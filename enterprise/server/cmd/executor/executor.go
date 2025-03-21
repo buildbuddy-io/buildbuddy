@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -264,13 +265,7 @@ func main() {
 	cleanupFUSEMounts()
 
 	if *deleteBuildRootOnStartup {
-		rootDir := runner.GetBuildRoot()
-		if err := os.RemoveAll(rootDir); err != nil {
-			log.Warningf("Failed to remove build root dir: %s", err)
-		}
-		if err := disk.EnsureDirectoryExists(rootDir); err != nil {
-			log.Warningf("Failed to create build root dir: %s", err)
-		}
+		deleteBuildRoot(rootContext, runner.GetBuildRoot())
 	}
 
 	setupNetworking(rootContext)
@@ -356,4 +351,19 @@ func main() {
 		http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), nil)
 	}()
 	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
+func deleteBuildRoot(ctx context.Context, rootDir string) {
+	log.Infof("Deleting build root dir at %q", rootDir)
+	stop := canary.StartWithLateFn(1*time.Minute, func(timeTaken time.Duration) {
+		log.Infof("Still deleting build root dir (%s elapsed)", timeTaken)
+	}, func(timeTaken time.Duration) {})
+	defer stop()
+
+	if err := disk.ForceRemove(ctx, rootDir); err != nil {
+		log.Warningf("Failed to remove build root dir: %s", err)
+	}
+	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
+		log.Warningf("Failed to create build root dir: %s", err)
+	}
 }
