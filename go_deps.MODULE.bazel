@@ -1,7 +1,12 @@
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
 
-inject_repo(go_deps, "zlib")
+# Non-Go repos referenced by Go repos
+inject_repo(
+    go_deps,
+    "googleapis",
+    "zlib",
+)
 
 # Go repos with patches
 go_deps.module_override(
@@ -133,7 +138,7 @@ go_deps.gazelle_override(
         "gazelle:resolve go github.com/containerd/containerd/api/types/platform //types:types",
         "gazelle:resolve go github.com/containerd/containerd/api/types/sandbox //types:types",
         "gazelle:resolve go github.com/containerd/containerd/api/types/task //types/task:task",
-        "gazelle:resolve proto google/rpc/status.proto @@//:googleapis_status_proto",
+        "gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
         "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
     ],
     path = "github.com/containerd/containerd/api",
@@ -141,7 +146,7 @@ go_deps.gazelle_override(
 go_deps.gazelle_override(
     directives = [
         "gazelle:proto file",
-        "gazelle:resolve proto proto/status.proto @@//:googleapis_status_proto",
+        "gazelle:resolve proto proto/status.proto @googleapis//google/rpc:status_proto",
         "gazelle:resolve proto go proto/status.proto @org_golang_google_genproto_googleapis_rpc//status",
     ],
     path = "github.com/containerd/ttrpc",
@@ -159,7 +164,7 @@ go_deps.gazelle_override(
         "gazelle:proto file",
         "gazelle:proto_strip_import_prefix /proto/cel/expr",
         "gazelle:proto_import_prefix cel/expr",
-        "gazelle:resolve proto google/rpc/status.proto @@//:googleapis_status_proto",
+        "gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
         "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
     ],
     path = "cel.dev/expr",
