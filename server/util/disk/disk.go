@@ -123,7 +123,7 @@ func ForceRemove(ctx context.Context, path string) error {
 		if entry.IsDir() {
 			// In order to remove dir entries and make sure we can further
 			// recurse into the dir, we need all bits set (RWX).
-			return os.Chmod(path, 0770)
+			return os.Chmod(path, 0777)
 		}
 		return nil
 	})
