@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/distributed_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -109,7 +109,7 @@ type Cache struct {
 	peerMetadata         map[string]*peerInfo
 	hintedHandoffsMu     *sync.RWMutex
 	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
-	cacheProxy           *cacheproxy.CacheProxy
+	distributedProxy     *distributed_client.Proxy
 	consistentHash       *consistent_hash.ConsistentHash
 	extraConsistentHash  *consistent_hash.ConsistentHash
 	heartbeatChannel     *heartbeat.Channel
@@ -210,7 +210,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		lookasideMu:         &sync.Mutex{},
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", config.ListenAddr)),
 		config:              config,
-		cacheProxy:          cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
+		distributedProxy:    distributed_client.New(env, c, config.ListenAddr),
 		consistentHash:      chash,
 		extraConsistentHash: extraCHash,
 
@@ -248,8 +248,8 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	if zone := resources.GetZone(); zone != "" {
 		dc.zone = zone
 	}
-	dc.cacheProxy.SetHeartbeatCallbackFunc(dc.recvHeartbeatCallback)
-	dc.cacheProxy.SetHintedHandoffCallbackFunc(dc.recvHintedHandoffCallback)
+	dc.distributedProxy.SetHeartbeatCallbackFunc(dc.recvHeartbeatCallback)
+	dc.distributedProxy.SetHintedHandoffCallbackFunc(dc.recvHintedHandoffCallback)
 	if len(config.Nodes) > 0 {
 		// Nodes are hardcoded. Set them once and be done with it.
 		chash.Set(config.Nodes...)
@@ -505,7 +505,7 @@ func (c *Cache) heartbeatPeers(shutDownChan chan struct{}) {
 		case <-ticker.C:
 			for _, peer := range c.consistentHash.GetItems() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-				if err := c.cacheProxy.SendHeartbeat(ctx, peer); err == nil {
+				if err := c.distributedProxy.SendHeartbeat(ctx, peer); err == nil {
 					// Trigger handoffs if we were able to ping this peer.
 					go c.handleHintedHandoffs(peer)
 				}
@@ -529,7 +529,7 @@ func (c *Cache) StartListening() {
 		if c.heartbeatChannel != nil {
 			c.heartbeatChannel.StartAdvertising()
 		}
-		if err := c.cacheProxy.StartListening(); err != nil {
+		if err := c.distributedProxy.StartListening(); err != nil {
 			log.Warningf("Unable to start cacheproxy: %s", err)
 		}
 	}()
@@ -550,7 +550,7 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	}
 	close(c.shutDownChan)
 	c.finishedShutdown = true
-	return c.cacheProxy.Shutdown(ctx)
+	return c.distributedProxy.Shutdown(ctx)
 }
 
 func (c *Cache) peerZone(peer string) (string, bool) {
@@ -637,14 +637,14 @@ func (c *Cache) remoteContains(ctx context.Context, peer string, r *rspb.Resourc
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Contains(ctx, r)
 	}
-	return c.cacheProxy.RemoteContains(ctx, peer, r)
+	return c.distributedProxy.RemoteContains(ctx, peer, r)
 }
 
 func (c *Cache) remoteMetadata(ctx context.Context, peer string, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Metadata(ctx, r)
 	}
-	return c.cacheProxy.RemoteMetadata(ctx, peer, r)
+	return c.distributedProxy.RemoteMetadata(ctx, peer, r)
 }
 
 func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
@@ -663,7 +663,7 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 	if len(stillMissing) == 0 {
 		return nil, nil
 	}
-	return c.cacheProxy.RemoteFindMissing(ctx, peer, isolation, stillMissing)
+	return c.distributedProxy.RemoteFindMissing(ctx, peer, isolation, stillMissing)
 }
 
 func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -684,7 +684,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 		return results, nil
 	}
 
-	results, err := c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, stillMissing)
+	results, err := c.distributedProxy.RemoteGetMulti(ctx, peer, isolation, stillMissing)
 	if err != nil {
 		return nil, err
 	}
@@ -708,7 +708,7 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 			return io.NopCloser(bytes.NewReader(buf)), nil
 		}
 	}
-	rc, err := c.cacheProxy.RemoteReader(ctx, peer, r, offset, limit)
+	rc, err := c.distributedProxy.RemoteReader(ctx, peer, r, offset, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -722,17 +722,17 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 	if c.config.EnableLocalWrites && peer == c.config.ListenAddr {
 		return c.local.Writer(ctx, r)
 	}
-	return c.cacheProxy.RemoteWriter(ctx, peer, handoffPeer, r)
+	return c.distributedProxy.RemoteWriter(ctx, peer, handoffPeer, r)
 }
 func (c *Cache) remoteDelete(ctx context.Context, peer string, r *rspb.ResourceName) error {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Delete(ctx, r)
 	}
-	return c.cacheProxy.RemoteDelete(ctx, peer, r)
+	return c.distributedProxy.RemoteDelete(ctx, peer, r)
 }
 
 func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string) error {
-	if exists, err := c.cacheProxy.RemoteContains(ctx, dest, rn); err == nil && exists {
+	if exists, err := c.distributedProxy.RemoteContains(ctx, dest, rn); err == nil && exists {
 		return nil
 	}
 
@@ -741,7 +741,7 @@ func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string
 		return err
 	}
 	defer r.Close()
-	rwc, err := c.cacheProxy.RemoteWriter(ctx, dest, "", rn)
+	rwc, err := c.distributedProxy.RemoteWriter(ctx, dest, "", rn)
 	if err != nil {
 		return err
 	}
@@ -874,10 +874,10 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 			return md, nil
 		}
 		if status.IsNotFoundError(err) {
-			c.log.CtxDebugf(ctx, "Metadata(%q) not found on peer %s", cacheproxy.ResourceIsolationString(r), peer)
+			c.log.CtxDebugf(ctx, "Metadata(%q) not found on peer %s", distributed_client.ResourceIsolationString(r), peer)
 			continue
 		}
-		c.log.CtxDebugf(ctx, "Metadata(%q) lookup failed on peer %s: (err: %v)", cacheproxy.ResourceIsolationString(r), peer, err)
+		c.log.CtxDebugf(ctx, "Metadata(%q) lookup failed on peer %s: (err: %v)", distributed_client.ResourceIsolationString(r), peer, err)
 
 		// Got an error -- mark this peer as failed and try the next one.
 		ps.MarkPeerAsFailed(peer)
@@ -1050,7 +1050,7 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 		lookups++
 		r, err := c.remoteReader(ctx, peer, rn, offset, limit)
 		if err == nil {
-			c.log.CtxDebugf(ctx, "Reader(%q) found on peer %s", cacheproxy.ResourceIsolationString(rn), peer)
+			c.log.CtxDebugf(ctx, "Reader(%q) found on peer %s", distributed_client.ResourceIsolationString(rn), peer)
 			backfill()
 			metrics.DistributedCachePeerLookups.With(prometheus.Labels{
 				metrics.DistributedCacheOperation: metricsLabel,
@@ -1059,10 +1059,10 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 			return r, err
 		}
 		if status.IsNotFoundError(err) {
-			c.log.CtxDebugf(ctx, "Reader(%q) not found on peer %s", cacheproxy.ResourceIsolationString(rn), peer)
+			c.log.CtxDebugf(ctx, "Reader(%q) not found on peer %s", distributed_client.ResourceIsolationString(rn), peer)
 			continue
 		}
-		c.log.CtxDebugf(ctx, "Reader(%q) error on peer %s: %s", cacheproxy.ResourceIsolationString(rn), peer, err)
+		c.log.CtxDebugf(ctx, "Reader(%q) error on peer %s: %s", distributed_client.ResourceIsolationString(rn), peer, err)
 
 		// Some other error -- mark this peer as failed and try the next one.
 		ps.MarkPeerAsFailed(peer)
@@ -1249,7 +1249,7 @@ func (mc *multiWriteCloser) Commit() error {
 			if err := wc.Commit(); err != nil {
 				return err
 			}
-			mc.log.CtxDebugf(mc.ctx, "Successfully wrote %s to %q", cacheproxy.ResourceIsolationString(mc.r), peer)
+			mc.log.CtxDebugf(mc.ctx, "Successfully wrote %s to %q", distributed_client.ResourceIsolationString(mc.r), peer)
 			return nil
 		})
 	}
@@ -1259,7 +1259,7 @@ func (mc *multiWriteCloser) Commit() error {
 		for peer := range mc.peerClosers {
 			peers = append(peers, peer)
 		}
-		mc.log.CtxDebugf(mc.ctx, "Writer(%q) successfully wrote to peers %s", cacheproxy.ResourceIsolationString(mc.r), peers)
+		mc.log.CtxDebugf(mc.ctx, "Writer(%q) successfully wrote to peers %s", distributed_client.ResourceIsolationString(mc.r), peers)
 	}
 	return err
 }

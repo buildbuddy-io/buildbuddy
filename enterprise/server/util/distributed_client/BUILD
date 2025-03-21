@@ -1,11 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//enterprise:__subpackages__"])
-
 go_library(
-    name = "cacheproxy",
-    srcs = ["cacheproxy.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy",
+    name = "distributed_client",
+    srcs = ["distributed_client.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/distributed_client",
+    visibility = ["//visibility:public"],
     deps = [
         "//proto:distributed_cache_go_proto",
         "//proto:remote_execution_go_proto",
@@ -28,11 +27,10 @@ go_library(
 )
 
 go_test(
-    name = "cacheproxy_test",
-    size = "small",
-    srcs = ["cacheproxy_test.go"],
+    name = "distributed_client_test",
+    srcs = ["distributed_client_test.go"],
     deps = [
-        ":cacheproxy",
+        ":distributed_client",
         "//proto:distributed_cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -53,3 +51,5 @@ go_test(
         "@org_golang_google_protobuf//testing/protocmp",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

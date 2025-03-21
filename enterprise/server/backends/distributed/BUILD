@@ -8,7 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed",
     deps = [
         "//enterprise/server/backends/pubsub",
-        "//enterprise/server/util/cacheproxy",
+        "//enterprise/server/util/distributed_client",
         "//enterprise/server/util/heartbeat",
         "//enterprise/server/util/redisutil",
         "//proto:distributed_cache_go_proto",

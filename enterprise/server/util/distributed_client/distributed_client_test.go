@@ -1,4 +1,4 @@
-package cacheproxy_test
+package distributed_client_test
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/distributed_client"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -107,9 +107,9 @@ func TestReaderMaxOffset(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	c := distributed_client.New(te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 	waitUntilServerIsAlive(peer)
 
@@ -179,9 +179,9 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 	sc := snitchCache{te.GetCache(), writeCounts}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, &sc, peer)
+	c := distributed_client.New(te, &sc, peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 
 	waitUntilServerIsAlive(peer)
@@ -231,9 +231,9 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 	sc := snitchCache{te.GetCache(), writeCounts}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, &sc, peer)
+	c := distributed_client.New(te, &sc, peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 
 	waitUntilServerIsAlive(peer)
@@ -280,9 +280,9 @@ func TestReader(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	c := distributed_client.New(te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 	waitUntilServerIsAlive(peer)
 
@@ -337,9 +337,9 @@ func TestReadOffsetLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	c := distributed_client.New(te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 	waitUntilServerIsAlive(peer)
 
@@ -371,9 +371,9 @@ func TestWriter(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	c := distributed_client.New(te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 
 	waitUntilServerIsAlive(peer)
@@ -438,9 +438,9 @@ func TestWriteAlreadyExists(t *testing.T) {
 	sc := snitchCache{te.GetCache(), writeCounts}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, &sc, peer)
+	c := distributed_client.New(te, &sc, peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 
 	waitUntilServerIsAlive(peer)
@@ -516,9 +516,9 @@ func TestReadWrite_Compressed(t *testing.T) {
 	for _, tc := range testCases {
 		peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 		te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
-		c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+		c := distributed_client.New(te, te.GetCache(), peer)
 		if err := c.StartListening(); err != nil {
-			t.Fatalf("Error setting up cacheproxy: %s", err)
+			t.Fatalf("Error setting up distributed_client: %s", err)
 		}
 		waitUntilServerIsAlive(peer)
 
@@ -568,9 +568,9 @@ func TestContains(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	c := distributed_client.New(te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 	waitUntilServerIsAlive(peer)
 
@@ -640,9 +640,9 @@ func TestOversizeBlobs(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	c := distributed_client.New(te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 
 	waitUntilServerIsAlive(peer)
@@ -715,7 +715,7 @@ func TestFindMissing(t *testing.T) {
 	}
 
 	peer := net.JoinHostPort("localhost", fmt.Sprintf("%d", testport.FindFree(t)))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	c := distributed_client.New(te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
 		t.Fatalf("Error starting cache proxy: %s", err)
 	}
@@ -787,9 +787,9 @@ func TestGetMulti(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	c := distributed_client.New(te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 	waitUntilServerIsAlive(peer)
 
@@ -851,9 +851,9 @@ func TestEmptyRead(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	c := distributed_client.New(te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 	waitUntilServerIsAlive(peer)
 
@@ -895,9 +895,9 @@ func TestDelete(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	c := distributed_client.New(te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 	waitUntilServerIsAlive(peer)
 
@@ -930,9 +930,9 @@ func TestMetadata(t *testing.T) {
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	c := distributed_client.New(te, te.GetCache(), peer)
 	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
+		t.Fatalf("Error setting up distributed_client: %s", err)
 	}
 	waitUntilServerIsAlive(peer)
 
@@ -954,7 +954,7 @@ func TestMetadata(t *testing.T) {
 		Resource: r,
 	})
 	if err != nil {
-		t.Fatalf("Error fetching metadata from cacheproxy: %s", err)
+		t.Fatalf("Error fetching metadata from distributed_client: %s", err)
 	}
 	cacheMetadata, err := te.GetCache().Metadata(ctx, r)
 	if err != nil {
@@ -1001,7 +1001,7 @@ func BenchmarkWrite(b *testing.B) {
 				require.NoError(b, err)
 
 				peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
-				c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+				c := distributed_client.New(te, te.GetCache(), peer)
 				err = c.StartListening()
 				require.NoError(b, err)
 
@@ -1036,7 +1036,7 @@ func BenchmarkRead(b *testing.B) {
 			ctx := context.Background()
 			te := getTestEnv(b, emptyUserMap)
 			peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
-			c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+			c := distributed_client.New(te, te.GetCache(), peer)
 
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 			require.NoError(b, err)
