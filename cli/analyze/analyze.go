@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -30,6 +31,8 @@ const (
 
 var (
 	flags = flag.NewFlagSet("analyze", flag.ContinueOnError)
+
+	keepGoingFlag = flags.Bool("keep_going", true, "Continue querying the dependency graph even after encountering errors.")
 
 	longestPathFlag = flags.Bool("longest_path", false, "Show the longest path in the build graph.")
 
@@ -325,7 +328,12 @@ func queryGraph(target string) (*DependencyGraph, error) {
 	// workspace. Tracking changes to external repos is complicated, so we're
 	// excluding them for now.
 	q := fmt.Sprintf("deps(%s) intersect //...", target)
-	bazelArgs := []string{"query", "--output=proto", q}
+	bazelArgs := []string{
+		"query",
+		fmt.Sprintf("--keep_going=%t", *keepGoingFlag),
+		"--output=proto",
+		q,
+	}
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	opts := &bazelisk.RunOpts{
@@ -336,9 +344,16 @@ func queryGraph(target string) (*DependencyGraph, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if exitCode != 0 {
-		fmt.Print(stderr.String())
-		return nil, fmt.Errorf("bazelisk query failed (exit code %d)", exitCode)
+		fmt.Fprint(os.Stderr, stderr.String())
+		// When --keep_going is set, Bazel can produce some output even when it
+		// exits with a non-zero exit code. So, we just log a warning on
+		// non-zero exits unless Bazel produced no output at all.
+		if !*keepGoingFlag || stdout.Len() == 0 {
+			return nil, fmt.Errorf("bazelisk query failed (exit code %d)", exitCode)
+		}
+		log.Warnf("Query returned non-zero exit code %d; analysis may be incomplete", exitCode)
 	}
 
 	res := &bqpb.QueryResult{}
