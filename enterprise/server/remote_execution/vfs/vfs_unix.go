@@ -124,9 +124,8 @@ func (vfs *VFS) Mount() error {
 		EntryTimeout: &nodeAttrTimeout,
 		AttrTimeout:  &nodeAttrTimeout,
 		MountOptions: fuse.MountOptions{
-			AllowOther:    true,
-			Debug:         vfs.logFUSEOps,
-			DisableXAttrs: true,
+			AllowOther: true,
+			Debug:      vfs.logFUSEOps,
 			// Don't depend on `fusermount`.
 			// Disable fallback to fusermount as well, since it can cause
 			// deadlocks. See https://github.com/hanwen/go-fuse/issues/506
@@ -721,12 +720,7 @@ func fillFuseAttr(out *fuse.Attr, attr *vfspb.Attrs) {
 	out.Blksize = uint32(attr.BlockSize)
 }
 
-func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	n.startOP("Getattr")
-	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Getattr %q", n.relativePath())
-	}
-
+func (n *Node) getattr() (*vfspb.Attrs, error) {
 	n.mu.Lock()
 	attrs := n.cachedAttrs
 	n.mu.Unlock()
@@ -734,7 +728,7 @@ func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) 
 	if attrs == nil {
 		rsp, err := n.vfs.vfsClient.GetAttr(n.vfs.getRPCContext(), &vfspb.GetAttrRequest{Id: n.StableAttr().Ino})
 		if err != nil {
-			return rpcErrToSyscallErrno(err)
+			return nil, err
 		}
 		attrs = rsp.GetAttrs()
 		n.mu.Lock()
@@ -744,8 +738,36 @@ func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) 
 		}
 		n.mu.Unlock()
 	}
+
+	return attrs, nil
+}
+
+func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	n.startOP("Getattr")
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "Getattr %q", n.relativePath())
+	}
+
+	attrs, err := n.getattr()
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
 	fillFuseAttr(&out.Attr, attrs)
 	return fs.OK
+}
+
+func (n *Node) setattr(req *vfspb.SetAttrRequest) (*vfspb.Attrs, error) {
+	rsp, err := n.vfs.vfsClient.SetAttr(n.vfs.getRPCContext(), req)
+	if err != nil {
+		return nil, err
+	}
+
+	n.mu.Lock()
+	if n.numHandles == 0 {
+		n.cachedAttrs = rsp.GetAttrs()
+	}
+	n.mu.Unlock()
+	return rsp.Attrs, nil
 }
 
 func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
@@ -776,20 +798,92 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 		req.SetAtime = &vfspb.SetAttrRequest_SetATime{AtimeNanos: uint64(at.UnixNano())}
 	}
 
-	rsp, err := n.vfs.vfsClient.SetAttr(n.vfs.getRPCContext(), req)
+	attr, err := n.setattr(req)
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
-
-	n.mu.Lock()
-	if n.numHandles == 0 {
-		n.cachedAttrs = rsp.GetAttrs()
-	}
-	n.mu.Unlock()
-
-	fillFuseAttr(&out.Attr, rsp.GetAttrs())
-
+	fillFuseAttr(&out.Attr, attr)
 	return fs.OK
+}
+
+func (n *Node) Getxattr(ctx context.Context, attr string, dest []byte) (uint32, syscall.Errno) {
+	attrs, err := n.getattr()
+	if err != nil {
+		return 0, rpcErrToSyscallErrno(err)
+	}
+
+	noCopy := len(dest) == 0
+	for _, xa := range attrs.Extended {
+		if xa.Name == attr {
+			if noCopy {
+				return uint32(len(xa.Value) + 1), fs.OK
+			}
+			if len(dest) < len(xa.Value)+1 {
+				return 0, syscall.ERANGE
+			}
+			n := copy(dest, xa.Value)
+			dest[n] = 0
+			return uint32(n + 1), 0
+		}
+	}
+
+	return 0, syscall.ENODATA
+}
+
+func (n *Node) Listxattr(ctx context.Context, dest []byte) (uint32, syscall.Errno) {
+	attrs, err := n.getattr()
+	if err != nil {
+		return 0, rpcErrToSyscallErrno(err)
+	}
+
+	size := 0
+	noCopy := len(dest) == 0
+	for _, xa := range attrs.Extended {
+		size += len(xa.Name) + 1
+		if noCopy {
+			continue
+		}
+		if len(dest) < len(xa.Name)+1 {
+			return 0, syscall.ERANGE
+		}
+		n := copy(dest, xa.Name)
+		dest[n] = 0
+		dest = dest[n+1:]
+	}
+
+	return uint32(size), fs.OK
+}
+
+func (n *Node) Setxattr(ctx context.Context, attr string, data []byte, flags uint32) syscall.Errno {
+	req := &vfspb.SetAttrRequest{
+		Id: n.StableAttr().Ino,
+		SetExtended: &vfspb.SetAttrRequest_SetExtendedAttr{
+			Name:  attr,
+			Value: data,
+			Flags: flags,
+		},
+	}
+
+	_, err := n.setattr(req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return 0
+}
+
+func (n *Node) Removexattr(ctx context.Context, attr string) syscall.Errno {
+	req := &vfspb.SetAttrRequest{
+		Id: n.StableAttr().Ino,
+		RemoveExtended: &vfspb.SetAttrRequest_RemoveExtendedAttr{
+			Name: attr,
+		},
+	}
+
+	_, err := n.setattr(req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return 0
 }
 
 func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {

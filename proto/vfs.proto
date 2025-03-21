@@ -7,6 +7,11 @@ syntax = "proto3";
 
 package vfs;
 
+message ExtendedAttr {
+  string name = 1;
+  bytes value = 2;
+}
+
 message Attrs {
   int64 size = 1;
   uint32 perm = 2;
@@ -17,6 +22,7 @@ message Attrs {
   // Number of 512-byte blocks used by the node.
   int64 blocks = 7;
   int64 block_size = 8;
+  repeated ExtendedAttr extended = 9;
 }
 
 message SymlinkEntry {
@@ -198,6 +204,18 @@ message SetAttrRequest {
     uint64 atime_nanos = 1;
   }
   SetATime set_atime = 5;
+
+  message SetExtendedAttr {
+    string name = 1;
+    bytes value = 2;
+    uint32 flags = 3;
+  }
+  SetExtendedAttr set_extended = 6;
+
+  message RemoveExtendedAttr {
+    string name = 1;
+  }
+  RemoveExtendedAttr remove_extended = 7;
 }
 
 message SetAttrResponse {

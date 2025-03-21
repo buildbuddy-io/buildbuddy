@@ -601,3 +601,92 @@ func TestMkdir(t *testing.T) {
 	rs := rawStat(t, testDirPath)
 	require.Greater(t, rs.Size, int64(0))
 }
+
+func nullTerminated(bs []byte) []byte {
+	return append(bs, 0)
+}
+
+func TestExtendedAttrs(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := "hello.txt"
+	testFilePath := filepath.Join(fsPath, testFile)
+	err := os.WriteFile(testFilePath, []byte("a"), 0644)
+	require.NoError(t, err)
+
+	// Simple set/get check.
+	key1 := "key1"
+	data1 := []byte("val1")
+	err = unix.Setxattr(testFilePath, key1, data1, 0)
+	require.NoError(t, err)
+	sz, err := unix.Getxattr(testFilePath, key1, nil)
+	require.NoError(t, err)
+	require.EqualValues(t, len(data1)+1, sz)
+	buf := make([]byte, 1024)
+	sz, err = unix.Getxattr(testFilePath, key1, buf)
+	require.NoError(t, err)
+	require.Equal(t, len(data1)+1, sz)
+	require.Equal(t, nullTerminated(data1), buf[:sz])
+
+	// Replace an existing attribute.
+	newData := []byte("newVal")
+	err = unix.Setxattr(testFilePath, key1, newData, 0)
+	require.NoError(t, err)
+	sz, err = unix.Getxattr(testFilePath, key1, nil)
+	require.NoError(t, err)
+	require.EqualValues(t, len(newData)+1, sz)
+	buf = make([]byte, 1024)
+	sz, err = unix.Getxattr(testFilePath, key1, buf)
+	require.NoError(t, err)
+	require.Equal(t, len(newData)+1, sz)
+	require.Equal(t, nullTerminated(newData), buf[:sz])
+
+	// XATTR_CREATE on an existing attribute should fail.
+	err = unix.Setxattr(testFilePath, key1, newData, unix.XATTR_CREATE)
+	require.ErrorIs(t, err, syscall.EEXIST)
+
+	// XATTR_REPLACE on a non-existent attribute should fail.
+	err = unix.Setxattr(testFilePath, "no-such-key", newData, unix.XATTR_REPLACE)
+	require.ErrorIs(t, err, syscall.ENODATA)
+
+	// Remove the attribute.
+	err = unix.Removexattr(testFilePath, key1)
+	require.NoError(t, err)
+
+	// Removing non-existent attribute should fail.
+	err = unix.Removexattr(testFilePath, key1)
+	require.ErrorIs(t, err, syscall.ENODATA)
+
+	// Test buffer sizes for "get".
+	{
+		err = unix.Setxattr(testFilePath, key1, data1, 0)
+		require.NoError(t, err)
+
+		// Not enough space for terminating null.
+		buf = make([]byte, len(data1))
+		_, err = unix.Getxattr(testFilePath, key1, buf)
+		require.ErrorIs(t, err, syscall.ERANGE)
+
+		// Exactly the right amount of space.
+		buf = make([]byte, len(data1)+1)
+		_, err = unix.Getxattr(testFilePath, key1, buf)
+		require.NoError(t, err)
+	}
+
+	// Set multiple attributes.
+	err = unix.Setxattr(testFilePath, key1, data1, 0)
+	require.NoError(t, err)
+	key2 := "key2"
+	data2 := []byte("some-other-val")
+	err = unix.Setxattr(testFilePath, key2, data2, 0)
+	require.NoError(t, err)
+	sz, err = unix.Listxattr(testFilePath, nil)
+	require.NoError(t, err)
+	require.Equal(t, len(key1)+len(key2)+2, sz)
+	buf = make([]byte, 1024)
+	sz, err = unix.Listxattr(testFilePath, buf)
+	require.NoError(t, err)
+	require.Equal(t, len(key1)+len(key2)+2, sz)
+	require.Equal(t, nullTerminated([]byte(key1)), buf[:len(key1)+1])
+	require.Equal(t, nullTerminated([]byte(key2)), buf[len(key1)+1:sz])
+}
