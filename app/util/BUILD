@@ -184,3 +184,8 @@ ts_library(
         "@npm//tslib",
     ],
 )
+
+ts_library(
+    name = "github",
+    srcs = ["github.tsx"],
+)

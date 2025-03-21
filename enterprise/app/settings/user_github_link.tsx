@@ -17,6 +17,10 @@ import errorService from "../../../app/errors/error_service";
 import authService from "../../../app/auth/auth_service";
 import { TextLink } from "../../../app/components/link/link";
 import { github } from "../../../proto/github_ts_proto";
+import {
+  LinkReadOnlyGitHubAppURL,
+  LinkReadWriteGitHubAppURL
+} from "../../../app/util/github";
 
 export interface Props {
   user: User;
@@ -53,13 +57,6 @@ export default class UserGitHubLink extends React.Component<Props, State> {
     this.fetchGitHubAccount();
   }
 
-  private gitHubLinkUrl(): string {
-    const params = new URLSearchParams({
-      user_id: this.props.user.displayUser?.userId?.id || "",
-      redirect_url: window.location.href,
-    });
-    return `/auth/github/app/link/?${params}`;
-  }
   private fetchGitHubAccount() {
     this.accountFetch?.cancel();
 
@@ -148,9 +145,14 @@ export default class UserGitHubLink extends React.Component<Props, State> {
             </OutlinedButton>
           </div>
         ) : (
-          <FilledButton className="settings-button settings-link-button">
-            <a href={this.gitHubLinkUrl()}>Link GitHub account</a>
-          </FilledButton>
+            <div className="setup-button-container">
+              <FilledButton className="settings-button settings-link-button left-aligned-button">
+                <a href={LinkReadWriteGitHubAppURL(this.props.user.displayUser?.userId?.id || "", "")}>Link GitHub account (full access)</a>
+              </FilledButton>
+              <FilledButton className="settings-button settings-link-button left-aligned-button">
+                <a href={LinkReadOnlyGitHubAppURL(this.props.user.displayUser?.userId?.id || "", "")}>Link GitHub account (read-only)</a>
+              </FilledButton>
+            </div>
         )}
         {this.state.deleteModalVisible && (
           <Modal
