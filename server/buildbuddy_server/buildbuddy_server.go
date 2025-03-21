@@ -1509,7 +1509,7 @@ func (s *BuildBuddyServer) LinkGitHubAppInstallation(ctx context.Context, req *g
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForGroup(ctx)
+	a, err := gh.GetGitHubAppWithID(req.GetAppId())
 	if err != nil {
 		return nil, err
 	}
@@ -1530,6 +1530,7 @@ func (s *BuildBuddyServer) GetGitHubAppInstallations(ctx context.Context, req *g
 			GroupId:        i.GroupID,
 			InstallationId: i.InstallationID,
 			Owner:          i.Owner,
+			AppId:          i.AppID,
 		})
 	}
 	return res, nil
@@ -1539,12 +1540,14 @@ func (s *BuildBuddyServer) UnlinkGitHubAppInstallation(ctx context.Context, req 
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForGroup(ctx)
+	a, err := gh.GetGitHubAppWithID(req.GetAppId())
 	if err != nil {
 		return nil, err
 	}
 	return a.UnlinkGitHubAppInstallation(ctx, req)
 }
+
+// TODO: This should be using the token
 func (s *BuildBuddyServer) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error) {
 	gh := s.env.GetGitHubAppService()
 	if gh == nil {
@@ -2076,6 +2079,8 @@ func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *repb.CreateR
 	return a.CreateRepo(ctx, request)
 }
 
+// TODO: This should be used with token?
+// But in reality it should probably be through an app, but we don't gate this at any point
 func (s *BuildBuddyServer) GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error) {
 	gh := s.env.GetGitHubAppService()
 	if gh == nil {

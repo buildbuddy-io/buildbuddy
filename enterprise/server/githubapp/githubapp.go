@@ -1108,8 +1108,8 @@ func (a *GitHubApp) handleInstall(ctx context.Context, groupID, setupAction stri
 	// desired org.
 	if groupID == "" {
 		redirect := fmt.Sprintf(
-			"/settings/org/github/complete-installation?installation_id=%d&installation_owner=%s",
-			installationID, installation.GetAccount().GetLogin())
+			"/settings/org/github/complete-installation?installation_id=%d&installation_owner=%s&app_id=%d",
+			installationID, installation.GetAccount().GetLogin(), installation.GetAppID())
 		return redirect, nil
 	}
 	if err := a.linkInstallation(ctx, installation, groupID); err != nil {
@@ -1283,6 +1283,7 @@ func (a *GitHubApp) GetGithubUserInstallations(ctx context.Context, req *ghpb.Ge
 	for _, i := range installations {
 		installation := &ghpb.UserInstallation{
 			Id:         i.GetID(),
+			AppId:      i.GetAppID(),
 			Login:      i.Account.GetLogin(),
 			Url:        i.GetHTMLURL(),
 			TargetType: i.GetTargetType(),

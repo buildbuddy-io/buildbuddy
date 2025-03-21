@@ -704,11 +704,13 @@ type GitHubApp interface {
 // GitHubApp the user has installed (read-only vs read-write) and is used for app-agnostic
 // operations.
 type GitHubAppService interface {
+	GetReadWriteGitHubApp() GitHubApp
+	GetGitHubAppWithID(appID int64) (GitHubApp, error)
+	GetGitHubAppForGroup(ctx context.Context) (GitHubApp, error)
+	GetGitHubAppForToken(token string) (GitHubApp, error)
+
 	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
 	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
-
-	GetGitHubAppForGroup(ctx context.Context) (GitHubApp, error)
-	GetReadWriteGitHubApp() GitHubApp
 }
 
 type RunnerService interface {
