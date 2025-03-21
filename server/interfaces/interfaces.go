@@ -1612,12 +1612,15 @@ type TransferTimer interface {
 	// does not support compression and requires that uncompressed bytes are
 	// written (bytesTransferredCache)
 	CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error
+
+	// TODO(iain): document
+	Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error
 }
 
 // Tracks cache hit/miss and transfer-timing statistics.
 //
 // Example usage
-// ht := env.GetHitTrackerFactory().NewHitTracker(ctx)
+// ht := env.GetHitTrackerFactory().NewHitTracker(ctx, invocation_id false /*=actionCache*/)
 //
 //	if err := ht.TrackMiss(); err != nil {
 //	  log.Printf("Error counting cache miss.")
@@ -1636,10 +1639,10 @@ type HitTracker interface {
 
 type HitTrackerFactory interface {
 	// Creates a new HitTracker for tracking Action Cache hits.
-	NewACHitTracker(ctx context.Context) HitTracker
+	NewACHitTracker(ctx context.Context, invocationID string) HitTracker
 
 	// Creates a new HitTracker for tracking ByteStream/CAS hits.
-	NewCASHitTracker(ctx context.Context) HitTracker
+	NewCASHitTracker(ctx context.Context, invocationID string) HitTracker
 }
 
 type HitTrackerService interface {

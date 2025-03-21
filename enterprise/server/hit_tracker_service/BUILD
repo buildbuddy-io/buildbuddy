@@ -8,7 +8,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_service",
     deps = [
         "//proto:hit_tracker_go_proto",
+        "//server/interfaces",
         "//server/real_environment",
+        "//server/util/log",
     ],
 )
 

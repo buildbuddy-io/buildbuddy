@@ -15,6 +15,7 @@ go_library(
         "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/digest",
+        "//server/util/bazel_request",
         "//server/util/capabilities",
         "//server/util/log",
         "//server/util/prefix",
