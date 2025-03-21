@@ -39,8 +39,8 @@ jobs:
         id: restore-caches
         uses: ./.github/actions/cache-restore
         with:
-          repo-cache-dir: "D:/bazel/repo-cache/"
-          go-mod-cache-dir: "D:/go-mod-cache/"
+          repo-cache-dir: "D:/bazel/repo-cache"
+          go-mod-cache-dir: "D:/go-mod-cache"
           yarn-cache-dir: "~\\AppData\\Local\\Yarn\\Cache\\v6"
 
       - name: Build and Upload Artifacts
@@ -61,8 +61,8 @@ jobs:
         if: always()
         with:
           repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
-          repo-cache-dir: "D:/bazel/repo-cache/"
+          repo-cache-dir: "D:/bazel/repo-cache"
           go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
-          go-mod-cache-dir: "D:/go-mod-cache/"
+          go-mod-cache-dir: "D:/go-mod-cache"
           yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}
           yarn-cache-dir: "~\\AppData\\Local\\Yarn\\Cache\\v6"
