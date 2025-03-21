@@ -221,7 +221,8 @@ type Group struct {
 	// group.
 	WriteToken string `gorm:"index:write_token_index"`
 
-	// The group's Github API token.
+	// The group's Github API token. This is deprecated in favor of a user-level
+	// token that can be used with our GitHub app.
 	GithubToken *string
 	Model
 
@@ -296,7 +297,8 @@ type User struct {
 	Email     string
 	ImageURL  string
 
-	// User-specific Github token (if linked).
+	// GitHub token used for all non-login related GitHub features.
+	// Can be for the read-only or read-write BuildBuddy GitHub app.
 	GithubToken string
 
 	// Group roles are used to determine read/write permissions

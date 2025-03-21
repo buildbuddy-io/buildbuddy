@@ -257,7 +257,9 @@ func (ws *workflowService) checkPreconditions(ctx context.Context) error {
 
 	return nil
 }
-func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
+
+// TODO(Maggie): Clean up all references to creating legacy workflows
+func (ws *workflowService) CreateLegacyWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
 	// Validate the request.
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
@@ -295,7 +297,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	// If no access token is provided explicitly, try getting the token from the
 	// group.
 	if accessToken == "" && isGitHubURL(repoURL) {
-		token, err := ws.gitHubTokenForAuthorizedGroup(ctx, req.GetRequestContext())
+		token, err := ws.legacyGithubTokenForAuthorizedGroup(ctx, req.GetRequestContext())
 		if err != nil {
 			return nil, status.InvalidArgumentError("An access token is required since the current organization does not have a GitHub account linked.")
 		}
@@ -977,11 +979,11 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	return res, nil
 }
 
-func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
+func (ws *workflowService) GetReposForLegacyGitHubApp(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
 	if req.GetGitProvider() == wfpb.GitProvider_UNKNOWN_GIT_PROVIDER {
 		return nil, status.FailedPreconditionError("Unknown git provider")
 	}
-	token, err := ws.gitHubTokenForAuthorizedGroup(ctx, req.GetRequestContext())
+	token, err := ws.legacyGithubTokenForAuthorizedGroup(ctx, req.GetRequestContext())
 	if err != nil {
 		return nil, err
 	}
@@ -996,7 +998,7 @@ func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposReque
 	return res, nil
 }
 
-func (ws *workflowService) gitHubTokenForAuthorizedGroup(ctx context.Context, reqCtx *ctxpb.RequestContext) (string, error) {
+func (ws *workflowService) legacyGithubTokenForAuthorizedGroup(ctx context.Context, reqCtx *ctxpb.RequestContext) (string, error) {
 	d := ws.env.GetUserDB()
 	if d == nil {
 		return "", status.FailedPreconditionError("Missing UserDB")
