@@ -966,8 +966,11 @@ type TaskLeaser interface {
 	Lease(ctx context.Context, taskID string) (TaskLease, error)
 }
 
-// TaskLease represents a lease held on a task.
-// The lease is valid as long as the Context() is not done.
+// TaskLease represents a lease held on a task, as a best-effort mechanism
+// to prevent multiple executors from executing the same task concurrently.
+//
+// The executor may assume that the lease is valid as long as the Context() is
+// not done and Close() has not been called.
 type TaskLease interface {
 	// Task contains the execution details required to run the leased task.
 	Task() *repb.ExecutionTask

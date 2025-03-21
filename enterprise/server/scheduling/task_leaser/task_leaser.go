@@ -31,12 +31,16 @@ const (
 	reconnectTimeout = 1 * time.Second
 )
 
+// Verify that TaskLeaser implements interfaces.TaskLeaser.
+var _ interfaces.TaskLeaser = (*TaskLeaser)(nil)
+
+// Verify that TaskLease implements interfaces.TaskLease.
+var _ interfaces.TaskLease = (*TaskLease)(nil)
+
 type TaskLeaser struct {
 	env        environment.Env
 	executorID string
 }
-
-var _ interfaces.TaskLeaser = (*TaskLeaser)(nil)
 
 func NewTaskLeaser(env environment.Env, executorID string) *TaskLeaser {
 	return &TaskLeaser{
@@ -81,8 +85,6 @@ type TaskLease struct {
 	ttl               time.Duration
 	cancelFunc        context.CancelFunc
 }
-
-var _ interfaces.TaskLease = (*TaskLease)(nil)
 
 func (t *TaskLease) Context() context.Context {
 	return t.ctx
