@@ -342,6 +342,8 @@ use_repo(
     "com_github_mitchellh_go_ps",
     "com_github_mwitkow_grpc_proxy",
     "com_github_nishanths_exhaustive",
+    "com_github_open_feature_go_sdk",
+    "com_github_open_feature_go_sdk_contrib_providers_flagd",
     "com_github_opencontainers_go_digest",
     "com_github_opencontainers_image_spec",
     "com_github_opencontainers_runtime_spec",
