@@ -143,6 +143,7 @@ func TestSelection(t *testing.T) {
 	// A user without the targeting var 'email' should not get the flag, but
 	// a user with it should.
 	require.False(t, fp.Boolean(ctx, "enable-mainframe-access", false))
+	require.False(t, fp.Boolean(ctx, "enable-mainframe-access", false, experiments.WithContext("email", "joeblow@google.com")))
 	require.True(t, fp.Boolean(ctx, "enable-mainframe-access", false, experiments.WithContext("email", "tyler@buildbuddy.io")))
 }
 
