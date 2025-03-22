@@ -78,6 +78,9 @@ const (
 	// HTTP response code: `200`, `302`, `401`, `404`, `500`, ...
 	HTTPResponseCodeLabel = "code"
 
+	// Host (without any port number) for outgoing HTTP requests
+	HTTPHostLabel = "host"
+
 	// Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 	CacheBackendLabel = "backend"
 
@@ -1833,6 +1836,16 @@ var (
 	//   sum by (le)	(rate(buildbuddy_http_response_size_bytes[5m]))
 	// )
 	// ```
+
+	HTTPOutgoingRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http_outgoing",
+		Name:      "request_count",
+		Help:      "HTTP outgoing request count.",
+	}, []string{
+		HTTPHostLabel,
+		HTTPMethodLabel,
+	})
 
 	// ## Internal metrics
 	//

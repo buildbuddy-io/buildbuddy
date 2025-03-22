@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -20,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -188,6 +191,16 @@ func makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizatio
 		Host:   ref.Context().RegistryStr(),
 		Path:   path,
 	}
+
+	registryHost, _, err := net.SplitHostPort(ref.Context().RegistryStr())
+	if err != nil {
+		registryHost = "[UNKNOWN]"
+	}
+	metrics.HTTPOutgoingRequestCount.With(prometheus.Labels{
+		metrics.HTTPHostLabel:   registryHost,
+		metrics.HTTPMethodLabel: method,
+	}).Inc()
+
 	upreq, err := http.NewRequest(method, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not make %s request to upstream registry '%s': %s", method, u, err)
