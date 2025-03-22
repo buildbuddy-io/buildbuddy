@@ -1,7 +1,7 @@
-diff --git a/node_modules/@protobufjs/inquire/index.js b/node_modules/@protobufjs/inquire/index.js
+diff --git a/index.js b/index.js
 index 33778b5..2132aac 100644
---- a/node_modules/@protobufjs/inquire/index.js
-+++ b/node_modules/@protobufjs/inquire/index.js
+--- a/index.js
++++ b/index.js
 @@ -9,7 +9,7 @@ module.exports = inquire;
   */
  function inquire(moduleName) {

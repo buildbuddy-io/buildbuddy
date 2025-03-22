@@ -8,6 +8,8 @@ ts_library(
     name = "root",
     srcs = ["root.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/alert",
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -20,7 +22,5 @@ ts_library(
         "//app/menu",
         "//app/preferences",
         "//app/router",
-        "@npm//@types/react",
-        "@npm//react",
     ],
 )

@@ -1,0 +1,28 @@
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "buildbuddy_go_oci_image_base",
+    digest = "sha256:388145607c79313a1e49b783a7ee71e4ef3df31d87c45adb46bfb9b257b643d1",
+    image = "gcr.io/distroless/cc-debian12",
+    platforms = ["linux/amd64"],
+)
+oci.pull(
+    name = "bazel_oci_image_base",
+    digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
+    image = "gcr.io/distroless/java17-debian12",
+    platforms = ["linux/amd64"],
+)
+oci.pull(
+    name = "busybox",
+    digest = "sha256:c230832bd3b0be59a6c47ed64294f9ce71e91b327957920b6929a0caa8353140",
+    image = "mirror.gcr.io/library/busybox:1.36.1",
+    platforms = ["linux/amd64"],
+)
+use_repo(
+    oci,
+    "bazel_oci_image_base",
+    "bazel_oci_image_base_linux_amd64",
+    "buildbuddy_go_oci_image_base",
+    "buildbuddy_go_oci_image_base_linux_amd64",
+    "busybox",
+    "busybox_linux_amd64",
+)

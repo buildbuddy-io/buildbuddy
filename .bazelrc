@@ -1,5 +1,7 @@
 common --noenable_bzlmod
 common --enable_workspace
+# Avoid being broken by version requirement changes in transitive deps.
+common --check_direct_dependencies=error
 
 common --enable_platform_specific_config
 
@@ -248,6 +250,9 @@ common:macos --host_action_env=DEVELOPER_DIR
 # rules_nodejs needs runfiles to be explicitly enabled.
 common:linux --enable_runfiles
 common:macos --enable_runfiles
+
+# passes an argument `--skipLibCheck` to *every* spawn of tsc
+common --@aspect_rules_ts//ts:skipLibCheck=always
 
 # Add `-test.v` to all Go tests so that each test func is reported as a separate test case
 # in the XML output.  This allows our webUI to display the run time of each test case
