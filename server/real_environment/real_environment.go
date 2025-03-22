@@ -134,6 +134,7 @@ type RealEnv struct {
 	cpuLeaser                        interfaces.CPULeaser
 	ociRegistry                      interfaces.OCIRegistry
 	hitTrackerFactory                interfaces.HitTrackerFactory
+	experimentFlagProvider           interfaces.ExperimentFlagProvider
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -820,4 +821,10 @@ func (r *RealEnv) GetHitTrackerFactory() interfaces.HitTrackerFactory {
 }
 func (r *RealEnv) SetHitTrackerFactory(hitTrackerFactory interfaces.HitTrackerFactory) {
 	r.hitTrackerFactory = hitTrackerFactory
+}
+func (r *RealEnv) GetExperimentFlagProvider() interfaces.ExperimentFlagProvider {
+	return r.experimentFlagProvider
+}
+func (r *RealEnv) SetExperimentFlagProvider(experimentFlagProvider interfaces.ExperimentFlagProvider) {
+	r.experimentFlagProvider = experimentFlagProvider
 }

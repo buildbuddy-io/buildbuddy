@@ -42,6 +42,7 @@ go_library(
         "//enterprise/server/crypter_service",
         "//enterprise/server/execution_search_service",
         "//enterprise/server/execution_service",
+        "//enterprise/server/experiments",
         "//enterprise/server/gcplink",
         "//enterprise/server/githubapp",
         "//enterprise/server/hostedrunner",

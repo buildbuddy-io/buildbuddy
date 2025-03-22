@@ -88,7 +88,7 @@ require (
 	github.com/jotfs/fastcdc-go v0.2.0
 	github.com/jsimonetti/rtnetlink v1.3.3
 	github.com/klauspost/compress v1.17.11
-	github.com/klauspost/cpuid/v2 v2.2.5
+	github.com/klauspost/cpuid/v2 v2.2.7
 	github.com/lestrrat-go/jwx v1.2.29
 	github.com/lni/dragonboat/v4 v4.0.0-20240618143154-6a1623140f27
 	github.com/lni/goutils v1.4.0
@@ -132,14 +132,14 @@ require (
 	go.opentelemetry.io/contrib/detectors/gcp v1.32.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.56.0
-	go.opentelemetry.io/otel v1.32.0
+	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.17.0
-	go.opentelemetry.io/otel/metric v1.32.0
+	go.opentelemetry.io/otel/metric v1.34.0
 	go.opentelemetry.io/otel/sdk v1.32.0
-	go.opentelemetry.io/otel/trace v1.32.0
+	go.opentelemetry.io/otel/trace v1.34.0
 	go.uber.org/atomic v1.11.0
 	golang.org/x/crypto v0.35.0
-	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
+	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 	golang.org/x/mod v0.23.0
 	golang.org/x/oauth2 v0.24.0
 	golang.org/x/sync v0.11.0
@@ -151,9 +151,9 @@ require (
 	google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1
 	google.golang.org/genproto/googleapis/api v0.0.0-20241202173237-19429a94021a
 	google.golang.org/genproto/googleapis/bytestream v0.0.0-20240903143218-8af14fe29dc1
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20241202173237-19429a94021a
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f
 	google.golang.org/grpc v1.70.0
-	google.golang.org/protobuf v1.36.3
+	google.golang.org/protobuf v1.36.5
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/clickhouse v0.5.1
@@ -247,7 +247,7 @@ require (
 	github.com/envoyproxy/go-control-plane v0.13.1 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.1.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.7.0 // indirect
+	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/getsentry/sentry-go v0.28.1 // indirect
 	github.com/go-chi/chi/v5 v5.0.7 // indirect
 	github.com/go-enry/go-oniguruma v1.2.1 // indirect
@@ -346,6 +346,8 @@ require (
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
+	github.com/open-feature/go-sdk v1.14.1 // indirect
+	github.com/open-feature/go-sdk-contrib/providers/flagd v0.2.6 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/paulmach/orb v0.9.2 // indirect

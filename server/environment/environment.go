@@ -135,4 +135,5 @@ type Env interface {
 	GetAtimeUpdater() interfaces.AtimeUpdater
 	GetCPULeaser() interfaces.CPULeaser
 	GetHitTrackerFactory() interfaces.HitTrackerFactory
+	GetExperimentFlagProvider() interfaces.ExperimentFlagProvider
 }
