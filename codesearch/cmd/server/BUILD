@@ -57,6 +57,7 @@ container_push(
 pkg_tar(
     name = "tar",
     srcs = [":server"],
+    include_runfiles = True,
 )
 
 oci_image(

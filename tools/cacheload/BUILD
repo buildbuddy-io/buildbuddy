@@ -62,6 +62,7 @@ container_push(
 pkg_tar(
     name = "tar",
     srcs = [":cacheload"],
+    include_runfiles = True,
 )
 
 oci_image(
