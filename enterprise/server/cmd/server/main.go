@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
@@ -299,6 +300,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := ociregistry.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := experiments.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

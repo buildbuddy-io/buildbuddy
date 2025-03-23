@@ -1666,3 +1666,13 @@ type HitTrackerFactory interface {
 	// Creates a new HitTracker for tracking ByteStream/CAS hits.
 	NewCASHitTracker(ctx context.Context) HitTracker
 }
+
+// ExperimentFlagProvider can be use for getting a flag value for a request to
+// enable or disable some experimental functionality. The experiment config is
+// managed outside of the app.
+type ExperimentFlagProvider interface {
+	Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool
+	String(ctx context.Context, flagName string, defaultValue string, opts ...any) string
+	Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64
+	Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64
+}
