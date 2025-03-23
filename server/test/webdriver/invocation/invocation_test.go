@@ -15,8 +15,9 @@ func TestInvocationPage_SuccessfulInvocation_BESOnly(t *testing.T) {
 	app := buildbuddy.Run(t)
 
 	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": "",
-		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
+		"MODULE.bazel":     "",
+		"WORKSPACE.bzlmod": "",
+		"BUILD":            `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
 	})
 	buildArgs := append([]string{"//:a", "--show_progress=0"}, app.BESBazelFlags()...)
 	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
@@ -44,8 +45,9 @@ func TestInvocationPage_FailedInvocation_BESOnly(t *testing.T) {
 	app := buildbuddy.Run(t)
 
 	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": "",
-		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "exit 1")`,
+		"MODULE.bazel":     "",
+		"WORKSPACE.bzlmod": "",
+		"BUILD":            `genrule(name = "a", outs = ["a.sh"], cmd_bash = "exit 1")`,
 	})
 	buildArgs := append([]string{"//:a", "--show_progress=0"}, app.BESBazelFlags()...)
 	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)

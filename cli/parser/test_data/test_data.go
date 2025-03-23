@@ -2,5 +2,5 @@ package test_data
 
 import _ "embed"
 
-//go:embed bazel7.4.0_help_flags-as-proto.b64
+//go:embed bazel8.1.1_help_flags-as-proto.b64
 var BazelHelpFlagsAsProtoOutput string
