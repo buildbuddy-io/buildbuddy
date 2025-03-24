@@ -73,7 +73,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 
 	// Get the id of the last chunk on disk after the last id stored in the db
 	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, inv.LastChunkId)
-	
+
 	// TODO(zoey): this should check for the status.NotFoundError, as that is the
 	// only one we can handle. Any other errors are real errors.
 	if err != nil {
