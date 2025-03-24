@@ -157,7 +157,17 @@ jobs:
         with:
           path: buildbuddy
 
-      - name: Restore caches
+      - name: Restore MacOS caches
+        if: matrix.os == 'macos-13' || matrix.os == 'macos-13-xlarge'
+        id: restore-caches
+        uses: ./buildbuddy/.github/actions/cache-restore
+        with:
+          repo-cache-dir: /Users/runner/repo-cache
+          go-mod-cache-dir: /Users/runner/go-mod-cache
+          yarn-cache-dir: /Users/runner/.cache/yarn/v6
+
+      - name: Restore Linux caches
+        if: matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-22.04-16cpu-arm64-arm-limited'
         id: restore-caches
         uses: ./buildbuddy/.github/actions/cache-restore
 
@@ -207,9 +217,20 @@ jobs:
             "${{ steps.build.outputs.BINARY }}" \
             "${{ steps.build.outputs.BINARY }}.sha256"
 
-      - name: Save caches
+      - name: Save MacOS cache 
         uses: ./buildbuddy/.github/actions/cache-save
-        if: always()
+        if: matrix.os == 'macos-13' || matrix.os == 'macos-13-xlarge'
+        with:
+          repo-cache-dir: /Users/runner/repo-cache
+          go-mod-cache-dir: /Users/runner/go-mod-cache
+          yarn-cache-dir: /Users/runner/.cache/yarn/v6
+          repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
+          go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
+          yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}
+
+      - name: Save Linux caches
+        uses: ./buildbuddy/.github/actions/cache-save
+        if: matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-22.04-16cpu-arm64-arm-limited'
         with:
           repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
           go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
