@@ -166,13 +166,14 @@ jobs:
         env:
           XCODE_VERSION: 12.4
           GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           set -x  # print executed commands
           if [[ "$OSTYPE" == darwin* ]]; then
             OS=darwin
+            GOMODCACHE=/Users/runner/go-mod-cache
           else
             OS=linux
+            GOMODCACHE=/home/runner/go-mod-cache
           fi
           ARCH=$(uname -m)
           # bazelisk uses "x86_64" / "arm64" convention
