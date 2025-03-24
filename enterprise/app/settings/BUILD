@@ -71,6 +71,7 @@ ts_library(
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/auth:user",
+        "//app/capabilities",
         "//app/components/button",
         "//app/components/dialog",
         "//app/components/link",

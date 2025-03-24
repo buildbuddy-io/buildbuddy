@@ -58,6 +58,8 @@ import (
 )
 
 var (
+	// TODO(Maggie): Once https://github.com/buildbuddy-io/buildbuddy-internal/issues/4672 is fixed,
+	// use `flag.Struct` to avoid having to duplicate all the config flags and share validation logic.
 	readWriteAppEnabled       = flag.Bool("github.app.enabled", false, "Whether to enable the read-write BuildBuddy GitHub app server.")
 	readWriteAppClientID      = flag.String("github.app.client_id", "", "GitHub app OAuth client ID.")
 	readWriteAppClientSecret  = flag.String("github.app.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)

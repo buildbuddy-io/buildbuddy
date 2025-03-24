@@ -23,8 +23,8 @@ import LinkButton from "../../../app/components/button/link_button";
 import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
 import GitHubTooltip from "./github_tooltip";
 import {
-  InstallReadOnlyGitHubAppURL,
-  InstallReadWriteGitHubAppURL
+  installReadOnlyGitHubAppURL,
+  installReadWriteGitHubAppURL
 } from "../../../app/util/github";
 
 export interface Props {
@@ -206,10 +206,10 @@ export default class GitHubLink extends React.Component<Props, State> {
               <p>You can also manage installations on GitHub using the buttons below.</p>
             </div>
               <div className="setup-button-container">
-                  <LinkButton className="big-button left-aligned-button" href={InstallReadWriteGitHubAppURL(this.props.user.displayUser.userId?.id || "", this.props.user.selectedGroup.id)}>
+                  <LinkButton className="big-button left-aligned-button" href={installReadWriteGitHubAppURL(this.props.user.displayUser.userId?.id || "", this.props.user.selectedGroup.id)}>
                       Manage installations (full-access)
                   </LinkButton>
-                  <LinkButton className="big-button left-aligned-button" href={InstallReadOnlyGitHubAppURL(this.props.user.displayUser.userId?.id || "", this.props.user.selectedGroup.id)}>
+                  <LinkButton className="big-button left-aligned-button" href={installReadOnlyGitHubAppURL(this.props.user.displayUser.userId?.id || "", this.props.user.selectedGroup.id)}>
                       Manage installations (read-only)
                   </LinkButton>
               </div>

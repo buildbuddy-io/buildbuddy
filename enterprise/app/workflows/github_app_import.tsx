@@ -15,8 +15,8 @@ import { normalizeRepoURL } from "../../../app/util/git";
 import { github } from "../../../proto/github_ts_proto";
 import { TextLink } from "../../../app/components/link/link";
 import {
-  LinkReadOnlyGitHubAppURL,
-  LinkReadWriteGitHubAppURL
+  linkReadOnlyGitHubAppURL,
+  linkReadWriteGitHubAppURL
 } from "../../../app/util/github";
 
 type GitHubAppImportProps = {
@@ -265,10 +265,10 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
                   install flow. There will be a final confirmation screen before
                   any permissions are granted.
                 </div>
-                <LinkButton className="big-button" href={LinkReadWriteGitHubAppURL(this.props.user?.displayUser?.userId?.id || "", this.props.user?.selectedGroup?.id || "")}>
+                <LinkButton className="big-button" href={linkReadWriteGitHubAppURL(this.props.user?.displayUser?.userId?.id || "", this.props.user?.selectedGroup?.id || "")}>
                   Link via the read-write app
                 </LinkButton>
-                <LinkButton className="big-button" href={LinkReadOnlyGitHubAppURL(this.props.user?.displayUser?.userId?.id || "", this.props.user?.selectedGroup?.id || "")}>
+                <LinkButton className="big-button" href={linkReadOnlyGitHubAppURL(this.props.user?.displayUser?.userId?.id || "", this.props.user?.selectedGroup?.id || "")}>
                   Link via the read-only app
                 </LinkButton>
               </Banner>
