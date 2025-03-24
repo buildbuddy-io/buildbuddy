@@ -204,6 +204,7 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		CreatedAtUsec:                      in.GetCreatedAtUsec(),
 		UserID:                             in.GetUserId(),
 		Worker:                             in.GetWorker(),
+		ExecutorHostname:                   in.GetExecutorHostname(),
 		SelfHosted:                         in.GetSelfHosted(),
 		Region:                             in.GetRegion(),
 		Stage:                              in.GetStage(),

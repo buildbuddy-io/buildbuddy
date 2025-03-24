@@ -166,6 +166,14 @@ func getExecutorHostID() string {
 	return hostID
 }
 
+func getExecutorHostName() string {
+	name, err := os.Hostname()
+	if err != nil {
+		log.Warningf("Failed to get hostname: %s", err)
+	}
+	return name
+}
+
 func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
@@ -299,7 +307,7 @@ func main() {
 		log.Fatalf("Failed to initialize runner pool: %s", err)
 	}
 
-	executor, err := remote_executor.NewExecutor(env, executorID, getExecutorHostID(), runnerPool)
+	executor, err := remote_executor.NewExecutor(env, executorID, getExecutorHostID(), getExecutorHostName(), runnerPool)
 	if err != nil {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}

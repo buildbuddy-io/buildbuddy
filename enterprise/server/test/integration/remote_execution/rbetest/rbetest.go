@@ -830,7 +830,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 
 	runnerPool := NewTestRunnerPool(r.t, env, localCacheDirectory, options.RunInterceptor)
 
-	exec, err := executor.NewExecutor(env, executorID, executorHostID, runnerPool)
+	exec, err := executor.NewExecutor(env, executorID, executorHostID, "fake-host-name", runnerPool)
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}

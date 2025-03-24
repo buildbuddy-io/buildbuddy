@@ -2443,6 +2443,7 @@ message StoredExecution {
   int64 created_at_usec = 5;
   string user_id = 6;
   string worker = 7;
+  string executor_hostname = 60;
   int64 stage = 8;
 
   // Executor metadata
