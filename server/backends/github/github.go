@@ -310,7 +310,10 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // This subsequent request should be handled with handleLinkRepoCallback
 func (c *OAuthHandler) HandleLinkRepo(w http.ResponseWriter, r *http.Request, redirectPath string) {
 	state := fmt.Sprintf("%d", random.RandUint64())
-	setCookies(w, r, state)
+	if !setCookies(w, r, state) {
+		redirectWithError(w, r, status.InternalErrorf("failed to set cookies"))
+		return
+	}
 
 	authURL := fmt.Sprintf(
 		"https://%s/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
@@ -322,19 +325,20 @@ func (c *OAuthHandler) HandleLinkRepo(w http.ResponseWriter, r *http.Request, re
 	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
-func setCookies(w http.ResponseWriter, r *http.Request, state string) {
+func setCookies(w http.ResponseWriter, r *http.Request, state string) bool {
 	userID := r.FormValue("user_id")
 	groupID := r.FormValue("group_id")
 	redirectURL := r.FormValue("redirect_url")
 	if err := build_buddy_url.ValidateRedirect(redirectURL); err != nil {
 		redirectWithError(w, r, err)
-		return
+		return false
 	}
 	expiry := time.Now().Add(tempCookieDuration)
 	cookie.SetCookie(w, stateCookieName, state, expiry, true)
 	cookie.SetCookie(w, userIDCookieName, userID, expiry, true)
 	cookie.SetCookie(w, groupIDCookieName, groupID, expiry, true)
 	cookie.SetCookie(w, cookie.RedirCookie, redirectURL, expiry, true)
+	return true
 }
 
 // handleLinkRepoCallback handles an oauth callback from GitHub.
@@ -472,12 +476,17 @@ func (c *OAuthHandler) Exchange(r *http.Request) (string, error) {
 func (c *OAuthHandler) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 	if c.InstallURL == "" {
 		redirectWithError(w, r, status.InternalErrorf("no install URL for github oauth handler %s", c.ClientID))
+		return
 	} else if r.FormValue("install") != "true" {
 		redirectWithError(w, r, status.InternalErrorf("unexpected install parameter not set"))
+		return
 	}
 
 	state := fmt.Sprintf("%d", random.RandUint64())
-	setCookies(w, r, state)
+	if !setCookies(w, r, state) {
+		redirectWithError(w, r, status.InternalErrorf("failed to set cookies"))
+		return
+	}
 
 	authURL := fmt.Sprintf("%s?state=%s", c.InstallURL, state)
 	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
