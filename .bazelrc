@@ -1,5 +1,7 @@
 common --noenable_bzlmod
 common --enable_workspace
+# Avoid being broken by version requirement changes in transitive deps.
+common --check_direct_dependencies=error
 
 common --enable_platform_specific_config
 

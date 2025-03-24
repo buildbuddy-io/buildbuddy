@@ -1,16 +1,66 @@
 module(name = "buildbuddy")
 
-bazel_dep(name = "bazel_skylib", version = "1.7.1")
-bazel_dep(name = "platforms", version = "0.0.10")
-bazel_dep(name = "rules_proto", version = "7.1.0")
-bazel_dep(name = "rules_pkg", version = "1.0.1")
-bazel_dep(name = "toolchains_musl", version = "0.1.15")
-bazel_dep(name = "googleapis", version = "0.0.0-20240326-1c8d509c5")
+## Overrides
+
+# abseil-cpp 20240722.0 in BCR does not have feature parity with its github analog
+bazel_dep(name = "abseil-cpp", repo_name = "com_google_absl")
+archive_override(
+    module_name = "abseil-cpp",
+    integrity = "sha256-9Q5awxGoE4Laf6dblzEOS5AGR0+VYKxG9UqZZ/B9SuM=",
+    strip_prefix = "abseil-cpp-20240722.0",
+    urls = ["https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz"],
+)
+
+bazel_dep(name = "gazelle", repo_name = "bazel_gazelle")
+single_version_override(
+    module_name = "gazelle",
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:gazelle.patch",
+    ],
+    version = "0.42.0",
+)
+
+bazel_dep(name = "googleapis")
 single_version_override(
     module_name = "googleapis",
     patch_strip = 1,
     patches = [
         "@@//buildpatches:bzlmod_googleapis.patch",
+    ],
+    version = "0.0.0-20240326-1c8d509c5",
+)
+
+# Note that this is 'rules_nodejs-core'
+# Keep in sync with build_bazel_rules_nodejs in WORKSPACE.bzlmod
+bazel_dep(name = "rules_nodejs")
+single_version_override(
+    module_name = "rules_nodejs",
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:build_bazel_rules_nodejs.patch",
+    ],
+    version = "5.8.5",
+)
+
+# dependencies of rules_webtesting module
+# TODO(sluongng): remove this once rules_scala is released on Central Registry
+archive_override(
+    module_name = "rules_scala",
+    integrity = "sha256-+Sc7oo2LlLxL12lg0TdBgGsr83CUTKZnMrrZL6tGMm0=",
+    strip_prefix = "rules_scala-219e63983e8e483e66ebf70372969ba227382001",
+    urls = [
+        "https://github.com/mbland/rules_scala/archive/219e63983e8e483e66ebf70372969ba227382001.tar.gz",
+    ],
+)
+
+bazel_dep(name = "rules_webtesting")
+archive_override(
+    module_name = "rules_webtesting",
+    integrity = "sha256-wJV/ZIAEYtzoEynx+f6NYA1ilAIrK6ppbUuaeI0+j3Y=",
+    strip_prefix = "rules_webtesting-7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed",
+    urls = [
+        "https://github.com/bazelbuild/rules_webtesting/archive/7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed.tar.gz",
     ],
 )
 
@@ -20,6 +70,45 @@ archive_override(
     integrity = "sha256-7QJavs7tVcTfCAuIIPcVrFXPs9xdPhaIlEBhCLTtcXw=",
     strip_prefix = "buildbuddy-toolchain-3d86f2afb5a986ea13a3ab22b0be54dd9cb0e453",
     urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/3d86f2afb5a986ea13a3ab22b0be54dd9cb0e453.tar.gz"],
+)
+
+## Regular bazel_deps
+
+bazel_dep(name = "aspect_rules_js", version = "2.1.3")
+bazel_dep(name = "aspect_rules_swc", version = "2.0.0")
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "platforms", version = "0.0.10")
+bazel_dep(name = "protobuf", version = "29.3", repo_name = "com_google_protobuf")
+bazel_dep(name = "rules_go", version = "0.52.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_oci", version = "2.0.0")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "rules_python", version = "1.0.0")
+bazel_dep(name = "toolchains_musl", version = "0.1.15")
+bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
+
+## Included extensions
+
+include("//:go_deps.MODULE.bazel")
+
+include("//:oci.MODULE.bazel")
+
+include("//:static_deps.MODULE.bazel")
+
+## Other extensions
+
+browser_repositories = use_extension("@rules_webtesting//web:extension.bzl", "browser_repositories_extension")
+browser_repositories.install(version = "0.3.4")
+use_repo(
+    browser_repositories,
+    "org_chromium_chromedriver_linux_x64",
+    "org_chromium_chromedriver_macos_arm64",
+    "org_chromium_chromedriver_macos_x64",
+    "org_chromium_chromedriver_windows_x64",
+    "org_chromium_chromium_linux_x64",
+    "org_chromium_chromium_macos_arm64",
+    "org_chromium_chromium_macos_x64",
+    "org_chromium_chromium_windows_x64",
 )
 
 buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
@@ -34,48 +123,6 @@ buildbuddy.msvc_toolchain(
     msvc_version = "14.43.34808",
 )
 
-switched_rules = use_extension("@googleapis//:extensions.bzl", "switched_rules")
-switched_rules.use_languages(
-    cc = True,
-    go = True,
-    grpc = True,
-)
-
-# Needed for com_google_protobuf
-bazel_dep(name = "rules_python", version = "0.33.2")
-
-python = use_extension("@rules_python//python/extensions:python.bzl", "python")
-python.toolchain(
-    configure_coverage_tool = False,
-    # Do not error if root user is detected
-    ignore_root_user_error = True,
-    python_version = "3.11",
-)
-
-bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
-bazel_dep(name = "rules_go", version = "0.52.0", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "gazelle", version = "0.42.0", repo_name = "bazel_gazelle")
-single_version_override(
-    module_name = "gazelle",
-    patch_strip = 1,
-    patches = [
-        "@@//buildpatches:gazelle.patch",
-    ],
-)
-
-bazel_dep(name = "abseil-cpp", version = "20240722.0", repo_name = "com_google_absl")
-
-# abseil-cpp 20240722.0 in BCR does not have feature parity with its github analog
-archive_override(
-    module_name = "abseil-cpp",
-    integrity = "sha256-9Q5awxGoE4Laf6dblzEOS5AGR0+VYKxG9UqZZ/B9SuM=",
-    strip_prefix = "abseil-cpp-20240722.0",
-    urls = ["https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz"],
-)
-
-bazel_dep(name = "aspect_rules_js", version = "2.1.3")
-bazel_dep(name = "protobuf", version = "29.3", repo_name = "com_google_protobuf")
-
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.24.1")
 go_sdk.nogo(nogo = "@//:vet")
@@ -83,353 +130,6 @@ use_repo(
     go_sdk,
     "go_toolchains",
     "io_bazel_rules_nogo",
-)
-
-go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
-go_deps.from_file(go_mod = "//:go.mod")
-
-# Go repos with patches
-go_deps.module_override(
-    patch_strip = 1,
-    patches = [
-        "@io_bazel_rules_go//third_party:com_github_gogo_protobuf-gazelle.patch",
-    ],
-    path = "github.com/gogo/protobuf",
-)
-go_deps.gazelle_override(
-    build_file_generation = "off",
-    path = "github.com/gogo/protobuf",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = [
-        "@buildbuddy//buildpatches:cloudflare_circl.patch",
-    ],
-    path = "github.com/cloudflare/circl",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = [
-        "@buildbuddy//buildpatches:vtprotobuf.patch",
-    ],
-    path = "github.com/planetscale/vtprotobuf",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = [
-        "@buildbuddy//buildpatches:bzlmod_com_github_awslabs_soci_snapshotter.patch",
-    ],
-    path = "github.com/awslabs/soci-snapshotter",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = ["@@//buildpatches:buildifier.patch"],
-    path = "github.com/bazelbuild/buildtools",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = ["@@//buildpatches:com_github_bojand_ghz.patch"],
-    path = "github.com/bojand/ghz",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = [
-        "@@//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch",
-        "@@//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_cgroup.patch",
-    ],
-    path = "github.com/firecracker-microvm/firecracker-go-sdk",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = ["@@//buildpatches:com_github_mattn_go_sqlite3.patch"],
-    path = "github.com/mattn/go-sqlite3",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = [
-        # Remove panic() from serverHandlerTransport.Drain
-        # gRPC GracefulStop stops accepting new requests and lets any existing
-        # requests finish. For "grpc-over-http" requests, gRPC does not control
-        # the connection lifetime so they choose to panic in Drain if there are
-        # inflight "grpc-over-http" requests. Since we also shutdown the HTTP
-        # server gracefully, it's safe for us to allow gRPC to wait for all
-        # ongoing requests to finish.
-        "@@//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
-    ],
-    path = "google.golang.org/grpc",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = [
-        "@@//buildpatches:io_kythe.patch",
-    ],
-    path = "kythe.io",
-)
-go_deps.module_override(
-    patches = [
-        "@@//buildpatches:com_github_containerd_containerd_api.patch",
-    ],
-    path = "github.com/containerd/containerd/api",
-)
-go_deps.module_override(
-    patches = [
-        "@@//buildpatches:com_github_containerd_ttrpc.patch",
-    ],
-    path = "github.com/containerd/ttrpc",
-)
-
-# Go repos with custom directives
-go_deps.gazelle_override(
-    directives = ["gazelle:proto disable"],
-    path = "k8s.io/kubelet",
-)
-go_deps.gazelle_override(
-    directives = ["gazelle:proto disable"],
-    path = "google.golang.org/protobuf",
-)
-go_deps.gazelle_override(
-    directives = ["gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2"],
-    path = "github.com/awslabs/soci-snapshotter",
-)
-go_deps.gazelle_override(
-    directives = ["gazelle:proto disable"],
-    path = "github.com/cockroachdb/errors",
-)
-go_deps.gazelle_override(
-    directives = [
-        "gazelle:resolve go github.com/jhump/protoreflect/internal/testprotos @com_github_jhump_protoreflect//internal/testprotos",
-        "gazelle:proto disable",
-    ],
-    path = "github.com/jhump/protoreflect",
-)
-go_deps.gazelle_override(
-    directives = ["gazelle:resolve go cel.dev/expr @dev_cel_expr//proto/cel/expr:expr_go_proto"],
-    path = "github.com/cncf/xds/go",
-)
-go_deps.gazelle_override(
-    directives = [
-        "gazelle:proto file",
-        "gazelle:proto_import_prefix github.com/containerd/containerd/api",
-        "gazelle:resolve proto go github.com/containerd/containerd/api/types //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/descriptor //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/fieldpath //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/metrics //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/mount //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/platform //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/sandbox //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/task //types/task:task",
-        "gazelle:resolve proto google/rpc/status.proto @@//:googleapis_status_proto",
-        "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
-    ],
-    path = "github.com/containerd/containerd/api",
-)
-go_deps.gazelle_override(
-    directives = [
-        "gazelle:proto file",
-        "gazelle:resolve proto proto/status.proto @@//:googleapis_status_proto",
-        "gazelle:resolve proto go proto/status.proto @org_golang_google_genproto_googleapis_rpc//status",
-    ],
-    path = "github.com/containerd/ttrpc",
-)
-go_deps.gazelle_override(
-    # Force a Gazelle run to ensure build targets in Bazelisk follow
-    # Gazelle naming conventions.
-    build_file_generation = "on",
-    path = "github.com/bazelbuild/bazelisk",
-)
-go_deps.gazelle_override(
-    # Force Gazelle to wipe out the existing build files before regenerate them.
-    build_file_generation = "clean",
-    directives = [
-        "gazelle:proto file",
-        "gazelle:proto_strip_import_prefix /proto/cel/expr",
-        "gazelle:proto_import_prefix cel/expr",
-        "gazelle:resolve proto google/rpc/status.proto @@//:googleapis_status_proto",
-        "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
-    ],
-    path = "cel.dev/expr",
-)
-go_deps.gazelle_override(
-    directives = [
-        "gazelle:resolve go github.com/prometheus/client_model/go @@//proto:prometheus_client_go_proto",
-    ],
-    path = "github.com/prometheus/client_golang",
-)
-go_deps.gazelle_override(
-    directives = [
-        "gazelle:resolve go github.com/prometheus/client_model/go @@//proto:prometheus_client_go_proto",
-    ],
-    path = "github.com/prometheus/common",
-)
-use_repo(
-    go_deps,
-    "co_honnef_go_tools",
-    "com_github_alecaivazis_survey_v2",
-    "com_github_armon_circbuf",
-    "com_github_aws_aws_sdk_go",
-    "com_github_aws_aws_sdk_go_v2",
-    "com_github_aws_aws_sdk_go_v2_config",
-    "com_github_aws_aws_sdk_go_v2_credentials",
-    "com_github_aws_aws_sdk_go_v2_feature_rds_auth",
-    "com_github_aws_aws_sdk_go_v2_feature_s3_manager",
-    "com_github_aws_aws_sdk_go_v2_service_s3",
-    "com_github_aws_aws_sdk_go_v2_service_sts",
-    "com_github_aws_smithy_go",
-    "com_github_awslabs_soci_snapshotter",
-    "com_github_azure_azure_storage_blob_go",
-    "com_github_bazelbuild_bazelisk",
-    "com_github_bazelbuild_buildtools",
-    "com_github_bduffany_godemon",
-    "com_github_bits_and_blooms_bloom_v3",
-    "com_github_bojand_ghz",
-    "com_github_bradfitz_gomemcache",
-    "com_github_buildbuddy_io_tensorflow_proto",
-    "com_github_buildkite_terminal_to_html_v3",
-    "com_github_cavaliergopher_cpio",
-    "com_github_cespare_xxhash_v2",
-    "com_github_clickhouse_clickhouse_go_v2",
-    "com_github_cockroachdb_pebble",
-    "com_github_containerd_containerd",
-    "com_github_coreos_go_oidc_v3",
-    "com_github_creack_pty",
-    "com_github_crewjam_saml",
-    "com_github_docker_distribution",
-    "com_github_docker_docker",
-    "com_github_docker_go_units",
-    "com_github_dop251_goja",
-    "com_github_elastic_gosigar",
-    "com_github_firecracker_microvm_firecracker_go_sdk",
-    "com_github_gabriel_vasile_mimetype",
-    "com_github_go_enry_go_enry_v2",
-    "com_github_go_faker_faker_v4",
-    "com_github_go_git_go_git_v5",
-    "com_github_go_redis_redis_extra_redisotel_v8",
-    "com_github_go_redis_redis_v8",
-    "com_github_go_sql_driver_mysql",
-    "com_github_gobwas_glob",
-    "com_github_golang_jwt_jwt",
-    "com_github_google_go_cmp",
-    "com_github_google_go_containerregistry",
-    "com_github_google_go_github_v59",
-    "com_github_google_shlex",
-    "com_github_google_uuid",
-    "com_github_googlecloudplatform_cloudsql_proxy",
-    "com_github_gorilla_mux",
-    "com_github_groob_plist",
-    "com_github_grpc_ecosystem_go_grpc_middleware_providers_prometheus",
-    "com_github_hanwen_go_fuse_v2",
-    "com_github_hashicorp_golang_lru",
-    "com_github_hashicorp_memberlist",
-    "com_github_hashicorp_serf",
-    "com_github_jackc_pgerrcode",
-    "com_github_jackc_pgx_v5",
-    "com_github_jhump_protoreflect",
-    "com_github_jonboulle_clockwork",
-    "com_github_jotfs_fastcdc_go",
-    "com_github_jsimonetti_rtnetlink",
-    "com_github_klauspost_compress",
-    "com_github_klauspost_cpuid_v2",
-    "com_github_lestrrat_go_jwx",
-    "com_github_lni_dragonboat_v4",
-    "com_github_lni_goutils",
-    "com_github_logrusorgru_aurora",
-    "com_github_manifoldco_promptui",
-    "com_github_masterminds_semver_v3",
-    "com_github_mattn_go_isatty",
-    "com_github_mattn_go_shellwords",
-    "com_github_mattn_go_sqlite3",
-    "com_github_mdlayher_vsock",
-    "com_github_mitchellh_go_ps",
-    "com_github_mwitkow_grpc_proxy",
-    "com_github_nishanths_exhaustive",
-    "com_github_open_feature_go_sdk",
-    "com_github_open_feature_go_sdk_contrib_providers_flagd",
-    "com_github_opencontainers_go_digest",
-    "com_github_opencontainers_image_spec",
-    "com_github_opencontainers_runtime_spec",
-    "com_github_otiai10_copy",
-    "com_github_pkg_errors",
-    "com_github_planetscale_vtprotobuf",
-    "com_github_pmezard_go_difflib",
-    "com_github_prometheus_client_golang",
-    "com_github_prometheus_client_model",
-    "com_github_prometheus_common",
-    "com_github_prometheus_procfs",
-    "com_github_rantav_go_grpc_channelz",
-    "com_github_roaringbitmap_roaring",
-    "com_github_rs_zerolog",
-    "com_github_shirou_gopsutil_v3",
-    "com_github_shurcool_githubv4",
-    "com_github_sirupsen_logrus",
-    "com_github_smacker_go_tree_sitter",
-    "com_github_stretchr_testify",
-    "com_github_tebeka_selenium",
-    "com_github_throttled_throttled_v2",
-    "com_github_tink_crypto_tink_go_awskms_v2",
-    "com_github_tink_crypto_tink_go_gcpkms_v2",
-    "com_github_tink_crypto_tink_go_v2",
-    "com_github_tklauser_go_sysconf",
-    "com_github_vishvananda_netlink",
-    "com_github_xiam_s_expr",
-    "com_github_zeebo_blake3",
-    "com_gitlab_arm_research_smarter_smarter_device_manager",
-    "com_google_cloud_go_compute",
-    "com_google_cloud_go_compute_metadata",
-    "com_google_cloud_go_logging",
-    "com_google_cloud_go_longrunning",
-    "com_google_cloud_go_secretmanager",
-    "com_google_cloud_go_storage",
-    "in_gopkg_yaml_v2",
-    "in_gopkg_yaml_v3",
-    "io_gorm_driver_clickhouse",
-    "io_gorm_driver_mysql",
-    "io_gorm_driver_postgres",
-    "io_gorm_driver_sqlite",
-    "io_gorm_gorm",
-    "io_kythe",
-    "io_opentelemetry_go_contrib_detectors_gcp",
-    "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
-    "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp",
-    "io_opentelemetry_go_otel",
-    "io_opentelemetry_go_otel_exporters_jaeger",
-    "io_opentelemetry_go_otel_metric",
-    "io_opentelemetry_go_otel_sdk",
-    "io_opentelemetry_go_otel_trace",
-    "org_golang_google_api",
-    "org_golang_google_genproto",
-    "org_golang_google_genproto_googleapis_api",
-    "org_golang_google_genproto_googleapis_bytestream",
-    "org_golang_google_genproto_googleapis_rpc",
-    "org_golang_google_grpc",
-    "org_golang_google_protobuf",
-    "org_golang_x_crypto",
-    "org_golang_x_exp",
-    "org_golang_x_mod",
-    "org_golang_x_oauth2",
-    "org_golang_x_sync",
-    "org_golang_x_sys",
-    "org_golang_x_text",
-    "org_golang_x_time",
-    "org_golang_x_tools",
-    "org_uber_go_atomic",
-)
-
-inject_repo(
-    go_deps,
-    # Bazelisk depends on aspect_rules_js
-    "aspect_rules_js",
-)
-
-# Note that this is 'rules_nodejs-core'
-# Keep in sync with build_bazel_rules_nodejs in WORKSPACE.bzlmod
-bazel_dep(name = "rules_nodejs", version = "5.8.5")
-single_version_override(
-    module_name = "rules_nodejs",
-    patch_strip = 1,
-    patches = [
-        "@@//buildpatches:build_bazel_rules_nodejs.patch",
-    ],
-    version = "5.8.5",
 )
 
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
@@ -441,13 +141,27 @@ use_repo(node, "nodejs_toolchains")
 
 register_toolchains("@nodejs_toolchains//:all")
 
-# SWC (for transpiling TS -> JS)
-bazel_dep(name = "aspect_rules_swc", version = "2.0.0")
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    configure_coverage_tool = False,
+    # Do not error if root user is detected
+    ignore_root_user_error = True,
+    python_version = "3.11",
+)
+
+switched_rules = use_extension("@googleapis//:extensions.bzl", "switched_rules")
+switched_rules.use_languages(
+    cc = True,
+    go = True,
+    grpc = True,
+)
 
 toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
 toolchains_musl.config(
     extra_target_compatible_with = ["//toolchains:musl_on"],
 )
+
+## Repo rules
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
@@ -466,117 +180,4 @@ http_archive(
     sha256 = "0a824a6e224d9810514f4a2f4a13f09488672ad483bb0e978c16d8a6b3372625",
     strip_prefix = "cloudprober-v0.11.2-ubuntu-x86_64",
     urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
-)
-
-http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
-
-install_static_dependencies_ext = use_extension(":deps.bzl", "install_static_dependencies_ext")
-use_repo(
-    install_static_dependencies_ext,
-    "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
-    "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
-    "com_github_bazelbuild_bazelisk-bazelisk-linux-amd64",
-    "com_github_bazelbuild_bazelisk-bazelisk-linux-arm64",
-    "com_github_buildbuddy_io_podman_static_podman-linux-amd64",
-    "com_github_buildbuddy_io_podman_static_podman-linux-arm64",
-    "com_github_buildbuddy_io_protoc_gen_protobufjs",
-    "com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64",
-    "com_github_containerd_containerd-linux-amd64",
-    "com_github_containerd_containerd-linux-arm64",
-    "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
-    "com_github_containers_crun_crun-linux-amd64",
-    "com_github_containers_crun_crun-linux-arm64",
-    "com_github_firecracker_microvm_firecracker",
-    "com_github_firecracker_microvm_firecracker_arm64",
-    "com_github_googlecloudplatform_docker-credential-gcr-linux-amd64",
-    "com_github_googlecloudplatform_docker-credential-gcr-linux-arm64",
-    "com_github_krallin_tini_tini-linux-amd64",
-    "com_github_krallin_tini_tini-linux-arm64",
-    "com_github_opencontainers_runc_runc-linux-amd64",
-    "com_github_opencontainers_runc_runc-linux-arm64",
-    "com_github_redis_redis-redis-server-v6.2.1-linux-arm64",
-    "com_github_redis_redis-redis-server-v6.2.1-linux-x86_64",
-    "com_github_redis_redis-redis-server-v6.2.6-darwin-arm64",
-    "com_github_redis_redis-redis-server-v6.2.6-darwin-x86_64",
-    "com_github_rootless_containers_rootlesskit-linux-amd64",
-    "com_github_rootless_containers_rootlesskit-linux-arm64",
-    "io_bazel_bazel-5.3.2-darwin-x86_64",
-    "io_bazel_bazel-5.3.2-linux-arm64",
-    "io_bazel_bazel-5.3.2-linux-x86_64",
-    "io_bazel_bazel-6.5.0-darwin-x86_64",
-    "io_bazel_bazel-6.5.0-linux-x86_64",
-    "io_bazel_bazel-7.1.0-darwin-x86_64",
-    "io_bazel_bazel-7.1.0-linux-x86_64",
-    "net_busybox_busybox-linux-amd64",
-    "net_busybox_busybox-linux-arm64",
-    "org_kernel_git_linux_kernel-vmlinux",
-    "org_kernel_git_linux_kernel-vmlinux-arm64",
-    "org_llvm_llvm_clang-format_linux-x86_64",
-    "org_llvm_llvm_clang-format_macos-x86_64",
-)
-
-bazel_dep(name = "rules_oci", version = "2.0.0")
-
-oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
-oci.pull(
-    name = "buildbuddy_go_oci_image_base",
-    digest = "sha256:388145607c79313a1e49b783a7ee71e4ef3df31d87c45adb46bfb9b257b643d1",
-    image = "gcr.io/distroless/cc-debian12",
-    platforms = ["linux/amd64"],
-)
-oci.pull(
-    name = "bazel_oci_image_base",
-    digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
-    image = "gcr.io/distroless/java17-debian12",
-    platforms = ["linux/amd64"],
-)
-oci.pull(
-    name = "busybox",
-    digest = "sha256:c230832bd3b0be59a6c47ed64294f9ce71e91b327957920b6929a0caa8353140",
-    image = "mirror.gcr.io/library/busybox:1.36.1",
-    platforms = ["linux/amd64"],
-)
-use_repo(
-    oci,
-    "bazel_oci_image_base",
-    "bazel_oci_image_base_linux_amd64",
-    "buildbuddy_go_oci_image_base",
-    "buildbuddy_go_oci_image_base_linux_amd64",
-    "busybox",
-    "busybox_linux_amd64",
-)
-
-bazel_dep(name = "rules_webtesting")
-archive_override(
-    module_name = "rules_webtesting",
-    integrity = "sha256-wJV/ZIAEYtzoEynx+f6NYA1ilAIrK6ppbUuaeI0+j3Y=",
-    strip_prefix = "rules_webtesting-7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed",
-    urls = [
-        "https://github.com/bazelbuild/rules_webtesting/archive/7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed.tar.gz",
-    ],
-)
-
-# dependencies of rules_webtesting module
-# TODO(sluongng): remove this once rules_scala is released on Central Registry
-archive_override(
-    module_name = "rules_scala",
-    integrity = "sha256-+Sc7oo2LlLxL12lg0TdBgGsr83CUTKZnMrrZL6tGMm0=",
-    strip_prefix = "rules_scala-219e63983e8e483e66ebf70372969ba227382001",
-    urls = [
-        "https://github.com/mbland/rules_scala/archive/219e63983e8e483e66ebf70372969ba227382001.tar.gz",
-    ],
-)
-
-browser_repositories = use_extension("@rules_webtesting//web:extension.bzl", "browser_repositories_extension")
-browser_repositories.install(version = "0.3.4")
-use_repo(
-    browser_repositories,
-    "org_chromium_chromedriver_linux_x64",
-    "org_chromium_chromedriver_macos_arm64",
-    "org_chromium_chromedriver_macos_x64",
-    "org_chromium_chromedriver_windows_x64",
-    "org_chromium_chromium_linux_x64",
-    "org_chromium_chromium_macos_arm64",
-    "org_chromium_chromium_macos_x64",
-    "org_chromium_chromium_windows_x64",
 )
