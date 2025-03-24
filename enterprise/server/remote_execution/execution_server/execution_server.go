@@ -998,31 +998,33 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 		log.CtxWarningf(ctx, "MarkExecutionFailed: error updating execution: %q: %s", taskID, err)
 		return err
 	}
-	err = func() error {
-		actionRN, err := digest.ParseUploadResourceName(taskID)
-		if err != nil {
-			return fmt.Errorf("Failed to parse taskID: %s", err)
-		}
-		action, cmd, err := s.fetchActionAndCommand(ctx, actionRN)
-		if err != nil {
-			return fmt.Errorf("Failed to fetch action and command: %s", err)
-		}
-		properties, err := platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd})
-		if err != nil {
-			return fmt.Errorf("Failed to parse platform properties: %s", err)
-		}
-		// We don't have a response, so we don't have response metadata. It's
-		// not required.
-		if err := s.recordExecution(ctx, taskID, action, nil, nil, properties); err != nil {
-			return fmt.Errorf("Failed to record execution: %s", err)
-		}
-		return nil
-	}()
+	err = s.recordFailedExecution(ctx, taskID)
 	if err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: %s", err)
 	}
 	if err := s.cacheExecuteResponse(ctx, taskID, rsp); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: failed to cache execute response for execution %q: %s", taskID, err)
+	}
+	return nil
+}
+
+func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID string) error {
+	actionRN, err := digest.ParseUploadResourceName(taskID)
+	if err != nil {
+		return fmt.Errorf("Failed to parse taskID: %s", err)
+	}
+	action, cmd, err := s.fetchActionAndCommand(ctx, actionRN)
+	if err != nil {
+		return fmt.Errorf("Failed to fetch action and command: %s", err)
+	}
+	properties, err := platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd})
+	if err != nil {
+		return fmt.Errorf("Failed to parse platform properties: %s", err)
+	}
+	// We don't have a response, so we don't have response metadata. It's
+	// not required.
+	if err := s.recordExecution(ctx, taskID, action, nil, nil, properties); err != nil {
+		return fmt.Errorf("Failed to record execution: %s", err)
 	}
 	return nil
 }
