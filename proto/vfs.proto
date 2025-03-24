@@ -303,8 +303,7 @@ message SetLkRequest {
 
 message SetLkResponse {}
 
-message StatfsRequest {
-}
+message StatfsRequest {}
 
 message StatfsResponse {
   int64 BlockSize = 1;
