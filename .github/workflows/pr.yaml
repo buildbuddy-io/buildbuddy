@@ -18,7 +18,7 @@ jobs:
         id: restore-caches
         uses: ./.github/actions/cache-restore
         with:
-          repo-cache-dir: ~/repo-cache/untrusted/
+          repo-cache-dir: ~/repo-cache/untrusted
 
       - name: Test
         env:
@@ -34,6 +34,7 @@ jobs:
         uses: ./.github/actions/cache-save
         if: always()
         with:
+          repo-cache-dir: ~/repo-cache/untrusted
           repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
           go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
           yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}
