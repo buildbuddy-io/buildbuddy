@@ -206,8 +206,8 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	q := newChunkQueue(c, eventLogPath, startIndex, step, boundary)
 	lineCount := 0
 	// Fetch one chunk even if the minimum line count is 0.
-	// `step` should only ever be 1 or MaxUint16 (effectively -1), so as long
-	// `boundary` remains invaraint, this loop is guaranteed to terminate in
+	// `step` should only ever be 1 or MaxUint16 (effectively -1), so as long as
+	// `boundary` remains invariant, this loop is guaranteed to terminate in
 	// 65536 iterations or fewer.
 	for chunkIndex := startIndex; chunkIndex != boundary+step; chunkIndex += step {
 		buffer, err := q.pop(ctx)
