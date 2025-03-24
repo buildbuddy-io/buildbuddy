@@ -1,4 +1,4 @@
-package storage
+package flagstack
 
 import (
 	"fmt"
