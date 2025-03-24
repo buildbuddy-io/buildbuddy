@@ -1849,6 +1849,54 @@ func TestActionMerging_Success(t *testing.T) {
 	require.Equal(t, op3, op4, "expected actions to be merged, even with skip_cache_lookup")
 }
 
+func TestActionMerging_ScheduledConcurrently(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+
+	// This test is racy by nature, but would fail open in case of flakiness.
+	// Reduce the chance this happens by rerunning the test a few times, which
+	// doesn't hurt test times since most of the time is spent in shutdown
+	// anyway.
+	for n := range 5 {
+		cmd := &repb.Command{
+			Arguments: []string{"sh", "-c", fmt.Sprintf("sleep %d", 5+n)},
+			Platform:  platform,
+		}
+
+		wg := sync.WaitGroup{}
+		ops := make(chan string, 5)
+		for i := range 5 {
+			wg.Add(1)
+			go func() {
+				exec := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: fmt.Sprintf("invocation%d", i)})
+				ops <- exec.WaitAccepted()
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+		close(ops)
+
+		var onlyOp string
+		for op := range ops {
+			require.NotEmpty(t, op)
+			if onlyOp == "" {
+				onlyOp = op
+			} else {
+				require.Equal(t, onlyOp, op, "not all actions were merged")
+			}
+		}
+	}
+}
+
 func TestActionMerging_LongTask(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{

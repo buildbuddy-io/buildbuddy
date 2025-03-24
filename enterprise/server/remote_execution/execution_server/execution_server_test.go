@@ -163,7 +163,9 @@ func TestDispatch(t *testing.T) {
 	// Dispatch().
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	require.NoError(t, err)
-	taskID, err := s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action)
+	taskID := arn.NewUploadString()
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
 	require.NoError(t, err)
 
 	rn, err := digest.ParseUploadResourceName(taskID)
@@ -895,14 +897,14 @@ func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func uploadAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action) *digest.ResourceName {
+func uploadAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action) *digest.CASResourceName {
 	cmd := &repb.Command{Arguments: []string{"test"}}
 	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, cmd)
 	require.NoError(t, err)
 	action.CommandDigest = cd
 	ad, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, action)
 	require.NoError(t, err)
-	return digest.NewResourceName(ad, instanceName, rspb.CacheType_CAS, df)
+	return digest.NewCASResourceName(ad, instanceName, df)
 }
 
 func withIncomingMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMetadata) context.Context {
