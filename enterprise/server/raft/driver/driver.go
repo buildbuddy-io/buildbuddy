@@ -42,6 +42,8 @@ const (
 	// If a node's disk is fuller than this (by percentage), it is not
 	// eligible to be used as a rebalance target.
 	maxDiskCapacityForRebalance = .925
+	// The max number of retries per action
+	maxRetry = 10
 )
 
 type DriverAction int
@@ -56,6 +58,21 @@ const (
 	DriverReplaceDeadReplica
 	DriverRebalanceReplica
 	DriverRebalanceLease
+)
+
+type RequeueType int
+
+const (
+	_ RequeueType = iota
+	// Do not requeue.
+	RequeueNoop
+	// Current operation succeeded, but we want to requeue to see if we need to
+	// perform other driver actions.
+	RequeueCheckOtherActions
+	// Current operation failed, but we want to retry.
+	RequeueRetry
+	// We need to wait to perform the current operation.
+	RequeueWait
 )
 
 const (
@@ -153,111 +170,10 @@ func computeQuorum(numNodes int) int {
 	return (numNodes / 2) + 1
 }
 
-// computeAction computes the action needed and its priority.
-func (rq *Queue) computeAction(ctx context.Context, rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsage, localReplicaID uint64) (DriverAction, float64) {
-	if rq.storeMap == nil {
-		action := DriverNoop
-		return action, action.Priority()
-	}
-	replicas := rd.GetReplicas()
-	curReplicas := len(replicas)
-	if curReplicas == 0 {
-		action := DriverNoop
-		return action, action.Priority()
-	}
-	rangeID := replicas[0].GetRangeId()
-	minReplicas := *minReplicasPerRange
-	if rangeID == constants.MetaRangeID {
-		minReplicas = *minMetaRangeReplicas
-	}
-
-	desiredQuorum := computeQuorum(minReplicas)
-	quorum := computeQuorum(curReplicas)
-
-	if curReplicas < minReplicas {
-		action := DriverAddReplica
-		adjustedPriority := action.Priority() + float64(desiredQuorum-curReplicas)
-		return action, adjustedPriority
-	}
-	replicasByStatus := rq.storeMap.DivideByStatus(replicas)
-	numLiveReplicas := len(replicasByStatus.LiveReplicas) + len(replicasByStatus.SuspectReplicas)
-	numDeadReplicas := len(replicasByStatus.DeadReplicas)
-
-	if numLiveReplicas < quorum {
-		// The cluster is unavailable since we don't have enough live nodes.
-		// There is no point of doing anything right now.
-		log.Debugf("noop because num live replicas = %d less than quorum =%d", numLiveReplicas, quorum)
-		action := DriverNoop
-		return action, action.Priority()
-	}
-
-	if curReplicas <= minReplicas && numDeadReplicas > 0 {
-		action := DriverReplaceDeadReplica
-		return action, action.Priority()
-	}
-
-	if numDeadReplicas > 0 {
-		action := DriverRemoveDeadReplica
-		return action, action.Priority()
-	}
-
-	if curReplicas > minReplicas {
-		action := DriverRemoveReplica
-		adjustedPriority := action.Priority() - float64(curReplicas%2)
-		return action, adjustedPriority
-	}
-
-	// Do not split if there is a replica is dead or suspect or a replica is
-	// in the middle of a removal.
-	allReady := rq.storeMap.AllAvailableStoresReady()
-	isClusterHealthy := len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0 && allReady
-	canSplit := isClusterHealthy && len(rd.GetRemoved()) == 0
-	if canSplit {
-		if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
-			if sizeUsed := usage.GetEstimatedDiskBytesUsed(); sizeUsed >= maxRangeSizeBytes {
-				action := DriverSplitRange
-				adjustedPriority := action.Priority() + float64(sizeUsed-maxRangeSizeBytes)/float64(sizeUsed)*100.0
-				return action, adjustedPriority
-			}
-		}
-	} else {
-		rq.log.Debugf("cannot split range %d: num of suspect replicas: %d, num deadReplicas: %d, num replicas marked for removal: %d, allReady=%t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, len(rd.GetRemoved()), allReady)
-	}
-
-	if rd.GetRangeId() == constants.MetaRangeID {
-		// Do not try to re-balance meta-range.
-		//
-		// When meta-range is moved onto a different node, range cache has to
-		// update its range descriptor. Before the range descriptor get updated,
-		// SyncPropose to all other ranges can fail temporarily because the range
-		// descriptor is not current. Therefore, we should only move meta-range
-		// when it's absolutely necessary.
-		action := DriverNoop
-		return action, action.Priority()
-	}
-
-	// Do not try to rebalance replica or leases if there is a dead or suspect,
-	// because it can make the system more unstable.
-	if isClusterHealthy {
-		// For DriverConsiderRebalance check if there are rebalance opportunities.
-		storesWithStats := rq.storeMap.GetStoresWithStats()
-		op := rq.findRebalanceReplicaOp(rd, storesWithStats, localReplicaID)
-		if op != nil {
-			log.Debugf("find rebalancing opportunities: from (nhid=%q, replicaCount=%d, isReady=%t) to (nhid=%q, replicaCount=%d, isReady=%t)", op.from.nhid, op.from.replicaCount, op.from.usage.GetIsReady(), op.to.nhid, op.to.replicaCount, op.to.usage.GetIsReady())
-			action := DriverRebalanceReplica
-			return action, action.Priority()
-		}
-		op = rq.findRebalanceLeaseOp(ctx, rd, localReplicaID)
-		if op != nil {
-			action := DriverRebalanceLease
-			return action, action.Priority()
-		}
-	} else {
-		rq.log.Debugf("do not consider rebalance because range %d is not healthy. num of suspect replicas: %d, num deadReplicas: %d, allReady: %t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, allReady)
-	}
-
-	action := DriverNoop
-	return action, action.Priority()
+type attemptRecord struct {
+	action          DriverAction
+	attempts        int
+	nextAttemptTime time.Time
 }
 
 type pqItem struct {
@@ -270,6 +186,8 @@ type pqItem struct {
 	index      int // The index of the item in the heap.
 	processing bool
 	requeue    bool
+
+	attemptRecord attemptRecord
 }
 
 // An priorityQueue implements heap.Interface and holds pqItems.
@@ -301,16 +219,25 @@ func (pq *priorityQueue) Pop() interface{} {
 	return item
 }
 
-func (pq *priorityQueue) update(item *pqItem, priority float64) {
+func (pq *priorityQueue) update(item *pqItem, priority float64, action DriverAction) {
 	item.priority = priority
+	if item.attemptRecord.action != action {
+		// clear the atempt record
+		item.attemptRecord = attemptRecord{
+			action: action,
+		}
+	}
 	heap.Fix(pq, item.index)
 }
 
-// The Queue is responsible for up-replicate, down-replicate and reblance ranges
-// across the stores.
-type Queue struct {
-	storeMap storemap.IStoreMap
-	store    IStore
+type queueImpl interface {
+	processReplica(ctx context.Context, repl IReplica, action DriverAction) RequeueType
+	computeAction(ctx context.Context, repl IReplica) (DriverAction, float64)
+	getReplica(rangeID uint64) (IReplica, error)
+}
+
+type baseQueue struct {
+	impl queueImpl
 
 	maxSize int
 	stop    chan struct{}
@@ -319,183 +246,354 @@ type Queue struct {
 	pq        *priorityQueue
 	pqItemMap map[uint64]*pqItem
 
-	clock     clockwork.Clock
-	log       log.Logger
-	apiClient IClient
+	clock clockwork.Clock
+
+	log log.Logger
 
 	eg       *errgroup.Group
 	egCtx    context.Context
 	egCancel context.CancelFunc
 }
 
-func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
-	storeMap := storemap.New(gossipManager, clock)
+func newBaseQueue(nhlog log.Logger, clock clockwork.Clock, impl queueImpl) *baseQueue {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	eg, gctx := errgroup.WithContext(ctx)
-	return &Queue{
-		storeMap:  storeMap,
-		pq:        &priorityQueue{},
-		pqItemMap: make(map[uint64]*pqItem),
-		store:     store,
-		maxSize:   100,
+	return &baseQueue{
 		clock:     clock,
 		log:       nhlog,
-		apiClient: apiClient,
-
-		eg:       eg,
-		egCtx:    gctx,
-		egCancel: cancelFunc,
+		maxSize:   100,
+		pq:        &priorityQueue{},
+		pqItemMap: make(map[uint64]*pqItem),
+		eg:        eg,
+		egCtx:     gctx,
+		egCancel:  cancelFunc,
+		impl:      impl,
 	}
 }
 
-func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64) {
-	rd := repl.RangeDescriptor()
-
-	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
-		// The store doesn't have lease for this range. do not queue.
-		rq.log.Debugf("should not queue range %d because we don't have lease", rd.GetRangeId())
-		return false, 0
+func (bq *baseQueue) pop() IReplica {
+	bq.mu.Lock()
+	defer bq.mu.Unlock()
+	item := heap.Pop(bq.pq).(*pqItem)
+	item.processing = true
+	repl, err := bq.impl.getReplica(item.rangeID)
+	if err != nil || repl.ReplicaID() != item.replicaID {
+		log.Errorf("unable to get replica for c%dn%d: %s", item.rangeID, item.replicaID, err)
+		delete(bq.pqItemMap, item.rangeID)
+		return nil
 	}
-
-	usage, err := repl.Usage()
-	if err != nil {
-		rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.RangeID(), repl.ReplicaID())
-	}
-
-	action, priority := rq.computeAction(ctx, rd, usage, repl.ReplicaID())
-	if action == DriverNoop {
-		rq.log.Debugf("should not queue range %d because no-op", rd.GetRangeId())
-		return false, 0
-	}
-	return true, priority
+	return repl
 }
 
-func (rq *Queue) pushLocked(item *pqItem) {
-	heap.Push(rq.pq, item)
-	rq.pqItemMap[item.rangeID] = item
+func (bq *baseQueue) pushLocked(item *pqItem) {
+	heap.Push(bq.pq, item)
+	bq.pqItemMap[item.rangeID] = item
 }
 
-func (rq *Queue) getItemWithMinPriority() *pqItem {
-	old := *rq.pq
+func (bq *baseQueue) getItemWithMinPriority() *pqItem {
+	old := *bq.pq
 	n := len(old)
 	return old[n-1]
 }
 
-func (rq *Queue) Len() int {
-	rq.mu.Lock()
-	defer rq.mu.Unlock()
-	return rq.pq.Len()
+func (bq *baseQueue) removeLocked(item *pqItem) {
+	if item.processing {
+		item.requeue = false
+		return
+	}
+	if item.index >= 0 {
+		heap.Remove(bq.pq, item.index)
+	}
+	delete(bq.pqItemMap, item.rangeID)
 }
 
-// MaybeAdd adds a replica to the queue if the store has the lease for the range,
-// and there is work needs to be done.
-// When the queue is full, it deletes the least important replica from the queue.
-func (rq *Queue) MaybeAdd(ctx context.Context, replica IReplica) {
-	rq.mu.Lock()
-	defer rq.mu.Unlock()
-	shouldQueue, priority := rq.shouldQueue(ctx, replica)
-	if !shouldQueue {
+func (bq *baseQueue) Len() int {
+	bq.mu.Lock()
+	defer bq.mu.Unlock()
+	return bq.pq.Len()
+}
+
+func (bq *baseQueue) postProcess(ctx context.Context, repl IReplica, requeueType RequeueType) {
+	rangeID := repl.RangeID()
+	bq.mu.Lock()
+	item, ok := bq.pqItemMap[rangeID]
+	if !ok {
+		alert.UnexpectedEvent("unexpected_pq_item_not_found", "pqItem not found for range %d", rangeID)
+		bq.mu.Unlock()
+		return
+	}
+	ar := attemptRecord{}
+	if requeueType == RequeueRetry {
+		ar = item.attemptRecord
+		ar.attempts++
+		ar.nextAttemptTime = bq.nextAttemptTime(ar.attempts)
+	} else if requeueType == RequeueWait {
+		ar = item.attemptRecord
+	}
+	delete(bq.pqItemMap, rangeID)
+	bq.mu.Unlock()
+
+	if ar.attempts >= maxRetry {
+		alert.UnexpectedEvent("driver_action_retries_exceeded", "c%dn%d action: %s retries exceeded", rangeID, repl.ReplicaID(), ar.action)
+		// do not add it to the queue
+	} else if requeueType != RequeueNoop || item.requeue {
+		bq.maybeAdd(ctx, repl, ar)
+	}
+}
+
+func (bq *baseQueue) nextAttemptTime(attemptNumber int) time.Time {
+	backoff := float64(1*time.Second) * math.Pow(2, float64(attemptNumber))
+	return bq.clock.Now().Add(time.Duration(backoff))
+}
+
+func (bq *baseQueue) process(ctx context.Context, repl IReplica) RequeueType {
+	action, _ := bq.impl.computeAction(ctx, repl)
+	rangeID := repl.RangeID()
+	bq.log.Debugf("start to process c%dn%d", rangeID, repl.ReplicaID())
+	bq.mu.Lock()
+	item, ok := bq.pqItemMap[rangeID]
+	if !ok {
+		alert.UnexpectedEvent("unexpected_pq_item_not_found", "pqItem not found for range %d", rangeID)
+		bq.mu.Unlock()
+		return RequeueNoop
+	}
+	ar := item.attemptRecord
+	bq.mu.Unlock()
+	if action == ar.action && !ar.nextAttemptTime.IsZero() {
+		if bq.clock.Now().Before(ar.nextAttemptTime) {
+			// Do nothing until nextAttemptTime becomes current
+			return RequeueWait
+		}
+	}
+
+	return bq.impl.processReplica(ctx, repl, action)
+}
+
+// The Queue is responsible for up-replicate, down-replicate and reblance ranges
+// across the stores.
+type Queue struct {
+	*baseQueue
+
+	storeMap storemap.IStoreMap
+	store    IStore
+
+	apiClient IClient
+}
+
+func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
+	storeMap := storemap.New(gossipManager, clock)
+	q := &Queue{
+		storeMap:  storeMap,
+		store:     store,
+		apiClient: apiClient,
+	}
+	q.baseQueue = newBaseQueue(nhlog, clock, q)
+	return q
+}
+
+func (rq *Queue) getReplica(rangeID uint64) (IReplica, error) {
+	return rq.store.GetReplica(rangeID)
+}
+
+// computeAction computes the action needed and its priority.
+func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction, float64) {
+	rd := repl.RangeDescriptor()
+	action := DriverNoop
+	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
+		return action, action.Priority()
+	}
+	if rq.storeMap == nil {
+		return action, action.Priority()
+	}
+	replicas := rd.GetReplicas()
+	curReplicas := len(replicas)
+	if curReplicas == 0 {
+		return action, action.Priority()
+	}
+	rangeID := replicas[0].GetRangeId()
+	minReplicas := *minReplicasPerRange
+	if rangeID == constants.MetaRangeID {
+		minReplicas = *minMetaRangeReplicas
+	}
+
+	desiredQuorum := computeQuorum(minReplicas)
+	quorum := computeQuorum(curReplicas)
+
+	if curReplicas < minReplicas {
+		action = DriverAddReplica
+		adjustedPriority := action.Priority() + float64(desiredQuorum-curReplicas)
+		return action, adjustedPriority
+	}
+	replicasByStatus := rq.storeMap.DivideByStatus(replicas)
+	numLiveReplicas := len(replicasByStatus.LiveReplicas) + len(replicasByStatus.SuspectReplicas)
+	numDeadReplicas := len(replicasByStatus.DeadReplicas)
+
+	if numLiveReplicas < quorum {
+		// The cluster is unavailable since we don't have enough live nodes.
+		// There is no point of doing anything right now.
+		log.Debugf("noop because num live replicas = %d less than quorum =%d", numLiveReplicas, quorum)
+		action = DriverNoop
+		return action, action.Priority()
+	}
+
+	if curReplicas <= minReplicas && numDeadReplicas > 0 {
+		action = DriverReplaceDeadReplica
+		return action, action.Priority()
+	}
+
+	if numDeadReplicas > 0 {
+		action = DriverRemoveDeadReplica
+		return action, action.Priority()
+	}
+
+	if curReplicas > minReplicas {
+		action = DriverRemoveReplica
+		adjustedPriority := action.Priority() - float64(curReplicas%2)
+		return action, adjustedPriority
+	}
+
+	// Do not split if there is a replica is dead or suspect or a replica is
+	// in the middle of a removal.
+	allReady := rq.storeMap.AllAvailableStoresReady()
+	isClusterHealthy := len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0 && allReady
+	canSplit := isClusterHealthy && len(rd.GetRemoved()) == 0
+	if canSplit {
+		if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
+			usage, err := repl.Usage()
+			if err != nil {
+				rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.RangeID(), repl.ReplicaID())
+			} else {
+				if sizeUsed := usage.GetEstimatedDiskBytesUsed(); sizeUsed >= maxRangeSizeBytes {
+					action = DriverSplitRange
+					adjustedPriority := action.Priority() + float64(sizeUsed-maxRangeSizeBytes)/float64(sizeUsed)*100.0
+					return action, adjustedPriority
+				}
+			}
+		}
+	} else {
+		rq.log.Debugf("cannot split range %d: num of suspect replicas: %d, num deadReplicas: %d, num replicas marked for removal: %d, allReady=%t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, len(rd.GetRemoved()), allReady)
+	}
+
+	if rd.GetRangeId() == constants.MetaRangeID {
+		// Do not try to re-balance meta-range.
+		//
+		// When meta-range is moved onto a different node, range cache has to
+		// update its range descriptor. Before the range descriptor get updated,
+		// SyncPropose to all other ranges can fail temporarily because the range
+		// descriptor is not current. Therefore, we should only move meta-range
+		// when it's absolutely necessary.
+		action = DriverNoop
+		return action, action.Priority()
+	}
+
+	// Do not try to rebalance replica or leases if there is a dead or suspect,
+	// because it can make the system more unstable.
+	if isClusterHealthy {
+		// For DriverConsiderRebalance check if there are rebalance opportunities.
+		storesWithStats := rq.storeMap.GetStoresWithStats()
+		op := rq.findRebalanceReplicaOp(rd, storesWithStats, repl.ReplicaID())
+		if op != nil {
+			log.Debugf("find rebalancing opportunities: from (nhid=%q, replicaCount=%d, isReady=%t) to (nhid=%q, replicaCount=%d, isReady=%t)", op.from.nhid, op.from.replicaCount, op.from.usage.GetIsReady(), op.to.nhid, op.to.replicaCount, op.to.usage.GetIsReady())
+			action = DriverRebalanceReplica
+			return action, action.Priority()
+		}
+		op = rq.findRebalanceLeaseOp(ctx, rd, repl.ReplicaID())
+		if op != nil {
+			action = DriverRebalanceLease
+			return action, action.Priority()
+		}
+	} else {
+		rq.log.Debugf("do not consider rebalance because range %d is not healthy. num of suspect replicas: %d, num deadReplicas: %d, allReady: %t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, allReady)
+	}
+
+	action = DriverNoop
+	return action, action.Priority()
+}
+
+func (bq *baseQueue) maybeAdd(ctx context.Context, repl IReplica, ar attemptRecord) {
+	bq.mu.Lock()
+	defer bq.mu.Unlock()
+
+	action, priority := bq.impl.computeAction(ctx, repl)
+	if action == DriverNoop {
 		return
 	}
 
-	rd := replica.RangeDescriptor()
-	item, ok := rq.pqItemMap[rd.GetRangeId()]
+	rangeID := repl.RangeID()
+	item, ok := bq.pqItemMap[rangeID]
 	if ok {
 		// The item is processing. Mark to be requeued.
 		if item.processing {
 			item.requeue = true
 			return
 		}
-		rq.pq.update(item, priority)
-		rq.log.Infof("updated priority for replica rangeID=%d", item.rangeID)
+		bq.pq.update(item, priority, action)
 		return
 	}
-
 	item = &pqItem{
-		rangeID:    rd.GetRangeId(),
-		replicaID:  replica.ReplicaID(),
+		rangeID:    rangeID,
+		replicaID:  repl.ReplicaID(),
 		priority:   priority,
-		insertTime: rq.clock.Now(),
+		insertTime: bq.clock.Now(),
 	}
-	rq.pushLocked(item)
-	rq.log.Infof("queued replica rangeID=%d with priority %.2f", item.rangeID, priority)
+
+	if action == ar.action {
+		item.attemptRecord = ar
+	} else {
+		item.attemptRecord = attemptRecord{
+			action: action,
+		}
+	}
+
+	bq.pushLocked(item)
 
 	// If the priroityQueue if full, let's remove the item with the lowest priority.
-	if pqLen := rq.pq.Len(); pqLen > rq.maxSize {
-		rq.removeLocked(rq.getItemWithMinPriority())
+	if pqLen := bq.pq.Len(); pqLen > bq.maxSize {
+		bq.removeLocked(bq.getItemWithMinPriority())
 	}
 }
 
-func (rq *Queue) removeLocked(item *pqItem) {
-	if item.processing {
-		item.requeue = false
-		return
-	}
-	if item.index >= 0 {
-		heap.Remove(rq.pq, item.index)
-	}
-	delete(rq.pqItemMap, item.rangeID)
+func (rq *Queue) MaybeAdd(ctx context.Context, replica IReplica) {
+	rq.maybeAdd(ctx, replica, attemptRecord{})
 }
 
-func (rq *Queue) pop() IReplica {
-	rq.mu.Lock()
-	defer rq.mu.Unlock()
-	item := heap.Pop(rq.pq).(*pqItem)
-	item.processing = true
-	repl, err := rq.store.GetReplica(item.rangeID)
-	if err != nil || repl.ReplicaID() != item.replicaID {
-		rq.log.Errorf("unable to get replica for c%dn%d: %s", item.rangeID, item.replicaID, err)
-		delete(rq.pqItemMap, item.rangeID)
-		return nil
-	}
-	return repl
-}
-
-func (rq *Queue) Start() {
-	rq.eg.Go(func() error {
-		rq.processQueue()
-		return nil
+func (bq *baseQueue) Start() {
+	bq.eg.Go(func() error {
+		queueDelay := bq.clock.NewTicker(queueWaitDuration)
+		defer queueDelay.Stop()
+		for {
+			select {
+			case <-bq.egCtx.Done():
+				return nil
+			case <-queueDelay.Chan():
+				bq.processQueue()
+			}
+		}
 	})
 }
 
-func (rq *Queue) Stop() {
-	rq.log.Infof("Driver shutdown started")
+func (bq *baseQueue) Stop() {
+	bq.log.Infof("Driver shutdown started")
 	now := time.Now()
 	defer func() {
-		rq.log.Infof("Driver shutdown finished in %s", time.Since(now))
+		bq.log.Infof("Driver shutdown finished in %s", time.Since(now))
 	}()
 
-	rq.egCancel()
-	rq.eg.Wait()
+	bq.egCancel()
+	bq.eg.Wait()
 }
 
-func (rq *Queue) processQueue() {
-	queueDelay := rq.clock.NewTicker(queueWaitDuration)
-	defer queueDelay.Stop()
-	for {
-		select {
-		case <-rq.egCtx.Done():
-			return
-		case <-queueDelay.Chan():
-		}
-		if rq.Len() == 0 {
-			continue
-		}
-		repl := rq.pop()
-		if repl == nil {
-			continue
-		}
-
-		requeue, err := rq.processReplica(rq.egCtx, repl)
-		if err != nil {
-			// TODO: check if err can be retried.
-			rq.log.Errorf("failed to process replica: %s", err)
-		} else {
-			rq.log.Debugf("successfully processed replica: %d", repl.RangeID())
-		}
-		rq.postProcess(rq.egCtx, repl, requeue)
+func (bq *baseQueue) processQueue() {
+	if bq.Len() == 0 {
+		return
+	}
+	repl := bq.pop()
+	if repl == nil {
+		return
 	}
 
+	requeueType := bq.process(bq.egCtx, repl)
+	bq.postProcess(bq.egCtx, repl, requeueType)
 }
 
 // findDeadReplica finds a dead replica to be removed.
@@ -1113,77 +1211,55 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	return nil
 }
 
-func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error) {
-	rd := repl.RangeDescriptor()
-	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
-		// the store doesn't have the lease of this range.
-		rq.log.Debugf("store doesn't have lease for c%dn%d, do not process", repl.RangeID(), repl.ReplicaID())
-		return false, nil
-	}
-	rq.log.Debugf("start to process c%dn%d", repl.RangeID(), repl.ReplicaID())
-	usage, err := repl.Usage()
-	if err != nil {
-		rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.RangeID(), repl.ReplicaID())
-	}
-	action, _ := rq.computeAction(ctx, rd, usage, repl.ReplicaID())
-
+func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action DriverAction) RequeueType {
 	var change *change
+	rd := repl.RangeDescriptor()
+	rangeID := repl.RangeID()
 
 	switch action {
 	case DriverNoop:
 	case DriverSplitRange:
-		rq.log.Debugf("split range (range_id: %d)", repl.RangeID())
+		rq.log.Debugf("split range (range_id: %d)", rangeID)
 		change = rq.splitRange(rd)
 	case DriverAddReplica:
-		rq.log.Debugf("add replica (range_id: %d)", repl.RangeID())
+		rq.log.Debugf("add replica (range_id: %d)", rangeID)
 		change = rq.addReplica(rd)
 	case DriverReplaceDeadReplica:
-		rq.log.Debugf("replace dead replica (range_id: %d)", repl.RangeID())
+		rq.log.Debugf("replace dead replica (range_id: %d)", rangeID)
 		change = rq.replaceDeadReplica(rd)
 	case DriverRemoveReplica:
-		rq.log.Debugf("remove replica (range_id: %d)", repl.RangeID())
+		rq.log.Debugf("remove replica (range_id: %d)", rangeID)
 		change = rq.removeReplica(ctx, rd, repl)
 	case DriverRemoveDeadReplica:
-		rq.log.Debugf("remove dead replica (range_id: %d)", repl.RangeID())
+		rq.log.Debugf("remove dead replica (range_id: %d)", rangeID)
 		change = rq.removeDeadReplica(rd)
 	case DriverRebalanceReplica:
-		rq.log.Debugf("consider rebalance replica: (range_id: %d)", repl.RangeID())
+		rq.log.Debugf("consider rebalance replica: (range_id: %d)", rangeID)
 		change = rq.rebalanceReplica(rd, repl)
 	case DriverRebalanceLease:
-		rq.log.Debugf("consider rebalance lease: (range_id: %d)", repl.RangeID())
+		rq.log.Debugf("consider rebalance lease: (range_id: %d)", rangeID)
 		change = rq.rebalanceLease(ctx, rd, repl)
 	}
 
 	if change == nil {
-		rq.log.Debugf("nothing to do for replica: (range_id: %d)", repl.RangeID())
-		return false, nil
+		rq.log.Debugf("nothing to do for replica: (range_id: %d)", rangeID)
+		return RequeueNoop
 	}
 
-	err = rq.applyChange(ctx, change)
+	err := rq.applyChange(ctx, change)
 	if err != nil {
-		rq.log.Warningf("Error apply change to range_id: %d: %s", repl.RangeID(), err)
+		rq.log.Warningf("Error apply change to range_id: %d: %s", rangeID, err)
 	}
 
 	if action == DriverNoop || action == DriverRebalanceReplica || action == DriverRebalanceLease {
-		return false, err
+		return RequeueNoop
 	}
-	return true, err
-}
 
-func (rq *Queue) postProcess(ctx context.Context, repl IReplica, requeue bool) {
-	rd := repl.RangeDescriptor()
-	rq.mu.Lock()
-	item, ok := rq.pqItemMap[rd.GetRangeId()]
-	if !ok {
-		alert.UnexpectedEvent("unexpected_pq_item_not_found", "pqItem not found for range %d", rd.GetRangeId())
-		rq.mu.Unlock()
-		return
-	}
-	requeue = requeue || item.requeue
-	delete(rq.pqItemMap, rd.GetRangeId())
-	rq.mu.Unlock()
-	if requeue {
-		rq.MaybeAdd(ctx, repl)
+	if err != nil {
+		rq.log.Errorf("failed to process replica: %s", err)
+		return RequeueRetry
+	} else {
+		return RequeueCheckOtherActions
 	}
 }
 
