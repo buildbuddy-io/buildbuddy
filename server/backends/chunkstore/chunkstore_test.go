@@ -457,6 +457,7 @@ func TestWriteInvalidChunk(t *testing.T) {
 	c := New(m, &ChunkstoreOptions{})
 	mtx := &mockstore.Context{}
 
+	// Write uint16_max chunks.
 	writer := c.Writer(mtx, "test", &ChunkstoreWriterOptions{WriteBlockSize: 1})
 	n, err := writer.Write(mtx, make([]byte, 65535))
 	require.NoError(t, err)
