@@ -6,10 +6,6 @@ ts_library(
     name = "repo",
     srcs = ["repo.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/components/checkbox",
         "//app/components/input",
@@ -28,6 +24,10 @@ ts_library(
         "//proto:repo_ts_proto",
         "//proto:secrets_ts_proto",
         "//proto:workflow_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 

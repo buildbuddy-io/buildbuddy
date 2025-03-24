@@ -6,10 +6,10 @@ ts_library(
     name = "event_hovercard",
     srcs = ["event_hovercard.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
         "//app/trace:trace_events",
         "//app/util:math",
+        "@npm//@types/react",
+        "@npm//react",
     ],
 )
 
@@ -17,10 +17,6 @@ ts_library(
     name = "trace_viewer",
     srcs = ["trace_viewer.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/components/filter_input",
         "//app/router",
         "//app/trace:constants",
@@ -33,6 +29,10 @@ ts_library(
         "//app/util:dom",
         "//app/util:math",
         "//app/util:platform",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -40,10 +40,10 @@ ts_library(
     name = "trace_viewer_model",
     srcs = ["trace_viewer_model.ts"],
     deps = [
-        "//:node_modules/tslib",
         "//app/trace:constants",
         "//app/trace:trace_events",
         "//app/util:color",
+        "@npm//tslib",
     ],
 )
 
@@ -58,7 +58,7 @@ ts_library(
     name = "trace_events",
     srcs = ["trace_events.ts"],
     deps = [
-        "//:node_modules/tslib",
+        "@npm//tslib",
     ],
 )
 
@@ -72,12 +72,12 @@ ts_library(
     name = "trace_viewer_panel",
     srcs = ["trace_viewer_panel.ts"],
     deps = [
-        "//:node_modules/tslib",
         "//app/trace:constants",
         "//app/trace:trace_events",
         "//app/trace:trace_viewer_model",
         "//app/util:canvas",
         "//app/util:dom",
         "//app/util:math",
+        "@npm//tslib",
     ],
 )

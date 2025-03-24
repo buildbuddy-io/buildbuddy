@@ -8,8 +8,8 @@ ts_library(
     name = "radio",
     srcs = ["radio.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
+        "@npm//@types/react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )

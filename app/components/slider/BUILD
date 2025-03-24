@@ -8,10 +8,10 @@ ts_library(
     name = "slider",
     srcs = ["slider.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-slider",
-        "//:node_modules/react",
-        "//:node_modules/react-slider",
-        "//:node_modules/tslib",
+        "@npm//@types/react",
+        "@npm//@types/react-slider",
+        "@npm//react",
+        "@npm//react-slider",
+        "@npm//tslib",
     ],
 )

@@ -1,5 +1,40 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
+# In Bazel Central Registry, rules_nodejs before 6.0 is actually rules_nodejs-core,
+# which is a trimmed version of build_bazel_rules_nodejs.
+#
+# Since there is no build_bazel_rules_nodejs in BCR, we still want to load it here.
+http_archive(
+    name = "build_bazel_rules_nodejs",
+    patch_args = ["-p1"],
+    patches = [
+        "//buildpatches:build_bazel_rules_nodejs.patch",
+    ],
+    sha256 = "a1295b168f183218bc88117cf00674bcd102498f294086ff58318f830dd9d9d1",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.5/rules_nodejs-5.8.5.tar.gz"],
+)
+
+load("@build_bazel_rules_nodejs//:repositories.bzl", "build_bazel_rules_nodejs_dependencies")
+
+build_bazel_rules_nodejs_dependencies()
+
+load("@rules_nodejs//nodejs:yarn_repositories.bzl", "yarn_repositories")
+
+yarn_repositories(
+    name = "yarn",
+    yarn_version = "1.22.10",
+)
+
+load("@build_bazel_rules_nodejs//:index.bzl", "yarn_install")
+
+yarn_install(
+    name = "npm",
+    exports_directories_only = False,
+    package_json = "//:package.json",
+    symlink_node_modules = False,
+    yarn_lock = "//:yarn.lock",
+)
+
 # Docker
 
 http_archive(
@@ -119,3 +154,9 @@ container_pull(
     registry = "gcr.io",
     repository = "distroless/java11-debian11",
 )
+
+# esbuild (for bundling JS)
+
+load("@build_bazel_rules_nodejs//toolchains/esbuild:esbuild_repositories.bzl", "esbuild_repositories")
+
+esbuild_repositories(npm_repository = "npm")

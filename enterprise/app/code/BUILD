@@ -11,16 +11,6 @@ ts_library(
     name = "code",
     srcs = ["code.tsx"],
     deps = [
-        "//:node_modules/@types/diff",
-        "//:node_modules/@types/long",
-        "//:node_modules/@types/react",
-        "//:node_modules/diff",
-        "//:node_modules/long",
-        "//:node_modules/lucide-react",
-        "//:node_modules/monaco-editor",
-        "//:node_modules/react",
-        "//:node_modules/rxjs",
-        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -50,6 +40,16 @@ ts_library(
         "//proto:remote_execution_ts_proto",
         "//proto:runner_ts_proto",
         "//proto:search_ts_proto",
+        "@npm//@types/diff",
+        "@npm//@types/long",
+        "@npm//@types/react",
+        "@npm//diff",
+        "@npm//long",
+        "@npm//lucide-react",
+        "@npm//monaco-editor",
+        "@npm//react",
+        "@npm//rxjs",
+        "@npm//tslib",
     ],
 )
 
@@ -57,15 +57,15 @@ ts_library(
     name = "code_build_button",
     srcs = ["code_build_button.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/components/button",
         "//app/components/button:button_group",
         "//app/components/menu",
         "//app/components/popup",
         "//app/components/spinner",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -73,12 +73,12 @@ ts_library(
     name = "code_empty",
     srcs = ["code_empty.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/format",
         "//app/service:rpc_service",
         "//proto:invocation_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -86,11 +86,11 @@ ts_library(
     name = "code_pull_request",
     srcs = ["code_pull_request.ts"],
     deps = [
-        "//:node_modules/@types/long",
-        "//:node_modules/long",
-        "//:node_modules/tslib",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
+        "@npm//@types/long",
+        "@npm//long",
+        "@npm//tslib",
     ],
 )
 
@@ -98,10 +98,10 @@ ts_library(
     name = "code_sidebar_node",
     srcs = ["code_sidebar_node.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
         "//proto:github_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
     ],
 )
 
@@ -109,10 +109,10 @@ ts_library(
     name = "code_sidebar_node_v2",
     srcs = ["code_sidebar_node_v2.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
         "//proto:workspace_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
     ],
 )
 
@@ -120,16 +120,6 @@ ts_library(
     name = "code_v2",
     srcs = ["code_v2.tsx"],
     deps = [
-        "//:node_modules/@types/diff",
-        "//:node_modules/@types/long",
-        "//:node_modules/@types/react",
-        "//:node_modules/diff",
-        "//:node_modules/long",
-        "//:node_modules/lucide-react",
-        "//:node_modules/monaco-editor",
-        "//:node_modules/react",
-        "//:node_modules/rxjs",
-        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -161,5 +151,15 @@ ts_library(
         "//proto:runner_ts_proto",
         "//proto:search_ts_proto",
         "//proto:workspace_ts_proto",
+        "@npm//@types/diff",
+        "@npm//@types/long",
+        "@npm//@types/react",
+        "@npm//diff",
+        "@npm//long",
+        "@npm//lucide-react",
+        "@npm//monaco-editor",
+        "@npm//react",
+        "@npm//rxjs",
+        "@npm//tslib",
     ],
 )

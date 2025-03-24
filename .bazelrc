@@ -251,8 +251,6 @@ common:macos --host_action_env=DEVELOPER_DIR
 common:linux --enable_runfiles
 common:macos --enable_runfiles
 
-common --@aspect_rules_ts//ts:skipLibCheck=honor_tsconfig
-
 # Add `-test.v` to all Go tests so that each test func is reported as a separate test case
 # in the XML output.  This allows our webUI to display the run time of each test case
 # separately and let us know which tests is slow.

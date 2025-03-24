@@ -24,10 +24,10 @@ import (
 const (
 	languageName        = "ts"
 	tsProjectRuleName   = "ts_project"
-	tsProjectImportPath = "@aspect_rules_ts//ts:defs.bzl"
+	tsProjectImportPath = "@npm//@bazel/typescript:index.bzl"
 	srcAttribute        = "srcs"
 	depsAttribute       = "deps"
-	npmImportPrefix     = "//:node_modules/"
+	npmImportPrefix     = "@npm//"
 	tsTypesImportPrefix = "@types/"
 	tslibImport         = "tslib"
 	packageFileName     = "package.json"

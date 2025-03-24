@@ -6,14 +6,14 @@ ts_library(
     name = "group_search",
     srcs = ["group_search.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/components/dialog:simple_modal_dialog",
         "//app/components/input",
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )

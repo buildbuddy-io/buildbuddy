@@ -8,8 +8,8 @@ ts_library(
     name = "menu",
     srcs = ["menu.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
+        "@npm//@types/react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )

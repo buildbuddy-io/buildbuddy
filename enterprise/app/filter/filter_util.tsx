@@ -325,7 +325,7 @@ function getValues(
     const fvs = values
       .map((v) => Number.parseInt(v))
       .filter(Number.isInteger)
-      .map((value) => Long.fromValue(value));
+      .map(Long.fromValue);
     return [new stat_filter.FilterValue({ intValue: fvs }), remainder];
   } else if (type === stat_filter.FilterType.INVOCATION_STATUS_FILTER_TYPE /* STATUS_FILTER_CATEGORY */) {
     // Casting because typescript doesn't understand the filter() call.
