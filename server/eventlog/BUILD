@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "eventlog",
@@ -15,5 +15,24 @@ go_library(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/terminal",
+    ],
+)
+
+go_test(
+    name = "eventlog_test",
+    srcs = ["eventlog_test.go"],
+    deps = [
+        ":eventlog",
+        "//proto:acl_go_proto",
+        "//proto:eventlog_go_proto",
+        "//proto:telemetry_go_proto",
+        "//server/backends/chunkstore",
+        "//server/interfaces",
+        "//server/tables",
+        "//server/testutil/mockstore",
+        "//server/testutil/testenv",
+        "//server/util/status",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

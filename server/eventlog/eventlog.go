@@ -37,6 +37,9 @@ const (
 var (
 	//Id of an empty log
 	EmptyId = chunkstore.ChunkIndexAsStringId(chunkstore.EmptyIndex)
+
+	// Max size of the buffer in the EventLogChunkResponse returned by GetEventLogChunk
+	MaxBufferSize = defaultLogChunkSize * 16
 )
 
 func GetEventLogPathFromInvocationIdAndAttempt(invocationId string, attempt uint64) string {
@@ -177,6 +180,9 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		buffer, err := q.pop(ctx)
 		if err != nil {
 			return nil, err
+		}
+		if len(rsp.Buffer) > 0 && len(buffer)+len(rsp.Buffer) > MaxBufferSize {
+			break
 		}
 		scanner := bufio.NewScanner(bytes.NewReader(buffer))
 		for scanner.Scan() {
