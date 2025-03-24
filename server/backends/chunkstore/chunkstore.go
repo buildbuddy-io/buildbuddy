@@ -588,11 +588,18 @@ func (l *writeLoop) run(ctx context.Context) {
 			//just wrote data to disk, reset the flushTime.
 			flushTime = time.Now().Add(l.writeTimeoutDuration)
 		}
-		// We report lastWriteSize as the number of bytes written because we may not
-		// flush all the bytes, but they will still be buffered to be written after
-		// we return. Thus, any and all write failures are instead reported in the
-		// error object as opposed to reflected in the number of bytes written.
+		// We normally report lastWriteSize as the number of bytes written because
+		// we may not flush all the bytes, but they will still be buffered to be
+		// written after we return unless we have exhausted the available indices.
+		// Thus, most write errors are instead reported in the error object as
+		// opposed to being reflected in the number of bytes written.
 		result := &WriteResult{Size: lastWriteSize, Err: err, LastChunkIndex: chunkIndex - 1, Timeout: timeout, BytesFlushed: bytesFlushed, Close: !open}
+		if status.IsResourceExhaustedError(err) {
+			// We ran out of indices for chunks, we can no longer write.
+			result.Size = bytesFlushed
+			result.Close = true
+			open = false
+		}
 		l.writeResultChannel <- result
 
 		if l.writeHook != nil {

@@ -465,5 +465,5 @@ func TestWriteInvalidChunk(t *testing.T) {
 	n, err = writer.Write(mtx, []byte{0})
 	assert.Equal(t, 0, n)
 	assert.Error(t, err)
-	assert.ErrorAs(t, err, status.ResourceExhaustedError())
+	assert.True(t, status.IsResourceExhaustedError(err))
 }
