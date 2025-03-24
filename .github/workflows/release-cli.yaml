@@ -217,7 +217,7 @@ jobs:
             "${{ steps.build.outputs.BINARY }}" \
             "${{ steps.build.outputs.BINARY }}.sha256"
 
-      - name: Save MacOS cache 
+      - name: Save MacOS cache
         uses: ./buildbuddy/.github/actions/cache-save
         if: matrix.os == 'macos-13' || matrix.os == 'macos-13-xlarge'
         with:
