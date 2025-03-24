@@ -130,6 +130,9 @@ func (c *Chunkstore) getLastChunkIndex(ctx context.Context, blobName string, sta
 		}
 		if !exists {
 			if index == 0 || index == startingIndex {
+				// This is the first loop iteration; we never found any chunks. If there
+				// are any chunks for this blob, they are less than the starting index.
+				// Return an error.
 				return math.MaxUint16, status.NotFoundErrorf("No Chunk found at index %d", index)
 			}
 			break

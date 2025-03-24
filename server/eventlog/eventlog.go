@@ -36,6 +36,7 @@ const (
 
 var (
 	//Id of an empty log
+	// TODO(zoey): actually use this in the file; it's clearer.
 	EmptyId = chunkstore.ChunkIndexAsStringId(chunkstore.EmptyIndex)
 )
 
@@ -54,12 +55,15 @@ func GetEventLogPubSubChannel(invocationID string) string {
 
 // Gets the chunk of the event log specified by the request from the blobstore and returns a response containing it
 func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {
+	// TODO(zoey): this function is way too long; split it up.
 	inv, err := env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId())
 	if err != nil {
 		return nil, err
 	}
 
 	if inv.LastChunkId == "" {
+		// This invocation does not have chunked event logs; return an empty
+		// response to indicate that to the client.
 		return &elpb.GetEventLogChunkResponse{}, nil
 	}
 
@@ -69,6 +73,9 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 
 	// Get the id of the last chunk on disk after the last id stored in the db
 	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, inv.LastChunkId)
+
+	// TODO(zoey): this should check for the status.NotFoundError, as that is the
+	// only one we can handle. Any other errors are real errors.
 	if err != nil {
 		if inv.LastChunkId != chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
 			// The last chunk id recorded in the invocation table is wrong; the only
@@ -113,10 +120,16 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		return nil, err
 	}
 
+	// If the requested chunk ID is empty, we're returning the last N lines of the
+	// blob instead of the first N lines beginning at the requested chunk ID, so
+	// our starting chunkIndex is the last one we know about.
 	startIndex := lastChunkIndex
 	if req.ChunkId != "" {
+		// The client requested a specific chunkID; we need to convert to a uint16
+		// and then validate it as the ID of a fetchable chunk.
 		var err error
-		if startIndex, err = chunkstore.ChunkIdAsUint16Index(req.ChunkId); err != nil {
+		startIndex, err = chunkstore.ChunkIdAsUint16Index(req.ChunkId)
+		if err != nil {
 			return nil, err
 		}
 
@@ -126,11 +139,29 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		}
 
 		if startIndex > lastChunkIndex {
+			// The requested chunk ID is greater than the one that we had recorded on
+			// disk when we populated lastChunkIndex above. We should check to see if
+			// the client requested the chunk cached in redis, and return it if they
+			// did.
 			if invocationInProgress {
 				// If the invocation is in progress and the chunk requested is not on
 				// disk, check the cache to see if the live chunk is being requested.
 				liveChunk := &elpb.LiveEventLogChunk{}
 				if err := keyval.GetProto(ctx, env.GetKeyValStore(), eventLogPath, liveChunk); err == nil {
+					// TODO(zoey): there is a potential race condition here where we
+					// retrieve the last chunk ID on disk, then one or more live chunks
+					// are written to disk and stored in the database, and then we
+					// retrieve the new live chunk here. If the client requested a chunk
+					// which was written to disk after we retrieved the last chunk ID,
+					// the conditional below will fail and we will fall through to
+					// returning an empty response with the last chunk ID we retrieved
+					// above. This will result in an unnecessary reconnection by the
+					// client to attempt to retrieve that chunk again. Instead, we should
+					// do this check FIRST, and then check if the requested chunk ID is
+					// less than the live chunk ID. If it is, we should validate it as a
+					// fetchable chunk.
+					//
+					// The same logic applies for when we check the live chunk above.
 					if chunkstore.ChunkIndexAsStringId(startIndex) == liveChunk.ChunkId {
 						return &elpb.GetEventLogChunkResponse{
 							Buffer:      liveChunk.Buffer,
@@ -167,12 +198,17 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	boundary := lastChunkIndex
 	step := uint16(1)
 	if req.ChunkId == "" {
+		// The caller is requesting the last n lines instead of the first n lines;
+		// We need to read from the end and go backwards until we have enough lines.
 		boundary = 0
 		step = math.MaxUint16 // decrements the value when added
 	}
 	q := newChunkQueue(c, eventLogPath, startIndex, step, boundary)
 	lineCount := 0
-	// Fetch one chunk even if the minimum line count is 0
+	// Fetch one chunk even if the minimum line count is 0.
+	// `step` should only ever be 1 or MaxUint16 (effectively -1), so as long as
+	// `boundary` remains invariant, this loop is guaranteed to terminate in
+	// 65536 iterations or fewer.
 	for chunkIndex := startIndex; chunkIndex != boundary+step; chunkIndex += step {
 		buffer, err := q.pop(ctx)
 		if err != nil {
@@ -186,9 +222,11 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			lineCount++
 		}
 		if step == 1 {
+			// Reading forwards, append the new lines
 			rsp.Buffer = append(rsp.Buffer, buffer...)
 			rsp.NextChunkId = chunkstore.ChunkIndexAsStringId(chunkIndex + step)
 		} else {
+			// Reading backwards, prepend the new lines
 			rsp.Buffer = append(buffer, rsp.Buffer...)
 			rsp.PreviousChunkId = chunkstore.ChunkIndexAsStringId(chunkIndex + step)
 		}
@@ -245,6 +283,7 @@ func (q *chunkQueue) pushNewFuture(ctx context.Context, index uint16) {
 	q.futures = append(q.futures, future)
 
 	if index == q.boundary+q.step {
+		// This future was the last valid index; append EOF.
 		future <- chunkReadResult{err: io.EOF}
 		return
 	}
@@ -268,7 +307,12 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 	numLoading := len(q.futures) - q.numPopped
 	numNewConnections := q.maxConnections - numLoading
 	for numNewConnections > 0 {
+		// the index of the next future is the index of the start plus or minus the
+		// current length of the queue.
 		index := q.start + uint16(len(q.futures))*q.step
+		// TODO: we shouldn't push futures if we already pushed EOF; add an
+		// indicator to q as to whether or not that has happened so that we can
+		// break this this loop when we reach the end of the availiable chunks.
 		q.pushNewFuture(ctx, index)
 		numNewConnections--
 	}
