@@ -120,9 +120,9 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		return nil, err
 	}
 
-	// If the requested chunk ID is empty, we're returning the last N lines
-	// instead of the first N lines, so our starting chunkIndex is the last one we
-	// know about.
+	// If the requested chunk ID is empty, we're returning the last N lines of the
+	// blob instead of the first N lines beginning at the requested chunk ID, so
+	// our starting chunkIndex is the last one we know about.
 	startIndex := lastChunkIndex
 	if req.ChunkId != "" {
 		// The client requested a specific chunkID; we need to convert to a uint16
