@@ -258,6 +258,13 @@ func updateAttr(attr *vfspb.Attrs, mod func(attr *vfspb.Attrs)) *vfspb.Attrs {
 	return newAttrs
 }
 
+// statBlocksToFSBlocks converts block count from 512-byte blocks (as reported
+// by Stat) to block count based on the filesystem block size.
+func (p *Server) statBlocksToFSBlocks(statBlocks int64) int64 {
+	statBlocksPerFSBlock := p.backingBlockSize / 512
+	return statBlocks / statBlocksPerFSBlock
+}
+
 func (fsn *fsNode) refreshAttrs() error {
 	fsn.mu.Lock()
 	defer fsn.mu.Unlock()
@@ -281,7 +288,7 @@ func (fsn *fsNode) refreshAttrs() error {
 		attr.BlockSize = int64(rawStat.Blksize)
 	})
 	fsn.server.mu.Lock()
-	fsn.server.blocks += (fsn.attrs.Blocks - oldBlocks) / (fsn.server.backingBlockSize / 512)
+	fsn.server.blocks += fsn.server.statBlocksToFSBlocks(fsn.attrs.Blocks - oldBlocks)
 	fsn.server.mu.Unlock()
 	return nil
 }
@@ -1293,7 +1300,7 @@ func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
 			return syscallErrStatus(err)
 		}
 		childNode.server.mu.Lock()
-		childNode.server.blocks -= childNode.attrs.Blocks / (childNode.server.backingBlockSize / 512)
+		childNode.server.blocks -= childNode.server.statBlocksToFSBlocks(childNode.attrs.Blocks)
 		childNode.server.mu.Unlock()
 	}
 	childNode.mu.Unlock()
