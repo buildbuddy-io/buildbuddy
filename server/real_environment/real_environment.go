@@ -11,6 +11,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 
+	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -134,6 +135,7 @@ type RealEnv struct {
 	cpuLeaser                        interfaces.CPULeaser
 	ociRegistry                      interfaces.OCIRegistry
 	hitTrackerFactory                interfaces.HitTrackerFactory
+	hitTrackerServiceServer          hitpb.HitTrackerServiceServer
 	experimentFlagProvider           interfaces.ExperimentFlagProvider
 }
 
@@ -822,6 +824,14 @@ func (r *RealEnv) GetHitTrackerFactory() interfaces.HitTrackerFactory {
 func (r *RealEnv) SetHitTrackerFactory(hitTrackerFactory interfaces.HitTrackerFactory) {
 	r.hitTrackerFactory = hitTrackerFactory
 }
+
+func (r *RealEnv) GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer {
+	return r.hitTrackerServiceServer
+}
+func (r *RealEnv) SetHitTrackerServiceServer(hitTrackerServiceServer hitpb.HitTrackerServiceServer) {
+	r.hitTrackerServiceServer = hitTrackerServiceServer
+}
+
 func (r *RealEnv) GetExperimentFlagProvider() interfaces.ExperimentFlagProvider {
 	return r.experimentFlagProvider
 }

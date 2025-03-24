@@ -61,6 +61,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -321,6 +322,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	}
 	if auth := env.GetAuthService(); auth != nil {
 		authpb.RegisterAuthServiceServer(grpcServer, auth)
+	}
+	if ht := env.GetHitTrackerServiceServer(); ht != nil {
+		hitpb.RegisterHitTrackerServiceServer(grpcServer, ht)
 	}
 }
 
