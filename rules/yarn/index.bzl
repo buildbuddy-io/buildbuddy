@@ -1,7 +1,6 @@
 DEFAULT_CMD_TPL = """
 # NOTE: BazelBinResolverPlugin in docusaurus.config.js depends on ROOTDIR being set
 # to the original execution working directory.
-export BAZEL_BINDIR=. &&
 export ROOTDIR=$$(pwd) &&
 export PACKAGEDIR=$$(dirname $(location {package})) &&
 export PATH=$$ROOTDIR/$$(dirname $(location {yarn})):$$ROOTDIR/$$(dirname $(location {node})):$$PATH &&
@@ -16,7 +15,6 @@ mv $$PACKAGEDIR/build.tar $@
 
 EXECUTABLE_CMD_TPL = """
 cat << EOF > $@
-export BAZEL_BINDIR=. &&
 export PATH=$$(pwd)/$$(dirname $(location {yarn})):$$(pwd)/$$(dirname $(location {node})):$$PATH &&
 cd $$(dirname $(location {package})) &&
 yarn install &&
@@ -24,7 +22,7 @@ yarn {command}
 EOF
 """
 
-def yarn(name, srcs, package, command = "build", deps = [], yarn = Label("//rules/yarn"), node = "@nodejs_host//:node_bin", **kwargs):
+def yarn(name, srcs, package, command = "build", deps = [], yarn = "@yarn//:yarn_bin", node = "@nodejs_host//:node_bin", **kwargs):
     extension = ".tar"
     executable = False
     if command != "build":

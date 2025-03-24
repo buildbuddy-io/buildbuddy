@@ -1,5 +1,5 @@
-load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@npm//@bazel/esbuild:index.bzl", "esbuild")
 load("//rules/sha:index.bzl", "sha")
 load("//rules/typescript:index.bzl", "ts_library")
 
@@ -7,7 +7,7 @@ package(default_visibility = ["//visibility:public"])
 
 esbuild(
     name = "app_bundle",
-    config = {
+    args = {
         "resolveExtensions": [
             ".mjs",
             ".js",
@@ -29,11 +29,11 @@ ts_library(
     name = "app",
     srcs = ["app.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//app/root",
+        "@npm//@types/react",
+        "@npm//@types/react-dom",
+        "@npm//react",
+        "@npm//react-dom",
     ],
 )
 

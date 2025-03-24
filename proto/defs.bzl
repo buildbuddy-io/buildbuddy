@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@build_bazel_rules_nodejs//:index.bzl", "js_library")
 load("@com_github_buildbuddy_io_protoc_gen_protobufjs//:rules.bzl", "protoc_gen_protobufjs")
 
 def ts_proto_library(name, proto, deps = [], **kwargs):
@@ -23,10 +23,10 @@ def ts_proto_library(name, proto, deps = [], **kwargs):
         name = name,
         srcs = [":" + name + "__gen_protobufjs"],
         deps = [
-            "//:node_modules/@types/long",
-            "//:node_modules/long",
-            "//:node_modules/protobufjs",
-            "//:node_modules/tslib",
+            "@npm//@types/long",
+            "@npm//long",
+            "@npm//protobufjs",
+            "@npm//tslib",
         ] + deps,
         **kwargs
     )

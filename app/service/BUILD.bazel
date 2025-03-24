@@ -6,10 +6,6 @@ ts_library(
     name = "rpc_service",
     srcs = ["rpc_service.ts"],
     deps = [
-        "//:node_modules/browser-headers",
-        "//:node_modules/protobufjs",
-        "//:node_modules/rxjs",
-        "//:node_modules/tslib",
         "//app/capabilities",
         "//app/util:async",
         "//app/util:errors",
@@ -17,5 +13,9 @@ ts_library(
         "//proto:context_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:grpc_status_ts_proto",
+        "@npm//browser-headers",
+        "@npm//protobufjs",
+        "@npm//rxjs",
+        "@npm//tslib",
     ],
 )

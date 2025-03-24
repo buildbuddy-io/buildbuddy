@@ -1,5 +1,5 @@
 import * as path from "path";
-import {existsSync} from "node:fs";
+import { existsSync } from "node:fs";
 
 // browserifyPathPlugin remaps the nodejs "path" module to "path-browserify".
 // This is needed for libsodium: https://github.com/evanw/esbuild/issues/1786
@@ -22,10 +22,5 @@ let browserifyPathPlugin = {
 };
 
 export default {
-  resolveExtensions: [".mjs", ".js"],
-  loader: {
-    ".ttf": "binary",
-    ".css": "binary",
-  },
   plugins: [browserifyPathPlugin],
 };

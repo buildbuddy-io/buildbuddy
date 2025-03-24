@@ -8,9 +8,6 @@ ts_library(
     name = "create_org",
     srcs = ["create_org.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/components/banner",
         "//app/components/button",
@@ -18,6 +15,9 @@ ts_library(
         "//app/service:rpc_service",
         "//enterprise/app/org:org_form",
         "//proto:group_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -25,16 +25,16 @@ ts_library(
     name = "edit_org",
     srcs = ["edit_org.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",
         "//app/service:rpc_service",
         "//enterprise/app/org:org_form",
         "//proto:group_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -42,15 +42,15 @@ ts_library(
     name = "join_org",
     srcs = ["join_org.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/components/button",
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:group_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -58,15 +58,15 @@ ts_library(
     name = "org_form",
     srcs = ["org_form.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/banner",
         "//app/components/select",
         "//app/util:errors",
         "//proto:group_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -74,14 +74,14 @@ ts_library(
     name = "org_join_requests",
     srcs = ["org_join_requests.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/components/button",
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -89,10 +89,6 @@ ts_library(
     name = "org_members",
     srcs = ["org_members.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -110,6 +106,10 @@ ts_library(
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -117,12 +117,12 @@ ts_library(
     name = "org_access_denied",
     srcs = ["org_access_denied.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
         "//app/auth:auth_service",
         "//app/auth:user",
         "//app/components/button",
         "//app/router",
         "//proto:user_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
     ],
 )

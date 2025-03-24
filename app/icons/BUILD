@@ -6,8 +6,8 @@ ts_library(
     name = "github",
     srcs = ["github.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
+        "@npm//@types/react",
+        "@npm//react",
     ],
 )
 
@@ -15,7 +15,7 @@ ts_library(
     name = "google",
     srcs = ["google.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
+        "@npm//@types/react",
+        "@npm//react",
     ],
 )

@@ -39,10 +39,6 @@ MODULE.bazel.lock
 # Node dependencies
 node_modules
 
-# non-pnpm lock files
-package-lock.json
-yarn.lock
-
 # Yarn logs
 yarn-error.log
 

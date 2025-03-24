@@ -8,10 +8,6 @@ ts_library(
     name = "workflows",
     srcs = ["workflows.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
@@ -35,6 +31,10 @@ ts_library(
         "//enterprise/app/workflows:zero_state",
         "//proto:github_ts_proto",
         "//proto:workflow_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -42,10 +42,6 @@ ts_library(
     name = "action_list",
     srcs = ["action_list.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/components/link",
         "//app/components/tooltip",
         "//app/format",
@@ -53,6 +49,10 @@ ts_library(
         "//app/util:proto",
         "//proto:invocation_status_ts_proto",
         "//proto:workflow_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -60,9 +60,6 @@ ts_library(
     name = "create_workflow",
     srcs = ["create_workflow.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/components/button",
@@ -74,6 +71,9 @@ ts_library(
         "//app/service:rpc_service",
         "//proto:git_ts_proto",
         "//proto:workflow_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -81,9 +81,6 @@ ts_library(
     name = "github_import",
     srcs = ["github_import.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/components/button",
         "//app/components/link",
@@ -93,6 +90,9 @@ ts_library(
         "//app/util:errors",
         "//proto:git_ts_proto",
         "//proto:workflow_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
     ],
 )
 
@@ -100,8 +100,8 @@ ts_library(
     name = "zero_state",
     srcs = ["zero_state.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
+        "@npm//@types/react",
+        "@npm//react",
     ],
 )
 
@@ -109,9 +109,6 @@ ts_library(
     name = "github_app_import",
     srcs = ["github_app_import.tsx"],
     deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/auth:user",
         "//app/components/banner",
@@ -126,5 +123,8 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:git",
         "//proto:github_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
     ],
 )
