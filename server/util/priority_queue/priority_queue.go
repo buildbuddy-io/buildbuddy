@@ -97,7 +97,7 @@ func (pq *PriorityQueue[V]) Peek() (V, bool) {
 // RemoveAt(0) removes the highest priority item, and is equivalent to Pop().
 // RemoveAt(1) removes the item with the second highest priority, and so on.
 //
-// To guarantee stability, ties in priority are broken by insertion time.
+// Ties in priority are broken by insertion time.
 //
 // It has complexity O(index * log(n)) where n is the number of elements in the
 // queue.
@@ -128,9 +128,9 @@ func (pq *PriorityQueue[V]) RemoveAt(index int) (V, bool) {
 func (pq *PriorityQueue[V]) GetAll() []V {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
-	allValues := make([]V, 0, len(pq.inner))
-	for _, i := range pq.inner {
-		allValues = append(allValues, i.value)
+	allValues := make([]V, len(pq.inner))
+	for i, v := range pq.inner {
+		allValues[i] = v.value
 	}
 	return allValues
 }

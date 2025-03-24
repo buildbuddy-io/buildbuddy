@@ -88,8 +88,8 @@ func (t *taskQueueIterator) Next() *scpb.EnqueueTaskReservationRequest {
 			t.groupIterators[currentPQ] = currentPQ.Value.(*groupPriorityQueue).Clone()
 		}
 
-		// Pop from the iterator's copy of the group queue to get the next task in the
-		// iteration.
+		// Pop from the iterator's copy of the group queue to get the next task
+		// in the iteration.
 		if groupIterator := t.groupIterators[currentPQ]; groupIterator.Len() > 0 {
 			numPopped := currentPQ.Value.(*groupPriorityQueue).Len() - groupIterator.Len()
 			t.current = &queuePosition{
@@ -740,14 +740,14 @@ func (q *PriorityTaskScheduler) getNextSchedulableTask() (*scpb.EnqueueTaskReser
 	// Don't use the experimental custom resource scheduling logic if there are
 	// no custom resources configured.
 	if len(q.customResourcesCapacity) == 0 {
-		task := q.q.Peek()
-		if task == nil {
+		nextTask := q.q.Peek()
+		if nextTask == nil {
 			return nil, nil
 		}
-		if canFit, _ := q.canFitTask(task); canFit {
-			return task, q.q.headRef()
+		if canFit, _ := q.canFitTask(nextTask); !canFit {
+			return nil, nil
 		}
-		return nil, nil
+		return nextTask, q.q.headRef()
 	}
 
 	// If the tasks at the head of the queue are only waiting for custom
