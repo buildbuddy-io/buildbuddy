@@ -1638,9 +1638,9 @@ type TransferTimer interface {
 	// written (bytesTransferredCache)
 	CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error
 
-	// Records the provided TransferTimer information in Redis without emitting
-	// Prometheus metrics. Exposed for use in
-	// enterprise/server/hit_tracker_service.
+	// Records the provided TransferTimer information using the usage tracker
+	// and metrics collector without emiting Prometheus metrics. Exposed for
+	// use in enterprise/server/hit_tracker_service.
 	Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error
 }
 
