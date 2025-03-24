@@ -297,7 +297,7 @@ func prepareCommand(ctx context.Context, rbeClient *rbeclient.Client, byteStream
 		Arguments: commandArgs,
 		Platform:  &repb.Platform{Properties: platformProps},
 	}
-	cmd, err := rbeClient.PrepareCommand(ctx, *remoteInstanceName, name, inputRootDigest, command, 0 /*=timeout*/)
+	cmd, err := rbeClient.PrepareCommand(ctx, *remoteInstanceName, name, inputRootDigest, command, 0 /*=timeout*/, false /*=doNotCache*/)
 	if err != nil {
 		return nil, status.UnknownErrorf("could not prepare command %q: %v", name, err)
 	}
