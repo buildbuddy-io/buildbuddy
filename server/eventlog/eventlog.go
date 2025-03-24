@@ -307,12 +307,12 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 	numLoading := len(q.futures) - q.numPopped
 	numNewConnections := q.maxConnections - numLoading
 	for numNewConnections > 0 {
-		// the index of the next future is the index of the start minus the current
-		// length of the queue.
+		// the index of the next future is the index of the start plus or minus the
+		// current length of the queue.
 		index := q.start + uint16(len(q.futures))*q.step
-		// TODO: we shouldn't push futures if we already pushed EOF; add indicator
-		// to q as to whether or not that has happened so that we can break this
-		// this loop when we reach the end of the availiable chunks.
+		// TODO: we shouldn't push futures if we already pushed EOF; add an
+		// indicator to q as to whether or not that has happened so that we can
+		// break this this loop when we reach the end of the availiable chunks.
 		q.pushNewFuture(ctx, index)
 		numNewConnections--
 	}
