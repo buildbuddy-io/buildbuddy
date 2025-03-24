@@ -180,6 +180,9 @@ message FrontendConfig {
 
   // If set, the login page will default to using this slug.
   string default_login_slug = 59;
+
+  // Whether the read-only BuildBuddy GitHub app is enabled.
+  bool read_only_github_app_enabled = 60;
 }
 
 message Region {

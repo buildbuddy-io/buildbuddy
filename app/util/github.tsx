@@ -1,9 +1,9 @@
 export const READ_WRITE_GITHUB_APP_URL = "/auth/github/app/link/"
 export const READ_ONLY_GITHUB_APP_URL = "/auth/github/read_only_app/link/"
 
-// LinkReadWriteAppURL is the URL to authorize against the read-write
+// linkReadWriteGitHubAppURL is the URL to authorize against the read-write
 // BuildBuddy GitHub app. This stores an oauth token for the user in our db.
-export function LinkReadWriteGitHubAppURL(userID: string, groupID: string): string {
+export function linkReadWriteGitHubAppURL(userID: string, groupID: string): string {
     return `${READ_WRITE_GITHUB_APP_URL}?${new URLSearchParams({
         user_id: userID,
         group_id: groupID,
@@ -11,9 +11,9 @@ export function LinkReadWriteGitHubAppURL(userID: string, groupID: string): stri
     })}`;
 }
 
-// LinkReadWriteAppURL is the URL to install the read-write
+// installReadWriteGitHubAppURL is the URL to install the read-write
 // BuildBuddy GitHub app.
-export function InstallReadWriteGitHubAppURL(userID: string, groupID: string): string {
+export function installReadWriteGitHubAppURL(userID: string, groupID: string): string {
     return `${READ_WRITE_GITHUB_APP_URL}?${new URLSearchParams({
         user_id: userID,
         group_id: groupID,
@@ -22,9 +22,9 @@ export function InstallReadWriteGitHubAppURL(userID: string, groupID: string): s
     })}`;
 }
 
-// LinkReadOnlyAppURL is the URL to authorize against the read-only
+// linkReadOnlyGitHubAppURL is the URL to authorize against the read-only
 // BuildBuddy GitHub app. This stores an oauth token for the user in our db.
-export function LinkReadOnlyGitHubAppURL(userID: string, groupID: string): string {
+export function linkReadOnlyGitHubAppURL(userID: string, groupID: string): string {
     return `${READ_ONLY_GITHUB_APP_URL}?${new URLSearchParams({
         user_id: userID,
         group_id: groupID,
@@ -32,9 +32,9 @@ export function LinkReadOnlyGitHubAppURL(userID: string, groupID: string): strin
     })}`;
 }
 
-// LinkReadOnlyAppURL is the URL to install the read-only
+// installReadOnlyGitHubAppURL is the URL to install the read-only
 // BuildBuddy GitHub app.
-export function InstallReadOnlyGitHubAppURL(userID: string, groupID: string): string {
+export function installReadOnlyGitHubAppURL(userID: string, groupID: string): string {
     return `${READ_ONLY_GITHUB_APP_URL}?${new URLSearchParams({
         user_id: userID,
         group_id: groupID,

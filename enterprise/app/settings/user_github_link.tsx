@@ -18,9 +18,10 @@ import authService from "../../../app/auth/auth_service";
 import { TextLink } from "../../../app/components/link/link";
 import { github } from "../../../proto/github_ts_proto";
 import {
-  LinkReadOnlyGitHubAppURL,
-  LinkReadWriteGitHubAppURL
+  linkReadOnlyGitHubAppURL,
+  linkReadWriteGitHubAppURL
 } from "../../../app/util/github";
+import capabilities from "../../../app/capabilities/capabilities";
 
 export interface Props {
   user: User;
@@ -147,11 +148,15 @@ export default class UserGitHubLink extends React.Component<Props, State> {
         ) : (
             <div className="setup-button-container">
               <FilledButton className="settings-button settings-link-button left-aligned-button">
-                <a href={LinkReadWriteGitHubAppURL(this.props.user.displayUser?.userId?.id || "", "")}>Link GitHub account (full access)</a>
+                <a href={linkReadWriteGitHubAppURL(this.props.user.displayUser?.userId?.id || "", "")}>Link GitHub account (full access)</a>
               </FilledButton>
-              <FilledButton className="settings-button settings-link-button left-aligned-button">
-                <a href={LinkReadOnlyGitHubAppURL(this.props.user.displayUser?.userId?.id || "", "")}>Link GitHub account (read-only)</a>
-              </FilledButton>
+              {
+                capabilities.readOnlyGitHubApp && (
+                  <FilledButton className="settings-button settings-link-button left-aligned-button">
+                    <a href={linkReadOnlyGitHubAppURL(this.props.user.displayUser?.userId?.id || "", "")}>Link GitHub account (read-only)</a>
+                  </FilledButton>
+                )
+              }
             </div>
         )}
         {this.state.deleteModalVisible && (

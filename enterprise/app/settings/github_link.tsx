@@ -22,8 +22,8 @@ import Banner from "../../../app/components/banner/banner";
 import LinkButton from "../../../app/components/button/link_button";
 import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
 import {
-  InstallReadOnlyGitHubAppURL,
-  InstallReadWriteGitHubAppURL
+  installReadOnlyGitHubAppURL,
+  installReadWriteGitHubAppURL
 } from "../../../app/util/github";
 
 export interface Props {
@@ -206,12 +206,14 @@ export default class GitHubLink extends React.Component<Props, State> {
             </div>
             {Boolean(!this.state.installationsLoading && !this.state.installationsResponse?.installations?.length) && (
                 <div className="setup-button-container">
-                  <LinkButton className="big-button left-aligned-button" href={InstallReadWriteGitHubAppURL(this.props.user.displayUser.userId?.id || "", this.props.user.selectedGroup.id)}>
+                  <LinkButton className="big-button left-aligned-button" href={installReadWriteGitHubAppURL(this.props.user.displayUser.userId?.id || "", this.props.user.selectedGroup.id)}>
                     Setup read-write app
                   </LinkButton>
-                  <LinkButton className="big-button left-aligned-button" href={InstallReadOnlyGitHubAppURL(this.props.user.displayUser.userId?.id || "", this.props.user.selectedGroup.id)}>
-                    Setup read-only app
-                  </LinkButton>
+                  {capabilities.readOnlyGitHubApp && (
+                    <LinkButton className="big-button left-aligned-button" href={installReadOnlyGitHubAppURL(this.props.user.displayUser.userId?.id || "", this.props.user.selectedGroup.id)}>
+                      Setup read-only app
+                    </LinkButton>
+                  )}
                 </div>
             )}
             {this.state.installationsLoading && <div className="loading loading-slim" />}

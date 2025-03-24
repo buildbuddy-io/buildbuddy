@@ -216,6 +216,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CspNonce:                               nonce,
 		CommunityLinksEnabled:                  *communityLinksEnabled,
 		DefaultLoginSlug:                       *defaultLoginSlug,
+		ReadOnlyGithubAppEnabled:               env.GetGitHubAppService() != nil && env.GetGitHubAppService().IsReadOnlyAppEnabled(),
 	}
 
 	configJSON, err := protojson.Marshal(&config)
