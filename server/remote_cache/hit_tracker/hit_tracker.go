@@ -159,21 +159,21 @@ type HitTracker struct {
 	executedActionMetadata *repb.ExecutedActionMetadata
 }
 
-func (h HitTrackerFactory) NewACHitTracker(ctx context.Context) interfaces.HitTracker {
-	return h.newHitTracker(ctx, true)
+func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, invocationID string) interfaces.HitTracker {
+	return h.newHitTracker(ctx, invocationID, true)
 }
 
-func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context) interfaces.HitTracker {
-	return h.newHitTracker(ctx, false)
+func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, invocationID string) interfaces.HitTracker {
+	return h.newHitTracker(ctx, invocationID, false)
 }
 
-func (h HitTrackerFactory) newHitTracker(ctx context.Context, actionCache bool) interfaces.HitTracker {
+func (h HitTrackerFactory) newHitTracker(ctx context.Context, invocationID string, actionCache bool) interfaces.HitTracker {
 	return &HitTracker{
 		env:             h.env,
 		c:               h.env.GetMetricsCollector(),
 		usage:           h.env.GetUsageTracker(),
 		ctx:             ctx,
-		iid:             bazel_request.GetInvocationID(ctx),
+		iid:             invocationID,
 		actionCache:     actionCache,
 		requestMetadata: bazel_request.GetRequestMetadata(ctx),
 	}
@@ -431,11 +431,15 @@ type TransferTimer struct {
 }
 
 func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
-	dur := time.Since(t.start)
+	duration := time.Since(t.start)
+	t.emitMetrics(bytesTransferredCache, bytesTransferredClient, duration, compressor, serverLabel)
+	return t.Record(bytesTransferredClient, time.Since(t.start), compressor)
+}
 
-	h := t.h
+// Records prometheus metrics about this TransferTimer.
+func (t *TransferTimer) emitMetrics(bytesTransferredCache, bytesTransferredClient int64, duration time.Duration, compressor repb.Compressor_Value, serverLabel string) {
 	et := cacheEventTypeLabel(t.actionCounter)
-	ct := h.cacheTypeLabel()
+	ct := t.h.cacheTypeLabel()
 	metrics.CacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      ct,
 		metrics.CacheEventTypeLabel: et,
@@ -443,8 +447,11 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 	t.emitSizeMetrics(compressor, t.sizeCounter, ct, serverLabel, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient))
 	durationMetric(t.timeCounter).With(prometheus.Labels{
 		metrics.CacheTypeLabel: ct,
-	}).Observe(float64(dur.Microseconds()))
+	}).Observe(float64(duration.Microseconds()))
+}
 
+func (t *TransferTimer) Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error {
+	h := t.h
 	if err := h.recordCacheUsage(t.h.ctx, t.d, t.actionCounter); err != nil {
 		return err
 	}
@@ -463,19 +470,19 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 	if t.sizeCounter == UploadSizeBytes {
 		compressedSizeCounter = UploadTransferredSizeBytes
 	}
-	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(compressedSizeCounter), bytesTransferredClient); err != nil {
+	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(compressedSizeCounter), bytesTransferred); err != nil {
 		return err
 	}
-	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.timeCounter), dur.Microseconds()); err != nil {
+	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.timeCounter), duration.Microseconds()); err != nil {
 		return err
 	}
 	if *detailedStatsEnabled {
 		stats := &detailedStats{
 			Status:               t.actionCounter,
 			StartTime:            t.start,
-			Duration:             dur,
+			Duration:             duration,
 			Compressor:           compressor,
-			TransferredSizeBytes: bytesTransferredClient,
+			TransferredSizeBytes: bytesTransferred,
 		}
 		if err := h.recordDetailedStats(t.d, stats); err != nil {
 			return err

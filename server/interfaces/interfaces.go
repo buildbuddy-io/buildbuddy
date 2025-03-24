@@ -1637,6 +1637,11 @@ type TransferTimer interface {
 	// does not support compression and requires that uncompressed bytes are
 	// written (bytesTransferredCache)
 	CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error
+
+	// Records the provided TransferTimer information in Redis without emitting
+	// Prometheus metrics. Exposed for use in
+	// enterprise/server/hit_tracker_service.
+	Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error
 }
 
 // Tracks cache hit/miss and transfer-timing statistics.
@@ -1661,10 +1666,10 @@ type HitTracker interface {
 
 type HitTrackerFactory interface {
 	// Creates a new HitTracker for tracking Action Cache hits.
-	NewACHitTracker(ctx context.Context) HitTracker
+	NewACHitTracker(ctx context.Context, invocationID string) HitTracker
 
 	// Creates a new HitTracker for tracking ByteStream/CAS hits.
-	NewCASHitTracker(ctx context.Context) HitTracker
+	NewCASHitTracker(ctx context.Context, invocationID string) HitTracker
 }
 
 // ExperimentFlagProvider can be use for getting a flag value for a request to
