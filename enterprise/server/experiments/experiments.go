@@ -3,6 +3,8 @@ package experiments
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -28,7 +30,15 @@ var (
 func Register(env *real_environment.RealEnv) error {
 	var provider openfeature.FeatureProvider = openfeature.NoopProvider{}
 	if *flagdBackend != "" {
-		provider = flagd.NewProvider(flagd.WithTargetUri(*flagdBackend))
+		host, port, err := net.SplitHostPort(*flagdBackend)
+		if err != nil {
+			return err
+		}
+		intPort, err := strconv.Atoi(port)
+		if err != nil {
+			return err
+		}
+		provider = flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithHost(host), flagd.WithPort(uint16(intPort)))
 	}
 
 	if err := openfeature.SetProviderAndWait(provider); err != nil {
