@@ -471,6 +471,9 @@ type writeLoop struct {
 }
 
 func (l *writeLoop) write(ctx context.Context, chunk []byte, chunkIndex uint16, lastWriteSize int) (int, error) {
+	if chunkIndex == EmptyIndex {
+		return 0, status.ResourceExhaustedErrorf("Failed to write to chunkstore; index '%04x' is the invalid index.", chunkIndex)
+	}
 	size := l.writeBlockSize
 	if len(chunk) <= size {
 		size = len(chunk)
