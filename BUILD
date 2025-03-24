@@ -1,12 +1,16 @@
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@com_github_bazelbuild_buildtools//buildifier:def.bzl", "buildifier")
 load("@com_github_sluongng_nogo_analyzer//staticcheck:def.bzl", "ANALYZERS", "staticcheck_analyzers")
 load("@io_bazel_rules_go//go:def.bzl", "nogo")
-load("@npm//@bazel/typescript:index.bzl", "ts_config")
+load("@npm//:defs.bzl", "npm_link_all_packages")
 load("//rules/go:index.bzl", "go_sdk_tool")
 
 package(default_visibility = ["//visibility:public"])
+
+npm_link_all_packages(name = "node_modules")
 
 # Rendered JSON result could be checked by doing:
 #   bazel build //:no_go_config
@@ -205,10 +209,14 @@ go_sdk_tool(
 )
 
 exports_files([
-    ".swcrc",
     "package.json",
     "yarn.lock",
 ])
+
+copy_to_bin(
+    name = "swcrc",
+    srcs = [".swcrc"],
+)
 
 ts_config(
     name = "tsconfig",
