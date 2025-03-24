@@ -303,6 +303,15 @@ message SetLkRequest {
 
 message SetLkResponse {}
 
+message StatfsRequest {}
+
+message StatfsResponse {
+  int64 BlockSize = 1;
+  uint64 TotalBlocks = 2;
+  uint64 BlocksFree = 3;
+  uint64 BlocksAvailable = 4;
+}
+
 // FileSystem is Virtual File System API that follows the FUSE API.
 // Refer to the FUSE API documentation for details of specific operations.
 service FileSystem {
@@ -346,6 +355,8 @@ service FileSystem {
   rpc CopyFileRange(CopyFileRangeRequest) returns (CopyFileRangeResponse);
 
   rpc Lseek(LseekRequest) returns (LseekResponse);
+
+  rpc Statfs(StatfsRequest) returns (StatfsResponse);
 
   rpc GetAttr(GetAttrRequest) returns (GetAttrResponse);
   rpc SetAttr(SetAttrRequest) returns (SetAttrResponse);

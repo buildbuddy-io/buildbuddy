@@ -152,7 +152,10 @@ func main() {
 		log.Infof("Action script written to %q", actionScript)
 	}
 
-	vfsServer := vfs_server.New(env, vfsScratchDir)
+	vfsServer, err := vfs_server.New(env, vfsScratchDir)
+	if err != nil {
+		log.Fatalf("Error creating vfs server: %s", err)
+	}
 	if err := vfsServer.Prepare(ctx, layout); err != nil {
 		log.Fatalf("Could not prepare VFS server: %s", err)
 	}
