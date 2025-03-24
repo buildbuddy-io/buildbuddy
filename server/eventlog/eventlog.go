@@ -152,7 +152,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 					// retrieve the last chunk ID on disk, then one or more live chunks
 					// are written to disk and stored in the database, and then we
 					// retrieve the new live chunk here. If the client requested a chunk
-					// which was written to disk after we retrieved the lastChunkID,
+					// which was written to disk after we retrieved the last chunk ID,
 					// the conditional below will fail and we will fall through to
 					// returning an empty response with the last chunk ID we retrieved
 					// above. This will result in an unnecessary reconnection by the
