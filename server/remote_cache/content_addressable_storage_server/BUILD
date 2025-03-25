@@ -18,6 +18,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/remote_cache/directory_size",
         "//server/util/background",
+        "//server/util/bazel_request",
         "//server/util/capabilities",
         "//server/util/compression",
         "//server/util/grpc_client",
