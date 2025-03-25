@@ -1090,6 +1090,10 @@ func (p *Parser) appendArgsForConfig(command string, rules *Rules, args []string
 						}
 					} else if strings.HasPrefix(tok, "-") {
 						i += 2
+					} else {
+						// not an option; support positional arguments
+						args = append(args, tok)
+						i++
 					}
 				}
 				continue
