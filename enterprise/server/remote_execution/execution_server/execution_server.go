@@ -485,7 +485,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	return s.execute(req, stream)
 }
 
-func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID string, req *repb.ExecuteRequest) error {
+func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID string, req *repb.ExecuteRequest, action *repb.Action) error {
 	if s.teeLimiter == nil {
 		return nil
 	}
@@ -510,29 +510,35 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 		md["x-buildbuddy-platform.pool"] = []string{teePoolName}
 		ctx = metadata.NewIncomingContext(ctx, md)
 
-		id, _, err := s.dispatch(ctx, teeReq, &dispatchOpts{teedRequest: true})
+		r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
+		newExecutionID, err := r.UploadString()
 		if err != nil {
 			log.CtxWarningf(ctx, "Could not tee execution %q: %s", originalExecutionID, err)
 			return
 		}
-		log.CtxInfof(ctx, "Teed execution %q for original execution %q", id, originalExecutionID)
+
+		if _, err := s.dispatch(ctx, teeReq, action, newExecutionID, &dispatchOpts{teedRequest: true}); err != nil {
+			log.CtxWarningf(ctx, "Could not tee execution %q: %s", originalExecutionID, err)
+			return
+		}
+		log.CtxInfof(ctx, "Teed execution %q for original execution %q", newExecutionID, originalExecutionID)
 	}()
 	return nil
 }
 
-func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest) (string, error) {
-	id, pool, err := s.dispatch(ctx, req, &dispatchOpts{recordActionMergingState: true})
+func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string) error {
+	pool, err := s.dispatch(ctx, req, action, executionID, &dispatchOpts{recordActionMergingState: true})
 	if err == nil && pool.IsShared && pool.Name == "" {
-		if err := s.teeExecution(ctx, id, req); err != nil {
+		if err := s.teeExecution(ctx, executionID, req, action); err != nil {
 			log.CtxWarningf(ctx, "Could not tee execution: %s", err)
 		}
 	}
-	return id, err
+	return err
 }
 
-func (s *ExecutionServer) dispatchHedge(ctx context.Context, req *repb.ExecuteRequest) (string, error) {
-	id, _, err := s.dispatch(ctx, req, &dispatchOpts{recordActionMergingState: false})
-	return id, err
+func (s *ExecutionServer) dispatchHedge(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string) error {
+	_, err := s.dispatch(ctx, req, action, executionID, &dispatchOpts{recordActionMergingState: false})
+	return err
 }
 
 type dispatchOpts struct {
@@ -540,25 +546,20 @@ type dispatchOpts struct {
 	teedRequest              bool
 }
 
-func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest, opts *dispatchOpts) (string, *interfaces.PoolInfo, error) {
+func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string, opts *dispatchOpts) (*interfaces.PoolInfo, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
-	executionID, err := r.UploadString()
-	if err != nil {
-		return "", nil, err
-	}
 	tracing.AddStringAttributeToCurrentSpan(ctx, "task_id", executionID)
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
 
 	scheduler := s.env.GetSchedulerService()
 	if scheduler == nil {
-		return "", nil, status.FailedPreconditionErrorf("No scheduler service configured")
+		return nil, status.FailedPreconditionErrorf("No scheduler service configured")
 	}
 	sizer := s.env.GetTaskSizer()
 	if sizer == nil {
-		return "", nil, status.FailedPreconditionError("No task sizer configured")
+		return nil, status.FailedPreconditionError("No task sizer configured")
 	}
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	invocationID := rmd.GetToolInvocationId()
@@ -567,9 +568,9 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
-	action, command, err := s.fetchActionAndCommand(ctx, adInstanceDigest)
+	command, err := s.fetchCommand(ctx, adInstanceDigest, action)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	if action.GetPlatform() == nil && command.GetPlatform() != nil {
 		log.CtxInfof(ctx, "Execution %q has a platform in the command, but not the action. Request metadata: %v", executionID, rmd)
@@ -583,13 +584,13 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	// Don't associate teed requests with the original invocation.
 	if !opts.teedRequest {
 		if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
-			return "", nil, err
+			return nil, err
 		}
 	}
 
@@ -618,22 +619,22 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	props, err := platform.ParseProperties(executionTask)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
 	if props.IncludeSecrets {
 		if secretService == nil {
-			return "", nil, status.FailedPreconditionError("Secrets requested but secret service not available")
+			return nil, status.FailedPreconditionError("Secrets requested but secret service not available")
 		}
 		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, platform.IsCICommand(command, platform.GetProto(action, command)))
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, envVars...)
 	}
@@ -642,7 +643,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {
 		// Should never happen.
-		return "", nil, status.InternalErrorf("Error marshalling execution task %q: %s", executionID, err)
+		return nil, status.InternalErrorf("Error marshalling execution task %q: %s", executionID, err)
 	}
 
 	defaultTaskSize := tasksize.Default(executionTask)
@@ -656,14 +657,14 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, props.OS, props.Pool, props.WorkflowID, props.PoolType)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()
 
 	if s.enableRedisAvailabilityMonitoring {
 		if err := s.streamPubSub.CreateMonitoredChannel(ctx, redisKeyForMonitoredTaskStatusStream(executionID)); err != nil {
-			return "", nil, err
+			return nil, err
 		}
 	}
 
@@ -686,22 +687,16 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		SerializedTask: serializedTask,
 	}
 
-	if opts.recordActionMergingState {
-		if err := action_merger.RecordQueuedExecution(ctx, s.rdb, executionID, r); err != nil {
-			log.CtxWarningf(ctx, "could not record queued pending execution %q: %s", executionID, err)
-		}
-	}
-
 	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 		defer cancel()
 		if opts.recordActionMergingState {
 			_ = action_merger.DeletePendingExecution(ctx, s.rdb, executionID)
 		}
-		return "", nil, status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err)
+		return nil, status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err)
 	}
 
-	return executionID, pool, nil
+	return pool, nil
 }
 
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
@@ -723,8 +718,6 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	}
 	invocationID := bazel_request.GetInvocationID(stream.Context())
 
-	hedge := false
-	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
 			r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
@@ -740,60 +733,52 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			}
 			return nil
 		}
-
-		// Check if there's already an identical action pending execution. If
-		// so, wait on the result of that execution instead of starting a new
-		// one.
-		ee, h, err := action_merger.FindPendingExecution(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest)
-		hedge = h
-		if err != nil {
-			log.CtxWarningf(ctx, "could not check for existing execution: %s", err)
-		}
-		if ee != "" {
-			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, ee)
-			log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, downloadString, invocationID)
-			executionID = ee
-			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
-			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
-			metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
-			if err := s.insertInvocationLink(ctx, ee, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
-				return err
-			}
-		}
 	}
 
-	// Create a new execution unless we found an existing identical action we
-	// can wait on.
-	mergedExecution := executionID != ""
-	if executionID == "" {
-		log.CtxInfof(ctx, "Scheduling new execution for %q for invocation %q", downloadString, invocationID)
-		newExecutionID, err := s.Dispatch(ctx, req)
-		if err != nil {
+	action := &repb.Action{}
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, adInstanceDigest, action); err != nil {
+		log.CtxWarningf(ctx, "Error fetching action: %s", err.Error())
+		return err
+	}
+
+	// Check if there's already an identical action pending execution that this request can be merged into.
+	executionID, op := action_merger.MaybeMergeExecutions(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest, action.DoNotCache)
+	if op == action_merger.NEW {
+		log.CtxInfof(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
+		if err := s.Dispatch(ctx, req, action, executionID); err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
 			return err
 		}
-		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, newExecutionID)
-		executionID = newExecutionID
+		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
 		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
-	}
-	// If the action_merger said to hedge this action, run another execution
-	// in the background.
-	if hedge {
-		action_merger.RecordHedgedExecution(ctx, s.rdb, adInstanceDigest, s.getGroupIDForMetrics(ctx))
-		hedgedExecutionID, err := s.dispatchHedge(ctx, req)
-		if err != nil {
-			log.CtxWarningf(ctx, "Error dispatching execution for action %q and invocation %q: %s", downloadString, invocationID, err)
+	} else {
+		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
+		log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", executionID, downloadString, invocationID)
+		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
+		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
+		metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
+		if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
 			return err
 		}
-		log.CtxInfof(ctx, "Dispatched new hedged execution %q for action %q and invocation %q", hedgedExecutionID, downloadString, invocationID)
-		metrics.RemoteExecutionHedgedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
-	}
-	if mergedExecution {
 		err = action_merger.RecordMergedExecution(ctx, s.rdb, adInstanceDigest, s.getGroupIDForMetrics(ctx))
 		if err != nil {
 			log.Debugf("Error recording merged execution in Redis: %s", err)
+		}
+		if op == action_merger.HEDGE {
+			// If the action_merger said to hedge this action, run another execution
+			// in the background.
+			action_merger.RecordHedgedExecution(ctx, s.rdb, adInstanceDigest, s.getGroupIDForMetrics(ctx))
+			hedgedExecutionID, err := adInstanceDigest.UploadString()
+			if err != nil {
+				log.CtxWarningf(ctx, "Could not get hedged execution ID for %q: %s", downloadString, err)
+			}
+			if err := s.dispatchHedge(ctx, req, action, hedgedExecutionID); err != nil {
+				return err
+			}
+			log.CtxInfof(ctx, "Dispatched new hedged execution %q for action %q and invocation %q", hedgedExecutionID, downloadString, invocationID)
+			metrics.RemoteExecutionHedgedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
 		}
 	}
 
@@ -1112,10 +1097,13 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				return status.WrapErrorf(err, "Failed to parse taskID")
 			}
 			actionRN = digest.NewResourceName(actionRN.GetDigest(), actionRN.GetInstanceName(), rspb.CacheType_AC, actionRN.GetDigestFunction())
-			var cmd *repb.Command
-			action, cmd, err = s.fetchActionAndCommand(ctx, actionRN)
+			action, err = s.fetchAction(ctx, actionRN)
 			if err != nil {
-				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
+				return status.UnavailableErrorf("Failed to fetch action: %s", err)
+			}
+			cmd, err := s.fetchCommand(ctx, actionRN, action)
+			if err != nil {
+				return status.UnavailableErrorf("Failed to fetch command: %s", err)
 			}
 			properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
 			if err != nil {
@@ -1275,17 +1263,33 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	return ut.Increment(ctx, labels, counts)
 }
 
-func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResourceName *digest.ResourceName) (*repb.Action, *repb.Command, error) {
+func (s *ExecutionServer) fetchAction(ctx context.Context, actionResourceName *digest.ResourceName) (*repb.Action, error) {
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
 		log.CtxWarningf(ctx, "Error fetching action: %s", err.Error())
-		return nil, nil, err
+		return nil, err
 	}
+	return action, nil
+}
+
+func (s *ExecutionServer) fetchCommand(ctx context.Context, actionResourceName *digest.ResourceName, action *repb.Action) (*repb.Command, error) {
 	cmdDigest := action.GetCommandDigest()
 	cmdInstanceNameDigest := digest.NewResourceName(cmdDigest, actionResourceName.GetInstanceName(), rspb.CacheType_CAS, actionResourceName.GetDigestFunction())
 	cmd := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
 		log.CtxWarningf(ctx, "Error fetching command: %s", err.Error())
+		return nil, err
+	}
+	return cmd, nil
+}
+
+func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResourceName *digest.ResourceName) (*repb.Action, *repb.Command, error) {
+	action, err := s.fetchAction(ctx, actionResourceName)
+	if err != nil {
+		return nil, nil, err
+	}
+	cmd, err := s.fetchCommand(ctx, actionResourceName, action)
+	if err != nil {
 		return nil, nil, err
 	}
 	return action, cmd, nil

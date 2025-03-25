@@ -1357,7 +1357,7 @@ func TestSaturateTaskQueue(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			cmd := rbe.Execute(cmdProto, &rbetest.ExecuteOpts{})
+			cmd := rbe.Execute(cmdProto, &rbetest.ExecuteOpts{DoNotCacheAction: true})
 			res := cmd.Wait()
 
 			require.NoError(t, res.Err)
@@ -1780,9 +1780,57 @@ func TestActionMerging_Success(t *testing.T) {
 	WaitForPendingExecution(rbe.GetRedisClient(), op3)
 	require.NotEqual(t, op2, op3, "actions under different organizations should not be merged")
 
-	cmd4 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, APIKey: rbe.APIKey1, InvocationID: "invocation4"})
+	cmd4 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: false, APIKey: rbe.APIKey1, InvocationID: "invocation4"})
 	op4 := cmd4.WaitAccepted()
-	require.Equal(t, op3, op4, "expected actions to be merged")
+	require.Equal(t, op3, op4, "expected actions to be merged, even with skip_cache_lookup")
+}
+
+func TestActionMerging_ScheduledConcurrently(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+
+	// This test is racy by nature, but would fail open in case of flakiness.
+	// Reduce the chance this happens by rerunning the test a few times, which
+	// doesn't hurt test times since most of the time is spent in shutdown
+	// anyway.
+	for n := range 5 {
+		cmd := &repb.Command{
+			Arguments: []string{"sh", "-c", fmt.Sprintf("sleep %d", 10+n)},
+			Platform:  platform,
+		}
+
+		wg := sync.WaitGroup{}
+		ops := make(chan string, 5)
+		for i := range 5 {
+			wg.Add(1)
+			go func() {
+				exec := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: fmt.Sprintf("invocation%d", i)})
+				ops <- exec.WaitAccepted()
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+		close(ops)
+
+		var onlyOp string
+		for op := range ops {
+			require.NotEmpty(t, op)
+			if onlyOp == "" {
+				onlyOp = op
+			} else {
+				require.Equal(t, onlyOp, op, "not all actions were merged")
+			}
+		}
+	}
 }
 
 func TestActionMerging_LongTask(t *testing.T) {
@@ -1932,6 +1980,49 @@ touch %s`, counter, fname)
 	op4 := cmd4.WaitAccepted()
 	require.NotEqual(t, op1, op4, "expected action to be hedged")
 	require.Equal(t, "FAST", strings.Trim(cmd4.Wait().Stdout, "\n"))
+}
+
+func TestActionMerging_DisabledWithDoNotCache(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "sleep 10"},
+		Platform:  platform,
+	}
+
+	numOps := 5
+	wg := sync.WaitGroup{}
+	ops := make(chan string, numOps)
+	for i := range numOps {
+		wg.Add(1)
+		go func() {
+			exec := rbe.Execute(cmd, &rbetest.ExecuteOpts{
+				CheckCache:       true,
+				DoNotCacheAction: true,
+				InvocationID:     fmt.Sprintf("invocation%d", i),
+			})
+			ops <- exec.WaitAccepted()
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	close(ops)
+
+	opsSet := make(map[string]struct{})
+	for op := range ops {
+		opsSet[op] = struct{}{}
+	}
+	require.Len(t, opsSet, numOps, "expected all ops to be unique")
 }
 
 func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {

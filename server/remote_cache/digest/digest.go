@@ -235,10 +235,7 @@ func (r *ResourceName) UploadString() (string, error) {
 	}
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
-	u, err := guuid.NewRandom()
-	if err != nil {
-		return "", err
-	}
+	u := guuid.New()
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
 		return fmt.Sprintf(
 			"%s/uploads/%s/%s/%s/%d",
