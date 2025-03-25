@@ -1,4 +1,4 @@
-import { CheckCircle, AlertCircle } from "lucide-react";
+import { CheckCircle } from "lucide-react";
 import React from "react";
 import { github } from "../../../proto/github_ts_proto";
 import alertService from "../../../app/alert/alert_service";
@@ -21,6 +21,7 @@ import capabilities from "../../../app/capabilities/capabilities";
 import Banner from "../../../app/components/banner/banner";
 import LinkButton from "../../../app/components/button/link_button";
 import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
+import GitHubTooltip from "./github_tooltip";
 
 export interface Props {
   user: User;
@@ -197,16 +198,16 @@ export default class GitHubLink extends React.Component<Props, State> {
 
         {capabilities.config.githubAppEnabled && (
           <>
-            <div className="settings-option-title">GitHub app link</div>
+            <div className="settings-option-title github-settings-title">
+              Manage GitHub app installations
+              <GitHubTooltip />
+            </div>
             <div className="settings-option-description">
-              <p>
-                The BuildBuddy GitHub app must be linked to a BuildBuddy organization before it can be used. All app
-                installations linked to your organization are shown below. You can also manage installations on GitHub
-                using the "Setup" button below.
-              </p>
+              <p>GitHub app installations that have been imported to BuildBuddy are shown below.</p>
+              <p>You can also manage installations on GitHub using the "Manage on GitHub" button below.</p>
             </div>
             <LinkButton className="big-button" href={this.getInstallURL()}>
-              Setup
+              Manage on GitHub
             </LinkButton>
             {this.state.installationsLoading && <div className="loading loading-slim" />}
             {Boolean(this.state.installationsResponse?.installations?.length) && (
