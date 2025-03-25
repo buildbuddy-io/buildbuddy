@@ -1077,18 +1077,18 @@ func TestBaseQueueAttemptRecordRetain(t *testing.T) {
 	// ProcessQueue should add c1n1 back to the queue with an attempt record
 	tq.processQueue()
 
-	item, ok := tq.pqItemMap[1]
+	task, ok := tq.taskMap[1]
 	require.True(t, ok)
-	require.NotNil(t, item)
-	require.Equal(t, 1, item.attemptRecord.attempts)
-	require.Equal(t, DriverSplitRange, item.attemptRecord.action)
+	require.NotNil(t, task)
+	require.Equal(t, 1, task.attemptRecord.attempts)
+	require.Equal(t, DriverSplitRange, task.attemptRecord.action)
 
 	tq.maybeAdd(ctx, tr, attemptRecord{})
-	item, ok = tq.pqItemMap[1]
+	task, ok = tq.taskMap[1]
 	require.True(t, ok)
-	require.NotNil(t, item)
-	require.Equal(t, 1, item.attemptRecord.attempts)
-	require.Equal(t, DriverSplitRange, item.attemptRecord.action)
+	require.NotNil(t, task)
+	require.Equal(t, 1, task.attemptRecord.attempts)
+	require.Equal(t, DriverSplitRange, task.attemptRecord.action)
 }
 
 func TestBaseQueueAttemptRecordReset(t *testing.T) {
@@ -1113,11 +1113,11 @@ func TestBaseQueueAttemptRecordReset(t *testing.T) {
 	// ProcessQueue should add c1n1 back to the queue with an attempt record
 	tq.processQueue()
 
-	item, ok := tq.pqItemMap[1]
+	task, ok := tq.taskMap[1]
 	require.True(t, ok)
-	require.NotNil(t, item)
-	require.Equal(t, 1, item.attemptRecord.attempts)
-	require.Equal(t, DriverSplitRange, item.attemptRecord.action)
+	require.NotNil(t, task)
+	require.Equal(t, 1, task.attemptRecord.attempts)
+	require.Equal(t, DriverSplitRange, task.attemptRecord.action)
 
 	tq.instructions["1-1"] = instruction{
 		action:      DriverAddReplica,
@@ -1128,9 +1128,9 @@ func TestBaseQueueAttemptRecordReset(t *testing.T) {
 	// action to do.
 	tq.maybeAdd(ctx, tr, attemptRecord{})
 
-	item, ok = tq.pqItemMap[1]
+	task, ok = tq.taskMap[1]
 	require.True(t, ok)
-	require.NotNil(t, item)
-	require.Equal(t, 0, item.attemptRecord.attempts)
-	require.Equal(t, DriverAddReplica, item.attemptRecord.action)
+	require.NotNil(t, task)
+	require.Equal(t, 0, task.attemptRecord.attempts)
+	require.Equal(t, DriverAddReplica, task.attemptRecord.action)
 }
