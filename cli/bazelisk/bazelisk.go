@@ -42,25 +42,38 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 	}
 	repos := createRepositories(core.MakeDefaultConfig())
 
-	if opts.Stdout != nil {
-		close, err := redirectStdio(opts.Stdout, &os.Stdout)
-		if err != nil {
-			return -1, err
+	if opts.Stdout != nil || opts.Stderr != nil {
+		var errRedirect **os.File
+		if opts.Stdout == opts.Stderr {
+			errRedirect = &os.Stderr
+			close, err := redirectStdio(opts.Stdout, &os.Stdout, errRedirect)
+			if err != nil {
+				return -1, err
+			}
+			defer close()
+		} else {
+			if opts.Stdout != nil {
+				close, err := redirectStdio(opts.Stdout, &os.Stdout)
+				if err != nil {
+					return -1, err
+				}
+				defer close()
+			}
+			if opts.Stderr != nil {
+				errRedirect = &os.Stderr
+				close, err := redirectStdio(opts.Stderr, errRedirect)
+				if err != nil {
+					return -1, err
+				}
+				defer close()
+			}
 		}
-		defer close()
-	}
-	if opts.Stderr != nil {
-		errRedirect := &os.Stderr
-		close, err := redirectStdio(opts.Stderr, errRedirect)
-		if err != nil {
-			return -1, err
+		if errRedirect != nil {
+			// Prevent Bazelisk `log.Printf` call to write directly to stderr
+			oldWriter := goLog.Writer()
+			goLog.SetOutput(*errRedirect)
+			defer goLog.SetOutput(oldWriter)
 		}
-		defer close()
-
-		// Prevent Bazelisk `log.Printf` call to write directly to stderr
-		oldWriter := goLog.Writer()
-		goLog.SetOutput(*errRedirect)
-		defer goLog.SetOutput(oldWriter)
 	}
 	return core.RunBazelisk(args, repos)
 }
@@ -132,8 +145,7 @@ func makePipeWriter(w io.Writer) (pw *os.File, closeFunc func(), err error) {
 
 // Redirects either os.Stdout or os.Stderr to the given writer. Calling the
 // returned close function stops redirection.
-func redirectStdio(w io.Writer, stdio **os.File) (close func(), err error) {
-	original := *stdio
+func redirectStdio(w io.Writer, stdio ...**os.File) (close func(), err error) {
 	var closePipe func()
 	f, ok := w.(*os.File)
 	if !ok {
@@ -144,12 +156,18 @@ func redirectStdio(w io.Writer, stdio **os.File) (close func(), err error) {
 		closePipe = c
 		f = pw
 	}
-	*stdio = f
+	original := make([]*os.File, len(stdio))
+	for i := range stdio {
+		original[i] = *stdio[i]
+		*stdio[i] = f
+	}
 	close = func() {
+		for i := range stdio {
+			*stdio[i] = original[i]
+		}
 		if closePipe != nil {
 			closePipe()
 		}
-		*stdio = original
 	}
 	return close, nil
 }
