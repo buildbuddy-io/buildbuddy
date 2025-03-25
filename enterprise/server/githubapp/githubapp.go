@@ -127,8 +127,10 @@ func (s *GitHubAppService) GetGitHubApp(ctx context.Context) (interfaces.GitHubA
 	// If the user has already linked an app installation, check its app ID.
 	// Check our database first over using the GitHub API, because the API is
 	// rate limited.
-	installations, _ := s.GetGitHubAppInstallations(ctx)
-	if len(installations) > 0 {
+	installations, err := s.GetGitHubAppInstallations(ctx)
+	if err != nil {
+		log.CtxErrorf(ctx, "failed to get github app installations: %s", err)
+	} else if len(installations) > 0 {
 		// For now, a user can only have one app linked to BuildBuddy at a time (either read-write
 		// or read-only). Just use the first app ID.
 		installation := installations[0]
@@ -162,7 +164,7 @@ func (s *GitHubAppService) GetGitHubAppWithID(appID int64) (interfaces.GitHubApp
 }
 
 // GetGitHubAppInstallations returns all GitHub apps the owner has installed
-// and linked to BuildBuddy.
+// and linked to the currently authenticated BuildBuddy org.
 //
 // Note that GitHub is always the source of truth for whether an app installation
 // is still valid. It's possible that access is revoked from GitHub and not reflected
@@ -486,7 +488,7 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *ta
 // LinkGitHubAppInstallation imports an installed GitHub app to BuildBuddy.
 //
 // After a user has installed the BuildBuddy Github app from the GitHub side,
-// this imports the data to BuildBuddy and saves it to the database.
+// this imports the installation metadata to BuildBuddy and saves it to the database.
 // This will fail if the user didn't install the app in GitHub.
 //
 // Note that GitHub is always the source of truth for whether the app is installed.

@@ -49,8 +49,8 @@ message UnlinkGitHubAccountResponse {
 message LinkAppInstallationRequest {
   context.RequestContext request_context = 1;
 
-  // The installation ID to link. This is unique to every user that has
-  // installed the app. Required.
+  // The installation ID to link. This is unique to every GitHub account that
+  // has installed the app. Required.
   int64 installation_id = 2;
 
   // The ID of the GitHub app being linked.
@@ -63,8 +63,8 @@ message LinkAppInstallationResponse {
 }
 
 message AppInstallation {
-  // The installation ID. This is unique to every user that has installed the
-  // app.
+  // The installation ID. This is unique to every GitHub account that has
+  // installed the app.
   int64 installation_id = 1;
 
   // The GitHub username or organization where the app is installed.

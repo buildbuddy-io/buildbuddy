@@ -37,15 +37,17 @@ export default class CompleteGitHubAppInstallationDialog extends React.Component
   };
 
   private linkInstallation() {
-    if (!this.props.search.get("installation_id") || !this.props.search.get("app_id")) {
+    const installationId = this.props.search.get("installation_id");
+    const appId = this.props.search.get("app_id");
+    if (!installationId || !appId) {
       throw new Error("installation_id and app_id query params are expected to be set");
     }
     this.setState({ isLinkInstallationLoading: true });
     rpcService.service
       .linkGitHubAppInstallation(
         github.LinkAppInstallationRequest.create({
-          installationId: Long.fromString(this.props.search.get("installation_id")!),
-          appId: Long.fromString(this.props.search.get("app_id")!),
+          installationId: Long.fromString(installationId),
+          appId: Long.fromString(appId),
         })
       )
       .then(() => {
