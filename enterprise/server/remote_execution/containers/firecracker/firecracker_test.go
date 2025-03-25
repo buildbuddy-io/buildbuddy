@@ -696,7 +696,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 		}
 	})
 
-	wokrDir := testfs.MakeDirAll(t, rootDir, "work")
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
