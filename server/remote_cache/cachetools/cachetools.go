@@ -250,10 +250,6 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if r.IsEmpty() {
 		return r.GetDigest(), 0, nil
 	}
-	resourceName, err := r.UploadString()
-	if err != nil {
-		return nil, 0, err
-	}
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -283,7 +279,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 		req := &bspb.WriteRequest{
 			Data:         buf[:n],
-			ResourceName: resourceName,
+			ResourceName: r.UploadString(),
 			WriteOffset:  bytesUploaded,
 			FinishWrite:  readDone,
 		}

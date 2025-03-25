@@ -244,7 +244,7 @@ func (r *CASResourceName) DownloadString() string {
 // UploadString returns a string representing the resource name for upload
 // purposes.
 // TODO: Drop the error return value, which is always nil.
-func (r *CASResourceName) UploadString() (string, error) {
+func (r *CASResourceName) UploadString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	u := guuid.New()
@@ -253,14 +253,14 @@ func (r *CASResourceName) UploadString() (string, error) {
 			"%s/uploads/%s/%s/%s/%d",
 			instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
 			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
-		), nil
+		)
 	} else {
 		return fmt.Sprintf(
 			"%s/uploads/%s/%s/%s/%s/%d",
 			instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
 			strings.ToLower(r.rn.DigestFunction.String()),
 			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
-		), nil
+		)
 	}
 }
 
