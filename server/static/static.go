@@ -218,6 +218,9 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		DefaultLoginSlug:                       *defaultLoginSlug,
 	}
 
+	if efp := env.GetExperimentFlagProvider(); efp != nil {
+		config.FlipLogoOnHover = efp.Boolean(ctx, "flip-logo-on-hover", false /*=default*/)
+	}
 	configJSON, err := protojson.Marshal(&config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
