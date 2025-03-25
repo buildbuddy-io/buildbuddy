@@ -155,7 +155,9 @@ func TestDispatch(t *testing.T) {
 	// Dispatch().
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, env)
 	require.NoError(t, err)
-	taskID, err := s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action)
+	taskID, err := arn.UploadString()
+	require.NoError(t, err)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, taskID)
 	require.NoError(t, err)
 
 	rn, err := digest.ParseUploadResourceName(taskID)
