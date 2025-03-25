@@ -127,6 +127,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
     rpcService.events.next("refresh");
   }
 
+  flipLogoOnHover() {
+    return capabilities.config.flipLogoOnHover;
+  }
+
   render() {
     let expanded =
       (!localStorage[sidebarExpandedKey] && !this.props.dense) ||
@@ -136,7 +140,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
       <div className={`sidebar ${expanded ? "expanded" : "collapsed"}`}>
         <div className="sidebar-header">
           <a href="/">
-            <img src="/image/logo_white.svg" className="logo" />
+            <img src="/image/logo_white.svg" className={`logo ${this.flipLogoOnHover() ? "flipflop" : ""}`} />
           </a>
         </div>
         <div className="sidebar-body">
