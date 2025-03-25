@@ -10,9 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -21,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -46,8 +45,69 @@ var (
 var shuttingDownLogOnce sync.Once
 
 type groupPriorityQueue struct {
-	*priority_queue.PriorityQueue
+	*priority_queue.PriorityQueue[*scpb.EnqueueTaskReservationRequest]
 	groupID string
+}
+
+func (pq *groupPriorityQueue) Clone() *groupPriorityQueue {
+	return &groupPriorityQueue{
+		PriorityQueue: pq.PriorityQueue.Clone(),
+		groupID:       pq.groupID,
+	}
+}
+
+type taskQueueIterator struct {
+	q *taskQueue
+	// Global index across all group queues - ranges from 0 to q.Len()
+	i              int
+	current        *queuePosition
+	nextGroupQueue *list.Element
+	groupIterators map[*list.Element]*groupPriorityQueue
+}
+
+// Next returns the next task in the taskQueue, or nil if the iterator has
+// reached the end of the queue.
+func (t *taskQueueIterator) Next() *scpb.EnqueueTaskReservationRequest {
+	t.current = nil
+	if t.i >= t.q.Len() {
+		return nil
+	}
+	// Rotate through group queues until we find one that we haven't exhausted,
+	// then return the next task from that group queue.
+	for {
+		currentPQ := t.nextGroupQueue
+
+		// Rotate
+		t.nextGroupQueue = t.nextGroupQueue.Next()
+		if t.nextGroupQueue == nil {
+			t.nextGroupQueue = t.q.pqs.Front()
+		}
+
+		// Lazily copy the group queue.
+		if _, ok := t.groupIterators[currentPQ]; !ok {
+			t.groupIterators[currentPQ] = currentPQ.Value.(*groupPriorityQueue).Clone()
+		}
+
+		// Pop from the iterator's copy of the group queue to get the next task
+		// in the iteration.
+		if groupIterator := t.groupIterators[currentPQ]; groupIterator.Len() > 0 {
+			numPopped := currentPQ.Value.(*groupPriorityQueue).Len() - groupIterator.Len()
+			t.current = &queuePosition{
+				GroupQueue: currentPQ,
+				Index:      numPopped,
+			}
+			t.i++
+			el, _ := groupIterator.Pop()
+			return el
+		}
+	}
+}
+
+// Current returns the current iteration index as a reference to an element in
+// the task queue. It returns nil if Next() has not been called for the first
+// time, or if the iterator has been exhausted.
+func (t *taskQueueIterator) Current() *queuePosition {
+	return t.current
 }
 
 type taskQueue struct {
@@ -72,7 +132,7 @@ func newTaskQueue() *taskQueue {
 }
 
 func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
-	var reservations []*scpb.EnqueueTaskReservationRequest
+	reservations := make([]*scpb.EnqueueTaskReservationRequest, 0, len(t.taskIDs))
 
 	for e := t.pqs.Front(); e != nil; e = e.Next() {
 		pq, ok := e.Value.(*groupPriorityQueue)
@@ -109,7 +169,7 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
 		}
 	} else {
 		pq = &groupPriorityQueue{
-			PriorityQueue: priority_queue.NewPriorityQueue(),
+			PriorityQueue: priority_queue.New[*scpb.EnqueueTaskReservationRequest](),
 			groupID:       taskGroupID,
 		}
 		el := t.pqs.PushBack(pq)
@@ -118,7 +178,9 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
 			t.currentPQ = el
 		}
 	}
-	pq.Push(req)
+	// Using negative priority here, since the remote execution API specifies
+	// that tasks with lower priority values should be scheduled first.
+	pq.Push(req, -int(req.GetSchedulingMetadata().GetPriority()))
 	t.taskIDs[req.GetTaskId()] = struct{}{}
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: taskGroupID}).Set(float64(pq.Len()))
 	if req.GetSchedulingMetadata().GetTrackQueuedTaskSize() {
@@ -127,30 +189,67 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
 		metrics.RemoteExecutionAssignedOrQueuedEstimatedRAMBytes.
 			Add(float64(req.TaskSize.EstimatedMemoryBytes))
 	}
+
 	return true
 }
 
+// headRef returns a reference to the current head of the task queue.
+func (t *taskQueue) headRef() *queuePosition {
+	if t.currentPQ == nil {
+		return nil
+	}
+	return &queuePosition{
+		GroupQueue: t.currentPQ,
+		Index:      0,
+	}
+}
+
+// Dequeue removes the task at the head of the task queue and returns it.
 func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
 	if t.currentPQ == nil {
 		return nil
 	}
-	pqEl := t.currentPQ
-	pq, ok := pqEl.Value.(*groupPriorityQueue)
+	return t.DequeueAt(t.headRef())
+}
+
+// DequeueAt removes the task at the given pointer from the taskQueue and
+// returns it.
+//
+// For simplicity, the per-group queues are only rotated when popping from the
+// head of the taskQueue. If we are skipping past tasks that are currently only
+// blocked on custom resources, then we don't rotate to the next the
+// groupPriorityQueue. This is fine for now, because we don't support custom
+// resources in multi-tenant scenarios yet.
+func (t *taskQueue) DequeueAt(pos *queuePosition) *scpb.EnqueueTaskReservationRequest {
+	// Remove from the group queue.
+	pq := pos.GroupQueue.Value.(*groupPriorityQueue)
+	req, ok := pq.RemoveAt(pos.Index)
 	if !ok {
-		// Why would this ever happen?
-		log.Error("not a *groupPriorityQueue!??!")
 		return nil
 	}
-	req := pq.Pop()
+
+	// Remove the task ID from the set of all IDs.
 	delete(t.taskIDs, req.GetTaskId())
-	t.currentPQ = t.currentPQ.Next()
+
+	// Rotate to the next group queue but only if we're doing a normal dequeue,
+	// removing from the head of the taskQueue, as opposed to skipping ahead.
+	if pos.GroupQueue == t.currentPQ && pos.Index == 0 {
+		t.currentPQ = t.currentPQ.Next()
+		if t.currentPQ == nil {
+			t.currentPQ = t.pqs.Front()
+		}
+	}
+
+	// Remove the group queue from the rotation if it's empty.
 	if pq.Len() == 0 {
-		t.pqs.Remove(pqEl)
+		t.pqs.Remove(pos.GroupQueue)
+		if t.pqs.Front() == nil {
+			// List is empty; clear currentPQ.
+			t.currentPQ = nil
+		}
 		delete(t.pqByGroupID, pq.groupID)
 	}
-	if t.currentPQ == nil {
-		t.currentPQ = t.pqs.Front()
-	}
+
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: req.GetSchedulingMetadata().GetTaskGroupId()}).Set(float64(pq.Len()))
 	if req.GetSchedulingMetadata().GetTrackQueuedTaskSize() {
 		metrics.RemoteExecutionAssignedOrQueuedEstimatedMilliCPU.
@@ -171,7 +270,24 @@ func (t *taskQueue) Peek() *scpb.EnqueueTaskReservationRequest {
 		log.Error("not a *groupPriorityQueue!??!")
 		return nil
 	}
-	return pq.Peek()
+	v, _ := pq.Peek()
+	return v
+}
+
+// Iterator returns a new iterator over the tasks in the queue.
+//
+// The iterator starts from the next task waiting to be scheduled, and iterates
+// across all tasks in the queue, in the same order in which they would normally
+// be dequeued.
+//
+// NOTE: while the iterator is in use, the task queue must be locked. Once the
+// task queue is unlocked, the caller cannot use the iterator again.
+func (t *taskQueue) Iterator() *taskQueueIterator {
+	return &taskQueueIterator{
+		q:              t,
+		nextGroupQueue: t.currentPQ,
+		groupIterators: make(map[*list.Element]*groupPriorityQueue, 0),
+	}
 }
 
 func (t *taskQueue) Len() int {
@@ -188,11 +304,19 @@ type Options struct {
 	CPUMillisCapacityOverride int64
 }
 
+// IExecutor is the executor interface expected by the PriorityTaskScheduler.
+// TODO: make operation.Publisher an interface and move this to interfaces.go
+type IExecutor interface {
+	ID() string
+	HostID() string
+	ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream *operation.Publisher) (retry bool, err error)
+}
+
 type PriorityTaskScheduler struct {
 	env              environment.Env
 	log              log.Logger
 	shuttingDown     bool
-	exec             *executor.Executor
+	exec             IExecutor
 	taskLeaser       interfaces.TaskLeaser
 	clock            clockwork.Clock
 	runnerPool       interfaces.RunnerPool
@@ -212,7 +336,7 @@ type PriorityTaskScheduler struct {
 	exclusiveTaskScheduling bool
 }
 
-func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runnerPool interfaces.RunnerPool, taskLeaser interfaces.TaskLeaser, options *Options) *PriorityTaskScheduler {
+func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool interfaces.RunnerPool, taskLeaser interfaces.TaskLeaser, options *Options) *PriorityTaskScheduler {
 	ramBytesCapacity := options.RAMBytesCapacityOverride
 	if ramBytesCapacity == 0 {
 		ramBytesCapacity = int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
@@ -491,23 +615,27 @@ func (q *PriorityTaskScheduler) stats() string {
 		len(q.activeTaskCancelFuncs), q.q.Len())
 }
 
-func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationRequest) bool {
+// canFitTask returns whether the task can fit on the executor, and whether the
+// task is eligible to be skipped due to only being blocked on custom resources.
+// Only tasks which _don't_ need custom resources may skip the task in this
+// case.
+func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationRequest) (canFit bool, isSkippable bool) {
 	// If we're running in exclusiveTaskScheduling mode, only ever allow one
 	// task to run at a time. Otherwise fall through to the logic below.
 	if q.exclusiveTaskScheduling && len(q.activeTaskCancelFuncs) >= 1 {
-		return false
+		return false, false
 	}
 
 	size := res.GetTaskSize()
 
 	availableRAM := q.ramBytesCapacity - q.ramBytesUsed
 	if size.GetEstimatedMemoryBytes() > availableRAM {
-		return false
+		return false, false
 	}
 
 	availableCPU := q.cpuMillisCapacity - q.cpuMillisUsed
 	if size.GetEstimatedMilliCpu() > availableCPU {
-		return false
+		return false, false
 	}
 
 	for _, r := range size.GetCustomResources() {
@@ -520,7 +648,7 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 		}
 		available := q.customResourcesCapacity[r.GetName()] - used
 		if customResource(r.GetValue()) > available {
-			return false
+			return false, true
 		}
 	}
 
@@ -533,10 +661,10 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 		alert.UnexpectedEvent("invalid_task_cpu", "Requested CPU %d is invalid", size.GetEstimatedMilliCpu())
 	}
 
-	return true
+	return true, false
 }
 
-func (q *PriorityTaskScheduler) getNextTask() *scpb.EnqueueTaskReservationRequest {
+func (q *PriorityTaskScheduler) nextTaskForPruning() *scpb.EnqueueTaskReservationRequest {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.shuttingDown || q.q.Len() == 0 {
@@ -560,7 +688,7 @@ func (q *PriorityTaskScheduler) getNextTask() *scpb.EnqueueTaskReservationReques
 //
 // This function returns true if a task was successfully dequeued.
 func (q *PriorityTaskScheduler) trimQueue() bool {
-	nextTask := q.getNextTask()
+	nextTask := q.nextTaskForPruning()
 	if nextTask == nil {
 		return false
 	}
@@ -594,6 +722,56 @@ func (q *PriorityTaskScheduler) trimQueue() bool {
 	return true
 }
 
+// queuePosition points to a specific position in the global task queue ordering
+// (across all groups), allowing immediate access to the element at that
+// position.
+//
+// If the queue is modified, the queuePosition is no longer valid.
+type queuePosition struct {
+	// Which of the per-group queues the task is in.
+	GroupQueue *list.Element
+	// The index of the task within the GroupQueue.
+	Index int
+}
+
+// getNextSchedulableTask returns the next task that can be scheduled, and a
+// pointer to the task in the queue.
+func (q *PriorityTaskScheduler) getNextSchedulableTask() (*scpb.EnqueueTaskReservationRequest, *queuePosition) {
+	// Don't use the experimental custom resource scheduling logic if there are
+	// no custom resources configured.
+	if len(q.customResourcesCapacity) == 0 {
+		nextTask := q.q.Peek()
+		if nextTask == nil {
+			return nil, nil
+		}
+		if canFit, _ := q.canFitTask(nextTask); !canFit {
+			return nil, nil
+		}
+		return nextTask, q.q.headRef()
+	}
+
+	// If the tasks at the head of the queue are only waiting for custom
+	// resources to be freed up, then peek ahead in the queue to see if there
+	// are any tasks which don't need custom resources, and allow those to run.
+	//
+	// The idea behind this strategy is that custom resources are expected to
+	// only be needed for relatively heavyweight tasks like GPU tests or Apple
+	// simulator tests, and while those tasks are waiting for the custom
+	// resources to be freed up, we want to allow other "normal" actions (e.g.
+	// compilation actions) to run.
+	iterator := q.q.Iterator()
+	for task := iterator.Next(); task != nil; task = iterator.Next() {
+		canFit, isSkippable := q.canFitTask(task)
+		if canFit {
+			return task, iterator.Current()
+		}
+		if !isSkippable {
+			return nil, nil
+		}
+	}
+	return nil, nil
+}
+
 func (q *PriorityTaskScheduler) handleTask() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -610,11 +788,11 @@ func (q *PriorityTaskScheduler) handleTask() {
 	if qLen == 0 {
 		return
 	}
-	nextTask := q.q.Peek()
-	if nextTask == nil || !q.canFitTask(nextTask) {
+	nextTask, ref := q.getNextSchedulableTask()
+	if nextTask == nil {
 		return
 	}
-	reservation := q.q.Dequeue()
+	reservation := q.q.DequeueAt(ref)
 	if reservation == nil {
 		log.CtxWarningf(q.rootContext, "reservation is nil")
 		return
