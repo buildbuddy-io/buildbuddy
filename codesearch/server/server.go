@@ -416,7 +416,7 @@ func (css *codesearchServer) syncIngestAnnotations(ctx context.Context, req *inp
 		os.Remove(fileName)
 	}()
 
-	sstableName, err := digest.ResourceNameFromProto(req.GetSstableName()).CheckCAS()
+	sstableName, err := digest.CASResourceNameFromProto(req.GetSstableName())
 	if err != nil {
 		return nil, err
 	}

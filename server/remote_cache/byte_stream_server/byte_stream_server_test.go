@@ -198,7 +198,7 @@ func TestRPCMalformedWrite(t *testing.T) {
 	buf[0] = ^buf[0] // flip bits in byte to corrupt digest.
 
 	readSeeker := bytes.NewReader(buf)
-	rn, err := digest.ResourceNameFromProto(instanceNameDigest).CheckCAS()
+	rn, err := digest.CASResourceNameFromProto(instanceNameDigest)
 	if err != nil {
 		t.Fatalf("failed to create resource name: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestRPCTooLongWrite(t *testing.T) {
 	// Test that a malformed upload (wrong bytesize) is rejected.
 	rnProto, buf := testdigest.RandomCASResourceBuf(t, 1000)
 	rnProto.Digest.SizeBytes += 1 // increment expected byte count by 1 to trigger mismatch.
-	instanceNameDigest, err := digest.ResourceNameFromProto(rnProto).CheckCAS()
+	instanceNameDigest, err := digest.CASResourceNameFromProto(rnProto)
 	if err != nil {
 		t.Fatalf("failed to create resource name: %v", err)
 	}

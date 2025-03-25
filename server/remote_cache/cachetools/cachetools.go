@@ -979,7 +979,7 @@ func getSubtree(ctx context.Context, subtree *digest.CASResourceName, fc interfa
 		var stMutex sync.Mutex
 		for _, child := range treeCache.GetTreeCacheChildren() {
 			subtreeEG.Go(func() error {
-				r, err := digest.ResourceNameFromProto(child).CheckCAS()
+				r, err := digest.CASResourceNameFromProto(child)
 				if err != nil {
 					return err
 				}
