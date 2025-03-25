@@ -1166,7 +1166,7 @@ func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) erro
 		return err
 	})
 	if err != nil && err != dragonboat.ErrShardNotFound {
-		// Ignore ShardNOtFound error. The shard can be unloaded or deleted by
+		// Ignore ShardNotFound error. The shard can be unloaded or deleted by
 		// syncRequestDeleteReplica.
 		return status.InternalErrorf("failed to stop replica c%dn%d: %s", rangeID, replicaID, err)
 	}
@@ -1506,48 +1506,6 @@ func (s *Store) newRangeDescriptorFromRaftMembership(ctx context.Context, rangeI
 	return res, nil
 }
 
-// isZombieNode checks whether a node is a zombie node.
-func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo, localRD, remoteRD *rfpb.RangeDescriptor) bool {
-	membershipStatus := s.checkMembershipStatus(ctx, shardInfo)
-	if membershipStatus == membershipStatusNotMember {
-		return true
-	}
-	if membershipStatus == membershipStatusShardNotFound {
-		// The shard was already deleted.
-		return false
-	}
-
-	if localRD == nil {
-		return true
-	}
-
-	// The replica info in the local range descriptor could be out of date. For
-	// example, when another node in the raft cluster proposed to remove this node
-	// when this node is dead. When this node restarted, the range descriptor is
-	// behind, but it cannot get updates from other nodes b/c it was removed from the
-	// cluster.
-
-	if localRD.GetStart() == nil {
-		s.log.Debugf("range descriptor for c%dn%d doesn't have start", shardInfo.ShardID, shardInfo.ReplicaID)
-		// This could happen in the middle of a split. We mark it as a
-		// potential zombie. After *zombieMinDuration, if the range still
-		// doesn't have bound, we assume the split failed and will clean
-		// up the zombie.
-		// Note: due to https://github.com/lni/dragonboat/issues/364, deletion
-		// of the last replica of the shard will fail.
-		return true
-	}
-	if remoteRD.GetGeneration() >= localRD.GetGeneration() {
-		localRD = remoteRD
-	}
-	for _, r := range localRD.GetReplicas() {
-		if r.GetRangeId() == shardInfo.ShardID && r.GetReplicaId() == shardInfo.ReplicaID {
-			return false
-		}
-	}
-	return true
-}
-
 type zombieCleanupAction int
 
 const (
@@ -1596,27 +1554,37 @@ func newReplicaJanitor(clock clockwork.Clock, store *Store) *replicaJanitor {
 func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescriptor) *zombieCleanupTask {
 	rd, foundRange := rangeMap[ss.rangeID]
 	if !ss.opened {
+		// The replica hasn't been started on raft.
 		if foundRange {
+			// The range is found in meta range.
 			ss.rd = rd
 			for _, repl := range rd.GetRemoved() {
 				if repl.GetReplicaId() == ss.replicaID {
+					// The replica is marked for removal; and we want to finish
+					// the clean up process.
 					ss.action = zombieCleanupRemoveData
 					return ss
 				}
 			}
 		}
+
 		ss.action = zombieCleanupNoAction
 		return ss
 	}
+
+	// The replica has been started on raft.
 	if foundRange {
 		ss.rd = rd
 		for _, repl := range rd.GetReplicas() {
 			if repl.GetReplicaId() == ss.replicaID {
+				// The replica is active; so this is not a zombie
 				ss.action = zombieCleanupNoAction
 				return ss
 			}
 		}
 	}
+
+	// The replica is a zombie, and she should remove the replica
 	ss.action = zombieCleanupRemoveReplica
 	return ss
 }
@@ -1676,6 +1644,9 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 			nInfo := j.store.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
 			rangeIDs := make([]uint64, 0, len(nInfo.ShardInfoList))
 			shardStateMap := make(map[uint64]zombieCleanupTask, len(nInfo.LogInfo))
+
+			// Add all the replicas on the machine to shardStateMap, including
+			// replicas that are not currently open.
 			for _, logInfo := range nInfo.LogInfo {
 				if j.store.nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
 					rangeIDs = append(rangeIDs, logInfo.ShardID)
@@ -1685,6 +1656,9 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 					}
 				}
 			}
+
+			// Go through the list of replicas that are currently open on raft,
+			// and mark them in shardStateMap
 			for _, sInfo := range nInfo.ShardInfoList {
 				ss, ok := shardStateMap[sInfo.ShardID]
 				if ok {
@@ -1693,6 +1667,8 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 					shardStateMap[sInfo.ShardID] = ss
 				}
 			}
+
+			// Fetch the range descritpors from meta range
 			ranges, err := j.store.sender.LookupRangeDescriptorsByIDs(ctx, rangeIDs)
 			if err != nil {
 				j.store.log.Warningf("failed to scan zombie nodes: %s", err)
@@ -1702,6 +1678,7 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 			for _, rd := range ranges {
 				rangeMap[rd.GetRangeId()] = rd
 			}
+
 			for rangeID, ss := range shardStateMap {
 				newSS := setZombieAction(&ss, rangeMap)
 				if newSS.action != zombieCleanupNoAction {
