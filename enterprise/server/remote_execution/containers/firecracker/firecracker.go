@@ -448,8 +448,9 @@ func resaveActionSnapshots() bool {
 		log.Errorf("Failed to get hostname: %s", err)
 		return true
 	}
-	// Using this hash because it's very fast and supported in clickhouse (so
-	// we can identify executions that were part of the experiment).
+	// Using this hash because it produces well distributed results, it's very
+	// fast, and it's supported in clickhouse (so we can identify executions
+	// that were part of the experiment).
 	hash := farm.Fingerprint64([]byte(host))
 	ratio := float64(hash) / float64(math.MaxUint64)
 	return ratio <= *resaveActionSnapshotsRatio
