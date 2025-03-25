@@ -20,7 +20,6 @@ go_library(
         "//enterprise/server/util/oci",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//proto:vmvfs_go_proto",
         "//server/environment",
         "//server/interfaces",
