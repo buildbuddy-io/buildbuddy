@@ -45,6 +45,7 @@ func TestGetEventLogChunkMaxBufferSize(t *testing.T) {
 	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(2))] = make([]byte, 8)
 	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(3))] = make([]byte, 8)
 	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(4))] = make([]byte, 8)
+	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(5))] = make([]byte, 8)
 
 	// Set a smaller MaxBufferSize to make testing clearer.
 	oldMaxBufferSize := eventlog.MaxBufferSize
@@ -71,8 +72,9 @@ func TestGetEventLogChunkMaxBufferSize(t *testing.T) {
 	assert.Len(t, rsp.Buffer, 16)
 
 	// If we retrieved two chunks starting at chunk 0, the next chunk should
-	// be index 2.
-	assert.Equal(t, rsp.NextChunkId, fmt.Sprintf("%04x", 2))
+	// be index 2, and the previous chunk should be empty.
+	assert.Equal(t, "", rsp.PreviousChunkId)
+	assert.Equal(t, fmt.Sprintf("%04x", 2), rsp.NextChunkId)
 
 	// Request a truly absurd number of lines (though our test data is only one
 	// line anyway) for the invocation logs, starting at the end.
@@ -91,7 +93,8 @@ func TestGetEventLogChunkMaxBufferSize(t *testing.T) {
 	// two chunks' worth of data (so 16 bytes).
 	assert.Len(t, rsp.Buffer, 16)
 
-	// If we retrieved two chunks starting at chunk 0, the next chunk should
-	// be index 2.
-	assert.Equal(t, rsp.NextChunkId, fmt.Sprintf("%04x", 2))
+	// If we retrieved two chunks starting at chunk 5, the previous chunk should
+	// be index 3, and the next chunk should be index 6.
+	assert.Equal(t, fmt.Sprintf("%04x", 3), rsp.PreviousChunkId)
+	assert.Equal(t, fmt.Sprintf("%04x", 6), rsp.NextChunkId)
 }

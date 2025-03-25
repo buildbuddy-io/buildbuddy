@@ -12,7 +12,6 @@ import (
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
-
 type MockInvocationDB struct {
 	DB map[string]*tables.Invocation
 }
@@ -56,4 +55,3 @@ func (m *MockInvocationDB) FillCounts(ctx context.Context, log *telpb.TelemetryS
 }
 func (m *MockInvocationDB) SetNowFunc(now func() time.Time) {
 }
-
