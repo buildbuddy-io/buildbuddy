@@ -8,10 +8,10 @@ ts_library(
     name = "secrets",
     srcs = ["secrets.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//enterprise/app/secrets:secrets_list",
         "//enterprise/app/secrets:update_secret",
-        "@npm//@types/react",
-        "@npm//react",
     ],
 )
 
@@ -19,6 +19,9 @@ ts_library(
     name = "secrets_list",
     srcs = ["secrets_list.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/components/button",
         "//app/components/button:link_button",
@@ -27,9 +30,6 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:secrets_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
     ],
 )
 
@@ -37,6 +37,9 @@ ts_library(
     name = "update_secret",
     srcs = ["update_secret.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/path-browserify",  # keep
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/components/button",
         "//app/components/input",
@@ -45,9 +48,6 @@ ts_library(
         "//app/errors:error_service",
         "//app/router",
         "//enterprise/app/secrets:secret_util",
-        "@npm//@types/react",
-        "@npm//path-browserify",  # keep
-        "@npm//react",
     ],
 )
 
@@ -55,9 +55,9 @@ ts_library(
     name = "secret_util",
     srcs = ["secret_util.ts"],
     deps = [
+        "//:node_modules/@types/libsodium-wrappers",
+        "//:node_modules/libsodium-wrappers",
         "//app/service:rpc_service",
         "//proto:secrets_ts_proto",
-        "@npm//@types/libsodium-wrappers",
-        "@npm//libsodium-wrappers",
     ],
 )
