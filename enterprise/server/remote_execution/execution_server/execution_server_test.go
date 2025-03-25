@@ -720,7 +720,36 @@ func TestMarkFailed(t *testing.T) {
 
 	err = s.MarkExecutionFailed(ctx, "blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1", status.InternalError("It didn't work"))
 	require.True(t, status.IsNotFoundError(err), "error should be NotFoundError, but was %s", err)
+}
 
+func TestInvocationLink_EmptyInvocationID(t *testing.T) {
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	env, conn := setupEnv(t)
+	client := repb.NewExecutionClient(conn)
+	execCollector := new(fakeCollector)
+	env.SetExecutionCollector(execCollector)
+
+	// Start an execution with an empty invocation ID.
+	clientCtx := context.Background()
+	instanceName := ""
+	digestFunction := repb.DigestFunction_SHA256
+	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{})
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+
+	// Wait for the execution to be accepted by the server.
+	_, err = executionClient.Recv()
+	require.NoError(t, err)
+
+	// No invocation links should be recorded.
+	require.Empty(t, execCollector.invocationLinks)
+
+	err = executionClient.CloseSend()
+	require.NoError(t, err)
 }
 
 func uploadAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, action *repb.Action) *digest.ResourceName {

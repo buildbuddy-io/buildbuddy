@@ -221,6 +221,13 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 }
 
 func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType sipb.StoredInvocationLink_Type) error {
+	// Don't insert invocation links for empty invocation IDs, which can happen
+	// when performing an execution using build tools that don't send
+	// an invocation ID in RequestMetadata.
+	if invocationID == "" {
+		return nil
+	}
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
