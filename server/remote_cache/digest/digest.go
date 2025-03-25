@@ -105,6 +105,7 @@ type ResourceName struct {
 	rn *rspb.ResourceName
 }
 
+// TODO: Introduce typed variants that return *CASResourceName or *ACResourceName.
 func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
 	rn := in.CloneVT()
 	// TODO(tylerw): remove once digest function is explicit everywhere.
