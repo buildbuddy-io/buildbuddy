@@ -24,7 +24,7 @@ ts_jasmine_node_test(
     srcs = ["async_test.ts"],
     deps = [
         ":async",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -55,7 +55,7 @@ ts_library(
 ts_library(
     name = "git",
     srcs = ["git.ts"],
-    deps = ["@npm//tslib"],
+    deps = ["//:node_modules/tslib"],
 )
 
 ts_jasmine_node_test(
@@ -94,11 +94,11 @@ ts_library(
     name = "proto",
     srcs = ["proto.ts"],
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
+        "//:node_modules/protobufjs",
         "//proto:duration_ts_proto",
         "//proto:timestamp_ts_proto",
-        "@npm//@types/long",
-        "@npm//long",
-        "@npm//protobufjs",
     ],
 )
 
@@ -131,8 +131,8 @@ ts_library(
     name = "react",
     srcs = ["react.tsx"],
     deps = [
-        "@npm//@types/react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 
@@ -140,12 +140,12 @@ ts_library(
     name = "cache",
     srcs = ["cache.tsx"],
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
+        "//:node_modules/tslib",
         "//proto:build_event_stream_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:resource_ts_proto",
-        "@npm//@types/long",
-        "@npm//long",
-        "@npm//tslib",
     ],
 )
 
@@ -154,7 +154,7 @@ ts_jasmine_node_test(
     srcs = ["cache_test.ts"],
     deps = [
         ":cache",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -174,6 +174,7 @@ ts_library(
     name = "remote_runner",
     srcs = ["remote_runner.tsx"],
     deps = [
+        "//:node_modules/tslib",
         "//app/errors:error_service",
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
@@ -181,6 +182,5 @@ ts_library(
         "//proto:github_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:runner_ts_proto",
-        "@npm//tslib",
     ],
 )

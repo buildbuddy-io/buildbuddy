@@ -6,12 +6,12 @@ ts_library(
     name = "menu",
     srcs = ["menu.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/preferences",
         "//app/router",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
     ],
 )

@@ -1,10 +1,19 @@
+load("@npm//:prettier/package_json.bzl", "bin")
+
+package(
+    default_visibility = ["//visibility:public"],
+)
+
+bin.prettier_binary(
+    name = "prettier_bin",
+)
+
 sh_binary(
     name = "prettier",
     srcs = ["prettier.sh"],
     data = [
-        "@npm//prettier/bin:prettier",
+        ":prettier_bin",
     ],
-    visibility = ["//visibility:public"],
     deps = [
         "@bazel_tools//tools/bash/runfiles",
     ],

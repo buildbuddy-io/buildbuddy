@@ -287,63 +287,117 @@ load("@com_github_sluongng_nogo_analyzer//staticcheck:deps.bzl", "staticcheck")
 
 staticcheck()
 
-# Node
+# JS
 
 http_archive(
-    name = "build_bazel_rules_nodejs",
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:build_bazel_rules_nodejs.patch",
-    ],
-    sha256 = "a1295b168f183218bc88117cf00674bcd102498f294086ff58318f830dd9d9d1",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.5/rules_nodejs-5.8.5.tar.gz"],
+    name = "aspect_rules_js",
+    sha256 = "d66f8abf914a0454a69181b7b17acaae56d7b0e2784cb26b40cb3273c4d836d1",
+    strip_prefix = "rules_js-2.2.0",
+    url = "https://github.com/aspect-build/rules_js/releases/download/v2.2.0/rules_js-v2.2.0.tar.gz",
 )
 
-http_archive(
-    name = "rules_nodejs",
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:build_bazel_rules_nodejs.patch",
-    ],
-    sha256 = "0c2277164b1752bb71ecfba3107f01c6a8fb02e4835a790914c71dfadcf646ba",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.5/rules_nodejs-core-5.8.5.tar.gz"],
-)
+load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
 
-load("@build_bazel_rules_nodejs//:repositories.bzl", "build_bazel_rules_nodejs_dependencies")
+rules_js_dependencies()
 
-build_bazel_rules_nodejs_dependencies()
+load("@aspect_rules_js//js:toolchains.bzl", "rules_js_register_toolchains")
 
-load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
+rules_js_register_toolchains(node_version = "18.20.3")
 
-nodejs_register_toolchains(
-    name = "nodejs",
-    node_version = "18.20.3",
-)
+load("@aspect_rules_js//npm:repositories.bzl", "npm_translate_lock")
 
-load("@rules_nodejs//nodejs:yarn_repositories.bzl", "yarn_repositories")
-
-yarn_repositories(
-    name = "yarn",
-    yarn_version = "1.22.10",
-)
-
-load("@build_bazel_rules_nodejs//:index.bzl", "yarn_install")
-
-yarn_install(
+npm_translate_lock(
     name = "npm",
-    exports_directories_only = False,
-    package_json = "//:package.json",
-    patch_args = [
-        "-p1",
-        "--binary",
-    ],
-    post_install_patches = [
-        # Patch out use of eval to satisfy a strict CSP.
-        # https://github.com/protobufjs/protobuf.js/issues/593
-        "//buildpatches:protobuf.js_inquire.patch",
-    ],
-    symlink_node_modules = False,
-    yarn_lock = "//:yarn.lock",
+    npmrc = "//:.npmrc",
+    patch_args = {
+        "@protobufjs/inquire": [
+            "-p1",
+            "--binary",
+        ],
+    },
+    patches = {
+        "@protobufjs/inquire": [
+            # Patch out use of eval to satisfy a strict CSP.
+            # https://github.com/protobufjs/protobuf.js/issues/593
+            "//buildpatches:protobuf.js_inquire.patch",
+        ],
+    },
+    pnpm_lock = "//:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//:.bazelignore",
+)
+
+load("@npm//:repositories.bzl", "npm_repositories")
+
+npm_repositories()
+
+# TS
+
+http_archive(
+    name = "aspect_rules_ts",
+    sha256 = "d584e4bc80674d046938563678117d17df962fe105395f6b1efe2e8a248b8100",
+    strip_prefix = "rules_ts-3.5.1",
+    url = "https://github.com/aspect-build/rules_ts/releases/download/v3.5.1/rules_ts-v3.5.1.tar.gz",
+)
+
+load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
+
+rules_ts_dependencies(
+    # TODO: Remove after the next aspect_rules_ts update.
+    ts_integrity = "sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ==",
+    ts_version_from = "//:package.json",
+)
+
+# esbuild
+
+http_archive(
+    name = "aspect_rules_esbuild",
+    sha256 = "550e33ddeb86a564b22b2c5d3f84748c6639b1b2b71fae66bf362c33392cbed8",
+    strip_prefix = "rules_esbuild-0.21.0",
+    url = "https://github.com/aspect-build/rules_esbuild/releases/download/v0.21.0/rules_esbuild-v0.21.0.tar.gz",
+)
+
+load("@aspect_rules_esbuild//esbuild:dependencies.bzl", "rules_esbuild_dependencies")
+
+rules_esbuild_dependencies()
+
+load("@aspect_rules_esbuild//esbuild:repositories.bzl", "LATEST_ESBUILD_VERSION", "esbuild_register_toolchains")
+
+esbuild_register_toolchains(
+    name = "esbuild",
+    esbuild_version = LATEST_ESBUILD_VERSION,
+)
+
+# jasmine
+
+http_archive(
+    name = "aspect_rules_jasmine",
+    sha256 = "0d2f9c977842685895020cac721d8cc4f1b37aae15af46128cf619741dc61529",
+    strip_prefix = "rules_jasmine-2.0.0",
+    url = "https://github.com/aspect-build/rules_jasmine/releases/download/v2.0.0/rules_jasmine-v2.0.0.tar.gz",
+)
+
+load("@aspect_rules_jasmine//jasmine:dependencies.bzl", "rules_jasmine_dependencies")
+
+rules_jasmine_dependencies()
+
+# swc
+
+http_archive(
+    name = "aspect_rules_swc",
+    sha256 = "d9ed410eb6a5c605345d872f0c4c50138bda3c572db2aed1796cf397fa361986",
+    strip_prefix = "rules_swc-2.3.0",
+    url = "https://github.com/aspect-build/rules_swc/releases/download/v2.3.0/rules_swc-v2.3.0.tar.gz",
+)
+
+load("@aspect_rules_swc//swc:dependencies.bzl", "rules_swc_dependencies")
+
+rules_swc_dependencies()
+
+load("@aspect_rules_swc//swc:repositories.bzl", "swc_register_toolchains")
+
+swc_register_toolchains(
+    name = "swc",
+    swc_version = "v1.3.78",
 )
 
 # Proto -- must be before container_repositories so we don't inherit their rules_pkg.
@@ -572,31 +626,6 @@ http_archive(
     sha256 = "0a824a6e224d9810514f4a2f4a13f09488672ad483bb0e978c16d8a6b3372625",
     strip_prefix = "cloudprober-v0.11.2-ubuntu-x86_64",
     urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
-)
-
-# esbuild (for bundling JS)
-
-load("@build_bazel_rules_nodejs//toolchains/esbuild:esbuild_repositories.bzl", "esbuild_repositories")
-
-esbuild_repositories(npm_repository = "npm")
-
-# SWC (for transpiling TS -> JS)
-http_archive(
-    name = "aspect_rules_swc",
-    sha256 = "d63d7b283249fa942f78d2716ecff3edbdc10104ee1b9a6b9464ece471ef95ea",
-    strip_prefix = "rules_swc-2.0.0",
-    url = "https://github.com/aspect-build/rules_swc/releases/download/v2.0.0/rules_swc-v2.0.0.tar.gz",
-)
-
-load("@aspect_rules_swc//swc:dependencies.bzl", "rules_swc_dependencies")
-
-rules_swc_dependencies()
-
-load("@aspect_rules_swc//swc:repositories.bzl", "swc_register_toolchains")
-
-swc_register_toolchains(
-    name = "swc",
-    swc_version = "v1.3.78",
 )
 
 # Web testing
