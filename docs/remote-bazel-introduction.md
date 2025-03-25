@@ -26,7 +26,7 @@ Remote Bazel also has the following performance benefits:
    take advantage of **warm Bazel instances**.
 
 Remote Bazel uses the same backend technology as our CI product, BuildBuddy
-Workflows. See [our docs on BuildBuddy Workflows](https://www.buildbuddy.io/docs/workflows-introduction/)
+Workflows. See [our docs on BuildBuddy Workflows](https://www.buildbuddy.io/docs/workflows-setup/)
 for a more in-depth description of the performance optimizations and mechanism
 for workspace recycling.
 
