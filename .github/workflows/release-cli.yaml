@@ -158,7 +158,7 @@ jobs:
           path: buildbuddy
 
       - name: Restore MacOS caches
-        if: matrix.os == 'macos-13' || matrix.os == 'macos-13-xlarge'
+        if: runner.os == 'macOS'
         id: restore-caches
         uses: ./buildbuddy/.github/actions/cache-restore
         with:
@@ -167,7 +167,7 @@ jobs:
           yarn-cache-dir: /Users/runner/.cache/yarn/v6
 
       - name: Restore Linux caches
-        if: matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-22.04-16cpu-arm64-arm-limited'
+        if: runner.os == 'Linux'
         id: restore-caches
         uses: ./buildbuddy/.github/actions/cache-restore
 
@@ -219,7 +219,7 @@ jobs:
 
       - name: Save MacOS cache
         uses: ./buildbuddy/.github/actions/cache-save
-        if: matrix.os == 'macos-13' || matrix.os == 'macos-13-xlarge'
+        if: runner.os == 'macOS'
         with:
           repo-cache-dir: /Users/runner/repo-cache
           go-mod-cache-dir: /Users/runner/go-mod-cache
@@ -230,7 +230,7 @@ jobs:
 
       - name: Save Linux caches
         uses: ./buildbuddy/.github/actions/cache-save
-        if: matrix.os == 'ubuntu-20.04' || matrix.os == 'ubuntu-22.04-16cpu-arm64-arm-limited'
+        if: runner.os == 'Linux'
         with:
           repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
           go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
