@@ -33,7 +33,7 @@ const (
 // is broken.
 type Publisher struct {
 	taskID           string
-	taskResourceName *digest.ResourceName
+	taskResourceName *digest.CASResourceName
 
 	// Execution stage as defined by the remote execution API.
 	executionStage repb.ExecutionStage_Value
@@ -47,7 +47,7 @@ type Publisher struct {
 	stream *retryingClient
 }
 
-func newPublisher(stream *retryingClient, taskID string, taskResourceName *digest.ResourceName) *Publisher {
+func newPublisher(stream *retryingClient, taskID string, taskResourceName *digest.CASResourceName) *Publisher {
 	return &Publisher{
 		stream:           stream,
 		taskID:           taskID,
@@ -331,8 +331,8 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *dige
 	}
 }
 
-func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName, er *repb.ExecuteResponse) error {
-	op, err := Assemble(taskID, Metadata(repb.ExecutionStage_COMPLETED, adInstanceDigest), er)
+func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *digest.ACResourceName, er *repb.ExecuteResponse) error {
+	op, err := Assemble(taskID, Metadata(repb.ExecutionStage_COMPLETED, &adInstanceDigest.ResourceName), er)
 	if err != nil {
 		return err
 	}

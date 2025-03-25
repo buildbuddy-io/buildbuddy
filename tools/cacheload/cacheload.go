@@ -30,7 +30,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -129,7 +128,7 @@ func incrementPromErrorMetric(err error) {
 
 func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest, error) {
 	d, buf := newRandomDigestBuf(randomBlobSize())
-	resourceName := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256)
 	if *writeCompressed {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
@@ -146,7 +145,7 @@ func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest,
 }
 
 func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, d *repb.Digest) error {
-	resourceName := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256)
 	if *readCompressed {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
@@ -167,7 +166,7 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, casClient repb.
 	})
 }
 
-func batchReadSingleBlob(ctx context.Context, casClient repb.ContentAddressableStorageClient, rn *digest.ResourceName) ([]byte, error) {
+func batchReadSingleBlob(ctx context.Context, casClient repb.ContentAddressableStorageClient, rn *digest.CASResourceName) ([]byte, error) {
 	responses, err := cachetools.BatchReadBlobs(ctx, casClient, &repb.BatchReadBlobsRequest{
 		InstanceName:          rn.GetInstanceName(),
 		AcceptableCompressors: []repb.Compressor_Value{rn.GetCompressor()},

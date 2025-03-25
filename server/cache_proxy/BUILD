@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/cache_proxy",
     deps = [
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//proto:semver_go_proto",
         "//server/environment",
         "//server/interfaces",

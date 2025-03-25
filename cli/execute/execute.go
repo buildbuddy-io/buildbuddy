@@ -156,11 +156,16 @@ func execute(cmdArgs []string) error {
 		return err
 	}
 	log.Debugf("Uploaded inputs in %s", time.Since(stageStart))
-	actionStr, err := digest.ResourceNameFromProto(arn).DownloadString()
-	if err != nil {
-		log.Debugf("Failed to compute action resource name: %s", err)
+	acrn, err := digest.CASResourceNameFromProto(arn)
+	if err == nil {
+		actionStr, err := acrn.DownloadString()
+		if err != nil {
+			log.Debugf("Failed to compute action resource name: %s", err)
+		} else {
+			log.Debugf("Action resource name: %s", actionStr)
+		}
 	} else {
-		log.Debugf("Action resource name: %s", actionStr)
+		log.Debugf("Failed to compute action resource name: %s", err)
 	}
 	stageStart = time.Now()
 	log.Debug("Starting /Execute request")

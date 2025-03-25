@@ -23,7 +23,6 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -112,7 +111,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
-	cacheRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS, r.GetDigestFunction())
+	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
 	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && req.ReadOffset == 0 && req.ReadLimit == 0
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
@@ -211,7 +210,7 @@ type writeState struct {
 	cacheCloser        io.Closer
 
 	checksum           *Checksum
-	resourceName       *digest.ResourceName
+	resourceName       *digest.CASResourceName
 	resourceNameString string
 	offset             int64
 }
@@ -256,7 +255,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		resourceNameString: req.ResourceName,
 	}
 
-	casRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS, r.GetDigestFunction())
+	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
 	if s.cache.SupportsCompressor(r.GetCompressor()) {
 		casRN.SetCompressor(r.GetCompressor())
 	}
@@ -557,7 +556,7 @@ func (s *Checksum) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (s *Checksum) Check(r *digest.ResourceName) error {
+func (s *Checksum) Check(r *digest.CASResourceName) error {
 	d := r.GetDigest()
 	computedDigest := fmt.Sprintf("%x", s.hash.Sum(nil))
 	if computedDigest != d.GetHash() {

@@ -105,6 +105,7 @@ type ResourceName struct {
 	rn *rspb.ResourceName
 }
 
+// Prefer either CASResourceNameFromProto or ACResourceNameFromProto.
 func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
 	rn := in.CloneVT()
 	// TODO(tylerw): remove once digest function is explicit everywhere.
@@ -116,6 +117,17 @@ func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
 	}
 }
 
+func CASResourceNameFromProto(in *rspb.ResourceName) (*CASResourceName, error) {
+	rn := ResourceNameFromProto(in)
+	return rn.CheckCAS()
+}
+
+func ACResourceNameFromProto(in *rspb.ResourceName) (*ACResourceName, error) {
+	rn := ResourceNameFromProto(in)
+	return rn.CheckAC()
+}
+
+// Prefer either NewCASResourceName or NewACResourceName.
 func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheType, digestFunction repb.DigestFunction_Value) *ResourceName {
 	if digestFunction == repb.DigestFunction_UNKNOWN {
 		digestFunction = InferOldStyleDigestFunctionInDesperation(d)
@@ -129,6 +141,28 @@ func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheTy
 			DigestFunction: digestFunction,
 		},
 	}
+}
+
+func NewCASResourceName(d *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) *CASResourceName {
+	return &CASResourceName{*NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction)}
+}
+
+func NewACResourceName(d *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) *ACResourceName {
+	return &ACResourceName{*NewResourceName(d, instanceName, rspb.CacheType_AC, digestFunction)}
+}
+
+func (r *ResourceName) CheckCAS() (*CASResourceName, error) {
+	if r.rn.GetCacheType() != rspb.CacheType_CAS {
+		return nil, status.FailedPreconditionErrorf("ResourceName is not a CAS resource name: %s", r.rn)
+	}
+	return &CASResourceName{*r}, nil
+}
+
+func (r *ResourceName) CheckAC() (*ACResourceName, error) {
+	if r.rn.GetCacheType() != rspb.CacheType_AC {
+		return nil, status.FailedPreconditionErrorf("ResourceName is not an AC resource name: %s", r.rn)
+	}
+	return &ACResourceName{*r}, nil
 }
 
 func (r *ResourceName) ToProto() *rspb.ResourceName {
@@ -183,12 +217,14 @@ func (r *ResourceName) Validate() error {
 	return nil
 }
 
+type CASResourceName struct {
+	ResourceName
+}
+
 // DownloadString returns a string representing the resource name for download
 // purposes.
-func (r *ResourceName) DownloadString() (string, error) {
-	if r.rn.GetCacheType() != rspb.CacheType_CAS {
-		return "", status.FailedPreconditionError("Cannot compute bytestream download string for non-CAS resource name")
-	}
+// TODO: Drop the error return value, which is always nil.
+func (r *CASResourceName) DownloadString() (string, error) {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
@@ -205,40 +241,13 @@ func (r *ResourceName) DownloadString() (string, error) {
 	}
 }
 
-// ActionCacheString returns a string representing the resource name for in
-// the action cache. This is BuildBuddy specific.
-func (r *ResourceName) ActionCacheString() (string, error) {
-	if r.rn.GetCacheType() != rspb.CacheType_AC {
-		return "", status.FailedPreconditionError("Cannot compute bytestream download string for non-CAS resource name")
-	}
-	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
-	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
-	if isOldStyleDigestFunction(r.rn.DigestFunction) {
-		return fmt.Sprintf(
-			"%s/%s/ac/%s/%d",
-			instanceName, blobTypeSegment(r.GetCompressor()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
-	} else {
-		return fmt.Sprintf(
-			"%s/%s/ac/%s/%s/%d",
-			instanceName, blobTypeSegment(r.GetCompressor()),
-			strings.ToLower(r.rn.DigestFunction.String()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
-	}
-}
-
 // UploadString returns a string representing the resource name for upload
 // purposes.
-func (r *ResourceName) UploadString() (string, error) {
-	if r.rn.GetCacheType() != rspb.CacheType_CAS {
-		return "", status.FailedPreconditionError("Cannot compute bytestream upload string for non-CAS resource name")
-	}
+// TODO: Drop the error return value, which is always nil.
+func (r *CASResourceName) UploadString() (string, error) {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
-	u, err := guuid.NewRandom()
-	if err != nil {
-		return "", err
-	}
+	u := guuid.New()
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
 		return fmt.Sprintf(
 			"%s/uploads/%s/%s/%s/%d",
@@ -252,6 +261,30 @@ func (r *ResourceName) UploadString() (string, error) {
 			strings.ToLower(r.rn.DigestFunction.String()),
 			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
 		), nil
+	}
+}
+
+type ACResourceName struct {
+	ResourceName
+}
+
+// ActionCacheString returns a string representing the resource name for in
+// the action cache. This is BuildBuddy specific.
+// TODO: Drop the error return value, which is always nil.
+func (r *ACResourceName) ActionCacheString() (string, error) {
+	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
+	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	if isOldStyleDigestFunction(r.rn.DigestFunction) {
+		return fmt.Sprintf(
+			"%s/%s/ac/%s/%d",
+			instanceName, blobTypeSegment(r.GetCompressor()),
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+	} else {
+		return fmt.Sprintf(
+			"%s/%s/ac/%s/%s/%d",
+			instanceName, blobTypeSegment(r.GetCompressor()),
+			strings.ToLower(r.rn.DigestFunction.String()),
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
 	}
 }
 
@@ -474,16 +507,28 @@ func parseResourceName(resourceName string, matcher *regexp.Regexp, cacheType rs
 	return r, nil
 }
 
-func ParseUploadResourceName(resourceName string) (*ResourceName, error) {
-	return parseResourceName(resourceName, uploadRegex, rspb.CacheType_CAS)
+func ParseUploadResourceName(resourceName string) (*CASResourceName, error) {
+	rn, err := parseResourceName(resourceName, uploadRegex, rspb.CacheType_CAS)
+	if err != nil {
+		return nil, err
+	}
+	return rn.CheckCAS()
 }
 
-func ParseDownloadResourceName(resourceName string) (*ResourceName, error) {
-	return parseResourceName(resourceName, downloadRegex, rspb.CacheType_CAS)
+func ParseDownloadResourceName(resourceName string) (*CASResourceName, error) {
+	rn, err := parseResourceName(resourceName, downloadRegex, rspb.CacheType_CAS)
+	if err != nil {
+		return nil, err
+	}
+	return rn.CheckCAS()
 }
 
-func ParseActionCacheResourceName(resourceName string) (*ResourceName, error) {
-	return parseResourceName(resourceName, actionCacheRegex, rspb.CacheType_AC)
+func ParseActionCacheResourceName(resourceName string) (*ACResourceName, error) {
+	rn, err := parseResourceName(resourceName, actionCacheRegex, rspb.CacheType_AC)
+	if err != nil {
+		return nil, err
+	}
+	return rn.CheckAC()
 }
 
 func IsDownloadResourceName(url string) bool {

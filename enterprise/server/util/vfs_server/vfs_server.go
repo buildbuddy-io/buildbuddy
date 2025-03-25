@@ -36,7 +36,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	gstatus "google.golang.org/grpc/status"
@@ -778,7 +777,7 @@ func newCASFetcher(env environment.Env, remoteInstanceName string, digestFunctio
 
 func (cf *casFetcher) downloadToFileCache(ctx context.Context, node *fsNode) error {
 	bsClient := cf.env.GetByteStreamClient()
-	rn := digest.NewResourceName(node.fileNode.GetDigest(), cf.remoteInstanceName, rspb.CacheType_CAS, cf.digestFunction)
+	rn := digest.NewCASResourceName(node.fileNode.GetDigest(), cf.remoteInstanceName, cf.digestFunction)
 	rn.SetCompressor(repb.Compressor_ZSTD)
 	w, err := cf.env.GetFileCache().Writer(ctx, node.fileNode, cf.digestFunction)
 	if err != nil {

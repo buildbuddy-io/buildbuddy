@@ -36,7 +36,6 @@ go_library(
         "//proto:context_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//proto:scheduler_go_proto",
         "//server/build_event_protocol/build_event_handler",
         "//server/build_event_protocol/build_event_server",

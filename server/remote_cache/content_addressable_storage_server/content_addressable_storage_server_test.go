@@ -747,13 +747,9 @@ func TestGetTreeWithSubtrees(t *testing.T) {
 	assert.Equal(t, 1, len(subtrees))
 
 	subtree := &capb.TreeCache{}
-	err = cachetools.GetBlobAsProto(ctx, bsClient, digest.ResourceNameFromProto(&rspb.ResourceName{
-		Digest:         subtrees[0].GetDigest(),
-		InstanceName:   subtrees[0].GetInstanceName(),
-		Compressor:     subtrees[0].GetCompressor(),
-		DigestFunction: subtrees[0].GetDigestFunction(),
-		CacheType:      rspb.CacheType_CAS,
-	}), subtree)
+	rn := digest.NewCASResourceName(subtrees[0].GetDigest(), instanceName, subtrees[0].GetDigestFunction())
+	rn.SetCompressor(subtrees[0].GetCompressor())
+	err = cachetools.GetBlobAsProto(ctx, bsClient, rn, subtree)
 	assert.NoError(t, err)
 
 	uploadedFiles2 := append(nodeModulesFiles, child3Files...)

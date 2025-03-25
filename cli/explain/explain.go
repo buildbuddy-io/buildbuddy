@@ -236,7 +236,7 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 	return in, err
 }
 
-func getExecLogResource(ctx context.Context, conn *grpc_client.ClientConnPool, invocationId string) (*digest.ResourceName, error) {
+func getExecLogResource(ctx context.Context, conn *grpc_client.ClientConnPool, invocationId string) (*digest.CASResourceName, error) {
 	resp, err := bbspb.NewBuildBuddyServiceClient(conn).GetInvocation(ctx, &invocation.GetInvocationRequest{
 		Lookup: &invocation.InvocationLookup{InvocationId: invocationId},
 	})

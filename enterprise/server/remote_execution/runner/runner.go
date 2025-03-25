@@ -44,7 +44,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -249,10 +248,10 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 }
 
 func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
-	rootInstanceDigest := digest.NewResourceName(
+	rootInstanceDigest := digest.NewCASResourceName(
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
-		rspb.CacheType_CAS, r.task.GetExecuteRequest().GetDigestFunction())
+		r.task.GetExecuteRequest().GetDigestFunction())
 	inputTree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(
 		ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest, r.env.GetFileCache(), r.env.GetByteStreamClient())
 	if err != nil {

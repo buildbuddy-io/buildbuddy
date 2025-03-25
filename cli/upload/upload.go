@@ -18,7 +18,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -103,7 +102,7 @@ func uploadFile(args []string) error {
 	if err != nil {
 		return err
 	}
-	ind := digest.NewResourceName(d, *remoteInstanceName, rspb.CacheType_CAS, digestFunction)
+	ind := digest.NewCASResourceName(d, *remoteInstanceName, digestFunction)
 	if *compress {
 		ind.SetCompressor(repb.Compressor_ZSTD)
 	}

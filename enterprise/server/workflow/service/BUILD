@@ -65,7 +65,6 @@ go_test(
         "//proto:buildbuddy_service_go_proto",
         "//proto:git_go_proto",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//proto:workflow_go_proto",
         "//server/backends/repo_downloader",
         "//server/buildbuddy_server",

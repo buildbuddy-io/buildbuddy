@@ -19,7 +19,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -86,7 +85,7 @@ type Command struct {
 
 	gRPCClientSource GRPCClientSource
 
-	actionResourceName *digest.ResourceName
+	actionResourceName *digest.ACResourceName
 
 	cancelExecutionRequest context.CancelFunc
 	accepted               chan string
@@ -110,7 +109,7 @@ func (c *Command) AcceptedChannel() <-chan string {
 	return c.accepted
 }
 
-func (c *Command) GetActionResourceName() *digest.ResourceName {
+func (c *Command) GetActionResourceName() *digest.ACResourceName {
 	return c.actionResourceName
 }
 
@@ -315,7 +314,7 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 	command := &Command{
 		gRPCClientSource:   c.gRPClientSource,
 		Name:               name,
-		actionResourceName: digest.NewResourceName(actionDigest, instanceName, rspb.CacheType_AC, repb.DigestFunction_SHA256),
+		actionResourceName: digest.NewACResourceName(actionDigest, instanceName, repb.DigestFunction_SHA256),
 	}
 
 	return command, nil
@@ -327,7 +326,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
 			return err
 		}
-		d := digest.NewResourceName(out.GetDigest(), res.InstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		d := digest.NewCASResourceName(out.GetDigest(), res.InstanceName, repb.DigestFunction_SHA256)
 		f, err := os.Create(path)
 		if err != nil {
 			return err
@@ -343,7 +342,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(path, 0777); err != nil {
 			return err
 		}
-		treeDigest := digest.NewResourceName(dir.GetTreeDigest(), res.InstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		treeDigest := digest.NewCASResourceName(dir.GetTreeDigest(), res.InstanceName, repb.DigestFunction_SHA256)
 		tree := &repb.Tree{}
 		if err := cachetools.GetBlobAsProto(ctx, c.gRPClientSource.GetByteStreamClient(), treeDigest, tree); err != nil {
 			return err

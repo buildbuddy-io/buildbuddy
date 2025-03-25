@@ -26,7 +26,6 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
@@ -76,8 +75,8 @@ func logExecutionMetadata(ctx context.Context, md *repb.ExecutedActionMetadata) 
 		qTime.Milliseconds(), fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds(), cpuMillis)
 }
 
-func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, sourceRN *digest.ResourceName) error {
-	targetRN := digest.NewResourceName(sourceRN.GetDigest(), *targetRemoteInstanceName, rspb.CacheType_CAS, sourceRN.GetDigestFunction())
+func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, sourceRN *digest.CASResourceName) error {
+	targetRN := digest.NewCASResourceName(sourceRN.GetDigest(), *targetRemoteInstanceName, sourceRN.GetDigestFunction())
 	exists, err := fmb.Exists(targetCtx, targetRN.GetDigest())
 	if err != nil {
 		return err
@@ -119,7 +118,7 @@ func (r *Replayer) copyTree(ctx context.Context, sourceRemoteInstanceName string
 				if _, copied := r.copiedDigests.Load(file.GetDigest().GetHash()); copied {
 					return nil
 				}
-				rn := digest.NewResourceName(file.GetDigest(), sourceRemoteInstanceName, rspb.CacheType_CAS, digestType)
+				rn := digest.NewCASResourceName(file.GetDigest(), sourceRemoteInstanceName, digestType)
 				err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, rn)
 				if err != nil {
 					return err
@@ -139,7 +138,7 @@ func (r *Replayer) copyTree(ctx context.Context, sourceRemoteInstanceName string
 func fetchStdoutOrStderr(ctx context.Context, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value, runDir, name string) error {
 	buf := &bytes.Buffer{}
 	if d.GetSizeBytes() != 0 {
-		ind := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, digestType)
+		ind := digest.NewCASResourceName(d, *targetRemoteInstanceName, digestType)
 		if err := cachetools.GetBlob(ctx, from, ind, buf); err != nil {
 			return err
 		}
@@ -238,7 +237,7 @@ func main() {
 	replayer.uploadGroup.SetLimit(3)
 	replayer.executeGroup.SetLimit(*jobs)
 
-	var resourceNames []*digest.ResourceName
+	var resourceNames []*digest.CASResourceName
 
 	if *actionDigest != "" {
 		// For backwards compatibility, attempt to fixup old style digest
@@ -316,7 +315,7 @@ type Replayer struct {
 	copiedDigests sync.Map
 }
 
-func (r *Replayer) Start(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.ResourceName) error {
+func (r *Replayer) Start(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.CASResourceName) error {
 	if r.fmb == nil {
 		r.fmb = NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), r.destCASClient, FindMissingBatcherOpts{})
 	}
@@ -331,7 +330,7 @@ func (r *Replayer) Wait() error {
 	return r.replayGroup.Wait()
 }
 
-func (r *Replayer) replay(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.ResourceName) error {
+func (r *Replayer) replay(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.CASResourceName) error {
 	// Fetch the action to ensure it exists.
 	action := &repb.Action{}
 	if err := cachetools.GetBlobAsProto(srcCtx, r.sourceBSClient, sourceExecutionRN, action); err != nil {
@@ -353,7 +352,7 @@ func (r *Replayer) replay(ctx, srcCtx, targetCtx context.Context, sourceExecutio
 	return r.execute(ctx, srcCtx, targetCtx, action, sourceExecutionRN)
 }
 
-func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.ResourceName) error {
+func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.CASResourceName) error {
 	s, _ := sourceExecutionRN.DownloadString()
 	log.Infof("Uploading Action, Command, and inputs for execution %q", s)
 	eg, targetCtx := errgroup.WithContext(targetCtx)
@@ -365,14 +364,14 @@ func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.A
 		return nil
 	})
 	eg.Go(func() error {
-		commandRN := digest.NewResourceName(action.GetCommandDigest(), sourceExecutionRN.GetInstanceName(), rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
+		commandRN := digest.NewCASResourceName(action.GetCommandDigest(), sourceExecutionRN.GetInstanceName(), sourceExecutionRN.GetDigestFunction())
 		if err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, commandRN); err != nil {
 			return status.WrapError(err, "copy command")
 		}
 		return nil
 	})
 	eg.Go(func() error {
-		treeRN := digest.NewResourceName(action.GetInputRootDigest(), sourceExecutionRN.GetInstanceName(), rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
+		treeRN := digest.NewCASResourceName(action.GetInputRootDigest(), sourceExecutionRN.GetInstanceName(), sourceExecutionRN.GetDigestFunction())
 		tree, err := cachetools.GetTreeFromRootDirectoryDigest(srcCtx, r.sourceCASClient, treeRN)
 		if err != nil {
 			return status.WrapError(err, "GetTree")
@@ -389,11 +388,11 @@ func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.A
 	return nil
 }
 
-func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.ResourceName) error {
+func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.CASResourceName) error {
 	// If we're overriding the command, do that now.
 	if *overrideCommand != "" {
 		// Download the command and update arguments.
-		sourceCRN := digest.NewResourceName(action.GetCommandDigest(), sourceExecutionRN.GetInstanceName(), rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
+		sourceCRN := digest.NewCASResourceName(action.GetCommandDigest(), sourceExecutionRN.GetInstanceName(), sourceExecutionRN.GetDigestFunction())
 		cmd := &repb.Command{}
 		if err := cachetools.GetBlobAsProto(srcCtx, r.sourceBSClient, sourceCRN, cmd); err != nil {
 			log.Fatalf("Failed to get command: %s", err)
@@ -412,7 +411,7 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 			return status.WrapError(err, "upload new action")
 		}
 
-		sourceExecutionRN = digest.NewResourceName(ad, *targetRemoteInstanceName, rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
+		sourceExecutionRN = digest.NewCASResourceName(ad, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction())
 	}
 	execReq := &repb.ExecuteRequest{
 		InstanceName:    *targetRemoteInstanceName,
@@ -439,7 +438,7 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 	return lastErr
 }
 
-func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, sourceExecutionID *digest.ResourceName, req *repb.ExecuteRequest) error {
+func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, sourceExecutionID *digest.CASResourceName, req *repb.ExecuteRequest) error {
 	ctx = log.EnrichContext(ctx, "run", fmt.Sprintf("%d/%d", i, *n))
 
 	actionId := sourceExecutionID.GetDigest().GetHash()

@@ -80,7 +80,6 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -924,7 +923,7 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionResult, instanceName string) (string, string, error) {
 	stdout := ""
 	if actionResult.GetStdoutDigest() != nil {
-		d := digest.NewResourceName(actionResult.GetStdoutDigest(), instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		d := digest.NewCASResourceName(actionResult.GetStdoutDigest(), instanceName, repb.DigestFunction_SHA256)
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetDigest().GetSizeBytes()))
 		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
 		if err != nil {
@@ -935,7 +934,7 @@ func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionR
 
 	stderr := ""
 	if actionResult.GetStderrDigest() != nil {
-		d := digest.NewResourceName(actionResult.GetStderrDigest(), instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		d := digest.NewCASResourceName(actionResult.GetStderrDigest(), instanceName, repb.DigestFunction_SHA256)
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetDigest().GetSizeBytes()))
 		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
 		if err != nil {

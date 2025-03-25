@@ -145,7 +145,11 @@ func waitContains(ctx context.Context, env *testenv.TestEnv, rn *rspb.ResourceNa
 		}
 		time.Sleep(time.Duration(i) * time.Millisecond)
 	}
-	s, err := digest.ResourceNameFromProto(rn).DownloadString()
+	casrn, err := digest.CASResourceNameFromProto(rn)
+	if err != nil {
+		return err
+	}
+	s, err := casrn.DownloadString()
 	if err != nil {
 		return err
 	}
@@ -165,42 +169,36 @@ func TestRead(t *testing.T) {
 
 	cases := []struct {
 		wantError error
-		cacheType rspb.CacheType
 		size      int64
 		offset    int64
 		remotes   remoteReadExpectation
 	}{
 		{ // Simple Read
 			wantError: nil,
-			cacheType: rspb.CacheType_CAS,
 			size:      1234,
 			offset:    0,
 			remotes:   once,
 		},
 		{ // Large Read
 			wantError: nil,
-			cacheType: rspb.CacheType_CAS,
 			size:      1000 * 1000 * 100,
 			offset:    0,
 			remotes:   once,
 		},
 		{ // 0 length read
 			wantError: nil,
-			cacheType: rspb.CacheType_CAS,
 			size:      0,
 			offset:    0,
 			remotes:   never,
 		},
 		{ // Offset
 			wantError: nil,
-			cacheType: rspb.CacheType_CAS,
 			size:      1234,
 			offset:    1,
 			remotes:   always,
 		},
 		{ // Max offset
 			wantError: nil,
-			cacheType: rspb.CacheType_CAS,
 			size:      1234,
 			offset:    1234,
 			remotes:   always,
@@ -213,7 +211,7 @@ func TestRead(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		rn, data := testdigest.NewRandomResourceAndBuf(t, tc.size, tc.cacheType, "")
+		rn, data := testdigest.NewRandomResourceAndBuf(t, tc.size, rspb.CacheType_CAS, "")
 		// Set the value in the remote cache.
 		err := remoteEnv.GetCache().Set(ctx, rn, data)
 		require.NoError(t, err)
@@ -222,7 +220,9 @@ func TestRead(t *testing.T) {
 		// it's only read from the remote byestream server the first time.
 		for i := 1; i < 4; i++ {
 			var buf bytes.Buffer
-			gotErr := byte_stream.ReadBlob(ctx, proxy, digest.ResourceNameFromProto(rn), &buf, tc.offset)
+			r, err := digest.CASResourceNameFromProto(rn)
+			require.NoError(t, err)
+			gotErr := byte_stream.ReadBlob(ctx, proxy, r, &buf, tc.offset)
 			if gstatus.Code(gotErr) != gstatus.Code(tc.wantError) {
 				t.Errorf("got %v; want %v", gotErr, tc.wantError)
 			}

@@ -116,7 +116,7 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 	if err != nil {
 		return nil, err
 	}
-	actionResourceName := digest.NewResourceName(actionDigest, instanceName, rspb.CacheType_CAS, digestFunction).ToProto()
+	actionResourceName := digest.NewCASResourceName(actionDigest, instanceName, digestFunction).ToProto()
 	return actionResourceName, nil
 }
 
@@ -156,13 +156,13 @@ func GetResult(ctx context.Context, env environment.Env, instanceName string, di
 	eg, egctx := errgroup.WithContext(ctx)
 	if res.GetStdoutDigest() != nil {
 		eg.Go(func() error {
-			rn := digest.NewResourceName(res.GetStdoutDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
+			rn := digest.NewCASResourceName(res.GetStdoutDigest(), instanceName, digestFunction)
 			return cachetools.GetBlob(egctx, env.GetByteStreamClient(), rn, &stdout)
 		})
 	}
 	if res.GetStderrDigest() != nil {
 		eg.Go(func() error {
-			rn := digest.NewResourceName(res.GetStderrDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
+			rn := digest.NewCASResourceName(res.GetStderrDigest(), instanceName, digestFunction)
 			return cachetools.GetBlob(egctx, env.GetByteStreamClient(), rn, &stderr)
 		})
 	}

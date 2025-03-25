@@ -58,7 +58,7 @@ var (
 // Returns the redis key pointing to the hash storing action merging state. The
 // value stored here is a hash containing the canonical (first-submitted)
 // execution ID and the count of executions run for this action (for hedging).
-func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.ResourceName) (string, error) {
+func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.CASResourceName) (string, error) {
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
 	if err != nil {
 		return "", err
@@ -88,7 +88,7 @@ func redisKeyForPendingExecutionDigest(executionID string) string {
 // quickly.
 //
 // This function records a queued execution in Redis.
-func RecordQueuedExecution(ctx context.Context, rdb redis.UniversalClient, executionID string, adResource *digest.ResourceName) error {
+func RecordQueuedExecution(ctx context.Context, rdb redis.UniversalClient, executionID string, adResource *digest.CASResourceName) error {
 	if !*enableActionMerging {
 		return nil
 	}
@@ -136,7 +136,7 @@ func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, exec
 }
 
 // This function records a hedged execution in Redis.
-func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.ResourceName, groupIdForMetrics string) error {
+func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.CASResourceName, groupIdForMetrics string) error {
 	key, err := redisKeyForPendingExecutionID(ctx, adResource)
 	if err != nil {
 		return err
@@ -150,7 +150,7 @@ func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adRes
 }
 
 // This function records a merged execution in Redis.
-func RecordMergedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.ResourceName, groupIdForMetrics string) error {
+func RecordMergedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.CASResourceName, groupIdForMetrics string) error {
 	key, err := redisKeyForPendingExecutionID(ctx, adResource)
 	if err != nil {
 		return err
@@ -208,7 +208,7 @@ func recordSubmitTimeOffsetMetric(hash map[string]string, groupIdForMetrics stri
 // the provided action digest, or an empty string, as well as a boolean if the
 // provided action should be run additionally in the background ("hedged"), or
 // an error if no pending execution was found.
-func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.ResourceName) (string, bool, error) {
+func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.CASResourceName) (string, bool, error) {
 	if !*enableActionMerging {
 		return "", false, nil
 	}

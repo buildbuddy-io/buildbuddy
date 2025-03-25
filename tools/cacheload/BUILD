@@ -11,7 +11,6 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/cachetools",

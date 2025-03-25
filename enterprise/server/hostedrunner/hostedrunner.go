@@ -34,7 +34,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -97,7 +96,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		if err != nil {
 			return nil, status.WrapError(err, "upload patch")
 		}
-		rn := digest.NewResourceName(patchDigest, req.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+		rn := digest.NewCASResourceName(patchDigest, req.GetInstanceName(), repb.DigestFunction_BLAKE3)
 		uri, err := rn.DownloadString()
 		if err != nil {
 			return nil, status.WrapError(err, "patch download string")

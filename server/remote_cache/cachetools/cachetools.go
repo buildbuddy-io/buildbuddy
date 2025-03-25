@@ -61,7 +61,7 @@ type nopCloser struct {
 
 func (nopCloser) Close() error { return nil }
 
-func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
+func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out io.Writer) error {
 	if bsClient == nil {
 		return status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -127,7 +127,7 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 	return nil
 }
 
-func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
+func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out io.Writer) error {
 	// We can only retry if we can rewind the writer back to the beginning.
 	seeker, retryable := out.(io.Seeker)
 	if retryable {
@@ -230,15 +230,15 @@ func batchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorag
 	return results, nil
 }
 
-func computeDigest(in io.ReadSeeker, instanceName string, digestFunction repb.DigestFunction_Value) (*digest.ResourceName, error) {
+func computeDigest(in io.ReadSeeker, instanceName string, digestFunction repb.DigestFunction_Value) (*digest.CASResourceName, error) {
 	d, err := digest.Compute(in, digestFunction)
 	if err != nil {
 		return nil, err
 	}
-	return digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction), nil
+	return digest.NewCASResourceName(d, instanceName, digestFunction), nil
 }
 
-func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.DigestFunction_Value) (*digest.ResourceName, error) {
+func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.DigestFunction_Value) (*digest.CASResourceName, error) {
 	f, err := os.Open(fullFilePath)
 	if err != nil {
 		return nil, err
@@ -247,7 +247,7 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
-func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*repb.Digest, int64, error) {
+func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
 	if bsClient == nil {
 		return nil, 0, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -339,7 +339,7 @@ type uploadRetryResult = struct {
 	uploadedBytes int64
 }
 
-func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*repb.Digest, int64, error) {
+func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
 	// We can only retry if we can rewind the reader back to the beginning.
 	seeker, retryable := in.(io.Seeker)
 	if retryable {
@@ -359,12 +359,9 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	}
 }
 
-func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *digest.ResourceName) (*repb.ActionResult, error) {
+func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *digest.ACResourceName) (*repb.ActionResult, error) {
 	if acClient == nil {
 		return nil, status.FailedPreconditionError("ActionCacheClient not configured")
-	}
-	if ar.GetCacheType() != rspb.CacheType_AC {
-		return nil, status.InvalidArgumentError("Cannot download non-AC resource from action cache")
 	}
 	req := &repb.GetActionResultRequest{
 		ActionDigest:   ar.GetDigest(),
@@ -382,12 +379,9 @@ func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *d
 	})
 }
 
-func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r *digest.ResourceName, ar *repb.ActionResult) error {
+func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r *digest.ACResourceName, ar *repb.ActionResult) error {
 	if acClient == nil {
 		return status.FailedPreconditionError("ActionCacheClient not configured")
-	}
-	if r.GetCacheType() != rspb.CacheType_AC {
-		return status.InvalidArgumentError("Cannot upload non-AC resource to action cache")
 	}
 
 	req := &repb.UpdateActionResultRequest{
@@ -456,10 +450,7 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	return result, err
 }
 
-func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out proto.Message) error {
-	if r.GetCacheType() != rspb.CacheType_CAS {
-		return status.InvalidArgumentError("Cannot download non-CAS resource from CAS cache")
-	}
+func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out proto.Message) error {
 	buf := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
 	if err := GetBlob(ctx, bsClient, r, buf); err != nil {
 		return err
@@ -467,7 +458,7 @@ func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *dige
 	return proto.Unmarshal(buf.Bytes(), out)
 }
 
-func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.ResourceName, out proto.Message) error {
+func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.CASResourceName, out proto.Message) error {
 	data, err := cache.Get(ctx, r.ToProto())
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
@@ -475,17 +466,13 @@ func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.R
 		}
 		return err
 	}
-	return proto.Unmarshal([]byte(data), out)
+	return proto.Unmarshal(data, out)
 }
 
-func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, d *digest.ResourceName, out proto.Message) error {
-	casRN := digest.NewResourceName(d.GetDigest(), d.GetInstanceName(), rspb.CacheType_CAS, d.GetDigestFunction())
+func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, d *digest.CASResourceName, out proto.Message) error {
+	// TODO: Check whether this is intentionally creating a partial copy of d.
+	casRN := digest.NewCASResourceName(d.GetDigest(), d.GetInstanceName(), d.GetDigestFunction())
 	return readProtoFromCache(ctx, cache, casRN, out)
-}
-
-func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.ResourceName, out proto.Message) error {
-	acRN := digest.NewResourceName(d.GetDigest(), d.GetInstanceName(), rspb.CacheType_AC, d.GetDigestFunction())
-	return readProtoFromCache(ctx, cache, acRN, out)
 }
 
 func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, remoteInstanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
@@ -528,7 +515,7 @@ func UploadBlobToCAS(ctx context.Context, bsClient bspb.ByteStreamClient, instan
 	if err != nil {
 		return nil, err
 	}
-	resourceName := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction)
+	resourceName := digest.NewCASResourceName(d, instanceName, digestFunction)
 	if resourceName.IsEmpty() {
 		return d, nil
 	}
@@ -643,7 +630,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	}
 
 	if d.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
-		resourceName := digest.NewResourceName(d, ul.instanceName, rspb.CacheType_CAS, ul.digestFunction)
+		resourceName := digest.NewCASResourceName(d, ul.instanceName, ul.digestFunction)
 		resourceName.SetCompressor(compressor)
 
 		byteStreamClient := ul.env.GetByteStreamClient()
@@ -870,9 +857,9 @@ func isExecutable(info os.FileInfo) bool {
 	return info.Mode()&0100 != 0
 }
 
-func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageClient, root *digest.ResourceName, sendCachedSubtreeDigests bool) ([]*repb.Directory, []*digest.ResourceName, error) {
+func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageClient, root *digest.CASResourceName, sendCachedSubtreeDigests bool) ([]*repb.Directory, []*digest.CASResourceName, error) {
 	var dirs []*repb.Directory
-	var subtrees []*digest.ResourceName
+	var subtrees []*digest.CASResourceName
 	nextPageToken := ""
 	for {
 		stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
@@ -896,7 +883,7 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 			nextPageToken = rsp.GetNextPageToken()
 			dirs = append(dirs, rsp.GetDirectories()...)
 			for _, st := range rsp.GetSubtrees() {
-				subtrees = append(subtrees, digest.NewResourceName(st.GetDigest(), st.GetInstanceName(), rspb.CacheType_CAS, st.GetDigestFunction()))
+				subtrees = append(subtrees, digest.NewCASResourceName(st.GetDigest(), st.GetInstanceName(), st.GetDigestFunction()))
 			}
 		}
 		if nextPageToken == "" {
@@ -913,7 +900,7 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 // the salt so that we can invalidate the entire filecache-based treecache
 // if needed.
 // Exposed for testing--no reason to use outside of this package.
-func MakeFileNode(r *digest.ResourceName) (*repb.FileNode, error) {
+func MakeFileNode(r *digest.CASResourceName) (*repb.FileNode, error) {
 	buf := strings.NewReader(fmt.Sprintf("%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()) + r.GetInstanceName() + "_treecache_" + *filecacheTreeSalt)
 	d, err := digest.Compute(buf, r.GetDigestFunction())
 	if err != nil {
@@ -922,7 +909,7 @@ func MakeFileNode(r *digest.ResourceName) (*repb.FileNode, error) {
 	return &repb.FileNode{Digest: &repb.Digest{Hash: d.GetHash(), SizeBytes: 0}}, nil
 }
 
-func getTreeCacheFromFilecache(ctx context.Context, r *digest.ResourceName, fc interfaces.FileCache) (*capb.TreeCache, int, error) {
+func getTreeCacheFromFilecache(ctx context.Context, r *digest.CASResourceName, fc interfaces.FileCache) (*capb.TreeCache, int, error) {
 	file, err := MakeFileNode(r)
 	if err != nil {
 		return nil, 0, err
@@ -939,7 +926,7 @@ func getTreeCacheFromFilecache(ctx context.Context, r *digest.ResourceName, fc i
 	return out, len(buf), nil
 }
 
-func writeTreeCacheToFilecache(ctx context.Context, r *digest.ResourceName, data *capb.TreeCache, fc interfaces.FileCache) (int, error) {
+func writeTreeCacheToFilecache(ctx context.Context, r *digest.CASResourceName, data *capb.TreeCache, fc interfaces.FileCache) (int, error) {
 	file, err := MakeFileNode(r)
 	if err != nil {
 		return 0, err
@@ -952,7 +939,7 @@ func writeTreeCacheToFilecache(ctx context.Context, r *digest.ResourceName, data
 	return fc.Write(ctx, file, contents)
 }
 
-func getSubtree(ctx context.Context, subtree *digest.ResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) ([]*capb.DirectoryWithDigest, error) {
+func getSubtree(ctx context.Context, subtree *digest.CASResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) ([]*capb.DirectoryWithDigest, error) {
 	// First, check the filecache.
 	treeCache, bytesRead, err := getTreeCacheFromFilecache(ctx, subtree, fc)
 	if err == nil {
@@ -992,7 +979,11 @@ func getSubtree(ctx context.Context, subtree *digest.ResourceName, fc interfaces
 		var stMutex sync.Mutex
 		for _, child := range treeCache.GetTreeCacheChildren() {
 			subtreeEG.Go(func() error {
-				childDirs, err := getSubtree(subtreeCtx, digest.ResourceNameFromProto(child), fc, bs)
+				r, err := digest.CASResourceNameFromProto(child)
+				if err != nil {
+					return err
+				}
+				childDirs, err := getSubtree(subtreeCtx, r, fc, bs)
 				if err != nil {
 					return err
 				}
@@ -1011,7 +1002,7 @@ func getSubtree(ctx context.Context, subtree *digest.ResourceName, fc interfaces
 	return treeCache.Children, nil
 }
 
-func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) ([]*repb.Directory, error) {
+func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.CASResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) ([]*repb.Directory, error) {
 	dirs, subtrees, err := streamTree(ctx, casClient, r, true && fc != nil)
 	if err != nil {
 		return nil, err
@@ -1055,7 +1046,7 @@ func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.
 	return dirs, nil
 }
 
-func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) (*repb.Tree, error) {
+func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.CASResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) (*repb.Tree, error) {
 	var dirs []*repb.Directory
 	if fc != nil && bs != nil && *requestCachedSubtreeDigests {
 		out, err := getAndCacheTreeFromRootDirectoryDigest(ctx, casClient, r, fc, bs)
@@ -1084,6 +1075,6 @@ func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient 
 	}, nil
 }
 
-func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName) (*repb.Tree, error) {
+func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.CASResourceName) (*repb.Tree, error) {
 	return GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, casClient, r, nil, nil)
 }
