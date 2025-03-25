@@ -1,78 +1,32 @@
 package eventlog_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockinvocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockstore"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
-	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
-type MockInvocationDB struct {
-	db map[string]*tables.Invocation
-}
-
-func (m *MockInvocationDB) CreateInvocation(ctx context.Context, in *tables.Invocation) (bool, error) {
-	return false, nil
-}
-func (m *MockInvocationDB) UpdateInvocation(ctx context.Context, in *tables.Invocation) (bool, error) {
-	return false, nil
-}
-func (m *MockInvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string, acl *aclpb.ACL) error {
-	return nil
-}
-func (m *MockInvocationDB) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
-	inv, ok := m.db[invocationID]
-	if !ok {
-		return nil, status.NotFoundError("")
-	}
-	return inv, nil
-}
-func (m *MockInvocationDB) LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error) {
-	return nil, nil
-}
-func (m *MockInvocationDB) LookupGroupIDFromInvocation(ctx context.Context, invocationID string) (string, error) {
-	return "", nil
-}
-func (m *MockInvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error) {
-	return nil, nil
-}
-func (m *MockInvocationDB) LookupChildInvocations(ctx context.Context, parentRunID string) ([]string, error) {
-	return nil, nil
-}
-func (m *MockInvocationDB) DeleteInvocation(ctx context.Context, invocationID string) error {
-	return nil
-}
-func (m *MockInvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
-	return nil
-}
-func (m *MockInvocationDB) FillCounts(ctx context.Context, log *telpb.TelemetryStat) error {
-	return nil
-}
-func (m *MockInvocationDB) SetNowFunc(now func() time.Time) {
-}
-
+// This test ensures that we stop continuing to accrue chunks in the response
+// buffer if we go over the maximum buffer size.
 func TestGetEventLogChunkMaxBufferSize(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 
-	invocationDB := &MockInvocationDB{db: make(map[string]*tables.Invocation)}
+	invocationDB := &mockinvocationdb.MockInvocationDB{DB: make(map[string]*tables.Invocation)}
 	env.SetInvocationDB(invocationDB)
 
+	// Make a bare bones test invocation in the DB
 	testID := "test_id"
-	invocationDB.db[testID] = &tables.Invocation{
+	invocationDB.DB[testID] = &tables.Invocation{
 		InvocationID: testID,
 		Attempt:      1,
 		LastChunkId:  fmt.Sprintf("%04x", uint16(3)),
@@ -82,13 +36,25 @@ func TestGetEventLogChunkMaxBufferSize(t *testing.T) {
 	env.SetBlobstore(blobstore)
 
 	blobPath := eventlog.GetEventLogPathFromInvocationIdAndAttempt(testID, 1)
+
+	// Make a chunked log for the invocation. Chunked logs can have more chunks
+	// than LastChunkId would suggest due to latency between blobstore writes
+	// and db writes recording them.
 	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(0))] = make([]byte, 8)
 	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(1))] = make([]byte, 8)
 	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(2))] = make([]byte, 8)
 	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(3))] = make([]byte, 8)
 	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(4))] = make([]byte, 8)
 
+	// Set a smaller MaxBufferSize to make testing clearer.
+	oldMaxBufferSize := eventlog.MaxBufferSize
 	eventlog.MaxBufferSize = 20
+	t.Cleanup(func() {
+		eventlog.MaxBufferSize = oldMaxBufferSize
+	})
+
+	// Request a truly absurd number of lines (though our test data is only one
+	// line anyway) for the invocation logs, starting at chunk 0.
 	rsp, err := eventlog.GetEventLogChunk(
 		env.GetServerContext(),
 		env,
@@ -99,6 +65,33 @@ func TestGetEventLogChunkMaxBufferSize(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
+
+	// Each chunk is size 8, so with 20 MaxBufferSize, we should only retrieve
+	// two chunks' worth of data (so 16 bytes).
 	assert.Len(t, rsp.Buffer, 16)
+
+	// If we retrieved two chunks starting at chunk 0, the next chunk should
+	// be index 2.
+	assert.Equal(t, rsp.NextChunkId, fmt.Sprintf("%04x", 2))
+
+	// Request a truly absurd number of lines (though our test data is only one
+	// line anyway) for the invocation logs, starting at the end.
+	rsp, err = eventlog.GetEventLogChunk(
+		env.GetServerContext(),
+		env,
+		&elpb.GetEventLogChunkRequest{
+			InvocationId: testID,
+			ChunkId:      "",
+			MinLines:     1_000_000_000,
+		},
+	)
+	require.NoError(t, err)
+
+	// Each chunk is size 8, so with 20 MaxBufferSize, we should only retrieve
+	// two chunks' worth of data (so 16 bytes).
+	assert.Len(t, rsp.Buffer, 16)
+
+	// If we retrieved two chunks starting at chunk 0, the next chunk should
+	// be index 2.
 	assert.Equal(t, rsp.NextChunkId, fmt.Sprintf("%04x", 2))
 }
