@@ -86,7 +86,7 @@ fi
 if [[ "$PRETTIER_PATH" ]]; then
   PRETTIER_COMMAND=("$PRETTIER_PATH")
 else
-  PRETTIER_COMMAND=("$(rlocation npm/prettier/bin/prettier.sh)" --bazel_node_working_dir="$PWD")
+  PRETTIER_COMMAND=("$(rlocation buildbuddy/tools/prettier/prettier_bin_/prettier_bin)")
 fi
 
-"${PRETTIER_COMMAND[@]}" "${paths[@]}" "$@"
+BAZEL_BINDIR=. "${PRETTIER_COMMAND[@]}" "${paths[@]}" "$@"

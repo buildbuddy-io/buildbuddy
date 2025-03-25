@@ -8,8 +8,8 @@ ts_library(
     name = "spinner",
     srcs = ["spinner.tsx"],
     deps = [
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )
