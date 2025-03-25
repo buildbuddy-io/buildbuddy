@@ -130,7 +130,7 @@ func main() {
 	// Handle raw string types
 	if *blobType == "stdout" || *blobType == "stderr" || *blobType == "file" {
 		var out bytes.Buffer
-		r, err := ind.ToCAS()
+		r, err := ind.CheckCAS()
 		if err != nil {
 			log.Fatalf("Failed to convert resource name to CAS: %s", err)
 		}
@@ -143,7 +143,7 @@ func main() {
 
 	// Handle ActionResults (these are stored in the action cache)
 	if *blobType == "ActionResult" {
-		r, err := ind.ToAC()
+		r, err := ind.CheckAC()
 		if err != nil {
 			log.Fatalf("Failed to convert resource name to AC: %s", err)
 		}
@@ -157,7 +157,7 @@ func main() {
 
 	// Handle Trees (these are stored in the CAS)
 	if *blobType == "Tree" {
-		r, err := ind.ToCAS()
+		r, err := ind.CheckCAS()
 		if err != nil {
 			log.Fatalf("Failed to convert resource name to CAS: %s", err)
 		}
@@ -179,7 +179,7 @@ func main() {
 	default:
 		log.Fatalf(`Invalid --type: %q (allowed values: Action, ActionResult, Command, Tree, file, stderr, stdout)`, *blobType)
 	}
-	r, err := ind.ToCAS()
+	r, err := ind.CheckCAS()
 	if err != nil {
 		log.Fatalf("Failed to convert resource name to CAS: %s", err)
 	}

@@ -156,7 +156,7 @@ func execute(cmdArgs []string) error {
 		return err
 	}
 	log.Debugf("Uploaded inputs in %s", time.Since(stageStart))
-	acrn, err := digest.ResourceNameFromProto(arn).ToCAS()
+	acrn, err := digest.ResourceNameFromProto(arn).CheckCAS()
 	if err == nil {
 		actionStr, err := acrn.DownloadString()
 		if err != nil {

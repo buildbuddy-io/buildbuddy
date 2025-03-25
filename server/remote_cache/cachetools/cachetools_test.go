@@ -54,7 +54,7 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 	}
 	for _, f := range fileCacheContents {
 		fileData, _ := f.data.MarshalVT()
-		rn, err := digest.ResourceNameFromProto(f.rn).ToCAS()
+		rn, err := digest.ResourceNameFromProto(f.rn).CheckCAS()
 		if err != nil {
 			panic(fmt.Sprintf("failed to convert resource name to CAS: %s", err))
 		}
@@ -66,7 +66,7 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 	bsDataMap := make(map[string][]byte)
 	for _, f := range remoteContents {
 		bsData, _ := f.data.MarshalVT()
-		rn, err := digest.ResourceNameFromProto(f.rn).ToCAS()
+		rn, err := digest.ResourceNameFromProto(f.rn).CheckCAS()
 		if err != nil {
 			panic(fmt.Sprintf("failed to convert resource name to CAS: %s", err))
 		}
@@ -78,7 +78,7 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 		data: bsDataMap,
 	}
 
-	rn, err := digest.ResourceNameFromProto(&fakeTreeRoot).ToCAS()
+	rn, err := digest.ResourceNameFromProto(&fakeTreeRoot).CheckCAS()
 	if err != nil {
 		panic(fmt.Sprintf("failed to convert resource name to CAS: %s", err))
 	}

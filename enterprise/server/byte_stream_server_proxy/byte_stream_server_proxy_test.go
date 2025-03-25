@@ -145,7 +145,7 @@ func waitContains(ctx context.Context, env *testenv.TestEnv, rn *rspb.ResourceNa
 		}
 		time.Sleep(time.Duration(i) * time.Millisecond)
 	}
-	casrn, err := digest.ResourceNameFromProto(rn).ToCAS()
+	casrn, err := digest.ResourceNameFromProto(rn).CheckCAS()
 	if err != nil {
 		return err
 	}
@@ -220,7 +220,7 @@ func TestRead(t *testing.T) {
 		// it's only read from the remote byestream server the first time.
 		for i := 1; i < 4; i++ {
 			var buf bytes.Buffer
-			r, err := digest.ResourceNameFromProto(rn).ToCAS()
+			r, err := digest.ResourceNameFromProto(rn).CheckCAS()
 			require.NoError(t, err)
 			gotErr := byte_stream.ReadBlob(ctx, proxy, r, &buf, tc.offset)
 			if gstatus.Code(gotErr) != gstatus.Code(tc.wantError) {

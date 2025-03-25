@@ -140,14 +140,14 @@ func NewACResourceName(d *repb.Digest, instanceName string, digestFunction repb.
 	return &ACResourceName{*NewResourceName(d, instanceName, rspb.CacheType_AC, digestFunction)}
 }
 
-func (r *ResourceName) ToCAS() (*CASResourceName, error) {
+func (r *ResourceName) CheckCAS() (*CASResourceName, error) {
 	if r.rn.GetCacheType() != rspb.CacheType_CAS {
 		return nil, status.FailedPreconditionErrorf("ResourceName is not a CAS resource name: %s", r.rn)
 	}
 	return &CASResourceName{*r}, nil
 }
 
-func (r *ResourceName) ToAC() (*ACResourceName, error) {
+func (r *ResourceName) CheckAC() (*ACResourceName, error) {
 	if r.rn.GetCacheType() != rspb.CacheType_AC {
 		return nil, status.FailedPreconditionErrorf("ResourceName is not an AC resource name: %s", r.rn)
 	}
@@ -501,7 +501,7 @@ func ParseUploadResourceName(resourceName string) (*CASResourceName, error) {
 	if err != nil {
 		return nil, err
 	}
-	return rn.ToCAS()
+	return rn.CheckCAS()
 }
 
 func ParseDownloadResourceName(resourceName string) (*CASResourceName, error) {
@@ -509,7 +509,7 @@ func ParseDownloadResourceName(resourceName string) (*CASResourceName, error) {
 	if err != nil {
 		return nil, err
 	}
-	return rn.ToCAS()
+	return rn.CheckCAS()
 }
 
 func ParseActionCacheResourceName(resourceName string) (*ACResourceName, error) {
@@ -517,7 +517,7 @@ func ParseActionCacheResourceName(resourceName string) (*ACResourceName, error) 
 	if err != nil {
 		return nil, err
 	}
-	return rn.ToAC()
+	return rn.CheckAC()
 }
 
 func IsDownloadResourceName(url string) bool {
