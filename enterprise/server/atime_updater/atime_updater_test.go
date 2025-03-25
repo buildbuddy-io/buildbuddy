@@ -487,8 +487,7 @@ func TestEnqueueByResourceName_ActionCache(t *testing.T) {
 	_, updater, cas, ticker := setup(t)
 	ctx := ctxWithClientIdentity()
 
-	rn, err := digest.NewACResourceName(aDigest, "instance-1", repb.DigestFunction_SHA256).ActionCacheString()
-	require.NoError(t, err)
+	rn := digest.NewACResourceName(aDigest, "instance-1", repb.DigestFunction_SHA256).ActionCacheString()
 	updater.EnqueueByResourceName(ctx, rn)
 	expectNoMoreUpdates(t, ticker, cas)
 }
