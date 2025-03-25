@@ -494,9 +494,7 @@ func TestEnqueueByResourceName_ActionCache(t *testing.T) {
 }
 
 func casResourceName(t *testing.T, d *repb.Digest, instanceName string) string {
-	rn, err := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256).DownloadString()
-	require.NoError(t, err)
-	return rn
+	return digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256).DownloadString()
 }
 
 func TestEnqueueByResourceName_CAS(t *testing.T) {

@@ -114,11 +114,7 @@ func (u *Uploader) uploadDirectory(namedSetID, root string) error {
 	for _, uploadChan := range uploadChans {
 		r := <-uploadChan
 		rn := digest.NewCASResourceName(r.Digest, u.instanceName, repb.DigestFunction_SHA256)
-		rnString, err := rn.DownloadString()
-		if err != nil {
-			return err
-		}
-		uri := fmt.Sprintf("%s/%s", u.bytestreamURIPrefix, rnString)
+		uri := fmt.Sprintf("%s/%s", u.bytestreamURIPrefix, rn.DownloadString())
 		f := &bespb.File{
 			Name:   r.Name,
 			File:   &bespb.File_Uri{Uri: uri},

@@ -1397,10 +1397,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 		if err != nil {
 			return nil, nil, err
 		}
-		downloadString, err := digest.NewCASResourceName(d.ToDigest(), *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
-		if err != nil {
-			return nil, nil, err
-		}
+		downloadString := digest.NewCASResourceName(d.ToDigest(), *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
 
 		runfiles = append(runfiles, &bespb.File{
 			Name: relPath,
@@ -1456,10 +1453,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 			if err != nil {
 				return err
 			}
-			downloadString, err := digest.NewCASResourceName(td, *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
-			if err != nil {
-				return err
-			}
+			downloadString := digest.NewCASResourceName(td, *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
 			mu.Lock()
 			runfileDirs = append(runfileDirs, &bespb.Tree{
 				Name: relPath,

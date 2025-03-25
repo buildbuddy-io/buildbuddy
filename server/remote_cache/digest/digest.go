@@ -224,20 +224,20 @@ type CASResourceName struct {
 // DownloadString returns a string representing the resource name for download
 // purposes.
 // TODO: Drop the error return value, which is always nil.
-func (r *CASResourceName) DownloadString() (string, error) {
+func (r *CASResourceName) DownloadString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
 		return fmt.Sprintf(
 			"%s/%s/%s/%d",
 			instanceName, blobTypeSegment(r.GetCompressor()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	} else {
 		return fmt.Sprintf(
 			"%s/%s/%s/%s/%d",
 			instanceName, blobTypeSegment(r.GetCompressor()),
 			strings.ToLower(r.rn.DigestFunction.String()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	}
 }
 

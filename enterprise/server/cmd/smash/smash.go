@@ -180,10 +180,7 @@ func writeDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 func readDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 	randomDigest := preWrittenDigests[rand.Intn(len(preWrittenDigests))]
 
-	downloadString, err := digest.NewCASResourceName(randomDigest, *instanceName, repb.DigestFunction_SHA256).DownloadString()
-	if err != nil {
-		log.Fatalf("Error computing download string: %s", err)
-	}
+	downloadString := digest.NewCASResourceName(randomDigest, *instanceName, repb.DigestFunction_SHA256).DownloadString()
 
 	rr := &bspb.ReadRequest{
 		ResourceName: downloadString,

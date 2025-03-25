@@ -69,12 +69,8 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 		return nil
 	}
 
-	downloadString, err := r.DownloadString()
-	if err != nil {
-		return err
-	}
 	req := &bspb.ReadRequest{
-		ResourceName: downloadString,
+		ResourceName: r.DownloadString(),
 	}
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {

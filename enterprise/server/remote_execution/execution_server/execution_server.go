@@ -723,10 +723,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		return err
 	}
 
-	downloadString, err := adInstanceDigest.DownloadString()
-	if err != nil {
-		return err
-	}
+	downloadString := adInstanceDigest.DownloadString()
 	invocationID := bazel_request.GetInvocationID(stream.Context())
 
 	hedge := false

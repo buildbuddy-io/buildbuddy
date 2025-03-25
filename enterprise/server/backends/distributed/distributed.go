@@ -353,7 +353,7 @@ func lookasideKey(r *rspb.ResourceName) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return rn.DownloadString()
+		return rn.DownloadString(), nil
 	}
 }
 

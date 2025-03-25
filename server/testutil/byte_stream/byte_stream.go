@@ -26,12 +26,8 @@ func WithBazelVersion(t *testing.T, ctx context.Context, version string) context
 }
 
 func ReadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out io.Writer, offset int64) error {
-	downloadString, err := r.DownloadString()
-	if err != nil {
-		return err
-	}
 	req := &bspb.ReadRequest{
-		ResourceName: downloadString,
+		ResourceName: r.DownloadString(),
 		ReadOffset:   offset,
 		ReadLimit:    r.GetDigest().GetSizeBytes(),
 	}
