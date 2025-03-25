@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
@@ -181,58 +182,16 @@ type attemptRecord struct {
 	nextAttemptTime time.Time
 }
 
-type pqItem struct {
+type driverTask struct {
 	rangeID   uint64
 	replicaID uint64
 
-	priority   float64
-	insertTime time.Time
-
-	index      int // The index of the item in the heap.
 	processing bool
 	requeue    bool
 
 	attemptRecord attemptRecord
-}
 
-// An priorityQueue implements heap.Interface and holds pqItems.
-type priorityQueue []*pqItem
-
-func (pq priorityQueue) Len() int { return len(pq) }
-func (pq priorityQueue) Less(i, j int) bool {
-	return pq[i].priority > pq[j].priority ||
-		(pq[i].priority == pq[j].priority && pq[i].insertTime.Before(pq[j].insertTime))
-}
-func (pq priorityQueue) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].index = i
-	pq[j].index = j
-}
-func (pq *priorityQueue) Push(x interface{}) {
-	n := len(*pq)
-	item := x.(*pqItem)
-	item.index = n
-	*pq = append(*pq, item)
-}
-func (pq *priorityQueue) Pop() interface{} {
-	old := *pq
-	n := len(old)
-	item := old[n-1]
-	old[n-1] = nil  // avoid memory leak
-	item.index = -1 // for safety
-	*pq = old[0 : n-1]
-	return item
-}
-
-func (pq *priorityQueue) update(item *pqItem, priority float64, action DriverAction) {
-	item.priority = priority
-	if item.attemptRecord.action != action {
-		// clear the atempt record
-		item.attemptRecord = attemptRecord{
-			action: action,
-		}
-	}
-	heap.Fix(pq, item.index)
+	item *priority_queue.Item[uint64]
 }
 
 type queueImpl interface {
@@ -247,9 +206,9 @@ type baseQueue struct {
 	maxSize int
 	stop    chan struct{}
 
-	mu        sync.Mutex //protects pq, pqItemMap
-	pq        *priorityQueue
-	pqItemMap map[uint64]*pqItem
+	mu      sync.Mutex //protects pq, taskMap
+	pq      *priority_queue.PriorityQueue[uint64]
+	taskMap map[uint64]*driverTask
 
 	clock clockwork.Clock
 
@@ -264,52 +223,62 @@ func newBaseQueue(nhlog log.Logger, clock clockwork.Clock, impl queueImpl) *base
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	eg, gctx := errgroup.WithContext(ctx)
 	return &baseQueue{
-		clock:     clock,
-		log:       nhlog,
-		maxSize:   100,
-		pq:        &priorityQueue{},
-		pqItemMap: make(map[uint64]*pqItem),
-		eg:        eg,
-		egCtx:     gctx,
-		egCancel:  cancelFunc,
-		impl:      impl,
+		clock:    clock,
+		log:      nhlog,
+		maxSize:  100,
+		pq:       &priority_queue.PriorityQueue[uint64]{},
+		taskMap:  make(map[uint64]*driverTask),
+		eg:       eg,
+		egCtx:    gctx,
+		egCancel: cancelFunc,
+		impl:     impl,
 	}
 }
 
 func (bq *baseQueue) pop() IReplica {
 	bq.mu.Lock()
 	defer bq.mu.Unlock()
-	item := heap.Pop(bq.pq).(*pqItem)
-	item.processing = true
-	repl, err := bq.impl.getReplica(item.rangeID)
-	if err != nil || repl.ReplicaID() != item.replicaID {
-		log.Errorf("unable to get replica for c%dn%d: %s", item.rangeID, item.replicaID, err)
-		delete(bq.pqItemMap, item.rangeID)
+	item := heap.Pop(bq.pq).(*priority_queue.Item[uint64])
+	rangeID := item.Value()
+	task, ok := bq.taskMap[rangeID]
+	if !ok {
+		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for range %d", rangeID)
+		return nil
+	}
+	task.processing = true
+	repl, err := bq.impl.getReplica(rangeID)
+	if err != nil || repl.ReplicaID() != task.replicaID {
+		log.Errorf("unable to get replica for c%dn%d: %s", task.rangeID, task.replicaID, err)
+		delete(bq.taskMap, rangeID)
 		return nil
 	}
 	return repl
 }
 
-func (bq *baseQueue) pushLocked(item *pqItem) {
+func (bq *baseQueue) pushLocked(task *driverTask, priority float64) {
+	item := priority_queue.NewItem(task.rangeID, priority)
 	heap.Push(bq.pq, item)
-	bq.pqItemMap[item.rangeID] = item
+	task.item = item
+	bq.taskMap[task.rangeID] = task
 }
 
-func (bq *baseQueue) getItemWithMinPriority() *pqItem {
-	old := *bq.pq
-	n := len(old)
-	return old[n-1]
-}
-
-func (bq *baseQueue) removeLocked(item *pqItem) {
-	if item.processing {
-		item.requeue = false
+func (bq *baseQueue) removeItemWithMinPriority() {
+	item := bq.pq.RemoveItemWithMinPriority()
+	if item == nil {
 		return
 	}
-	if item.index >= 0 {
-		heap.Remove(bq.pq, item.index)
+	rangeID := item.Value()
+	task, ok := bq.taskMap[rangeID]
+	if !ok {
+		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for range %d", rangeID)
+		return
 	}
-	delete(bq.pqItemMap, item.rangeID)
+
+	if task.processing {
+		task.requeue = false
+		return
+	}
+	delete(bq.taskMap, rangeID)
 }
 
 func (bq *baseQueue) Len() int {
@@ -321,27 +290,27 @@ func (bq *baseQueue) Len() int {
 func (bq *baseQueue) postProcess(ctx context.Context, repl IReplica, requeueType RequeueType) {
 	rangeID := repl.RangeID()
 	bq.mu.Lock()
-	item, ok := bq.pqItemMap[rangeID]
+	task, ok := bq.taskMap[rangeID]
 	if !ok {
-		alert.UnexpectedEvent("unexpected_pq_item_not_found", "pqItem not found for range %d", rangeID)
+		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for range %d", rangeID)
 		bq.mu.Unlock()
 		return
 	}
 	ar := attemptRecord{}
 	if requeueType == RequeueRetry {
-		ar = item.attemptRecord
+		ar = task.attemptRecord
 		ar.attempts++
 		ar.nextAttemptTime = bq.nextAttemptTime(ar.attempts)
 	} else if requeueType == RequeueWait {
-		ar = item.attemptRecord
+		ar = task.attemptRecord
 	}
-	delete(bq.pqItemMap, rangeID)
+	delete(bq.taskMap, rangeID)
 	bq.mu.Unlock()
 
 	if ar.attempts >= maxRetry {
 		alert.UnexpectedEvent("driver_action_retries_exceeded", "c%dn%d action: %s retries exceeded", rangeID, repl.ReplicaID(), ar.action)
 		// do not add it to the queue
-	} else if requeueType != RequeueNoop || item.requeue {
+	} else if requeueType != RequeueNoop || task.requeue {
 		bq.maybeAdd(ctx, repl, ar)
 	}
 }
@@ -356,13 +325,13 @@ func (bq *baseQueue) process(ctx context.Context, repl IReplica) RequeueType {
 	rangeID := repl.RangeID()
 	bq.log.Debugf("start to process c%dn%d", rangeID, repl.ReplicaID())
 	bq.mu.Lock()
-	item, ok := bq.pqItemMap[rangeID]
+	task, ok := bq.taskMap[rangeID]
 	if !ok {
-		alert.UnexpectedEvent("unexpected_pq_item_not_found", "pqItem not found for range %d", rangeID)
+		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for range %d", rangeID)
 		bq.mu.Unlock()
 		return RequeueNoop
 	}
-	ar := item.attemptRecord
+	ar := task.attemptRecord
 	bq.mu.Unlock()
 	if action == ar.action && !ar.nextAttemptTime.IsZero() {
 		if bq.clock.Now().Before(ar.nextAttemptTime) {
@@ -525,36 +494,40 @@ func (bq *baseQueue) maybeAdd(ctx context.Context, repl IReplica, ar attemptReco
 	}
 
 	rangeID := repl.RangeID()
-	item, ok := bq.pqItemMap[rangeID]
+	task, ok := bq.taskMap[rangeID]
 	if ok {
 		// The item is processing. Mark to be requeued.
-		if item.processing {
-			item.requeue = true
+		if task.processing {
+			task.requeue = true
 			return
 		}
-		bq.pq.update(item, priority, action)
+		if task.attemptRecord.action != action {
+			// clear the attempt record if action is different
+			task.attemptRecord = attemptRecord{
+				action: action,
+			}
+		}
+		bq.pq.Update(task.item, priority)
 		return
 	}
-	item = &pqItem{
-		rangeID:    rangeID,
-		replicaID:  repl.ReplicaID(),
-		priority:   priority,
-		insertTime: bq.clock.Now(),
+	task = &driverTask{
+		rangeID:   rangeID,
+		replicaID: repl.ReplicaID(),
 	}
 
 	if action == ar.action {
-		item.attemptRecord = ar
+		task.attemptRecord = ar
 	} else {
-		item.attemptRecord = attemptRecord{
+		task.attemptRecord = attemptRecord{
 			action: action,
 		}
 	}
 
-	bq.pushLocked(item)
+	bq.pushLocked(task, priority)
 
 	// If the priroityQueue if full, let's remove the item with the lowest priority.
 	if pqLen := bq.pq.Len(); pqLen > bq.maxSize {
-		bq.removeLocked(bq.getItemWithMinPriority())
+		bq.removeItemWithMinPriority()
 	}
 }
 
