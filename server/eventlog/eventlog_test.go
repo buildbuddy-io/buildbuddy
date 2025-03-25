@@ -65,7 +65,6 @@ func (m *MockInvocationDB) FillCounts(ctx context.Context, log *telpb.TelemetryS
 func (m *MockInvocationDB) SetNowFunc(now func() time.Time) {
 }
 
-
 func TestGetEventLogChunkMaxBufferSize(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 
@@ -75,8 +74,8 @@ func TestGetEventLogChunkMaxBufferSize(t *testing.T) {
 	testID := "test_id"
 	invocationDB.db[testID] = &tables.Invocation{
 		InvocationID: testID,
-		Attempt: 1,
-		LastChunkId: fmt.Sprintf("%04x", uint16(3)),
+		Attempt:      1,
+		LastChunkId:  fmt.Sprintf("%04x", uint16(3)),
 	}
 
 	blobstore := mockstore.New()
@@ -95,8 +94,8 @@ func TestGetEventLogChunkMaxBufferSize(t *testing.T) {
 		env,
 		&elpb.GetEventLogChunkRequest{
 			InvocationId: testID,
-			ChunkId: fmt.Sprintf("%04x", uint16(0)),
-			MinLines: 1_000_000_000,
+			ChunkId:      fmt.Sprintf("%04x", uint16(0)),
+			MinLines:     1_000_000_000,
 		},
 	)
 	require.NoError(t, err)
