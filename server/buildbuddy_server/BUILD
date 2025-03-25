@@ -82,7 +82,6 @@ go_test(
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//proto:user_id_go_proto",
         "//server/backends/invocationdb",
         "//server/build_event_protocol/build_event_handler",

@@ -343,9 +343,17 @@ func lookasideKey(r *rspb.ResourceName) (string, error) {
 		// These are OK to put in the lookaside cache because even
 		// though they are technically AC entries, they are based on CAS
 		// content that does not change.
-		return digest.ResourceNameFromProto(r).ActionCacheString()
+		rn, err := digest.ResourceNameFromProto(r).ToAC()
+		if err != nil {
+			return "", err
+		}
+		return rn.ActionCacheString()
 	} else {
-		return digest.ResourceNameFromProto(r).DownloadString()
+		rn, err := digest.ResourceNameFromProto(r).ToCAS()
+		if err != nil {
+			return "", err
+		}
+		return rn.DownloadString()
 	}
 }
 

@@ -42,7 +42,7 @@ type resourceAndTreeCache struct {
 	data *capb.TreeCache
 }
 
-func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*resourceAndTreeCache, remoteContents []*resourceAndTreeCache) (*digest.ResourceName, *fakeCasClient, *fakeFilecache, *fakeBytestreamClient) {
+func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*resourceAndTreeCache, remoteContents []*resourceAndTreeCache) (*digest.CASResourceName, *fakeCasClient, *fakeFilecache, *fakeBytestreamClient) {
 
 	cas := &fakeCasClient{
 		treeDigest: fakeTreeRoot.GetDigest(),
@@ -53,7 +53,11 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 	}
 	for _, f := range fileCacheContents {
 		fileData, _ := f.data.MarshalVT()
-		fileNode, _ := cachetools.MakeFileNode(digest.ResourceNameFromProto(f.rn))
+		rn, err := digest.ResourceNameFromProto(f.rn).ToCAS()
+		if err != nil {
+			panic(fmt.Sprintf("failed to convert resource name to CAS: %s", err))
+		}
+		fileNode, _ := cachetools.MakeFileNode(rn)
 		fc.Write(context.Background(), fileNode, fileData)
 	}
 	fc.writeCount = 0
@@ -61,7 +65,11 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 	bsDataMap := make(map[string][]byte)
 	for _, f := range remoteContents {
 		bsData, _ := f.data.MarshalVT()
-		dlString, _ := digest.ResourceNameFromProto(f.rn).DownloadString()
+		rn, err := digest.ResourceNameFromProto(f.rn).ToCAS()
+		if err != nil {
+			panic(fmt.Sprintf("failed to convert resource name to CAS: %s", err))
+		}
+		dlString, _ := rn.DownloadString()
 		bsDataMap[dlString] = bsData
 	}
 	bs := &fakeBytestreamClient{
@@ -69,7 +77,11 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 		data: bsDataMap,
 	}
 
-	return digest.ResourceNameFromProto(&fakeTreeRoot), cas, fc, bs
+	rn, err := digest.ResourceNameFromProto(&fakeTreeRoot).ToCAS()
+	if err != nil {
+		panic(fmt.Sprintf("failed to convert resource name to CAS: %s", err))
+	}
+	return rn, cas, fc, bs
 }
 
 func makeDigest(name string) *repb.Digest {

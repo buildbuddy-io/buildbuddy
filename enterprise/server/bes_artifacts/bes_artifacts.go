@@ -18,7 +18,6 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -114,7 +113,7 @@ func (u *Uploader) uploadDirectory(namedSetID, root string) error {
 	var files []*bespb.File
 	for _, uploadChan := range uploadChans {
 		r := <-uploadChan
-		rn := digest.NewResourceName(r.Digest, u.instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		rn := digest.NewCASResourceName(r.Digest, u.instanceName, repb.DigestFunction_SHA256)
 		rnString, err := rn.DownloadString()
 		if err != nil {
 			return err

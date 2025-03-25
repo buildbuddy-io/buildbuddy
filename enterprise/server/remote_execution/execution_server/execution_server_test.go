@@ -597,7 +597,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 
 	// Check that the action cache contains the right entry, if any.
 	arn.ToProto().CacheType = rspb.CacheType_AC
-	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arn)
+	arnAC, err := arn.ToAC()
+	require.NoError(t, err)
+	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arnAC)
 	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult {
 		require.NoError(t, err)
 		assert.Empty(t, cmp.Diff(trimmedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))

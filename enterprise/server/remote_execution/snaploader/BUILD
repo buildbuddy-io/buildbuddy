@@ -13,7 +13,6 @@ go_library(
         "//enterprise/server/remote_execution/snaputil",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/environment",
         "//server/metrics",
         "//server/remote_cache/cachetools",

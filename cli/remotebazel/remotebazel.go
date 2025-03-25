@@ -669,7 +669,7 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 	return nil
 }
 
-func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.ResourceName, outFile string) error {
+func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.CASResourceName, outFile string) error {
 	if err := os.MkdirAll(filepath.Dir(outFile), 0755); err != nil {
 		return err
 	}
@@ -710,7 +710,7 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 	return outputs, nil
 }
 
-func bytestreamURIToResourceName(uri string) (*digest.ResourceName, error) {
+func bytestreamURIToResourceName(uri string) (*digest.CASResourceName, error) {
 	u, err := url.Parse(uri)
 	if err != nil {
 		return nil, err

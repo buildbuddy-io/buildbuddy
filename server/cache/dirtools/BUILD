@@ -24,7 +24,6 @@ go_library(
         "//server/util/rpcutil",
         "//server/util/status",
         "//third_party/singleflight",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_x_sync//errgroup",
     ],

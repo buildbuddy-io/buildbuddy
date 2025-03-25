@@ -22,7 +22,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
@@ -488,14 +487,14 @@ func TestEnqueueByResourceName_ActionCache(t *testing.T) {
 	_, updater, cas, ticker := setup(t)
 	ctx := ctxWithClientIdentity()
 
-	rn, err := digest.NewResourceName(aDigest, "instance-1", rspb.CacheType_AC, repb.DigestFunction_SHA256).ActionCacheString()
+	rn, err := digest.NewACResourceName(aDigest, "instance-1", repb.DigestFunction_SHA256).ActionCacheString()
 	require.NoError(t, err)
 	updater.EnqueueByResourceName(ctx, rn)
 	expectNoMoreUpdates(t, ticker, cas)
 }
 
 func casResourceName(t *testing.T, d *repb.Digest, instanceName string) string {
-	rn, err := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
+	rn, err := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256).DownloadString()
 	require.NoError(t, err)
 	return rn
 }

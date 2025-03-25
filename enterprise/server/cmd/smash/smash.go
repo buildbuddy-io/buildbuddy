@@ -22,7 +22,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -142,7 +141,7 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 
 func writeDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 	d, buf := newRandomDigestBuf(randomBlobSize())
-	resourceName, err := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).UploadString()
+	resourceName, err := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256).UploadString()
 	if err != nil {
 		log.Fatalf("Error computing upload resource name: %s", err)
 	}
@@ -181,7 +180,7 @@ func writeDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 func readDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 	randomDigest := preWrittenDigests[rand.Intn(len(preWrittenDigests))]
 
-	downloadString, err := digest.NewResourceName(randomDigest, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
+	downloadString, err := digest.NewCASResourceName(randomDigest, *instanceName, repb.DigestFunction_SHA256).DownloadString()
 	if err != nil {
 		log.Fatalf("Error computing download string: %s", err)
 	}

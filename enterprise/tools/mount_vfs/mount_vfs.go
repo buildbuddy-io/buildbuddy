@@ -22,7 +22,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -36,13 +35,13 @@ var (
 	cpuProfile         = flag.String("cpuprofile", "", "If set, CPU profile will be written to given file. Use 'go tool pprof' to view it.")
 )
 
-func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, actionDigest *digest.ResourceName) (*repb.Action, *repb.Command, error) {
+func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, actionDigest *digest.CASResourceName) (*repb.Action, *repb.Command, error) {
 	action := &repb.Action{}
 	if err := cachetools.GetBlobAsProto(ctx, bsClient, actionDigest, action); err != nil {
 		return nil, nil, status.WrapErrorf(err, "could not fetch action")
 	}
 	cmd := &repb.Command{}
-	if err := cachetools.GetBlobAsProto(ctx, bsClient, digest.NewResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_BLAKE3), cmd); err != nil {
+	if err := cachetools.GetBlobAsProto(ctx, bsClient, digest.NewCASResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName(), repb.DigestFunction_BLAKE3), cmd); err != nil {
 		return nil, nil, status.WrapErrorf(err, "could not fetch command")
 	}
 	return action, cmd, nil
@@ -111,7 +110,7 @@ func main() {
 			log.Fatalf("Error fetching action: %s", err)
 		}
 
-		tree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, casClient, digest.NewResourceName(action.GetInputRootDigest(), *remoteInstanceName, rspb.CacheType_CAS, actionRN.GetDigestFunction()))
+		tree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, casClient, digest.NewCASResourceName(action.GetInputRootDigest(), *remoteInstanceName, actionRN.GetDigestFunction()))
 		if err != nil {
 			log.Fatalf("Could not fetch input root structure: %s", err)
 		}
