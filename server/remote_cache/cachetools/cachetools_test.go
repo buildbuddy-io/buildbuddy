@@ -34,6 +34,7 @@ var (
 		},
 		InstanceName:   testInstance,
 		DigestFunction: repb.DigestFunction_BLAKE3,
+		CacheType:      rspb.CacheType_CAS,
 	}
 )
 
