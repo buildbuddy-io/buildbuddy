@@ -211,7 +211,7 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 		numTasks := l.load[cpuInfo.processor]
 		// we want the least loaded cpus first, so give the
 		// cpus with more tasks a more negative score.
-		pq.Push(cpuInfo, -1*numTasks)
+		pq.Push(cpuInfo, float64(-1*numTasks))
 	}
 
 	// Get the set of CPUs, in order of load (incr).
