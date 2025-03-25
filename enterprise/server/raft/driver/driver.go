@@ -42,7 +42,12 @@ const (
 	// If a node's disk is fuller than this (by percentage), it is not
 	// eligible to be used as a rebalance target.
 	maxDiskCapacityForRebalance = .925
-	// The max number of retries per action
+	// The max number of retries per action. When a driver operation failed, we
+	// will put the replica back on the queue to retry during post-process. An
+	// alert will be fired once the max number of retries have reached, and we
+	// won't put the replica back on to the queue during post-process.  However,
+	// the store periodically scan the replicas and add to the queue if a driver
+	// action is needed.
 	maxRetry = 10
 )
 
