@@ -1,7 +1,7 @@
 ---
-id: remote-bazel-introduction
-title: Introduction to Remote Bazel
-sidebar_label: Remote bazel introduction
+id: remote-bazel
+title: Remote Bazel
+sidebar_label: Remote bazel
 ---
 
 Remote Bazel is an easily configurable way to run commands on a remote runner. You

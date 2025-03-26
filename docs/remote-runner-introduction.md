@@ -4,26 +4,25 @@ title: Introduction to Remote Runners
 sidebar_label: Remote Runner Introduction
 ---
 
-A remote runner is an execution environment that runs on a BuildBuddy executor.
-For example, this might look like a Firecracker microVM or an OCI container that
-can run arbitrary code.
-
-With Bazel builds, remote execution allows actions to be executed on remote
-executors. This process is orchestrated by a Bazel client server running locally. Benefits
-of remote execution include allowing each action to target a specific architecture
-or machines with lots of resources.
-
-BuildBuddy remote runners let you use our remote execution environment for any
-computation, not just that associated with a Bazel build. For example, you could
-use it to run the Bazel client server itself, which is typically run locally, on a
-remote executor.
+A BuildBuddy remote runner is an execution environment that runs on a BuildBuddy executor.
+Our remote runners are optimized to run Bazel commands, and allow users to maintain
+a warm bazel instance in a secure execution environment managed by BuildBuddy.
+For example, this might look like a Firecracker microVM or an OCI container where
+you can run Bazel commands.
 
 BuildBuddy remote runners have the following unique advantages:
 
 1. Colocation with BuildBuddy servers, ensuring a **fast network
-   connection between Bazel and BuildBuddy's RBE & caching servers**.
-2. Running workloads against **warm runners** using VM
-   snapshotting (on Linux) and persistent runners (on macOS).
+   connection** between Bazel and BuildBuddy's cache & RBE servers.
+2. Running workloads in **persistent execution environments** using microVM
+   snapshotting (on Linux) and persistent runners (on macOS). This allows reusing
+   Bazel's in-memory analysis cache and local disk cache, achieving higher performance
+   compared to remote caching alone.
+
+There are two ways to use remote runners:
+
+1. **BuildBuddy Workflows:** Our continuous integration (CI) solution that runs Bazel builds and tests in response to git events (pull requests or pushes).
+2. **Remote Bazel:** a CLI tool that works exactly like the Bazel command, but runs Bazel on a remote workspace and streams the output back to the local machine.
 
 See [our blog post](https://www.buildbuddy.io/blog/meet-buildbuddy-workflows)
 for more details on the motivation behind remote runners as well as some
@@ -200,7 +199,7 @@ traditional Bazel remote executors.
 ## Getting started
 
 You can get started with [BuildBuddy Workflows(https://docs.buildbuddy.io/docs/workflows-setup/)
-or [Remote Bazel](https://docs.buildbuddy.io/docs/remote-bazel-introduction/) by checking out the
+or [Remote Bazel](https://docs.buildbuddy.io/docs/remote-bazel/) by checking out the
 corresponding docs.
 
 If you've already linked your GitHub account to BuildBuddy, it'll only take

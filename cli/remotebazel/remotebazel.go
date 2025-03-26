@@ -468,7 +468,7 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 		select {
 		case <-time.After(500 * time.Millisecond):
 			log.Warnf("Mirroring your local git state is taking a long time." +
-				" See https://www.buildbuddy.io/docs/remote-bazel-introduction/#automatic-git-state-mirroring" +
+				" See https://www.buildbuddy.io/docs/remote-bazel/#automatic-git-state-mirroring" +
 				" for more details and suggestions.")
 		case <-done:
 		}

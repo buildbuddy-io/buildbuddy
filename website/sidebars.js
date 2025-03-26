@@ -17,7 +17,7 @@ module.exports = {
       "remote-runner-features",
       "workflows-setup",
       "workflows-config",
-      "remote-bazel-introduction",
+      "remote-bazel",
     ],
     CLI: ["cli", "cli-plugins"],
     Troubleshooting: ["troubleshooting", "troubleshooting-rbe", "troubleshooting-slow-upload"],
