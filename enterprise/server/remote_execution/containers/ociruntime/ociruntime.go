@@ -61,6 +61,8 @@ var (
 	netPoolSize = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 	capAdd      = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
+	tiniEnabled = flag.Bool("executor.oci.tini_enabled", false, "Run tini as pid 1 for recycled containers.")
+	tiniPath    = flag.String("executor.oci.tini_path", "", "Path to tini binary to use as pid 1 for recycled containers. Defaults to PATH lookup if not set.")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -86,6 +88,9 @@ const (
 
 	// Maximum length of overlayfs mount options string.
 	maxMntOptsLength = 4095
+
+	// Path to tini binary in the container.
+	tiniMountPoint = "/usr/local/buildbuddy-container-tools/tini"
 )
 
 var (
@@ -475,6 +480,12 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 		return status.UnavailableErrorf("create network: %s", err)
 	}
 	pid1 := &repb.Command{Arguments: []string{"sleep", "999999999999"}}
+	if *tiniEnabled {
+		pid1.Arguments = append(
+			[]string{tiniMountPoint, "--"},
+			pid1.Arguments...,
+		)
+	}
 	// Provision bundle directory (OCI config JSON, rootfs, etc.)
 	if err := c.createBundle(ctx, pid1); err != nil {
 		return status.UnavailableErrorf("create OCI bundle: %s", err)
@@ -1040,6 +1051,23 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				Options:     []string{"bind", "rprivate"},
 			})
 		}
+	}
+	if *tiniEnabled {
+		tiniPath := *tiniPath
+		if tiniPath == "" {
+			p, err := exec.LookPath("tini")
+			if err != nil {
+				return nil, fmt.Errorf("find tini in $PATH: %w", err)
+			}
+			tiniPath = p
+		}
+		// Bind-mount tini readonly into the container.
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: tiniMountPoint,
+			Type:        "bind",
+			Source:      tiniPath,
+			Options:     []string{"bind", "rprivate", "ro"},
+		})
 	}
 	return &spec, nil
 }
