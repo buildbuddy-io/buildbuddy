@@ -225,7 +225,7 @@ func newBaseQueue(nhlog log.Logger, clock clockwork.Clock, impl queueImpl) *base
 	return &baseQueue{
 		clock:    clock,
 		log:      nhlog,
-		maxSize:  100,
+		maxSize:  1000,
 		pq:       &priority_queue.PriorityQueue[uint64]{},
 		taskMap:  make(map[uint64]*driverTask),
 		eg:       eg,
