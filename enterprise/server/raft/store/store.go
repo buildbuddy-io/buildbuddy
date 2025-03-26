@@ -2136,49 +2136,65 @@ func (w *updateTagsWorker) updateTags() error {
 	return err
 }
 
+type handleTaskFunc func(context.Context, *replica.Replica) error
+
+type replicaWorker struct {
+	name     string
+	tasks    chan *replica.Replica
+	handleFn handleTaskFunc
+}
+
+func (w *replicaWorker) Enqueue(repl *replica.Replica) {
+	select {
+	case w.tasks <- repl:
+		break
+	default:
+		log.Warningf("%s queue full", w.name)
+	}
+}
+
+func (w *replicaWorker) Start(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			for len(w.tasks) > 0 {
+				<-w.tasks
+			}
+			return
+		case repl := <-w.tasks:
+			if err := w.handleFn(ctx, repl); err != nil {
+				log.Warningf("%s failed to handle task: %s", w.name, err)
+			}
+		}
+	}
+}
+
 type deleteSessionWorker struct {
 	rateLimiter       *rate.Limiter
 	lastExecutionTime sync.Map // map of uint64 rangeID -> the timestamp we last delete sessions
 	session           *client.Session
 	clock             clockwork.Clock
 	store             *Store
-	deleteChan        chan *replica.Replica
 	clientSessionTTL  time.Duration
+
+	*replicaWorker
 }
 
 func newDeleteSessionsWorker(clock clockwork.Clock, store *Store, clientSessionTTL time.Duration) *deleteSessionWorker {
-	return &deleteSessionWorker{
+	res := &deleteSessionWorker{
 		rateLimiter:       rate.NewLimiter(rate.Limit(deleteSessionsRateLimit), 1),
 		store:             store,
 		lastExecutionTime: sync.Map{},
 		session:           client.NewSessionWithClock(clock),
 		clock:             clock,
-		deleteChan:        make(chan *replica.Replica, 10000),
 		clientSessionTTL:  clientSessionTTL,
 	}
-}
-
-func (w *deleteSessionWorker) Enqueue(repl *replica.Replica) {
-	select {
-	case w.deleteChan <- repl:
-		break
-	default:
-		log.Warning("deleteSessionWorker queue full")
+	res.replicaWorker = &replicaWorker{
+		name:     "deleteSessionWorker",
+		tasks:    make(chan *replica.Replica, 10000),
+		handleFn: res.deleteSessions,
 	}
-}
-
-func (w *deleteSessionWorker) Start(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			for len(w.deleteChan) > 0 {
-				<-w.deleteChan
-			}
-			return
-		case repl := <-w.deleteChan:
-			w.deleteSessions(ctx, repl)
-		}
-	}
+	return res
 }
 
 func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.Replica) error {
