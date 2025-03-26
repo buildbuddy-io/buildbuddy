@@ -1107,7 +1107,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return status.WrapErrorf(err, "Failed to parse taskID")
 			}
-			actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
 			var cmd *repb.Command
 			action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
 			if err != nil {
@@ -1117,6 +1116,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return status.InternalErrorf("Failed to parse platform properties: %s", err)
 			}
+			actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
 			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
@@ -1273,14 +1273,14 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 
 func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, *repb.Command, error) {
 	action := &repb.Action{}
-	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
+	if err := cachetools.ReadProtoFromCache(ctx, s.cache, actionResourceName, action); err != nil {
 		log.CtxWarningf(ctx, "Error fetching action: %s", err.Error())
 		return nil, nil, err
 	}
 	cmdDigest := action.GetCommandDigest()
 	cmdInstanceNameDigest := digest.NewCASResourceName(cmdDigest, actionResourceName.GetInstanceName(), actionResourceName.GetDigestFunction())
 	cmd := &repb.Command{}
-	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
+	if err := cachetools.ReadProtoFromCache(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
 		log.CtxWarningf(ctx, "Error fetching command: %s", err.Error())
 		return nil, nil, err
 	}

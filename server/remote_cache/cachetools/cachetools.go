@@ -451,7 +451,7 @@ func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *dige
 	return proto.Unmarshal(buf.Bytes(), out)
 }
 
-func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.CASResourceName, out proto.Message) error {
+func ReadProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.CASResourceName, out proto.Message) error {
 	data, err := cache.Get(ctx, r.ToProto())
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
@@ -460,12 +460,6 @@ func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.C
 		return err
 	}
 	return proto.Unmarshal(data, out)
-}
-
-func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, d *digest.CASResourceName, out proto.Message) error {
-	// TODO: Check whether this is intentionally creating a partial copy of d.
-	casRN := digest.NewCASResourceName(d.GetDigest(), d.GetInstanceName(), d.GetDigestFunction())
-	return readProtoFromCache(ctx, cache, casRN, out)
 }
 
 func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, remoteInstanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
