@@ -566,7 +566,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	op, err = operation.Assemble(
 		taskID,
-		operation.Metadata(repb.ExecutionStage_COMPLETED, arn),
+		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
 		expectedExecuteResponse,
 	)
 	require.NoError(t, err)

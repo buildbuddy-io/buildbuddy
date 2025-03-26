@@ -253,10 +253,10 @@ func (c *retryingClient) CloseAndRecv() (*repb.PublishOperationResponse, error) 
 
 // Metadata creates the ExecuteOperationMetadata object that goes in the
 // Operation.metadata field.
-func Metadata(stage repb.ExecutionStage_Value, r *digest.ResourceName) *repb.ExecuteOperationMetadata {
+func Metadata(stage repb.ExecutionStage_Value, d *repb.Digest) *repb.ExecuteOperationMetadata {
 	return &repb.ExecuteOperationMetadata{
 		Stage:        stage,
-		ActionDigest: r.GetDigest(),
+		ActionDigest: d,
 	}
 }
 
@@ -298,7 +298,7 @@ type StreamLike interface {
 type StateChangeFunc func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error
 type FinishWithErrorFunc func(finalErr error) error
 
-func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName) StateChangeFunc {
+func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *repb.Digest) StateChangeFunc {
 	return func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
 		if stage == repb.ExecutionStage_COMPLETED {
 			if target, err := flagutil.GetDereferencedValue[string]("executor.app_target"); err == nil {
@@ -331,8 +331,8 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *dige
 	}
 }
 
-func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *digest.ACResourceName, er *repb.ExecuteResponse) error {
-	op, err := Assemble(taskID, Metadata(repb.ExecutionStage_COMPLETED, &adInstanceDigest.ResourceName), er)
+func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *repb.Digest, er *repb.ExecuteResponse) error {
+	op, err := Assemble(taskID, Metadata(repb.ExecutionStage_COMPLETED, adInstanceDigest), er)
 	if err != nil {
 		return err
 	}

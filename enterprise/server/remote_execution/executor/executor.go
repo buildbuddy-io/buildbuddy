@@ -212,7 +212,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		SchedulingMetadata: st.GetSchedulingMetadata(),
 		ExecutorHostname:   s.hostname,
 	}
-	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, &adInstanceDigest.ResourceName)
+	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest.GetDigest())
 	stateChangeFn := operation.StateChangeFunc(func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
 		if stage == repb.ExecutionStage_COMPLETED {
 			if err := appendAuxiliaryMetadata(execResponse.GetResult().GetExecutionMetadata(), auxMetadata); err != nil {
@@ -243,7 +243,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		resp.Result = &repb.ActionResult{
 			ExecutionMetadata: md,
 		}
-		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, resp); err != nil {
+		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest.GetDigest(), resp); err != nil {
 			return true, err
 		}
 		return false, finalErr
