@@ -11,16 +11,6 @@ outputs:
   yarn-cache-dir:
     description: "Determined Yarn cache directory path"
     value: ${{ steps.determine-paths-linux.outputs.yarn-cache-dir || steps.determine-paths-macos.outputs.yarn-cache-dir || steps.determine-paths-windows.outputs.yarn-cache-dir }}
-  # Cache hit statuses for each cache
-  repo-cache-hit:
-    description: "Cache hit status for Bazel Repo Cache"
-    value: ${{ steps.repo-cache-restore.outputs.cache-hit }}
-  go-mod-cache-hit:
-    description: "Cache hit status for Go Mod Cache"
-    value: ${{ steps.go-mod-cache-restore.outputs.cache-hit }}
-  yarn-cache-hit:
-    description: "Cache hit status for Yarn Cache"
-    value: ${{ steps.yarn-cache-restore.outputs.cache-hit }}
 runs:
   using: composite
   steps:
