@@ -14,12 +14,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Restore caches
-        id: restore-caches
+        id: cache-restore
         uses: ./.github/actions/cache-restore
-        with:
-          repo-cache-dir: "D:/bazel/repo-cache"
-          go-mod-cache-dir: "D:/go-mod-cache"
-          yarn-cache-dir: "~\\AppData\\Local\\Yarn\\Cache\\v6"
 
       # This step would list out all files under $vs2022Path for debugging purposes.
       # - name: "Find CL"
@@ -60,6 +56,6 @@ jobs:
         uses: ./.github/actions/cache-save
         if: always()
         with:
-          repo-cache-dir: "D:/bazel/repo-cache"
-          go-mod-cache-dir: "D:/go-mod-cache"
-          yarn-cache-dir: "~\\AppData\\Local\\Yarn\\Cache\\v6"
+          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
+          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
+          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}
