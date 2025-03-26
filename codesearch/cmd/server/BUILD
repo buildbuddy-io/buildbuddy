@@ -17,6 +17,7 @@ go_library(
         "//server/config",
         "//server/real_environment",
         "//server/rpc/interceptors",
+        "//server/util/authutil",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/grpc_server",

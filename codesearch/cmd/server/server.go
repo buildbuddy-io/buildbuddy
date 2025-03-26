@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -33,6 +34,8 @@ var (
 	remoteCache  = flag.String("codesearch.remote_cache", "", "gRPC Address of buildbuddy cache")
 
 	monitoringAddr = flag.String("monitoring.listen", ":9090", "Address to listen for monitoring traffic on")
+
+	headersToPropagate = []string{authutil.APIKeyHeader, authutil.ContextTokenStringKey}
 )
 
 func main() {
@@ -82,12 +85,10 @@ func main() {
 	// Add the API-Key and JWT propagating interceptors.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
-			interceptors.PropagateAPIKeyUnaryInterceptor(),
-			interceptors.PropagateJWTUnaryInterceptor(),
+			interceptors.PropagateMetadataUnaryInterceptor(headersToPropagate...),
 		},
 		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
-			interceptors.PropagateAPIKeyStreamInterceptor(),
-			interceptors.PropagateJWTStreamInterceptor(),
+			interceptors.PropagateMetadataStreamInterceptor(headersToPropagate...),
 		},
 	}
 

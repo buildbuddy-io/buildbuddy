@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
@@ -452,37 +451,23 @@ func setClientIdentityStreamClientInterceptor(env environment.Env) grpc.StreamCl
 	return contextReplacingStreamClientInterceptor(getClientIdentityAdder(env))
 }
 
-func propagateMetadataFromIncomingToOutgoing(key string) func(context.Context) context.Context {
+func propagateMetadataFromIncomingToOutgoing(keys ...string) func(context.Context) context.Context {
 	return func(ctx context.Context) context.Context {
-		if keys := metadata.ValueFromIncomingContext(ctx, key); len(keys) > 0 {
-			ctx = metadata.AppendToOutgoingContext(ctx, key, keys[len(keys)-1])
+		for _, key := range keys {
+			if values := metadata.ValueFromIncomingContext(ctx, key); len(values) > 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, key, values[len(values)-1])
+			}
 		}
 		return ctx
 	}
 }
 
-func PropagateAPIKeyUnaryInterceptor() grpc.UnaryServerInterceptor {
-	return contextReplacingUnaryServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.APIKeyHeader))
+func PropagateMetadataUnaryInterceptor(keys ...string) grpc.UnaryServerInterceptor {
+	return contextReplacingUnaryServerInterceptor(propagateMetadataFromIncomingToOutgoing(keys...))
 }
 
-func PropagateAPIKeyStreamInterceptor() grpc.StreamServerInterceptor {
-	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.APIKeyHeader))
-}
-
-func PropagateJWTUnaryInterceptor() grpc.UnaryServerInterceptor {
-	return contextReplacingUnaryServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.ContextTokenStringKey))
-}
-
-func PropagateJWTStreamInterceptor() grpc.StreamServerInterceptor {
-	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.ContextTokenStringKey))
-}
-
-func PropagateClientIdentityUnaryInterceptor() grpc.UnaryServerInterceptor {
-	return contextReplacingUnaryServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.ClientIdentityHeaderName))
-}
-
-func PropagateClientIdentityStreamInterceptor() grpc.StreamServerInterceptor {
-	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.ClientIdentityHeaderName))
+func PropagateMetadataStreamInterceptor(keys ...string) grpc.StreamServerInterceptor {
+	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(keys...))
 }
 
 func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnaryServerInterceptor) grpc.ServerOption {
