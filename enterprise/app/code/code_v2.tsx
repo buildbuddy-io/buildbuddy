@@ -42,7 +42,7 @@ import picker_service, { PickerModel } from "../../../app/picker/picker_service"
 import { GithubIcon } from "../../../app/icons/github";
 import { getLangHintFromFilePath } from "../monaco/monaco";
 import SearchBar from "../../../app/components/search_bar/search_bar";
-import {linkReadWriteGitHubAppURL} from "../../../app/util/github";
+import { linkReadWriteGitHubAppURL } from "../../../app/util/github";
 
 interface Props {
   user: User;
@@ -1157,7 +1157,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   // and gate them for users that have installed the read-only app.
   handleGitHubClicked() {
     const userID = this.props.user.displayUser.userId?.id || "";
-    window.location.href = linkReadWriteGitHubAppURL(userID, "")
+    window.location.href = linkReadWriteGitHubAppURL(userID, "");
   }
 
   handleUpdatePR() {

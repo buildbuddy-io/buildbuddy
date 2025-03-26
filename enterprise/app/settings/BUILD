@@ -54,8 +54,8 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/service:rpc_service",
-        "//enterprise/app/settings:github_tooltip",
         "//app/util:github",
+        "//enterprise/app/settings:github_tooltip",
         "//proto:github_ts_proto",
     ],
 )
@@ -79,8 +79,8 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/service:rpc_service",
-        "//enterprise/app/settings:github_tooltip",
         "//app/util:github",
+        "//enterprise/app/settings:github_tooltip",
         "//proto:github_ts_proto",
     ],
 )

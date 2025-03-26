@@ -14,10 +14,7 @@ import rpcService, { CancelablePromise } from "../../../app/service/rpc_service"
 import { normalizeRepoURL } from "../../../app/util/git";
 import { github } from "../../../proto/github_ts_proto";
 import { TextLink } from "../../../app/components/link/link";
-import {
-  linkReadOnlyGitHubAppURL,
-  linkReadWriteGitHubAppURL
-} from "../../../app/util/github";
+import { linkReadOnlyGitHubAppURL, linkReadWriteGitHubAppURL } from "../../../app/util/github";
 
 type GitHubAppImportProps = {
   user: User;
@@ -172,17 +169,17 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
 
   private onClickInstallApp() {
     rpcService.service
-        .getGitHubAppInstallPath(new github.GetGithubAppInstallPathRequest())
-        .then((response) => {
-          const path = `${response.installPath}?${new URLSearchParams({
-            user_id: this.props.user?.displayUser?.userId?.id || "",
-            group_id: this.props.user?.selectedGroup?.id || "",
-            redirect_url: window.location.href,
-            install: "true",
-          })}`;
-          window.location.href = path;
-        })
-        .catch((e) => errorService.handleError(e));
+      .getGitHubAppInstallPath(new github.GetGithubAppInstallPathRequest())
+      .then((response) => {
+        const path = `${response.installPath}?${new URLSearchParams({
+          user_id: this.props.user?.displayUser?.userId?.id || "",
+          group_id: this.props.user?.selectedGroup?.id || "",
+          redirect_url: window.location.href,
+          install: "true",
+        })}`;
+        window.location.href = path;
+      })
+      .catch((e) => errorService.handleError(e));
   }
 
   private renderRepos() {
@@ -256,28 +253,36 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
         </div>
         <div className="container content-container">
           {!this.props.user.githubLinked && (
-              <Banner type="info" className="install-app-banner">
-                <div>To get started, link a GitHub account to your BuildBuddy
-                  account through one of the BuildBuddy GitHub apps.
-                </div>
-                <div>
-                  To see requested permissions for each app, click through the
-                  install flow. There will be a final confirmation screen before
-                  any permissions are granted.
-                </div>
-                <LinkButton className="big-button" href={linkReadWriteGitHubAppURL(this.props.user?.displayUser?.userId?.id || "", this.props.user?.selectedGroup?.id || "")}>
-                  Link via the read-write app
-                </LinkButton>
-                <LinkButton className="big-button" href={linkReadOnlyGitHubAppURL(this.props.user?.displayUser?.userId?.id || "", this.props.user?.selectedGroup?.id || "")}>
-                  Link via the read-only app
-                </LinkButton>
-              </Banner>
+            <Banner type="info" className="install-app-banner">
+              <div>
+                To get started, link a GitHub account to your BuildBuddy account through one of the BuildBuddy GitHub
+                apps.
+              </div>
+              <div>
+                To see requested permissions for each app, click through the install flow. There will be a final
+                confirmation screen before any permissions are granted.
+              </div>
+              <LinkButton
+                className="big-button"
+                href={linkReadWriteGitHubAppURL(
+                  this.props.user?.displayUser?.userId?.id || "",
+                  this.props.user?.selectedGroup?.id || ""
+                )}>
+                Link via the read-write app
+              </LinkButton>
+              <LinkButton
+                className="big-button"
+                href={linkReadOnlyGitHubAppURL(
+                  this.props.user?.displayUser?.userId?.id || "",
+                  this.props.user?.selectedGroup?.id || ""
+                )}>
+                Link via the read-only app
+              </LinkButton>
+            </Banner>
           )}
           {this.props.user.githubLinked && !this.state.installationsResponse?.installations?.length && (
-              <Banner type="info" className="install-app-banner">
-                <div>To link a repository, install the BuildBuddy app on
-                  GitHub.
-                </div>
+            <Banner type="info" className="install-app-banner">
+              <div>To link a repository, install the BuildBuddy app on GitHub.</div>
               <LinkButton className="big-button" onClick={this.onClickInstallApp.bind(this)}>
                 Install
               </LinkButton>

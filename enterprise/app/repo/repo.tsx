@@ -18,7 +18,7 @@ import picker_service from "../../../app/picker/picker_service";
 import { GithubIcon } from "../../../app/icons/github";
 import { GoogleIcon } from "../../../app/icons/google";
 import OrgPicker from "../org_picker/org_picker";
-import {installReadWriteGitHubAppURL} from "../../../app/util/github";
+import { installReadWriteGitHubAppURL } from "../../../app/util/github";
 
 export interface RepoComponentProps {
   path: string;
@@ -175,7 +175,12 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   // and gate them for users that have installed the read-only app.
   linkGithubAccount() {
     return popup
-      .open(installReadWriteGitHubAppURL(this.props.user?.displayUser.userId?.id || "", this.props.user?.selectedGroup.id || ""))
+      .open(
+        installReadWriteGitHubAppURL(
+          this.props.user?.displayUser.userId?.id || "",
+          this.props.user?.selectedGroup.id || ""
+        )
+      )
       .then(() => this.fetchSecrets())
       .then(() => {
         return this.fetchGithubInstallations()?.then((resp) => {
