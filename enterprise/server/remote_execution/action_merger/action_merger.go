@@ -63,10 +63,7 @@ func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.CASRe
 	if err != nil {
 		return "", err
 	}
-	downloadString, err := adResource.DownloadString()
-	if err != nil {
-		return "", err
-	}
+	downloadString := adResource.DownloadString()
 	return fmt.Sprintf("pendingExecution/%d/%s%s", keyVersion, userPrefix, downloadString), nil
 }
 

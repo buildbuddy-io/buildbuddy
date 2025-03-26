@@ -353,7 +353,7 @@ func (r *Replayer) replay(ctx, srcCtx, targetCtx context.Context, sourceExecutio
 }
 
 func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.CASResourceName) error {
-	s, _ := sourceExecutionRN.DownloadString()
+	s := sourceExecutionRN.DownloadString()
 	log.Infof("Uploading Action, Command, and inputs for execution %q", s)
 	eg, targetCtx := errgroup.WithContext(targetCtx)
 	eg.Go(func() error {

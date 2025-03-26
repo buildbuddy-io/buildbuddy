@@ -227,8 +227,7 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 		defer conn.Close()
 		err := cachetools.GetBlob(ctx, bsClient, resource, out)
 		if err != nil {
-			rs, _ := resource.DownloadString()
-			out.CloseWithError(fmt.Errorf("failed to download %s for invocation %s: %v", rs, invocationId, err))
+			out.CloseWithError(fmt.Errorf("failed to download %s for invocation %s: %v", resource.DownloadString(), invocationId, err))
 		} else {
 			out.Close()
 		}

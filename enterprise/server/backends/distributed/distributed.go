@@ -347,13 +347,13 @@ func lookasideKey(r *rspb.ResourceName) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return rn.ActionCacheString()
+		return rn.ActionCacheString(), nil
 	} else {
 		rn, err := digest.CASResourceNameFromProto(r)
 		if err != nil {
 			return "", err
 		}
-		return rn.DownloadString()
+		return rn.DownloadString(), nil
 	}
 }
 

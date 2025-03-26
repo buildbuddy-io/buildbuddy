@@ -158,12 +158,7 @@ func execute(cmdArgs []string) error {
 	log.Debugf("Uploaded inputs in %s", time.Since(stageStart))
 	acrn, err := digest.CASResourceNameFromProto(arn)
 	if err == nil {
-		actionStr, err := acrn.DownloadString()
-		if err != nil {
-			log.Debugf("Failed to compute action resource name: %s", err)
-		} else {
-			log.Debugf("Action resource name: %s", actionStr)
-		}
+		log.Debugf("Action resource name: %s", acrn.DownloadString())
 	} else {
 		log.Debugf("Failed to compute action resource name: %s", err)
 	}

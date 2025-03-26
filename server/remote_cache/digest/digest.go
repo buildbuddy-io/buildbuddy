@@ -223,28 +223,26 @@ type CASResourceName struct {
 
 // DownloadString returns a string representing the resource name for download
 // purposes.
-// TODO: Drop the error return value, which is always nil.
-func (r *CASResourceName) DownloadString() (string, error) {
+func (r *CASResourceName) DownloadString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
 		return fmt.Sprintf(
 			"%s/%s/%s/%d",
 			instanceName, blobTypeSegment(r.GetCompressor()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	} else {
 		return fmt.Sprintf(
 			"%s/%s/%s/%s/%d",
 			instanceName, blobTypeSegment(r.GetCompressor()),
 			strings.ToLower(r.rn.DigestFunction.String()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	}
 }
 
-// UploadString returns a string representing the resource name for upload
-// purposes.
-// TODO: Drop the error return value, which is always nil.
-func (r *CASResourceName) UploadString() (string, error) {
+// NewUploadString returns a new string representing the resource name for
+// upload purposes each time it is called.
+func (r *CASResourceName) NewUploadString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	u := guuid.New()
@@ -253,14 +251,14 @@ func (r *CASResourceName) UploadString() (string, error) {
 			"%s/uploads/%s/%s/%s/%d",
 			instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
 			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
-		), nil
+		)
 	} else {
 		return fmt.Sprintf(
 			"%s/uploads/%s/%s/%s/%s/%d",
 			instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
 			strings.ToLower(r.rn.DigestFunction.String()),
 			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
-		), nil
+		)
 	}
 }
 
@@ -270,21 +268,20 @@ type ACResourceName struct {
 
 // ActionCacheString returns a string representing the resource name for in
 // the action cache. This is BuildBuddy specific.
-// TODO: Drop the error return value, which is always nil.
-func (r *ACResourceName) ActionCacheString() (string, error) {
+func (r *ACResourceName) ActionCacheString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
 		return fmt.Sprintf(
 			"%s/%s/ac/%s/%d",
 			instanceName, blobTypeSegment(r.GetCompressor()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	} else {
 		return fmt.Sprintf(
 			"%s/%s/ac/%s/%s/%d",
 			instanceName, blobTypeSegment(r.GetCompressor()),
 			strings.ToLower(r.rn.DigestFunction.String()),
-			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 	}
 }
 

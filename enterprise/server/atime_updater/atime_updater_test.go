@@ -487,16 +487,13 @@ func TestEnqueueByResourceName_ActionCache(t *testing.T) {
 	_, updater, cas, ticker := setup(t)
 	ctx := ctxWithClientIdentity()
 
-	rn, err := digest.NewACResourceName(aDigest, "instance-1", repb.DigestFunction_SHA256).ActionCacheString()
-	require.NoError(t, err)
+	rn := digest.NewACResourceName(aDigest, "instance-1", repb.DigestFunction_SHA256).ActionCacheString()
 	updater.EnqueueByResourceName(ctx, rn)
 	expectNoMoreUpdates(t, ticker, cas)
 }
 
 func casResourceName(t *testing.T, d *repb.Digest, instanceName string) string {
-	rn, err := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256).DownloadString()
-	require.NoError(t, err)
-	return rn
+	return digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256).DownloadString()
 }
 
 func TestEnqueueByResourceName_CAS(t *testing.T) {

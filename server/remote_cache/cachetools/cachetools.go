@@ -69,12 +69,8 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 		return nil
 	}
 
-	downloadString, err := r.DownloadString()
-	if err != nil {
-		return err
-	}
 	req := &bspb.ReadRequest{
-		ResourceName: downloadString,
+		ResourceName: r.DownloadString(),
 	}
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
@@ -254,10 +250,6 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if r.IsEmpty() {
 		return r.GetDigest(), 0, nil
 	}
-	resourceName, err := r.UploadString()
-	if err != nil {
-		return nil, 0, err
-	}
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -278,6 +270,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	buf := make([]byte, uploadBufSizeBytes)
 	bytesUploaded := int64(0)
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+	resourceName := r.NewUploadString()
 	for {
 		n, err := rc.Read(buf)
 		if err != nil && err != io.EOF {

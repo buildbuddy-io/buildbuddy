@@ -97,11 +97,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 			return nil, status.WrapError(err, "upload patch")
 		}
 		rn := digest.NewCASResourceName(patchDigest, req.GetInstanceName(), repb.DigestFunction_BLAKE3)
-		uri, err := rn.DownloadString()
-		if err != nil {
-			return nil, status.WrapError(err, "patch download string")
-		}
-		patchURIs = append(patchURIs, uri)
+		patchURIs = append(patchURIs, rn.DownloadString())
 	}
 
 	repoURL := req.GetGitRepo().GetRepoUrl()

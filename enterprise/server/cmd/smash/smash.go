@@ -141,10 +141,7 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 
 func writeDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 	d, buf := newRandomDigestBuf(randomBlobSize())
-	resourceName, err := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256).UploadString()
-	if err != nil {
-		log.Fatalf("Error computing upload resource name: %s", err)
-	}
+	resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256).NewUploadString()
 	r := bytes.NewReader(buf)
 
 	var messages []*dynamic.Message
@@ -180,10 +177,7 @@ func writeDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 func readDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 	randomDigest := preWrittenDigests[rand.Intn(len(preWrittenDigests))]
 
-	downloadString, err := digest.NewCASResourceName(randomDigest, *instanceName, repb.DigestFunction_SHA256).DownloadString()
-	if err != nil {
-		log.Fatalf("Error computing download string: %s", err)
-	}
+	downloadString := digest.NewCASResourceName(randomDigest, *instanceName, repb.DigestFunction_SHA256).DownloadString()
 
 	rr := &bspb.ReadRequest{
 		ResourceName: downloadString,

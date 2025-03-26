@@ -149,10 +149,7 @@ func waitContains(ctx context.Context, env *testenv.TestEnv, rn *rspb.ResourceNa
 	if err != nil {
 		return err
 	}
-	s, err := casrn.DownloadString()
-	if err != nil {
-		return err
-	}
+	s := casrn.DownloadString()
 	return status.NotFoundErrorf("Timed out waiting for cache to contain %s", s)
 }
 

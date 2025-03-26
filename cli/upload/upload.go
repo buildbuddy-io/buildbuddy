@@ -115,11 +115,7 @@ func uploadFile(args []string) error {
 		return err
 	}
 
-	ds, err := ind.DownloadString()
-	if err != nil {
-		return err
-	}
-	log.Print(ds)
+	log.Print(ind.DownloadString())
 	return nil
 }
 

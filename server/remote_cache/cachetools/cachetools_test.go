@@ -70,7 +70,7 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 		if err != nil {
 			panic(fmt.Sprintf("failed to convert resource name to CAS: %s", err))
 		}
-		dlString, _ := rn.DownloadString()
+		dlString := rn.DownloadString()
 		bsDataMap[dlString] = bsData
 	}
 	bs := &fakeBytestreamClient{
