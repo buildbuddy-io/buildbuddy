@@ -221,8 +221,8 @@ type HasResourceName interface {
 	GetResourceName() *ResourceName
 }
 
-func (r *ResourceName) GetResourceName() *ResourceName {
-	return r
+func (r ResourceName) GetResourceName() *ResourceName {
+	return &r
 }
 
 type CASResourceName struct {
