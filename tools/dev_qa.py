@@ -57,12 +57,12 @@ REPO_CONFIGS = [
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --remote_timeout=10m \
+                --jobs=100 \
                 --build_metadata=TAGS=dev-qa \
+                --build_tag_filters=-local \
                 --noenable_bzlmod \
                 --extra_execution_platforms=@buildbuddy_toolchain//:platform \
-                --host_platform=@buildbuddy_toolchain//:platform \
                 --platforms=@buildbuddy_toolchain//:platform \
-                --crosstool_top=@buildbuddy_toolchain//:toolchain \
                 --remote_header=x-buildbuddy-api-key={}
         """.format(API_KEY),
     },
@@ -78,12 +78,11 @@ REPO_CONFIGS = [
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --remote_timeout=10m \
+                --jobs=100 \
                 --build_metadata=TAGS=dev-qa \
                 --noenable_bzlmod \
                 --extra_execution_platforms=@buildbuddy_toolchain//:platform \
-                --host_platform=@buildbuddy_toolchain//:platform \
                 --platforms=@buildbuddy_toolchain//:platform \
-                --crosstool_top=@buildbuddy_toolchain//:toolchain \
                 --remote_header=x-buildbuddy-api-key={}
         """.format(API_KEY),
     },
@@ -101,9 +100,7 @@ REPO_CONFIGS = [
                 --jobs=100 \
                 --build_metadata=TAGS=dev-qa \
                 --extra_execution_platforms=@buildbuddy_toolchain//:platform \
-                --host_platform=@buildbuddy_toolchain//:platform \
                 --platforms=@buildbuddy_toolchain//:platform \
-                --crosstool_top=@buildbuddy_toolchain//:toolchain \
                 --remote_header=x-buildbuddy-api-key={}
         """.format(API_KEY),
     },
