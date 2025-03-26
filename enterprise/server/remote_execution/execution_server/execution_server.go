@@ -730,7 +730,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			executionID := adInstanceDigest.NewUploadString()
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "cached")
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
-			stateChangeFn := operation.GetStateChangeFunc(stream, executionID, &adInstanceDigest.ResourceName)
+			stateChangeFn := operation.GetStateChangeFunc(stream, executionID, adInstanceDigest)
 			if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithCachedResult(actionResult)); err != nil {
 				return err // CHECK (these errors should not happen).
 			}
@@ -897,7 +897,7 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 		// Send a best-effort initial "in progress" update to client.
 		// Once Bazel receives the initial update, it will use WaitExecution to handle retry on error instead of
 		// requesting a new execution via Execute.
-		stateChangeFn := operation.GetStateChangeFunc(stream, req.GetName(), &actionResource.ResourceName)
+		stateChangeFn := operation.GetStateChangeFunc(stream, req.GetName(), actionResource)
 		err = stateChangeFn(repb.ExecutionStage_QUEUED, operation.InProgressExecuteResponse())
 		if err != nil && err != io.EOF {
 			log.CtxWarningf(stream.Context(), "Could not send initial update: %s", err)
@@ -922,7 +922,7 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 		if msg.Err != nil {
 			op, err := operation.Assemble(
 				req.GetName(),
-				operation.Metadata(repb.ExecutionStage_COMPLETED, &actionResource.ResourceName),
+				operation.Metadata(repb.ExecutionStage_COMPLETED, actionResource),
 				operation.ErrorResponse(msg.Err))
 			if err != nil {
 				return err
@@ -980,7 +980,7 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 		return err
 	}
 	rsp := operation.ErrorResponse(reason)
-	op, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, &r.ResourceName), rsp)
+	op, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, r), rsp)
 	if err != nil {
 		return err
 	}

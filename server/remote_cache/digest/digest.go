@@ -217,6 +217,14 @@ func (r *ResourceName) Validate() error {
 	return nil
 }
 
+type HasResourceName interface {
+	GetResourceName() *ResourceName
+}
+
+func (r *ResourceName) GetResourceName() *ResourceName {
+	return r
+}
+
 type CASResourceName struct {
 	ResourceName
 }
