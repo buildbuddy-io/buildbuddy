@@ -1,6 +1,7 @@
 package priority_queue_test
 
 import (
+	"container/heap"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
@@ -101,4 +102,18 @@ func TestRemoveAt(t *testing.T) {
 	// Queue should now be empty
 	_, ok = q.RemoveAt(0)
 	require.False(t, ok)
+}
+
+func TestRemoveItemWithMinPriority(t *testing.T) {
+	pq := &priority_queue.PriorityQueue[string]{}
+	heap.Push(pq, priority_queue.NewItem("A", 1))
+	heap.Push(pq, priority_queue.NewItem("B", 2))
+
+	item := pq.RemoveItemWithMinPriority()
+	require.Equal(t, "A", item.Value())
+
+	heap.Push(pq, priority_queue.NewItem("C", 3))
+	heap.Push(pq, priority_queue.NewItem("D", 4))
+	item = pq.RemoveItemWithMinPriority()
+	require.Equal(t, "B", item.Value())
 }

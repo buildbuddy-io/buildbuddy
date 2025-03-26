@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// A Item is the element managed by a priority queue.
+// Item is an element managed by a priority queue.
 type Item[V any] struct {
 	value      V
 	index      int // The index of the item in the heap
@@ -64,11 +64,17 @@ func (pq *PriorityQueue[V]) Update(item *Item[V], priority float64) {
 func (pq *PriorityQueue[V]) RemoveItemWithMinPriority() *Item[V] {
 	old := *pq
 	n := len(old)
-	item := old[n-1]
-	if item != nil && item.index >= 0 {
-		heap.Remove(pq, item.index)
+
+	// The min item can only be at the leaf nodes; so we only need to scan the
+	// right half of the array.
+	minIndex := n / 2
+
+	for i := n/2 + 1; i < n; i++ {
+		if pq.Less(minIndex, i) {
+			minIndex = i
+		}
 	}
-	return item
+	return heap.Remove(pq, minIndex).(*Item[V])
 }
 
 // ThreadSafePriorityQueue implements a thread safe priority queue for type V.
