@@ -551,7 +551,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	defer span.End()
 
 	r := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
-	executionID := r.UploadString()
+	executionID := r.NewUploadString()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "task_id", executionID)
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
 
@@ -727,8 +727,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
-			r := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
-			executionID := r.UploadString()
+			executionID := adInstanceDigest.NewUploadString()
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "cached")
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
 			stateChangeFn := operation.GetStateChangeFunc(stream, executionID, &adInstanceDigest.ResourceName)

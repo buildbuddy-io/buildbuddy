@@ -240,9 +240,9 @@ func (r *CASResourceName) DownloadString() string {
 	}
 }
 
-// UploadString returns a string representing the resource name for upload
-// purposes.
-func (r *CASResourceName) UploadString() string {
+// NewUploadString returns a new string representing the resource name for
+// upload purposes each time it is called.
+func (r *CASResourceName) NewUploadString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	u := guuid.New()

@@ -270,6 +270,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	buf := make([]byte, uploadBufSizeBytes)
 	bytesUploaded := int64(0)
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+	resourceName := r.NewUploadString()
 	for {
 		n, err := rc.Read(buf)
 		if err != nil && err != io.EOF {
@@ -279,7 +280,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 		req := &bspb.WriteRequest{
 			Data:         buf[:n],
-			ResourceName: r.UploadString(),
+			ResourceName: resourceName,
 			WriteOffset:  bytesUploaded,
 			FinishWrite:  readDone,
 		}

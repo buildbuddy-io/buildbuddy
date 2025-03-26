@@ -175,7 +175,7 @@ func (s *realLocalWriter) send(data []byte) error {
 		if err != nil {
 			return err
 		}
-		req.ResourceName = rn.UploadString()
+		req.ResourceName = rn.NewUploadString()
 		s.initialized = true
 	}
 	s.offset += int64(len(data))

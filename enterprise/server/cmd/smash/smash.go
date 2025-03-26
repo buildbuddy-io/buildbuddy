@@ -141,7 +141,7 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 
 func writeDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 	d, buf := newRandomDigestBuf(randomBlobSize())
-	resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256).UploadString()
+	resourceName := digest.NewCASResourceName(d, *instanceName, repb.DigestFunction_SHA256).NewUploadString()
 	r := bytes.NewReader(buf)
 
 	var messages []*dynamic.Message
