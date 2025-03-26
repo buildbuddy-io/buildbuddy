@@ -165,39 +165,39 @@ func (r ResourceName) CheckAC() (*ACResourceName, error) {
 	return &ACResourceName{r}, nil
 }
 
-func (r *ResourceName) ToProto() *rspb.ResourceName {
+func (r ResourceName) ToProto() *rspb.ResourceName {
 	return r.rn
 }
 
-func (r *ResourceName) GetDigest() *repb.Digest {
+func (r ResourceName) GetDigest() *repb.Digest {
 	return r.rn.GetDigest()
 }
 
-func (r *ResourceName) GetDigestFunction() repb.DigestFunction_Value {
+func (r ResourceName) GetDigestFunction() repb.DigestFunction_Value {
 	return r.rn.GetDigestFunction()
 }
 
-func (r *ResourceName) GetInstanceName() string {
+func (r ResourceName) GetInstanceName() string {
 	return r.rn.GetInstanceName()
 }
 
-func (r *ResourceName) GetCacheType() rspb.CacheType {
+func (r ResourceName) GetCacheType() rspb.CacheType {
 	return r.rn.GetCacheType()
 }
 
-func (r *ResourceName) GetCompressor() repb.Compressor_Value {
+func (r ResourceName) GetCompressor() repb.Compressor_Value {
 	return r.rn.GetCompressor()
 }
 
-func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
+func (r ResourceName) SetCompressor(compressor repb.Compressor_Value) {
 	r.rn.Compressor = compressor
 }
 
-func (r *ResourceName) IsEmpty() bool {
+func (r ResourceName) IsEmpty() bool {
 	return IsEmptyHash(r.rn.GetDigest(), r.rn.GetDigestFunction())
 }
 
-func (r *ResourceName) Validate() error {
+func (r ResourceName) Validate() error {
 	d := r.rn.GetDigest()
 	if d == nil {
 		return status.InvalidArgumentError("Invalid (nil) Digest")
@@ -223,7 +223,7 @@ type CASResourceName struct {
 
 // DownloadString returns a string representing the resource name for download
 // purposes.
-func (r *CASResourceName) DownloadString() string {
+func (r CASResourceName) DownloadString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
@@ -242,7 +242,7 @@ func (r *CASResourceName) DownloadString() string {
 
 // NewUploadString returns a new string representing the resource name for
 // upload purposes each time it is called.
-func (r *CASResourceName) NewUploadString() string {
+func (r CASResourceName) NewUploadString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	u := guuid.New()
@@ -268,7 +268,7 @@ type ACResourceName struct {
 
 // ActionCacheString returns a string representing the resource name for in
 // the action cache. This is BuildBuddy specific.
-func (r *ACResourceName) ActionCacheString() string {
+func (r ACResourceName) ActionCacheString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
