@@ -99,6 +99,7 @@ export default class GitHubLink extends React.Component<Props, State> {
       .unlinkGitHubAppInstallation(
         github.UnlinkAppInstallationRequest.create({
           installationId: installation.installationId,
+          appId: installation.appId,
         })
       )
       .then(() => {

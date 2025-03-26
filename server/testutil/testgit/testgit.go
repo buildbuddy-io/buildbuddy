@@ -166,12 +166,28 @@ func configure(t testing.TB, repoPath string) {
 	`)
 }
 
+// FakeGitHubAppService implements the github app service interface for tests.
+type FakeGitHubAppService struct {
+	interfaces.GitHubAppService
+
+	App interfaces.GitHubApp
+}
+
+func (s *FakeGitHubAppService) GetGitHubApp(ctx context.Context) (interfaces.GitHubApp, error) {
+	return s.App, nil
+}
+
 // FakeGitHubApp implements the github app interface for tests.
 type FakeGitHubApp struct {
 	interfaces.GitHubApp
-	Token string
+	Token     string
+	MockAppID int64
 }
 
 func (a *FakeGitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
 	return a.Token, nil
+}
+
+func (a *FakeGitHubApp) AppID() int64 {
+	return a.MockAppID
 }
