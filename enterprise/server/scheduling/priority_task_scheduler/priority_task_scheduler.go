@@ -45,14 +45,14 @@ var (
 var shuttingDownLogOnce sync.Once
 
 type groupPriorityQueue struct {
-	*priority_queue.PriorityQueue[*scpb.EnqueueTaskReservationRequest]
+	*priority_queue.ThreadSafePriorityQueue[*scpb.EnqueueTaskReservationRequest]
 	groupID string
 }
 
 func (pq *groupPriorityQueue) Clone() *groupPriorityQueue {
 	return &groupPriorityQueue{
-		PriorityQueue: pq.PriorityQueue.Clone(),
-		groupID:       pq.groupID,
+		ThreadSafePriorityQueue: pq.ThreadSafePriorityQueue.Clone(),
+		groupID:                 pq.groupID,
 	}
 }
 
@@ -169,8 +169,8 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
 		}
 	} else {
 		pq = &groupPriorityQueue{
-			PriorityQueue: priority_queue.New[*scpb.EnqueueTaskReservationRequest](),
-			groupID:       taskGroupID,
+			ThreadSafePriorityQueue: priority_queue.New[*scpb.EnqueueTaskReservationRequest](),
+			groupID:                 taskGroupID,
 		}
 		el := t.pqs.PushBack(pq)
 		t.pqByGroupID[taskGroupID] = el
@@ -180,7 +180,7 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
 	}
 	// Using negative priority here, since the remote execution API specifies
 	// that tasks with lower priority values should be scheduled first.
-	pq.Push(req, -int(req.GetSchedulingMetadata().GetPriority()))
+	pq.Push(req, -float64(req.GetSchedulingMetadata().GetPriority()))
 	t.taskIDs[req.GetTaskId()] = struct{}{}
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: taskGroupID}).Set(float64(pq.Len()))
 	if req.GetSchedulingMetadata().GetTrackQueuedTaskSize() {
