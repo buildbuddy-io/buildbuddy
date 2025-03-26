@@ -397,6 +397,7 @@ func (t *TransferTimer) emitSizeMetrics(compressor repb.Compressor_Value, ct cou
 	metrics.ServerDownloadSizeBytes.With(prometheus.Labels{
 		metrics.CacheTypeLabel: cacheTypeLabel,
 		metrics.ServerName:     serverLabel,
+		metrics.GroupID:        groupID,
 	}).Observe(bytesTransferredClient)
 	if compressor == repb.Compressor_IDENTITY {
 		metrics.ServerUncompressedDownloadBytesCount.With(prometheus.Labels{
