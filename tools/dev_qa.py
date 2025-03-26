@@ -57,12 +57,12 @@ REPO_CONFIGS = [
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --remote_timeout=10m \
+                --jobs=100 \
                 --build_metadata=TAGS=dev-qa \
+                --build_tag_filters=-local \
                 --noenable_bzlmod \
                 --extra_execution_platforms=@buildbuddy_toolchain//:platform \
-                --host_platform=@buildbuddy_toolchain//:platform \
                 --platforms=@buildbuddy_toolchain//:platform \
-                --crosstool_top=@buildbuddy_toolchain//:toolchain \
                 --remote_header=x-buildbuddy-api-key={}
         """.format(API_KEY),
     },
@@ -78,12 +78,11 @@ REPO_CONFIGS = [
                 --bes_backend=remote.buildbuddy.dev \
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --remote_timeout=10m \
+                --jobs=100 \
                 --build_metadata=TAGS=dev-qa \
                 --noenable_bzlmod \
                 --extra_execution_platforms=@buildbuddy_toolchain//:platform \
-                --host_platform=@buildbuddy_toolchain//:platform \
                 --platforms=@buildbuddy_toolchain//:platform \
-                --crosstool_top=@buildbuddy_toolchain//:toolchain \
                 --remote_header=x-buildbuddy-api-key={}
         """.format(API_KEY),
     },
@@ -101,9 +100,7 @@ REPO_CONFIGS = [
                 --jobs=100 \
                 --build_metadata=TAGS=dev-qa \
                 --extra_execution_platforms=@buildbuddy_toolchain//:platform \
-                --host_platform=@buildbuddy_toolchain//:platform \
                 --platforms=@buildbuddy_toolchain//:platform \
-                --crosstool_top=@buildbuddy_toolchain//:toolchain \
                 --remote_header=x-buildbuddy-api-key={}
         """.format(API_KEY),
     },
@@ -129,16 +126,32 @@ REPO_CONFIGS = [
 BUILDBUDDY_TOOLCHAIN_SNIPPET = """
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "e8ba5cf78c8a6268a08cf563c54d3d23a7edf288a16b39fadc8b8a27b2527155",
-    strip_prefix = "buildbuddy-toolchain-f52e991c46e4bb6c71320db3970c20ce088ce951",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/f52e991c46e4bb6c71320db3970c20ce088ce951.tar.gz"],
+    integrity = "sha256-e6gcgLHmJHvxCNNbCSQ4OrX8FbGn8TiS7XSVphM1ZU8=",
+    strip_prefix = "buildbuddy-toolchain-badf8034b2952ec613970a27f24fb140be7eaf73",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/badf8034b2952ec613970a27f24fb140be7eaf73.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
+
 buildbuddy_deps()
 
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy", "UBUNTU20_04_IMAGE")
-buildbuddy(name = "buildbuddy_toolchain", container_image = UBUNTU20_04_IMAGE)
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "buildbuddy")
+
+buildbuddy(
+    name = "buildbuddy_toolchain",
+    container_image = UBUNTU20_04_IMAGE,
+    # This is the MSVC available on Github Action win22 image
+    # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md
+    msvc_edition = "Enterprise",
+    msvc_release = "2022",
+    # From 'Microsoft Visual C++ 2022 Minimum Runtime' for x64 architecture
+    # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
+    msvc_version = "14.43.34808",
+)
+
+register_toolchains(
+    "@buildbuddy_toolchain//:all",
+)
 """
 
 def run_test(name, repo_url, commit_sha, command, clean_repos=False):
