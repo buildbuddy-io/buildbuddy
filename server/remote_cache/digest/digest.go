@@ -151,18 +151,18 @@ func NewACResourceName(d *repb.Digest, instanceName string, digestFunction repb.
 	return &ACResourceName{*NewResourceName(d, instanceName, rspb.CacheType_AC, digestFunction)}
 }
 
-func (r *ResourceName) CheckCAS() (*CASResourceName, error) {
+func (r ResourceName) CheckCAS() (*CASResourceName, error) {
 	if r.rn.GetCacheType() != rspb.CacheType_CAS {
 		return nil, status.FailedPreconditionErrorf("ResourceName is not a CAS resource name: %s", r.rn)
 	}
-	return &CASResourceName{*r}, nil
+	return &CASResourceName{r}, nil
 }
 
-func (r *ResourceName) CheckAC() (*ACResourceName, error) {
+func (r ResourceName) CheckAC() (*ACResourceName, error) {
 	if r.rn.GetCacheType() != rspb.CacheType_AC {
 		return nil, status.FailedPreconditionErrorf("ResourceName is not an AC resource name: %s", r.rn)
 	}
-	return &ACResourceName{*r}, nil
+	return &ACResourceName{r}, nil
 }
 
 func (r *ResourceName) ToProto() *rspb.ResourceName {
