@@ -311,7 +311,6 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (c *OAuthHandler) HandleLinkRepo(w http.ResponseWriter, r *http.Request, redirectPath string) {
 	state := fmt.Sprintf("%d", random.RandUint64())
 	if !setCookies(w, r, state) {
-		redirectWithError(w, r, status.InternalErrorf("failed to set cookies"))
 		return
 	}
 
@@ -484,7 +483,6 @@ func (c *OAuthHandler) handleInstallApp(w http.ResponseWriter, r *http.Request) 
 
 	state := fmt.Sprintf("%d", random.RandUint64())
 	if !setCookies(w, r, state) {
-		redirectWithError(w, r, status.InternalErrorf("failed to set cookies"))
 		return
 	}
 
