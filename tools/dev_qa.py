@@ -129,16 +129,32 @@ REPO_CONFIGS = [
 BUILDBUDDY_TOOLCHAIN_SNIPPET = """
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "e8ba5cf78c8a6268a08cf563c54d3d23a7edf288a16b39fadc8b8a27b2527155",
-    strip_prefix = "buildbuddy-toolchain-f52e991c46e4bb6c71320db3970c20ce088ce951",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/f52e991c46e4bb6c71320db3970c20ce088ce951.tar.gz"],
+    integrity = "sha256-7QJavs7tVcTfCAuIIPcVrFXPs9xdPhaIlEBhCLTtcXw=",
+    strip_prefix = "buildbuddy-toolchain-3d86f2afb5a986ea13a3ab22b0be54dd9cb0e453",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/3d86f2afb5a986ea13a3ab22b0be54dd9cb0e453.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
+
 buildbuddy_deps()
 
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy", "UBUNTU20_04_IMAGE")
-buildbuddy(name = "buildbuddy_toolchain", container_image = UBUNTU20_04_IMAGE)
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "buildbuddy")
+
+buildbuddy(
+    name = "buildbuddy_toolchain",
+    container_image = UBUNTU20_04_IMAGE,
+    # This is the MSVC available on Github Action win22 image
+    # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md
+    msvc_edition = "Enterprise",
+    msvc_release = "2022",
+    # From 'Microsoft Visual C++ 2022 Minimum Runtime' for x64 architecture
+    # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
+    msvc_version = "14.43.34808",
+)
+
+register_toolchains(
+    "@buildbuddy_toolchain//:all",
+)
 """
 
 def run_test(name, repo_url, commit_sha, command, clean_repos=False):

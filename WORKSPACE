@@ -594,7 +594,10 @@ oci_pull(
 )
 
 # BuildBuddy Toolchain
-# Keep up-to-date with docs/rbe-setup.md and docs/rbe-github-actions.md
+# Keep up-to-date with 
+# - docs/rbe-setup.md 
+# - docs/rbe-github-actions.md 
+# - tools/dev_qa.py
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
     integrity = "sha256-7QJavs7tVcTfCAuIIPcVrFXPs9xdPhaIlEBhCLTtcXw=",
