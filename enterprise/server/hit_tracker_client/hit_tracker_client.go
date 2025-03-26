@@ -2,6 +2,7 @@ package hit_tracker_client
 
 import (
 	"context"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -22,11 +23,11 @@ func Register(env *real_environment.RealEnv) {
 type HitTracker struct {
 }
 
-func (h HitTrackerFactory) NewACHitTracker(ctx context.Context) interfaces.HitTracker {
+func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, invocationID string) interfaces.HitTracker {
 	return &HitTracker{}
 }
 
-func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context) interfaces.HitTracker {
+func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, invocationID string) interfaces.HitTracker {
 	return &HitTracker{}
 }
 
@@ -45,6 +46,10 @@ type TransferTimer struct {
 }
 
 func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
+	return nil
+}
+
+func (t *TransferTimer) Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error {
 	return nil
 }
 

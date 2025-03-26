@@ -28,7 +28,6 @@ import (
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gcodes "google.golang.org/grpc/codes"
@@ -297,7 +296,7 @@ func (p *FetchServer) FetchDirectory(ctx context.Context, req *rapb.FetchDirecto
 }
 
 func (p *FetchServer) rewriteToCache(ctx context.Context, blobDigest *repb.Digest, instanceName string, fromFunc, toFunc repb.DigestFunction_Value) *repb.Digest {
-	cacheRN := digest.NewResourceName(blobDigest, instanceName, rspb.CacheType_CAS, fromFunc)
+	cacheRN := digest.NewCASResourceName(blobDigest, instanceName, fromFunc)
 	cache := p.env.GetCache()
 	reader, err := cache.Reader(ctx, cacheRN.ToProto(), 0, 0)
 	if err != nil {
@@ -335,7 +334,7 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 		// doesn't matter.
 		SizeBytes: 1,
 	}
-	cacheRN := digest.NewResourceName(blobDigest, instanceName, rspb.CacheType_CAS, checksumFunc)
+	cacheRN := digest.NewCASResourceName(blobDigest, instanceName, checksumFunc)
 	log.CtxDebugf(ctx, "Looking up %s in cache", blobDigest.Hash)
 
 	// Lookup metadata to get the correct digest size to be returned to
@@ -351,7 +350,7 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 	// Even though we successfully fetched metadata, we need to renew
 	// the cache entry (using Contains()) to ensure that it doesn't
 	// expire by the time the client requests it from cache.
-	cacheRN = digest.NewResourceName(blobDigest, instanceName, rspb.CacheType_CAS, checksumFunc)
+	cacheRN = digest.NewCASResourceName(blobDigest, instanceName, checksumFunc)
 	exists, err := cache.Contains(ctx, cacheRN.ToProto())
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to renew %s: %s", digest.String(blobDigest), err)
@@ -401,7 +400,7 @@ func mirrorToCache(
 	// response to cache.
 	if checksumFunc == storageFunc && expectedChecksum != "" && rsp.ContentLength >= 0 {
 		d := &repb.Digest{Hash: expectedChecksum, SizeBytes: rsp.ContentLength}
-		rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, storageFunc)
+		rn := digest.NewCASResourceName(d, remoteInstanceName, storageFunc)
 		if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
 			return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
 		}

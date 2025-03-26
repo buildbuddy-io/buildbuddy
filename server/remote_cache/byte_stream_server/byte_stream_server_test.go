@@ -27,7 +27,6 @@ import (
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	guuid "github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
@@ -72,55 +71,55 @@ func TestRPCRead(t *testing.T) {
 	}
 	cases := []struct {
 		wantError    error
-		resourceName *digest.ResourceName
+		resourceName *digest.CASResourceName
 		wantData     string
 		offset       int64
 	}{
 		{ // Simple Read
-			resourceName: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewCASResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
-			}, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256),
+			}, "", repb.DigestFunction_SHA256),
 
 			wantData:  randStr(1234),
 			wantError: nil,
 			offset:    0,
 		},
 		{ // Large Read
-			resourceName: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewCASResourceName(&repb.Digest{
 				Hash:      "ffd14ebb6c1b2701ac793ea1aff6dddf8540e734bd6d051ac2a24aa3ec062781",
 				SizeBytes: 1000 * 1000 * 100,
-			}, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256),
+			}, "", repb.DigestFunction_SHA256),
 
 			wantData:  randStr(1000 * 1000 * 100),
 			wantError: nil,
 			offset:    0,
 		},
 		{ // 0 length read
-			resourceName: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewCASResourceName(&repb.Digest{
 				Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 				SizeBytes: 0,
-			}, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256),
+			}, "", repb.DigestFunction_SHA256),
 
 			wantData:  "",
 			wantError: nil,
 			offset:    0,
 		},
 		{ // Offset
-			resourceName: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewCASResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
-			}, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256),
+			}, "", repb.DigestFunction_SHA256),
 
 			wantData:  randStr(1234),
 			wantError: nil,
 			offset:    1,
 		},
 		{ // Max offset
-			resourceName: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewCASResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
-			}, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256),
+			}, "", repb.DigestFunction_SHA256),
 
 			wantData:  randStr(1234),
 			wantError: nil,
@@ -161,7 +160,7 @@ func TestRPCWrite(t *testing.T) {
 
 	// Test that a regular bytestream upload works.
 	d, readSeeker := testdigest.NewReader(t, 1000)
-	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	instanceNameDigest := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
 	_, _, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +176,7 @@ func TestRPCWriteWithDirectWrite(t *testing.T) {
 
 	// This file is small enough that we'll skip the Contains check.
 	d, readSeeker := testdigest.NewReader(t, 1000)
-	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	instanceNameDigest := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
 	_, _, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +198,11 @@ func TestRPCMalformedWrite(t *testing.T) {
 	buf[0] = ^buf[0] // flip bits in byte to corrupt digest.
 
 	readSeeker := bytes.NewReader(buf)
-	_, _, err := cachetools.UploadFromReader(ctx, bsClient, digest.ResourceNameFromProto(instanceNameDigest), readSeeker)
+	rn, err := digest.CASResourceNameFromProto(instanceNameDigest)
+	if err != nil {
+		t.Fatalf("failed to create resource name: %v", err)
+	}
+	_, _, err = cachetools.UploadFromReader(ctx, bsClient, rn, readSeeker)
 	if !status.IsDataLossError(err) {
 		t.Fatalf("Expected data loss error but got %s", err)
 	}
@@ -214,10 +217,13 @@ func TestRPCTooLongWrite(t *testing.T) {
 	// Test that a malformed upload (wrong bytesize) is rejected.
 	rnProto, buf := testdigest.RandomCASResourceBuf(t, 1000)
 	rnProto.Digest.SizeBytes += 1 // increment expected byte count by 1 to trigger mismatch.
-	instanceNameDigest := digest.ResourceNameFromProto(rnProto)
+	instanceNameDigest, err := digest.CASResourceNameFromProto(rnProto)
+	if err != nil {
+		t.Fatalf("failed to create resource name: %v", err)
+	}
 
 	readSeeker := bytes.NewReader(buf)
-	_, _, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
+	_, _, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if !status.IsDataLossError(err) {
 		t.Fatalf("Expected data loss error but got %s", err)
 	}
@@ -234,7 +240,7 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 	require.NoError(t, err)
 	d, err := digest.Compute(strings.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
-	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	instanceNameDigest := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
 
 	// Write
 	_, _, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, strings.NewReader(blob))

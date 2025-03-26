@@ -54,6 +54,7 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/service:rpc_service",
+        "//enterprise/app/settings:github_tooltip",
         "//proto:github_ts_proto",
     ],
 )
@@ -76,6 +77,7 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/service:rpc_service",
+        "//enterprise/app/settings:github_tooltip",
         "//proto:github_ts_proto",
     ],
 )
@@ -99,5 +101,16 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "github_tooltip",
+    srcs = ["github_tooltip.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//app/components/tooltip",
     ],
 )

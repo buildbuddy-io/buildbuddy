@@ -10,7 +10,6 @@ go_library(
         "//cli/cli_command",
         "//cli/parser",
         "//cli/version",
-        "//server/util/lockingbuffer",
     ],
 )
 

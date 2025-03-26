@@ -29,7 +29,6 @@ import (
 	sspb "github.com/awslabs/soci-snapshotter/proto"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	godigest "github.com/opencontainers/go-digest"
 )
@@ -333,7 +332,7 @@ func getArtifacts(ctx context.Context, client socipb.SociArtifactStoreClient, en
 			return err
 		}
 		defer blobFile.Close()
-		resourceName := digest.NewResourceName(artifact.Digest, "" /*=instanceName -- not used */, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		resourceName := digest.NewCASResourceName(artifact.Digest, "" /*=instanceName -- not used */, repb.DigestFunction_SHA256)
 		if err = cachetools.GetBlob(ctx, env.GetByteStreamClient(), resourceName, blobFile); err != nil {
 			return err
 		}

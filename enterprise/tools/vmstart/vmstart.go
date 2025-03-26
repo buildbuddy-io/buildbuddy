@@ -38,7 +38,6 @@ import (
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -124,13 +123,13 @@ func parseSnapshotKeyJSON(in string) (*RemoteSnapshotKey, *fcpb.SnapshotKey, err
 	return k, pk, nil
 }
 
-func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, actionDigest *digest.ResourceName) (*repb.Action, *repb.Command, error) {
+func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, actionDigest *digest.CASResourceName) (*repb.Action, *repb.Command, error) {
 	action := &repb.Action{}
 	if err := cachetools.GetBlobAsProto(ctx, bsClient, actionDigest, action); err != nil {
 		return nil, nil, status.WrapErrorf(err, "could not fetch action")
 	}
 	cmd := &repb.Command{}
-	if err := cachetools.GetBlobAsProto(ctx, bsClient, digest.NewResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_SHA256), cmd); err != nil {
+	if err := cachetools.GetBlobAsProto(ctx, bsClient, digest.NewCASResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName(), repb.DigestFunction_SHA256), cmd); err != nil {
 		return nil, nil, status.WrapErrorf(err, "could not fetch command")
 	}
 	return action, cmd, nil
@@ -312,7 +311,7 @@ func run(ctx context.Context, env environment.Env) error {
 		// If the parsed remote_instance_name is empty, and the flag instance
 		// name is set; override the instance name of `rn`.
 		if actionInstanceDigest.GetInstanceName() == "" && *remoteInstanceName != "" {
-			actionInstanceDigest = digest.NewResourceName(actionInstanceDigest.GetDigest(), *remoteInstanceName, actionInstanceDigest.GetCacheType(), actionInstanceDigest.GetDigestFunction())
+			actionInstanceDigest = digest.NewCASResourceName(actionInstanceDigest.GetDigest(), *remoteInstanceName, actionInstanceDigest.GetDigestFunction())
 		}
 
 		action, cmd, err := getActionAndCommand(ctx, env.GetByteStreamClient(), actionInstanceDigest)
@@ -324,7 +323,7 @@ func run(ctx context.Context, env environment.Env) error {
 		out, _ = prototext.Marshal(cmd)
 		log.Infof("Command:\n%s", string(out))
 
-		tree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), digest.NewResourceName(action.GetInputRootDigest(), *remoteInstanceName, rspb.CacheType_CAS, actionInstanceDigest.GetDigestFunction()))
+		tree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), digest.NewCASResourceName(action.GetInputRootDigest(), *remoteInstanceName, actionInstanceDigest.GetDigestFunction()))
 		if err != nil {
 			return status.WrapError(err, "get tree")
 		}

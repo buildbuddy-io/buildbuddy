@@ -9,6 +9,12 @@ export class User {
   selectedGroup: grp.Group;
   selectedGroupAccess: user.SelectedGroup.Access;
   allowedRpcs: Set<BuildBuddyServiceRpcName>;
+  /** Whether the user has linked their personal GitHub account in order to use
+   * GitHub-related features. Linking their personal account is a pre-requisite
+   * to manage/view GitHub-related features in our UI, even though many of the features
+   * are powered through a GitHub app that is installed at the org level.
+   *
+   * This is separate from whether the user uses GitHub to login. */
   githubLinked: boolean;
   /** Whether the user is temporarily acting as a member of the selected group. */
   isImpersonating: boolean;

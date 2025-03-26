@@ -70,12 +70,15 @@ func main() {
 		digestString = "/blobs/" + digestString
 	}
 
-	ind, err := digest.ParseDownloadResourceName(digestString)
-	if err != nil {
-		log.Fatal(status.Message(err))
-	}
+	var ind *digest.ResourceName
 	if *blobType == "ActionResult" {
 		ind = digest.NewResourceName(ind.GetDigest(), ind.GetInstanceName(), rspb.CacheType_AC, ind.GetDigestFunction())
+	} else {
+		indDownload, err := digest.ParseDownloadResourceName(digestString)
+		if err != nil {
+			log.Fatal(status.Message(err))
+		}
+		ind = &indDownload.ResourceName
 	}
 
 	// For backwards compatibility with the existing behavior of this code:
@@ -127,7 +130,11 @@ func main() {
 	// Handle raw string types
 	if *blobType == "stdout" || *blobType == "stderr" || *blobType == "file" {
 		var out bytes.Buffer
-		if err := cachetools.GetBlob(ctx, bsClient, ind, &out); err != nil {
+		r, err := ind.CheckCAS()
+		if err != nil {
+			log.Fatalf("Failed to convert resource name to CAS: %s", err)
+		}
+		if err := cachetools.GetBlob(ctx, bsClient, r, &out); err != nil {
 			log.Fatal(err.Error())
 		}
 		writeToStdout(out.Bytes())
@@ -136,7 +143,11 @@ func main() {
 
 	// Handle ActionResults (these are stored in the action cache)
 	if *blobType == "ActionResult" {
-		ar, err := cachetools.GetActionResult(ctx, acClient, ind)
+		r, err := ind.CheckAC()
+		if err != nil {
+			log.Fatalf("Failed to convert resource name to AC: %s", err)
+		}
+		ar, err := cachetools.GetActionResult(ctx, acClient, r)
 		if err != nil {
 			log.Fatal(err.Error())
 		}
@@ -146,7 +157,11 @@ func main() {
 
 	// Handle Trees (these are stored in the CAS)
 	if *blobType == "Tree" {
-		inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, casClient, ind)
+		r, err := ind.CheckCAS()
+		if err != nil {
+			log.Fatalf("Failed to convert resource name to CAS: %s", err)
+		}
+		inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, casClient, r)
 		if err != nil {
 			log.Fatal(err.Error())
 		}
@@ -164,7 +179,11 @@ func main() {
 	default:
 		log.Fatalf(`Invalid --type: %q (allowed values: Action, ActionResult, Command, Tree, file, stderr, stdout)`, *blobType)
 	}
-	if err := cachetools.GetBlobAsProto(ctx, bsClient, ind, msg); err != nil {
+	r, err := ind.CheckCAS()
+	if err != nil {
+		log.Fatalf("Failed to convert resource name to CAS: %s", err)
+	}
+	if err := cachetools.GetBlobAsProto(ctx, bsClient, r, msg); err != nil {
 		log.Fatal(err.Error())
 	}
 	printMessage(msg)

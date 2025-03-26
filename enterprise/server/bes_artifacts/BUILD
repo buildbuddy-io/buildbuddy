@@ -9,7 +9,6 @@ go_library(
         "//enterprise/server/build_event_publisher",
         "//proto:build_event_stream_go_proto",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/grpc_client",

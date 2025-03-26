@@ -601,12 +601,12 @@ type ApiService interface {
 }
 
 type WorkflowService interface {
-	CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
+	CreateLegacyWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
 	DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
 	GetWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error)
 	GetWorkflowHistory(ctx context.Context) (*wfpb.GetWorkflowHistoryResponse, error)
 	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
-	GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
+	GetReposForLegacyGitHubApp(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 
 	// HandleRepositoryEvent handles a webhook event corresponding to the given
@@ -641,15 +641,17 @@ type SnapshotService interface {
 	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
 }
 
+// GitHubApp represents a specific instance of either the read-only or read-write
+// BuildBuddy GitHub app.
 type GitHubApp interface {
 	// TODO(bduffany): Add webhook handler and repo management API
 
+	AppID() int64
+
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
-	GetGitHubAppInstallations(context.Context, *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error)
 	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
 
-	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
-	LinkGitHubRepo(context.Context, *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error)
+	LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
 
 	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
@@ -671,6 +673,9 @@ type GitHubApp interface {
 
 	// OAuthHandler returns the OAuth flow HTTP handler.
 	OAuthHandler() http.Handler
+
+	// IsTokenValid returns whether the oauth token is valid for the current app.
+	IsTokenValid(ctx context.Context, oauthToken string) bool
 
 	// Passthroughs
 	GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error)
@@ -696,6 +701,18 @@ type GitHubApp interface {
 	UpdateGithubPullRequestComment(ctx context.Context, req *ghpb.UpdateGithubPullRequestCommentRequest) (*ghpb.UpdateGithubPullRequestCommentResponse, error)
 	DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error)
 	SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error)
+}
+
+// GitHubAppService is a wrapper for GitHubApp. It's needed to determine the specific
+// GitHubApp the user has installed (read-only vs read-write) and is used for app-agnostic
+// operations.
+type GitHubAppService interface {
+	GetReadWriteGitHubApp() GitHubApp
+	GetGitHubAppWithID(appID int64) (GitHubApp, error)
+	GetGitHubApp(ctx context.Context) (GitHubApp, error)
+
+	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
+	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
 }
 
 type RunnerService interface {
@@ -1637,6 +1654,11 @@ type TransferTimer interface {
 	// does not support compression and requires that uncompressed bytes are
 	// written (bytesTransferredCache)
 	CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error
+
+	// Records the provided TransferTimer information using the usage tracker
+	// and metrics collector without emiting Prometheus metrics. Exposed for
+	// use in enterprise/server/hit_tracker_service.
+	Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error
 }
 
 // Tracks cache hit/miss and transfer-timing statistics.
@@ -1661,10 +1683,10 @@ type HitTracker interface {
 
 type HitTrackerFactory interface {
 	// Creates a new HitTracker for tracking Action Cache hits.
-	NewACHitTracker(ctx context.Context) HitTracker
+	NewACHitTracker(ctx context.Context, invocationID string) HitTracker
 
 	// Creates a new HitTracker for tracking ByteStream/CAS hits.
-	NewCASHitTracker(ctx context.Context) HitTracker
+	NewCASHitTracker(ctx context.Context, invocationID string) HitTracker
 }
 
 // ExperimentFlagProvider can be use for getting a flag value for a request to

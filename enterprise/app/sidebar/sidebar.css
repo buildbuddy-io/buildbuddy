@@ -38,6 +38,11 @@
   transition: 300ms ease-in-out;
 }
 
+.flipflop:hover {
+  -webkit-transform: scaleX(-1);
+  transform: scaleX(-1);
+}
+
 .sidebar .sidebar-header {
   height: 36px;
   margin-bottom: 24px;

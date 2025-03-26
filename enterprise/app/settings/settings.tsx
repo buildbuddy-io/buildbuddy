@@ -133,7 +133,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 {router.canAccessOrgGitHubLinkPage(this.props.user) &&
                   (capabilities.github || capabilities.config.githubAppEnabled) && (
                     <SettingsTab id={TabId.OrgGitHub} activeTabId={activeTabId}>
-                      <span>GitHub link</span>
+                      <span>GitHub installations</span>
                       {/* If the user has a group-level GitHub link and the new GitHub App is
                         enabled, show a deprecation alert. */}
                       {capabilities.config.githubAppEnabled && this.props.user.selectedGroup.githubLinked && (

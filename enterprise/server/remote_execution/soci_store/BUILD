@@ -17,7 +17,6 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "//proto:registry_go_proto",
             "//proto:remote_execution_go_proto",
-            "//proto:resource_go_proto",
             "//proto:soci_go_proto",
             "//server/interfaces",
             "//server/metrics",
