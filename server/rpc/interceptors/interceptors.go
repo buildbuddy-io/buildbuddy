@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -47,10 +49,10 @@ var (
 
 func init() {
 	headerContextKeys = map[string]string{
-		"x-buildbuddy-jwt":    "x-buildbuddy-jwt",
-		"x-buildbuddy-origin": "x-buildbuddy-origin",
-		"x-buildbuddy-client": "x-buildbuddy-client",
-		"build.bazel.remote.execution.v2.requestmetadata-bin": "build.bazel.remote.execution.v2.requestmetadata-bin",
+		authutil.ContextTokenStringKey:   authutil.ContextTokenStringKey,
+		usageutil.OriginHeaderName:       usageutil.OriginHeaderName,
+		usageutil.ClientHeaderName:       usageutil.ClientHeaderName,
+		bazel_request.RequestMetadataKey: bazel_request.RequestMetadataKey,
 	}
 }
 

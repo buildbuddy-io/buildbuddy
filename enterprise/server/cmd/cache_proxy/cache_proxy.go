@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
 
@@ -50,7 +51,13 @@ var (
 
 	remoteCache = flag.String("cache_proxy.remote_cache", "grpcs://remote.buildbuddy.dev", "The backing remote cache.")
 
-	headersToPropagate = []string{authutil.APIKeyHeader, authutil.ContextTokenStringKey, "x-buildbuddy-origin", "x-buildbuddy-client", authutil.ClientIdentityHeaderName, bazel_request.RequestMetadataKey}
+	headersToPropagate = []string{
+		authutil.APIKeyHeader,
+		authutil.ContextTokenStringKey,
+		usageutil.ClientHeaderName,
+		usageutil.OriginHeaderName,
+		authutil.ClientIdentityHeaderName,
+		bazel_request.RequestMetadataKey}
 )
 
 func main() {
