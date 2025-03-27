@@ -131,7 +131,7 @@ common:ci --disk_cache=
 # Configuration used for untrusted GitHub actions-based CI
 common:untrusted-ci --config=remote-minimal
 common:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
-common:untrusted-ci --repository_cache=~/repo-cache/untrusted/
+common:untrusted-ci --repository_cache=~/repo-cache/
 common:untrusted-ci --disk_cache=
 common:untrusted-ci --flaky_test_attempts=2
 common:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io

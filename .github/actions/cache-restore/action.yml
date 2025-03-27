@@ -1,40 +1,56 @@
 name: "Restore download caches"
-description: "Restores external dependencies caches, and outputs cache-hit statuses."
-inputs:
-  repo-cache-dir:
-    description: "The directory where the Bazel Repo cache is stored."
-    required: true
-    default: "$HOME/repo-cache"
-  go-mod-cache-dir:
-    description: "The directory where the Go Mod cache is stored."
-    required: true
-    default: "$HOME/go-mod-cache"
-  yarn-cache-dir:
-    description: "The directory where the Yarn cache is stored."
-    required: true
-    default: "$HOME/.cache/yarn/v6"
+description: "Determines cache paths based on OS using hardcoded paths, restores external dependencies caches, and outputs cache-hit statuses and paths."
 outputs:
-  repo-cache-hit:
-    description: "Cache hit status for Bazel Repo Cache"
-    value: ${{ steps.repo-cache-restore.outputs.cache-hit }}
-  go-mod-cache-hit:
-    description: "Cache hit status for Go Mod Cache"
-    value: ${{ steps.go-mod-cache-restore.outputs.cache-hit }}
-  yarn-cache-hit:
-    description: "Cache hit status for Yarn Cache"
-    value: ${{ steps.yarn-cache-restore.outputs.cache-hit }}
+  # Cache paths for each cache
+  repo-cache-dir:
+    description: "Determined Bazel Repo cache directory path"
+    value: ${{ steps.determine-paths-linux.outputs.repo-cache-dir || steps.determine-paths-macos.outputs.repo-cache-dir || steps.determine-paths-windows.outputs.repo-cache-dir }}
+  go-mod-cache-dir:
+    description: "Determined Go Mod cache directory path"
+    value: ${{ steps.determine-paths-linux.outputs.go-mod-cache-dir || steps.determine-paths-macos.outputs.go-mod-cache-dir || steps.determine-paths-windows.outputs.go-mod-cache-dir }}
+  yarn-cache-dir:
+    description: "Determined Yarn cache directory path"
+    value: ${{ steps.determine-paths-linux.outputs.yarn-cache-dir || steps.determine-paths-macos.outputs.yarn-cache-dir || steps.determine-paths-windows.outputs.yarn-cache-dir }}
 runs:
   using: composite
-  # Github Actions does not allow overwriting an existing cache key.
-  # So we write a new cache key for each run attempt, while restoring the cache with a prefix match.
-  #
-  # Reference: https://github.com/actions/cache/pull/1452
   steps:
+    # Step to determine paths for Linux using /home/runner
+    - name: Determine Cache Paths (Linux)
+      id: determine-paths-linux
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        echo "repo-cache-dir=/home/runner/repo-cache" >> $GITHUB_OUTPUT
+        echo "go-mod-cache-dir=/home/runner/go-mod-cache" >> $GITHUB_OUTPUT
+        echo "yarn-cache-dir=/home/runner/.cache/yarn/v6" >> $GITHUB_OUTPUT
+
+    # Step to determine paths for macOS using /Users/runner
+    - name: Determine Cache Paths (macOS)
+      id: determine-paths-macos
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        echo "repo-cache-dir=/Users/runner/repo-cache" >> $GITHUB_OUTPUT
+        echo "go-mod-cache-dir=/Users/runner/go-mod-cache" >> $GITHUB_OUTPUT
+        echo "yarn-cache-dir=/Users/runner/.cache/yarn/v6" >> $GITHUB_OUTPUT
+
+    # Step to determine paths for Windows using D:\
+    - name: Determine Cache Paths (Windows)
+      id: determine-paths-windows
+      if: runner.os == 'Windows'
+      shell: pwsh # PowerShell is default on Windows runners
+      run: |
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "repo-cache-dir=D:/bazel/repo-cache"
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "go-mod-cache-dir=D:/go-mod-cache"
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "yarn-cache-dir=~/AppData/Local/Yarn/Cache/v6"
+
+    # Restore steps now use combined outputs from the determine steps
     - name: Restore Bazel Repo Cache
       uses: actions/cache/restore@v4
       id: repo-cache-restore
       with:
-        path: ${{ inputs.repo-cache-dir }}
+        # Use the path determined in the conditional steps
+        path: ${{ steps.determine-paths-linux.outputs.repo-cache-dir || steps.determine-paths-macos.outputs.repo-cache-dir || steps.determine-paths-windows.outputs.repo-cache-dir }}
         key: repo-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           repo-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'deps.bzl') }}-
@@ -44,7 +60,8 @@ runs:
       uses: actions/cache/restore@v4
       id: go-mod-cache-restore
       with:
-        path: ${{ inputs.go-mod-cache-dir }}
+        # Use the path determined in the conditional steps
+        path: ${{ steps.determine-paths-linux.outputs.go-mod-cache-dir || steps.determine-paths-macos.outputs.go-mod-cache-dir || steps.determine-paths-windows.outputs.go-mod-cache-dir }}
         key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}-
@@ -54,7 +71,8 @@ runs:
       uses: actions/cache/restore@v4
       id: yarn-cache-restore
       with:
-        path: ${{ inputs.yarn-cache-dir }}
+        # Use the path determined in the conditional steps
+        path: ${{ steps.determine-paths-linux.outputs.yarn-cache-dir || steps.determine-paths-macos.outputs.yarn-cache-dir || steps.determine-paths-windows.outputs.yarn-cache-dir }}
         key: yarn-cache-${{ runner.os }}-${{ hashFiles('**/yarn.lock', '**/package.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           yarn-cache-${{ runner.os }}-${{ hashFiles('**/yarn.lock', '**/package.json') }}-
