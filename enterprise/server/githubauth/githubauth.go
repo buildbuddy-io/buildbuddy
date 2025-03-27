@@ -126,23 +126,7 @@ func (a *githubAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 }
 
 func (a *githubAuthenticator) handler() *github.OAuthHandler {
-	// We always use the read-write github app for login for legacy reasons.
-	// Previously, we only offered a read-write app, and customers onboarded to it.
-	// Even though login only needs read access, there is no easy way to transfer
-	// customers to the read-only app once we added support for it.
-	//
-	// Using the read-write app does NOT mean that users have to grant write access
-	// for login. In GitHub, authorizing and installing a GitHub app are different.
-	// When *authorizing*, our read-write app only requests read access to emails.
-	// In GitHub terminology, you are authorizing an Oauth app.
-	// When *installing*, our read-write app requests write access to certain resources.
-	// In GitHub terminology, you are installing a GitHub app.
-	//
-	// TLDR: The login flow only prompts the user to authorize the app, so the user won't
-	// be asked to grant any write permissions, even though it's technically under
-	// our read-write app.
-	ghApp := a.env.GetGitHubAppService().GetReadWriteGitHubApp()
-	return ghApp.OAuthHandler().(*github.OAuthHandler)
+	return a.env.GetGitHubApp().OAuthHandler().(*github.OAuthHandler)
 }
 
 func (a *githubAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {

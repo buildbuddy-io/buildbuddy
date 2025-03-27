@@ -167,7 +167,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		ConfiguredIssuers:                      env.GetAuthenticator().PublicIssuers(),
 		DefaultToDenseMode:                     *defaultToDenseMode,
 		GithubEnabled:                          github.IsLegacyOAuthAppEnabled(),
-		GithubAppEnabled:                       env.GetGitHubAppService() != nil,
+		GithubAppEnabled:                       env.GetGitHubApp() != nil,
 		GithubAuthEnabled:                      github.AuthEnabled(env),
 		AnonymousUsageEnabled:                  env.GetAuthenticator().AnonymousUsageEnabled(ctx),
 		TestDashboardEnabled:                   target_tracker.TargetTrackingEnabled(),

@@ -1515,76 +1515,46 @@ func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.Un
 }
 
 func (s *BuildBuddyServer) LinkGitHubAppInstallation(ctx context.Context, req *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubAppWithID(req.GetAppId())
-	if err != nil {
-		return nil, err
 	}
 	return a.LinkGitHubAppInstallation(ctx, req)
 }
 func (s *BuildBuddyServer) GetGitHubAppInstallations(ctx context.Context, req *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error) {
-	a := s.env.GetGitHubAppService()
+	a := s.env.GetGitHubApp()
 	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	installations, err := a.GetGitHubAppInstallations(ctx)
-	if err != nil {
-		return nil, err
-	}
-	res := &ghpb.GetAppInstallationsResponse{}
-	for _, i := range installations {
-		res.Installations = append(res.Installations, &ghpb.AppInstallation{
-			GroupId:        i.GroupID,
-			InstallationId: i.InstallationID,
-			Owner:          i.Owner,
-			AppId:          i.AppID,
-		})
-	}
-	return res, nil
+	return a.GetGitHubAppInstallations(ctx, req)
 }
 func (s *BuildBuddyServer) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubAppWithID(req.GetAppId())
-	if err != nil {
-		return nil, err
 	}
 	return a.UnlinkGitHubAppInstallation(ctx, req)
 }
-
 func (s *BuildBuddyServer) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetAccessibleGitHubRepos(ctx, req)
 }
 func (s *BuildBuddyServer) GetLinkedGitHubRepos(ctx context.Context, req *ghpb.GetLinkedReposRequest) (*ghpb.GetLinkedReposResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	return gh.GetLinkedGitHubRepos(ctx)
+	return a.GetLinkedGitHubRepos(ctx)
 }
 func (s *BuildBuddyServer) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rsp, err := a.LinkGitHubRepo(ctx, req.GetRepoUrl())
+	rsp, err := a.LinkGitHubRepo(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -1594,13 +1564,9 @@ func (s *BuildBuddyServer) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRep
 	return rsp, nil
 }
 func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	rsp, err := a.UnlinkGitHubRepo(ctx, req)
 	if err != nil {
@@ -2077,289 +2043,193 @@ func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAu
 }
 
 func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *repb.CreateRepoRequest) (*repb.CreateRepoResponse, error) {
-	gh := s.env.GetGitHubAppService()
+	gh := s.env.GetGitHubApp()
 	if gh == nil {
-		return nil, status.UnimplementedError("Not implemented")
+		return nil, status.UnimplementedError("Github service not configured")
 	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return a.CreateRepo(ctx, request)
+	return gh.CreateRepo(ctx, request)
 }
 
 func (s *BuildBuddyServer) GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetGithubUserInstallations(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetGithubUser(ctx context.Context, req *ghpb.GetGithubUserRequest) (*ghpb.GetGithubUserResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetGithubUser(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetGithubRepo(ctx context.Context, req *ghpb.GetGithubRepoRequest) (*ghpb.GetGithubRepoResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetGithubRepo(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetGithubContent(ctx context.Context, req *ghpb.GetGithubContentRequest) (*ghpb.GetGithubContentResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetGithubContent(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetGithubTree(ctx context.Context, req *ghpb.GetGithubTreeRequest) (*ghpb.GetGithubTreeResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetGithubTree(ctx, req)
 }
 
 func (s *BuildBuddyServer) CreateGithubTree(ctx context.Context, req *ghpb.CreateGithubTreeRequest) (*ghpb.CreateGithubTreeResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.CreateGithubTree(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetGithubBlob(ctx context.Context, req *ghpb.GetGithubBlobRequest) (*ghpb.GetGithubBlobResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetGithubBlob(ctx, req)
 }
 
 func (s *BuildBuddyServer) CreateGithubBlob(ctx context.Context, req *ghpb.CreateGithubBlobRequest) (*ghpb.CreateGithubBlobResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.CreateGithubBlob(ctx, req)
 }
 
 func (s *BuildBuddyServer) CreateGithubPull(ctx context.Context, req *ghpb.CreateGithubPullRequest) (*ghpb.CreateGithubPullResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.CreateGithubPull(ctx, req)
 }
 
 func (s *BuildBuddyServer) MergeGithubPull(ctx context.Context, req *ghpb.MergeGithubPullRequest) (*ghpb.MergeGithubPullResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.MergeGithubPull(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetGithubCompare(ctx context.Context, req *ghpb.GetGithubCompareRequest) (*ghpb.GetGithubCompareResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetGithubCompare(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetGithubForks(ctx context.Context, req *ghpb.GetGithubForksRequest) (*ghpb.GetGithubForksResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetGithubForks(ctx, req)
 }
 
 func (s *BuildBuddyServer) CreateGithubFork(ctx context.Context, req *ghpb.CreateGithubForkRequest) (*ghpb.CreateGithubForkResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.CreateGithubFork(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetGithubCommits(ctx context.Context, req *ghpb.GetGithubCommitsRequest) (*ghpb.GetGithubCommitsResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetGithubCommits(ctx, req)
 }
 
 func (s *BuildBuddyServer) CreateGithubCommit(ctx context.Context, req *ghpb.CreateGithubCommitRequest) (*ghpb.CreateGithubCommitResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.CreateGithubCommit(ctx, req)
 }
 
 func (s *BuildBuddyServer) UpdateGithubRef(ctx context.Context, req *ghpb.UpdateGithubRefRequest) (*ghpb.UpdateGithubRefResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.UpdateGithubRef(ctx, req)
 }
 
 func (s *BuildBuddyServer) CreateGithubRef(ctx context.Context, req *ghpb.CreateGithubRefRequest) (*ghpb.CreateGithubRefResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.CreateGithubRef(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetGithubPullRequest(ctx context.Context, req *ghpb.GetGithubPullRequestRequest) (*ghpb.GetGithubPullRequestResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetGithubPullRequest(ctx, req)
 }
 
 func (s *BuildBuddyServer) CreateGithubPullRequestComment(ctx context.Context, req *ghpb.CreateGithubPullRequestCommentRequest) (*ghpb.CreateGithubPullRequestCommentResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.CreateGithubPullRequestComment(ctx, req)
 }
 
 func (s *BuildBuddyServer) UpdateGithubPullRequestComment(ctx context.Context, req *ghpb.UpdateGithubPullRequestCommentRequest) (*ghpb.UpdateGithubPullRequestCommentResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.UpdateGithubPullRequestComment(ctx, req)
 }
 
 func (s *BuildBuddyServer) DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.DeleteGithubPullRequestComment(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.GetGithubPullRequestDetails(ctx, req)
 }
 
 func (s *BuildBuddyServer) SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 	return a.SendGithubPullRequestReview(ctx, req)
 }

@@ -49,13 +49,9 @@ message UnlinkGitHubAccountResponse {
 message LinkAppInstallationRequest {
   context.RequestContext request_context = 1;
 
-  // The installation ID to link. This is unique to every GitHub account that
-  // has installed the app. Required.
-  int64 installation_id = 2;
-
-  // The ID of the GitHub app being linked.
+  // The installation ID to link.
   // Required.
-  int64 app_id = 3;
+  int64 installation_id = 2;
 }
 
 message LinkAppInstallationResponse {
@@ -63,8 +59,7 @@ message LinkAppInstallationResponse {
 }
 
 message AppInstallation {
-  // The installation ID. This is unique to every GitHub account that has
-  // installed the app.
+  // The GitHub App installation ID.
   int64 installation_id = 1;
 
   // The GitHub username or organization where the app is installed.
@@ -73,10 +68,6 @@ message AppInstallation {
 
   // The group ID to which the installation is linked.
   string group_id = 3;
-
-  // The ID of the GitHub app being linked. There are only 2 possible values,
-  // corresponding to either the read-write or read-only app.
-  int64 app_id = 4;
 }
 
 // A request to list GitHub App installations accessible to user as well as
@@ -111,11 +102,7 @@ message UnlinkAppInstallationRequest {
   context.RequestContext request_context = 1;
 
   // The installation ID to unlink.
-  // This is unique to every user that has installed the app.
   int64 installation_id = 2;
-
-  // The ID of the GitHub app being unlinked.
-  int64 app_id = 3;
 }
 
 message UnlinkAppInstallationResponse {
@@ -202,7 +189,6 @@ message UserInstallation {
   string url = 3;
   string target_type = 4;
   UserInstallationPermissions permissions = 5;
-  int64 app_id = 6;
 }
 
 message UserInstallationPermissions {

@@ -472,11 +472,9 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if wfs := env.GetWorkflowService(); wfs != nil {
 		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
 	}
-	if gha := env.GetGitHubAppService(); gha != nil {
-		mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, gha.GetReadWriteGitHubApp().WebhookHandler()))
-		mux.Handle("/auth/github/app/link/", interceptors.WrapAuthenticatedExternalHandler(env, gha.GetReadWriteGitHubApp().OAuthHandler()))
-		// TODO(Maggie): Read only app should use the callbacks `webhooks/github/app/readonly`
-		// and `/auth/github/app/readonly/link/`
+	if gha := env.GetGitHubApp(); gha != nil {
+		mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, gha.WebhookHandler()))
+		mux.Handle("/auth/github/app/link/", interceptors.WrapAuthenticatedExternalHandler(env, gha.OAuthHandler()))
 	}
 
 	if gcp := env.GetGCPService(); gcp != nil {

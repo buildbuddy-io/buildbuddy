@@ -252,7 +252,6 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
           </div>
         </div>
         <div className="container content-container">
-          {/*TODO: Maggie - combine the link and install steps into one*/}
           {!this.props.user.githubLinked && (
             <Banner type="info" className="install-app-banner">
               <div>To get started, link a GitHub account to your BuildBuddy account.</div>
