@@ -707,15 +707,9 @@ type GitHubApp interface {
 // GitHubApp the user has installed (read-only vs read-write) and is used for app-agnostic
 // operations.
 type GitHubAppService interface {
-	IsReadWriteAppEnabled() bool
-	IsReadOnlyAppEnabled() bool
-
 	GetReadWriteGitHubApp() GitHubApp
-	GetReadOnlyGitHubApp() GitHubApp
 	GetGitHubAppWithID(appID int64) (GitHubApp, error)
 	GetGitHubApp(ctx context.Context) (GitHubApp, error)
-
-	InstallPath(ctx context.Context) (string, error)
 
 	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
 	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
