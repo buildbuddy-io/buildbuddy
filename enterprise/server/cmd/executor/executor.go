@@ -167,7 +167,7 @@ func getExecutorHostID() string {
 }
 
 func getExecutorHostName() string {
-	name, err := os.Hostname()
+	name, err := resources.GetMyHostname()
 	if err != nil {
 		log.Warningf("Failed to get hostname: %s", err)
 	}
