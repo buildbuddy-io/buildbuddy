@@ -158,7 +158,8 @@ func TestHitTrackerService_Usage(t *testing.T) {
 
 // Note: Can't use bazel_request.WithRequestMetadata here since it sets the
 // metadata on the outgoing context, but the hit tracker reads the metadata
-// from the incoming context.
+// from the incoming context, and in this test the server implementation is
+// called directly; not over RPC.
 func withRequestMetadata(t *testing.T, ctx context.Context, rmd *repb.RequestMetadata) context.Context {
 	b, err := proto.Marshal(rmd)
 	require.NoError(t, err)

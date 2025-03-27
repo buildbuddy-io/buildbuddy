@@ -29,7 +29,7 @@ func Register(env *real_environment.RealEnv) error {
 func (h HitTrackerService) Track(ctx context.Context, req *hitpb.TrackRequest) (*hitpb.TrackResponse, error) {
 	for _, cacheHit := range req.GetHits() {
 		if cacheHit.GetInvocationId() == "" {
-			log.Debug("Skipping TrackRequest.Hits with empty invocation ID")
+			log.Warning("Skipping TrackRequest.Hits with empty invocation ID")
 			continue
 		}
 
