@@ -281,7 +281,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s, *clientSessionTTL)
 	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval, *zombieMinDuration)
-	s.nonVoterZombieJanitor = newNonVoterZombieJanitor(clock, s)
+	s.nonVoterZombieJanitor = newNonVoterZombieJanitor(clock, s, *zombieNonVoterMinDuration)
 
 	if err != nil {
 		return nil, err
@@ -2183,6 +2183,10 @@ func (w *replicaWorker) Start(ctx context.Context) {
 // started, therefore, it won't be detected as a normal zombie (i.e. a shard that
 // has been started but should not exist according to meta range).
 type nonVoterZombieJanitor struct {
+	// The minimum duration the replica must remain as a non-voter before it is
+	// removed
+	minDuration time.Duration
+
 	lastDetectedAt map[string]time.Time // from replicaKey to last_detected_at
 	rateLimiter    *rate.Limiter
 	clock          clockwork.Clock
@@ -2192,8 +2196,9 @@ type nonVoterZombieJanitor struct {
 	*replicaWorker
 }
 
-func newNonVoterZombieJanitor(clock clockwork.Clock, store *Store) *nonVoterZombieJanitor {
+func newNonVoterZombieJanitor(clock clockwork.Clock, store *Store, minDuration time.Duration) *nonVoterZombieJanitor {
 	res := &nonVoterZombieJanitor{
+		minDuration:    minDuration,
 		clock:          clock,
 		store:          store,
 		rateLimiter:    rate.NewLimiter(rate.Limit(nonVoterZombieJanitorRateLimit), 1),
@@ -2212,15 +2217,15 @@ func (j *nonVoterZombieJanitor) checkRepl(ctx context.Context, repl *replica.Rep
 		return err
 	}
 	rangeID := repl.RangeID()
-	membership, err := j.store.GetMembership(ctx, repl.RangeID())
+	membership, err := j.store.GetMembership(ctx, rangeID)
 	if err != nil {
-		return status.WrapError(err, "failed to get Membership")
+		return status.WrapErrorf(err, "failed to get membership for range %d", rangeID)
 	}
 	for replicaID, _ := range membership.NonVotings {
 		key := replicaKey(rangeID, replicaID)
 		detectedAt, ok := j.lastDetectedAt[key]
 		if ok {
-			if j.clock.Since(detectedAt) < *zombieNonVoterMinDuration {
+			if j.clock.Since(detectedAt) < j.minDuration {
 				continue
 			}
 			_, err := j.store.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
