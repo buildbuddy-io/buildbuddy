@@ -37,7 +37,7 @@ type NodeRegistry interface {
 	AddNode(target, raftAddress, grpcAddress string)
 	ResolveNHID(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error)
 	String() string
-	List() []*rfpb.ConnectionInfo
+	ListNodes() []*rfpb.ConnectionInfo
 }
 
 // fixedPartitioner is the IPartitioner with fixed capacity and naive
@@ -51,15 +51,19 @@ func (p *fixedPartitioner) GetPartitionID(rangeID uint64) uint64 {
 	return rangeID % p.capacity
 }
 
+type addresses struct {
+	grpc string
+	raft string
+}
+
 // StaticRegistry is used to manage all known node addresses in the multi raft
 // system. The transport layer uses this address registry to locate nodes.
 type StaticRegistry struct {
 	partitioner *fixedPartitioner
 	validate    dbConfig.TargetValidator
 
-	nodeTargets sync.Map // map of raftio.NodeInfo => NHID(string)
-	targetRafts sync.Map // map of NHID(string) => raftAddress(string)
-	targetGrpcs sync.Map // map of NHID(string) => grpcAddress(string)
+	nodeTargets     sync.Map // map of raftio.NodeInfo => NHID(string)
+	targetAddresses sync.Map // map of NHID(string) => addresses
 }
 
 // NewStaticNodeRegistry returns a new StaticRegistry object.
@@ -112,8 +116,8 @@ func (n *StaticRegistry) Resolve(rangeID uint64, replicaID uint64) (string, stri
 func (n *StaticRegistry) ResolveRaft(rangeID uint64, replicaID uint64) (string, string, error) {
 	key := raftio.GetNodeInfo(rangeID, replicaID)
 	if target, ok := n.nodeTargets.Load(key); ok {
-		if r, ok := n.targetRafts.Load(target); ok {
-			raftAddr := r.(string)
+		if a, ok := n.targetAddresses.Load(target); ok {
+			raftAddr := a.(addresses).raft
 			return raftAddr, n.getConnectionKey(raftAddr, rangeID), nil
 		}
 	}
@@ -134,8 +138,8 @@ func (n *StaticRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replic
 
 	key := raftio.GetNodeInfo(rangeID, replicaID)
 	if target, ok := n.nodeTargets.Load(key); ok {
-		if g, ok := n.targetGrpcs.Load(target); ok {
-			grpcAddr := g.(string)
+		if a, ok := n.targetAddresses.Load(target); ok {
+			grpcAddr := a.(addresses).grpc
 			return grpcAddr, n.getConnectionKey(grpcAddr, rangeID), nil
 		}
 	}
@@ -160,17 +164,38 @@ func (n *StaticRegistry) AddNode(target, raftAddress, grpcAddress string) {
 		log.Errorf("invalid target %s", target)
 		return
 	}
-	if raftAddress != "" {
-		n.targetRafts.Store(target, raftAddress)
+	if raftAddress == "" && grpcAddress == "" {
+		return
 	}
-	if grpcAddress != "" {
-		n.targetGrpcs.Store(target, grpcAddress)
+	a := addresses{
+		raft: raftAddress,
+		grpc: grpcAddress,
 	}
+	n.targetAddresses.Store(target, a)
 }
 
-// List lists all the {NHID, raftAddress, grpcAddress} available in the registry
-func (n *StaticRegistry) List() []*rfpb.ConnectionInfo {
-	results := []*rfpb.ConnectionInfo{}
+// ListNodes lists all the {NHID, raftAddress, grpcAddress} available in the
+// registry.
+func (n *StaticRegistry) ListNodes() []*rfpb.ConnectionInfo {
+	results := make([]*rfpb.ConnectionInfo, 0)
+	n.targetAddresses.Range(func(k, v interface{}) bool {
+		nhid := k.(string)
+		a := v.(addresses)
+		results = append(results, &rfpb.ConnectionInfo{
+			Nhid:        nhid,
+			RaftAddress: a.raft,
+			GrpcAddress: a.grpc,
+		})
+		return true
+	})
+	return results
+}
+
+func (n *StaticRegistry) Close() error {
+	return nil
+}
+
+func (n *StaticRegistry) String() string {
 	nhidToReplicas := make(map[string][]*rfpb.ReplicaDescriptor)
 	n.nodeTargets.Range(func(k, v interface{}) bool {
 		nhid := v.(string)
@@ -189,36 +214,16 @@ func (n *StaticRegistry) List() []*rfpb.ConnectionInfo {
 			return replicas[i].GetRangeId() < replicas[j].GetRangeId()
 		})
 	}
-	for nhid, replicas := range nhidToReplicas {
-		var raftAddr, grpcAddr string
-		if r, ok := n.targetRafts.Load(nhid); ok {
-			raftAddr = r.(string)
-		}
-		if g, ok := n.targetGrpcs.Load(nhid); ok {
-			grpcAddr = g.(string)
-		}
-		if raftAddr != "" || grpcAddr != "" {
-			results = append(results, &rfpb.ConnectionInfo{
-				Nhid:        nhid,
-				RaftAddress: raftAddr,
-				GrpcAddress: grpcAddr,
-				Replicas:    replicas,
-			})
-		}
-	}
-	return results
-}
-
-func (n *StaticRegistry) Close() error {
-	return nil
-}
-
-func (n *StaticRegistry) String() string {
-	connections := n.List()
 	buf := "\nRegistry\n"
-	for _, conn := range connections {
-		buf += fmt.Sprintf("  Node: %q [raftAddr: %q, grpcAddr: %q]\n", conn.GetNhid(), conn.GetRaftAddress(), conn.GetGrpcAddress())
-		buf += fmt.Sprintf("   %+v\n", conn.GetReplicas())
+	for nhid, replicas := range nhidToReplicas {
+		a, ok := n.targetAddresses.Load(nhid)
+		if !ok {
+			continue
+		}
+		addr := a.(addresses)
+
+		buf += fmt.Sprintf("  Node: %q [raftAddr: %q, grpcAddr: %q]\n", nhid, addr.raft, addr.grpc)
+		buf += fmt.Sprintf("   %+v\n", replicas)
 	}
 	return buf
 }
@@ -394,9 +399,9 @@ func (d *DynamicNodeRegistry) Remove(rangeID uint64, replicaID uint64) {
 func (d *DynamicNodeRegistry) RemoveShard(rangeID uint64) {
 }
 
-// List lists all entries from the registry.
-func (d *DynamicNodeRegistry) List() []*rfpb.ConnectionInfo {
-	return d.sReg.List()
+// ListNodes lists all entries from the registry.
+func (d *DynamicNodeRegistry) ListNodes() []*rfpb.ConnectionInfo {
+	return d.sReg.ListNodes()
 }
 
 // Resolve returns the raft address and the connection key of the specified node.

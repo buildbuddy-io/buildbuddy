@@ -284,7 +284,6 @@ message ConnectionInfo {
   string nhid = 1;
   string grpc_address = 2;
   string raft_address = 3;
-  repeated ReplicaDescriptor replicas = 4;
 }
 
 message GetRegistryResponse {

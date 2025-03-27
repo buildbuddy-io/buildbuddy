@@ -412,9 +412,6 @@ func (s *Store) preloadRegistry(ctx context.Context) error {
 					continue
 				}
 				s.registry.AddNode(conn.GetNhid(), conn.GetRaftAddress(), conn.GetGrpcAddress())
-				for _, replica := range conn.GetReplicas() {
-					s.registry.Add(replica.GetRangeId(), replica.GetReplicaId(), conn.GetNhid())
-				}
 			}
 			return nil
 		})
@@ -1027,7 +1024,7 @@ func (s *Store) isLeader(rangeID uint64, replicaID uint64) bool {
 }
 
 func (s *Store) GetRegistry(ctx context.Context, req *rfpb.GetRegistryRequest) (*rfpb.GetRegistryResponse, error) {
-	connections := s.registry.List()
+	connections := s.registry.ListNodes()
 	return &rfpb.GetRegistryResponse{
 		Connections: connections,
 	}, nil
