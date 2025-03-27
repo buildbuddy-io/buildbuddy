@@ -1591,7 +1591,7 @@ func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescr
 		}
 	}
 
-	// The replica is a zombie, and she should remove the replica
+	// The replica is a zombie, and it should be removed.
 	ss.action = zombieCleanupRemoveReplica
 	return ss
 }
@@ -1648,69 +1648,73 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.Chan():
-			nInfo := j.store.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
-			rangeIDs := make([]uint64, 0, len(nInfo.ShardInfoList))
-			shardStateMap := make(map[uint64]zombieCleanupTask, len(nInfo.LogInfo))
-
-			// Add all the replicas on the machine to shardStateMap, including
-			// replicas that are not currently open.
-			for _, logInfo := range nInfo.LogInfo {
-				if j.store.nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
-					rangeIDs = append(rangeIDs, logInfo.ShardID)
-					shardStateMap[logInfo.ShardID] = zombieCleanupTask{
-						rangeID:   logInfo.ShardID,
-						replicaID: logInfo.ReplicaID,
-					}
-				}
-			}
-
-			// Go through the list of replicas that are currently open on raft,
-			// and mark them in shardStateMap
-			for _, sInfo := range nInfo.ShardInfoList {
-				ss, ok := shardStateMap[sInfo.ShardID]
-				if ok {
-					ss.shardInfo = sInfo
-					ss.opened = true
-					shardStateMap[sInfo.ShardID] = ss
-				}
-			}
-
-			// Fetch the range descritpors from meta range
-			ranges, err := j.store.sender.LookupRangeDescriptorsByIDs(ctx, rangeIDs)
-			if err != nil {
-				j.store.log.Warningf("failed to scan zombie nodes: %s", err)
-				continue
-			}
-			rangeMap := make(map[uint64]*rfpb.RangeDescriptor, len(ranges))
-			for _, rd := range ranges {
-				rangeMap[rd.GetRangeId()] = rd
-			}
-
-			for rangeID, ss := range shardStateMap {
-				newSS := setZombieAction(&ss, rangeMap)
-				if newSS.action != zombieCleanupNoAction {
-					detectedAt, ok := j.lastDetectedAt[rangeID]
-					if ok {
-						if j.clock.Since(detectedAt) >= j.zombieMinDuration {
-							// this is a zombie.
-							j.mu.Lock()
-							inQueue := j.rangeIDsInQueue[rangeID]
-							j.mu.Unlock()
-							if !inQueue {
-								j.tasks <- *newSS
-							}
-							j.mu.Lock()
-							j.rangeIDsInQueue[rangeID] = true
-							j.mu.Unlock()
-						}
-					} else {
-						j.lastDetectedAt[rangeID] = j.clock.Now()
-					}
-				}
-			}
-			metrics.RaftZombieCleanupTasks.Set(float64(len(j.tasks)))
+			j.scanForZombies(ctx)
 		}
 	}
+}
+
+func (j *replicaJanitor) scanForZombies(ctx context.Context) {
+	nInfo := j.store.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
+	rangeIDs := make([]uint64, 0, len(nInfo.ShardInfoList))
+	shardStateMap := make(map[uint64]zombieCleanupTask, len(nInfo.LogInfo))
+
+	// Add all the replicas on the machine to shardStateMap, including
+	// replicas that are not currently open.
+	for _, logInfo := range nInfo.LogInfo {
+		if j.store.nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
+			rangeIDs = append(rangeIDs, logInfo.ShardID)
+			shardStateMap[logInfo.ShardID] = zombieCleanupTask{
+				rangeID:   logInfo.ShardID,
+				replicaID: logInfo.ReplicaID,
+			}
+		}
+	}
+
+	// Go through the list of replicas that are currently open on raft,
+	// and mark them in shardStateMap
+	for _, sInfo := range nInfo.ShardInfoList {
+		ss, ok := shardStateMap[sInfo.ShardID]
+		if ok {
+			ss.shardInfo = sInfo
+			ss.opened = true
+			shardStateMap[sInfo.ShardID] = ss
+		}
+	}
+
+	// Fetch the range descritpors from meta range
+	ranges, err := j.store.sender.LookupRangeDescriptorsByIDs(ctx, rangeIDs)
+	if err != nil {
+		j.store.log.Warningf("failed to scan zombie nodes: %s", err)
+		return
+	}
+	rangeMap := make(map[uint64]*rfpb.RangeDescriptor, len(ranges))
+	for _, rd := range ranges {
+		rangeMap[rd.GetRangeId()] = rd
+	}
+
+	for rangeID, ss := range shardStateMap {
+		newSS := setZombieAction(&ss, rangeMap)
+		if newSS.action != zombieCleanupNoAction {
+			detectedAt, ok := j.lastDetectedAt[rangeID]
+			if ok {
+				if j.clock.Since(detectedAt) >= j.zombieMinDuration {
+					// this is a zombie.
+					j.mu.Lock()
+					inQueue := j.rangeIDsInQueue[rangeID]
+					j.mu.Unlock()
+					if !inQueue {
+						j.tasks <- *newSS
+					}
+					j.mu.Lock()
+					j.rangeIDsInQueue[rangeID] = true
+					j.mu.Unlock()
+				}
+			} else {
+				j.lastDetectedAt[rangeID] = j.clock.Now()
+			}
+		}
+	}
+	metrics.RaftZombieCleanupTasks.Set(float64(len(j.tasks)))
 }
 
 func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTask) (zombieCleanupAction, error) {
