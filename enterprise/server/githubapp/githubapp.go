@@ -115,8 +115,11 @@ func NewAppService(env environment.Env, readWriteApp interfaces.GitHubApp) (*Git
 	}, nil
 }
 
-// GetGitHubApp returns the BB GitHub app that the current user has authorized.
-func (s *GitHubAppService) GetGitHubApp(ctx context.Context) (interfaces.GitHubApp, error) {
+// GetGitHubAppForAuthenticatedUser returns the BB GitHub app that the current user has authorized.
+// This can be used for requests that don't provide a specific repoURL or for users
+// who have not linked an installation yet (unlike `GetGitHubAppForOwner`), but you must
+// have an authenticated user context.
+func (s *GitHubAppService) GetGitHubAppForAuthenticatedUser(ctx context.Context) (interfaces.GitHubApp, error) {
 	u, err := s.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
@@ -147,6 +150,27 @@ func (s *GitHubAppService) GetGitHubApp(ctx context.Context) (interfaces.GitHubA
 		return s.GetReadWriteGitHubApp(), nil
 	}
 	return nil, status.InternalErrorf("github token for user %v is not valid for any github apps", u.UserID)
+}
+
+// GetGitHubAppForOwner returns the BB GitHub app corresponding to the app installation
+// for the GitHub owner.
+//
+// A GitHub owner is either a username or an org name. For example, for the repo URL
+// `github.com/buildbuddy-io/buildbuddy`, the owner is `buildbuddy-io`.
+// Each owner can only install one of the BB apps (enforced in `createInstallation`).
+//
+// The installation must be both installed on GitHub and imported
+// to BuildBuddy via `LinkGitHubAppInstallation`.
+func (s *GitHubAppService) GetGitHubAppForOwner(ctx context.Context, owner string) (interfaces.GitHubApp, error) {
+	in, err := s.GetInstallationByOwner(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.GetGitHubAppWithID(in.AppID)
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 func (s *GitHubAppService) GetReadWriteGitHubApp() interfaces.GitHubApp {
@@ -207,6 +231,33 @@ func (s *GitHubAppService) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetL
 		return nil, status.InternalErrorf("failed to query repo rows: %s", err)
 	}
 	return res, nil
+}
+
+// GetInstallationByOwner returns the BuildBuddy GitHub app installation for a
+// GitHub owner, if it exists.
+//
+// A GitHub owner is either a username or an org name. For example, for the repo URL
+// `github.com/buildbuddy-io/buildbuddy`, the owner is `buildbuddy-io`.
+//
+// Each owner can have at most 1 app installation. GitHub does not allow multiple
+// installations for the same owner and app ID. And we do not allow each groupID
+// to install multiple app IDs (this is enforced in `createInstallation`).
+//
+// This function does not authorize the request. The caller should make sure the
+// authenticated group has authorization to access this installation.
+func (s *GitHubAppService) GetInstallationByOwner(ctx context.Context, owner string) (*tables.GitHubAppInstallation, error) {
+	installation := &tables.GitHubAppInstallation{}
+	err := s.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installations_by_owner").Raw(`
+		SELECT * FROM "GitHubAppInstallations"
+		WHERE owner = ?
+	`, owner).Take(installation)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundErrorf("no GitHub app installation for %q was found", owner)
+		}
+		return nil, status.InternalErrorf("failed to look up GitHub app installation: %s", err)
+	}
+	return installation, nil
 }
 
 // GitHubApp Users can install either a read-write or read-only BuildBuddy
@@ -565,6 +616,18 @@ func (a *GitHubApp) createInstallation(ctx context.Context, in *tables.GitHubApp
 		}
 	}
 
+	// Make sure each GitHub owner only installs 1 BuildBuddy app (either read-only
+	// or read-write). That way, two separate groups won't be able to install different
+	// apps for the same GitHub repo (which would prevent us from attributing webhook
+	// events to a specific group).
+	// TODO: Check that if the data doesn't exist, it returns an error
+	_, err = a.env.GetGitHubAppService().GetInstallationByOwner(ctx, in.Owner)
+	if err == nil {
+		return status.InvalidArgumentErrorf("multiple groups cannot install a github app for the same owner %s", in.Owner)
+	} else if err != nil && !db.IsRecordNotFound(err) {
+		return err
+	}
+
 	log.CtxInfof(ctx,
 		"Linking GitHub app installation %d for app %d (%s) to group %s",
 		in.InstallationID, in.AppID, in.Owner, in.GroupID)
@@ -621,31 +684,6 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 	return &ghpb.UnlinkAppInstallationResponse{}, nil
 }
 
-// GetInstallationByOwner returns the BuildBuddy GitHub app installation for an
-// owner, if it exists.
-// Each owner can have at most 1 app installation. GitHub does not allow multiple
-// installations for the same owner and app ID. And we do not allow each groupID
-// to install multiple app IDs (this is enforced in `createInstallation`).
-func (a *GitHubApp) GetInstallationByOwner(ctx context.Context, owner string) (*tables.GitHubAppInstallation, error) {
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	installation := &tables.GitHubAppInstallation{}
-	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installations_by_owner").Raw(`
-		SELECT * FROM "GitHubAppInstallations"
-		WHERE group_id = ?
-		AND owner = ?
-	`, u.GetGroupID(), owner).Take(installation)
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return nil, status.NotFoundErrorf("no GitHub app installation for %q was found for the authenticated group", owner)
-		}
-		return nil, status.InternalErrorf("failed to look up GitHub app installation: %s", err)
-	}
-	return installation, nil
-}
-
 // LinkGitHubRepo imports an authorized repo to BuildBuddy.
 //
 //	 In order to authorize the BB GitHub app to access a specific repo, you have to
@@ -667,7 +705,7 @@ func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.L
 		return nil, err
 	}
 
-	installation, err := a.GetInstallationByOwner(ctx, parsedRepoURL.Owner)
+	installation, err := a.env.GetGitHubAppService().GetInstallationByOwner(ctx, parsedRepoURL.Owner)
 	if err != nil {
 		return nil, err
 	}

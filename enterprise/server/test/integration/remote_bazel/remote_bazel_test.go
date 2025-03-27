@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
@@ -32,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -273,7 +275,8 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string,
 			e.SetWorkflowService(service.NewWorkflowService(e))
 			iss := invocation_search_service.NewInvocationSearchService(e, e.GetDBHandle(), e.GetOLAPDBHandle())
 			e.SetInvocationSearchService(iss)
-			gh := &testgit.FakeGitHubAppService{App: &testgit.FakeGitHubApp{Token: githubToken, MockAppID: mockGithubAppID}}
+			gh, err := githubapp.NewAppService(e, &testgit.FakeGitHubApp{Token: githubToken, MockAppID: mockGithubAppID})
+			require.NoError(t, err)
 			e.SetGitHubAppService(gh)
 			runner, err := hostedrunner.New(e)
 			require.NoError(t, err)
@@ -304,9 +307,12 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string,
 		AppID:   mockGithubAppID,
 	})
 	require.NoError(t, err)
+	parsedRepo, err := git.ParseGitHubRepoURL(repoURL)
+	require.NoError(t, err)
 	err = dbh.NewQuery(context.Background(), "create_github_app_install_for_test").Create(&tables.GitHubAppInstallation{
 		GroupID: env.GroupID1,
 		AppID:   mockGithubAppID,
+		Owner:   parsedRepo.Owner,
 	})
 	require.NoError(t, err)
 

@@ -709,10 +709,19 @@ type GitHubApp interface {
 type GitHubAppService interface {
 	GetReadWriteGitHubApp() GitHubApp
 	GetGitHubAppWithID(appID int64) (GitHubApp, error)
-	GetGitHubApp(ctx context.Context) (GitHubApp, error)
+	// GetGitHubAppForAuthenticatedUser returns the BB GitHub app that the current user has authorized.
+	// This can be used for requests that don't provide a specific repoURL or for users
+	// who have not linked an installation yet (unlike `GetGitHubAppForOwner`), but you must
+	// have an authenticated user context.
+	GetGitHubAppForAuthenticatedUser(ctx context.Context) (GitHubApp, error)
+	// GetGitHubAppForRepoURL returns the BB GitHub app corresponding to the app installation
+	// for the given URL. The installation must be both installed on GitHub and imported
+	// to BuildBuddy via (`LinkGitHubAppInstallation`).
+	GetGitHubAppForOwner(ctx context.Context, repoURL string) (GitHubApp, error)
 
 	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
 	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
+	GetInstallationByOwner(ctx context.Context, owner string) (*tables.GitHubAppInstallation, error)
 }
 
 type RunnerService interface {

@@ -331,12 +331,12 @@ func (s *workspaceService) nodesFromGitHub(ctx context.Context, githubRepo, ref 
 	if gh == nil {
 		return nil, "", status.UnimplementedError("No GitHub app configured")
 	}
-	a, err := gh.GetGitHubApp(ctx)
+
+	repo, err := git.ParseGitHubRepoURL(githubRepo)
 	if err != nil {
 		return nil, "", err
 	}
-
-	repo, err := git.ParseGitHubRepoURL(githubRepo)
+	a, err := gh.GetGitHubAppForOwner(ctx, repo.Owner)
 	if err != nil {
 		return nil, "", err
 	}
@@ -403,12 +403,13 @@ func (s *workspaceService) getGithubFileFromSha(ctx context.Context, githubRepo,
 	if gh == nil {
 		return nil, status.UnimplementedError("No GitHub app configured")
 	}
-	a, err := gh.GetGitHubApp(ctx)
+
+	repo, err := git.ParseGitHubRepoURL(githubRepo)
 	if err != nil {
 		return nil, err
 	}
 
-	repo, err := git.ParseGitHubRepoURL(githubRepo)
+	a, err := gh.GetGitHubAppForOwner(ctx, repo.Owner)
 	if err != nil {
 		return nil, err
 	}
@@ -440,12 +441,12 @@ func (s *workspaceService) getGithubFileFromPath(ctx context.Context, githubRepo
 	if gh == nil {
 		return nil, status.UnimplementedError("No GitHub app configured")
 	}
-	a, err := gh.GetGitHubApp(ctx)
+
+	repo, err := git.ParseGitHubRepoURL(githubRepo)
 	if err != nil {
 		return nil, err
 	}
-
-	repo, err := git.ParseGitHubRepoURL(githubRepo)
+	a, err := gh.GetGitHubAppForOwner(ctx, repo.Owner)
 	if err != nil {
 		return nil, err
 	}

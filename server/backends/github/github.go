@@ -568,13 +568,13 @@ func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo st
 	if gh == nil {
 		return nil, status.UnimplementedError("No GitHub app configured")
 	}
-	app, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
-	}
 	parts := strings.Split(ownerRepo, "/")
 	if len(parts) != 2 {
 		return nil, status.InvalidArgumentErrorf("invalid owner/repo %q", ownerRepo)
+	}
+	app, err := gh.GetGitHubAppForOwner(ctx, parts[0])
+	if err != nil {
+		return nil, err
 	}
 	return app.GetInstallationTokenForStatusReportingOnly(ctx, parts[0])
 }
