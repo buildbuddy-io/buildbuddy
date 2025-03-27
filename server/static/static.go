@@ -216,7 +216,6 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CspNonce:                               nonce,
 		CommunityLinksEnabled:                  *communityLinksEnabled,
 		DefaultLoginSlug:                       *defaultLoginSlug,
-		ReadOnlyGithubAppEnabled:               env.GetGitHubAppService() != nil && env.GetGitHubAppService().IsReadOnlyAppEnabled(),
 	}
 
 	if efp := env.GetExperimentFlagProvider(); efp != nil {

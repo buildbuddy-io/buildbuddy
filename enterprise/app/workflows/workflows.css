@@ -250,7 +250,7 @@
 .workflows-github-import .install-app-banner .banner-content {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
 }
 
 .workflows-github-import .install-app-banner .base-button {

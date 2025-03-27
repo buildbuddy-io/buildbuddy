@@ -184,8 +184,3 @@ ts_library(
         "//proto:runner_ts_proto",
     ],
 )
-
-ts_library(
-    name = "github",
-    srcs = ["github.tsx"],
-)

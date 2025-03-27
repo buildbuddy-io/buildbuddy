@@ -144,7 +144,6 @@ var (
 		"UnlinkGitHubAppInstallation",
 		// Org GitHub repo management
 		"GetAccessibleGitHubRepos",
-		"GetGitHubAppInstallPath",
 		"LinkGitHubRepo",
 		"UnlinkGitHubRepo",
 		// Org API key management

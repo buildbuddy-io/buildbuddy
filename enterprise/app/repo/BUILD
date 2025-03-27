@@ -21,7 +21,6 @@ ts_library(
         "//app/picker:picker_service",
         "//app/router",
         "//app/service:rpc_service",
-        "//app/util:github",
         "//app/util:popup",
         "//enterprise/app/org_picker",
         "//enterprise/app/secrets:secret_util",

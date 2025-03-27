@@ -40,14 +40,6 @@ github:
     client_secret: ${SECRET:BB_LOCAL_GITHUB_APP_CLIENT_SECRET}
     webhook_secret: ${SECRET:BB_LOCAL_GITHUB_APP_WEBHOOK_SECRET}
     private_key: ${SECRET:BB_LOCAL_GITHUB_APP_PRIVATE_KEY}
-  read_only_app:
-    enabled: true
-    public_link: "https://github.com/apps/buildbuddy-read-only-local"
-    id: "1187717"
-    client_id: ${SECRET:BB_LOCAL_READ_ONLY_GITHUB_APP_CLIENT_ID}
-    client_secret: ${SECRET:BB_LOCAL_READ_ONLY_GITHUB_APP_CLIENT_SECRET}
-    webhook_secret: ${SECRET:BB_LOCAL_READ_ONLY_GITHUB_APP_WEBHOOK_SECRET}
-    private_key: ${SECRET:BB_LOCAL_READ_ONLY_GITHUB_APP_PRIVATE_KEY}
 remote_execution:
   enable_remote_exec: true
   enable_workflows: true

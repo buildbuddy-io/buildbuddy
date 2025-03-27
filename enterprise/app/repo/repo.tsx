@@ -18,7 +18,6 @@ import picker_service from "../../../app/picker/picker_service";
 import { GithubIcon } from "../../../app/icons/github";
 import { GoogleIcon } from "../../../app/icons/google";
 import OrgPicker from "../org_picker/org_picker";
-import { installReadWriteGitHubAppURL } from "../../../app/util/github";
 
 export interface RepoComponentProps {
   path: string;
@@ -171,15 +170,15 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       .then(() => auth_service.refreshUser());
   }
 
-  // TODO: Have a better way to manage which features require write permissions
-  // and gate them for users that have installed the read-only app.
   linkGithubAccount() {
     return popup
       .open(
-        installReadWriteGitHubAppURL(
-          this.props.user?.displayUser.userId?.id || "",
-          this.props.user?.selectedGroup.id || ""
-        )
+        `/auth/github/app/link/?${new URLSearchParams({
+          group_id: this.props.user?.selectedGroup.id || "",
+          user_id: this.props.user?.displayUser.userId?.id || "",
+          redirect_url: window.location.href,
+          install: "true",
+        })}`
       )
       .then(() => this.fetchSecrets())
       .then(() => {
