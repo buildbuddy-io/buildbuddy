@@ -2240,6 +2240,8 @@ func (j *nonVoterZombieJanitor) checkRepl(ctx context.Context, repl *replica.Rep
 			})
 			if err != nil {
 				return status.WrapErrorf(err, "failed to remove non-voter replica c%dn%d", rangeID, replicaID)
+			} else {
+				log.Infof("successfully removed non-voter c%dn%d", rangeID, replicaID)
 			}
 		} else {
 			j.lastDetectedAt[key] = j.clock.Now()
