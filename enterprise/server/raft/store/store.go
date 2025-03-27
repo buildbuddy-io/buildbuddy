@@ -1701,24 +1701,26 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 
 	for rangeID, ss := range shardStateMap {
 		newSS := setZombieAction(&ss, rangeMap)
-		if newSS.action != zombieCleanupNoAction {
-			detectedAt, ok := j.lastDetectedAt[rangeID]
-			if ok {
-				if j.clock.Since(detectedAt) >= j.zombieMinDuration {
-					// this is a zombie.
-					j.mu.Lock()
-					inQueue := j.rangeIDsInQueue[rangeID]
-					j.mu.Unlock()
-					if !inQueue {
-						j.tasks <- *newSS
-					}
-					j.mu.Lock()
-					j.rangeIDsInQueue[rangeID] = true
-					j.mu.Unlock()
-				}
-			} else {
-				j.lastDetectedAt[rangeID] = j.clock.Now()
+		if newSS.action == zombieCleanupNoAction {
+			continue
+		}
+		detectedAt, ok := j.lastDetectedAt[rangeID]
+		if ok {
+			if j.clock.Since(detectedAt) < j.zombieMinDuration {
+				continue
 			}
+			// this is a zombie.
+			j.mu.Lock()
+			inQueue := j.rangeIDsInQueue[rangeID]
+			j.mu.Unlock()
+			if !inQueue {
+				j.tasks <- *newSS
+			}
+			j.mu.Lock()
+			j.rangeIDsInQueue[rangeID] = true
+			j.mu.Unlock()
+		} else {
+			j.lastDetectedAt[rangeID] = j.clock.Now()
 		}
 	}
 	metrics.RaftZombieCleanupTasks.Set(float64(len(j.tasks)))
