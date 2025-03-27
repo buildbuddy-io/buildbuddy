@@ -2,7 +2,25 @@ actions:
   - name: Big
     container_image: ubuntu-20.04
     steps:
-      - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare"
+      - run: |
+          # bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare &
+          cd ..
+          if [ ! -d bb_cp1 ]; then
+            mkdir bb_cp1
+            cd bb_cp1
+            git clone https://github.com/buildbuddy-io/buildbuddy.git
+            cd ..
+            mkdir bb_cp2
+            cd bb_cp2
+            git clone https://github.com/buildbuddy-io/buildbuddy.git
+            cd ..
+          fi
+      - run: |
+          cd ../bb_cp1
+          bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare --output_base=/home/buildbuddy/workspace/output-base-1 &
+      - run: |
+          cd ../bb_cp2
+          bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare --output_base=/home/buildbuddy/workspace/output-base-2
     resource_requests:
       memory: 40GB
       disk: 45GB
