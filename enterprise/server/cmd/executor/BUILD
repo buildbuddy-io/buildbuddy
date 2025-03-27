@@ -88,18 +88,18 @@ go_binary(
     embed = [":executor_lib"],
 )
 
+alias(
+    name = "tini",
+    actual = select({
+        "@platforms//cpu:arm64": "@com_github_krallin_tini_tini-linux-arm64//file:tini",
+        "//conditions:default": "@com_github_krallin_tini_tini-linux-amd64//file:tini",
+    }),
+)
+
 container_layer(
     name = "tini_layer",
     directory = "/",
-    files = select({
-        "@platforms//cpu:x86_64": [
-            "@com_github_krallin_tini_tini-linux-amd64//file:tini",
-        ],
-        "@platforms//cpu:arm64": [
-            "@com_github_krallin_tini_tini-linux-arm64//file:tini",
-        ],
-        "//conditions:default": [],
-    }),
+    files = [":tini"],
     tags = ["manual"],
 )
 
