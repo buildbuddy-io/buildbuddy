@@ -22,6 +22,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -29,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc"
 
@@ -47,6 +50,14 @@ var (
 	serverType = flag.String("server_type", "cache-proxy", "The server type to match on health checks")
 
 	remoteCache = flag.String("cache_proxy.remote_cache", "grpcs://remote.buildbuddy.dev", "The backing remote cache.")
+
+	headersToPropagate = []string{
+		authutil.APIKeyHeader,
+		authutil.ContextTokenStringKey,
+		usageutil.ClientHeaderName,
+		usageutil.OriginHeaderName,
+		authutil.ClientIdentityHeaderName,
+		bazel_request.RequestMetadataKey}
 )
 
 func main() {
@@ -147,17 +158,13 @@ func main() {
 }
 
 func startGRPCServers(env *real_environment.RealEnv) error {
-	// Add the API-Key, JWT, and client-identity propagating interceptors.
+	// Add the API-Key, JWT, client-identity, etc... propagating interceptor.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
-			interceptors.PropagateAPIKeyUnaryInterceptor(),
-			interceptors.PropagateJWTUnaryInterceptor(),
-			interceptors.PropagateClientIdentityUnaryInterceptor(),
+			interceptors.PropagateMetadataUnaryInterceptor(headersToPropagate...),
 		},
 		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
-			interceptors.PropagateAPIKeyStreamInterceptor(),
-			interceptors.PropagateJWTStreamInterceptor(),
-			interceptors.PropagateClientIdentityStreamInterceptor(),
+			interceptors.PropagateMetadataStreamInterceptor(headersToPropagate...),
 		},
 	}
 

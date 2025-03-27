@@ -85,6 +85,7 @@ go_test(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
+        "//server/util/usageutil",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_uuid//:uuid",

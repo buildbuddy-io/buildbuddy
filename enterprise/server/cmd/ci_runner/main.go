@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/creack/pty"
 	"github.com/docker/go-units"
 	"github.com/google/shlex"
@@ -2225,12 +2226,12 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 		lines = append(lines, "build:buildbuddy_api_key --remote_header=x-buildbuddy-api-key="+apiKey)
 	}
 	if origin := os.Getenv("BB_GRPC_CLIENT_ORIGIN"); origin != "" {
-		lines = append(lines, "common --remote_header=x-buildbuddy-origin="+origin)
-		lines = append(lines, "common --bes_header=x-buildbuddy-origin="+origin)
+		lines = append(lines, fmt.Sprintf("common --remote_header=%s=%s", usageutil.OriginHeaderName, origin))
+		lines = append(lines, fmt.Sprintf("common --bes_header=%s=%s", usageutil.OriginHeaderName, origin))
 	}
 	if identity := os.Getenv(clientIdentityEnvVar); identity != "" {
-		lines = append(lines, "common --remote_header=x-buildbuddy-client-identity="+identity)
-		lines = append(lines, "common --bes_header=x-buildbuddy-client-identity="+identity)
+		lines = append(lines, fmt.Sprintf("common --remote_header=%s=%s", authutil.ClientIdentityHeaderName, identity))
+		lines = append(lines, fmt.Sprintf("common --bes_header=%s=%s", authutil.ClientIdentityHeaderName, identity))
 	}
 
 	// These configs point to the same env that triggered the remote run

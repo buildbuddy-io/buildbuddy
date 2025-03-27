@@ -36,6 +36,7 @@ go_library(
         "//server/util/log",
         "//server/util/redact",
         "//server/util/status",
+        "//server/util/usageutil",
         "@com_github_creack_pty//:pty",
         "@com_github_docker_go_units//:go-units",
         "@com_github_google_shlex//:shlex",

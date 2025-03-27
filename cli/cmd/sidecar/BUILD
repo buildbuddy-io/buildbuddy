@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "sidecar",
     srcs = ["sidecar.go"],
@@ -17,6 +19,7 @@ go_library(
         "//server/nullauth",
         "//server/real_environment",
         "//server/rpc/interceptors",
+        "//server/util/authutil",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
@@ -26,5 +29,3 @@ go_library(
         "@org_golang_google_grpc//reflection",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])
