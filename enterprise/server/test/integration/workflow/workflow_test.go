@@ -255,6 +255,7 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 		UserId:  &uidpb.UserId{Id: env.UserID1},
 		GroupId: env.GroupID1,
 	}
+	// TODO: Replace all of these with non-legacy WF
 	createResp, err := bb.CreateWorkflow(ctx, &wfpb.CreateWorkflowRequest{
 		RequestContext: reqCtx,
 		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
