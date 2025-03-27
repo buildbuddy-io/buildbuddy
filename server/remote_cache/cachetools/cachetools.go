@@ -466,7 +466,7 @@ func ReadProtoFromActionCache(ctx context.Context, cache interfaces.Cache, r *di
 	data, err := cache.Get(ctx, r.ToProto())
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
-			return digest.MissingDigestError(r.GetDigest())
+			return status.NotFoundErrorf("Digest not found in AC: %v", r.GetDigest())
 		}
 		return err
 	}

@@ -32,7 +32,6 @@ go_test(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/action_cache_server",
-        "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/status",

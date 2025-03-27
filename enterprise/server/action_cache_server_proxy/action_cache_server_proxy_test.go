@@ -2,12 +2,10 @@ package action_cache_server_proxy
 
 import (
 	"context"
-	"log"
 	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -162,9 +160,7 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 		ActionDigest:   digestA,
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	r, err := proxy.GetActionResult(ctx, readReqA)
-	log.Printf("%v", r)
-	log.Printf("%v", err)
+	_, err = proxy.GetActionResult(ctx, readReqA)
 	require.True(t, status.IsNotFoundError(err))
 
 	// Write it through the proxy and confirm it's readable from the proxy and
@@ -187,15 +183,11 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 	_, err = proxy.GetActionResult(ctx, readReqB)
 	require.True(t, status.IsNotFoundError(err))
 
-	// Cache shouldn't act like it has DigestB when specifying a cache value, either.
-
 	// Write it to the backing cache and confirm it's readable from the proxy
 	// and backing cache.
 	update(ctx, ac, digestB, 999, t)
 	require.Equal(t, int32(999), get(ctx, ac, digestB, t).GetExitCode())
 	require.Equal(t, int32(999), get(ctx, proxy, digestB, t).GetExitCode())
-	d, _ := digest.ComputeForMessage(getCached(ctx, proxy, digestB, nil, t), repb.DigestFunction_SHA256)
-	log.Printf("%v", d)
 
 	// Change the action result, write it, and confirm the new result is
 	// readable from the proxy and backing cache.
