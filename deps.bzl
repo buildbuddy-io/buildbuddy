@@ -4475,12 +4475,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.2.0",
     )
     go_repository(
-        name = "com_github_spaolacci_murmur3",
-        importpath = "github.com/spaolacci/murmur3",
-        sum = "h1:qLC7fQah7D6K1B0ujays3HV9gkFtllcxhzImRR7ArPQ=",
-        version = "v0.0.0-20180118202830-f09979ecbc72",
-    )
-    go_repository(
         name = "com_github_spf13_afero",
         importpath = "github.com/spf13/afero",
         sum = "h1:EaGW2JJh15aKOejeuJ+wpFSHnbd7GE6Wvp3TsNhb6LY=",
