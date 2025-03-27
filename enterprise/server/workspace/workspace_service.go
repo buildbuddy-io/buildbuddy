@@ -327,13 +327,9 @@ func pathExists(path string, nodes []*wspb.Node) bool {
 }
 
 func (s *workspaceService) nodesFromGitHub(ctx context.Context, githubRepo, ref string) ([]*wspb.Node, string, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, "", status.UnimplementedError("No GitHub app configured")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, "", err
 	}
 
 	repo, err := git.ParseGitHubRepoURL(githubRepo)
@@ -399,13 +395,9 @@ func resourceNameForNode(workspaceName string, node *wspb.Node) *rspb.ResourceNa
 // Github
 
 func (s *workspaceService) getGithubFileFromSha(ctx context.Context, githubRepo, path, sha string) (*wspb.GetWorkspaceFileResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("No GitHub app configured")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 
 	repo, err := git.ParseGitHubRepoURL(githubRepo)
@@ -436,13 +428,9 @@ func (s *workspaceService) getGithubFileFromSha(ctx context.Context, githubRepo,
 }
 
 func (s *workspaceService) getGithubFileFromPath(ctx context.Context, githubRepo, ref, path string) (*wspb.GetWorkspaceFileResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
+	a := s.env.GetGitHubApp()
+	if a == nil {
 		return nil, status.UnimplementedError("No GitHub app configured")
-	}
-	a, err := gh.GetGitHubApp(ctx)
-	if err != nil {
-		return nil, err
 	}
 
 	repo, err := git.ParseGitHubRepoURL(githubRepo)

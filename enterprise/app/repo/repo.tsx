@@ -233,7 +233,6 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
       .linkGitHubAppInstallation(
         github.LinkAppInstallationRequest.create({
           installationId: selectedInstallation?.id,
-          appId: selectedInstallation?.appId,
         })
       )
       .catch((e) => error_service.handleError(e));
