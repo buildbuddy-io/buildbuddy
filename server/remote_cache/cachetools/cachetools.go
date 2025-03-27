@@ -462,6 +462,17 @@ func ReadProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.C
 	return proto.Unmarshal(data, out)
 }
 
+func ReadProtoFromActionCache(ctx context.Context, cache interfaces.Cache, r *digest.ACResourceName, out proto.Message) error {
+	data, err := cache.Get(ctx, r.ToProto())
+	if err != nil {
+		if gstatus.Code(err) == gcodes.NotFound {
+			return digest.MissingDigestError(r.GetDigest())
+		}
+		return err
+	}
+	return proto.Unmarshal(data, out)
+}
+
 func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, remoteInstanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
 	d, err := digest.Compute(in, digestFunction)
 	if err != nil {

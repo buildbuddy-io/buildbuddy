@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -56,7 +55,7 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 	}, nil
 }
 
-func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*digest.ResourceName, error) {
+func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
 	var sb strings.Builder
 	sb.WriteString(req.GetActionDigest().GetHash())
 	sb.WriteString(*actionCacheSalt)
@@ -75,7 +74,7 @@ func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.Get
 	if err != nil {
 		return nil, err
 	}
-	return digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction()), nil
+	return digest.NewACResourceName(d, req.GetInstanceName(), req.GetDigestFunction()), nil
 }
 
 func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResultWithDigest, error) {
@@ -84,7 +83,7 @@ func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Contex
 		return nil, err
 	}
 	out := &repb.ActionResultWithDigest{}
-	err = cachetools.ReadProtoFromAC(ctx, s.localCache, key, out)
+	err = cachetools.ReadProtoFromActionCache(ctx, s.localCache, key, out)
 	if err != nil {
 		return nil, err
 	}
