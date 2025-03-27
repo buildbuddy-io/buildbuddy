@@ -278,7 +278,9 @@ message RegistryQueryResponse {
   string raft_address = 3;
 }
 
-message GetRegistryRequest {}
+message GetRegistryRequest {
+  repeated uint64 range_ids = 1;
+}
 
 message ConnectionInfo {
   string nhid = 1;

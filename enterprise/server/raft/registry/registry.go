@@ -37,7 +37,7 @@ type NodeRegistry interface {
 	AddNode(target, raftAddress, grpcAddress string)
 	ResolveNHID(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error)
 	String() string
-	List() []*rfpb.ConnectionInfo
+	Get(rangeIDs map[uint64]struct{}) []*rfpb.ConnectionInfo
 }
 
 // fixedPartitioner is the IPartitioner with fixed capacity and naive
@@ -168,17 +168,27 @@ func (n *StaticRegistry) AddNode(target, raftAddress, grpcAddress string) {
 	}
 }
 
-// List lists all the {NHID, raftAddress, grpcAddress} available in the registry
-func (n *StaticRegistry) List() []*rfpb.ConnectionInfo {
+// Get returns all the connections info for the requested rangeIDs. When rangeIDs
+// is empty, it returns all connection info.
+func (n *StaticRegistry) Get(rangeIDs map[uint64]struct{}) []*rfpb.ConnectionInfo {
 	results := []*rfpb.ConnectionInfo{}
 	nhidToReplicas := make(map[string][]*rfpb.ReplicaDescriptor)
 	n.nodeTargets.Range(func(k, v interface{}) bool {
 		nhid := v.(string)
 		ni := k.(raftio.NodeInfo)
-		nhidToReplicas[nhid] = append(nhidToReplicas[nhid], &rfpb.ReplicaDescriptor{
-			RangeId:   ni.ShardID,
-			ReplicaId: ni.ReplicaID,
-		})
+		keep := true
+		if len(rangeIDs) > 0 {
+			if _, ok := rangeIDs[ni.ShardID]; !ok {
+				keep = false
+			}
+		}
+
+		if keep {
+			nhidToReplicas[nhid] = append(nhidToReplicas[nhid], &rfpb.ReplicaDescriptor{
+				RangeId:   ni.ShardID,
+				ReplicaId: ni.ReplicaID,
+			})
+		}
 		return true
 	})
 	for _, replicas := range nhidToReplicas {
@@ -214,7 +224,7 @@ func (n *StaticRegistry) Close() error {
 }
 
 func (n *StaticRegistry) String() string {
-	connections := n.List()
+	connections := n.Get(nil)
 	buf := "\nRegistry\n"
 	for _, conn := range connections {
 		buf += fmt.Sprintf("  Node: %q [raftAddr: %q, grpcAddr: %q]\n", conn.GetNhid(), conn.GetRaftAddress(), conn.GetGrpcAddress())
@@ -394,9 +404,9 @@ func (d *DynamicNodeRegistry) Remove(rangeID uint64, replicaID uint64) {
 func (d *DynamicNodeRegistry) RemoveShard(rangeID uint64) {
 }
 
-// List lists all entries from the registry.
-func (d *DynamicNodeRegistry) List() []*rfpb.ConnectionInfo {
-	return d.sReg.List()
+// Get returns all connection infos for the given range IDs.
+func (d *DynamicNodeRegistry) Get(rangeIDs map[uint64]struct{}) []*rfpb.ConnectionInfo {
+	return d.sReg.Get(rangeIDs)
 }
 
 // Resolve returns the raft address and the connection key of the specified node.

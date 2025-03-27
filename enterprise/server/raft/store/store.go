@@ -328,12 +328,14 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	egStarter := &errgroup.Group{}
 	egStarter.SetLimit(numReplicaStarter)
 	numReplicas := len(nodeHostInfo.LogInfo)
+	rangeIDs := []uint64{}
 	for i, logInfo := range nodeHostInfo.LogInfo {
 		i, logInfo := i, logInfo
 		if !nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
 			// Skip nodes not on this machine.
 			continue
 		}
+		rangeIDs = append(rangeIDs, logInfo.ShardID)
 		egStarter.Go(func() error {
 			start := time.Now()
 			s.log.Infof("Replica c%dn%d is active. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, i+1, numReplicas)
@@ -357,7 +359,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	ctx = context.Background()
 	if *enableRegistryPreload {
 		s.log.Debug("Start to preloadRegistry")
-		err := s.preloadRegistry(ctx)
+		err := s.preloadRegistry(ctx, rangeIDs)
 		if err != nil {
 			s.log.Debugf("preloadRegistry failed: %s", err)
 		}
@@ -378,7 +380,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	return s, nil
 }
 
-func (s *Store) preloadRegistry(ctx context.Context) error {
+func (s *Store) preloadRegistry(ctx context.Context, rangeIDs []uint64) error {
 	localMember := s.gossipManager.LocalMember()
 	members := s.gossipManager.Members()
 
@@ -401,7 +403,9 @@ func (s *Store) preloadRegistry(ctx context.Context) error {
 				s.log.Errorf("preloadRegistry: unable to get client for addr (%q): %s", addr, err)
 				return nil
 			}
-			rsp, err := c.GetRegistry(ctx, &rfpb.GetRegistryRequest{})
+			rsp, err := c.GetRegistry(ctx, &rfpb.GetRegistryRequest{
+				RangeIds: rangeIDs,
+			})
 			if err != nil {
 				s.log.Errorf("preloadRegistry: unable to get registry from addr (%q): %s", addr, err)
 				return nil
@@ -1027,7 +1031,11 @@ func (s *Store) isLeader(rangeID uint64, replicaID uint64) bool {
 }
 
 func (s *Store) GetRegistry(ctx context.Context, req *rfpb.GetRegistryRequest) (*rfpb.GetRegistryResponse, error) {
-	connections := s.registry.List()
+	rangeIDs := make(map[uint64]struct{}, len(req.GetRangeIds()))
+	for _, rangeID := range req.GetRangeIds() {
+		rangeIDs[rangeID] = struct{}{}
+	}
+	connections := s.registry.Get(rangeIDs)
 	return &rfpb.GetRegistryResponse{
 		Connections: connections,
 	}, nil
