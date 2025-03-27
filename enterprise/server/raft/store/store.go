@@ -66,22 +66,24 @@ import (
 )
 
 var (
-	zombieNodeScanInterval = flag.Duration("cache.raft.zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
-	zombieMinDuration      = flag.Duration("cache.raft.zombie_min_duration", 1*time.Minute, "The minimum duration a replica must remain in a zombie state to be considered a zombie.")
-	replicaScanInterval    = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
-	clientSessionTTL       = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
-	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
-	enableTxnCleanup       = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
-	enableRegistryPreload  = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
+	zombieNodeScanInterval    = flag.Duration("cache.raft.zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
+	zombieMinDuration         = flag.Duration("cache.raft.zombie_min_duration", 1*time.Minute, "The minimum duration a replica must remain in a zombie state to be considered a zombie.")
+	zombieNonVoterMinDuration = flag.Duration("cache.raft.zombie_non_voter_min_duration", 1*time.Hour, "The minimum duration a replica must remain in a non-voter state before we remove it")
+	replicaScanInterval       = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
+	clientSessionTTL          = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
+	enableDriver              = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
+	enableTxnCleanup          = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
+	enableRegistryPreload     = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
 )
 
 const (
-	deleteSessionsRateLimit      = 1
-	removeZombieRateLimit        = 1
-	numReplicaStarter            = 50
-	checkReplicaCaughtUpInterval = 1 * time.Second
-	maxWaitTimeForReplicaRange   = 30 * time.Second
-	metricsRefreshPeriod         = 30 * time.Second
+	nonVoterZombieJanitorRateLimit = 1
+	deleteSessionsRateLimit        = 1
+	removeZombieRateLimit          = 1
+	numReplicaStarter              = 50
+	checkReplicaCaughtUpInterval   = 1 * time.Second
+	maxWaitTimeForReplicaRange     = 30 * time.Second
+	metricsRefreshPeriod           = 30 * time.Second
 
 	// listenerID for replicaStatusWaiter
 	listenerID = "replicaStatusWaiter"
@@ -140,9 +142,10 @@ type Store struct {
 	updateTagsWorker *updateTagsWorker
 	txnCoordinator   *txn.Coordinator
 
-	driverQueue         *driver.Queue
-	deleteSessionWorker *deleteSessionWorker
-	replicaJanitor      *replicaJanitor
+	driverQueue           *driver.Queue
+	deleteSessionWorker   *deleteSessionWorker
+	replicaJanitor        *replicaJanitor
+	nonVoterZombieJanitor *nonVoterZombieJanitor
 
 	clock clockwork.Clock
 
@@ -278,6 +281,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s, *clientSessionTTL)
 	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval, *zombieMinDuration)
+	s.nonVoterZombieJanitor = newNonVoterZombieJanitor(clock, s, *zombieNonVoterMinDuration)
 
 	if err != nil {
 		return nil, err
@@ -493,7 +497,7 @@ func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugIn
 	} else if len(ranges) > 0 {
 		rsp.RangeDescriptorInMetaRange = ranges[0]
 	}
-	membership, err := s.getMembership(ctx, req.GetRangeId())
+	membership, err := s.GetMembership(ctx, req.GetRangeId())
 	if err != nil {
 		return rsp, err
 	}
@@ -657,7 +661,10 @@ func (s *Store) Start() error {
 		s.deleteSessionWorker.Start(s.egCtx)
 		return nil
 	})
-
+	s.eg.Go(func() error {
+		s.nonVoterZombieJanitor.Start(s.egCtx)
+		return nil
+	})
 	return nil
 }
 
@@ -754,7 +761,7 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 		}
 
 		if targetReplicaID == 0 {
-			log.Debugf("cannot find a replica with ready connections to transfer leadership to for shard %d, choose a random replica: %s", clusterInfo.ShardID, backupReplicaID)
+			log.Debugf("cannot find a replica with ready connections to transfer leadership to for shard %d, choose a random replica: %d", clusterInfo.ShardID, backupReplicaID)
 			targetReplicaID = backupReplicaID
 		}
 		if targetReplicaID != 0 {
@@ -1432,7 +1439,7 @@ const (
 // there is error to get membership info.
 func (s *Store) checkMembershipStatus(ctx context.Context, shardInfo dragonboat.ShardInfo) membershipStatus {
 	// Get the config change index for this shard.
-	membership, err := s.getMembership(ctx, shardInfo.ShardID)
+	membership, err := s.GetMembership(ctx, shardInfo.ShardID)
 	if err != nil {
 		if errors.Is(err, dragonboat.ErrShardNotFound) {
 			return membershipStatusShardNotFound
@@ -1469,7 +1476,7 @@ type replicaMembership struct {
 }
 
 func (s *Store) checkReplicaMembership(ctx context.Context, rangeID uint64, nhid string) (*replicaMembership, error) {
-	membership, err := s.getMembership(ctx, rangeID)
+	membership, err := s.GetMembership(ctx, rangeID)
 	if err != nil {
 		return nil, err
 	}
@@ -1493,7 +1500,7 @@ func (s *Store) checkReplicaMembership(ctx context.Context, rangeID uint64, nhid
 }
 
 func (s *Store) newRangeDescriptorFromRaftMembership(ctx context.Context, rangeID uint64) (*rfpb.RangeDescriptor, error) {
-	membership, err := s.getMembership(ctx, rangeID)
+	membership, err := s.GetMembership(ctx, rangeID)
 	if err != nil {
 		return nil, err
 	}
@@ -1787,8 +1794,8 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		}
 
 		// Skip removeReplica if we don't have rd. This is possible when we were
-		// not able to create rd from the membership because the shard is ready.
-		// In that case, we stopped the replica directly.
+		// not able to create rd from the membership because the shard is not
+		// ready. In that case, we stopped the replica directly.
 		if rd != nil {
 			err = j.store.removeReplica(ctx, rd, removeReplicaReq)
 			if err != nil {
@@ -2140,49 +2147,131 @@ func (w *updateTagsWorker) updateTags() error {
 	return err
 }
 
+type handleTaskFunc func(context.Context, *replica.Replica) error
+
+type replicaWorker struct {
+	name     string
+	tasks    chan *replica.Replica
+	handleFn handleTaskFunc
+}
+
+func (w *replicaWorker) Enqueue(repl *replica.Replica) {
+	select {
+	case w.tasks <- repl:
+		break
+	default:
+		log.Warningf("%s queue full", w.name)
+	}
+}
+
+func (w *replicaWorker) Start(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			for len(w.tasks) > 0 {
+				<-w.tasks
+			}
+			return
+		case repl := <-w.tasks:
+			if err := w.handleFn(ctx, repl); err != nil {
+				log.Warningf("%s failed to handle task: %s", w.name, err)
+			}
+		}
+	}
+}
+
+// nonVoterZombieJanitor cleans up zombie non voters. We have zombie non voters when
+// the driver try to up-replicate a range and when it successfully add a
+// non-voter to the raft cluster, but fail to start the shard or promote it to
+// voter, and later abandon the attempt. In such case, a shard has never been
+// started, therefore, it won't be detected as a normal zombie (i.e. a shard that
+// has been started but should not exist according to meta range).
+type nonVoterZombieJanitor struct {
+	// The minimum duration the replica must remain as a non-voter before it is
+	// removed
+	minDuration time.Duration
+
+	lastDetectedAt map[string]time.Time // from replicaKey to last_detected_at
+	rateLimiter    *rate.Limiter
+	clock          clockwork.Clock
+
+	store *Store
+
+	*replicaWorker
+}
+
+func newNonVoterZombieJanitor(clock clockwork.Clock, store *Store, minDuration time.Duration) *nonVoterZombieJanitor {
+	res := &nonVoterZombieJanitor{
+		minDuration:    minDuration,
+		clock:          clock,
+		store:          store,
+		rateLimiter:    rate.NewLimiter(rate.Limit(nonVoterZombieJanitorRateLimit), 1),
+		lastDetectedAt: make(map[string]time.Time),
+	}
+	res.replicaWorker = &replicaWorker{
+		name:     "nonVoterZombieJanitor",
+		tasks:    make(chan *replica.Replica, 10000),
+		handleFn: res.checkRepl,
+	}
+	return res
+}
+
+func (j *nonVoterZombieJanitor) checkRepl(ctx context.Context, repl *replica.Replica) error {
+	if err := j.rateLimiter.Wait(ctx); err != nil {
+		return err
+	}
+	rangeID := repl.RangeID()
+	membership, err := j.store.GetMembership(ctx, rangeID)
+	if err != nil {
+		return status.WrapErrorf(err, "failed to get membership for range %d", rangeID)
+	}
+	for replicaID, _ := range membership.NonVotings {
+		key := replicaKey(rangeID, replicaID)
+		detectedAt, ok := j.lastDetectedAt[key]
+		if ok {
+			if j.clock.Since(detectedAt) < j.minDuration {
+				continue
+			}
+			_, err := j.store.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+				RangeId:   rangeID,
+				ReplicaId: replicaID,
+			})
+			if err != nil {
+				return status.WrapErrorf(err, "failed to remove non-voter replica c%dn%d", rangeID, replicaID)
+			}
+		} else {
+			j.lastDetectedAt[key] = j.clock.Now()
+		}
+	}
+	return nil
+}
+
 type deleteSessionWorker struct {
 	rateLimiter       *rate.Limiter
 	lastExecutionTime sync.Map // map of uint64 rangeID -> the timestamp we last delete sessions
 	session           *client.Session
 	clock             clockwork.Clock
 	store             *Store
-	deleteChan        chan *replica.Replica
 	clientSessionTTL  time.Duration
+
+	*replicaWorker
 }
 
 func newDeleteSessionsWorker(clock clockwork.Clock, store *Store, clientSessionTTL time.Duration) *deleteSessionWorker {
-	return &deleteSessionWorker{
+	res := &deleteSessionWorker{
 		rateLimiter:       rate.NewLimiter(rate.Limit(deleteSessionsRateLimit), 1),
 		store:             store,
 		lastExecutionTime: sync.Map{},
 		session:           client.NewSessionWithClock(clock),
 		clock:             clock,
-		deleteChan:        make(chan *replica.Replica, 10000),
 		clientSessionTTL:  clientSessionTTL,
 	}
-}
-
-func (w *deleteSessionWorker) Enqueue(repl *replica.Replica) {
-	select {
-	case w.deleteChan <- repl:
-		break
-	default:
-		log.Warning("deleteSessionWorker queue full")
+	res.replicaWorker = &replicaWorker{
+		name:     "deleteSessionWorker",
+		tasks:    make(chan *replica.Replica, 10000),
+		handleFn: res.deleteSessions,
 	}
-}
-
-func (w *deleteSessionWorker) Start(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			for len(w.deleteChan) > 0 {
-				<-w.deleteChan
-			}
-			return
-		case repl := <-w.deleteChan:
-			w.deleteSessions(ctx, repl)
-		}
-	}
+	return res
 }
 
 func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.Replica) error {
@@ -2441,7 +2530,7 @@ func (s *Store) waitForReplicaToCatchUp(ctx context.Context, rangeID uint64, des
 	return nil
 }
 
-func (s *Store) getMembership(ctx context.Context, rangeID uint64) (*dragonboat.Membership, error) {
+func (s *Store) GetMembership(ctx context.Context, rangeID uint64) (*dragonboat.Membership, error) {
 	var membership *dragonboat.Membership
 	var err error
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
@@ -2467,7 +2556,7 @@ func (s *Store) getMembership(ctx context.Context, rangeID uint64) (*dragonboat.
 }
 
 func (s *Store) getConfigChangeID(ctx context.Context, rangeID uint64) (uint64, error) {
-	membership, err := s.getMembership(ctx, rangeID)
+	membership, err := s.GetMembership(ctx, rangeID)
 	if err != nil {
 		return 0, err
 	}
@@ -2582,7 +2671,7 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 			// However, the next attempt of SyncRequestAddReplica can fail
 			// because the config change ID is equal to the last applied change
 			// id.
-			membership, membershipErr := s.getMembership(ctx, rd.GetRangeId())
+			membership, membershipErr := s.GetMembership(ctx, rd.GetRangeId())
 			if membershipErr != nil {
 				return status.InternalErrorf("nodeHost.SyncRequestAddReplica failed (configChangeID=%d): %s, and getMembership failed: %s", configChangeID, err, membershipErr)
 			}
@@ -2991,6 +3080,7 @@ func (store *Store) scanReplicas(ctx context.Context, scanInterval time.Duration
 				store.driverQueue.MaybeAdd(ctx, repl)
 			}
 			store.deleteSessionWorker.Enqueue(repl)
+			store.nonVoterZombieJanitor.Enqueue(repl)
 		}
 	}
 }

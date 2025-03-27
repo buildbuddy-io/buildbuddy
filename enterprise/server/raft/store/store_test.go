@@ -33,21 +33,7 @@ import (
 )
 
 func getMembership(t *testing.T, ts *testutil.TestingStore, ctx context.Context, rangeID uint64) []*rfpb.ReplicaDescriptor {
-	var membership *dragonboat.Membership
-	var err error
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		membership, err = ts.NodeHost().SyncGetShardMembership(ctx, rangeID)
-		if err != nil {
-			return err
-		}
-		// Trick client.RunNodehostFn into running this again if we got a nil
-		// membership back
-		if membership == nil {
-			return status.OutOfRangeErrorf("cluster not ready")
-		}
-		return nil
-	})
-
+	membership, err := ts.GetMembership(ctx, rangeID)
 	if err != nil {
 		if errors.Is(err, dragonboat.ErrShardNotFound) {
 			return []*rfpb.ReplicaDescriptor{}
@@ -63,6 +49,16 @@ func getMembership(t *testing.T, ts *testutil.TestingStore, ctx context.Context,
 		})
 	}
 	return replicas
+}
+
+func addNonVoting(t *testing.T, ts *testutil.TestingStore, ctx context.Context, rangeID uint64, replicaID uint64, nhid string) {
+	membership, err := ts.GetMembership(ctx, rangeID)
+	require.NoError(t, err)
+	ccid := membership.ConfigChangeID
+	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		return ts.NodeHost().SyncRequestAddNonVoting(ctx, rangeID, replicaID, nhid, ccid)
+	})
+	require.NoError(t, err)
 }
 
 func TestConfiguredClusters(t *testing.T) {
@@ -274,6 +270,40 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 		require.Equal(t, uint64(1), list1.GetReplicas()[0].GetRangeId())
 		require.Equal(t, uint64(1), list2.GetReplicas()[0].GetRangeId())
 		break
+	}
+}
+
+func TestCleanupZombieNonVoter(t *testing.T) {
+	// Prevent driver kicks in to add the replica back to the store.
+	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 1)
+
+	clock := clockwork.NewFakeClock()
+
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1}
+	sf.StartShard(t, ctx, stores...)
+
+	s2 := sf.NewStore(t)
+	// add a non-voter c2n2
+	addNonVoting(t, s1, ctx, 2, 2, s2.NHID())
+
+	membership, err := s1.GetMembership(ctx, 2)
+	require.NoError(t, err)
+	// Check that c2n2 is a non-voter on raft.
+	require.Equal(t, 1, len(membership.NonVotings))
+	require.Contains(t, membership.NonVotings, uint64(2))
+
+	for {
+		clock.Advance(1 * time.Hour)
+		membership, err := s1.GetMembership(ctx, 2)
+		require.NoError(t, err)
+		if len(membership.NonVotings) == 0 {
+			break
+		}
 	}
 }
 
