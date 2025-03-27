@@ -17,6 +17,7 @@ go_library(
         "//server/metrics",
         "//server/util/alert",
         "//server/util/log",
+        "//server/util/priority_queue",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
