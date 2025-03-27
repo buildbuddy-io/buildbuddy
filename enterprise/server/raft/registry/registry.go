@@ -164,7 +164,7 @@ func (n *StaticRegistry) AddNode(target, raftAddress, grpcAddress string) {
 		log.Errorf("invalid target %s", target)
 		return
 	}
-	if raftAddress != "" && grpcAddress != "" {
+	if raftAddress == "" && grpcAddress == "" {
 		return
 	}
 	a := addresses{
