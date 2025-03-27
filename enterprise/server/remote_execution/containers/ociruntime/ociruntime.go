@@ -61,8 +61,8 @@ var (
 	netPoolSize = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 	capAdd      = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
-	tiniEnabled = flag.Bool("executor.oci.tini_enabled", false, "Run tini as pid 1 for recycled containers.")
-	tiniPath    = flag.String("executor.oci.tini_path", "", "Path to tini binary to use as pid 1 for recycled containers. Defaults to PATH lookup if not set.")
+	tiniEnabled = flag.Bool("executor.oci.tini_enabled", false, "Run tini as pid 1 for recycling-enabled containers.")
+	tiniPath    = flag.String("executor.oci.tini_path", "", "Path to tini binary to use as pid 1 for recycling-enabled containers. Defaults to PATH lookup if not set.")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -177,6 +177,10 @@ type provider struct {
 	// Configured runtime path.
 	runtime string
 
+	// Path to the configured tini binary or the one found in $PATH if none was
+	// configured. Only set if executor.oci.tini_enabled == true.
+	tiniPath string
+
 	networkPool *networking.ContainerNetworkPool
 
 	// Optional. "" if executor.oci.enable_lxcfs == false.
@@ -204,6 +208,20 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	}
 	if rt == "" {
 		return nil, status.FailedPreconditionError("could not find a usable container runtime in PATH")
+	}
+
+	// Configure the tini binary path.
+	var tini string
+	if *tiniEnabled {
+		if *tiniPath == "" {
+			p, err := exec.LookPath("tini")
+			if err != nil {
+				return nil, status.FailedPreconditionErrorf("tini not found in PATH")
+			}
+			tini = p
+		} else {
+			tini = *tiniPath
+		}
 	}
 
 	lxcfsMount := "" // set below if configured.
@@ -258,6 +276,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	return &provider{
 		env:            env,
 		runtime:        rt,
+		tiniPath:       tini,
 		containersRoot: containersRoot,
 		cgroupPaths:    &cgroup.Paths{},
 		imageCacheRoot: imageCacheRoot,
@@ -271,6 +290,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 	container := &ociContainer{
 		env:            p.env,
 		runtime:        p.runtime,
+		tiniPath:       p.tiniPath,
 		containersRoot: p.containersRoot,
 		cgroupPaths:    p.cgroupPaths,
 		imageCacheRoot: p.imageCacheRoot,
@@ -299,6 +319,7 @@ type ociContainer struct {
 	env environment.Env
 
 	runtime        string
+	tiniPath       string
 	cgroupPaths    *cgroup.Paths
 	cgroupParent   string
 	cgroupSettings *scpb.CgroupSettings
@@ -1052,20 +1073,12 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			})
 		}
 	}
-	if *tiniEnabled {
-		tiniPath := *tiniPath
-		if tiniPath == "" {
-			p, err := exec.LookPath("tini")
-			if err != nil {
-				return nil, fmt.Errorf("find tini in $PATH: %w", err)
-			}
-			tiniPath = p
-		}
+	if c.tiniPath != "" {
 		// Bind-mount tini readonly into the container.
 		spec.Mounts = append(spec.Mounts, specs.Mount{
 			Destination: tiniMountPoint,
 			Type:        "bind",
-			Source:      tiniPath,
+			Source:      c.tiniPath,
 			Options:     []string{"bind", "rprivate", "ro"},
 		})
 	}
