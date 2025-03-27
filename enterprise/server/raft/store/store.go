@@ -276,8 +276,8 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	if *enableDriver {
 		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, apiClient, clock)
 	}
-	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s)
-	s.replicaJanitor = newReplicaJanitor(clock, s)
+	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s, *clientSessionTTL)
+	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval, *zombieMinDuration)
 
 	if err != nil {
 		return nil, err
@@ -641,16 +641,18 @@ func (s *Store) Start() error {
 		s.refreshMetrics(s.egCtx)
 		return nil
 	})
-	s.eg.Go(func() error {
-		if *enableTxnCleanup {
+	if *enableTxnCleanup {
+		s.eg.Go(func() error {
 			s.txnCoordinator.Start(s.egCtx)
-		}
-		return nil
-	})
-	s.eg.Go(func() error {
-		s.scanReplicas(s.egCtx)
-		return nil
-	})
+			return nil
+		})
+	}
+	if scanInterval := *replicaScanInterval; scanInterval != 0 {
+		s.eg.Go(func() error {
+			s.scanReplicas(s.egCtx, scanInterval)
+			return nil
+		})
+	}
 	s.eg.Go(func() error {
 		s.deleteSessionWorker.Start(s.egCtx)
 		return nil
@@ -1525,6 +1527,9 @@ type zombieCleanupTask struct {
 }
 
 type replicaJanitor struct {
+	scanInterval      time.Duration
+	zombieMinDuration time.Duration
+
 	lastDetectedAt map[uint64]time.Time // from rangeID to last_detected_at
 
 	rateLimiter *rate.Limiter
@@ -1540,14 +1545,16 @@ type replicaJanitor struct {
 	eg       errgroup.Group
 }
 
-func newReplicaJanitor(clock clockwork.Clock, store *Store) *replicaJanitor {
+func newReplicaJanitor(clock clockwork.Clock, store *Store, scanInterval time.Duration, zombieMinDuration time.Duration) *replicaJanitor {
 	return &replicaJanitor{
-		rateLimiter:     rate.NewLimiter(rate.Limit(removeZombieRateLimit), 1),
-		clock:           clock,
-		tasks:           make(chan zombieCleanupTask, 500),
-		rangeIDsInQueue: make(map[uint64]bool),
-		lastDetectedAt:  make(map[uint64]time.Time),
-		store:           store,
+		scanInterval:      scanInterval,
+		zombieMinDuration: zombieMinDuration,
+		rateLimiter:       rate.NewLimiter(rate.Limit(removeZombieRateLimit), 1),
+		clock:             clock,
+		tasks:             make(chan zombieCleanupTask, 500),
+		rangeIDsInQueue:   make(map[uint64]bool),
+		lastDetectedAt:    make(map[uint64]time.Time),
+		store:             store,
 	}
 }
 
@@ -1590,7 +1597,7 @@ func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescr
 }
 
 func (j *replicaJanitor) Start(ctx context.Context) {
-	if *zombieNodeScanInterval == 0 {
+	if j.scanInterval == 0 {
 		return
 	}
 	eg := &errgroup.Group{}
@@ -1630,10 +1637,10 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 }
 
 func (j *replicaJanitor) scan(ctx context.Context) {
-	if *zombieNodeScanInterval == 0 {
+	if j.scanInterval == 0 {
 		return
 	}
-	timer := j.clock.NewTicker(*zombieNodeScanInterval)
+	timer := j.clock.NewTicker(j.scanInterval)
 	defer timer.Stop()
 
 	for {
@@ -1684,7 +1691,7 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 				if newSS.action != zombieCleanupNoAction {
 					detectedAt, ok := j.lastDetectedAt[rangeID]
 					if ok {
-						if j.clock.Since(detectedAt) >= *zombieMinDuration {
+						if j.clock.Since(detectedAt) >= j.zombieMinDuration {
 							// this is a zombie.
 							j.mu.Lock()
 							inQueue := j.rangeIDsInQueue[rangeID]
@@ -2136,9 +2143,10 @@ type deleteSessionWorker struct {
 	clock             clockwork.Clock
 	store             *Store
 	deleteChan        chan *replica.Replica
+	clientSessionTTL  time.Duration
 }
 
-func newDeleteSessionsWorker(clock clockwork.Clock, store *Store) *deleteSessionWorker {
+func newDeleteSessionsWorker(clock clockwork.Clock, store *Store, clientSessionTTL time.Duration) *deleteSessionWorker {
 	return &deleteSessionWorker{
 		rateLimiter:       rate.NewLimiter(rate.Limit(deleteSessionsRateLimit), 1),
 		store:             store,
@@ -2146,6 +2154,7 @@ func newDeleteSessionsWorker(clock clockwork.Clock, store *Store) *deleteSession
 		session:           client.NewSessionWithClock(clock),
 		clock:             clock,
 		deleteChan:        make(chan *replica.Replica, 10000),
+		clientSessionTTL:  clientSessionTTL,
 	}
 }
 
@@ -2199,7 +2208,7 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 	now := w.clock.Now()
 	request, err := rbuilder.NewBatchBuilder().Add(
 		&rfpb.DeleteSessionsRequest{
-			CreatedAtUsec: now.Add(-*clientSessionTTL).UnixMicro(),
+			CreatedAtUsec: now.Add(-w.clientSessionTTL).UnixMicro(),
 		}).ToProto()
 	if err != nil {
 		return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to build request: %s", rd.GetRangeId(), err)
@@ -2964,8 +2973,8 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, r
 	return newDescriptor, nil
 }
 
-func (store *Store) scanReplicas(ctx context.Context) {
-	scanDelay := store.clock.NewTicker(*replicaScanInterval)
+func (store *Store) scanReplicas(ctx context.Context, scanInterval time.Duration) {
+	scanDelay := store.clock.NewTicker(scanInterval)
 	for {
 		select {
 		case <-ctx.Done():
