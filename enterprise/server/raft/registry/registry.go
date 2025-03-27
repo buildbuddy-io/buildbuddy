@@ -56,19 +56,28 @@ type addresses struct {
 	raft string
 }
 
+type nodeInfoSet map[raftio.NodeInfo]struct{}
+
 // StaticRegistry is used to manage all known node addresses in the multi raft
 // system. The transport layer uses this address registry to locate nodes.
 type StaticRegistry struct {
 	partitioner *fixedPartitioner
 	validate    dbConfig.TargetValidator
 
-	nodeTargets     sync.Map // map of raftio.NodeInfo => NHID(string)
+	mu          sync.Mutex                 // protects shards and nodeTargets
+	shards      map[uint64]nodeInfoSet     // map of rangeID to a set of nodeInfo
+	nodeTargets map[raftio.NodeInfo]string // map of raftio.NodeInfo => NHID
+
 	targetAddresses sync.Map // map of NHID(string) => addresses
 }
 
 // NewStaticNodeRegistry returns a new StaticRegistry object.
 func NewStaticNodeRegistry(streamConnections uint64, v dbConfig.TargetValidator) *StaticRegistry {
-	n := &StaticRegistry{validate: v}
+	n := &StaticRegistry{
+		validate:    v,
+		shards:      make(map[uint64]nodeInfoSet),
+		nodeTargets: make(map[raftio.NodeInfo]string),
+	}
 	if streamConnections > 1 {
 		n.partitioner = &fixedPartitioner{capacity: streamConnections}
 	}
@@ -81,13 +90,26 @@ func (n *StaticRegistry) Add(rangeID uint64, replicaID uint64, target string) {
 		log.Errorf("invalid target %s", target)
 		return
 	}
+
 	key := raftio.GetNodeInfo(rangeID, replicaID)
-	existingTarget, ok := n.nodeTargets.LoadOrStore(key, target)
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	s, ok := n.shards[rangeID]
+	if !ok {
+		s = make(map[raftio.NodeInfo]struct{})
+		n.shards[rangeID] = s
+	}
+	s[key] = struct{}{}
+
+	existingTarget, ok := n.nodeTargets[key]
+
 	if ok {
 		if existingTarget != target {
 			log.Errorf("inconsistent target for c%dn%d, %s:%s", rangeID, replicaID, existingTarget, target)
 		}
 	} else {
+		n.nodeTargets[key] = target
 		log.Debugf("added target for c%dn%d:%s", rangeID, replicaID, target)
 	}
 }
@@ -101,10 +123,28 @@ func (n *StaticRegistry) getConnectionKey(addr string, rangeID uint64) string {
 
 // Remove removes a remote from the node registry.
 func (n *StaticRegistry) Remove(rangeID uint64, replicaID uint64) {
+	key := raftio.GetNodeInfo(rangeID, replicaID)
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	s, ok := n.shards[rangeID]
+	if ok {
+		delete(s, key)
+	}
+	delete(n.nodeTargets, key)
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
 func (n *StaticRegistry) RemoveShard(rangeID uint64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	s, ok := n.shards[rangeID]
+	if ok {
+		for ni, _ := range s {
+			delete(n.nodeTargets, ni)
+		}
+	}
+	delete(n.shards, rangeID)
 }
 
 // ResolveRaft returns the raft address and the connection key of the specified node.
@@ -115,7 +155,11 @@ func (n *StaticRegistry) Resolve(rangeID uint64, replicaID uint64) (string, stri
 // ResolveRaft returns the raft address and the connection key of the specified node.
 func (n *StaticRegistry) ResolveRaft(rangeID uint64, replicaID uint64) (string, string, error) {
 	key := raftio.GetNodeInfo(rangeID, replicaID)
-	if target, ok := n.nodeTargets.Load(key); ok {
+	n.mu.Lock()
+	target, ok := n.nodeTargets[key]
+	n.mu.Unlock()
+
+	if ok {
 		if a, ok := n.targetAddresses.Load(target); ok {
 			raftAddr := a.(addresses).raft
 			return raftAddr, n.getConnectionKey(raftAddr, rangeID), nil
@@ -137,7 +181,12 @@ func (n *StaticRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replic
 	}()
 
 	key := raftio.GetNodeInfo(rangeID, replicaID)
-	if target, ok := n.nodeTargets.Load(key); ok {
+
+	n.mu.Lock()
+	target, ok := n.nodeTargets[key]
+	n.mu.Unlock()
+
+	if ok {
 		if a, ok := n.targetAddresses.Load(target); ok {
 			grpcAddr := a.(addresses).grpc
 			return grpcAddr, n.getConnectionKey(grpcAddr, rangeID), nil
@@ -150,8 +199,11 @@ func (n *StaticRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replic
 // specified node.
 func (n *StaticRegistry) ResolveNHID(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error) {
 	key := raftio.GetNodeInfo(rangeID, replicaID)
-	if t, ok := n.nodeTargets.Load(key); ok {
-		target := t.(string)
+	n.mu.Lock()
+	target, ok := n.nodeTargets[key]
+	n.mu.Unlock()
+
+	if ok {
 		return target, n.getConnectionKey(target, rangeID), nil
 	}
 	return "", "", targetAddressUnknownError(rangeID, replicaID)
@@ -197,15 +249,14 @@ func (n *StaticRegistry) Close() error {
 
 func (n *StaticRegistry) String() string {
 	nhidToReplicas := make(map[string][]*rfpb.ReplicaDescriptor)
-	n.nodeTargets.Range(func(k, v interface{}) bool {
-		nhid := v.(string)
-		ni := k.(raftio.NodeInfo)
+	n.mu.Lock()
+	for ni, nhid := range n.nodeTargets {
 		nhidToReplicas[nhid] = append(nhidToReplicas[nhid], &rfpb.ReplicaDescriptor{
 			RangeId:   ni.ShardID,
 			ReplicaId: ni.ReplicaID,
 		})
-		return true
-	})
+	}
+	n.mu.Unlock()
 	for _, replicas := range nhidToReplicas {
 		sort.Slice(replicas, func(i, j int) bool {
 			if replicas[i].GetRangeId() == replicas[j].GetRangeId() {
@@ -393,10 +444,12 @@ func (d *DynamicNodeRegistry) Add(rangeID uint64, replicaID uint64, target strin
 
 // Remove removes a remote from the node registry.
 func (d *DynamicNodeRegistry) Remove(rangeID uint64, replicaID uint64) {
+	d.sReg.Remove(rangeID, replicaID)
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
 func (d *DynamicNodeRegistry) RemoveShard(rangeID uint64) {
+	d.sReg.RemoveShard(rangeID)
 }
 
 // ListNodes lists all entries from the registry.
