@@ -2314,7 +2314,10 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 	}
 	w.lastExecutionTime.Store(rd.GetRangeId(), now)
 	_, err = rbuilder.NewBatchResponseFromProto(rsp).DeleteSessionsResponse(0)
-	return status.InternalErrorf("unable to delete sessions for rangeID=%d: DeleteSessions fails: %s", rd.GetRangeId(), err)
+	if err != nil {
+		return status.InternalErrorf("unable to delete sessions for rangeID=%d: deleteSessions fails: %s", rd.GetRangeId(), err)
+	}
+	return nil
 }
 
 func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
