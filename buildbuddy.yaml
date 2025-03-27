@@ -1,4 +1,11 @@
 actions:
+  - name: Big
+    container_image: ubuntu-20.04
+    steps:
+      - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare"
+    resource_requests:
+      memory: 40GB
+      disk: 45GB
   - name: Test
     container_image: ubuntu-20.04
     triggers:
