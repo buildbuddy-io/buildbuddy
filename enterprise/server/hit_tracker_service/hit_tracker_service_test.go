@@ -50,9 +50,7 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 		SizeBytes: 1234,
 	}
 	compressedSize := int64(123)
-	ctx = withRequestMetadata(t, ctx, rmd)
-	require.NoError(t, err)
-	ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, iid)
+	ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, iid, rmd)
 
 	dl := ht.TrackDownload(d1)
 	dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")

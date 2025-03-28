@@ -6,9 +6,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 type HitTrackerService struct {
@@ -33,7 +35,12 @@ func (h HitTrackerService) Track(ctx context.Context, req *hitpb.TrackRequest) (
 			continue
 		}
 
-		hitTracker := h.hitTrackerFactory.NewCASHitTracker(ctx, cacheHit.GetInvocationId())
+		requestMetadata := &repb.RequestMetadata{}
+		if err := proto.Unmarshal(cacheHit.GetBazelRequestMetadata(), requestMetadata); err != nil {
+			log.Debugf("Malformed bazel request metadata: %v", err)
+		}
+
+		hitTracker := h.hitTrackerFactory.NewCASHitTracker(ctx, cacheHit.GetInvocationId(), requestMetadata)
 		for i := int64(0); i < cacheHit.GetEmptyHits(); i++ {
 			hitTracker.TrackEmptyHit()
 		}

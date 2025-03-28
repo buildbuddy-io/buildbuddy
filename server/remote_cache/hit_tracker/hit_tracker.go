@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -159,15 +158,15 @@ type HitTracker struct {
 	executedActionMetadata *repb.ExecutedActionMetadata
 }
 
-func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, invocationID string) interfaces.HitTracker {
-	return h.newHitTracker(ctx, invocationID, true)
+func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, invocationID string, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return h.newHitTracker(ctx, invocationID, requestMetadata, true)
 }
 
-func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, invocationID string) interfaces.HitTracker {
-	return h.newHitTracker(ctx, invocationID, false)
+func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, invocationID string, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return h.newHitTracker(ctx, invocationID, requestMetadata, false)
 }
 
-func (h HitTrackerFactory) newHitTracker(ctx context.Context, invocationID string, actionCache bool) interfaces.HitTracker {
+func (h HitTrackerFactory) newHitTracker(ctx context.Context, invocationID string, requestMetadata *repb.RequestMetadata, actionCache bool) interfaces.HitTracker {
 	return &HitTracker{
 		env:             h.env,
 		c:               h.env.GetMetricsCollector(),
@@ -175,7 +174,7 @@ func (h HitTrackerFactory) newHitTracker(ctx context.Context, invocationID strin
 		ctx:             ctx,
 		iid:             invocationID,
 		actionCache:     actionCache,
-		requestMetadata: bazel_request.GetRequestMetadata(ctx),
+		requestMetadata: requestMetadata,
 	}
 }
 
