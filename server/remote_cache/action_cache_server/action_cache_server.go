@@ -28,7 +28,7 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
-var checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests")
+var checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
 
 type ActionCacheServer struct {
 	env   environment.Env

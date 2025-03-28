@@ -21,8 +21,6 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const ActionCacheRemoteInstanceName = "__bb_action_cache__"
-
 var (
 	cacheActionResults = flag.Bool("cache_proxy.cache_action_results", false, "If true, the proxy will cache ActionCache.GetActionResult responses.")
 	actionCacheSalt    = flag.String("cache_proxy.action_cache_salt", "actioncache-170325", "A salt to reset action cache contents when needed.")
@@ -60,7 +58,9 @@ func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.Get
 	sb.WriteString(req.GetActionDigest().GetHash())
 	sb.WriteString(*actionCacheSalt)
 	if req.GetInlineStderr() {
-		sb.WriteString("e")
+		sb.WriteString("|e")
+	} else {
+		sb.WriteString("|n")
 	}
 	if req.GetInlineStdout() {
 		sb.WriteString("o")
