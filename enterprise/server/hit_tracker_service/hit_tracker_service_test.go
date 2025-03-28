@@ -33,7 +33,7 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 	require.NoError(t, err)
 	env.SetMetricsCollector(mc)
 	hit_tracker.Register(env)
-	hit_tracker_service.Register(env)
+	require.NoError(t, hit_tracker_service.Register(env))
 	ctx := context.Background()
 
 	iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
@@ -124,7 +124,7 @@ func TestHitTrackerService_Usage(t *testing.T) {
 	ut := &fakeUsageTracker{}
 	env.SetUsageTracker(ut)
 	hit_tracker.Register(env)
-	hit_tracker_service.Register(env)
+	require.NoError(t, hit_tracker_service.Register(env))
 	require.NotNil(t, env.GetHitTrackerServiceServer())
 
 	ctx := context.Background()
