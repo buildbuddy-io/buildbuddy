@@ -2306,7 +2306,7 @@ func (s *BuildBuddyServer) GetGithubPullRequest(ctx context.Context, req *ghpb.G
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2330,7 +2330,7 @@ func (s *BuildBuddyServer) UpdateGithubPullRequestComment(ctx context.Context, r
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2342,7 +2342,7 @@ func (s *BuildBuddyServer) DeleteGithubPullRequestComment(ctx context.Context, r
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2366,7 +2366,7 @@ func (s *BuildBuddyServer) SendGithubPullRequestReview(ctx context.Context, req 
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}

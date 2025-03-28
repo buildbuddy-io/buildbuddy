@@ -119,22 +119,19 @@ func NewAppService(env environment.Env, readWriteApp interfaces.GitHubApp) (*Git
 // This can be used for requests that don't provide a specific repoURL or for users
 // who have not linked an installation yet (unlike `GetGitHubAppForOwner`), but you must
 // have an authenticated user context.
+//
+// NOTE: GitHub webhook handlers and requests authenticated with a group API key
+// do not have an authenticated BuildBuddy user in the context. Use GetGitHubAppForOwner
+// in those cases.
 func (s *GitHubAppService) GetGitHubAppForAuthenticatedUser(ctx context.Context) (interfaces.GitHubApp, error) {
-	u, err := s.env.GetUserDB().GetUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if u.GithubToken == "" {
-		return nil, status.NotFoundErrorf("no linked GitHub account was found")
-	}
-	// If the user has already linked an app installation, check its app ID.
+	// If the user's group has already linked an app installation, check its app ID.
 	// Check our database first over using the GitHub API, because the API is
 	// rate limited.
 	installations, err := s.GetGitHubAppInstallations(ctx)
 	if err != nil {
 		log.CtxErrorf(ctx, "failed to get github app installations: %s", err)
 	} else if len(installations) > 0 {
-		// For now, a user can only have one app linked to BuildBuddy at a time (either read-write
+		// For now, a group can only have one app linked to BuildBuddy at a time (either read-write
 		// or read-only). Just use the first app ID.
 		installation := installations[0]
 		a, err := s.GetGitHubAppWithID(installation.AppID)
@@ -146,6 +143,13 @@ func (s *GitHubAppService) GetGitHubAppForAuthenticatedUser(ctx context.Context)
 
 	// If there are no installations, use the github token stored for the user
 	// to determine which app was authorized.
+	u, err := s.env.GetUserDB().GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if u.GithubToken == "" {
+		return nil, status.NotFoundErrorf("no linked GitHub account was found")
+	}
 	if s.GetReadWriteGitHubApp().IsTokenValid(ctx, u.GithubToken) {
 		return s.GetReadWriteGitHubApp(), nil
 	}
@@ -620,11 +624,13 @@ func (a *GitHubApp) createInstallation(ctx context.Context, in *tables.GitHubApp
 	// or read-write). That way, two separate groups won't be able to install different
 	// apps for the same GitHub repo (which would prevent us from attributing webhook
 	// events to a specific group).
-	// TODO: Check that if the data doesn't exist, it returns an error
-	_, err = a.env.GetGitHubAppService().GetInstallationByOwner(ctx, in.Owner)
-	if err == nil {
+	existingInstallation, err := a.env.GetGitHubAppService().GetInstallationByOwner(ctx, in.Owner)
+	if err == nil && existingInstallation.GroupID != in.GroupID {
+		// There are some flows, like when authorizing additional repos from the GitHub side,
+		// where one group ID might try to install the same app multiple times.
+		// That is allowed and should effectively be a no-op.
 		return status.InvalidArgumentErrorf("multiple groups cannot install a github app for the same owner %s", in.Owner)
-	} else if err != nil && !db.IsRecordNotFound(err) {
+	} else if err != nil && !status.IsNotFoundError(err) {
 		return err
 	}
 
