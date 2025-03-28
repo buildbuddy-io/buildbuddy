@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -144,7 +145,10 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 	require.NoError(t, err)
 
 	ac := runACServer(ctx, t, ta)
-	proxy := runACProxy(ctx, t, ta, ac)
+	countingClient := &countingActionCacheClient{
+		realAC: ac,
+	}
+	proxy := runACProxy(ctx, t, ta, countingClient)
 
 	digestA := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
@@ -168,13 +172,21 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 	update(ctx, proxy, digestA, 1, t)
 	require.Equal(t, int32(1), get(ctx, ac, digestA, t).GetExitCode())
 	require.Equal(t, int32(1), get(ctx, proxy, digestA, t).GetExitCode())
+	require.Equal(t, 0, countingClient.cacheHitCount)
+
+	// This extra read should actually be a cached hit.
+	require.Equal(t, int32(1), get(ctx, proxy, digestA, t).GetExitCode())
+	require.Equal(t, 1, countingClient.cacheHitCount)
 
 	// Change the action result, write it, and confirm the new result is
 	// readable from the proxy and backing cache.
 	update(ctx, proxy, digestA, 2, t)
 	require.Equal(t, int32(2), get(ctx, ac, digestA, t).GetExitCode())
 	require.Equal(t, int32(2), get(ctx, proxy, digestA, t).GetExitCode())
+	// That should _not_ be a cache hit.
+	require.Equal(t, 1, countingClient.cacheHitCount)
 
+	countingClient.cacheHitCount = 0
 	// DigestB shouldn't be present initially,
 	readReqB := &repb.GetActionResultRequest{
 		ActionDigest:   digestB,
@@ -188,10 +200,36 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 	update(ctx, ac, digestB, 999, t)
 	require.Equal(t, int32(999), get(ctx, ac, digestB, t).GetExitCode())
 	require.Equal(t, int32(999), get(ctx, proxy, digestB, t).GetExitCode())
+	require.Equal(t, 0, countingClient.cacheHitCount)
+
+	// Do a few extra reads..
+	require.Equal(t, int32(999), get(ctx, proxy, digestB, t).GetExitCode())
+	require.Equal(t, int32(999), get(ctx, proxy, digestB, t).GetExitCode())
+	require.Equal(t, 2, countingClient.cacheHitCount)
 
 	// Change the action result, write it, and confirm the new result is
 	// readable from the proxy and backing cache.
 	update(ctx, ac, digestB, 998, t)
 	require.Equal(t, int32(998), get(ctx, ac, digestB, t).GetExitCode())
 	require.Equal(t, int32(998), get(ctx, proxy, digestB, t).GetExitCode())
+	require.Equal(t, 2, countingClient.cacheHitCount)
+}
+
+type countingActionCacheClient struct {
+	realAC        repb.ActionCacheClient
+	cacheHitCount int
+}
+
+// GetActionResult implements remote_execution.ActionCacheClient.
+func (c *countingActionCacheClient) GetActionResult(ctx context.Context, in *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	result, err := c.realAC.GetActionResult(ctx, in, opts...)
+	if result.GetActionResultDigest() != nil {
+		c.cacheHitCount++
+	}
+	return result, err
+}
+
+// UpdateActionResult implements remote_execution.ActionCacheClient.
+func (c *countingActionCacheClient) UpdateActionResult(ctx context.Context, in *repb.UpdateActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	return c.realAC.UpdateActionResult(ctx, in, opts...)
 }

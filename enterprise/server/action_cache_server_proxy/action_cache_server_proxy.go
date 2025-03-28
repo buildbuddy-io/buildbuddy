@@ -156,7 +156,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 		resp = local
 		labels[metrics.CacheHitMissStatus] = "hit"
 	} else {
-		if *cacheActionResults {
+		if *cacheActionResults && err == nil && resp != nil {
 			s.cacheActionResultLocally(ctx, req, resp)
 		}
 		labels[metrics.CacheHitMissStatus] = "miss"
