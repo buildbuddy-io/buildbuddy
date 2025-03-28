@@ -44,6 +44,7 @@ go_library(
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto//googleapis/longrunning",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/anypb",

@@ -1239,6 +1239,22 @@ message ActionResult {
 
   // The details of the execution that originally produced this result.
   ExecutedActionMetadata execution_metadata = 9;
+
+  // BUILDBUDDY-SPECIFIC FIELDS BELOW.
+  // Started at field #1000 to avoid conflicts with Bazel.
+
+  // If this field is non-empty, then the `cached_action_result_digest`
+  // specified on the `GetActionResultRequest` matches the currently-stored
+  // ActionResult held by this AC for the specified Action.  Other fields
+  // WILL NOT be filled in order to prevent extra data transfer--the caller
+  // should use their cached value for the `ActionResult` instead.
+  Digest action_result_digest = 1000;
+}
+
+message ActionResultWithDigest {
+  // The computed digest of the action result below.
+  Digest digest = 1;
+  ActionResult action_result = 2;
 }
 
 // An `OutputFile` is similar to a
@@ -1607,6 +1623,12 @@ message GetActionResultRequest {
   // buildbuddy-specific UsageStats field.  This data is large and
   // shouldn't be sent to Bazel for normal action cache fetches.
   bool include_timeline_data = 1000;
+
+  // If specified, this is the digest of an `ActionResult` that the client is
+  // currently holding.  The digest is computed using the value specified in
+  // `digest_function`.  If the ActionResult matches this digest, then the
+  // response will only have the `action_result_digest` field filled.
+  Digest cached_action_result_digest = 1001;
 }
 
 // A request message for

@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -26,6 +27,8 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
+
+var checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
 
 type ActionCacheServer struct {
 	env   environment.Env
@@ -188,6 +191,20 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	// change it.
 	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
 		return nil, err
+	}
+	// See if the caller specified a cached value.  If they did and it matches
+	// the full response that we just computed, then we won't bother sending the
+	// data, and instead just tell the caller that their cache is correct.
+	if *checkClientActionResultDigests && req.GetCachedActionResultDigest().GetHash() != "" {
+		d, err := digest.ComputeForMessage(rsp, req.GetDigestFunction())
+		if err != nil {
+			return nil, err
+		}
+		if proto.Equal(req.GetCachedActionResultDigest(), d) {
+			rsp = &repb.ActionResult{
+				ActionResultDigest: d,
+			}
+		}
 	}
 
 	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
