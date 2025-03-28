@@ -19,7 +19,7 @@ import (
 
 const (
 	usage = `
-usage: bb print [--grpc_log=PATH] [--compact_execution_log=PATH] [--sort=false] [--raw=false]
+usage: bb print [--grpc_log=PATH] [--compact_execution_log=PATH] [--sort=false] [--raw=false] [--max_entry_size_mb=40]
 
 Prints a human-readable representation of log files output by Bazel.
 
@@ -37,6 +37,7 @@ var (
 	compactExecLog = flags.String("compact_execution_log", "", "compact execution log path.")
 	sort           = flags.Bool("sort", false, "apply sorting to log output, only applicable with --compact_execution_log")
 	raw            = flags.Bool("raw", false, "don't convert the log entries to Bazel's Spawn, only applicable with --compact_execution_log")
+	maxEntrySizeMB = flags.Int64("max_entry_size_mb", 40, "maximum size in MB of proto log entry that can be unmarshalled")
 )
 
 func HandlePrint(args []string) (int, error) {
@@ -78,7 +79,7 @@ func printLog(path string, m proto.Message) error {
 func copyUnmarshaled(w io.Writer, grpcLog io.Reader, m proto.Message) error {
 	br := bufio.NewReader(grpcLog)
 	for {
-		err := protodelim.UnmarshalFrom(br, m)
+		err := protodelim.UnmarshalOptions{MaxSize: *maxEntrySizeMB << 20}.UnmarshalFrom(br, m)
 		if err == io.EOF {
 			return nil
 		}

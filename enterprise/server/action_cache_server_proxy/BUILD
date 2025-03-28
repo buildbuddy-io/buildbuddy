@@ -9,9 +9,15 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
+        "//server/remote_cache/cachetools",
+        "//server/remote_cache/digest",
+        "//server/util/flag",
+        "//server/util/prefix",
         "//server/util/proto",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
@@ -27,8 +33,11 @@ go_test(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/action_cache_server",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
     ],
 )

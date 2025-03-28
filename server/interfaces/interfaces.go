@@ -641,15 +641,17 @@ type SnapshotService interface {
 	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
 }
 
+// GitHubApp represents a specific instance of either the read-only or read-write
+// BuildBuddy GitHub app.
 type GitHubApp interface {
 	// TODO(bduffany): Add webhook handler and repo management API
 
+	AppID() int64
+
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
-	GetGitHubAppInstallations(context.Context, *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error)
 	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
 
-	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
-	LinkGitHubRepo(context.Context, *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error)
+	LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
 
 	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
@@ -671,6 +673,9 @@ type GitHubApp interface {
 
 	// OAuthHandler returns the OAuth flow HTTP handler.
 	OAuthHandler() http.Handler
+
+	// IsTokenValid returns whether the oauth token is valid for the current app.
+	IsTokenValid(ctx context.Context, oauthToken string) bool
 
 	// Passthroughs
 	GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error)
@@ -696,6 +701,27 @@ type GitHubApp interface {
 	UpdateGithubPullRequestComment(ctx context.Context, req *ghpb.UpdateGithubPullRequestCommentRequest) (*ghpb.UpdateGithubPullRequestCommentResponse, error)
 	DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error)
 	SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error)
+}
+
+// GitHubAppService is a wrapper for GitHubApp. It's needed to determine the specific
+// GitHubApp the user has installed (read-only vs read-write) and is used for app-agnostic
+// operations.
+type GitHubAppService interface {
+	GetReadWriteGitHubApp() GitHubApp
+	GetGitHubAppWithID(appID int64) (GitHubApp, error)
+	// GetGitHubAppForAuthenticatedUser returns the BB GitHub app that the current user has authorized.
+	// This can be used for requests that don't provide a specific repoURL or for users
+	// who have not linked an installation yet (unlike `GetGitHubAppForOwner`), but you must
+	// have an authenticated user context.
+	GetGitHubAppForAuthenticatedUser(ctx context.Context) (GitHubApp, error)
+	// GetGitHubAppForRepoURL returns the BB GitHub app corresponding to the app installation
+	// for the given URL. The installation must be both installed on GitHub and imported
+	// to BuildBuddy via (`LinkGitHubAppInstallation`).
+	GetGitHubAppForOwner(ctx context.Context, repoURL string) (GitHubApp, error)
+
+	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
+	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
+	GetInstallationByOwner(ctx context.Context, owner string) (*tables.GitHubAppInstallation, error)
 }
 
 type RunnerService interface {

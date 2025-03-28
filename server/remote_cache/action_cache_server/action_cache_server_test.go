@@ -55,7 +55,7 @@ func TestInlineSingleFile(t *testing.T) {
 		},
 	})
 
-	actionResult := getWithInlining(t, ctx, acClient, []string{"my/pkg/file"})
+	actionResult := getWithInlining(t, ctx, acClient, []string{"my/pkg/file"}, nil)
 	require.Len(t, actionResult.OutputFiles, 1)
 	assert.Equal(t, "my/pkg/file", actionResult.OutputFiles[0].Path)
 	assert.Equal(t, digestA, actionResult.OutputFiles[0].Digest)
@@ -98,7 +98,7 @@ func TestInlineSingleFileTooLarge(t *testing.T) {
 		},
 	})
 
-	actionResult := getWithInlining(t, ctx, acClient, []string{"my/pkg/file"})
+	actionResult := getWithInlining(t, ctx, acClient, []string{"my/pkg/file"}, nil)
 	require.Len(t, actionResult.OutputFiles, 1)
 	assert.Equal(t, "my/pkg/file", actionResult.OutputFiles[0].Path)
 	assert.Equal(t, digestA, actionResult.OutputFiles[0].Digest)
@@ -152,7 +152,7 @@ func TestInlineMultipleFiles(t *testing.T) {
 		},
 	})
 
-	actionResult := getWithInlining(t, ctx, acClient, []string{"my/pkg/file", "my/pkg/file2", "my/pkg/file3"})
+	actionResult := getWithInlining(t, ctx, acClient, []string{"my/pkg/file", "my/pkg/file2", "my/pkg/file3"}, nil)
 	require.Len(t, actionResult.OutputFiles, 3)
 	assert.Equal(t, "my/pkg/file", actionResult.OutputFiles[0].Path)
 	assert.Equal(t, digestA, actionResult.OutputFiles[0].Digest)
@@ -173,6 +173,105 @@ func TestInlineMultipleFiles(t *testing.T) {
 		},
 	)))
 	assert.Equal(t, float64(2), testutil.ToFloat64(metrics.CacheEvents.With(
+		prometheus.Labels{
+			metrics.CacheTypeLabel:      "cas",
+			metrics.CacheEventTypeLabel: "hit",
+		},
+	)))
+}
+
+func TestInlineWithClientSideCacheMatch(t *testing.T) {
+	flags.Set(t, "cache.check_client_action_result_digests", true)
+	resetMetrics()
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	clientConn := runACServer(ctx, t, te)
+	acClient := repb.NewActionCacheClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	digestA, err := cachetools.UploadBlobToCAS(ctx, bsClient, "", repb.DigestFunction_SHA256, []byte("hello world"))
+	require.NoError(t, err)
+
+	update(t, ctx, acClient, []*repb.OutputFile{
+		{
+			Path:   "my/pkg/file",
+			Digest: digestA,
+		},
+	})
+
+	cachedDigest := &repb.Digest{
+		Hash:      "fa613038f1cff5cfa9abba1a924b33713d8685d72ee1efe6d9758e58584f2c77",
+		SizeBytes: 138,
+	}
+
+	// Client-side cache hit: ONLY action_result_digest should be set.
+	actionResult := getWithInlining(t, ctx, acClient, []string{"my/pkg/file"}, cachedDigest)
+	assert.Equal(t, &repb.ActionResult{
+		ActionResultDigest: cachedDigest,
+	}, actionResult)
+
+	// All hit tracking should behave the same.
+	testmetrics.AssertHistogramSamples(t, metrics.CacheRequestedInlineSizeBytes, float64(len("hello world")))
+	assert.Equal(t, 1, testutil.CollectAndCount(metrics.CacheRequestedInlineSizeBytes))
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
+		prometheus.Labels{
+			metrics.CacheTypeLabel:      "action_cache",
+			metrics.CacheEventTypeLabel: "hit",
+		},
+	)))
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
+		prometheus.Labels{
+			metrics.CacheTypeLabel:      "cas",
+			metrics.CacheEventTypeLabel: "hit",
+		},
+	)))
+}
+
+func TestInlineWithClientSideCacheMismatch(t *testing.T) {
+	flags.Set(t, "cache.check_client_action_result_digests", true)
+	resetMetrics()
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	clientConn := runACServer(ctx, t, te)
+	acClient := repb.NewActionCacheClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	digestA, err := cachetools.UploadBlobToCAS(ctx, bsClient, "", repb.DigestFunction_SHA256, []byte("hello world"))
+	require.NoError(t, err)
+
+	update(t, ctx, acClient, []*repb.OutputFile{
+		{
+			Path:   "my/pkg/file",
+			Digest: digestA,
+		},
+	})
+
+	cachedDigest := &repb.Digest{
+		Hash:      "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd",
+		SizeBytes: 222,
+	}
+	actionResult := getWithInlining(t, ctx, acClient, []string{"my/pkg/file"}, cachedDigest)
+
+	// Client-side cache miss: the full response should be sent, with no action_result_digest.
+	assert.Nil(t, actionResult.GetActionResultDigest())
+	require.Len(t, actionResult.OutputFiles, 1)
+	assert.Equal(t, "my/pkg/file", actionResult.OutputFiles[0].Path)
+	assert.Equal(t, digestA, actionResult.OutputFiles[0].Digest)
+	assert.Equal(t, []byte("hello world"), actionResult.OutputFiles[0].Contents)
+
+	testmetrics.AssertHistogramSamples(t, metrics.CacheRequestedInlineSizeBytes, float64(len("hello world")))
+	assert.Equal(t, 1, testutil.CollectAndCount(metrics.CacheRequestedInlineSizeBytes))
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
+		prometheus.Labels{
+			metrics.CacheTypeLabel:      "action_cache",
+			metrics.CacheEventTypeLabel: "hit",
+		},
+	)))
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "cas",
 			metrics.CacheEventTypeLabel: "hit",
@@ -302,20 +401,24 @@ func update(t *testing.T, ctx context.Context, client repb.ActionCacheClient, ou
 		DigestFunction: repb.DigestFunction_SHA256,
 		ActionResult: &repb.ActionResult{
 			OutputFiles: outputFiles,
+			ExecutionMetadata: &repb.ExecutedActionMetadata{
+				Worker: "c089b1ff-48c4-4464-b956-ad40a3d9c217",
+			},
 		},
 	}
 	_, err := client.UpdateActionResult(ctx, &req)
 	require.NoError(t, err)
 }
 
-func getWithInlining(t *testing.T, ctx context.Context, client repb.ActionCacheClient, inline []string) *repb.ActionResult {
+func getWithInlining(t *testing.T, ctx context.Context, client repb.ActionCacheClient, inline []string, cachedDigest *repb.Digest) *repb.ActionResult {
 	req := &repb.GetActionResultRequest{
 		ActionDigest: &repb.Digest{
 			Hash:      strings.Repeat("a", 64),
 			SizeBytes: 1024,
 		},
-		DigestFunction:    repb.DigestFunction_SHA256,
-		InlineOutputFiles: inline,
+		DigestFunction:           repb.DigestFunction_SHA256,
+		InlineOutputFiles:        inline,
+		CachedActionResultDigest: cachedDigest,
 	}
 	resp, err := client.GetActionResult(ctx, req)
 	require.NoError(t, err)

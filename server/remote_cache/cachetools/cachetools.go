@@ -451,15 +451,20 @@ func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *dige
 	return proto.Unmarshal(buf.Bytes(), out)
 }
 
-func ReadProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.CASResourceName, out proto.Message) error {
-	data, err := cache.Get(ctx, r.ToProto())
+func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *rspb.ResourceName, out proto.Message) error {
+	data, err := cache.Get(ctx, r)
 	if err != nil {
-		if gstatus.Code(err) == gcodes.NotFound {
-			return digest.MissingDigestError(r.GetDigest())
-		}
 		return err
 	}
 	return proto.Unmarshal(data, out)
+}
+
+func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, r *digest.CASResourceName, out proto.Message) error {
+	return readProtoFromCache(ctx, cache, r.ToProto(), out)
+}
+
+func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, r *digest.ACResourceName, out proto.Message) error {
+	return readProtoFromCache(ctx, cache, r.ToProto(), out)
 }
 
 func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, remoteInstanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
