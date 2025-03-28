@@ -165,7 +165,7 @@ func getLegacyOAuthHandler(env environment.Env) *OAuthHandler {
 	a := NewOAuthHandler(env, *clientID, legacyClientSecret(), legacyOAuthAppPath)
 	a.GroupLinkEnabled = true
 	// Only enable user-level linking if the new GitHub App is not yet enabled.
-	a.UserLinkEnabled = env.GetGitHubApp() == nil
+	a.UserLinkEnabled = env.GetGitHubAppService() == nil
 	return a
 }
 
@@ -564,13 +564,19 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 }
 
 func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo string) (*github.InstallationToken, error) {
-	app := c.env.GetGitHubApp()
-	if app == nil {
-		return nil, nil
+	gh := c.env.GetGitHubAppService()
+	if gh == nil {
+		return nil, status.UnimplementedError("No GitHub app configured")
 	}
 	parts := strings.Split(ownerRepo, "/")
 	if len(parts) != 2 {
 		return nil, status.InvalidArgumentErrorf("invalid owner/repo %q", ownerRepo)
+	}
+	// When handling webhooks, we do not have an authenticated BuildBuddy user in
+	// the context and cannot use `GetGitHubAppForAuthenticatedUser`.
+	app, err := gh.GetGitHubAppForOwner(ctx, parts[0])
+	if err != nil {
+		return nil, err
 	}
 	return app.GetInstallationTokenForStatusReportingOnly(ctx, parts[0])
 }
