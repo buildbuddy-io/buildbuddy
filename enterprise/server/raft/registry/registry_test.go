@@ -47,14 +47,14 @@ func requireResolves(t testing.TB, dnr registry.NodeRegistry, rangeID, replicaID
 }
 
 func TestStaticRegistryAdd(t *testing.T) {
-	nr := registry.NewStaticNodeRegistry(1, nil)
+	nr := registry.NewStaticNodeRegistry(1, nil, log.Logger{})
 	nr.Add(1, 1, "nhid-1")
 	nr.AddNode("nhid-1", "raftaddress:1", "grpcaddress:1")
 	requireResolves(t, nr, 1, 1, "raftaddress:1", "grpcaddress:1")
 }
 
 func TestStaticRegistryRemove(t *testing.T) {
-	nr := registry.NewStaticNodeRegistry(1, nil)
+	nr := registry.NewStaticNodeRegistry(1, nil, log.Logger{})
 	nr.Add(1, 1, "nhid-1")
 	nr.Add(2, 1, "nhid-1")
 	nr.Add(1, 2, "nhid-2")
@@ -72,7 +72,7 @@ func TestStaticRegistryRemove(t *testing.T) {
 }
 
 func TestStaticRegistryRemoveShard(t *testing.T) {
-	nr := registry.NewStaticNodeRegistry(1, nil)
+	nr := registry.NewStaticNodeRegistry(1, nil, log.Logger{})
 	nr.Add(1, 1, "nhid-1")
 	nr.Add(2, 1, "nhid-1")
 	nr.Add(1, 2, "nhid-2")
@@ -93,7 +93,7 @@ func TestStaticRegistryRemoveShard(t *testing.T) {
 func TestDynamicRegistryAdd(t *testing.T) {
 	nodeAddr := localAddr(t)
 	gm := newGossipManager(t, nodeAddr, nil)
-	dnr := registry.NewDynamicNodeRegistry(gm, 1, nil)
+	dnr := registry.NewDynamicNodeRegistry(gm, 1, nil, log.Logger{})
 	dnr.Add(1, 1, "nhid-1")
 	dnr.AddNode("nhid-1", "raftaddress:1", "grpcaddress:1")
 	requireResolves(t, dnr, 1, 1, "raftaddress:1", "grpcaddress:1")
@@ -107,7 +107,7 @@ func TestDynamicRegistryAdd(t *testing.T) {
 func TestDynamicRegistryRemove(t *testing.T) {
 	nodeAddr := localAddr(t)
 	gm := newGossipManager(t, nodeAddr, nil)
-	dnr := registry.NewDynamicNodeRegistry(gm, 1, nil)
+	dnr := registry.NewDynamicNodeRegistry(gm, 1, nil, log.Logger{})
 	dnr.Add(1, 1, "nhid-1")
 	dnr.Add(2, 1, "nhid-1")
 	dnr.Add(1, 2, "nhid-2")
@@ -127,7 +127,7 @@ func TestDynamicRegistryRemove(t *testing.T) {
 func TestDynamicRegistryRemoveShard(t *testing.T) {
 	nodeAddr := localAddr(t)
 	gm := newGossipManager(t, nodeAddr, nil)
-	dnr := registry.NewDynamicNodeRegistry(gm, 1, nil)
+	dnr := registry.NewDynamicNodeRegistry(gm, 1, nil, log.Logger{})
 	dnr.Add(1, 1, "nhid-1")
 	dnr.Add(2, 1, "nhid-1")
 	dnr.Add(1, 2, "nhid-2")
@@ -155,9 +155,9 @@ func TestDynamicRegistryResolution(t *testing.T) {
 	gm2 := newGossipManager(t, node2Addr, seeds)
 	gm3 := newGossipManager(t, node3Addr, seeds)
 
-	dnr1 := registry.NewDynamicNodeRegistry(gm1, 1, nil)
-	dnr2 := registry.NewDynamicNodeRegistry(gm2, 1, nil)
-	dnr3 := registry.NewDynamicNodeRegistry(gm3, 1, nil)
+	dnr1 := registry.NewDynamicNodeRegistry(gm1, 1, nil, log.Logger{})
+	dnr2 := registry.NewDynamicNodeRegistry(gm2, 1, nil, log.Logger{})
+	dnr3 := registry.NewDynamicNodeRegistry(gm3, 1, nil, log.Logger{})
 
 	dnr1.Add(1, 1, "nhid-1")
 	dnr1.AddNode("nhid-1", "raftaddress:1", "grpcaddress:1")
