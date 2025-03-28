@@ -1622,7 +1622,7 @@ func (p *PebbleCache) gcsObjectIsPastTTL(gcsMetadata *sgpb.StorageMetadata_GCSMe
 	// TTL, assume it has already been marked for deletion.
 	customTimeUsec := gcsMetadata.GetLastCustomTimeUsec()
 	buffer := time.Hour
-	return p.clock.Since(time.UnixMicro(customTimeUsec)) + buffer > time.Duration(p.gcsTTLDays*24)*time.Hour
+	return p.clock.Since(time.UnixMicro(customTimeUsec))+buffer > time.Duration(p.gcsTTLDays*24)*time.Hour
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
