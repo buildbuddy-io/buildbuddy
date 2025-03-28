@@ -29,10 +29,10 @@ var (
 	// now and we can increase it (or increase the update frequency) if we drop
 	// a lot of updates. Note this also affects memory usage of the proxy!
 	atimeUpdaterMaxDigestsPerUpdate = flag.Int("cache_proxy.remote_atime_max_digests_per_update", 10*1000, "The maximum number of blob digests to send in a single request for updating blob access times in the remote cache.")
-	atimeUpdaterMaxUpdatesPerGroup  = flag.Int("cache_proxy.remote_atime_max_updates_per_group", 25, "The maximum number of FindMissingBlobRequests to accumulate per group for updating blob access times in the remote cache.")
-	atimeUpdaterMaxDigestsPerGroup  = flag.Int("cache_proxy.remote_atime_max_digests_per_group", 50*1000, "The maximum number of blob digests to enqueue atime updates for, per group, across all instance names / hash fucntions.")
-	atimeUpdaterBatchUpdateInterval = flag.Duration("cache_proxy.remote_atime_update_interval", 5*time.Second, "The time interval to wait between sending access time updates to the remote cache.")
-	atimeUpdaterRpcTimeout          = flag.Duration("cache_proxy.remote_atime_rpc_timeout", 1*time.Second, "RPC timeout to use when updating blob access times in the remote cache.")
+	atimeUpdaterMaxUpdatesPerGroup  = flag.Int("cache_proxy.remote_atime_max_updates_per_group", 50, "The maximum number of FindMissingBlobRequests to accumulate per group for updating blob access times in the remote cache.")
+	atimeUpdaterMaxDigestsPerGroup  = flag.Int("cache_proxy.remote_atime_max_digests_per_group", 200*1000, "The maximum number of blob digests to enqueue atime updates for, per group, across all instance names / hash fucntions.")
+	atimeUpdaterBatchUpdateInterval = flag.Duration("cache_proxy.remote_atime_update_interval", 10*time.Second, "The time interval to wait between sending access time updates to the remote cache.")
+	atimeUpdaterRpcTimeout          = flag.Duration("cache_proxy.remote_atime_rpc_timeout", 2*time.Second, "RPC timeout to use when updating blob access times in the remote cache.")
 )
 
 // A single authorization (JWT, client-identity, etc.) header.
