@@ -2613,10 +2613,6 @@ func (s *Store) addNonVoting(ctx context.Context, rangeID uint64, newReplicaID u
 		return status.InternalErrorf("failed to get config change ID: %s", err)
 	}
 
-	// Gossip the address of the node that is about to be added.
-	s.registry.Add(rangeID, newReplicaID, node.GetNhid())
-	s.registry.AddNode(node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
-
 	// Propose the config change (this adds the node as a non-voter to the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestAddNonVoting(ctx, rangeID, newReplicaID, node.GetNhid(), configChangeID)
