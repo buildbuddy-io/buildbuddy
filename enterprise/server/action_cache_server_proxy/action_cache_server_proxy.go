@@ -126,7 +126,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 			return nil, err
 		}
 		if localDigest != nil {
-			// If there's a hash on the local copy, use it and see if remote has it.
+			// See if remote matches our locally-cached result.
 			req.CachedActionResultDigest = localDigest
 			local = localResult
 		}
