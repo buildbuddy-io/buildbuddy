@@ -1618,8 +1618,8 @@ func (p *PebbleCache) gcsObjectIsPastTTL(gcsMetadata *sgpb.StorageMetadata_GCSMe
 	// and if the object has changed between those two events, it is still
 	// deleted.
 	//
-	// For this reason, if a GCS object is ever less than 24 hours (1 day)
-	// away from TTL, assume it has already been marked for deletion.
+	// For this reason, if a GCS object is ever less than 1 hour away from
+	// TTL, assume it has already been marked for deletion.
 	customTimeUsec := gcsMetadata.GetLastCustomTimeUsec()
 	buffer := time.Hour
 	return p.clock.Since(time.UnixMicro(customTimeUsec)) + buffer > time.Duration(p.gcsTTLDays*24)*time.Hour
