@@ -1816,7 +1816,6 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 	}
 
 	_, err = j.store.RemoveData(ctx, removeDataReq)
-	j.store.log.Infof("removed data for c%dn%d", removeDataReq.RangeId, removeDataReq.ReplicaId)
 	if err != nil {
 		return zombieCleanupRemoveData, status.InternalErrorf("failed to remove data: %s", err)
 	}
