@@ -233,6 +233,11 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 				// calling code can catch.
 				err = status.AlreadyExistsError("blob already exists")
 			}
+			if gerr.Code == http.StatusTooManyRequests {
+				// Rewrite the error to a ResourceExhaustedError that
+				// calling code can catch.
+				err = status.ResourceExhaustedError("too many concurrent writes")
+			}
 		}
 		util.RecordWriteMetrics(gcsLabel, start, int(n), err)
 		return err

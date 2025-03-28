@@ -772,22 +772,17 @@ type gcsMetadataWriter struct {
 
 func (g *gcsMetadataWriter) Commit() error {
 	err := g.CommittedWriteCloser.Commit()
-	if status.IsAlreadyExistsError(err) {
-		// This object already exists. We need to bump the
-		// custom time though.
-		err = g.gcs.UpdateCustomTime(g.ctx, g.blobName, g.customTime)
-		if status.IsResourceExhaustedError(err) {
-			err = nil
-			log.Debugf("Write gcs blob %q (already exists), updating custom time skipped because of high qps", g.blobName)
 
-		} else {
-			log.Debugf("Write gcs blob %q (already exists), updating custom time to %d, err: %s", g.blobName, g.customTime.UnixMicro(), err)
-		}
+	switch {
+	case status.IsAlreadyExistsError(err):
+		log.Debugf("Write gcs blob %q (already exists)", g.blobName)
+		return nil
+	case status.IsResourceExhaustedError(err):
+		log.Debugf("Write gcs blob %q (too many writes)", g.blobName)
+		return nil
+	default:
 		return err
-	} else {
-		log.Debugf("Write gcs blob %q (first time), custom time: %d, err: %s", g.blobName, g.customTime.UnixMicro(), err)
 	}
-	return err
 }
 
 func (g *gcsMetadataWriter) Close() error {
@@ -816,15 +811,8 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		return nil, err
 	}
 
-	// To avoid sending too many write QPS for the same blob, if it already
-	// exists, don't attempt to write it again. This optimization can only
-	// happen for CAS blobs, because we know the content stored under a
-	// particular digest key won't change. For AC entries, we must do the
-	// write, even if a file already exists, because the value may differ.
-	overwriteExisting := fileRecord.GetIsolation().GetCacheType() != rspb.CacheType_CAS
-
 	customTime := fs.clock.Now()
-	wc, err := fs.gcs.ConditionalWriter(ctx, string(blobName), overwriteExisting, customTime)
+	wc, err := fs.gcs.ConditionalWriter(ctx, string(blobName), true /*=overwriteExisting*/, customTime)
 	if err != nil {
 		return nil, err
 	}
