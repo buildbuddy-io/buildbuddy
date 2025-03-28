@@ -3,6 +3,7 @@ package action_cache_server_proxy
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -18,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -66,6 +68,7 @@ func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.Get
 		sb.WriteString("o")
 	}
 	for _, s := range req.GetInlineOutputFiles() {
+		sb.WriteString(strconv.Itoa(len(s)))
 		sb.WriteString(s)
 	}
 	buf := strings.NewReader(sb.String())
@@ -77,17 +80,27 @@ func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.Get
 	return digest.NewACResourceName(d, req.GetInstanceName(), req.GetDigestFunction()), nil
 }
 
-func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResultWithDigest, error) {
+func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.Digest, *repb.ActionResult, error) {
 	key, err := s.getACKeyForGetActionResultRequest(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	out := &repb.ActionResultWithDigest{}
-	err = cachetools.ReadProtoFromActionCache(ctx, s.localCache, key, out)
+	ptr := &rspb.ResourceName{}
+	err = cachetools.ReadProtoFromActionCache(ctx, s.localCache, key, ptr)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return out, nil
+	casRN, err := digest.CASResourceNameFromProto(ptr)
+	if err != nil {
+		return nil, nil, err
+	}
+	out := &repb.ActionResult{}
+	err = cachetools.ReadProtoFromCache(ctx, s.localCache, casRN, out)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return ptr.GetDigest(), out, nil
 }
 
 func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, req *repb.GetActionResultRequest, resp *repb.ActionResult) error {
@@ -95,19 +108,15 @@ func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, r
 	if err != nil {
 		return err
 	}
-	d, err := digest.ComputeForMessage(resp, req.GetDigestFunction())
+	d, err := cachetools.UploadProtoToCAS(ctx, s.localCache, req.GetInstanceName(), req.GetDigestFunction(), resp)
 	if err != nil {
 		return err
 	}
-	valueToStore := &repb.ActionResultWithDigest{
-		Digest:       d,
-		ActionResult: resp,
-	}
-	buf, err := valueToStore.MarshalVT()
+	casRN := digest.NewCASResourceName(d, req.GetInstanceName(), req.GetDigestFunction())
+	buf, err := casRN.ToProto().MarshalVT()
 	if err != nil {
 		return err
 	}
-
 	return s.localCache.Set(ctx, key.ToProto(), buf)
 }
 
@@ -122,16 +131,17 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	}
 
 	// First, see if we have a local copy of this ActionResult.
-	var local *repb.ActionResultWithDigest
+	var local *repb.ActionResult
 	if *cacheActionResults {
 		var err error
-		local, err = s.getLocallyCachedActionResult(ctx, req)
+		localDigest, localResult, err := s.getLocallyCachedActionResult(ctx, req)
 		if err != nil && !status.IsNotFoundError(err) {
 			return nil, err
 		}
-		if local.GetDigest().GetHash() != "" {
+		if localDigest != nil {
 			// If there's a hash on the local copy, use it and see if remote has it.
-			req.CachedActionResultDigest = local.GetDigest()
+			req.CachedActionResultDigest = localDigest
+			local = localResult
 		}
 	}
 
@@ -143,8 +153,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	// The response indicates that our cached value is valid; use it.
 	if *cacheActionResults && req.GetCachedActionResultDigest().GetHash() != "" &&
 		proto.Equal(req.GetCachedActionResultDigest(), resp.GetActionResultDigest()) {
-		// XXX: Should we re-hash the AR here to prevent tampering?
-		resp = local.GetActionResult()
+		resp = local
 		labels[metrics.CacheHitMissStatus] = "hit"
 	} else {
 		if *cacheActionResults {
