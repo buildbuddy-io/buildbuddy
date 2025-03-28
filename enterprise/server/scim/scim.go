@@ -479,7 +479,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 	if err != nil {
 		return nil, err
 	}
-	log.CtxDebugf(ctx, "SCIM patch user request: %s", string(req))
+	log.CtxInfof(ctx, "SCIM patch user request:\n%s", string(req))
 	pr := PatchResource{}
 	if err := json.Unmarshal(req, &pr); err != nil {
 		return nil, err
