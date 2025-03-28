@@ -1,6 +1,7 @@
 package action_cache_server_proxy
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -54,7 +56,12 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 }
 
 func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
-	d, err := digest.ComputeForMessage(req, req.GetDigestFunction())
+	hashBytes, err := req.MarshalVT()
+	if err != nil {
+		return nil, err
+	}
+	hashBytes = append(hashBytes, []byte(*actionCacheSalt)...)
+	d, err := digest.Compute(bytes.NewReader(hashBytes), req.GetDigestFunction())
 	if err != nil {
 		return nil, err
 	}
