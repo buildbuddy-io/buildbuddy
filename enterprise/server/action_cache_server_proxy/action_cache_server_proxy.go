@@ -86,7 +86,7 @@ func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Contex
 		return nil, nil, err
 	}
 	ptr := &rspb.ResourceName{}
-	err = cachetools.ReadProtoFromActionCache(ctx, s.localCache, key, ptr)
+	err = cachetools.ReadProtoFromAC(ctx, s.localCache, key, ptr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -95,7 +95,7 @@ func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Contex
 		return nil, nil, err
 	}
 	out := &repb.ActionResult{}
-	err = cachetools.ReadProtoFromCache(ctx, s.localCache, casRN, out)
+	err = cachetools.ReadProtoFromCAS(ctx, s.localCache, casRN, out)
 	if err != nil {
 		return nil, nil, err
 	}
