@@ -3,8 +3,6 @@ package action_cache_server_proxy
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -13,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -57,25 +54,7 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 }
 
 func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
-	var sb strings.Builder
-	sb.WriteString(req.GetActionDigest().GetHash())
-	sb.WriteString(*actionCacheSalt)
-	if req.GetInlineStderr() {
-		sb.WriteString("|e")
-	} else {
-		sb.WriteString("|n")
-	}
-	if req.GetInlineStdout() {
-		sb.WriteString("o")
-	}
-	for _, s := range req.GetInlineOutputFiles() {
-		sb.WriteString(strconv.Itoa(len(s)))
-		sb.WriteString(s)
-		sb.WriteString("|")
-	}
-	buf := strings.NewReader(sb.String())
-
-	d, err := digest.Compute(buf, req.GetDigestFunction())
+	d, err := digest.ComputeForMessage(req, req.GetDigestFunction())
 	if err != nil {
 		return nil, err
 	}
