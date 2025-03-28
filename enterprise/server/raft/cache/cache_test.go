@@ -328,9 +328,12 @@ func TestLRU(t *testing.T) {
 	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
 	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
 	flags.Set(t, "cache.raft.min_eviction_age", 0)
-	flags.Set(t, "cache.raft.samples_per_batch", 50)
+	flags.Set(t, "cache.raft.eviction_batch_size", 1)
+	flags.Set(t, "cache.raft.samples_per_batch", 10)
 	flags.Set(t, "cache.raft.local_size_update_period", 100*time.Millisecond)
 	flags.Set(t, "cache.raft.partition_usage_delta_bytes_threshold", 100)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 1)
+	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
 
 	digestSize := int64(1000)
 	numDigests := 25
@@ -393,8 +396,12 @@ func TestLRU(t *testing.T) {
 		resourceKeys = append(resourceKeys, r)
 	}
 
-	rc1.TestingWaitForGC()
+	log.Info("start waiting for gc")
+	err = rc1.TestingWaitForGC()
+	require.NoError(t, err)
+	log.Info("waiting for gc finished, wait fot shutdown started")
 	waitForShutdown(t, caches...)
+	log.Info("wait fot shutdown ended")
 
 	caches = startNNodes(t, configs)
 	rc1 = caches[0]
@@ -447,5 +454,7 @@ func TestLRU(t *testing.T) {
 	// Check that the avg age of evicted items is older than avg age of kept items.
 	require.Greater(t, avgEvictedAgeSeconds, avgKeptAgeSeconds)
 
+	log.Info("wait to shutdown started")
 	waitForShutdown(t, caches...)
+	log.Info("wait to shutdown ended")
 }
