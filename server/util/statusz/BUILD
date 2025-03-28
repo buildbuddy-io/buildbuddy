@@ -5,5 +5,8 @@ go_library(
     srcs = ["statusz.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/statusz",
     visibility = ["//visibility:public"],
-    deps = ["//server/version"],
+    deps = [
+        "//server/util/log",
+        "//server/version",
+    ],
 )

@@ -1,9 +1,12 @@
 package scheduler_client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
+	"html/template"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -87,9 +91,11 @@ type Registration struct {
 	apiKey          string
 	shutdownSignal  chan struct{}
 
-	mu          sync.Mutex
-	connected   bool
-	idleSeconds atomic.Int64
+	mu             sync.Mutex
+	connected      bool
+	idleSeconds    atomic.Int64
+	paused         atomic.Bool
+	updateRunState chan bool
 }
 
 func (r *Registration) getConnected() bool {
@@ -105,10 +111,55 @@ func (r *Registration) setConnected(connected bool) {
 }
 
 func (r *Registration) Check(ctx context.Context) error {
-	if r.getConnected() {
+	paused := r.paused.Load()
+	if paused || r.getConnected() {
 		return nil
 	}
 	return errors.New("not registered to scheduler yet")
+}
+
+const templateContent = `
+<div>
+  <input type="checkbox" id="paused" {{if .Paused}}checked{{end}}>
+  <label for="paused">Pause scheduling (stop accepting new work)</label>
+  <script>
+     const checkbox = document.getElementById("paused");
+     checkbox.addEventListener('change', (event) => {
+       fetch("/statusz/scheduler_client", {
+           method: "POST",
+	   headers:{
+	       "Content-Type": "application/x-www-form-urlencoded",
+	   },
+	   body: new URLSearchParams({"pause": event.currentTarget.checked ? "true" : "false" }),
+       })
+      .then(response => console.log(response));
+    });
+  </script>
+</div>`
+
+var statusTemplate = template.Must(template.New("scheduler_client").Parse(templateContent))
+
+func (r *Registration) Statusz(ctx context.Context) string {
+	data := struct {
+		Paused bool
+	}{
+		Paused: r.paused.Load(),
+	}
+	buf := &bytes.Buffer{}
+	statusTemplate.Execute(buf, data)
+	return buf.String()
+}
+
+func (r *Registration) UpdateStatusz(w http.ResponseWriter, req *http.Request) {
+	if err := req.ParseForm(); err != nil {
+		w.Write([]byte(err.Error()))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	paused := req.FormValue("pause") == "true"
+	r.updateRunState <- !paused
+	r.paused.Store(paused)
+	w.WriteHeader(http.StatusOK)
 }
 
 func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse, schedulerErr chan error, registrationTicker, requestMoreWorkTicker *time.Ticker) (bool, error) {
@@ -273,8 +324,32 @@ func (r *Registration) Start(ctx context.Context) {
 	}
 
 	go func() {
-		r.maintainRegistrationAndStreamWork(ctx)
+		r.watchRunState(ctx)
 	}()
+
+	r.updateRunState <- true
+}
+
+func (r *Registration) watchRunState(rootContext context.Context) {
+	ctx, cancel := context.WithCancel(rootContext)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			cancel()
+			return
+		case running := <-r.updateRunState:
+			if running {
+				go func() {
+					r.maintainRegistrationAndStreamWork(ctx)
+				}()
+			} else {
+				cancel()
+				ctx, cancel = context.WithCancel(rootContext)
+			}
+		}
+	}
 }
 
 // NewRegistration creates a handle to maintain registration with a scheduler server.
@@ -307,7 +382,9 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 		node:            node,
 		apiKey:          apiKey,
 		shutdownSignal:  shutdownSignal,
+		updateRunState:  make(chan bool),
 	}
 	env.GetHealthChecker().AddHealthCheck("registered_to_scheduler", registration)
+	statusz.AddSection("scheduler_client", "Remote execution scheduler client", registration)
 	return registration, nil
 }
