@@ -58,44 +58,54 @@ import (
 )
 
 var (
-	enabled       = flag.Bool("github.app.enabled", false, "Whether to enable the BuildBuddy GitHub app server.")
-	clientID      = flag.String("github.app.client_id", "", "GitHub app OAuth client ID.")
-	clientSecret  = flag.String("github.app.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)
-	appID         = flag.String("github.app.id", "", "GitHub app ID.")
-	publicLink    = flag.String("github.app.public_link", "", "GitHub app installation URL.")
-	privateKey    = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
-	webhookSecret = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
+	// TODO(Maggie): Once https://github.com/buildbuddy-io/buildbuddy-internal/issues/4672 is fixed,
+	// use `flag.Struct` to avoid having to duplicate all the config flags and share validation logic.
+	readWriteAppEnabled       = flag.Bool("github.app.enabled", false, "Whether to enable the read-write BuildBuddy GitHub app server.")
+	readWriteAppClientID      = flag.String("github.app.client_id", "", "GitHub app OAuth client ID.")
+	readWriteAppClientSecret  = flag.String("github.app.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)
+	readWriteAppID            = flag.String("github.app.id", "", "GitHub app ID.")
+	readWriteAppPublicLink    = flag.String("github.app.public_link", "", "GitHub app installation URL.")
+	readWriteAppPrivateKey    = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
+	readWriteAppWebhookSecret = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
+	enableReviewMutates       = flag.Bool("github.app.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
 
-	enableReviewMutates = flag.Bool("github.app.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
+	readOnlyAppEnabled       = flag.Bool("github.read_only_app.enabled", false, "Whether to enable the read-only BuildBuddy GitHub app server.")
+	readOnlyAppClientID      = flag.String("github.read_only_app.client_id", "", "Read-only GitHub app OAuth client ID.")
+	readOnlyAppClientSecret  = flag.String("github.read_only_app.client_secret", "", "Read-only GitHub app OAuth client secret.", flag.Secret)
+	readOnlyAppID            = flag.String("github.read_only_app.id", "", "Read-only GitHub app ID.")
+	readOnlyAppPublicLink    = flag.String("github.read_only_app.public_link", "", "Read-only GitHub app installation URL.")
+	readOnlyAppPrivateKey    = flag.String("github.read_only_app.private_key", "", "Read-only GitHub app private key.", flag.Secret)
+	readOnlyAppWebhookSecret = flag.String("github.read_only_app.webhook_secret", "", "Read-only GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
 
 	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
 )
 
 const (
-	oauthAppPath = "/auth/github/app/link/"
+	readWriteOauthPath = "/auth/github/app/link/"
+	readOnlyOauthPath  = "/auth/github/read_only_app/link/"
 
 	// Max page size that GitHub allows for list requests.
 	githubMaxPageSize = 100
 )
 
 func Register(env *real_environment.RealEnv) error {
-	if !*enabled {
+	if !*readWriteAppEnabled && !*readOnlyAppEnabled {
 		return nil
 	}
 	readWriteApp, err := NewReadWriteApp(env)
 	if err != nil {
 		return err
 	}
-	a, err := NewAppService(env, readWriteApp)
+	readOnlyApp, err := NewReadOnlyApp(env)
+	if err != nil {
+		return err
+	}
+	a, err := NewAppService(env, readWriteApp, readOnlyApp)
 	if err != nil {
 		return err
 	}
 	env.SetGitHubAppService(a)
 	return nil
-}
-
-func IsEnabled() bool {
-	return *enabled
 }
 
 // GitHubAppService is a wrapper for GitHubApp. Because there are 2 BuildBuddy
@@ -105,14 +115,23 @@ type GitHubAppService struct {
 	env environment.Env
 
 	readWriteApp interfaces.GitHubApp
-	// TODO(Maggie): Add read only app
+	readOnlyApp  interfaces.GitHubApp
 }
 
-func NewAppService(env environment.Env, readWriteApp interfaces.GitHubApp) (*GitHubAppService, error) {
+func NewAppService(env environment.Env, readWriteApp interfaces.GitHubApp, readOnlyApp interfaces.GitHubApp) (*GitHubAppService, error) {
 	return &GitHubAppService{
 		env:          env,
 		readWriteApp: readWriteApp,
+		readOnlyApp:  readOnlyApp,
 	}, nil
+}
+
+func (s *GitHubAppService) IsReadWriteAppEnabled() bool {
+	return *readWriteAppEnabled
+}
+
+func (s *GitHubAppService) IsReadOnlyAppEnabled() bool {
+	return *readOnlyAppEnabled
 }
 
 // GetGitHubAppForAuthenticatedUser returns the BB GitHub app that the current user has authorized.
@@ -124,7 +143,6 @@ func NewAppService(env environment.Env, readWriteApp interfaces.GitHubApp) (*Git
 // do not have an authenticated BuildBuddy user in the context. Use GetGitHubAppForOwner
 // in those cases.
 func (s *GitHubAppService) GetGitHubAppForAuthenticatedUser(ctx context.Context) (interfaces.GitHubApp, error) {
-	// If the user's group has already linked an app installation, check its app ID.
 	// Check our database first over using the GitHub API, because the API is
 	// rate limited.
 	installations, err := s.GetGitHubAppInstallations(ctx)
@@ -150,8 +168,10 @@ func (s *GitHubAppService) GetGitHubAppForAuthenticatedUser(ctx context.Context)
 	if u.GithubToken == "" {
 		return nil, status.NotFoundErrorf("no linked GitHub account was found")
 	}
-	if s.GetReadWriteGitHubApp().IsTokenValid(ctx, u.GithubToken) {
+	if s.IsReadWriteAppEnabled() && s.GetReadWriteGitHubApp().IsTokenValid(ctx, u.GithubToken) {
 		return s.GetReadWriteGitHubApp(), nil
+	} else if s.IsReadOnlyAppEnabled() && s.GetReadOnlyGitHubApp().IsTokenValid(ctx, u.GithubToken) {
+		return s.GetReadOnlyGitHubApp(), nil
 	}
 	return nil, status.InternalErrorf("github token for user %v is not valid for any github apps", u.UserID)
 }
@@ -181,14 +201,39 @@ func (s *GitHubAppService) GetReadWriteGitHubApp() interfaces.GitHubApp {
 	return s.readWriteApp
 }
 
+func (s *GitHubAppService) GetReadOnlyGitHubApp() interfaces.GitHubApp {
+	return s.readOnlyApp
+}
+
 func (s *GitHubAppService) GetGitHubAppWithID(appID int64) (interfaces.GitHubApp, error) {
-	if appID == s.readWriteApp.AppID() {
+	if s.IsReadWriteAppEnabled() && appID == s.readWriteApp.AppID() {
 		return s.readWriteApp, nil
-	} else if appID == 0 {
+	} else if s.IsReadWriteAppEnabled() && appID == 0 {
 		// TODO(MAGGIE): Delete this after we've backfilled the database
 		return s.readWriteApp, nil
+	} else if s.IsReadOnlyAppEnabled() && appID == s.readOnlyApp.AppID() {
+		return s.readOnlyApp, nil
 	}
 	return nil, status.InvalidArgumentErrorf("no github app with app ID %v", appID)
+}
+
+// InstallPath returns the path the user should hit to enter the GitHub app install flow.
+//
+// As a prerequisite, users must link their GitHub accounts to BuildBuddy via a
+// specific GitHub app (via `github::HandleLinkRepo`). That saves a GitHub token
+// for the user. This function returns the installation path for that app.
+func (s *GitHubAppService) InstallPath(ctx context.Context) (string, error) {
+	app, err := s.GetGitHubAppForAuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if s.IsReadWriteAppEnabled() && app.AppID() == s.readWriteApp.AppID() {
+		return readWriteOauthPath, nil
+	} else if s.IsReadOnlyAppEnabled() && app.AppID() == s.readOnlyApp.AppID() {
+		return readOnlyOauthPath, nil
+	}
+	return "", status.InternalErrorf("app id %d does not correspond to any github apps", app.AppID())
 }
 
 // GetGitHubAppInstallations returns all GitHub apps the owner has installed
@@ -281,6 +326,8 @@ type GitHubApp struct {
 
 	oauth *gh_oauth.OAuthHandler
 
+	webhookSecret string
+
 	// privateKey is the GitHub-issued private key for the app. It is used to
 	// create JWTs for authenticating with GitHub as the app itself.
 	privateKey *rsa.PrivateKey
@@ -288,41 +335,87 @@ type GitHubApp struct {
 
 // NewReadWriteApp returns a new GitHubApp handle for the read-write BuildBuddy Github app.
 func NewReadWriteApp(env environment.Env) (*GitHubApp, error) {
-	if *clientID == "" {
-		return nil, status.FailedPreconditionError("missing client ID.")
+	if *readWriteAppClientID == "" {
+		return nil, status.FailedPreconditionError("missing read write client ID.")
 	}
-	if *clientSecret == "" {
-		return nil, status.FailedPreconditionError("missing client secret.")
+	if *readWriteAppClientSecret == "" {
+		return nil, status.FailedPreconditionError("missing read write client secret.")
 	}
-	if *appID == "" {
-		return nil, status.FailedPreconditionError("missing app ID")
+	if *readWriteAppID == "" {
+		return nil, status.FailedPreconditionError("missing read write app ID")
 	}
-	appIDParsed, err := strconv.Atoi(*appID)
+	appIDParsed, err := strconv.Atoi(*readWriteAppID)
 	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid app ID %v: %s", *appID, err)
+		return nil, status.InvalidArgumentErrorf("invalid read write app ID %v: %s", *readWriteAppID, err)
 	}
-	if *publicLink == "" {
-		return nil, status.FailedPreconditionError("missing app public link")
+	if *readWriteAppPublicLink == "" {
+		return nil, status.FailedPreconditionError("missing read write app public link")
 	}
-	if *webhookSecret == "" {
-		return nil, status.FailedPreconditionError("missing app webhook secret")
+	if *readWriteAppWebhookSecret == "" {
+		return nil, status.FailedPreconditionError("missing read write app webhook secret")
 	}
-	if *privateKey == "" {
-		return nil, status.FailedPreconditionError("missing app private key")
+	if *readWriteAppPrivateKey == "" {
+		return nil, status.FailedPreconditionError("missing read write app private key")
 	}
-	privateKey, err := decodePrivateKey(*privateKey)
+	privateKey, err := decodePrivateKey(*readWriteAppPrivateKey)
 	if err != nil {
 		return nil, err
 	}
 
 	app := &GitHubApp{
-		env:        env,
-		privateKey: privateKey,
-		appID:      int64(appIDParsed),
+		env:           env,
+		privateKey:    privateKey,
+		webhookSecret: *readWriteAppWebhookSecret,
+		appID:         int64(appIDParsed),
 	}
-	oauth := gh_oauth.NewOAuthHandler(env, *clientID, *clientSecret, oauthAppPath)
+	oauth := gh_oauth.NewOAuthHandler(env, *readWriteAppClientID, *readWriteAppClientSecret, readWriteOauthPath)
 	oauth.HandleInstall = app.handleInstall
-	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *publicLink)
+	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *readWriteAppPublicLink)
+	app.oauth = oauth
+	return app, nil
+}
+
+// NewReadOnlyApp returns a new GitHubApp handle for the read-only BuildBuddy Github app.
+func NewReadOnlyApp(env environment.Env) (*GitHubApp, error) {
+	if !*readOnlyAppEnabled {
+		return nil, nil
+	}
+	if *readOnlyAppClientID == "" {
+		return nil, status.FailedPreconditionError("missing read only client ID.")
+	}
+	if *readOnlyAppClientSecret == "" {
+		return nil, status.FailedPreconditionError("missing read only client secret.")
+	}
+	if *readOnlyAppID == "" {
+		return nil, status.FailedPreconditionError("missing read only app ID")
+	}
+	appIDParsed, err := strconv.Atoi(*readOnlyAppID)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid read only app ID %v: %s", *readOnlyAppID, err)
+	}
+	if *readOnlyAppPublicLink == "" {
+		return nil, status.FailedPreconditionError("missing read only app public link")
+	}
+	if *readOnlyAppWebhookSecret == "" {
+		return nil, status.FailedPreconditionError("missing read only app webhook secret")
+	}
+	if *readOnlyAppPrivateKey == "" {
+		return nil, status.FailedPreconditionError("missing read only app private key")
+	}
+	privateKey, err := decodePrivateKey(*readOnlyAppPrivateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	app := &GitHubApp{
+		env:           env,
+		privateKey:    privateKey,
+		webhookSecret: *readOnlyAppWebhookSecret,
+		appID:         int64(appIDParsed),
+	}
+	oauth := gh_oauth.NewOAuthHandler(env, *readOnlyAppClientID, *readOnlyAppClientSecret, readOnlyOauthPath)
+	oauth.HandleInstall = app.handleInstall
+	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *readOnlyAppPublicLink)
 	app.oauth = oauth
 	return app, nil
 }
@@ -337,7 +430,7 @@ func (a *GitHubApp) WebhookHandler() http.Handler {
 
 func (a *GitHubApp) handleWebhookRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	b, err := github.ValidatePayload(req, []byte(*webhookSecret))
+	b, err := github.ValidatePayload(req, []byte(a.webhookSecret))
 	if err != nil {
 		log.CtxDebugf(ctx, "Failed to validate webhook payload: %s", err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -1195,7 +1288,7 @@ func (a *GitHubApp) newAppClient(ctx context.Context) (*github.Client, error) {
 	// Create and sign JWT
 	t := jwt.New(jwt.GetSigningMethod("RS256"))
 	t.Claims = &jwt.StandardClaims{
-		Issuer:    *appID,
+		Issuer:    fmt.Sprintf("%d", a.appID),
 		IssuedAt:  time.Now().Add(-1 * time.Minute).Unix(),
 		ExpiresAt: time.Now().Add(5 * time.Minute).Unix(),
 	}
