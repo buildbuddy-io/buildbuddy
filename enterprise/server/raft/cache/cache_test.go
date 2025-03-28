@@ -396,12 +396,9 @@ func TestLRU(t *testing.T) {
 		resourceKeys = append(resourceKeys, r)
 	}
 
-	log.Info("start waiting for gc")
 	err = rc1.TestingWaitForGC()
 	require.NoError(t, err)
-	log.Info("waiting for gc finished, wait fot shutdown started")
 	waitForShutdown(t, caches...)
-	log.Info("wait fot shutdown ended")
 
 	caches = startNNodes(t, configs)
 	rc1 = caches[0]
@@ -454,7 +451,5 @@ func TestLRU(t *testing.T) {
 	// Check that the avg age of evicted items is older than avg age of kept items.
 	require.Greater(t, avgEvictedAgeSeconds, avgKeptAgeSeconds)
 
-	log.Info("wait to shutdown started")
 	waitForShutdown(t, caches...)
-	log.Info("wait to shutdown ended")
 }
