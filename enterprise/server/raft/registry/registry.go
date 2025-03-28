@@ -131,6 +131,7 @@ func (n *StaticRegistry) Remove(rangeID uint64, replicaID uint64) {
 		delete(s, key)
 	}
 	delete(n.nodeTargets, key)
+	log.Debugf("removed targets for c%dn%d", rangeID, replicaID)
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
@@ -145,6 +146,7 @@ func (n *StaticRegistry) RemoveShard(rangeID uint64) {
 		}
 	}
 	delete(n.shards, rangeID)
+	log.Debugf("removed targets for range", rangeID)
 }
 
 // ResolveRaft returns the raft address and the connection key of the specified node.
