@@ -168,7 +168,8 @@ type registryHolder struct {
 }
 
 func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v)
+	nhLog := log.NamedSubLogger(nhid)
+	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v, nhLog)
 	rc.r = r
 	r.AddNode(nhid, rc.raftAddr, rc.grpcAddr)
 	return r, nil
@@ -1815,6 +1816,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 	}
 
 	_, err = j.store.RemoveData(ctx, removeDataReq)
+	j.store.log.Infof("removed data for c%dn%d", removeDataReq.RangeId, removeDataReq.ReplicaId)
 	if err != nil {
 		return zombieCleanupRemoveData, status.InternalErrorf("failed to remove data: %s", err)
 	}
