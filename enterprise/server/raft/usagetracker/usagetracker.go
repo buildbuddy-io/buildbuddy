@@ -735,7 +735,13 @@ func (ut *Tracker) broadcast(force bool) (bool, error) {
 	return true, nil
 }
 
-func (ut *Tracker) TestingWaitForGC() {
+type watermark struct {
+	timestamp time.Time
+	sizeBytes int64
+}
+
+func (ut *Tracker) TestingWaitForGC() error {
+	lastSize := make(map[string]watermark)
 	for {
 		ut.mu.Lock()
 		partitionUsage := ut.byPartition
@@ -753,6 +759,16 @@ func (ut *Tracker) TestingWaitForGC() {
 			totalSizeBytes := pu.LocalSizeBytes()
 			pu.lru.UpdateSizeBytes(totalSizeBytes)
 			maxAllowedSize := int64(EvictionCutoffThreshold * float64(pu.part.MaxSizeBytes))
+			if lastSize[pu.part.ID].sizeBytes != totalSizeBytes {
+				lastSize[pu.part.ID] = watermark{
+					timestamp: time.Now(),
+					sizeBytes: totalSizeBytes,
+				}
+			} else {
+				if size := lastSize[pu.part.ID].sizeBytes; size > 0 && time.Since(lastSize[pu.part.ID].timestamp) > 3*time.Second {
+					return status.FailedPreconditionErrorf("LRU not making progress: size is %s, maxAllowedSize is %s", units.HumanSize(float64(size)), units.HumanSize(float64(maxAllowedSize)))
+				}
+			}
 			if totalSizeBytes <= maxAllowedSize {
 				done += 1
 			}
@@ -763,4 +779,5 @@ func (ut *Tracker) TestingWaitForGC() {
 
 		time.Sleep(100 * time.Millisecond)
 	}
+	return nil
 }
