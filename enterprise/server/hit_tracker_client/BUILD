@@ -10,7 +10,6 @@ go_library(
         "//proto:hit_tracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
-        "//server/environment",
         "//server/interfaces",
         "//server/real_environment",
         "//server/util/grpc_client",

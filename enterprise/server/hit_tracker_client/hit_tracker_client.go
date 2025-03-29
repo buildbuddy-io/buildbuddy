@@ -3,9 +3,10 @@ package hit_tracker_client
 import (
 	"context"
 	"flag"
+	"fmt"
+	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -20,8 +21,9 @@ import (
 )
 
 var (
-	remoteHitTrackerTarget  = flag.String("cache.hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracker.")
-	remoteHitTrackerTimeout = flag.Duration("cache.hit_tracker.rpc_timeout", 5*time.Second, "The timout to use for gRPC requests to the remote cache-hit-tracker.")
+	remoteHitTrackerTarget       = flag.String("cache.remote_hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracking service.")
+	remoteHitTrackerTimeout      = flag.Duration("cache.remote_hit_tracker.rpc_timeout", 3*time.Second, "The timout to use for gRPC requests to the remote cache-hit-tracking service.")
+	remoteHitTrackerPollInterval = flag.Duration("cache.remote_hit_tracker.update_interval", 250*time.Millisecond, "The time interval to wait between sending remote cache-hit-tracking RPCs.")
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -29,25 +31,49 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
-	env.SetHitTrackerFactory(newHitTrackerClient(conn))
+	env.SetHitTrackerFactory(newHitTrackerClient(env, conn))
 	return nil
 }
 
-func newHitTrackerClient(conn grpc.ClientConnInterface) *HitTrackerFactory {
-	return &HitTrackerFactory{client: hitpb.NewHitTrackerServiceClient(conn)}
+func newHitTrackerClient(env *real_environment.RealEnv, conn grpc.ClientConnInterface) *HitTrackerFactory {
+	factory := HitTrackerFactory{
+		authenticator: env.GetAuthenticator(),
+		ticker:        env.GetClock().NewTicker(*remoteHitTrackerPollInterval).Chan(),
+		quit:          make(chan struct{}, 1),
+		hits:          map[string]map[string]map[string]cacheHits{},
+		rpcTimeout:    *remoteHitTrackerTimeout,
+		client:        hitpb.NewHitTrackerServiceClient(conn),
+	}
+	go factory.start()
+	env.GetHealthChecker().RegisterShutdownFunction(factory.shutdown)
+	return &factory
+}
+
+type cacheHits struct {
+	emptyHits int64
+	downloads []*hitpb.Download
 }
 
 type HitTrackerFactory struct {
-	env    environment.Env
+	authenticator interfaces.Authenticator
+
+	ticker <-chan time.Time
+	quit   chan struct{}
+
+	mu   sync.Mutex
+	hits map[string]map[string]map[string]cacheHits // lol
+
+	rpcTimeout time.Duration
+
 	client hitpb.HitTrackerServiceClient
 }
 
-func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, invocationID string, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	return &HitTracker{}
+func (h *HitTrackerFactory) NewACHitTracker(ctx context.Context, invocationID string, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return &NoOpHitTracker{}
 }
 
-func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, invocationID string, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	return &HitTracker{}
+func (h *HitTrackerFactory) NewCASHitTracker(ctx context.Context, invocationID string, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, invocationID: invocationID}
 }
 
 // For Action Cache hit-tracking, explicitly ignore everything. These cache
@@ -89,9 +115,11 @@ func (t *NoOpTransferTimer) Record(bytesTransferred int64, duration time.Duratio
 // For CAS hit-tracking, use a hit-tracker that sends information about local
 // cache hits to the RPC service at the configured backend.
 type HitTrackerClient struct {
-	ctx          context.Context
-	client       hitpb.HitTrackerServiceClient
-	invocationID string
+	ctx             context.Context
+	enqueueFn       func(context.Context, string, string, int64, *hitpb.Download)
+	client          hitpb.HitTrackerServiceClient
+	invocationID    string
+	requestMetadata string
 }
 
 // This should only be used for Action Cache hit tracking.
@@ -104,37 +132,55 @@ func (h *HitTrackerClient) TrackMiss(d *repb.Digest) error {
 	return nil
 }
 
-// TODO(iain): implement some client-side batching here.
-func sendAsync(ctx context.Context, client hitpb.HitTrackerServiceClient, req *hitpb.TrackRequest) {
-	go func() {
-		ctx, cancel := context.WithTimeout(ctx, *remoteHitTrackerTimeout)
-		_, err := client.Track(ctx, req)
-		cancel()
-		if err != nil {
-			log.Infof("Error sending hit_tracker.Track RPC: %v", err)
-		}
-	}()
+func (h *HitTrackerFactory) groupID(ctx context.Context) string {
+	user, err := h.authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser
+	}
+	return user.GetGroupID()
+}
+
+func (h *HitTrackerFactory) enqueue(ctx context.Context, invocationID, requestMetadata string, emptyHits int64, download *hitpb.Download) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	groupID := h.groupID(ctx)
+	hitsByGroup, ok := h.hits[groupID]
+	if !ok {
+		hitsByGroup = map[string]map[string]cacheHits{}
+		h.hits[groupID] = hitsByGroup
+	}
+
+	hitsByInvocation, ok := hitsByGroup[invocationID]
+	if !ok {
+		hitsByInvocation = map[string]cacheHits{}
+		hitsByGroup[invocationID] = hitsByInvocation
+	}
+
+	hitsByRMD, ok := hitsByInvocation[requestMetadata]
+	if !ok {
+		hitsByRMD = cacheHits{}
+		hitsByInvocation[requestMetadata] = hitsByRMD
+	}
+
+	hitsByRMD.emptyHits += emptyHits
+	if download != nil {
+		hitsByRMD.downloads = append(hitsByRMD.downloads, download)
+	}
 }
 
 func (h *HitTrackerClient) TrackEmptyHit() error {
-	req := hitpb.TrackRequest{
-		Hits: []*hitpb.CacheHits{
-			&hitpb.CacheHits{
-				InvocationId: h.invocationID,
-				EmptyHits:    1,
-			},
-		},
-	}
-	sendAsync(h.ctx, h.client, &req)
+	h.enqueueFn(h.ctx, h.invocationID, h.requestMetadata, 1, nil)
 	return nil
 }
 
 type TransferTimer struct {
-	ctx          context.Context
-	invocationID string
-	digest       *repb.Digest
-	start        time.Time
-	client       hitpb.HitTrackerServiceClient
+	ctx             context.Context
+	enqueueFn       func(context.Context, string, string, int64, *hitpb.Download)
+	invocationID    string
+	requestMetadata string
+	digest          *repb.Digest
+	start           time.Time
+	client          hitpb.HitTrackerServiceClient
 }
 
 func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
@@ -146,15 +192,7 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 		SizeBytes: bytesTransferredClient,
 		Duration:  durationpb.New(time.Since(t.start)),
 	}
-	req := hitpb.TrackRequest{
-		Hits: []*hitpb.CacheHits{
-			&hitpb.CacheHits{
-				InvocationId: t.invocationID,
-				Downloads:    []*hitpb.Download{download},
-			},
-		},
-	}
-	sendAsync(t.ctx, t.client, &req)
+	t.enqueueFn(t.ctx, t.invocationID, t.requestMetadata, 0, download)
 	return nil
 }
 
@@ -165,6 +203,7 @@ func (t *TransferTimer) Record(bytesTransferred int64, duration time.Duration, c
 func (h *HitTrackerClient) TrackDownload(digest *repb.Digest) interfaces.TransferTimer {
 	return &TransferTimer{
 		ctx:          h.ctx,
+		enqueueFn:    h.enqueueFn,
 		invocationID: h.invocationID,
 		digest:       digest,
 		start:        time.Now(),
@@ -175,4 +214,61 @@ func (h *HitTrackerClient) TrackDownload(digest *repb.Digest) interfaces.Transfe
 // Writes hit the backing cache, so no need to report on hit-tracking.
 func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferTimer {
 	return &NoOpTransferTimer{}
+}
+
+func (h *HitTrackerFactory) start() {
+	for {
+		select {
+		case <-h.quit:
+			return
+		case <-h.ticker:
+			h.sendTrackRequests(context.Background())
+		}
+	}
+}
+
+func (h *HitTrackerFactory) sendTrackRequests(ctx context.Context) int {
+	i := 0
+	groups := make([]string, len(h.hits))
+	h.mu.Lock()
+	for group := range h.hits {
+		groups[i] = group
+		i++
+	}
+	h.mu.Unlock()
+
+	for _, group := range groups {
+		trackRequestProto := hitpb.TrackRequest{}
+		h.mu.Lock()
+		// TODO(iain): limit the size of these, maybe?
+		for iid, hitsByIID := range h.hits[group] {
+			cacheHitsProto := hitpb.CacheHits{InvocationID: iid}
+			trackRequestProto.Hits = append(trackRequestProto.Hits, &cacheHitsProto)
+			for rmd, hits := range hitsByIID {
+				// TODO(iain): put rmd in the proto here.
+				fmt.Println(rmd)
+				cacheHitsProto.EmptyHits = hits.emptyHits
+				cacheHitsProto.Downloads = hits.downloads
+			}
+		}
+		h.hits[group] = map[string]map[string]cacheHits{}
+		h.mu.Unlock()
+
+		if len(trackRequestProto.Hits) > 0 {
+			h.client.Track(context.Background(), trackRequestProto)
+		}
+	}
+	return 0
+}
+
+func (h *HitTrackerFactory) shutdown(ctx context.Context) error {
+	close(h.quit)
+
+	// Make a best-effort attempt to flush pending updates.
+	// TODO(iain): we could do something fancier here if necessary, like
+	// fire-and-forget these RPCs with a rate-limiter. Let's try this for now.
+	for h.sendTrackRequests(ctx) > 0 {
+	}
+
+	return nil
 }
