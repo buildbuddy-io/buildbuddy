@@ -30,6 +30,7 @@ export class Capabilities {
   code: boolean = false;
   sso: boolean = false;
   usage: boolean = false;
+  readOnlyGitHubApp: boolean = false;
 
   constructor() {
     this.invocationSharing = true;
@@ -53,6 +54,7 @@ export class Capabilities {
     this.executorKeyCreation = this.config.executorKeyCreationEnabled;
     this.code = this.config.codeEditorEnabled;
     this.usage = this.config.usageEnabled;
+    this.readOnlyGitHubApp = this.config.readOnlyGithubAppEnabled;
   }
 
   register(name: string, enterprise: boolean, paths: Array<string>) {

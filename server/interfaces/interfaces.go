@@ -707,7 +707,11 @@ type GitHubApp interface {
 // GitHubApp the user has installed (read-only vs read-write) and is used for app-agnostic
 // operations.
 type GitHubAppService interface {
+	IsReadWriteAppEnabled() bool
+	IsReadOnlyAppEnabled() bool
+
 	GetReadWriteGitHubApp() GitHubApp
+	GetReadOnlyGitHubApp() GitHubApp
 	GetGitHubAppWithID(appID int64) (GitHubApp, error)
 	// GetGitHubAppForAuthenticatedUser returns the BB GitHub app that the current user has authorized.
 	// This can be used for requests that don't provide a specific repoURL or for users
@@ -718,6 +722,8 @@ type GitHubAppService interface {
 	// for the given URL. The installation must be both installed on GitHub and imported
 	// to BuildBuddy via (`LinkGitHubAppInstallation`).
 	GetGitHubAppForOwner(ctx context.Context, repoURL string) (GitHubApp, error)
+
+	InstallPath(ctx context.Context) (string, error)
 
 	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
 	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
