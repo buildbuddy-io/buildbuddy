@@ -60,20 +60,21 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 		Hash:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		SizeBytes: 456,
 	}
-	srmd, err := proto.Marshal(rmd)
-	require.NoError(t, err)
 	rn := digest.NewResourceName(&d2, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 	hits := hitpb.CacheHits{
-		InvocationId:         iid,
-		BazelRequestMetadata: srmd,
-		EmptyHits:            1,
+		RequestMetadata: rmd,
+		EmptyHits:       1,
 		Downloads: []*hitpb.Download{&hitpb.Download{
 			Resource:  rn.ToProto(),
 			SizeBytes: 456,
 			Duration:  durationpb.New(time.Minute),
 		}},
 	}
-	req := hitpb.TrackRequest{Hits: []*hitpb.CacheHits{&hits}}
+	hitsByInvocation := hitpb.CacheHitsByInvocation{
+		InvocationId: iid,
+		Hits:         []*hitpb.CacheHits{&hits},
+	}
+	req := hitpb.TrackRequest{Hits: []*hitpb.CacheHitsByInvocation{&hitsByInvocation}}
 
 	_, err = env.GetHitTrackerServiceServer().Track(ctx, &req)
 	require.NoError(t, err)
@@ -141,20 +142,21 @@ func TestHitTrackerService_Usage(t *testing.T) {
 		Hash:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		SizeBytes: 456,
 	}
-	srmd, err := proto.Marshal(rmd)
-	require.NoError(t, err)
 	rn := digest.NewResourceName(&d2, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 	hits := hitpb.CacheHits{
-		InvocationId:         iid,
-		BazelRequestMetadata: srmd,
-		EmptyHits:            1,
+		RequestMetadata: rmd,
+		EmptyHits:       1,
 		Downloads: []*hitpb.Download{&hitpb.Download{
 			Resource:  rn.ToProto(),
 			SizeBytes: 456,
 			Duration:  durationpb.New(time.Minute),
 		}},
 	}
-	req := hitpb.TrackRequest{Hits: []*hitpb.CacheHits{&hits}}
+	hitsByInvocation := hitpb.CacheHitsByInvocation{
+		InvocationId: iid,
+		Hits:         []*hitpb.CacheHits{&hits},
+	}
+	req := hitpb.TrackRequest{Hits: []*hitpb.CacheHitsByInvocation{&hitsByInvocation}}
 	_, err = env.GetHitTrackerServiceServer().Track(ctx, &req)
 	require.NoError(t, err)
 
