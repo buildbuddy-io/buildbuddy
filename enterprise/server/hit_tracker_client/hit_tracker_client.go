@@ -3,7 +3,6 @@ package hit_tracker_client
 import (
 	"context"
 	"flag"
-	"fmt"
 	"sync"
 	"time"
 
@@ -22,8 +21,9 @@ import (
 
 var (
 	remoteHitTrackerTarget       = flag.String("cache.remote_hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracking service.")
-	remoteHitTrackerTimeout      = flag.Duration("cache.remote_hit_tracker.rpc_timeout", 3*time.Second, "The timout to use for gRPC requests to the remote cache-hit-tracking service.")
+	remoteHitTrackerTimeout      = flag.Duration("cache.remote_hit_tracker.rpc_timeout", 5*time.Second, "The timout to use for gRPC requests to the remote cache-hit-tracking service.")
 	remoteHitTrackerPollInterval = flag.Duration("cache.remote_hit_tracker.update_interval", 250*time.Millisecond, "The time interval to wait between sending remote cache-hit-tracking RPCs.")
+	remoteHitTrackerWorkers      = flag.Int("cache.remote_hit_tracker.workers", 3, "The number of workers to use to send asynchronous remote-cache-hit-tracking RPCs.")
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -40,19 +40,27 @@ func newHitTrackerClient(env *real_environment.RealEnv, conn grpc.ClientConnInte
 		authenticator: env.GetAuthenticator(),
 		ticker:        env.GetClock().NewTicker(*remoteHitTrackerPollInterval).Chan(),
 		quit:          make(chan struct{}, 1),
-		hits:          map[string]map[string]map[string]cacheHits{},
+		hits:          map[groupID]cacheHitsByInvocationID{},
 		rpcTimeout:    *remoteHitTrackerTimeout,
 		client:        hitpb.NewHitTrackerServiceClient(conn),
 	}
-	go factory.start()
+	for i := 0; i < *remoteHitTrackerWorkers; i++ {
+		go factory.start()
+	}
 	env.GetHealthChecker().RegisterShutdownFunction(factory.shutdown)
 	return &factory
 }
 
 type cacheHits struct {
+	// Gotta keep that jwt around so the app knows what group.
 	emptyHits int64
 	downloads []*hitpb.Download
 }
+
+// typedefs to make triple-nested map less gross :-(
+type groupID string
+type cacheHitsByRequestMetadata map[string]cacheHits
+type cacheHitsByInvocationID map[string]cacheHitsByRequestMetadata
 
 type HitTrackerFactory struct {
 	authenticator interfaces.Authenticator
@@ -61,7 +69,7 @@ type HitTrackerFactory struct {
 	quit   chan struct{}
 
 	mu   sync.Mutex
-	hits map[string]map[string]map[string]cacheHits // lol
+	hits map[groupID]cacheHitsByInvocationID
 
 	rpcTimeout time.Duration
 
@@ -132,12 +140,12 @@ func (h *HitTrackerClient) TrackMiss(d *repb.Digest) error {
 	return nil
 }
 
-func (h *HitTrackerFactory) groupID(ctx context.Context) string {
+func (h *HitTrackerFactory) groupID(ctx context.Context) groupID {
 	user, err := h.authenticator.AuthenticatedUser(ctx)
 	if err != nil {
 		return interfaces.AuthAnonymousUser
 	}
-	return user.GetGroupID()
+	return groupID(user.GetGroupID())
 }
 
 func (h *HitTrackerFactory) enqueue(ctx context.Context, invocationID, requestMetadata string, emptyHits int64, download *hitpb.Download) {
@@ -146,13 +154,13 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, invocationID, requestMe
 	groupID := h.groupID(ctx)
 	hitsByGroup, ok := h.hits[groupID]
 	if !ok {
-		hitsByGroup = map[string]map[string]cacheHits{}
+		hitsByGroup = cacheHitsByInvocationID{}
 		h.hits[groupID] = hitsByGroup
 	}
 
 	hitsByInvocation, ok := hitsByGroup[invocationID]
 	if !ok {
-		hitsByInvocation = map[string]cacheHits{}
+		hitsByInvocation = cacheHitsByRequestMetadata{}
 		hitsByGroup[invocationID] = hitsByInvocation
 	}
 
@@ -229,7 +237,7 @@ func (h *HitTrackerFactory) start() {
 
 func (h *HitTrackerFactory) sendTrackRequests(ctx context.Context) int {
 	i := 0
-	groups := make([]string, len(h.hits))
+	groups := make([]groupID, len(h.hits))
 	h.mu.Lock()
 	for group := range h.hits {
 		groups[i] = group
@@ -242,20 +250,19 @@ func (h *HitTrackerFactory) sendTrackRequests(ctx context.Context) int {
 		h.mu.Lock()
 		// TODO(iain): limit the size of these, maybe?
 		for iid, hitsByIID := range h.hits[group] {
-			cacheHitsProto := hitpb.CacheHits{InvocationID: iid}
+			cacheHitsProto := hitpb.CacheHits{InvocationId: iid}
 			trackRequestProto.Hits = append(trackRequestProto.Hits, &cacheHitsProto)
 			for rmd, hits := range hitsByIID {
-				// TODO(iain): put rmd in the proto here.
-				fmt.Println(rmd)
+				cacheHitsProto.BazelRequestMetadata = rmd
 				cacheHitsProto.EmptyHits = hits.emptyHits
 				cacheHitsProto.Downloads = hits.downloads
 			}
 		}
-		h.hits[group] = map[string]map[string]cacheHits{}
+		h.hits[group] = cacheHitsByInvocationID{}
 		h.mu.Unlock()
 
 		if len(trackRequestProto.Hits) > 0 {
-			h.client.Track(context.Background(), trackRequestProto)
+			h.client.Track(context.Background(), &trackRequestProto)
 		}
 	}
 	return 0
