@@ -4,6 +4,14 @@ title: Workflows setup
 sidebar_label: Workflows setup
 ---
 
+BuildBuddy Workflows is a Continuous Integration (CI) solution for Bazel
+repositories hosted on GitHub.
+
+BuildBuddy Workflows are specifically designed for Bazel builds, and are
+tightly integrated with BuildBuddy RBE and Remote Caching, making them
+significantly faster than other CI options. (See https://docs.buildbuddy.io/docs/remote-runner-introduction/
+for more details on the benefits of Workflows.)
+
 Workflows automatically build and test your code with
 BuildBuddy whenever a commit is pushed to your GitHub repo.
 

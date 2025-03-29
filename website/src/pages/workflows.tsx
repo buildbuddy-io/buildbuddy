@@ -17,7 +17,7 @@ function Component() {
           lessPadding={true}
           primaryButtonHref="https://app.buildbuddy.io/workflows/"
           secondaryButtonText="Workflow Docs"
-          secondaryButtonHref="/docs/workflows-introduction"
+          secondaryButtonHref="/docs/workflows-setup"
           gradientButton={true}
         />
 

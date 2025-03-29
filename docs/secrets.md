@@ -6,8 +6,7 @@ sidebar_label: RBE Secrets
 
 Secrets are encrypted environment variables associated with your
 BuildBuddy organization. Secrets can be used in actions executed with
-[remote execution](remote-build-execution) as well as [BuildBuddy
-Workflows](workflows-introduction).
+[remote execution](remote-build-execution) as well as [BuildBuddy remote runners](remote-runner-introduction).
 
 BuildBuddy encrypts secrets with a
 [libsodium sealed box](https://libsodium.gitbook.io/doc/public-key_cryptography/sealed_boxes).
@@ -60,7 +59,7 @@ foo_library(
 
 ### Workflows
 
-[BuildBuddy workflows](workflows-introduction) do not need additional
+[BuildBuddy workflows](workflows-setup) do not need additional
 configuration to use secrets; they receive secrets by default as long as
 the workflow is being triggered on behalf of a trusted collaborator in the
 repository.

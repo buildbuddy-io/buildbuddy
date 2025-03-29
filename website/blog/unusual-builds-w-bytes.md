@@ -21,8 +21,8 @@ Users on older versions of Bazel can work around this issue by setting `--experi
 At BuildBuddy, we not only operate a Bazel Remote Cache and Remote Build Execution service, but we can also operate Bazel, the client-side, for you.
 This is done through two offerings:
 
-- [BuildBuddy Workflows](/docs/workflows-introduction), which operates as a typical CI system that integrates directly with GitHub.
-- [BuildBuddy Remote Bazel](/docs/remote-bazel-introduction), which is a Bazel-in-the-cloud service that allows you to run Bazel builds remotely.
+- [BuildBuddy Workflows](/docs/workflows-setup), which operates as a typical CI system that integrates directly with GitHub.
+- [BuildBuddy Remote Bazel](/docs/remote-bazel), which is a Bazel-in-the-cloud service that allows you to run Bazel builds remotely.
 
 Both of these are built on top of Firecracker MicroVMs, which allows us to take snapshots of the JVM containing Bazel's in-process Analysis Cache and restore it in a new VM in milliseconds.
 The snapshots are typically chunked and stored in our Remote Cache, which allows us to share the cache across multiple machines.

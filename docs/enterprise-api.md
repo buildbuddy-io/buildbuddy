@@ -71,8 +71,14 @@ message GetInvocationRequest {
   // The selector defining which invocations(s) to retrieve.
   InvocationSelector selector = 1;
 
+  // If true, includes additional build metadata.
+  bool include_metadata = 2;
+
   // The next_page_token value returned from a previous request, if any.
   string page_token = 3;
+
+  // If true, include artifacts attached to the invocation.
+  bool include_artifacts = 4;
 }
 ```
 
