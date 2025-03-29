@@ -50,9 +50,7 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 		SizeBytes: 1234,
 	}
 	compressedSize := int64(123)
-	ctx = withRequestMetadata(t, ctx, rmd)
-	require.NoError(t, err)
-	ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, iid)
+	ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, iid, rmd)
 
 	dl := ht.TrackDownload(d1)
 	dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
@@ -62,10 +60,13 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 		Hash:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		SizeBytes: 456,
 	}
+	srmd, err := proto.Marshal(rmd)
+	require.NoError(t, err)
 	rn := digest.NewResourceName(&d2, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 	hits := hitpb.CacheHits{
-		InvocationId: iid,
-		EmptyHits:    1,
+		InvocationId:         iid,
+		BazelRequestMetadata: srmd,
+		EmptyHits:            1,
 		Downloads: []*hitpb.Download{&hitpb.Download{
 			Resource:  rn.ToProto(),
 			SizeBytes: 456,
@@ -129,15 +130,24 @@ func TestHitTrackerService_Usage(t *testing.T) {
 
 	ctx := context.Background()
 	iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
+	rmd := &repb.RequestMetadata{
+		ToolInvocationId: iid,
+		ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
+		ActionMnemonic:   "GoCompile",
+		TargetId:         "//foo:bar",
+	}
 
 	d2 := repb.Digest{
 		Hash:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		SizeBytes: 456,
 	}
+	srmd, err := proto.Marshal(rmd)
+	require.NoError(t, err)
 	rn := digest.NewResourceName(&d2, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 	hits := hitpb.CacheHits{
-		InvocationId: iid,
-		EmptyHits:    1,
+		InvocationId:         iid,
+		BazelRequestMetadata: srmd,
+		EmptyHits:            1,
 		Downloads: []*hitpb.Download{&hitpb.Download{
 			Resource:  rn.ToProto(),
 			SizeBytes: 456,
