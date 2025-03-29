@@ -1386,6 +1386,7 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 	}
 }
 
+// TODO(Maggie): Delete this when all FE references have been deleted
 func (s *BuildBuddyServer) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
 		return wfs.CreateLegacyWorkflow(ctx, req)

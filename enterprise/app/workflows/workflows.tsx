@@ -8,8 +8,6 @@ import router from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { workflow } from "../../../proto/workflow_ts_proto";
-import CreateWorkflowComponent from "./create_workflow";
-import GitHubImport from "./github_import";
 import GitHubAppImport from "./github_app_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
 import { AlertCircle, CheckCircle, GitBranch, GitMerge, MoreVertical, Wrench, XCircle } from "lucide-react";
@@ -39,20 +37,6 @@ export default class WorkflowsComponent extends React.Component<WorkflowsProps> 
     if (user.isGroupAdmin()) {
       if (capabilities.config.githubAppEnabled && (path === "/workflows/new" || path.startsWith("/workflows/new/"))) {
         return <GitHubAppImport user={user} />;
-      }
-
-      if (path === "/workflows/new") {
-        if (user.selectedGroup.githubLinked) {
-          return <GitHubImport />;
-        } else {
-          return <CreateWorkflowComponent user={user} />;
-        }
-      }
-      if (path === "/workflows/new/github") {
-        return <GitHubImport />;
-      }
-      if (path === "/workflows/new/custom") {
-        return <CreateWorkflowComponent user={user} />;
       }
     }
 
