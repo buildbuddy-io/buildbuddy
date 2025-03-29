@@ -27,23 +27,25 @@ func Register(env *real_environment.RealEnv) error {
 
 // TODO(iain): record a source (e.g. Cache Proxy).
 func (h HitTrackerService) Track(ctx context.Context, req *hitpb.TrackRequest) (*hitpb.TrackResponse, error) {
-	for _, cacheHit := range req.GetHits() {
-		if cacheHit.GetInvocationId() == "" {
+	for _, hitsByInvocation := range req.GetHits() {
+		if hitsByInvocation.GetInvocationId() == "" {
 			log.Warning("Skipping TrackRequest.Hits with empty invocation ID")
 			continue
 		}
 
-		hitTracker := h.hitTrackerFactory.NewCASHitTracker(ctx, cacheHit.GetInvocationId())
-		for i := int64(0); i < cacheHit.GetEmptyHits(); i++ {
-			hitTracker.TrackEmptyHit()
-		}
+		for _, hitByBazelRequest := range hitsByInvocation.GetHits() {
+			hitTracker := h.hitTrackerFactory.NewCASHitTracker(ctx, hitsByInvocation.GetInvocationId(), hitByBazelRequest.GetRequestMetadata())
+			for i := int64(0); i < hitByBazelRequest.GetEmptyHits(); i++ {
+				hitTracker.TrackEmptyHit()
+			}
 
-		for _, download := range cacheHit.GetDownloads() {
-			transferTimer := hitTracker.TrackDownload(download.GetResource().GetDigest())
-			duration := download.GetDuration().AsDuration()
-			err := transferTimer.Record(download.GetSizeBytes(), duration, download.GetResource().GetCompressor())
-			if err != nil {
-				log.CtxWarningf(ctx, "Error recording hit-tracking metrics: %s", err)
+			for _, download := range hitByBazelRequest.GetDownloads() {
+				transferTimer := hitTracker.TrackDownload(download.GetResource().GetDigest())
+				duration := download.GetDuration().AsDuration()
+				err := transferTimer.Record(download.GetSizeBytes(), duration, download.GetResource().GetCompressor())
+				if err != nil {
+					log.CtxWarningf(ctx, "Error recording hit-tracking metrics: %s", err)
+				}
 			}
 		}
 	}

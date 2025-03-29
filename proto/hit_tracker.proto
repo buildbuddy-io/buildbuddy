@@ -2,6 +2,7 @@
 syntax = "proto3";
 
 import "google/protobuf/duration.proto";
+import "proto/remote_execution.proto";
 import "proto/resource.proto";
 
 package hit_tracker;
@@ -20,18 +21,25 @@ message Download {
 
 // Information about cache hits for a particular invocation.
 message CacheHits {
-  // The invocation ID associated with this cache hit information.
-  string invocation_id = 1;
+  // The Bazel request metadata protocol buffer associated with these hits.
+  build.bazel.remote.execution.v2.RequestMetadata request_metadata = 2;
 
   // The number of empty digests that "hit" the cache.
-  int64 empty_hits = 2;
+  int64 empty_hits = 3;
 
   // Information about cache downloads (size, duration, etc.).
-  repeated Download downloads = 3;
+  repeated Download downloads = 4;
+}
+
+message CacheHitsByInvocation {
+  // The invocation ID associated with these hits.
+  string invocation_id = 1;
+
+  repeated CacheHits hits = 2;
 }
 
 message TrackRequest {
-  repeated CacheHits hits = 1;
+  repeated CacheHitsByInvocation hits = 1;
 }
 
 message TrackResponse {}
