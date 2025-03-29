@@ -89,7 +89,7 @@ func getToolEnv() *real_environment.RealEnv {
 	fc.WaitForDirectoryScanToComplete()
 	re.SetFileCache(fc)
 
-	leaser, err := cpuset.NewLeaser()
+	leaser, err := cpuset.NewLeaser(cpuset.LeaserOpts{})
 	if err != nil {
 		log.Fatalf("Failed to set up cpuset leaser: %s", err)
 	}
