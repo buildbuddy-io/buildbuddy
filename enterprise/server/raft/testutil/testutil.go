@@ -3,7 +3,6 @@ package testutil
 import (
 	"context"
 	"fmt"
-	"log"
 	"path/filepath"
 	"testing"
 	"time"
@@ -22,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
@@ -43,7 +43,6 @@ func localAddr(t *testing.T) string {
 type StoreFactory struct {
 	rootDir     string
 	gossipAddrs []string
-	reg         registry.NodeRegistry
 	clock       clockwork.Clock
 }
 
@@ -58,7 +57,6 @@ func NewStoreFactoryWithClock(t *testing.T, clock clockwork.Clock) *StoreFactory
 	require.NoError(t, err)
 	return &StoreFactory{
 		rootDir: rootDir,
-		reg:     registry.NewStaticNodeRegistry(1, nil),
 		clock:   clock,
 	}
 }
@@ -69,16 +67,15 @@ func (nrf nodeRegistryFactory) Create(nhid string, streamConnections uint64, v d
 	return nrf(nhid, streamConnections, v)
 }
 
-func (sf *StoreFactory) Registry() registry.NodeRegistry {
-	return sf.reg
-}
-
 func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	require.Nil(t, disk.EnsureDirectoryExists(ts.RootDir))
 
-	reg := sf.reg
 	nrf := nodeRegistryFactory(func(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-		return reg, nil
+		nhLog := log.NamedSubLogger(nhid)
+		r := registry.NewDynamicNodeRegistry(ts.gm, streamConnections, v, nhLog)
+		r.AddNode(nhid, ts.RaftAddress, ts.GRPCAddress)
+		ts.Registry = r
+		return r, nil
 	})
 
 	raftListener := listener.NewRaftListener()
@@ -99,11 +96,10 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 
 	te := testenv.GetTestEnv(t)
 	te.SetClock(sf.clock)
-	apiClient := client.NewAPIClient(te, nodeHost.ID(), reg)
+	apiClient := client.NewAPIClient(te, nodeHost.ID(), ts.Registry)
 
 	rc := rangecache.New()
 	s := sender.New(rc, apiClient)
-	reg.AddNode(nodeHost.ID(), ts.RaftAddress, ts.GRPCAddress)
 	partitions := []disk.Partition{
 		{
 			ID:           "default",
@@ -121,7 +117,7 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	require.NoError(t, err)
 	leaser := pebble.NewDBLeaser(db)
 	ts.leaser = leaser
-	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, ts.gm, s, reg, raftListener, apiClient, ts.GRPCAddress, ts.GRPCAddress, partitions, db, leaser, mc)
+	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, ts.gm, s, ts.Registry, raftListener, apiClient, ts.GRPCAddress, ts.GRPCAddress, partitions, db, leaser, mc)
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
@@ -164,6 +160,7 @@ type TestingStore struct {
 	leaser pebble.Leaser
 
 	gm          *gossip.GossipManager
+	Registry    registry.NodeRegistry
 	RootDir     string
 	RaftAddress string
 	GRPCAddress string

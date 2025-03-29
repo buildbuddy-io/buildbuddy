@@ -168,7 +168,8 @@ type registryHolder struct {
 }
 
 func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v)
+	nhLog := log.NamedSubLogger(nhid)
+	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v, nhLog)
 	rc.r = r
 	r.AddNode(nhid, rc.raftAddr, rc.grpcAddr)
 	return r, nil
