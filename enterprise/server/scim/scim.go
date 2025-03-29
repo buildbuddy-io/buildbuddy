@@ -208,6 +208,9 @@ func (s *SCIMServer) handleRequest(w http.ResponseWriter, r *http.Request, handl
 		w.Write([]byte("SCIM API can only be used in conjunction with SAML"))
 		return
 	}
+
+	log.CtxInfof(r.Context(), "Handling request for group %s: %s %s", g.GroupID, r.Method, r.URL.RequestURI())
+
 	val, err := handler(r.Context(), r, g)
 	if err != nil {
 		log.CtxWarningf(r.Context(), "SCIM request %s %q failed: %s", r.Method, r.RequestURI, err)
@@ -479,7 +482,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 	if err != nil {
 		return nil, err
 	}
-	log.CtxDebugf(ctx, "SCIM patch user request: %s", string(req))
+	log.CtxInfof(ctx, "Patch user request:\n%s", string(req))
 	pr := PatchResource{}
 	if err := json.Unmarshal(req, &pr); err != nil {
 		return nil, err
