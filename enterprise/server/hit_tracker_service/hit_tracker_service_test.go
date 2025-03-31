@@ -171,10 +171,12 @@ func TestHitTrackerService_Usage(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, ut.Increments, 2)
-	require.Equal(t, []*tables.UsageCounts{{
-		CASCacheHits:           2,
-		TotalDownloadSizeBytes: 456,
-	}}, ut.Increments)
+	require.Equal(t, []*tables.UsageCounts{
+		{CASCacheHits: 1},
+		{
+			CASCacheHits:           1,
+			TotalDownloadSizeBytes: 456,
+		}}, ut.Increments)
 	ut.Increments = nil
 }
 
