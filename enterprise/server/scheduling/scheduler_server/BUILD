@@ -34,7 +34,6 @@ go_library(
         "//server/util/random",
         "//server/util/status",
         "//server/util/tracing",
-        "@com_github_dgryski_go_farm//:go-farm",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
