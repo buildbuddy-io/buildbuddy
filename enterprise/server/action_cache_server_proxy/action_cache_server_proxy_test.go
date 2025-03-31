@@ -170,7 +170,8 @@ func TestActionCacheProxy_CachingAndEncryptionEnabled(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err))
 
 	// Write it through the proxy and confirm it's readable from the proxy and
-	// backing cache.
+	// backing cache--this would theoretically stuff the cache if the user
+	// wasn't using encryption.
 	update(ctx, proxy, digestA, 1, t)
 	require.Equal(t, int32(1), get(ctx, ac, digestA, t).GetExitCode())
 	require.Equal(t, int32(1), get(ctx, proxy, digestA, t).GetExitCode())
