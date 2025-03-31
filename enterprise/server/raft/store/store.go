@@ -3126,8 +3126,8 @@ func (s *Store) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) 
 	return res
 }
 
-func (s *Store) TestingWaitForGC() {
-	s.usages.TestingWaitForGC()
+func (s *Store) TestingWaitForGC() error {
+	return s.usages.TestingWaitForGC()
 }
 
 func (s *Store) TestingFlush() {
