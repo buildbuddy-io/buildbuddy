@@ -37,7 +37,7 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 		SizeBytes: 1234,
 	}
 	compressedSize := int64(123)
-	ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, iid, rmd)
+	ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, rmd)
 
 	dl := ht.TrackDownload(d)
 	dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
@@ -89,7 +89,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 			SizeBytes: 1000,
 		}
 		compressedSize := int64(100)
-		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, iid, rmd)
+		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, rmd)
 
 		dl := ht.TrackDownload(d)
 		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
@@ -115,7 +115,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 			SizeBytes: 2000,
 		}
 		compressedSize := int64(100)
-		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, iid, rmd)
+		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, rmd)
 
 		dl := ht.TrackDownload(d)
 		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
@@ -138,7 +138,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 			Hash:      "7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
 			SizeBytes: 111,
 		}
-		ht := env.GetHitTrackerFactory().NewACHitTracker(ctx, iid, rmd)
+		ht := env.GetHitTrackerFactory().NewACHitTracker(ctx, rmd)
 
 		dl := ht.TrackDownload(d)
 		dl.CloseWithBytesTransferred(d.SizeBytes, d.SizeBytes, repb.Compressor_IDENTITY, "test")

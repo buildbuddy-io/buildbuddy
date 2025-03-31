@@ -158,21 +158,21 @@ type HitTracker struct {
 	executedActionMetadata *repb.ExecutedActionMetadata
 }
 
-func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, invocationID string, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	return h.newHitTracker(ctx, invocationID, requestMetadata, true)
+func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return h.newHitTracker(ctx, requestMetadata, true)
 }
 
-func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, invocationID string, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	return h.newHitTracker(ctx, invocationID, requestMetadata, false)
+func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return h.newHitTracker(ctx, requestMetadata, false)
 }
 
-func (h HitTrackerFactory) newHitTracker(ctx context.Context, invocationID string, requestMetadata *repb.RequestMetadata, actionCache bool) interfaces.HitTracker {
+func (h HitTrackerFactory) newHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, actionCache bool) interfaces.HitTracker {
 	return &HitTracker{
 		env:             h.env,
 		c:               h.env.GetMetricsCollector(),
 		usage:           h.env.GetUsageTracker(),
 		ctx:             ctx,
-		iid:             invocationID,
+		iid:             requestMetadata.GetToolInvocationId(),
 		actionCache:     actionCache,
 		requestMetadata: requestMetadata,
 	}

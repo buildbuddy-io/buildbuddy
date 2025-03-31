@@ -7,39 +7,23 @@ import "proto/resource.proto";
 
 package hit_tracker;
 
-// Contains information about an artifact that was downloaded from the cache.
-message Download {
+// Information about a cache hit.
+message CacheHit {
+  // The Bazel request metadata protocol buffer associated with this hit.
+  build.bazel.remote.execution.v2.RequestMetadata request_metadata = 1;
+
   // The resource that was downloaded. Only digest and compressor are used.
-  resource.ResourceName resource = 1;
+  resource.ResourceName resource = 2;
 
   // The number of bytes that were downloaded.
-  int64 size_bytes = 2;
+  int64 size_bytes = 3;
 
   // The time taken for the download.
-  google.protobuf.Duration duration = 3;
-}
-
-// Information about cache hits for a particular invocation.
-message CacheHits {
-  // The Bazel request metadata protocol buffer associated with these hits.
-  build.bazel.remote.execution.v2.RequestMetadata request_metadata = 2;
-
-  // The number of empty digests that "hit" the cache.
-  int64 empty_hits = 3;
-
-  // Information about cache downloads (size, duration, etc.).
-  repeated Download downloads = 4;
-}
-
-message CacheHitsByInvocation {
-  // The invocation ID associated with these hits.
-  string invocation_id = 1;
-
-  repeated CacheHits hits = 2;
+  google.protobuf.Duration duration = 4;
 }
 
 message TrackRequest {
-  repeated CacheHitsByInvocation hits = 1;
+  repeated CacheHit hits = 1;
 }
 
 message TrackResponse {}
