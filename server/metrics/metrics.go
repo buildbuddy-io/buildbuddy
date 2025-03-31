@@ -201,7 +201,7 @@ const (
 	// The ID of a raft listener
 	RaftListenerID = "listener_id"
 
-	// The source of the event broadcase
+	// The source of the event broadcast.
 	RaftEventBroadcaster = "event_broadcast_source"
 
 	// Raft Event Type, such as "range-removed", "range-usage-updated"
