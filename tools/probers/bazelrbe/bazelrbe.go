@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	mrand "math/rand/v2"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -37,7 +39,8 @@ func createEchoRule(targetName string, inputs, outputs []string) (string, error)
 		srcs = append(srcs, `"`+input+`"`)
 		outs = append(outs, `"`+outputs[i]+`"`)
 	}
-
+	// Disable affinity routing by adding a random salt to platform properties.
+	salt := mrand.Uint64()
 	return fmt.Sprintf(`
 genrule(
       name = "%s",
@@ -52,8 +55,9 @@ genrule(
 			/bin/cat "$$src" > "$$out"
 		  done
       """,
+	  exec_properties = {"salt": "%d"},
 )
-`, targetName, strings.Join(srcs, ","), strings.Join(outs, ",")), nil
+`, targetName, strings.Join(srcs, ","), strings.Join(outs, ","), salt), nil
 }
 
 func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes int) error {
