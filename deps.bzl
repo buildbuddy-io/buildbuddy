@@ -1366,6 +1366,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v3.2.0+incompatible",
     )
     go_repository(
+        name = "com_github_dgryski_go_farm",
+        importpath = "github.com/dgryski/go-farm",
+        sum = "h1:aIftn67I1fkbMa512G+w+Pxci9hJPB8oMnkcP3iZF38=",
+        version = "v0.0.0-20240924180020-3414d57e47da",
+    )
+    go_repository(
         name = "com_github_dgryski_go_rendezvous",
         importpath = "github.com/dgryski/go-rendezvous",
         sum = "h1:lO4WD4F/rVNCu3HqELle0jiPLLBs70cWOduZpkS1E78=",

@@ -307,11 +307,12 @@ func main() {
 		log.Fatalf("Failed to initialize runner pool: %s", err)
 	}
 
-	executor, err := remote_executor.NewExecutor(env, executorID, getExecutorHostID(), getExecutorHostName(), runnerPool)
+	executorHostName := getExecutorHostName()
+	executor, err := remote_executor.NewExecutor(env, executorID, getExecutorHostID(), executorHostName, runnerPool)
 	if err != nil {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}
-	taskLeaser := task_leaser.NewTaskLeaser(env, executorID)
+	taskLeaser := task_leaser.NewTaskLeaser(env, executorID, executorHostName)
 	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, taskLeaser, &priority_task_scheduler.Options{})
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
