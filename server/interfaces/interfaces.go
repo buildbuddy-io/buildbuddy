@@ -1691,7 +1691,6 @@ type TransferTimer interface {
 type HitTracker interface {
 	SetExecutedActionMetadata(md *repb.ExecutedActionMetadata)
 	TrackMiss(d *repb.Digest) error
-	TrackEmptyHit() error
 	TrackDownload(d *repb.Digest) TransferTimer
 	TrackUpload(d *repb.Digest) TransferTimer
 }

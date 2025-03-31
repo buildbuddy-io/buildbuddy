@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -124,6 +125,26 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 			CASCacheHits:           1,
 			TotalDownloadSizeBytes: 2000,
 		}}, ut.Increments)
+		ut.Increments = nil
+	}
+	{
+		// Bazel CAS empty cache hit
+		rmd := &repb.RequestMetadata{
+			ToolInvocationId: iid,
+			ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
+			ActionMnemonic:   "GoCompile",
+			TargetId:         "//foo:bar",
+		}
+		d := &repb.Digest{
+			Hash:      digest.EmptySha256,
+			SizeBytes: 0,
+		}
+		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, rmd)
+
+		dl := ht.TrackDownload(d)
+		dl.CloseWithBytesTransferred(0, 0, repb.Compressor_ZSTD, "test")
+
+		assert.Equal(t, []*tables.UsageCounts{{CASCacheHits: 1}}, ut.Increments)
 		ut.Increments = nil
 	}
 	{
