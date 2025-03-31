@@ -101,7 +101,8 @@ REPO_CONFIGS = [
                 --build_metadata=TAGS=dev-qa \
                 --extra_execution_platforms=@buildbuddy_toolchain//:platform \
                 --platforms=@buildbuddy_toolchain//:platform \
-                --remote_header=x-buildbuddy-api-key={}
+                --remote_header=x-buildbuddy-api-key={} \
+                --remote_grpc_log=grpc_log.bin
         """.format(API_KEY),
     },
     {
