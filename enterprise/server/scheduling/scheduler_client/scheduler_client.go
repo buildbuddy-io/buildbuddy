@@ -152,8 +152,7 @@ func (r *Registration) Statusz(ctx context.Context) string {
 
 func (r *Registration) UpdateStatusz(w http.ResponseWriter, req *http.Request) {
 	if err := req.ParseForm(); err != nil {
-		w.Write([]byte(err.Error()))
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	paused := req.FormValue("pause") == "true"
