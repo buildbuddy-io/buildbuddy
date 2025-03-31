@@ -5,12 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -20,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -27,9 +30,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/dgryski/go-farm"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -1680,6 +1685,18 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 					log.CtxWarningf(ctx, "Could not remove task from unclaimed list: %s", err)
 				}
 			}
+			executorHostname := req.GetExecutorHostname()
+			// TODO / DO NOT SUBMIT
+			// An alternative way of getting the executors, instead of passing
+			// it in the lease request. I'm not sure which approach I prefer.
+			// executorHostname := ""
+			// for _, exec := range nodePool.connectedExecutors {
+			// 	if exec.GetExecutorId() == executorID {
+			// 		executorHostname = exec.Host
+			// 		break
+			// 	}
+			// }
+			task.serializedTask = s.modifyTaskForExperiments(ctx, executorHostname, task.serializedTask)
 
 			// Prometheus: observe queue wait time.
 			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
@@ -1771,6 +1788,63 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	}
 
 	return nil
+}
+
+func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, task []byte) []byte {
+	fp := s.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return task
+	}
+
+	// We need the bazel RequestMetadata to make experiment decisions. The Lease
+	// RPC doesn't get this metadata, because the executor doesn't get it until
+	// the lease returns. Instead of piping it all the way through, create a new
+	// gRPC incoming context, from the serialized task's metadata.
+	taskProto := new(repb.ExecutionTask)
+	if err := proto.Unmarshal(task, taskProto); err != nil {
+		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
+		return task
+	}
+	md, found := metadata.FromIncomingContext(ctx)
+	if !found {
+		md = make(metadata.MD)
+	}
+	metaBytes, err := proto.Marshal(taskProto.GetRequestMetadata())
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to marshal request metadata: %s", err)
+		return task
+	}
+	md.Append(bazel_request.RequestMetadataKey, string(metaBytes))
+	ctx = metadata.NewIncomingContext(ctx, md)
+	ctx = bazel_request.ParseRequestMetadataOnce(ctx)
+
+	var opts []any
+	if executorHostname != "" {
+		// Using this hash because it produces well distributed results, it's very
+		// fast, and it's supported in clickhouse (so we can identify executions
+		// that were part of the experiment).
+		hash := farm.Fingerprint64([]byte(executorHostname))
+		ratio := float64(hash) / float64(math.MaxUint64)
+		opts = append(opts, experiments.WithContext("executor_farm_hash_ratio", ratio))
+	}
+	skipResaving := fp.Boolean(ctx, "skip-resaving-action-snapshots", false, opts...)
+	if !skipResaving {
+		return task
+	}
+	if taskProto.GetPlatformOverrides() == nil {
+		taskProto.PlatformOverrides = new(repb.Platform)
+	}
+	plat := taskProto.GetPlatformOverrides()
+	plat.Properties = append(plat.Properties, &repb.Platform_Property{
+		Name:  platform.DontResaveActionSnapshotsPropertyName,
+		Value: "true",
+	})
+	if newTask, err := proto.Marshal(taskProto); err != nil {
+		log.CtxWarningf(ctx, "Failed to marshal ExecutionTask: %s", err)
+		return task
+	} else {
+		return newTask
+	}
 }
 
 type enqueueTaskReservationOpts struct {

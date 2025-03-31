@@ -44,6 +44,9 @@ message LeaseTaskRequest {
   // ID of the executor making the request.
   string executor_id = 4;
 
+  // The hostname of the executor making the request.
+  string executor_hostname = 9;
+
   // Indicates that the leased task could not be run to completion and should
   // be re-enqueued to be retried.
   bool re_enqueue = 5;
