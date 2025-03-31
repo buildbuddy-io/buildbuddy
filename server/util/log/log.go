@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -315,6 +316,55 @@ func (l *Logger) Fatalf(format string, args ...interface{}) {
 	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
+}
+
+func (l Logger) EveryN(n uint32) Logger {
+	return Logger{
+		zl: l.zl.Sample(&zerolog.LevelSampler{
+			TraceSampler: &zerolog.BasicSampler{N: n},
+			DebugSampler: &zerolog.BasicSampler{N: n},
+			InfoSampler:  &zerolog.BasicSampler{N: n},
+			WarnSampler:  &zerolog.BasicSampler{N: n},
+			ErrorSampler: &zerolog.BasicSampler{N: n},
+		}),
+	}
+}
+
+// DurationSampler is a sampler that will send every time.Duration, regardless
+// of level.
+type durationSampler struct {
+	LastSampleNanos atomic.Int64
+	PeriodNanos     int64
+}
+
+func newDurationSampler(d time.Duration) *durationSampler {
+	return &durationSampler{
+		PeriodNanos: d.Nanoseconds(),
+	}
+}
+
+// Sample implements the Sampler interface.
+func (s *durationSampler) Sample(lvl zerolog.Level) bool {
+	lastSampleNanos := s.LastSampleNanos.Load()
+	nowNanos := time.Now().UnixNano()
+
+	if nowNanos-s.PeriodNanos > lastSampleNanos {
+		s.LastSampleNanos.Store(nowNanos)
+		return true
+	}
+	return false
+}
+
+func (l Logger) EveryDuration(d time.Duration) Logger {
+	return Logger{
+		zl: l.zl.Sample(&zerolog.LevelSampler{
+			TraceSampler: newDurationSampler(d),
+			DebugSampler: newDurationSampler(d),
+			InfoSampler:  newDurationSampler(d),
+			WarnSampler:  newDurationSampler(d),
+			ErrorSampler: newDurationSampler(d),
+		}),
+	}
 }
 
 func NamedSubLogger(name string) Logger {
