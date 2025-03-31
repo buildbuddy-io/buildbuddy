@@ -318,6 +318,9 @@ func (l *Logger) Fatalf(format string, args ...interface{}) {
 	os.Exit(1)
 }
 
+// EveryN returns a new logger that will only emit a log every N times it is
+// called. This can be used to reduce the frequency of logs that are similar and
+// frequent.
 func (l Logger) EveryN(n uint32) Logger {
 	return Logger{
 		zl: l.zl.Sample(&zerolog.LevelSampler{
@@ -330,7 +333,7 @@ func (l Logger) EveryN(n uint32) Logger {
 	}
 }
 
-// DurationSampler is a sampler that will send every time.Duration, regardless
+// durationSampler is a sampler that will send every time.Duration, regardless
 // of level.
 type durationSampler struct {
 	LastSampleNanos atomic.Int64
@@ -355,6 +358,9 @@ func (s *durationSampler) Sample(lvl zerolog.Level) bool {
 	return false
 }
 
+// EveryDuration returns a new logger that will only log anew after every
+// duration d has passed. This can be useful if you want to limit the
+// frequency of some logging to once per second or something.
 func (l Logger) EveryDuration(d time.Duration) Logger {
 	return Logger{
 		zl: l.zl.Sample(&zerolog.LevelSampler{
