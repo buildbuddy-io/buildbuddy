@@ -10,7 +10,6 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/http/httpclient",
-        "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
@@ -20,7 +19,6 @@ go_library(
         "//server/util/status",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
-        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
