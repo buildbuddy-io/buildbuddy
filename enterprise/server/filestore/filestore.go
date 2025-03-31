@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 
@@ -806,13 +807,18 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	if fs.gcs == nil || fs.appName == "" {
 		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	blobName, err := fs.BlobKey(fs.appName, fileRecord)
+	blobNameBytes, err := fs.BlobKey(fs.appName, fileRecord)
 	if err != nil {
 		return nil, err
 	}
+	salt, err := random.RandomString(5)
+	if err != nil {
+		return nil, err
+	}
+	blobName := string(blobNameBytes) + "-" + salt
 
 	customTime := fs.clock.Now()
-	wc, err := fs.gcs.ConditionalWriter(ctx, string(blobName), true /*=overwriteExisting*/, customTime)
+	wc, err := fs.gcs.ConditionalWriter(ctx, blobName, true /*=overwriteExisting*/, customTime)
 	if err != nil {
 		return nil, err
 	}
