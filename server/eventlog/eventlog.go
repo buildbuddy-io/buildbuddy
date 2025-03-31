@@ -331,7 +331,7 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 	return result.data, nil
 }
 
-func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, pubsub interfaces.PubSub, pubsubChannel string, eventLogPath string, numLinesToRetain int) *EventLogWriter {
+func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, pubsub interfaces.PubSub, pubsubChannel string, eventLogPath string, numLinesToRetain int) (*EventLogWriter, error) {
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
 	}
@@ -351,14 +351,18 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 		WriteHook:            writeHook,
 	}
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
+	sw, err := terminal.NewScreenWriter()
+	if err != nil {
+		return nil, err
+	}
 	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
 		WriteWithTailCloser:           cw,
-		terminalWriter:                terminal.NewScreenWriter(),
+		terminalWriter:                sw,
 		numLinesToRetainForANSICursor: numLinesToRetain,
 	}
 	eventLogWriter.chunkstoreWriter = cw
 
-	return eventLogWriter
+	return eventLogWriter, nil
 }
 
 type WriteCloserWithContext interface {
@@ -437,9 +441,9 @@ func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, erro
 	}
 	popped := w.terminalWriter.PopExtraLines(w.numLinesToRetainForANSICursor)
 	if len(popped) != 0 {
-		popped = append(popped, '\n')
+		popped = popped + "\n"
 	}
-	return w.WriteWithTailCloser.WriteWithTail(ctx, popped, w.terminalWriter.Render())
+	return w.WriteWithTailCloser.WriteWithTail(ctx, []byte(popped), []byte(w.terminalWriter.Render()))
 }
 
 func (w *ANSICursorBufferWriter) Close(ctx context.Context) error {

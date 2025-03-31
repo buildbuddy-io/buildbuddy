@@ -5,22 +5,21 @@ import (
 )
 
 type ScreenWriter struct {
-	screen *bkterminal.Screen
+	*bkterminal.Screen
 }
 
-func NewScreenWriter() *ScreenWriter {
-	return &ScreenWriter{screen: bkterminal.NewScreen()}
+func NewScreenWriter() (*ScreenWriter, error) {
+	s, err := bkterminal.NewScreen()
+	if err != nil {
+		return nil, err
+	}
+	return &ScreenWriter{Screen: s}, nil
 }
 
-func (w *ScreenWriter) Write(p []byte) (int, error) {
-	bkterminal.ParseANSIToScreen(w.screen, p)
-	return len(p), nil
+func (w *ScreenWriter) Render() string {
+	return w.Screen.AsANSI()
 }
 
-func (w *ScreenWriter) Render() []byte {
-	return w.screen.AsANSI()
-}
-
-func (w *ScreenWriter) PopExtraLines(numLinesToRetain int) []byte {
-	return w.screen.FlushLinesFromTop(numLinesToRetain)
+func (w *ScreenWriter) PopExtraLines(numLinesToRetain int) string {
+	return w.Screen.FlushLinesFromTop(numLinesToRetain)
 }
