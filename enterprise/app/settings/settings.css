@@ -105,6 +105,16 @@
   display: flex;
 }
 
+.setup-button-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setup-button-container .left-aligned-button {
+  align-self: flex-start;
+}
+
 /* Large screen */
 @media (min-width: 1281px) {
   .settings .settings-tabs {

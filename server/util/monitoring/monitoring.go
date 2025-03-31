@@ -45,7 +45,7 @@ func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
 	handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
 
 	// Statusz page
-	handle("/statusz", statusz.Server())
+	handle(statusz.StatuszPath, statusz.Server())
 
 	// Flagz page
 	handle("/flagz", http.HandlerFunc(flagz.ServeHTTP))

@@ -56,19 +56,31 @@ type addresses struct {
 	raft string
 }
 
+type nodeInfoSet map[raftio.NodeInfo]struct{}
+
 // StaticRegistry is used to manage all known node addresses in the multi raft
 // system. The transport layer uses this address registry to locate nodes.
 type StaticRegistry struct {
 	partitioner *fixedPartitioner
 	validate    dbConfig.TargetValidator
 
-	nodeTargets     sync.Map // map of raftio.NodeInfo => NHID(string)
+	mu          sync.Mutex                 // protects shards and nodeTargets
+	shards      map[uint64]nodeInfoSet     // map of rangeID to a set of nodeInfo
+	nodeTargets map[raftio.NodeInfo]string // map of raftio.NodeInfo => NHID
+
 	targetAddresses sync.Map // map of NHID(string) => addresses
+
+	log log.Logger
 }
 
 // NewStaticNodeRegistry returns a new StaticRegistry object.
-func NewStaticNodeRegistry(streamConnections uint64, v dbConfig.TargetValidator) *StaticRegistry {
-	n := &StaticRegistry{validate: v}
+func NewStaticNodeRegistry(streamConnections uint64, v dbConfig.TargetValidator, nhlogger log.Logger) *StaticRegistry {
+	n := &StaticRegistry{
+		validate:    v,
+		shards:      make(map[uint64]nodeInfoSet),
+		nodeTargets: make(map[raftio.NodeInfo]string),
+		log:         nhlogger,
+	}
 	if streamConnections > 1 {
 		n.partitioner = &fixedPartitioner{capacity: streamConnections}
 	}
@@ -78,17 +90,30 @@ func NewStaticNodeRegistry(streamConnections uint64, v dbConfig.TargetValidator)
 // Add adds the specified node and its target info to the registry.
 func (n *StaticRegistry) Add(rangeID uint64, replicaID uint64, target string) {
 	if n.validate != nil && !n.validate(target) {
-		log.Errorf("invalid target %s", target)
+		n.log.Errorf("invalid target %s", target)
 		return
 	}
+
 	key := raftio.GetNodeInfo(rangeID, replicaID)
-	existingTarget, ok := n.nodeTargets.LoadOrStore(key, target)
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	s, ok := n.shards[rangeID]
+	if !ok {
+		s = make(map[raftio.NodeInfo]struct{})
+		n.shards[rangeID] = s
+	}
+	s[key] = struct{}{}
+
+	existingTarget, ok := n.nodeTargets[key]
+
 	if ok {
 		if existingTarget != target {
-			log.Errorf("inconsistent target for c%dn%d, %s:%s", rangeID, replicaID, existingTarget, target)
+			n.log.Errorf("inconsistent target for c%dn%d, %s:%s", rangeID, replicaID, existingTarget, target)
 		}
 	} else {
-		log.Debugf("added target for c%dn%d:%s", rangeID, replicaID, target)
+		n.nodeTargets[key] = target
+		n.log.Debugf("added target for c%dn%d:%s", rangeID, replicaID, target)
 	}
 }
 
@@ -101,10 +126,30 @@ func (n *StaticRegistry) getConnectionKey(addr string, rangeID uint64) string {
 
 // Remove removes a remote from the node registry.
 func (n *StaticRegistry) Remove(rangeID uint64, replicaID uint64) {
+	key := raftio.GetNodeInfo(rangeID, replicaID)
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	s, ok := n.shards[rangeID]
+	if ok {
+		delete(s, key)
+	}
+	delete(n.nodeTargets, key)
+	n.log.Debugf("removed targets for c%dn%d", rangeID, replicaID)
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
 func (n *StaticRegistry) RemoveShard(rangeID uint64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	s, ok := n.shards[rangeID]
+	if ok {
+		for ni, _ := range s {
+			delete(n.nodeTargets, ni)
+		}
+	}
+	delete(n.shards, rangeID)
+	n.log.Debugf("removed targets for range %d", rangeID)
 }
 
 // ResolveRaft returns the raft address and the connection key of the specified node.
@@ -115,7 +160,11 @@ func (n *StaticRegistry) Resolve(rangeID uint64, replicaID uint64) (string, stri
 // ResolveRaft returns the raft address and the connection key of the specified node.
 func (n *StaticRegistry) ResolveRaft(rangeID uint64, replicaID uint64) (string, string, error) {
 	key := raftio.GetNodeInfo(rangeID, replicaID)
-	if target, ok := n.nodeTargets.Load(key); ok {
+	n.mu.Lock()
+	target, ok := n.nodeTargets[key]
+	n.mu.Unlock()
+
+	if ok {
 		if a, ok := n.targetAddresses.Load(target); ok {
 			raftAddr := a.(addresses).raft
 			return raftAddr, n.getConnectionKey(raftAddr, rangeID), nil
@@ -137,7 +186,12 @@ func (n *StaticRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replic
 	}()
 
 	key := raftio.GetNodeInfo(rangeID, replicaID)
-	if target, ok := n.nodeTargets.Load(key); ok {
+
+	n.mu.Lock()
+	target, ok := n.nodeTargets[key]
+	n.mu.Unlock()
+
+	if ok {
 		if a, ok := n.targetAddresses.Load(target); ok {
 			grpcAddr := a.(addresses).grpc
 			return grpcAddr, n.getConnectionKey(grpcAddr, rangeID), nil
@@ -150,8 +204,11 @@ func (n *StaticRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replic
 // specified node.
 func (n *StaticRegistry) ResolveNHID(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error) {
 	key := raftio.GetNodeInfo(rangeID, replicaID)
-	if t, ok := n.nodeTargets.Load(key); ok {
-		target := t.(string)
+	n.mu.Lock()
+	target, ok := n.nodeTargets[key]
+	n.mu.Unlock()
+
+	if ok {
 		return target, n.getConnectionKey(target, rangeID), nil
 	}
 	return "", "", targetAddressUnknownError(rangeID, replicaID)
@@ -197,15 +254,14 @@ func (n *StaticRegistry) Close() error {
 
 func (n *StaticRegistry) String() string {
 	nhidToReplicas := make(map[string][]*rfpb.ReplicaDescriptor)
-	n.nodeTargets.Range(func(k, v interface{}) bool {
-		nhid := v.(string)
-		ni := k.(raftio.NodeInfo)
+	n.mu.Lock()
+	for ni, nhid := range n.nodeTargets {
 		nhidToReplicas[nhid] = append(nhidToReplicas[nhid], &rfpb.ReplicaDescriptor{
 			RangeId:   ni.ShardID,
 			ReplicaId: ni.ReplicaID,
 		})
-		return true
-	})
+	}
+	n.mu.Unlock()
 	for _, replicas := range nhidToReplicas {
 		sort.Slice(replicas, func(i, j int) bool {
 			if replicas[i].GetRangeId() == replicas[j].GetRangeId() {
@@ -239,10 +295,10 @@ type DynamicNodeRegistry struct {
 // hand this to the raft library when we set things up. It will create a single
 // DynamicNodeRegistry and use it to resolve all other raft nodes until the
 // process shuts down.
-func NewDynamicNodeRegistry(gossipManager interfaces.GossipService, streamConnections uint64, v dbConfig.TargetValidator) *DynamicNodeRegistry {
+func NewDynamicNodeRegistry(gossipManager interfaces.GossipService, streamConnections uint64, v dbConfig.TargetValidator, nhlog log.Logger) *DynamicNodeRegistry {
 	dnr := &DynamicNodeRegistry{
 		gossipManager: gossipManager,
-		sReg:          NewStaticNodeRegistry(streamConnections, v),
+		sReg:          NewStaticNodeRegistry(streamConnections, v, nhlog),
 	}
 	// Register the node registry as a gossip listener so that it receives
 	// gossip callbacks.
@@ -259,7 +315,7 @@ func (d *DynamicNodeRegistry) handleEvent(event *serf.UserEvent) {
 		return
 	}
 	if req.GetNhid() == "" {
-		log.Warningf("Ignoring malformed registry push request: %+v", req)
+		d.sReg.log.Warningf("Ignoring malformed registry push request: %+v", req)
 		return
 	}
 	if req.GetGrpcAddress() != "" || req.GetRaftAddress() != "" {
@@ -285,7 +341,7 @@ func (d *DynamicNodeRegistry) handleQuery(ctx context.Context, query *serf.Query
 		return
 	}
 	if req.GetRangeId() == 0 || req.GetReplicaId() == 0 {
-		log.Warningf("Ignoring malformed registry query: %+v", req)
+		d.sReg.log.Warningf("Ignoring malformed registry query: %+v", req)
 		return
 	}
 	n, _, err := d.sReg.ResolveNHID(ctx, req.GetRangeId(), req.GetReplicaId())
@@ -310,7 +366,7 @@ func (d *DynamicNodeRegistry) handleQuery(ctx context.Context, query *serf.Query
 		return
 	}
 	if err := query.Respond(buf); err != nil {
-		log.Debugf("Error responding to gossip query: %s", err)
+		d.sReg.log.Debugf("Error responding to gossip query: %s", err)
 	}
 }
 
@@ -331,19 +387,18 @@ func (d *DynamicNodeRegistry) OnEvent(updateType serf.EventType, event serf.Even
 func (d *DynamicNodeRegistry) pushUpdate(req *rfpb.RegistryPushRequest) {
 	buf, err := proto.Marshal(req)
 	if err != nil {
-		log.Errorf("error marshaling proto: %s", err)
+		d.sReg.log.Errorf("error marshaling proto: %s", err)
 		return
 	}
 	err = d.gossipManager.SendUserEvent(constants.RegistryUpdateEvent, buf, true)
 	if err != nil {
-		log.Errorf("error pushing gossip update: %s", err)
+		d.sReg.log.Errorf("error pushing gossip update: %s", err)
 	}
 }
 
 // queryPeers queries the gossip network for node that hold the specified rangeID
 // and replicaID. If any nodes are found, they are added to the static registry.
 func (d *DynamicNodeRegistry) queryPeers(ctx context.Context, rangeID uint64, replicaID uint64) {
-	log.Debugf("queryPeers for c%dn%d", rangeID, replicaID)
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	rangeIDAttr := attribute.Int64("range_id", int64(rangeID))
 	replicaIDAttr := attribute.Int64("replica_id", int64(replicaID))
@@ -360,7 +415,7 @@ func (d *DynamicNodeRegistry) queryPeers(ctx context.Context, rangeID uint64, re
 	}
 	stream, err := d.gossipManager.Query(constants.RegistryQueryEvent, buf, nil)
 	if err != nil {
-		log.Warningf("queryPeers failed: gossip Query returned err: %s", err)
+		d.sReg.log.Warningf("queryPeers failed: gossip Query returned err: %s", err)
 		return
 	}
 	for p := range stream.ResponseCh() {
@@ -369,7 +424,7 @@ func (d *DynamicNodeRegistry) queryPeers(ctx context.Context, rangeID uint64, re
 			continue
 		}
 		if rsp.GetNhid() == "" {
-			log.Warningf("queryPeers ignoring malformed query response: %+v", rsp)
+			d.sReg.log.Warningf("queryPeers ignoring malformed query response: %+v", rsp)
 			continue
 		}
 		d.sReg.Add(rangeID, replicaID, rsp.GetNhid())
@@ -393,10 +448,12 @@ func (d *DynamicNodeRegistry) Add(rangeID uint64, replicaID uint64, target strin
 
 // Remove removes a remote from the node registry.
 func (d *DynamicNodeRegistry) Remove(rangeID uint64, replicaID uint64) {
+	d.sReg.Remove(rangeID, replicaID)
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
 func (d *DynamicNodeRegistry) RemoveShard(rangeID uint64) {
+	d.sReg.RemoveShard(rangeID)
 }
 
 // ListNodes lists all entries from the registry.

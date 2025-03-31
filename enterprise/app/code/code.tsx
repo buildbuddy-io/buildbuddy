@@ -40,6 +40,7 @@ import picker_service, { PickerModel } from "../../../app/picker/picker_service"
 import { GithubIcon } from "../../../app/icons/github";
 import { getLangHintFromFilePath } from "../monaco/monaco";
 import SearchBar from "../../../app/components/search_bar/search_bar";
+import { linkReadWriteGitHubAppURL } from "../../../app/util/github";
 
 interface Props {
   user: User;
@@ -882,12 +883,11 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({ temporaryFiles: this.state.temporaryFiles });
   }
 
+  // TODO: Have a better way to manage which features require write permissions
+  // and gate them for users that have installed the read-only app.
   handleGitHubClicked() {
-    const params = new URLSearchParams({
-      redirect_url: window.location.href,
-      ...(this.props.user.displayUser.userId && { user_id: this.props.user.displayUser.userId.id }),
-    });
-    window.location.href = `/auth/github/app/link/?${params}`;
+    const userID = this.props.user.displayUser.userId?.id || "";
+    window.location.href = linkReadWriteGitHubAppURL(userID, "");
   }
 
   handleUpdatePR() {

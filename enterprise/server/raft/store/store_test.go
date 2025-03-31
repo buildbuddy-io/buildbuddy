@@ -656,7 +656,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	rd := s.GetRange(2)
 	// Veirfy that nhid in the range descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
-		nhid, _, err := sf.Registry().ResolveNHID(ctx, repl.GetRangeId(), repl.GetReplicaId())
+		nhid, _, err := s.Registry.ResolveNHID(ctx, repl.GetRangeId(), repl.GetReplicaId())
 		require.NoError(t, err)
 		require.Equal(t, repl.GetNhid(), nhid)
 	}
@@ -675,7 +675,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	rd = s.GetRange(3)
 	// Veirfy that nhid in the rangea descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
-		nhid, _, err := sf.Registry().ResolveNHID(ctx, repl.GetRangeId(), repl.GetReplicaId())
+		nhid, _, err := s.Registry.ResolveNHID(ctx, repl.GetRangeId(), repl.GetReplicaId())
 		require.NoError(t, err)
 		require.Equal(t, repl.GetNhid(), nhid)
 	}

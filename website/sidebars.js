@@ -12,8 +12,13 @@ module.exports = {
       "rbe-github-actions",
       "rbe-pools",
     ],
-    "Workflows (CI)": ["workflows-introduction", "workflows-setup", "workflows-config"],
-    "Remote Bazel": ["remote-bazel-introduction"],
+    "Remote Runners (CI)": [
+      "remote-runner-introduction",
+      "remote-runner-features",
+      "workflows-setup",
+      "workflows-config",
+      "remote-bazel",
+    ],
     CLI: ["cli", "cli-plugins"],
     Troubleshooting: ["troubleshooting", "troubleshooting-rbe", "troubleshooting-slow-upload"],
     Enterprise: [

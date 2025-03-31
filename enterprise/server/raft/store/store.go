@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
@@ -119,9 +120,10 @@ type Store struct {
 	db     pebble.IPebbleDB
 	leaser pebble.Leaser
 
-	configuredClusters int
-	rangeMu            sync.RWMutex
-	openRanges         map[uint64]*rfpb.RangeDescriptor
+	configuredClusters atomic.Int32
+
+	rangeMu    sync.RWMutex
+	openRanges map[uint64]*rfpb.RangeDescriptor
 
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
@@ -168,7 +170,8 @@ type registryHolder struct {
 }
 
 func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v)
+	nhLog := log.NamedSubLogger(nhid)
+	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v, nhLog)
 	rc.r = r
 	r.AddNode(nhid, rc.raftAddr, rc.grpcAddr)
 	return r, nil
@@ -346,7 +349,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 				}
 				return status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
 			}
-			s.configuredClusters++
+			s.configuredClusters.Add(1)
 			s.log.Infof("Recreated c%dn%d in %s. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, time.Since(start), i+1, numReplicas)
 			return nil
 		})
@@ -965,7 +968,7 @@ func (s *Store) APIClient() *client.APIClient {
 }
 
 func (s *Store) ConfiguredClusters() int {
-	return s.configuredClusters
+	return int(s.configuredClusters.Load())
 }
 
 func (s *Store) NodeHost() *dragonboat.NodeHost {
@@ -2285,9 +2288,9 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 				// There are probably no client sessions to delete.
 				return nil
 			}
+		} else {
+			return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to parse lastExecutionTime", rd.GetRangeId())
 		}
-
-		return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to parse lastExecutionTime", rd.GetRangeId())
 	}
 
 	if !w.store.HaveLease(ctx, rd.GetRangeId()) {
@@ -3126,8 +3129,8 @@ func (s *Store) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) 
 	return res
 }
 
-func (s *Store) TestingWaitForGC() {
-	s.usages.TestingWaitForGC()
+func (s *Store) TestingWaitForGC() error {
+	return s.usages.TestingWaitForGC()
 }
 
 func (s *Store) TestingFlush() {
