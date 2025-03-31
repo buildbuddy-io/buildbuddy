@@ -60,6 +60,24 @@ func NewClient(timeout time.Duration, allowedPrivateIPNets []*net.IPNet) *http.C
 	}
 }
 
+func NewClientWithLocalhost(timeout time.Duration) *http.Client {
+	allowedPrivateIPNets := []*net.IPNet{
+		&net.IPNet{
+			IP:   net.IPv4(127, 0, 0, 0),
+			Mask: net.CIDRMask(8, 32),
+		},
+		&net.IPNet{
+			IP:   net.ParseIP("::1"),
+			Mask: net.CIDRMask(128, 128),
+		},
+	}
+	return NewClient(timeout, allowedPrivateIPNets)
+}
+
+func NewClientNoPrivateIPs(timeout time.Duration) *http.Client {
+	return NewClient(timeout, []*net.IPNet{})
+}
+
 type metricsTransport struct {
 	inner http.RoundTripper
 }

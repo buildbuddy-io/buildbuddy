@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,6 +34,7 @@ type simplePullTestCase struct {
 
 func TestPull(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	flags.Set(t, "ociregistry.allow_localhost", true)
 
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
