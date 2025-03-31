@@ -968,7 +968,7 @@ func (s *Store) APIClient() *client.APIClient {
 }
 
 func (s *Store) ConfiguredClusters() int {
-	return s.configuredClusters.Load()
+	return int(s.configuredClusters.Load())
 }
 
 func (s *Store) NodeHost() *dragonboat.NodeHost {
