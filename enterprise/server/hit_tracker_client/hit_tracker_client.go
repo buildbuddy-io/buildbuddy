@@ -38,10 +38,6 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 	return nil
 }
 
-func (h *HitTracker) TrackEmptyHit() error {
-	return nil
-}
-
 type TransferTimer struct {
 }
 
