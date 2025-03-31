@@ -575,6 +575,7 @@ message File {
   int64 length = 6;
 }
 
+// BUILDBUDDY-SPECIFIC EVENTS BELOW
 message Tree {
   // Where the tree is to be planted.
   string name = 1;
@@ -627,7 +628,7 @@ message ActionExecuted {
   repeated string command_line = 9;
 
   // List of paths to log files
-  repeated File action_metadata_logs = 10;
+  repeated File action_metadata_logs = 10 [deprecated = true];
 
   // Only populated if success = false, and sometimes not even then.
   failure_details.FailureDetail failure_detail = 11;
