@@ -149,7 +149,11 @@ func (la *leaseAgent) sendRangeEvent(eventType events.EventType) {
 	case la.broadcast <- ev:
 		break
 	default:
-		la.log.Warningf("Dropping range event: %+v", ev)
+		metrics.RaftStoreEventBroadcastDropped.With(prometheus.Labels{
+			metrics.RaftEventBroadcaster: "leasekeeper",
+			metrics.RaftEventType:        ev.EventType().String(),
+		}).Inc()
+		la.log.Warningf("leaseAgent dropped range event: %+v", ev)
 	}
 }
 

@@ -194,11 +194,18 @@ const (
 	// Raft RangeCache event type: `hit`, `miss`, or `update`.
 	RaftRangeCacheEventTypeLabel = "rangecache_event_type"
 
-	// Raft Listener Event Type
+	// Raft Listener Event Type, such as "LeaderUpdated". These are events sent
+	// by dragonboat library.
 	RaftListenerEventType = "listener_event"
 
 	// The ID of a raft listener
 	RaftListenerID = "listener_id"
+
+	// The source of the event broadcast.
+	RaftEventBroadcaster = "event_broadcast_source"
+
+	// Raft Event Type, such as "range-removed", "range-usage-updated"
+	RaftEventType = "raft_event"
 
 	// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
@@ -2454,6 +2461,33 @@ var (
 	}, []string{
 		RaftListenerID,
 		RaftListenerEventType,
+	})
+
+	RaftStoreEventsChanSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "store_events",
+		Help:      "Number of events in the queue",
+	})
+
+	RaftStoreEventBroadcastDropped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "store_event_broadcast_dropped",
+		Help:      "The total number of dropped events to broadcast",
+	}, []string{
+		RaftEventBroadcaster,
+		RaftEventType,
+	})
+
+	RaftStoreEventListenerDropped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "store_event_listener_dropped",
+		Help:      "The total number of dropped events in store",
+	}, []string{
+		RaftListenerID,
+		RaftEventType,
 	})
 
 	RaftLeaseActionCount = promauto.NewCounterVec(prometheus.CounterOpts{
