@@ -1620,6 +1620,17 @@ func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.Unlin
 	}
 	return rsp, nil
 }
+func (s *BuildBuddyServer) GetGitHubAppInstallPath(ctx context.Context, req *ghpb.GetGithubAppInstallPathRequest) (*ghpb.GetGithubAppInstallPathResponse, error) {
+	gh := s.env.GetGitHubAppService()
+	if gh == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	installPath, err := gh.InstallPath(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &ghpb.GetGithubAppInstallPathResponse{InstallPath: installPath}, nil
+}
 
 func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb.InvalidateSnapshotRequest) (*wfpb.InvalidateSnapshotResponse, error) {
 	if ss := s.env.GetSnapshotService(); ss != nil {

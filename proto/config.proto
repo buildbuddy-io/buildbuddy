@@ -183,6 +183,9 @@ message FrontendConfig {
 
   // IF set, the BuildBuddy logo will flip on hover.
   bool flip_logo_on_hover = 60;
+
+  // Whether the read-only BuildBuddy GitHub app is enabled.
+  bool read_only_github_app_enabled = 61;
 }
 
 message Region {

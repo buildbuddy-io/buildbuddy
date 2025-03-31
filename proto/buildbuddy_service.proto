@@ -168,6 +168,8 @@ service BuildBuddyService {
       returns (github.UnlinkGitHubAccountResponse);
 
   // GitHub app link API
+  rpc GetGitHubAppInstallPath(github.GetGithubAppInstallPathRequest)
+      returns (github.GetGithubAppInstallPathResponse);
   rpc LinkGitHubAppInstallation(github.LinkAppInstallationRequest)
       returns (github.LinkAppInstallationResponse);
   rpc GetGitHubAppInstallations(github.GetAppInstallationsRequest)
