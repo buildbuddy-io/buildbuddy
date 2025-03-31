@@ -537,7 +537,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 	}
 
 	for _, op := range pr.Operations {
-		if !strings.EqualFold(op.Op, "replace") {
+		if !strings.EqualFold(op.Op, "replace") && !strings.EqualFold(op.Op, "add") {
 			return nil, status.InvalidArgumentErrorf("unsupported operation %q", op.Op)
 		}
 
