@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
@@ -333,6 +334,7 @@ func (r *Registration) Start(ctx context.Context) {
 }
 
 func (r *Registration) watchRunState(rootContext context.Context) {
+	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(rootContext)
 	defer cancel()
 
@@ -342,13 +344,18 @@ func (r *Registration) watchRunState(rootContext context.Context) {
 			cancel()
 			return
 		case running := <-r.updateRunState:
+			// Always cancel first
+			cancel()
+			wg.Wait()
+			ctx, cancel = context.WithCancel(rootContext)
+
+			// Restart if it should be running
 			if running {
+				wg.Add(1)
 				go func() {
+					defer wg.Done()
 					r.maintainRegistrationAndStreamWork(ctx)
 				}()
-			} else {
-				cancel()
-				ctx, cancel = context.WithCancel(rootContext)
 			}
 		}
 	}
