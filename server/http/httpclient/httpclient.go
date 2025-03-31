@@ -77,10 +77,6 @@ func NewClient(timeout time.Duration) *http.Client {
 		}
 		return NewClientWithPrivateIPNets(timeout, allowedPrivateIPNets)
 	}
-	return NewClientNoPrivateIPs(timeout)
-}
-
-func NewClientNoPrivateIPs(timeout time.Duration) *http.Client {
 	return NewClientWithPrivateIPNets(timeout, []*net.IPNet{})
 }
 

@@ -106,7 +106,7 @@ func (s *FetchServer) newFetchClient(ctx context.Context, protoTimeout *duration
 	if protoTimeout != nil {
 		timeout = protoTimeout.AsDuration()
 	}
-	return httpclient.NewClient(timeout, s.allowedPrivateIPNets)
+	return httpclient.NewClientWithPrivateIPNets(timeout, s.allowedPrivateIPNets)
 }
 
 // parseChecksumQualifier returns a digest function and digest hash
