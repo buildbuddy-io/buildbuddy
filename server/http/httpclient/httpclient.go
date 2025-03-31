@@ -14,6 +14,8 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
+const maxHTTPTimeout = 60 * time.Minute
+
 type dialerControl = func(network, address string, conn syscall.RawConn) error
 
 func blockingDialerControl(allowed []*net.IPNet) dialerControl {
@@ -37,9 +39,14 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 }
 
 func NewClient(timeout time.Duration, allowedPrivateIPNets []*net.IPNet) *http.Client {
+	dialerTimeout := timeout
+	if timeout == 0 || timeout > maxHTTPTimeout {
+		dialerTimeout = maxHTTPTimeout
+	}
+
 	inner := &http.Transport{
 		Dial: (&net.Dialer{
-			Timeout: timeout,
+			Timeout: dialerTimeout,
 			Control: blockingDialerControl(allowedPrivateIPNets),
 		}).Dial,
 		TLSHandshakeTimeout: timeout,
