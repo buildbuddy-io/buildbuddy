@@ -2288,9 +2288,9 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 				// There are probably no client sessions to delete.
 				return nil
 			}
+		} else {
+			return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to parse lastExecutionTime", rd.GetRangeId())
 		}
-
-		return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to parse lastExecutionTime", rd.GetRangeId())
 	}
 
 	if !w.store.HaveLease(ctx, rd.GetRangeId()) {
