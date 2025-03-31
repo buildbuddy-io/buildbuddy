@@ -223,7 +223,7 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 		}))
 	}
 
-	tr := httpclient.NewClient().Transport
+	tr := httpclient.New().Transport
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
 	} else {

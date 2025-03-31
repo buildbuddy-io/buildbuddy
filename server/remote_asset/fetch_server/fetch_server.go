@@ -3,7 +3,6 @@ package fetch_server
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,7 +11,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -106,7 +104,7 @@ func (s *FetchServer) newFetchClient(ctx context.Context, protoTimeout *duration
 	if protoTimeout != nil {
 		timeout = protoTimeout.AsDuration()
 	}
-	return httpclient.NewClientWithPrivateIPNets(timeout, s.allowedPrivateIPNets)
+	return httpclient.NewWithAllowedPrivateIPs(timeout, s.allowedPrivateIPNets)
 }
 
 // parseChecksumQualifier returns a digest function and digest hash
@@ -456,26 +454,4 @@ func tempCopy(r io.Reader) (path string, err error) {
 		return "", status.UnavailableErrorf("failed to copy HTTP response to temp file: %s", err)
 	}
 	return f.Name(), nil
-}
-
-type dialerControl = func(network, address string, conn syscall.RawConn) error
-
-func blockingDialerControl(ctx context.Context, allowed []*net.IPNet) dialerControl {
-	return func(network, address string, conn syscall.RawConn) error {
-		host, _, err := net.SplitHostPort(address)
-		if err != nil {
-			return err
-		}
-		ip := net.ParseIP(host)
-		for _, ipNet := range allowed {
-			if ipNet.Contains(ip) {
-				return nil
-			}
-		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			log.CtxInfof(ctx, "Blocked Fetch for address %s", address)
-			return errors.New("IP address not allowed")
-		}
-		return nil
-	}
 }

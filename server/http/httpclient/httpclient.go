@@ -15,33 +15,22 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
+// Tests often need to make HTTP requests to localhost -- set this flag to permit those requests.
 var allowLocalhost = flag.Bool("httpclient.allow_localhost", false, "Allow HTTP requests to localhost")
 
 const maxHTTPTimeout = 60 * time.Minute
 
-type dialerControl = func(network, address string, conn syscall.RawConn) error
-
-func blockingDialerControl(allowed []*net.IPNet) dialerControl {
-	return func(network, address string, conn syscall.RawConn) error {
-		host, _, err := net.SplitHostPort(address)
-		if err != nil {
-			return err
-		}
-		ip := net.ParseIP(host)
-		for _, ipNet := range allowed {
-			if ipNet.Contains(ip) {
-				return nil
-			}
-		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			log.Infof("Blocked Fetch for address %s", address)
-			return errors.New("IP address not allowed")
-		}
-		return nil
-	}
+// Create an HTTP client that blocks connections to private IPs, records metrics on any requests made,
+// and has a consistent timeout (see maxHTTPTimeout).
+//
+// If you just want to make an HTTP request, this is the client to use.
+func New() *http.Client {
+	return NewWithAllowedPrivateIPs(maxHTTPTimeout, []*net.IPNet{})
 }
 
-func NewClientWithPrivateIPNets(timeout time.Duration, allowedPrivateIPNets []*net.IPNet) *http.Client {
+// Create an HTTP client blocks connections to all but the specified private IPs, records metrics on any requests made,
+// and uses the specified timeout (passing a timeout of 0 will use maxHTTPTimeout),
+func NewWithAllowedPrivateIPs(timeout time.Duration, allowedPrivateIPNets []*net.IPNet) *http.Client {
 	dialerTimeout := timeout
 	if timeout == 0 || timeout > maxHTTPTimeout {
 		dialerTimeout = maxHTTPTimeout
@@ -63,21 +52,26 @@ func NewClientWithPrivateIPNets(timeout time.Duration, allowedPrivateIPNets []*n
 	}
 }
 
-func NewClient() *http.Client {
-	if *allowLocalhost {
-		allowedPrivateIPNets := []*net.IPNet{
-			&net.IPNet{
-				IP:   net.IPv4(127, 0, 0, 0),
-				Mask: net.CIDRMask(8, 32),
-			},
-			&net.IPNet{
-				IP:   net.ParseIP("::1"),
-				Mask: net.CIDRMask(128, 128),
-			},
+type dialerControl = func(network, address string, conn syscall.RawConn) error
+
+func blockingDialerControl(allowed []*net.IPNet) dialerControl {
+	return func(network, address string, conn syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return err
 		}
-		return NewClientWithPrivateIPNets(maxHTTPTimeout, allowedPrivateIPNets)
+		ip := net.ParseIP(host)
+		for _, ipNet := range allowed {
+			if ipNet.Contains(ip) {
+				return nil
+			}
+		}
+		if (ip.IsLoopback() && !*allowLocalhost) || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			log.Infof("Blocked Fetch for address %s", address)
+			return errors.New("IP address not allowed")
+		}
+		return nil
 	}
-	return NewClientWithPrivateIPNets(maxHTTPTimeout, []*net.IPNet{})
 }
 
 // verify that metricsTransport implements the RoundTripper interface

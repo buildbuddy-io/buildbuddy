@@ -67,7 +67,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*registry, error) {
-	client := httpclient.NewClient()
+	client := httpclient.New()
 	r := &registry{
 		env:    env,
 		client: client,
