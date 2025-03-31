@@ -119,9 +119,11 @@ type Store struct {
 	db     pebble.IPebbleDB
 	leaser pebble.Leaser
 
-	configuredClusters int
-	rangeMu            sync.RWMutex
-	openRanges         map[uint64]*rfpb.RangeDescriptor
+	configuredClustersMu sync.Mutex
+	configuredClusters   int
+
+	rangeMu    sync.RWMutex
+	openRanges map[uint64]*rfpb.RangeDescriptor
 
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
@@ -347,7 +349,9 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 				}
 				return status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
 			}
+			s.configuredClustersMu.Lock()
 			s.configuredClusters++
+			s.configuredClustersMu.Unlock()
 			s.log.Infof("Recreated c%dn%d in %s. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, time.Since(start), i+1, numReplicas)
 			return nil
 		})
@@ -966,6 +970,8 @@ func (s *Store) APIClient() *client.APIClient {
 }
 
 func (s *Store) ConfiguredClusters() int {
+	s.configuredClustersMu.Lock()
+	defer s.configuredClustersMu.Unlock()
 	return s.configuredClusters
 }
 
