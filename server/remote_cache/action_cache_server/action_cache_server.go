@@ -155,7 +155,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 
-	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetInvocationID(ctx))
+	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 
@@ -258,7 +258,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return req.ActionResult, nil
 	}
 
-	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetInvocationID(ctx))
+	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	ht.SetExecutedActionMetadata(req.GetActionResult().GetExecutionMetadata())
 	d := req.GetActionDigest()
 	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
@@ -327,7 +327,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 		return nil
 	}
 
-	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetInvocationID(ctx))
+	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	resourcesToInline := make([]*rspb.ResourceName, 0, len(filesToInline))
 	downloadTrackers := make([]interfaces.TransferTimer, 0, len(filesToInline))
 	for _, f := range filesToInline {

@@ -857,6 +857,7 @@ proto_library(
     name = "hit_tracker_proto",
     srcs = ["hit_tracker.proto"],
     deps = [
+        ":remote_execution_proto",
         ":resource_proto",
         "@com_google_protobuf//:duration_proto",
     ],
@@ -2015,6 +2016,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker",
     proto = ":hit_tracker_proto",
     deps = [
+        ":remote_execution_go_proto",
         ":resource_go_proto",
     ],
 )

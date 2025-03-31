@@ -39,6 +39,12 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 	iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
 
 	// Track one cache hit using the hit_tracker directly.
+	emptyRmd := &repb.RequestMetadata{
+		ToolInvocationId: iid,
+		ActionId:         "4bcc407e49739ff0ea6394ba83efe63ad934c65bb4655db3fe5282d6e005894f",
+		ActionMnemonic:   "EmptyAction",
+		TargetId:         "//empty",
+	}
 	rmd := &repb.RequestMetadata{
 		ToolInvocationId: iid,
 		ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
@@ -50,29 +56,30 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 		SizeBytes: 1234,
 	}
 	compressedSize := int64(123)
-	ctx = withRequestMetadata(t, ctx, rmd)
-	require.NoError(t, err)
-	ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, iid)
+	ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, rmd)
 
 	dl := ht.TrackDownload(d1)
 	dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
 
 	// Track two more cache hits using the hit_tracker_service.
-	d2 := repb.Digest{
+	emptyDigest := repb.Digest{Hash: digest.EmptySha256, SizeBytes: 0}
+	emptyRn := digest.NewResourceName(&emptyDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	emptyHit := hitpb.CacheHit{
+		RequestMetadata: emptyRmd,
+		Resource:        emptyRn.ToProto(),
+	}
+	d := repb.Digest{
 		Hash:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		SizeBytes: 456,
 	}
-	rn := digest.NewResourceName(&d2, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
-	hits := hitpb.CacheHits{
-		InvocationId: iid,
-		EmptyHits:    1,
-		Downloads: []*hitpb.Download{&hitpb.Download{
-			Resource:  rn.ToProto(),
-			SizeBytes: 456,
-			Duration:  durationpb.New(time.Minute),
-		}},
+	rn := digest.NewResourceName(&d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	hit := hitpb.CacheHit{
+		RequestMetadata: rmd,
+		Resource:        rn.ToProto(),
+		SizeBytes:       456,
+		Duration:        durationpb.New(time.Minute),
 	}
-	req := hitpb.TrackRequest{Hits: []*hitpb.CacheHits{&hits}}
+	req := hitpb.TrackRequest{Hits: []*hitpb.CacheHit{&emptyHit, &hit}}
 
 	_, err = env.GetHitTrackerServiceServer().Track(ctx, &req)
 	require.NoError(t, err)
@@ -98,8 +105,8 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 	actual3 := sc.Results[2]
 	require.Equal(t, rspb.CacheType_CAS, actual3.CacheType)
 	require.Equal(t, capb.RequestType_READ, actual3.RequestType)
-	require.Equal(t, d2.Hash, actual3.GetDigest().GetHash())
-	require.Equal(t, d2.SizeBytes, actual3.GetDigest().GetSizeBytes())
+	require.Equal(t, d.Hash, actual3.GetDigest().GetHash())
+	require.Equal(t, d.SizeBytes, actual3.GetDigest().GetSizeBytes())
 	require.Equal(t, repb.Compressor_IDENTITY, actual3.GetCompressor())
 	require.Equal(t, int64(456), actual3.GetTransferredSizeBytes())
 }
@@ -129,30 +136,47 @@ func TestHitTrackerService_Usage(t *testing.T) {
 
 	ctx := context.Background()
 	iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
+	emptyRmd := &repb.RequestMetadata{
+		ToolInvocationId: iid,
+		ActionId:         "4bcc407e49739ff0ea6394ba83efe63ad934c65bb4655db3fe5282d6e005894f",
+		ActionMnemonic:   "EmptyAction",
+		TargetId:         "//empty",
+	}
+	rmd := &repb.RequestMetadata{
+		ToolInvocationId: iid,
+		ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
+		ActionMnemonic:   "GoCompile",
+		TargetId:         "//foo:bar",
+	}
 
-	d2 := repb.Digest{
+	emptyDigest := repb.Digest{Hash: digest.EmptySha256, SizeBytes: 0}
+	emptyRn := digest.NewResourceName(&emptyDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	emptyHit := hitpb.CacheHit{
+		RequestMetadata: emptyRmd,
+		Resource:        emptyRn.ToProto(),
+	}
+	d := repb.Digest{
 		Hash:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		SizeBytes: 456,
 	}
-	rn := digest.NewResourceName(&d2, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
-	hits := hitpb.CacheHits{
-		InvocationId: iid,
-		EmptyHits:    1,
-		Downloads: []*hitpb.Download{&hitpb.Download{
-			Resource:  rn.ToProto(),
-			SizeBytes: 456,
-			Duration:  durationpb.New(time.Minute),
-		}},
+	rn := digest.NewResourceName(&d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+	hit := hitpb.CacheHit{
+		RequestMetadata: rmd,
+		Resource:        rn.ToProto(),
+		SizeBytes:       456,
+		Duration:        durationpb.New(time.Minute),
 	}
-	req := hitpb.TrackRequest{Hits: []*hitpb.CacheHits{&hits}}
+	req := hitpb.TrackRequest{Hits: []*hitpb.CacheHit{&emptyHit, &hit}}
 	_, err = env.GetHitTrackerServiceServer().Track(ctx, &req)
 	require.NoError(t, err)
 
-	require.Len(t, ut.Increments, 1)
-	require.Equal(t, []*tables.UsageCounts{{
-		CASCacheHits:           1,
-		TotalDownloadSizeBytes: 456,
-	}}, ut.Increments)
+	require.Len(t, ut.Increments, 2)
+	require.Equal(t, []*tables.UsageCounts{
+		{CASCacheHits: 1},
+		{
+			CASCacheHits:           1,
+			TotalDownloadSizeBytes: 456,
+		}}, ut.Increments)
 	ut.Increments = nil
 }
 
