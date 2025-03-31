@@ -575,7 +575,7 @@ message File {
   int64 length = 6;
 }
 
-// BUILDBUDDY-SPECIFIC EVENTS BELOW
+// BUILDBUDDY-SPECIFIC EVENT
 message Tree {
   // Where the tree is to be planted.
   string name = 1;
