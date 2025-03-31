@@ -14,7 +14,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 )
 
-const templateContents = `<!DOCTYPE html>
+const (
+	StatuszPath = "/statusz/{section_name...}"
+
+	templateContents = `<!DOCTYPE html>
 <html>
   <head>
     <title>/statusz</title>
@@ -66,6 +69,7 @@ const templateContents = `<!DOCTYPE html>
   {{end}}
 </html>
 `
+)
 
 var (
 	startTime          time.Time
@@ -91,16 +95,22 @@ type StatusReporter interface {
 	// running state in a compact way.
 	Statusz(ctx context.Context) string
 }
-type StatusFunc func(ctx context.Context) string
-
-func (f StatusFunc) Statusz(ctx context.Context) string {
-	return f(ctx)
+type StatusUpdater interface {
+	// Sections that implement this interface may update the service's
+	// current running state in some way.
+	// Implementations are responsible for writing the HTTP status code.
+	// The client does not use the HTTP body.
+	UpdateStatusz(w http.ResponseWriter, r *http.Request)
 }
+
+type StatusFunc func(ctx context.Context) string
+type UpdateFunc func(w http.ResponseWriter, r *http.Request)
 
 type Section struct {
 	Name        string
 	Description string
-	Fn          StatusFunc
+	Status      StatusFunc
+	Update      UpdateFunc
 }
 
 type Handler struct {
@@ -118,11 +128,15 @@ func NewHandler() *Handler {
 func (h *Handler) AddSection(name, description string, statusReporter StatusReporter) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.sections[name] = &Section{
+	s := &Section{
 		Name:        name,
 		Description: description,
-		Fn:          statusReporter.Statusz,
+		Status:      statusReporter.Statusz,
 	}
+	if sm, ok := statusReporter.(StatusUpdater); ok {
+		s.Update = sm.UpdateStatusz
+	}
+	h.sections[name] = s
 }
 
 type renderedSection struct {
@@ -131,22 +145,9 @@ type renderedSection struct {
 	HTML        template.HTML
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	ctx := r.Context()
-	orderedSections := make([]*renderedSection, 0, len(h.sections))
-	for _, s := range h.sections {
-		rs := &renderedSection{
-			Name:        s.Name,
-			Description: s.Description,
-			HTML:        template.HTML(s.Fn(ctx)),
-		}
-		orderedSections = append(orderedSections, rs)
-	}
-	sort.Slice(orderedSections, func(i, j int) bool {
-		return orderedSections[i].Name < orderedSections[j].Name
+func (h *Handler) renderSections(sections []*renderedSection, w http.ResponseWriter) {
+	sort.Slice(sections, func(i, j int) bool {
+		return sections[i].Name < sections[j].Name
 	})
 
 	data := struct {
@@ -168,9 +169,46 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		CurrentTime: time.Now(),
 		AppVersion:  version.Tag(),
 		GoVersion:   version.GoVersion(),
-		Sections:    orderedSections,
+		Sections:    sections,
 	}
 	statusPageTemplate.Execute(w, data)
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	ctx := r.Context()
+
+	selectedSection := r.PathValue("section_name")
+
+	if r.Method == http.MethodPost {
+		section, ok := h.sections[selectedSection]
+		if !ok {
+			http.Error(w, "no section specified in URL path", http.StatusInternalServerError)
+			return
+		}
+		if section.Update == nil {
+			http.Error(w, "section does not implement Update interface", http.StatusInternalServerError)
+			return
+		}
+		section.Update(w, r)
+		return
+	}
+
+	// If no single-section was specified, render all sections.
+	sections := make([]*renderedSection, 0, len(h.sections))
+	for _, section := range h.sections {
+		if selectedSection != "" && section.Name != selectedSection {
+			continue
+		}
+		rs := &renderedSection{
+			Name:        section.Name,
+			Description: section.Description,
+			HTML:        template.HTML(section.Status(ctx)),
+		}
+		sections = append(sections, rs)
+	}
+	h.renderSections(sections, w)
 }
 
 func AddSection(name, description string, statusReporter StatusReporter) {
