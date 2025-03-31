@@ -130,7 +130,7 @@ type Store struct {
 
 	eventsMu       sync.Mutex
 	events         chan events.Event
-	eventListeners []chan events.Event
+	eventListeners map[string]chan events.Event
 
 	usages *usagetracker.Tracker
 
@@ -219,7 +219,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	nodeLiveness := nodeliveness.New(env.GetServerContext(), nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
-	eventsChan := make(chan events.Event, 100)
+	eventsChan := make(chan events.Event, 1000)
 
 	clock := env.GetClock()
 	session := client.NewSessionWithClock(clock)
@@ -253,7 +253,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 		eventsMu:       sync.Mutex{},
 		events:         eventsChan,
-		eventListeners: make([]chan events.Event, 0),
+		eventListeners: make(map[string]chan events.Event),
 
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
@@ -587,12 +587,16 @@ func (s *Store) handleEvents(ctx context.Context) {
 		select {
 		case e := <-s.events:
 			s.eventsMu.Lock()
-			for _, ch := range s.eventListeners {
+			for id, ch := range s.eventListeners {
 				select {
 				case ch <- e:
 					continue
 				default:
-					s.log.Warningf("Dropped event: %s", e)
+					metrics.RaftStoreEventListenerDropped.With(prometheus.Labels{
+						metrics.RaftListenerID: id,
+						metrics.RaftEventType:  e.EventType().String(),
+					}).Inc()
+					s.log.Warningf("EventListener(%s) dropped event: %s", id, e)
 				}
 			}
 			s.eventsMu.Unlock()
@@ -602,12 +606,12 @@ func (s *Store) handleEvents(ctx context.Context) {
 	}
 }
 
-func (s *Store) AddEventListener() <-chan events.Event {
+func (s *Store) AddEventListener(id string) <-chan events.Event {
 	s.eventsMu.Lock()
 	defer s.eventsMu.Unlock()
 
-	ch := make(chan events.Event, 100)
-	s.eventListeners = append(s.eventListeners, ch)
+	ch := make(chan events.Event, 1000)
+	s.eventListeners[id] = ch
 	return ch
 }
 
@@ -1811,7 +1815,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 }
 
 func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, maxRangeSizeBytes int64) {
-	eventsCh := s.AddEventListener()
+	eventsCh := s.AddEventListener("splitRanges")
 	for {
 		select {
 		case <-ctx.Done():
@@ -1848,7 +1852,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, maxRangeSizeBy
 }
 
 func (s *Store) updateStoreUsageTag(ctx context.Context) {
-	eventsCh := s.AddEventListener()
+	eventsCh := s.AddEventListener("updateTags")
 	for {
 		select {
 		case <-ctx.Done():
@@ -3140,6 +3144,7 @@ func (s *Store) refreshMetrics(ctx context.Context) {
 				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Total))
 				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Avail))
 			}
+			metrics.RaftStoreEventsChanSize.Set(float64(len(s.events)))
 		}
 	}
 }

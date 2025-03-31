@@ -226,7 +226,11 @@ func (sm *Replica) notifyListenersOfUsage(rd *rfpb.RangeDescriptor, usage *rfpb.
 	case sm.broadcast <- up:
 		break
 	default:
-		sm.log.Warningf("dropped usage update: %+v", up)
+		metrics.RaftStoreEventBroadcastDropped.With(prometheus.Labels{
+			metrics.RaftEventBroadcaster: "replica",
+			metrics.RaftEventType:        up.EventType().String(),
+		}).Inc()
+		sm.log.Warningf("replica dropped usage update: %+v", up)
 	}
 }
 
