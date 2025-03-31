@@ -1683,18 +1683,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 					log.CtxWarningf(ctx, "Could not remove task from unclaimed list: %s", err)
 				}
 			}
-			executorHostname := req.GetExecutorHostname()
-			// TODO / DO NOT SUBMIT
-			// An alternative way of getting the executors, instead of passing
-			// it in the lease request. I'm not sure which approach I prefer.
-			// executorHostname := ""
-			// for _, exec := range nodePool.connectedExecutors {
-			// 	if exec.GetExecutorId() == executorID {
-			// 		executorHostname = exec.Host
-			// 		break
-			// 	}
-			// }
-			task.serializedTask = s.modifyTaskForExperiments(ctx, executorHostname, task.serializedTask)
+			task.serializedTask = s.modifyTaskForExperiments(ctx, req.GetExecutorHostname(), task.serializedTask)
 
 			// Prometheus: observe queue wait time.
 			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
