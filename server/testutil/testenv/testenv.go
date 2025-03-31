@@ -74,6 +74,8 @@ auth:
   enable_anonymous_usage: true
 remote_execution:
    enable_remote_exec: true
+httpclient:
+   allow_localhost: true
 `
 
 func init() {
