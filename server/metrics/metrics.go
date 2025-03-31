@@ -1837,10 +1837,10 @@ var (
 	// )
 	// ```
 
-	HTTPOutgoingRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	HTTPClientRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
-		Subsystem: "http_outgoing",
-		Name:      "request_count",
+		Subsystem: "http",
+		Name:      "client_request_count",
 		Help:      "HTTP outgoing request count.",
 	}, []string{
 		HTTPHostLabel,

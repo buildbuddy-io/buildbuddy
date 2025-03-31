@@ -275,7 +275,7 @@ func newMetricsTransport(inner http.RoundTripper) http.RoundTripper {
 }
 
 func (t *metricsTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
-	metrics.HTTPOutgoingRequestCount.With(prometheus.Labels{
+	metrics.HTTPClientRequestCount.With(prometheus.Labels{
 		metrics.HTTPHostLabel:   in.URL.Hostname(),
 		metrics.HTTPMethodLabel: in.Method,
 	}).Inc()

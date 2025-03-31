@@ -196,7 +196,7 @@ func makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizatio
 	if err != nil {
 		registryHost = "[UNKNOWN]"
 	}
-	metrics.HTTPOutgoingRequestCount.With(prometheus.Labels{
+	metrics.HTTPClientRequestCount.With(prometheus.Labels{
 		metrics.HTTPHostLabel:   registryHost,
 		metrics.HTTPMethodLabel: method,
 	}).Inc()
