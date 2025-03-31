@@ -132,7 +132,8 @@ const templateContent = `
 	   },
 	   body: new URLSearchParams({"pause": event.currentTarget.checked ? "true" : "false" }),
        })
-      .then(response => console.log(response));
+      .then(response => { window.alert("Changes applied"); console.log(response); })
+      .catch(e => window.alert("Fetch failed: " + String(e)));
     });
   </script>
 </div>`
@@ -146,7 +147,9 @@ func (r *Registration) Statusz(ctx context.Context) string {
 		Paused: r.paused.Load(),
 	}
 	buf := &bytes.Buffer{}
-	statusTemplate.Execute(buf, data)
+	if err := statusTemplate.Execute(buf, data); err != nil {
+		return fmt.Sprintf("Failed to execute template: %s", err)
+	}
 	return buf.String()
 }
 

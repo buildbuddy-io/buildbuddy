@@ -98,6 +98,8 @@ type StatusReporter interface {
 type StatusUpdater interface {
 	// Sections that implement this interface may update the service's
 	// current running state in some way.
+	// Implementations are responsible for writing the HTTP status code.
+	// The client does not use the HTTP body.
 	UpdateStatusz(w http.ResponseWriter, r *http.Request)
 }
 
@@ -182,21 +184,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		section, ok := h.sections[selectedSection]
 		if !ok {
-			w.Write([]byte("no section specified in URL Path"))
-			w.WriteHeader(http.StatusInternalServerError)
+			http.Error(w, "no section specified in URL path", http.StatusInternalServerError)
 			return
 		}
 		if section.Update == nil {
-			w.Write([]byte("section does not implement Update interface"))
-			w.WriteHeader(http.StatusInternalServerError)
+			http.Error(w, "section does not implement Update interface", http.StatusInternalServerError)
 			return
 		}
 		section.Update(w, r)
 		return
 	}
 
-	// If no single-section was specified, render all sections. Each section
-	// is iframed.
+	// If no single-section was specified, render all sections.
 	sections := make([]*renderedSection, 0, len(h.sections))
 	for _, section := range h.sections {
 		if selectedSection != "" && section.Name != selectedSection {
