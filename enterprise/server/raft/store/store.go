@@ -781,20 +781,6 @@ func (s *Store) GetRange(rangeID uint64) *rfpb.RangeDescriptor {
 	return s.lookupRange(rangeID)
 }
 
-func (s *Store) sendRangeEvent(eventType events.EventType, rd *rfpb.RangeDescriptor) {
-	ev := events.RangeEvent{
-		Type:            eventType,
-		RangeDescriptor: rd,
-	}
-
-	select {
-	case s.events <- ev:
-		break
-	default:
-		s.log.Warningf("Dropping range event: %+v", ev)
-	}
-}
-
 // We need to implement the Add/RemoveRange interface so that stores opened and
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
