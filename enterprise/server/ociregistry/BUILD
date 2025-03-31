@@ -10,6 +10,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
+        "//server/http/httpclient",
         "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/cachetools",

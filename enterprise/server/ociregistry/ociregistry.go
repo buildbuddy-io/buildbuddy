@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -22,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/prometheus/client_golang/prometheus"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -52,7 +52,8 @@ var (
 )
 
 type registry struct {
-	env environment.Env
+	env    environment.Env
+	client *http.Client
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -70,8 +71,19 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*registry, error) {
+	allowedPrivateIPs := []string{"127.0.0.0/8", "::1/128"}
+	allowedPrivateIPNets := make([]*net.IPNet, 0, len(allowedPrivateIPs))
+	for _, r := range allowedPrivateIPs {
+		_, ipNet, err := net.ParseCIDR(r)
+		if err != nil {
+			return nil, fmt.Errorf("parse 'remote_asset.allowed_private_ips': %w", err)
+		}
+		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
+	}
+	client := httpclient.NewClient(time.Duration(0), allowedPrivateIPNets)
 	r := &registry{
-		env: env,
+		env:    env,
+		client: client,
 	}
 	return r, nil
 }
@@ -176,7 +188,7 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	}
 }
 
-func makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*http.Response, error) {
+func (r *registry) makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*http.Response, error) {
 	var path string
 	switch ociResourceType {
 	case ocipb.OCIResourceType_BLOB:
@@ -192,15 +204,6 @@ func makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizatio
 		Path:   path,
 	}
 
-	registryHost, _, err := net.SplitHostPort(ref.Context().RegistryStr())
-	if err != nil {
-		registryHost = "[UNKNOWN]"
-	}
-	metrics.HTTPClientRequestCount.With(prometheus.Labels{
-		metrics.HTTPHostLabel:   registryHost,
-		metrics.HTTPMethodLabel: method,
-	}).Inc()
-
 	upreq, err := http.NewRequest(method, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not make %s request to upstream registry '%s': %s", method, u, err)
@@ -211,7 +214,7 @@ func makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizatio
 	if authorizationHeader != "" {
 		upreq.Header.Set(headerAuthorization, authorizationHeader)
 	}
-	return http.DefaultClient.Do(upreq.WithContext(ctx))
+	return r.client.Do(upreq.WithContext(ctx))
 }
 
 func parseContentLengthHeader(value string) (int64, bool, error) {
@@ -239,8 +242,8 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 	return &hash, nil
 }
 
-func resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, bool, error) {
-	headresp, err := makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
+func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, bool, error) {
+	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
 	if err != nil {
 		return nil, false, fmt.Errorf("error making %s request to upstream registry: %s", http.MethodHead, err)
 	}
@@ -286,7 +289,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
 		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
 		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
-		hash, exists, err := resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
+		hash, exists, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("could not resolve digest for manifest %s: %s", ref, err), http.StatusServiceUnavailable)
 			return
@@ -323,7 +326,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		}
 	}
 
-	upresp, err := makeUpstreamRequest(ctx, inreq.Method, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef)
+	upresp, err := r.makeUpstreamRequest(ctx, inreq.Method, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error making %s request to upstream registry: %s", inreq.Method, err), http.StatusServiceUnavailable)
 		return
