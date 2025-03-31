@@ -201,7 +201,7 @@ func (c Credentials) Equals(o Credentials) bool {
 func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	imageRef, err := ctrname.ParseReference(imageName)
+	ref, err := ctrname.ParseReference(imageName)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
@@ -229,30 +229,7 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 	} else {
 		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 	}
-	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-	}
-
-	// Image() should resolve both images and image indices to an appropriate image
-	img, err := remoteDesc.Image()
-	if err != nil {
-		switch remoteDesc.MediaType {
-		// This is an "image index", a meta-manifest that contains a list of
-		// {platform props, manifest hash} properties to allow client to decide
-		// which manifest they want to use based on platform.
-		case types.OCIImageIndex, types.DockerManifestList:
-			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
-		case types.OCIManifestSchema1, types.DockerManifestSchema2:
-			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
-		default:
-			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
-		}
-	}
-	return img, nil
+	return fetchImage(ref, remoteOpts...)
 }
 
 // RuntimePlatform returns the platform on which the program is being executed,
@@ -304,4 +281,31 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 		}
 	}
 	return t.inner.RoundTrip(in)
+}
+
+func fetchImage(ref ctrname.Reference, options ...remote.Option) (v1.Image, error) {
+	remoteDesc, err := remote.Get(ref, options...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
+
+	// Image() should resolve both images and image indices to an appropriate image
+	img, err := remoteDesc.Image()
+	if err != nil {
+		switch remoteDesc.MediaType {
+		// This is an "image index", a meta-manifest that contains a list of
+		// {platform props, manifest hash} properties to allow client to decide
+		// which manifest they want to use based on platform.
+		case types.OCIImageIndex, types.DockerManifestList:
+			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
+		case types.OCIManifestSchema1, types.DockerManifestSchema2:
+			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
+		default:
+			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
+		}
+	}
+	return img, nil
 }
