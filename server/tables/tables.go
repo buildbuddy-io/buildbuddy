@@ -221,7 +221,8 @@ type Group struct {
 	// group.
 	WriteToken string `gorm:"index:write_token_index"`
 
-	// The group's Github API token.
+	// The group's Github API token. This is deprecated in favor of a user-level
+	// token that can be used with our GitHub app.
 	GithubToken *string
 	Model
 
@@ -296,7 +297,8 @@ type User struct {
 	Email     string
 	ImageURL  string
 
-	// User-specific Github token (if linked).
+	// GitHub token used for all non-login related GitHub features.
+	// Can be for the read-only or read-write BuildBuddy GitHub app.
 	GithubToken string
 
 	// Group roles are used to determine read/write permissions
@@ -556,6 +558,9 @@ func (ts *TargetStatus) TableName() string {
 // GitHubAppInstallation represents a BuildBuddy GitHub App installation linked
 // to an organization.
 //
+// For now, a BB group can only have one app installed at a time (either read-write
+// or read-only).
+//
 // We'll listen to app uninstallation webhook events to proactively remove these
 // from the DB, but this is not 100% reliable, so GitHub is ultimately the
 // source of truth for whether an installation is valid or not. Typically, the
@@ -572,7 +577,8 @@ type GitHubAppInstallation struct {
 	GroupID string `gorm:"primaryKey"`
 	Perms   int32  `gorm:"not null"`
 
-	// InstallationID is the GitHub app installation ID.
+	// InstallationID is the GitHub app installation ID. This a unique value
+	// for every user that has installed a GitHub app.
 	InstallationID int64 `gorm:"not null"`
 
 	// Owner is the GitHub login of the installation (either a user or
@@ -580,6 +586,11 @@ type GitHubAppInstallation struct {
 	// store it here so that we can run queries to associate repos with
 	// installations.
 	Owner string `gorm:"primaryKey"`
+
+	// AppID is the ID for the GitHub app that this installation corresponds to.
+	// There are only 2 possible app IDs - corresponding to either the read-write
+	// or read-only BB GitHub app.
+	AppID int64
 }
 
 func (gh *GitHubAppInstallation) TableName() string {
@@ -605,6 +616,10 @@ type GitRepository struct {
 	// within this repository should run as a non-root user by default.
 	// TODO(http://go/b/3286): Remove this field after completing migration.
 	DefaultNonRootRunner bool `gorm:"not null;default:0"`
+
+	// The ID of the BuildBuddy Github app this repository was authorized for.
+	// (i.e. either the read-only or the read-write app)
+	AppID int64
 }
 
 func (g *GitRepository) TableName() string {

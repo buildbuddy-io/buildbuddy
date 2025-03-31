@@ -11,6 +11,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 
+	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -45,7 +46,7 @@ type RealEnv struct {
 	workspaceService                 interfaces.WorkspaceService
 	runnerService                    interfaces.RunnerService
 	gitProviders                     interfaces.GitProviders
-	gitHubApp                        interfaces.GitHubApp
+	githubAppService                 interfaces.GitHubAppService
 	gitHubStatusService              interfaces.GitHubStatusService
 	staticFilesystem                 fs.FS
 	appFilesystem                    fs.FS
@@ -133,6 +134,9 @@ type RealEnv struct {
 	atimeUpdater                     interfaces.AtimeUpdater
 	cpuLeaser                        interfaces.CPULeaser
 	ociRegistry                      interfaces.OCIRegistry
+	hitTrackerFactory                interfaces.HitTrackerFactory
+	hitTrackerServiceServer          hitpb.HitTrackerServiceServer
+	experimentFlagProvider           interfaces.ExperimentFlagProvider
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -424,11 +428,11 @@ func (r *RealEnv) GetGitProviders() interfaces.GitProviders {
 func (r *RealEnv) SetGitProviders(gp interfaces.GitProviders) {
 	r.gitProviders = gp
 }
-func (r *RealEnv) SetGitHubApp(val interfaces.GitHubApp) {
-	r.gitHubApp = val
+func (r *RealEnv) GetGitHubAppService() interfaces.GitHubAppService {
+	return r.githubAppService
 }
-func (r *RealEnv) GetGitHubApp() interfaces.GitHubApp {
-	return r.gitHubApp
+func (r *RealEnv) SetGitHubAppService(v interfaces.GitHubAppService) {
+	r.githubAppService = v
 }
 func (r *RealEnv) SetGitHubStatusService(val interfaces.GitHubStatusService) {
 	r.gitHubStatusService = val
@@ -812,4 +816,25 @@ func (r *RealEnv) GetOCIRegistry() interfaces.OCIRegistry {
 }
 func (r *RealEnv) SetOCIRegistry(ociRegistry interfaces.OCIRegistry) {
 	r.ociRegistry = ociRegistry
+}
+
+func (r *RealEnv) GetHitTrackerFactory() interfaces.HitTrackerFactory {
+	return r.hitTrackerFactory
+}
+func (r *RealEnv) SetHitTrackerFactory(hitTrackerFactory interfaces.HitTrackerFactory) {
+	r.hitTrackerFactory = hitTrackerFactory
+}
+
+func (r *RealEnv) GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer {
+	return r.hitTrackerServiceServer
+}
+func (r *RealEnv) SetHitTrackerServiceServer(hitTrackerServiceServer hitpb.HitTrackerServiceServer) {
+	r.hitTrackerServiceServer = hitTrackerServiceServer
+}
+
+func (r *RealEnv) GetExperimentFlagProvider() interfaces.ExperimentFlagProvider {
+	return r.experimentFlagProvider
+}
+func (r *RealEnv) SetExperimentFlagProvider(experimentFlagProvider interfaces.ExperimentFlagProvider) {
+	r.experimentFlagProvider = experimentFlagProvider
 }

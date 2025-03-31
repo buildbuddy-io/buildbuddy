@@ -2301,6 +2301,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		ServerName,
+		GroupID,
 	})
 
 	ServerUncompressedDownloadBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{

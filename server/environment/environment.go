@@ -10,6 +10,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 
+	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -81,7 +82,7 @@ type Env interface {
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService
 	GetWorkspaceService() interfaces.WorkspaceService
-	GetGitHubApp() interfaces.GitHubApp
+	GetGitHubAppService() interfaces.GitHubAppService
 	GetRunnerService() interfaces.RunnerService
 	GetGitProviders() interfaces.GitProviders
 	GetUsageService() interfaces.UsageService
@@ -134,4 +135,7 @@ type Env interface {
 	GetClock() clockwork.Clock
 	GetAtimeUpdater() interfaces.AtimeUpdater
 	GetCPULeaser() interfaces.CPULeaser
+	GetHitTrackerFactory() interfaces.HitTrackerFactory
+	GetHitTrackerServiceServer() hitpb.HitTrackerServiceServer
+	GetExperimentFlagProvider() interfaces.ExperimentFlagProvider
 }

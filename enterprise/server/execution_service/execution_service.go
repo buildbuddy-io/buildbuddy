@@ -267,7 +267,7 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 			end:   metadata.GetWorkerCompletedTimestamp(),
 		},
 		{
-			name:  "pull image",
+			name:  "prepare runner",
 			tid:   executorTID,
 			start: metadata.GetWorkerStartTimestamp(),
 			end:   metadata.GetInputFetchStartTimestamp(),

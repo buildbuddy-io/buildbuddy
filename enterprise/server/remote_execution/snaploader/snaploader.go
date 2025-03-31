@@ -36,7 +36,6 @@ import (
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
@@ -115,7 +114,7 @@ func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.
 	if err != nil {
 		return "", err
 	}
-	rn := digest.NewResourceName(versionKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	rn := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if status.IsNotFoundError(err) {
 		// Version metadata might not exist in the cache if:
@@ -428,7 +427,7 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 	if err != nil {
 		return nil, err
 	}
-	rn := digest.NewResourceName(manifestKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	rn := digest.NewACResourceName(manifestKey, key.InstanceName, repb.DigestFunction_BLAKE3)
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if err != nil {
 		return nil, err
@@ -718,7 +717,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		if err != nil {
 			return err
 		}
-		acDigest := digest.NewResourceName(d, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+		acDigest := digest.NewACResourceName(d, key.InstanceName, repb.DigestFunction_BLAKE3)
 		if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar); err != nil {
 			return err
 		}
@@ -736,7 +735,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 				log.Warningf("Failed to generate snapshot specific remote manifest key for snapshot ID %s: %s", snapshotID, err)
 				return nil
 			}
-			snapshotSpecificAcDigest := digest.NewResourceName(snapshotSpecificManifestKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+			snapshotSpecificAcDigest := digest.NewACResourceName(snapshotSpecificManifestKey, key.InstanceName, repb.DigestFunction_BLAKE3)
 			if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), snapshotSpecificAcDigest, ar); err != nil {
 				log.Warningf("Failed to cache remote snapshot specific manifest for snapshot ID %s: %s", snapshotID, err)
 				return nil
@@ -1054,7 +1053,7 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 		return "", err
 	}
 
-	acDigest := digest.NewResourceName(versionKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	acDigest := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
 	if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, versionMetadataActionResult); err != nil {
 		return "", err
 	}

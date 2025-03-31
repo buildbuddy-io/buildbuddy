@@ -41,7 +41,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
       return;
     }
     let testOutputsUri = this.props.files.find(
-      (file: build_event_stream.File) => true && file.name === TargetArtifactsCardComponent.ZIPPED_OUTPUTS_FILE
+      (file: build_event_stream.File) => file.name === TargetArtifactsCardComponent.ZIPPED_OUTPUTS_FILE
     )?.uri;
 
     if (!testOutputsUri || !testOutputsUri.startsWith("bytestream://")) {

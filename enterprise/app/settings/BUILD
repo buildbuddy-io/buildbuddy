@@ -8,6 +8,9 @@ ts_library(
     name = "settings",
     srcs = ["settings.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/banner",
@@ -27,9 +30,6 @@ ts_library(
         "//enterprise/app/settings:github_complete_installation",
         "//enterprise/app/settings:github_link",
         "//enterprise/app/settings:user_github_link",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
     ],
 )
 
@@ -37,6 +37,9 @@ ts_library(
     name = "github_link",
     srcs = ["github_link.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/auth:user",
@@ -51,10 +54,8 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/service:rpc_service",
+        "//enterprise/app/settings:github_tooltip",
         "//proto:github_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
     ],
 )
 
@@ -62,6 +63,10 @@ ts_library(
     name = "user_github_link",
     srcs = ["user_github_link.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/auth:user",
@@ -72,11 +77,8 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/service:rpc_service",
+        "//enterprise/app/settings:github_tooltip",
         "//proto:github_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
     ],
 )
 
@@ -84,6 +86,10 @@ ts_library(
     name = "github_complete_installation",
     srcs = ["github_complete_installation.tsx"],
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/@types/react",
+        "//:node_modules/long",
+        "//:node_modules/react",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/auth:user",
@@ -95,9 +101,16 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
-        "@npm//@types/long",
-        "@npm//@types/react",
-        "@npm//long",
-        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "github_tooltip",
+    srcs = ["github_tooltip.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//app/components/tooltip",
     ],
 )

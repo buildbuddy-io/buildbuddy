@@ -39,7 +39,6 @@ import (
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
@@ -70,9 +69,10 @@ type Executor struct {
 	runnerPool interfaces.RunnerPool
 	id         string
 	hostID     string
+	hostname   string
 }
 
-func NewExecutor(env environment.Env, id, hostID string, runnerPool interfaces.RunnerPool) (*Executor, error) {
+func NewExecutor(env environment.Env, id, hostID, hostname string, runnerPool interfaces.RunnerPool) (*Executor, error) {
 	if err := disk.EnsureDirectoryExists(runnerPool.GetBuildRoot()); err != nil {
 		return nil, err
 	}
@@ -80,6 +80,7 @@ func NewExecutor(env environment.Env, id, hostID string, runnerPool interfaces.R
 		env:        env,
 		id:         id,
 		hostID:     hostID,
+		hostname:   hostname,
 		runnerPool: runnerPool,
 	}, nil
 }
@@ -200,7 +201,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	task := st.GetExecutionTask()
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
-	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
+	adInstanceDigest := digest.NewACResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	digestFunction := adInstanceDigest.GetDigestFunction()
 	task.ExecuteRequest.DigestFunction = digestFunction
 	acClient := s.env.GetActionCacheClient()
@@ -209,8 +210,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		PlatformOverrides:  task.GetPlatformOverrides(),
 		ExecuteRequest:     task.GetExecuteRequest(),
 		SchedulingMetadata: st.GetSchedulingMetadata(),
+		ExecutorHostname:   s.hostname,
 	}
-	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)
+	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest.GetDigest())
 	stateChangeFn := operation.StateChangeFunc(func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
 		if stage == repb.ExecutionStage_COMPLETED {
 			if err := appendAuxiliaryMetadata(execResponse.GetResult().GetExecutionMetadata(), auxMetadata); err != nil {
@@ -241,7 +243,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		resp.Result = &repb.ActionResult{
 			ExecutionMetadata: md,
 		}
-		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, resp); err != nil {
+		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest.GetDigest(), resp); err != nil {
 			return true, err
 		}
 		return false, finalErr

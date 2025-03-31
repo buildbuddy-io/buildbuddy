@@ -51,6 +51,7 @@ export default class GridSortControlsComponent extends React.Component<Props> {
             <Option value="avgDuration">Average duration</Option>
             <Option value="maxDuration">Max duration</Option>
             <Option value="flake">Flake percentage</Option>
+            <Option value="cached">Cached percentage</Option>
           </Select>
         </div>
         <div className="tap-sort-control">

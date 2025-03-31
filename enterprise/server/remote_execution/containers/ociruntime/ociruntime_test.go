@@ -58,6 +58,7 @@ var (
 	busyboxRlocationpath    string
 	ociBusyboxRlocationpath string
 	testworkerRlocationpath string
+	tiniRlocationpath       string
 )
 
 func init() {
@@ -471,6 +472,73 @@ func TestCreateExecRemove(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, "buildbuddy was here: /buildbuddy-execroot\n", string(res.Stdout))
+}
+
+func TestTiniProcessReaping(t *testing.T) {
+	setupNetworking(t)
+
+	image := realBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	tiniPath, err := runfiles.Rlocation(tiniRlocationpath)
+	require.NoError(t, err)
+	flags.Set(t, "executor.oci.tini_enabled", true)
+	flags.Set(t, "executor.oci.tini_path", tiniPath)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	// Pull
+	require.NoError(t, err)
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+
+	// Create
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Exec 1: create an orphaned process that writes its PID to a pipe
+	// and waits for it to be read, then exits.
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		mkfifo pid.pipe
+		sh -c 'echo $$ >> pid.pipe' &>/dev/null &
+	`}}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	require.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+
+	// Exec 2: read the PID from the pipe and wait for the process to be reaped.
+	// If it is never reaped then the test will time out.
+	cmd = &repb.Command{Arguments: []string{"sh", "-c", `
+		read PID < pid.pipe
+		while [ -e /proc/$PID/stat ]; do
+			sleep 0.1
+		done
+	`}}
+	res = c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Empty(t, string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
 }
 
 func TestExecUsageStats(t *testing.T) {

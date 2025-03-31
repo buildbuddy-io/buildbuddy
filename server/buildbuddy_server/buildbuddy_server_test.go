@@ -39,7 +39,6 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
@@ -313,8 +312,10 @@ func TestFileDownloadEndpoint(t *testing.T) {
 
 	{
 		// Upload CAS resource
-		rn, b := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_CAS, "")
-		_, _, err = cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), digest.ResourceNameFromProto(rn), bytes.NewReader(b))
+		rn, b := testdigest.RandomCASResourceBuf(t, 100)
+		casrn, err := digest.CASResourceNameFromProto(rn)
+		require.NoError(t, err)
+		_, _, err = cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), casrn, bytes.NewReader(b))
 		require.NoError(t, err)
 
 		// Fetch it from /file/download endpoint
@@ -336,7 +337,7 @@ func TestFileDownloadEndpoint(t *testing.T) {
 			Hash:      "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
 			SizeBytes: 111,
 		}
-		rn := digest.NewResourceName(key, "", rspb.CacheType_AC, repb.DigestFunction_SHA256)
+		rn := digest.NewACResourceName(key, "", repb.DigestFunction_SHA256)
 		ar := &repb.ActionResult{
 			StdoutRaw: []byte("test-stdout"),
 			ExecutionMetadata: &repb.ExecutedActionMetadata{

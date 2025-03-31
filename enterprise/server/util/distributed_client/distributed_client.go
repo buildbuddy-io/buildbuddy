@@ -1,4 +1,4 @@
-package cacheproxy
+package distributed_client
 
 import (
 	"context"
@@ -35,7 +35,7 @@ const (
 	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
 )
 
-type CacheProxy struct {
+type Proxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
 	log                   log.Logger
@@ -50,11 +50,11 @@ type CacheProxy struct {
 	zone                  string
 }
 
-func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
-	proxy := &CacheProxy{
+func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
+	proxy := &Proxy{
 		env:          env,
 		cache:        c,
-		log:          log.NamedSubLogger(fmt.Sprintf("CacheProxy(%s)", listenAddr)),
+		log:          log.NamedSubLogger(fmt.Sprintf("Proxy(%s)", listenAddr)),
 		readBufPool:  bytebufferpool.VariableSize(readBufSizeBytes),
 		writeBufPool: bytebufferpool.NewVariableWriteBufPool(readBufSizeBytes),
 		listenAddr:   listenAddr,
@@ -68,7 +68,7 @@ func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *
 	return proxy
 }
 
-func (c *CacheProxy) StartListening() error {
+func (c *Proxy) StartListening() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.server != nil {
@@ -94,7 +94,7 @@ func (c *CacheProxy) StartListening() error {
 	return nil
 }
 
-func (c *CacheProxy) Shutdown(ctx context.Context) error {
+func (c *Proxy) Shutdown(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.server == nil {
@@ -105,11 +105,11 @@ func (c *CacheProxy) Shutdown(ctx context.Context) error {
 	return err
 }
 
-func (c *CacheProxy) SetHeartbeatCallbackFunc(fn func(ctx context.Context, peer string)) {
+func (c *Proxy) SetHeartbeatCallbackFunc(fn func(ctx context.Context, peer string)) {
 	c.heartbeatCallback = fn
 }
 
-func (c *CacheProxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer string, r *rspb.ResourceName)) {
+func (c *Proxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer string, r *rspb.ResourceName)) {
 	c.hintedHandoffCallback = fn
 }
 
@@ -127,7 +127,7 @@ func digestToKey(d *repb.Digest) *dcpb.Key {
 	}
 }
 
-func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCacheClient, error) {
+func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCacheClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if client, ok := c.clients[peer]; ok {
@@ -146,14 +146,14 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 	return dcpb.NewDistributedCacheClient(conn), nil
 }
 
-func (c *CacheProxy) prepareContext(ctx context.Context) context.Context {
+func (c *Proxy) prepareContext(ctx context.Context) context.Context {
 	if c.zone != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, resources.ZoneHeader, c.zone)
 	}
 	return ctx
 }
 
-func (c *CacheProxy) readWriteContext(ctx context.Context) (context.Context, error) {
+func (c *Proxy) readWriteContext(ctx context.Context) (context.Context, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(c.prepareContext(ctx), c.env)
 	if err != nil {
 		return ctx, err
@@ -196,7 +196,7 @@ func getResources(resources []*rspb.ResourceName, isolation *dcpb.Isolation, dig
 	return rns
 }
 
-func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingRequest) (*dcpb.FindMissingResponse, error) {
+func (c *Proxy) FindMissing(ctx context.Context, req *dcpb.FindMissingRequest) (*dcpb.FindMissingResponse, error) {
 	ctx, err := c.readWriteContext(ctx)
 	if err != nil {
 		return nil, err
@@ -214,7 +214,7 @@ func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingReque
 	return rsp, nil
 }
 
-func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*dcpb.MetadataResponse, error) {
+func (c *Proxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*dcpb.MetadataResponse, error) {
 	ctx, err := c.readWriteContext(ctx)
 	if err != nil {
 		return nil, err
@@ -241,7 +241,7 @@ func ResourceIsolationString(r *rspb.ResourceName) string {
 	return rep
 }
 
-func (c *CacheProxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb.DeleteResponse, error) {
+func (c *Proxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb.DeleteResponse, error) {
 	ctx, err := c.readWriteContext(ctx)
 	if err != nil {
 		return nil, err
@@ -254,7 +254,7 @@ func (c *CacheProxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb
 	return &dcpb.DeleteResponse{}, nil
 }
 
-func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.GetMultiResponse, error) {
+func (c *Proxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.GetMultiResponse, error) {
 	ctx, err := c.readWriteContext(ctx)
 	if err != nil {
 		return nil, err
@@ -282,7 +282,7 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	return rsp, nil
 }
 
-func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadServer) error {
+func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadServer) error {
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
 		return err
@@ -318,13 +318,13 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	return err
 }
 
-func (c *CacheProxy) callHintedHandoffCB(ctx context.Context, peer string, r *rspb.ResourceName) {
+func (c *Proxy) callHintedHandoffCB(ctx context.Context, peer string, r *rspb.ResourceName) {
 	if c.hintedHandoffCallback != nil {
 		c.hintedHandoffCallback(ctx, peer, r)
 	}
 }
 
-func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
+func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
 		return err
@@ -381,7 +381,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	return nil
 }
 
-func (c *CacheProxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) (*dcpb.HeartbeatResponse, error) {
+func (c *Proxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) (*dcpb.HeartbeatResponse, error) {
 	if req.GetSource() == "" {
 		return nil, status.InvalidArgumentError("A source is required.")
 	}
@@ -391,7 +391,7 @@ func (c *CacheProxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) 
 	return &dcpb.HeartbeatResponse{}, nil
 }
 
-func (c *CacheProxy) RemoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {
+func (c *Proxy) RemoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {
 	isolation := &dcpb.Isolation{
 		CacheType:          r.GetCacheType(),
 		RemoteInstanceName: r.GetInstanceName(),
@@ -403,7 +403,7 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer string, r *rspb.Re
 	return len(missing) == 0, nil
 }
 
-func (c *CacheProxy) RemoteMetadata(ctx context.Context, peer string, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
+func (c *Proxy) RemoteMetadata(ctx context.Context, peer string, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	isolation := &dcpb.Isolation{
 		CacheType:          r.GetCacheType(),
 		RemoteInstanceName: r.GetInstanceName(),
@@ -430,7 +430,7 @@ func (c *CacheProxy) RemoteMetadata(ctx context.Context, peer string, r *rspb.Re
 	}, nil
 }
 
-func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+func (c *Proxy) RemoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	req := &dcpb.FindMissingRequest{
 		Isolation: isolation,
 	}
@@ -457,7 +457,7 @@ func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolati
 	return missing, nil
 }
 
-func (c *CacheProxy) RemoteDelete(ctx context.Context, peer string, r *rspb.ResourceName) error {
+func (c *Proxy) RemoteDelete(ctx context.Context, peer string, r *rspb.ResourceName) error {
 	isolation := &dcpb.Isolation{
 		CacheType:          r.GetCacheType(),
 		RemoteInstanceName: r.GetInstanceName(),
@@ -479,7 +479,7 @@ func (c *CacheProxy) RemoteDelete(ctx context.Context, peer string, r *rspb.Reso
 	return nil
 }
 
-func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	req := &dcpb.GetMultiRequest{
 		Isolation: isolation,
 	}
@@ -508,7 +508,7 @@ func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation 
 	return resultMap, nil
 }
 
-func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	isolation := &dcpb.Isolation{
 		CacheType:          r.GetCacheType(),
 		RemoteInstanceName: r.GetInstanceName(),
@@ -672,7 +672,7 @@ func safeBufferSize(r *rspb.ResourceName) int64 {
 	return size
 }
 
-func (c *CacheProxy) newBufferedStreamWriteCloser(swc *streamWriteCloser) *bufferedStreamWriteCloser {
+func (c *Proxy) newBufferedStreamWriteCloser(swc *streamWriteCloser) *bufferedStreamWriteCloser {
 	bufWriter := c.writeBufPool.Get(safeBufferSize(swc.r))
 	bufWriter.Reset(swc)
 	return &bufferedStreamWriteCloser{
@@ -684,7 +684,7 @@ func (c *CacheProxy) newBufferedStreamWriteCloser(swc *streamWriteCloser) *buffe
 	}
 }
 
-func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
@@ -713,7 +713,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 	return c.newBufferedStreamWriteCloser(wc), nil
 }
 
-func (c *CacheProxy) SendHeartbeat(ctx context.Context, peer string) error {
+func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return err

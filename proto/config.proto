@@ -180,6 +180,9 @@ message FrontendConfig {
 
   // If set, the login page will default to using this slug.
   string default_login_slug = 59;
+
+  // IF set, the BuildBuddy logo will flip on hover.
+  bool flip_logo_on_hover = 60;
 }
 
 message Region {

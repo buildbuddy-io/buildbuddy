@@ -629,3 +629,30 @@ func TestCommonUndocumentedOption(t *testing.T) {
 	require.NoError(t, err, "error expanding %s", args)
 	assert.Equal(t, expectedExpandedArgs, expandedArgs)
 }
+
+func TestCommonPositionalArgument(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"WORKSPACE": "",
+		".bazelrc":  "common foo",
+	})
+
+	args := []string{
+		"build",
+	}
+
+	expectedExpandedArgs := []string{
+		"--ignore_all_rc_files",
+		"build",
+		"foo",
+	}
+	p, err := GetParser()
+	require.NoError(t, err)
+	expandedArgs, err := p.expandConfigs(
+		ws,
+		args,
+	)
+
+	require.NoError(t, err, "error expanding %s", args)
+	assert.Equal(t, expectedExpandedArgs, expandedArgs)
+}

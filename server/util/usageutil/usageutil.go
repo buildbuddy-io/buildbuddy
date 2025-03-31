@@ -9,8 +9,12 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// Client label constants.
 const (
+	// gRPC metadata header constants.
+	ClientHeaderName = "x-buildbuddy-client"
+	OriginHeaderName = "x-buildbuddy-origin"
+
+	// Client label constants.
 	bazelClientLabel    = "bazel"
 	executorClientLabel = "executor"
 )
@@ -45,8 +49,8 @@ func Labels(ctx context.Context) (*tables.UsageLabels, error) {
 func WithLocalServerLabels(ctx context.Context) context.Context {
 	// Note: we set the header values here even if they're empty so that they
 	// override other header values, e.g. bazel request metadata.
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-origin", *origin)
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-client", clientType)
+	ctx = metadata.AppendToOutgoingContext(ctx, OriginHeaderName, *origin)
+	ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, clientType)
 	return ctx
 }
 
@@ -63,7 +67,7 @@ func SetClientType(value string) {
 }
 
 func originLabel(ctx context.Context) string {
-	vals := metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-origin")
+	vals := metadata.ValueFromIncomingContext(ctx, OriginHeaderName)
 	if len(vals) == 0 {
 		return ""
 	}
@@ -71,7 +75,7 @@ func originLabel(ctx context.Context) string {
 }
 
 func clientLabel(ctx context.Context) string {
-	vals := metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-client")
+	vals := metadata.ValueFromIncomingContext(ctx, ClientHeaderName)
 	if len(vals) > 0 {
 		return vals[0]
 	}

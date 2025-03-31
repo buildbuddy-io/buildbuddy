@@ -601,12 +601,12 @@ type ApiService interface {
 }
 
 type WorkflowService interface {
-	CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
+	CreateLegacyWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
 	DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
 	GetWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error)
 	GetWorkflowHistory(ctx context.Context) (*wfpb.GetWorkflowHistoryResponse, error)
 	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
-	GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
+	GetReposForLegacyGitHubApp(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 
 	// HandleRepositoryEvent handles a webhook event corresponding to the given
@@ -641,15 +641,17 @@ type SnapshotService interface {
 	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
 }
 
+// GitHubApp represents a specific instance of either the read-only or read-write
+// BuildBuddy GitHub app.
 type GitHubApp interface {
 	// TODO(bduffany): Add webhook handler and repo management API
 
+	AppID() int64
+
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
-	GetGitHubAppInstallations(context.Context, *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error)
 	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
 
-	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
-	LinkGitHubRepo(context.Context, *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error)
+	LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
 
 	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
@@ -671,6 +673,9 @@ type GitHubApp interface {
 
 	// OAuthHandler returns the OAuth flow HTTP handler.
 	OAuthHandler() http.Handler
+
+	// IsTokenValid returns whether the oauth token is valid for the current app.
+	IsTokenValid(ctx context.Context, oauthToken string) bool
 
 	// Passthroughs
 	GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error)
@@ -696,6 +701,27 @@ type GitHubApp interface {
 	UpdateGithubPullRequestComment(ctx context.Context, req *ghpb.UpdateGithubPullRequestCommentRequest) (*ghpb.UpdateGithubPullRequestCommentResponse, error)
 	DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error)
 	SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error)
+}
+
+// GitHubAppService is a wrapper for GitHubApp. It's needed to determine the specific
+// GitHubApp the user has installed (read-only vs read-write) and is used for app-agnostic
+// operations.
+type GitHubAppService interface {
+	GetReadWriteGitHubApp() GitHubApp
+	GetGitHubAppWithID(appID int64) (GitHubApp, error)
+	// GetGitHubAppForAuthenticatedUser returns the BB GitHub app that the current user has authorized.
+	// This can be used for requests that don't provide a specific repoURL or for users
+	// who have not linked an installation yet (unlike `GetGitHubAppForOwner`), but you must
+	// have an authenticated user context.
+	GetGitHubAppForAuthenticatedUser(ctx context.Context) (GitHubApp, error)
+	// GetGitHubAppForRepoURL returns the BB GitHub app corresponding to the app installation
+	// for the given URL. The installation must be both installed on GitHub and imported
+	// to BuildBuddy via (`LinkGitHubAppInstallation`).
+	GetGitHubAppForOwner(ctx context.Context, repoURL string) (GitHubApp, error)
+
+	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
+	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
+	GetInstallationByOwner(ctx context.Context, owner string) (*tables.GitHubAppInstallation, error)
 }
 
 type RunnerService interface {
@@ -956,6 +982,32 @@ type TaskSizer interface {
 type ScheduledTask struct {
 	ExecutionTask      *repb.ExecutionTask
 	SchedulingMetadata *scpb.SchedulingMetadata
+}
+
+// TaskLeaser is responsible for leasing tasks to executors.
+type TaskLeaser interface {
+	// Lease attempts to lease the given task ID.
+	// The executor should respect the Context() on the returned lease, and
+	// should call Close() when the lease is no longer needed.
+	Lease(ctx context.Context, taskID string) (TaskLease, error)
+}
+
+// TaskLease represents a lease held on a task, as a best-effort mechanism
+// to prevent multiple executors from executing the same task concurrently.
+//
+// The executor may assume that the lease is valid as long as the Context() is
+// not done and Close() has not been called.
+type TaskLease interface {
+	// Task contains the execution details required to run the leased task.
+	Task() *repb.ExecutionTask
+
+	// Context returns the context for the lease, which will be canceled when
+	// the lease is no longer valid. The executor should stop work on the task
+	// as soon as possible after the context is canceled.
+	Context() context.Context
+
+	// Close releases the lease.
+	Close(ctx context.Context, err error, retry bool)
 }
 
 // Runner represents an isolated execution environment.
@@ -1595,4 +1647,63 @@ type CPULeaser interface {
 
 type OCIRegistry interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
+// Measures transfer time between a client and the cache. Obtained from a
+// HitTracker.
+type TransferTimer interface {
+	// CloseWithBytesTransferred emits and saves metrics related to data
+	// transfer.
+	//
+	// bytesTransferredCache refers to data uploaded/downloaded to the cache
+	// bytesTransferredClient refers to data uploaded/downloaded from the
+	// client
+	// They can be different if, for example, the client supports compression
+	// and uploads compressed bytes (bytesTransferredClient) but the cache
+	// does not support compression and requires that uncompressed bytes are
+	// written (bytesTransferredCache)
+	CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error
+
+	// Records the provided TransferTimer information using the usage tracker
+	// and metrics collector without emiting Prometheus metrics. Exposed for
+	// use in enterprise/server/hit_tracker_service.
+	Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error
+}
+
+// Tracks cache hit/miss and transfer-timing statistics.
+//
+// Example usage
+// ht := env.GetHitTrackerFactory().NewHitTracker(ctx)
+//
+//	if err := ht.TrackMiss(); err != nil {
+//	  log.Printf("Error counting cache miss.")
+//	}
+//
+// dlt := ht.TrackDownload(d)
+// // Download logic
+// dlt.CloseWithBytesTransferred(bytesSentFromCache, bytesSentToClient, compressor, serverLabel)
+type HitTracker interface {
+	SetExecutedActionMetadata(md *repb.ExecutedActionMetadata)
+	TrackMiss(d *repb.Digest) error
+	TrackEmptyHit() error
+	TrackDownload(d *repb.Digest) TransferTimer
+	TrackUpload(d *repb.Digest) TransferTimer
+}
+
+type HitTrackerFactory interface {
+	// Creates a new HitTracker for tracking Action Cache hits.
+	NewACHitTracker(ctx context.Context, invocationID string) HitTracker
+
+	// Creates a new HitTracker for tracking ByteStream/CAS hits.
+	NewCASHitTracker(ctx context.Context, invocationID string) HitTracker
+}
+
+// ExperimentFlagProvider can be use for getting a flag value for a request to
+// enable or disable some experimental functionality. The experiment config is
+// managed outside of the app.
+type ExperimentFlagProvider interface {
+	Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool
+	String(ctx context.Context, flagName string, defaultValue string, opts ...any) string
+	Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64
+	Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64
 }

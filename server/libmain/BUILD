@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//proto:auth_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:hit_tracker_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
@@ -44,6 +45,7 @@ go_library(
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/capabilities_server",
         "//server/remote_cache/content_addressable_storage_server",
+        "//server/remote_cache/hit_tracker",
         "//server/splash",
         "//server/ssl",
         "//server/static",

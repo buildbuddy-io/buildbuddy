@@ -17,6 +17,7 @@ import errorService from "../../../app/errors/error_service";
 import authService from "../../../app/auth/auth_service";
 import { TextLink } from "../../../app/components/link/link";
 import { github } from "../../../proto/github_ts_proto";
+import GitHubTooltip from "./github_tooltip";
 
 export interface Props {
   user: User;
@@ -119,11 +120,23 @@ export default class UserGitHubLink extends React.Component<Props, State> {
 
     return (
       <div className="github-account-link">
-        <div className="settings-option-title">GitHub account link</div>
+        <div className="settings-option-title github-settings-title">
+          GitHub account link
+          <GitHubTooltip />
+        </div>
         <div className="settings-option-description">
           <p>
-            Linking a GitHub account allows you to configure BuildBuddy integrations for your GitHub repositories
-            directly in the BuildBuddy UI.
+            Linking your GitHub account to BuildBuddy lets you manage the BuildBuddy GitHub app directly in the
+            BuildBuddy UI.
+          </p>
+          <p>
+            Even if you login to BuildBuddy using your GitHub account, this must be explicitly granted to access
+            GitHub-related features.
+          </p>
+          <p>
+            Unlinking your account will prevent you from managing the BuildBuddy GitHub app in our UI, but it will not
+            disable the app and related features. To manage the app installation itself, go to the "GitHub
+            installations" tab under "Organization settings".
           </p>
         </div>
         {this.props.user.githubLinked ? (

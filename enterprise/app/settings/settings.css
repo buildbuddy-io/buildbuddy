@@ -88,6 +88,23 @@
   align-items: center;
 }
 
+.github-settings-title {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+}
+
+.github-hovercard {
+  margin: 12px;
+  background: rgba(255, 255, 255, 1);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+  backdrop-filter: blur(3px);
+  display: flex;
+}
+
 /* Large screen */
 @media (min-width: 1281px) {
   .settings .settings-tabs {

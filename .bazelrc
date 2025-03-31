@@ -1,12 +1,9 @@
 common --noenable_bzlmod
 common --enable_workspace
-common --lockfile_mode=update
+# Avoid being broken by version requirement changes in transitive deps.
+common --check_direct_dependencies=error
 
-common --enable_platform_specific_config=true
-
-# Avoid genquery failing on unconfigured cycles
-# https://github.com/bazelbuild/bazel/issues/14169
-common --experimental_skip_ttvs_for_genquery
+common --enable_platform_specific_config
 
 # Build with --config=local to send build logs to your local server
 common:local --bes_results_url=http://localhost:8080/invocation/
@@ -134,7 +131,7 @@ common:ci --disk_cache=
 # Configuration used for untrusted GitHub actions-based CI
 common:untrusted-ci --config=remote-minimal
 common:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
-common:untrusted-ci --repository_cache=~/repo-cache/untrusted/
+common:untrusted-ci --repository_cache=~/repo-cache/
 common:untrusted-ci --disk_cache=
 common:untrusted-ci --flaky_test_attempts=2
 common:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
@@ -254,6 +251,8 @@ common:macos --host_action_env=DEVELOPER_DIR
 common:linux --enable_runfiles
 common:macos --enable_runfiles
 
+common --@aspect_rules_ts//ts:skipLibCheck=honor_tsconfig
+
 # Add `-test.v` to all Go tests so that each test func is reported as a separate test case
 # in the XML output.  This allows our webUI to display the run time of each test case
 # separately and let us know which tests is slow.
@@ -334,6 +333,11 @@ common --noslim_profile
 # Include compact execution log
 # TODO(sluongng): make Bazel writes this to output_base automatically
 common --execution_log_compact_file=bazel_compact_exec_log.binpb.zst
+
+# Don't show cached test results in the test summary
+# We have many tests that can fill up the console with cached results.
+# If you prefer to see cached results, set this to 'short' in user.bazelrc file.
+test --test_summary=terse
 
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:

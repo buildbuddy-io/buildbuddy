@@ -12,7 +12,6 @@ go_library(
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/workflow/config",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//proto:runner_go_proto",
         "//server/endpoint_urls/build_buddy_url",
         "//server/endpoint_urls/cache_api_url",

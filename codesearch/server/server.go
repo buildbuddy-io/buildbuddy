@@ -416,7 +416,10 @@ func (css *codesearchServer) syncIngestAnnotations(ctx context.Context, req *inp
 		os.Remove(fileName)
 	}()
 
-	sstableName := digest.ResourceNameFromProto(req.GetSstableName())
+	sstableName, err := digest.CASResourceNameFromProto(req.GetSstableName())
+	if err != nil {
+		return nil, err
+	}
 	if err := cachetools.GetBlob(ctx, css.env.GetByteStreamClient(), sstableName, tmpFile); err != nil {
 		return nil, err
 	}

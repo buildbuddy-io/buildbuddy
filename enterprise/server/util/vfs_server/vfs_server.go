@@ -36,7 +36,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	gstatus "google.golang.org/grpc/status"
@@ -47,6 +46,10 @@ const (
 	_OFD_GETLK  = 36
 	_OFD_SETLK  = 37
 	_OFD_SETLKW = 38
+
+	// This is the total (arbitrary) size we report via statfs.
+	// We don't actually enforce this is a limit.
+	reportedSizeBytes = 20 * 1024 * 1024 * 1024
 )
 
 var (
@@ -199,6 +202,10 @@ func (dc *DirectClient) SetLkw(ctx context.Context, in *vfspb.SetLkRequest, opts
 	return dc.s.SetLkw(ctx, in)
 }
 
+func (dc *DirectClient) Statfs(ctx context.Context, in *vfspb.StatfsRequest, opts ...grpc.CallOption) (*vfspb.StatfsResponse, error) {
+	return dc.s.Statfs(ctx, in)
+}
+
 const (
 	fsDirectoryNode = iota
 	fsFileNode
@@ -206,6 +213,7 @@ const (
 )
 
 type fsNode struct {
+	server   *Server
 	id       uint64
 	nodeType byte
 	fileNode *repb.FileNode
@@ -249,6 +257,13 @@ func updateAttr(attr *vfspb.Attrs, mod func(attr *vfspb.Attrs)) *vfspb.Attrs {
 	return newAttrs
 }
 
+// statBlocksToFSBlocks converts block count from 512-byte blocks (as reported
+// by Stat) to block count based on the filesystem block size.
+func (p *Server) statBlocksToFSBlocks(statBlocks int64) int64 {
+	statBlocksPerFSBlock := p.backingBlockSize / 512
+	return statBlocks / statBlocksPerFSBlock
+}
+
 func (fsn *fsNode) refreshAttrs() error {
 	fsn.mu.Lock()
 	defer fsn.mu.Unlock()
@@ -259,7 +274,7 @@ func (fsn *fsNode) refreshAttrs() error {
 	if err != nil {
 		return syscallErrStatus(err)
 	}
-
+	oldBlocks := fsn.attrs.Blocks
 	fsn.attrs = updateAttr(fsn.attrs, func(attr *vfspb.Attrs) {
 		attr.Size = fi.Size()
 		attr.MtimeNanos = uint64(fi.ModTime().UnixNano())
@@ -271,6 +286,9 @@ func (fsn *fsNode) refreshAttrs() error {
 		// cast.
 		attr.BlockSize = int64(rawStat.Blksize)
 	})
+	fsn.server.mu.Lock()
+	fsn.server.blocks += fsn.server.statBlocksToFSBlocks(fsn.attrs.Blocks - oldBlocks)
+	fsn.server.mu.Unlock()
 	return nil
 }
 
@@ -333,14 +351,16 @@ func newSymlinkNode(parent *fsNode, name string, target string) *fsNode {
 }
 
 type Server struct {
-	env           environment.Env
-	workspacePath string
+	env              environment.Env
+	workspacePath    string
+	backingBlockSize int64
 
 	server *grpc.Server
 
 	nextNodeID atomic.Uint64
 
 	mu                 sync.Mutex
+	blocks             int64
 	nextId             uint64
 	nodes              map[uint64]*fsNode
 	internalTaskCtx    context.Context
@@ -350,18 +370,25 @@ type Server struct {
 	fileHandles        map[uint64]*fileHandle
 }
 
-func New(env environment.Env, workspacePath string) *Server {
+func New(env environment.Env, workspacePath string) (*Server, error) {
 	rootNode := newDirNode(nil, "")
 	nodes := make(map[uint64]*fsNode)
 	nodes[0] = rootNode
 
-	return &Server{
-		env:           env,
-		workspacePath: workspacePath,
-		fileHandles:   make(map[uint64]*fileHandle),
-		root:          rootNode,
-		nodes:         nodes,
+	fs := unix.Statfs_t{}
+	err := unix.Statfs(workspacePath, &fs)
+	if err != nil {
+		return nil, err
 	}
+
+	return &Server{
+		env:              env,
+		workspacePath:    workspacePath,
+		backingBlockSize: fs.Bsize,
+		fileHandles:      make(map[uint64]*fileHandle),
+		root:             rootNode,
+		nodes:            nodes,
+	}, nil
 }
 
 func (p *Server) Path() string {
@@ -384,6 +411,7 @@ func (p *Server) taskCtx() context.Context {
 
 func (p *Server) addNode(node *fsNode) uint64 {
 	id := atomic.AddUint64(&p.nextId, 1)
+	node.server = p
 	node.id = id
 	p.mu.Lock()
 	p.nodes[id] = node
@@ -749,7 +777,7 @@ func newCASFetcher(env environment.Env, remoteInstanceName string, digestFunctio
 
 func (cf *casFetcher) downloadToFileCache(ctx context.Context, node *fsNode) error {
 	bsClient := cf.env.GetByteStreamClient()
-	rn := digest.NewResourceName(node.fileNode.GetDigest(), cf.remoteInstanceName, rspb.CacheType_CAS, cf.digestFunction)
+	rn := digest.NewCASResourceName(node.fileNode.GetDigest(), cf.remoteInstanceName, cf.digestFunction)
 	rn.SetCompressor(repb.Compressor_ZSTD)
 	w, err := cf.env.GetFileCache().Writer(ctx, node.fileNode, cf.digestFunction)
 	if err != nil {
@@ -1003,29 +1031,17 @@ func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*v
 	return &vfspb.GetAttrResponse{Attrs: node.attrs}, nil
 }
 
-func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*vfspb.SetAttrResponse, error) {
-	node, err := p.lookupNode(request.GetId())
-	if err != nil {
-		return nil, err
-	}
-
-	node.mu.Lock()
-	defer node.mu.Unlock()
-
-	// Not using updateAttr here to avoid putting all the setattr logic
-	// inside a nested function.
-	newAttrs := proto.Clone(node.attrs).(*vfspb.Attrs)
-
+func (p *Server) processSetAttr(node *fsNode, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
 	if request.SetPerms != nil {
 		newAttrs.Perm = request.SetPerms.Perms
 	}
 
 	if request.SetSize != nil {
 		if node.backingPath == "" {
-			return nil, syscallErrStatus(syscall.EPERM)
+			return syscall.EPERM
 		}
 		if err := os.Truncate(node.backingPath, request.SetSize.GetSize()); err != nil {
-			return nil, syscallErrStatus(err)
+			return err
 		}
 		newAttrs.Size = request.SetSize.GetSize()
 	}
@@ -1051,6 +1067,79 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 			atime = time.Unix(0, int64(request.SetAtime.GetAtimeNanos()))
 		}
 		if err := os.Chtimes(node.backingPath, atime, mtime); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *Server) processSetExtendedAttr(node *fsNode, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
+	set := request.SetExtended != nil
+	remove := request.RemoveExtended != nil
+	if !set && !remove {
+		return status.InvalidArgumentErrorf("either set or remove should be present")
+	}
+	if set && remove {
+		return status.InvalidArgumentErrorf("both set and remove should not be present")
+	}
+
+	if se := request.SetExtended; se != nil {
+		exists := false
+		for _, xa := range newAttrs.Extended {
+			if xa.Name == se.Name {
+				if se.Flags&unix.XATTR_CREATE != 0 {
+					return syscall.EEXIST
+				}
+				xa.Value = se.Value
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			if se.Flags&unix.XATTR_REPLACE != 0 {
+				return syscall.ENODATA
+			}
+			newAttrs.Extended = append(newAttrs.Extended, &vfspb.ExtendedAttr{
+				Name:  se.Name,
+				Value: se.Value,
+			})
+		}
+		return nil
+	}
+
+	if re := request.RemoveExtended; re != nil {
+		for i, xa := range newAttrs.Extended {
+			if xa.Name == re.Name {
+				newAttrs.Extended = append(newAttrs.Extended[:i], newAttrs.Extended[i+1:]...)
+				return nil
+			}
+		}
+		return syscall.ENODATA
+	}
+
+	return nil
+}
+
+func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*vfspb.SetAttrResponse, error) {
+	node, err := p.lookupNode(request.GetId())
+	if err != nil {
+		return nil, err
+	}
+
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	// Not using updateAttr here to avoid putting all the setattr logic
+	// inside a nested function.
+	newAttrs := proto.Clone(node.attrs).(*vfspb.Attrs)
+
+	if request.SetExtended != nil || request.RemoveExtended != nil {
+		if err := p.processSetExtendedAttr(node, request, newAttrs); err != nil {
+			return nil, syscallErrStatus(err)
+		}
+	} else {
+		if err := p.processSetAttr(node, request, newAttrs); err != nil {
 			return nil, syscallErrStatus(err)
 		}
 	}
@@ -1124,7 +1213,7 @@ func (p *Server) Mkdir(ctx context.Context, request *vfspb.MkdirRequest) (*vfspb
 	parentNode.children[request.GetName()] = newNode
 	p.addNode(newNode)
 
-	return &vfspb.MkdirResponse{Id: newNode.id}, nil
+	return &vfspb.MkdirResponse{Id: newNode.id, Attrs: newNode.attrs}, nil
 }
 
 func (p *Server) Rmdir(ctx context.Context, request *vfspb.RmdirRequest) (*vfspb.RmdirResponse, error) {
@@ -1209,6 +1298,9 @@ func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
 			childNode.mu.Unlock()
 			return syscallErrStatus(err)
 		}
+		childNode.server.mu.Lock()
+		childNode.server.blocks -= childNode.server.statBlocksToFSBlocks(childNode.attrs.Blocks)
+		childNode.server.mu.Unlock()
 	}
 	childNode.mu.Unlock()
 
@@ -1358,6 +1450,27 @@ func (p *Server) CopyFileRange(ctx context.Context, request *vfspb.CopyFileRange
 		return nil, syscallErrStatus(err)
 	}
 	return &vfspb.CopyFileRangeResponse{NumBytesCopied: uint32(n)}, nil
+}
+
+func (p *Server) Statfs(ctx context.Context, request *vfspb.StatfsRequest) (*vfspb.StatfsResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	totalBlocks := reportedSizeBytes / p.backingBlockSize
+
+	free := totalBlocks - p.blocks
+	// We don't enforce a usage limit yet so used blocks may go over the
+	// total blocks.
+	if free < 0 {
+		free = 0
+	}
+
+	return &vfspb.StatfsResponse{
+		BlockSize:       p.backingBlockSize,
+		TotalBlocks:     uint64(totalBlocks),
+		BlocksFree:      uint64(free),
+		BlocksAvailable: uint64(free),
+	}, nil
 }
 
 func (p *Server) Start(lis net.Listener) error {

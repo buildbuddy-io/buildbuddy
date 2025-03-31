@@ -20,7 +20,6 @@ import (
 	"google.golang.org/genproto/googleapis/bytestream"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs.")
@@ -93,7 +92,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 		return 0, err
 	}
 	defer f.Close()
-	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+	r := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
 	if err := cachetools.GetBlob(ctx, bsClient, r, f); err != nil {
 		return 0, status.WrapError(err, "remote fetch snapshot artifact")
@@ -143,7 +142,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 		defer func() { log.CtxDebugf(ctx, "Uploaded snapshot artifact in %s", time.Since(start)) }()
 	}
 
-	rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+	rn := digest.NewCASResourceName(d, remoteInstanceName, repb.DigestFunction_BLAKE3)
 	rn.SetCompressor(repb.Compressor_ZSTD)
 	file, err := os.Open(path)
 	if err != nil {

@@ -49,10 +49,10 @@ import (
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
+	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -221,6 +221,13 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 }
 
 func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType sipb.StoredInvocationLink_Type) error {
+	// Don't insert invocation links for empty invocation IDs, which can happen
+	// when performing an execution using build tools that don't send
+	// an invocation ID in RequestMetadata.
+	if invocationID == "" {
+		return nil
+	}
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -375,6 +382,8 @@ func (s *ExecutionServer) recordExecution(
 		executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
 		executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
 
+		executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
+
 		executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
 		executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
 
@@ -435,8 +444,8 @@ func (s *ExecutionServer) recordExecution(
 // not validate it.
 // N.B. This should only be used if the calling code has already ensured the
 // action is valid and may be returned.
-func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *digest.ResourceName) (*repb.ActionResult, error) {
-	cacheResource := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_AC, r.GetDigestFunction())
+func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *digest.CASResourceName) (*repb.ActionResult, error) {
+	cacheResource := digest.NewACResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
 	data, err := s.cache.Get(ctx, cacheResource.ToProto())
 	if err != nil {
 		if status.IsNotFoundError(err) {
@@ -451,7 +460,7 @@ func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *dig
 	return actionResult, nil
 }
 
-func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *digest.ResourceName) (*repb.ActionResult, error) {
+func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *digest.CASResourceName) (*repb.ActionResult, error) {
 	actionResult, err := s.getUnvalidatedActionResult(ctx, d)
 	if err != nil {
 		return nil, err
@@ -542,11 +551,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
-	executionID, err := r.UploadString()
-	if err != nil {
-		return "", nil, err
-	}
+	r := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
+	executionID := r.NewUploadString()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "task_id", executionID)
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
 
@@ -564,7 +570,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		log.CtxInfof(ctx, "Execution %q is missing invocation ID metadata. Request metadata: %+v", executionID, rmd)
 	}
 
-	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
+	adInstanceDigest := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	action, command, err := s.fetchActionAndCommand(ctx, adInstanceDigest)
 	if err != nil {
 		return "", nil, err
@@ -709,30 +715,23 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		return status.InvalidArgumentErrorf("invalid execution priority %d; priority values must be between -1000 and 1000 (inclusive)", req.GetExecutionPolicy().GetPriority())
 	}
 
-	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
+	adInstanceDigest := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {
 		return err
 	}
 
-	downloadString, err := adInstanceDigest.DownloadString()
-	if err != nil {
-		return err
-	}
+	downloadString := adInstanceDigest.DownloadString()
 	invocationID := bazel_request.GetInvocationID(stream.Context())
 
 	hedge := false
 	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
-			r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
-			executionID, err := r.UploadString()
-			if err != nil {
-				return err
-			}
+			executionID := adInstanceDigest.NewUploadString()
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "cached")
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
-			stateChangeFn := operation.GetStateChangeFunc(stream, executionID, adInstanceDigest)
+			stateChangeFn := operation.GetStateChangeFunc(stream, executionID, adInstanceDigest.GetDigest())
 			if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithCachedResult(actionResult)); err != nil {
 				return err // CHECK (these errors should not happen).
 			}
@@ -899,7 +898,7 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 		// Send a best-effort initial "in progress" update to client.
 		// Once Bazel receives the initial update, it will use WaitExecution to handle retry on error instead of
 		// requesting a new execution via Execute.
-		stateChangeFn := operation.GetStateChangeFunc(stream, req.GetName(), actionResource)
+		stateChangeFn := operation.GetStateChangeFunc(stream, req.GetName(), actionResource.GetDigest())
 		err = stateChangeFn(repb.ExecutionStage_QUEUED, operation.InProgressExecuteResponse())
 		if err != nil && err != io.EOF {
 			log.CtxWarningf(stream.Context(), "Could not send initial update: %s", err)
@@ -924,7 +923,7 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 		if msg.Err != nil {
 			op, err := operation.Assemble(
 				req.GetName(),
-				operation.Metadata(repb.ExecutionStage_COMPLETED, actionResource),
+				operation.Metadata(repb.ExecutionStage_COMPLETED, actionResource.GetDigest()),
 				operation.ErrorResponse(msg.Err))
 			if err != nil {
 				return err
@@ -982,7 +981,7 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 		return err
 	}
 	rsp := operation.ErrorResponse(reason)
-	op, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, r), rsp)
+	op, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, r.GetDigest()), rsp)
 	if err != nil {
 		return err
 	}
@@ -998,8 +997,33 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 		log.CtxWarningf(ctx, "MarkExecutionFailed: error updating execution: %q: %s", taskID, err)
 		return err
 	}
+	err = s.recordFailedExecution(ctx, taskID)
+	if err != nil {
+		log.CtxWarningf(ctx, "MarkExecutionFailed: %s", err)
+	}
 	if err := s.cacheExecuteResponse(ctx, taskID, rsp); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: failed to cache execute response for execution %q: %s", taskID, err)
+	}
+	return nil
+}
+
+func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID string) error {
+	actionRN, err := digest.ParseUploadResourceName(taskID)
+	if err != nil {
+		return fmt.Errorf("Failed to parse taskID: %s", err)
+	}
+	action, cmd, err := s.fetchActionAndCommand(ctx, actionRN)
+	if err != nil {
+		return fmt.Errorf("Failed to fetch action and command: %s", err)
+	}
+	properties, err := platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd})
+	if err != nil {
+		return fmt.Errorf("Failed to parse platform properties: %s", err)
+	}
+	// We don't have a response, so we don't have response metadata. It's
+	// not required.
+	if err := s.recordExecution(ctx, taskID, action, nil, nil, properties); err != nil {
+		return fmt.Errorf("Failed to record execution: %s", err)
 	}
 	return nil
 }
@@ -1080,20 +1104,20 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			} else if !ok {
 				log.CtxInfof(ctx, "Failed to find ExecutionAuxiliaryMetadata. Executor is probably self-hosted and not updated since 2024-12-13.")
 			}
-			actionRN, err := digest.ParseUploadResourceName(taskID)
+			actionCASRN, err := digest.ParseUploadResourceName(taskID)
 			if err != nil {
 				return status.WrapErrorf(err, "Failed to parse taskID")
 			}
-			actionRN = digest.NewResourceName(actionRN.GetDigest(), actionRN.GetInstanceName(), rspb.CacheType_AC, actionRN.GetDigestFunction())
 			var cmd *repb.Command
-			action, cmd, err = s.fetchActionAndCommand(ctx, actionRN)
+			action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
 			if err != nil {
 				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
 			}
 			properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
 			if err != nil {
-				log.CtxWarningf(ctx, "Failed to parse platform properties: %s", err)
+				return status.InternalErrorf("Failed to parse platform properties: %s", err)
 			}
+			actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
 			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
@@ -1157,7 +1181,7 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	if err != nil {
 		return err
 	}
-	arn := digest.NewResourceName(d, taskRN.GetInstanceName(), rspb.CacheType_AC, taskRN.GetDigestFunction())
+	arn := digest.NewACResourceName(d, taskRN.GetInstanceName(), taskRN.GetDigestFunction())
 
 	redactCachedExecuteResponse(ctx, response)
 	b, err := proto.Marshal(response)
@@ -1169,7 +1193,7 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), arn, ar)
 }
 
-func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ResourceName, response *repb.ExecuteResponse, action *repb.Action) error {
+func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ACResourceName, response *repb.ExecuteResponse, action *repb.Action) error {
 	if response.GetCachedResult() || action.GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
 		return nil
 	}
@@ -1178,7 +1202,7 @@ func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceN
 
 // markTaskComplete contains logic to be run when the task is complete but
 // before letting the client know that the task has completed.
-func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties) error {
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties) error {
 	execErr := gstatus.ErrorProto(executeResponse.GetStatus())
 	router := s.env.GetTaskRouter()
 	if router != nil && !executeResponse.GetCachedResult() {
@@ -1248,16 +1272,22 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	return ut.Increment(ctx, labels, counts)
 }
 
-func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResourceName *digest.ResourceName) (*repb.Action, *repb.Command, error) {
+func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, *repb.Command, error) {
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
+		if gstatus.Code(err) == gcodes.NotFound {
+			err = digest.MissingDigestError(actionResourceName.GetDigest())
+		}
 		log.CtxWarningf(ctx, "Error fetching action: %s", err.Error())
 		return nil, nil, err
 	}
 	cmdDigest := action.GetCommandDigest()
-	cmdInstanceNameDigest := digest.NewResourceName(cmdDigest, actionResourceName.GetInstanceName(), rspb.CacheType_CAS, actionResourceName.GetDigestFunction())
+	cmdInstanceNameDigest := digest.NewCASResourceName(cmdDigest, actionResourceName.GetInstanceName(), actionResourceName.GetDigestFunction())
 	cmd := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
+		if gstatus.Code(err) == gcodes.NotFound {
+			err = digest.MissingDigestError(actionResourceName.GetDigest())
+		}
 		log.CtxWarningf(ctx, "Error fetching command: %s", err.Error())
 		return nil, nil, err
 	}

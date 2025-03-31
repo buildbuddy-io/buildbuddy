@@ -464,7 +464,7 @@ func (s *APIServer) handleGetFileRequest(w http.ResponseWriter, r *http.Request)
 
 	err = s.env.GetPooledByteStreamClient().StreamBytestreamFile(r.Context(), parsedURL, w)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 	}
 }
 

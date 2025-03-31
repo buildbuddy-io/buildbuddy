@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbeclient"
@@ -79,7 +80,6 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -829,11 +829,12 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 
 	runnerPool := NewTestRunnerPool(r.t, env, localCacheDirectory, options.RunInterceptor)
 
-	exec, err := executor.NewExecutor(env, executorID, executorHostID, runnerPool)
+	exec, err := executor.NewExecutor(env, executorID, executorHostID, "fake-host-name", runnerPool)
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, runnerPool, &options.priorityTaskSchedulerOptions)
+	taskLeaser := task_leaser.NewTaskLeaser(env, executorID)
+	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, runnerPool, taskLeaser, &options.priorityTaskSchedulerOptions)
 	taskScheduler.Start()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -922,7 +923,7 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionResult, instanceName string) (string, string, error) {
 	stdout := ""
 	if actionResult.GetStdoutDigest() != nil {
-		d := digest.NewResourceName(actionResult.GetStdoutDigest(), instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		d := digest.NewCASResourceName(actionResult.GetStdoutDigest(), instanceName, repb.DigestFunction_SHA256)
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetDigest().GetSizeBytes()))
 		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
 		if err != nil {
@@ -933,7 +934,7 @@ func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionR
 
 	stderr := ""
 	if actionResult.GetStderrDigest() != nil {
-		d := digest.NewResourceName(actionResult.GetStderrDigest(), instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
+		d := digest.NewCASResourceName(actionResult.GetStderrDigest(), instanceName, repb.DigestFunction_SHA256)
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetDigest().GetSizeBytes()))
 		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
 		if err != nil {

@@ -8,10 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"time"
-
-	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
@@ -25,7 +24,6 @@ import (
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -386,10 +384,9 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	if err != nil {
 		return err
 	}
-	arRN := digest.NewResourceName(
+	arRN := digest.NewACResourceName(
 		arDigest,
 		actionResultInstanceName,
-		rspb.CacheType_AC,
 		repb.DigestFunction_SHA256,
 	)
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
@@ -412,10 +409,9 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
 		return fmt.Errorf("missing blob metadata digest or blob digest for %s", ref)
 	}
-	blobMetadataRN := digest.NewResourceName(
+	blobMetadataRN := digest.NewCASResourceName(
 		blobMetadataCASDigest,
 		"",
-		rspb.CacheType_CAS,
 		repb.DigestFunction_SHA256,
 	)
 	blobMetadata := &ocipb.OCIBlobMetadata{}
@@ -429,10 +425,9 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	w.WriteHeader(http.StatusOK)
 
 	if writeBody {
-		blobRN := digest.NewResourceName(
+		blobRN := digest.NewCASResourceName(
 			blobCASDigest,
 			"",
-			rspb.CacheType_CAS,
 			repb.DigestFunction_SHA256,
 		)
 		blobRN.SetCompressor(repb.Compressor_ZSTD)
@@ -447,10 +442,9 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
 	}
-	blobRN := digest.NewResourceName(
+	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
 		"",
-		rspb.CacheType_CAS,
 		repb.DigestFunction_SHA256,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
@@ -496,10 +490,9 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 	if err != nil {
 		return err
 	}
-	arRN := digest.NewResourceName(
+	arRN := digest.NewACResourceName(
 		arDigest,
 		actionResultInstanceName,
-		rspb.CacheType_AC,
 		repb.DigestFunction_SHA256,
 	)
 	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)

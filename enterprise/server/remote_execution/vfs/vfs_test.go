@@ -2,6 +2,7 @@ package vfs_test
 
 import (
 	"context"
+	"crypto/rand"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -32,7 +33,8 @@ func setupVFS(t *testing.T) string {
 
 	env := testenv.GetTestEnv(t)
 
-	server := vfs_server.New(env, back)
+	server, err := vfs_server.New(env, back)
+	require.NoError(t, err)
 	err = server.Prepare(context.Background(), &container.FileSystemLayout{
 		Inputs: &repb.Tree{
 			Root: &repb.Directory{},
@@ -588,4 +590,141 @@ func TestSetAttr(t *testing.T) {
 	require.EqualValues(t, 3, rs.Nlink)
 	require.EqualValues(t, rs.BlockSize/512, rs.Blocks)
 	require.EqualValues(t, 1000, rs.Size)
+}
+
+func TestMkdir(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testDir := "dir"
+	testDirPath := filepath.Join(fsPath, testDir)
+	err := os.Mkdir(testDirPath, 0700)
+	require.NoError(t, err)
+
+	rs := rawStat(t, testDirPath)
+	require.Greater(t, rs.Size, int64(0))
+}
+
+func nullTerminated(bs []byte) []byte {
+	return append(bs, 0)
+}
+
+func TestExtendedAttrs(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := "hello.txt"
+	testFilePath := filepath.Join(fsPath, testFile)
+	err := os.WriteFile(testFilePath, []byte("a"), 0644)
+	require.NoError(t, err)
+
+	// Simple set/get check.
+	key1 := "key1"
+	data1 := []byte("val1")
+	err = unix.Setxattr(testFilePath, key1, data1, 0)
+	require.NoError(t, err)
+	sz, err := unix.Getxattr(testFilePath, key1, nil)
+	require.NoError(t, err)
+	require.EqualValues(t, len(data1)+1, sz)
+	buf := make([]byte, 1024)
+	sz, err = unix.Getxattr(testFilePath, key1, buf)
+	require.NoError(t, err)
+	require.Equal(t, len(data1)+1, sz)
+	require.Equal(t, nullTerminated(data1), buf[:sz])
+
+	// Replace an existing attribute.
+	newData := []byte("newVal")
+	err = unix.Setxattr(testFilePath, key1, newData, 0)
+	require.NoError(t, err)
+	sz, err = unix.Getxattr(testFilePath, key1, nil)
+	require.NoError(t, err)
+	require.EqualValues(t, len(newData)+1, sz)
+	buf = make([]byte, 1024)
+	sz, err = unix.Getxattr(testFilePath, key1, buf)
+	require.NoError(t, err)
+	require.Equal(t, len(newData)+1, sz)
+	require.Equal(t, nullTerminated(newData), buf[:sz])
+
+	// XATTR_CREATE on an existing attribute should fail.
+	err = unix.Setxattr(testFilePath, key1, newData, unix.XATTR_CREATE)
+	require.ErrorIs(t, err, syscall.EEXIST)
+
+	// XATTR_REPLACE on a non-existent attribute should fail.
+	err = unix.Setxattr(testFilePath, "no-such-key", newData, unix.XATTR_REPLACE)
+	require.ErrorIs(t, err, syscall.ENODATA)
+
+	// Remove the attribute.
+	err = unix.Removexattr(testFilePath, key1)
+	require.NoError(t, err)
+
+	// Removing non-existent attribute should fail.
+	err = unix.Removexattr(testFilePath, key1)
+	require.ErrorIs(t, err, syscall.ENODATA)
+
+	// Test buffer sizes for "get".
+	{
+		err = unix.Setxattr(testFilePath, key1, data1, 0)
+		require.NoError(t, err)
+
+		// Not enough space for terminating null.
+		buf = make([]byte, len(data1))
+		_, err = unix.Getxattr(testFilePath, key1, buf)
+		require.ErrorIs(t, err, syscall.ERANGE)
+
+		// Exactly the right amount of space.
+		buf = make([]byte, len(data1)+1)
+		_, err = unix.Getxattr(testFilePath, key1, buf)
+		require.NoError(t, err)
+	}
+
+	// Set multiple attributes.
+	err = unix.Setxattr(testFilePath, key1, data1, 0)
+	require.NoError(t, err)
+	key2 := "key2"
+	data2 := []byte("some-other-val")
+	err = unix.Setxattr(testFilePath, key2, data2, 0)
+	require.NoError(t, err)
+	sz, err = unix.Listxattr(testFilePath, nil)
+	require.NoError(t, err)
+	require.Equal(t, len(key1)+len(key2)+2, sz)
+	buf = make([]byte, 1024)
+	sz, err = unix.Listxattr(testFilePath, buf)
+	require.NoError(t, err)
+	require.Equal(t, len(key1)+len(key2)+2, sz)
+	require.Equal(t, nullTerminated([]byte(key1)), buf[:len(key1)+1])
+	require.Equal(t, nullTerminated([]byte(key2)), buf[len(key1)+1:sz])
+}
+
+func TestStatfs(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	stats := &unix.Statfs_t{}
+	err := unix.Statfs(fsPath, stats)
+	require.NoError(t, err)
+	require.Greater(t, stats.Bsize, int64(0))
+	require.Greater(t, stats.Blocks, uint64(0))
+	require.Greater(t, stats.Bfree, uint64(0))
+	require.Greater(t, stats.Bavail, uint64(0))
+	require.Equal(t, stats.Bfree, stats.Blocks)
+	require.Equal(t, stats.Bavail, stats.Blocks)
+	log.Infof("stats %+v", stats)
+
+	data := make([]byte, stats.Bsize*2)
+	rand.Read(data)
+	testFile := "hello.txt"
+	testFilePath := filepath.Join(fsPath, testFile)
+	err = os.WriteFile(testFilePath, data, 0644)
+	require.NoError(t, err)
+
+	err = unix.Statfs(fsPath, stats)
+	require.NoError(t, err)
+	log.Infof("stats %+v", stats)
+	require.Equal(t, stats.Bfree, stats.Blocks-2)
+	require.Equal(t, stats.Bavail, stats.Blocks-2)
+
+	err = os.Remove(testFilePath)
+	require.NoError(t, err)
+	err = unix.Statfs(fsPath, stats)
+	require.NoError(t, err)
+	log.Infof("stats %+v", stats)
+	require.Equal(t, stats.Bfree, stats.Blocks)
+	require.Equal(t, stats.Bavail, stats.Blocks)
 }

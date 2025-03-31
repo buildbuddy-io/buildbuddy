@@ -28,7 +28,6 @@ import (
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -254,7 +253,7 @@ func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context
 			}
 			defer os.Remove(path)
 
-			rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+			rn := digest.NewCASResourceName(d, remoteInstanceName, repb.DigestFunction_BLAKE3)
 			rn.SetCompressor(repb.Compressor_ZSTD)
 			file, err := os.Open(path)
 			if err != nil {
@@ -279,7 +278,7 @@ func uploadManifestRemoteCache(ctx context.Context, env environment.Env, key *fc
 	if err != nil {
 		log.Fatalf("Error generating digest for snapshot key: %s", err)
 	}
-	acDigest := digest.NewResourceName(remoteManifestKey, remoteInstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	acDigest := digest.NewACResourceName(remoteManifestKey, remoteInstanceName, repb.DigestFunction_BLAKE3)
 	if err := cachetools.UploadActionResult(ctx, env.GetActionCacheClient(), acDigest, localACResult); err != nil {
 		log.Fatalf("Error uploading manifest to remote cache: %s", err)
 	}

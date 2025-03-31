@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/creack/pty"
 	"github.com/docker/go-units"
 	"github.com/google/shlex"
@@ -52,7 +53,6 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	backendLog "github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -1398,10 +1398,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 		if err != nil {
 			return nil, nil, err
 		}
-		downloadString, err := digest.NewResourceName(d.ToDigest(), *remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
-		if err != nil {
-			return nil, nil, err
-		}
+		downloadString := digest.NewCASResourceName(d.ToDigest(), *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
 
 		runfiles = append(runfiles, &bespb.File{
 			Name: relPath,
@@ -1457,10 +1454,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 			if err != nil {
 				return err
 			}
-			downloadString, err := digest.NewResourceName(td, *remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
-			if err != nil {
-				return err
-			}
+			downloadString := digest.NewCASResourceName(td, *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
 			mu.Lock()
 			runfileDirs = append(runfileDirs, &bespb.Tree{
 				Name: relPath,
@@ -2232,12 +2226,12 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 		lines = append(lines, "build:buildbuddy_api_key --remote_header=x-buildbuddy-api-key="+apiKey)
 	}
 	if origin := os.Getenv("BB_GRPC_CLIENT_ORIGIN"); origin != "" {
-		lines = append(lines, "common --remote_header=x-buildbuddy-origin="+origin)
-		lines = append(lines, "common --bes_header=x-buildbuddy-origin="+origin)
+		lines = append(lines, fmt.Sprintf("common --remote_header=%s=%s", usageutil.OriginHeaderName, origin))
+		lines = append(lines, fmt.Sprintf("common --bes_header=%s=%s", usageutil.OriginHeaderName, origin))
 	}
 	if identity := os.Getenv(clientIdentityEnvVar); identity != "" {
-		lines = append(lines, "common --remote_header=x-buildbuddy-client-identity="+identity)
-		lines = append(lines, "common --bes_header=x-buildbuddy-client-identity="+identity)
+		lines = append(lines, fmt.Sprintf("common --remote_header=%s=%s", authutil.ClientIdentityHeaderName, identity))
+		lines = append(lines, fmt.Sprintf("common --bes_header=%s=%s", authutil.ClientIdentityHeaderName, identity))
 	}
 
 	// These configs point to the same env that triggered the remote run

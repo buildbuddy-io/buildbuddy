@@ -30,7 +30,6 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -810,7 +809,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 			d := dk.ToDigest()
 			filePointers := filePointers
 
-			rn := digest.NewResourceName(dk.ToDigest(), ff.instanceName, rspb.CacheType_CAS, ff.digestFunction)
+			rn := digest.NewCASResourceName(dk.ToDigest(), ff.instanceName, ff.digestFunction)
 			// Write empty files directly (skip checking cache and downloading).
 			if rn.IsEmpty() {
 				for _, fp := range filePointers {
@@ -923,7 +922,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		if err != nil {
 			return nil, err
 		}
-		resourceName := digest.NewResourceName(fp0.FileNode.Digest, instanceName, rspb.CacheType_CAS, ff.digestFunction)
+		resourceName := digest.NewCASResourceName(fp0.FileNode.Digest, instanceName, ff.digestFunction)
 		if ff.supportsCompression() {
 			resourceName.SetCompressor(repb.Compressor_ZSTD)
 		}
@@ -965,14 +964,6 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		}
 	}
 	return nil
-}
-
-func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *digest.ResourceName) (*repb.Directory, error) {
-	dir := &repb.Directory{}
-	if err := cachetools.GetBlobAsProto(ctx, bsClient, reqDigest, dir); err != nil {
-		return nil, err
-	}
-	return dir, nil
 }
 
 func DirMapFromTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {

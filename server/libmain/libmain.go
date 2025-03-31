@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
@@ -60,6 +61,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -218,6 +220,9 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 	realEnv.SetKeyValStore(keyValStore)
 
 	realEnv.SetRepoDownloader(repo_downloader.NewRepoDownloader())
+
+	hit_tracker.Register(realEnv)
+
 	return realEnv
 }
 
@@ -317,6 +322,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	}
 	if auth := env.GetAuthService(); auth != nil {
 		authpb.RegisterAuthServiceServer(grpcServer, auth)
+	}
+	if ht := env.GetHitTrackerServiceServer(); ht != nil {
+		hitpb.RegisterHitTrackerServiceServer(grpcServer, ht)
 	}
 }
 
@@ -464,9 +472,11 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if wfs := env.GetWorkflowService(); wfs != nil {
 		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
 	}
-	if gha := env.GetGitHubApp(); gha != nil {
-		mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, gha.WebhookHandler()))
-		mux.Handle("/auth/github/app/link/", interceptors.WrapAuthenticatedExternalHandler(env, gha.OAuthHandler()))
+	if gha := env.GetGitHubAppService(); gha != nil {
+		mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, gha.GetReadWriteGitHubApp().WebhookHandler()))
+		mux.Handle("/auth/github/app/link/", interceptors.WrapAuthenticatedExternalHandler(env, gha.GetReadWriteGitHubApp().OAuthHandler()))
+		// TODO(Maggie): Read only app should use the callbacks `webhooks/github/app/readonly`
+		// and `/auth/github/app/readonly/link/`
 	}
 
 	if gcp := env.GetGCPService(); gcp != nil {

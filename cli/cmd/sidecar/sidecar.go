@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -128,8 +129,8 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 	grpcOptions := []grpc.ServerOption{
 		interceptors.GetUnaryInterceptor(env),
 		interceptors.GetStreamInterceptor(env),
-		grpc.ChainUnaryInterceptor(inactivityUnaryInterceptor(), interceptors.PropagateAPIKeyUnaryInterceptor()),
-		grpc.ChainStreamInterceptor(inactivityStreamInterceptor(), interceptors.PropagateAPIKeyStreamInterceptor()),
+		grpc.ChainUnaryInterceptor(inactivityUnaryInterceptor(), interceptors.PropagateMetadataUnaryInterceptor(authutil.APIKeyHeader)),
+		grpc.ChainStreamInterceptor(inactivityStreamInterceptor(), interceptors.PropagateMetadataStreamInterceptor(authutil.APIKeyHeader)),
 		grpc.MaxRecvMsgSize(grpc_server.MaxRecvMsgSizeBytes()),
 		grpc_server.KeepaliveEnforcementPolicy(),
 	}

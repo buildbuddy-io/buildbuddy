@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Restore caches
-        id: restore-caches
+        id: cache-restore
         uses: ./.github/actions/cache-restore
 
       - name: Build Website
@@ -45,6 +45,6 @@ jobs:
         uses: ./.github/actions/cache-save
         if: always()
         with:
-          repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
-          go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
-          yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}
+          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
+          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
+          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}

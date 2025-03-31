@@ -15,6 +15,7 @@ go_library(
         "//server/nullauth",
         "//server/real_environment",
         "//server/remote_cache/byte_stream_client",
+        "//server/remote_cache/hit_tracker",
         "//server/testutil/testclickhouse",
         "//server/testutil/testfs",
         "//server/testutil/testmysql",

@@ -45,6 +45,7 @@ go_test(
     data = [
         ":busybox",
         ":crun",
+        "//enterprise/server/cmd/executor:tini",
         "//enterprise/server/remote_execution/runner/testworker",
         "@busybox",
     ],
@@ -72,6 +73,7 @@ go_test(
         "busyboxRlocationpath": "$(rlocationpath :busybox)",
         "ociBusyboxRlocationpath": "$(rlocationpath @busybox)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
+        "tiniRlocationpath": "$(rlocationpath //enterprise/server/cmd/executor:tini)",
     },
     deps = [
         ":ociruntime",

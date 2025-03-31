@@ -12,10 +12,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -26,7 +28,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -91,7 +92,8 @@ func startServerLocally(ctx context.Context, localBSS bspb.ByteStreamServer) (*g
 	return conn, nil
 }
 
-func NewCacheProxy(ctx context.Context, env environment.Env, conn grpc.ClientConnInterface) (*CacheProxy, error) {
+func NewCacheProxy(ctx context.Context, env *real_environment.RealEnv, conn grpc.ClientConnInterface) (*CacheProxy, error) {
+	hit_tracker.Register(env)
 	if env.GetCache() == nil {
 		return nil, status.FailedPreconditionError("CacheProxy requires a local cache to run.")
 	}
@@ -215,7 +217,7 @@ func (p *CacheProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServ
 		if err != nil {
 			if err == io.EOF {
 				if localFile != nil {
-					resourceName := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, resourceName.GetDigestFunction())
+					resourceName := digest.NewCASResourceName(d, instanceName, resourceName.GetDigestFunction())
 					if _, _, err := cachetools.UploadFromReader(ctx, p.localBSSClient, resourceName, localFile); err != nil {
 						log.Errorf("error uploading from reader: %s", err.Error())
 					}

@@ -32,6 +32,7 @@ go_library(
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/scheduling/priority_task_scheduler",
         "//enterprise/server/scheduling/scheduler_client",
+        "//enterprise/server/scheduling/task_leaser",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/cpuset",
         "//proto:remote_execution_go_proto",
@@ -44,6 +45,7 @@ go_library(
         "//server/real_environment",
         "//server/resources",
         "//server/ssl",
+        "//server/util/canary",
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/grpc_client",
@@ -86,18 +88,18 @@ go_binary(
     embed = [":executor_lib"],
 )
 
+alias(
+    name = "tini",
+    actual = select({
+        "@platforms//cpu:arm64": "@com_github_krallin_tini_tini-linux-arm64//file:tini",
+        "//conditions:default": "@com_github_krallin_tini_tini-linux-amd64//file:tini",
+    }),
+)
+
 container_layer(
     name = "tini_layer",
     directory = "/",
-    files = select({
-        "@platforms//cpu:x86_64": [
-            "@com_github_krallin_tini_tini-linux-amd64//file:tini",
-        ],
-        "@platforms//cpu:arm64": [
-            "@com_github_krallin_tini_tini-linux-arm64//file:tini",
-        ],
-        "//conditions:default": [],
-    }),
+    files = [":tini"],
     tags = ["manual"],
 )
 

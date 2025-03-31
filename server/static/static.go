@@ -167,7 +167,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		ConfiguredIssuers:                      env.GetAuthenticator().PublicIssuers(),
 		DefaultToDenseMode:                     *defaultToDenseMode,
 		GithubEnabled:                          github.IsLegacyOAuthAppEnabled(),
-		GithubAppEnabled:                       env.GetGitHubApp() != nil,
+		GithubAppEnabled:                       env.GetGitHubAppService() != nil,
 		GithubAuthEnabled:                      github.AuthEnabled(env),
 		AnonymousUsageEnabled:                  env.GetAuthenticator().AnonymousUsageEnabled(ctx),
 		TestDashboardEnabled:                   target_tracker.TargetTrackingEnabled(),
@@ -218,6 +218,9 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		DefaultLoginSlug:                       *defaultLoginSlug,
 	}
 
+	if efp := env.GetExperimentFlagProvider(); efp != nil {
+		config.FlipLogoOnHover = efp.Boolean(ctx, "flip-logo-on-hover", false /*=default*/)
+	}
 	configJSON, err := protojson.Marshal(&config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

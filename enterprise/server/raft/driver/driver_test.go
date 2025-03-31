@@ -3,6 +3,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand"
 	"slices"
 	"testing"
@@ -314,7 +315,8 @@ func TestFindNodeForAllocation(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			rq := &Queue{log: log.NamedSubLogger("test")}
+			rq := &Queue{}
+			rq.baseQueue = &baseQueue{log: log.NamedSubLogger("test"), impl: rq}
 			storesWithStats := storemap.CreateStoresWithStats(tc.usages)
 			actual := rq.findNodeForAllocation(tc.rd, storesWithStats)
 			require.EqualExportedValues(t, tc.expected, actual)
@@ -504,7 +506,10 @@ func TestFindReplicaForRemoval(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
 			storeMap := newTestStoreMap(tc.usages)
-			rq := &Queue{log: log.NamedSubLogger("test"), clock: clock, storeMap: storeMap}
+			rq := &Queue{
+				storeMap: storeMap,
+			}
+			rq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clock, rq)
 			actual := rq.findReplicaForRemoval(tc.rd, tc.replicaStateMap, localReplicaID)
 			require.EqualExportedValues(t, tc.expected, actual)
 		})
@@ -769,7 +774,13 @@ func TestRebalanceReplica(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
 			storeMap := newTestStoreMap(tc.usages)
-			rq := &Queue{log: log.NamedSubLogger("test"), storeMap: storeMap}
+			rq := &Queue{
+				storeMap: storeMap,
+			}
+			rq.baseQueue = &baseQueue{
+				log:  log.NamedSubLogger("test"),
+				impl: rq,
+			}
 			storesWithStats := storemap.CreateStoresWithStats(tc.usages)
 			actual := rq.findRebalanceReplicaOp(tc.rd, storesWithStats, localReplicaID)
 			if tc.expected != nil {
@@ -926,7 +937,14 @@ func TestRebalanceLeases(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
 			storeMap := newTestStoreMap(tc.usages)
-			rq := &Queue{log: log.NamedSubLogger("test"), storeMap: storeMap, apiClient: client}
+			rq := &Queue{
+				storeMap:  storeMap,
+				apiClient: client,
+			}
+			rq.baseQueue = &baseQueue{
+				log:  log.NamedSubLogger("test"),
+				impl: rq,
+			}
 			actual := rq.findRebalanceLeaseOp(ctx, tc.rd, localReplicaID)
 			if tc.expected != nil {
 				require.NotNil(t, actual)
@@ -940,4 +958,179 @@ func TestRebalanceLeases(t *testing.T) {
 			}
 		})
 	}
+}
+
+type testReplica struct {
+	rangeID   uint64
+	replicaID uint64
+}
+
+func (tr *testReplica) RangeID() uint64   { return tr.rangeID }
+func (tr *testReplica) ReplicaID() uint64 { return tr.replicaID }
+func (tr *testReplica) RangeDescriptor() *rfpb.RangeDescriptor {
+	return &rfpb.RangeDescriptor{RangeId: tr.rangeID}
+}
+func (tr *testReplica) Usage() (*rfpb.ReplicaUsage, error) { return nil, nil }
+
+type instruction struct {
+	action      DriverAction
+	priority    float64
+	requeueType RequeueType
+}
+
+type testQueue struct {
+	*baseQueue
+	instructions map[string]instruction
+	repls        map[uint64]*testReplica
+}
+
+func (tq *testQueue) processReplica(ctx context.Context, repl IReplica, action DriverAction) RequeueType {
+	rangeID := repl.RangeID()
+	replicaID := repl.ReplicaID()
+	key := fmt.Sprintf("%d-%d", rangeID, replicaID)
+	i, ok := tq.instructions[key]
+	if !ok {
+		return RequeueNoop
+	}
+	return i.requeueType
+}
+
+func (tq *testQueue) computeAction(ctx context.Context, repl IReplica) (DriverAction, float64) {
+	rangeID := repl.RangeID()
+	replicaID := repl.ReplicaID()
+	key := fmt.Sprintf("%d-%d", rangeID, replicaID)
+	i, ok := tq.instructions[key]
+	if !ok {
+		return DriverNoop, 0.0
+	}
+	return i.action, i.priority
+}
+
+func (tq *testQueue) getReplica(rangeID uint64) (IReplica, error) {
+	return tq.repls[rangeID], nil
+}
+
+func TestBaseQueueRetry(t *testing.T) {
+	tr := &testReplica{rangeID: 1, replicaID: 1}
+	ctx := context.Background()
+	clock := clockwork.NewFakeClock()
+	instructions := map[string]instruction{
+		"1-1": instruction{
+			action:      DriverSplitRange,
+			priority:    10.0,
+			requeueType: RequeueRetry,
+		},
+	}
+	tq := &testQueue{
+		instructions: instructions, // nolint
+		repls:        map[uint64]*testReplica{1: tr},
+	}
+	tq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clock, tq)
+	tq.maybeAdd(ctx, tr, attemptRecord{})
+
+	// ProcessQueue should add c1n1 back to the queue with an attempt record
+	tq.processQueue()
+
+	// we should not retry in a second.
+	clock.Advance(1 * time.Second)
+	repl := tq.pop()
+	require.NotNil(t, repl)
+	requeueType := tq.process(ctx, repl)
+	require.Equal(t, RequeueWait, requeueType)
+	tq.postProcess(ctx, repl, requeueType)
+
+	// after two seconds, we can retry the task
+	clock.Advance(1 * time.Second)
+	repl = tq.pop()
+	require.NotNil(t, repl)
+	requeueType = tq.process(ctx, repl)
+	require.Equal(t, RequeueRetry, requeueType)
+	tq.postProcess(ctx, repl, requeueType)
+
+	for i := 2; i < 10; i++ {
+		require.Equal(t, 1, tq.Len())
+		clock.Advance(time.Duration(1*math.Pow(2, float64(i))) * time.Second)
+		tq.processQueue()
+	}
+	require.Equal(t, 0, tq.Len())
+}
+
+func TestBaseQueueAttemptRecordRetain(t *testing.T) {
+	tr := &testReplica{rangeID: 1, replicaID: 1}
+	ctx := context.Background()
+	clock := clockwork.NewFakeClock()
+	instructions := map[string]instruction{
+		"1-1": instruction{
+			action:      DriverSplitRange,
+			priority:    10.0,
+			requeueType: RequeueRetry,
+		},
+	}
+	tq := &testQueue{
+		instructions: instructions, // nolint
+		repls:        map[uint64]*testReplica{1: tr},
+	}
+	tq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clock, tq)
+
+	tq.maybeAdd(ctx, tr, attemptRecord{})
+
+	// ProcessQueue should add c1n1 back to the queue with an attempt record
+	tq.processQueue()
+
+	task, ok := tq.taskMap[1]
+	require.True(t, ok)
+	require.NotNil(t, task)
+	require.Equal(t, 1, task.attemptRecord.attempts)
+	require.Equal(t, DriverSplitRange, task.attemptRecord.action)
+
+	tq.maybeAdd(ctx, tr, attemptRecord{})
+	task, ok = tq.taskMap[1]
+	require.True(t, ok)
+	require.NotNil(t, task)
+	require.Equal(t, 1, task.attemptRecord.attempts)
+	require.Equal(t, DriverSplitRange, task.attemptRecord.action)
+}
+
+func TestBaseQueueAttemptRecordReset(t *testing.T) {
+	tr := &testReplica{rangeID: 1, replicaID: 1}
+	ctx := context.Background()
+	clock := clockwork.NewFakeClock()
+	instructions := map[string]instruction{
+		"1-1": instruction{
+			action:      DriverSplitRange,
+			priority:    10.0,
+			requeueType: RequeueRetry,
+		},
+	}
+	tq := &testQueue{
+		instructions: instructions, // nolint
+		repls:        map[uint64]*testReplica{1: tr},
+	}
+	tq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clock, tq)
+
+	tq.maybeAdd(ctx, tr, attemptRecord{})
+
+	// ProcessQueue should add c1n1 back to the queue with an attempt record
+	tq.processQueue()
+
+	task, ok := tq.taskMap[1]
+	require.True(t, ok)
+	require.NotNil(t, task)
+	require.Equal(t, 1, task.attemptRecord.attempts)
+	require.Equal(t, DriverSplitRange, task.attemptRecord.action)
+
+	tq.instructions["1-1"] = instruction{
+		action:      DriverAddReplica,
+		priority:    15.0,
+		requeueType: RequeueCheckOtherActions,
+	}
+	// We try to queue replica c1n1 again, but this time, there is a different
+	// action to do.
+	tq.maybeAdd(ctx, tr, attemptRecord{})
+
+	task, ok = tq.taskMap[1]
+	require.True(t, ok)
+	require.NotNil(t, task)
+	require.Equal(t, 0, task.attemptRecord.attempts)
+	require.Equal(t, DriverAddReplica, task.attemptRecord.action)
 }

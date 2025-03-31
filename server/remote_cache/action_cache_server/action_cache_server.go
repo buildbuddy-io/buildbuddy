@@ -13,8 +13,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -26,6 +27,8 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
+
+var checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
 
 type ActionCacheServer struct {
 	env   environment.Env
@@ -152,7 +155,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
+	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetInvocationID(ctx))
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 
@@ -188,6 +191,20 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	// change it.
 	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
 		return nil, err
+	}
+	// See if the caller specified a cached value.  If they did and it matches
+	// the full response that we just computed, then we won't bother sending the
+	// data, and instead just tell the caller that their cache is correct.
+	if *checkClientActionResultDigests && req.GetCachedActionResultDigest().GetHash() != "" {
+		d, err := digest.ComputeForMessage(rsp, req.GetDigestFunction())
+		if err != nil {
+			return nil, err
+		}
+		if proto.Equal(req.GetCachedActionResultDigest(), d) {
+			rsp = &repb.ActionResult{
+				ActionResultDigest: d,
+			}
+		}
 	}
 
 	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
@@ -241,7 +258,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return req.ActionResult, nil
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
+	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetInvocationID(ctx))
 	ht.SetExecutedActionMetadata(req.GetActionResult().GetExecutionMetadata())
 	d := req.GetActionDigest()
 	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
@@ -280,7 +297,8 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 
 	budget := int64(max(0, maxResultSize-proto.Size(ar)))
 	var filesToInline []*repb.OutputFile
-	for i, f := range ar.OutputFiles {
+	inlinedBytes := int64(0)
+	for _, f := range ar.OutputFiles {
 		if _, ok := requestedFiles[f.Path]; !ok {
 			continue
 		}
@@ -291,12 +309,6 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 			continue
 		}
 
-		if i == 0 {
-			// Bazel only requests inlining for a single file and we may exit
-			// this loop early, so don't track sizes for the other files.
-			metrics.CacheRequestedInlineSizeBytes.With(prometheus.Labels{}).Observe(float64(contentsSize))
-		}
-
 		// An additional "contents" field requires 1 byte for the tag field
 		// (5:LEN), the bytes for the varint encoding of the length of the
 		// contents and the contents themselves.
@@ -304,17 +316,20 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 		if budget < totalSize {
 			continue
 		}
+		inlinedBytes += contentsSize
 		budget -= totalSize
 		filesToInline = append(filesToInline, f)
 	}
+
+	metrics.CacheRequestedInlineSizeBytes.With(prometheus.Labels{}).Observe(float64(inlinedBytes))
 
 	if len(filesToInline) == 0 {
 		return nil
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetInvocationID(ctx))
 	resourcesToInline := make([]*rspb.ResourceName, 0, len(filesToInline))
-	downloadTrackers := make([]*hit_tracker.TransferTimer, 0, len(filesToInline))
+	downloadTrackers := make([]interfaces.TransferTimer, 0, len(filesToInline))
 	for _, f := range filesToInline {
 		resourcesToInline = append(resourcesToInline, digest.NewResourceName(f.GetDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction()).ToProto())
 		downloadTrackers = append(downloadTrackers, ht.TrackDownload(f.GetDigest()))

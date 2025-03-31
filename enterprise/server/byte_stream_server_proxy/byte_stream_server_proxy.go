@@ -175,11 +175,7 @@ func (s *realLocalWriter) send(data []byte) error {
 		if err != nil {
 			return err
 		}
-		urn, err := rn.UploadString()
-		if err != nil {
-			return err
-		}
-		req.ResourceName = urn
+		req.ResourceName = rn.NewUploadString()
 		s.initialized = true
 	}
 	s.offset += int64(len(data))

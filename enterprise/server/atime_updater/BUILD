@@ -28,7 +28,6 @@ go_test(
     embed = [":atime_updater"],
     deps = [
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/testutil/testauth",

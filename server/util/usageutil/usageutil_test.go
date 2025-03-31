@@ -69,10 +69,10 @@ func TestLabels(t *testing.T) {
 				md[bazel_request.RequestMetadataKey] = []string{string(mdb)}
 			}
 			if test.OriginHeader != "" {
-				md["x-buildbuddy-origin"] = []string{test.OriginHeader}
+				md[usageutil.OriginHeaderName] = []string{test.OriginHeader}
 			}
 			if test.ClientHeader != "" {
-				md["x-buildbuddy-client"] = []string{test.ClientHeader}
+				md[usageutil.ClientHeaderName] = []string{test.ClientHeader}
 			}
 			ctx := metadata.NewIncomingContext(context.Background(), md)
 

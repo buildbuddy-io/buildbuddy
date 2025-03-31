@@ -10,7 +10,6 @@ go_library(
         "//proto:buildbuddy_service_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/bazel_request",

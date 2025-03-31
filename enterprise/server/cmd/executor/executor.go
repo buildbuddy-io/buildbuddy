@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -35,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -164,6 +166,14 @@ func getExecutorHostID() string {
 	return hostID
 }
 
+func getExecutorHostName() string {
+	name, err := resources.GetMyHostname()
+	if err != nil {
+		log.Warningf("Failed to get hostname: %s", err)
+	}
+	return name
+}
+
 func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
@@ -263,13 +273,7 @@ func main() {
 	cleanupFUSEMounts()
 
 	if *deleteBuildRootOnStartup {
-		rootDir := runner.GetBuildRoot()
-		if err := os.RemoveAll(rootDir); err != nil {
-			log.Warningf("Failed to remove build root dir: %s", err)
-		}
-		if err := disk.EnsureDirectoryExists(rootDir); err != nil {
-			log.Warningf("Failed to create build root dir: %s", err)
-		}
+		deleteBuildRoot(rootContext, runner.GetBuildRoot())
 	}
 
 	setupNetworking(rootContext)
@@ -303,11 +307,12 @@ func main() {
 		log.Fatalf("Failed to initialize runner pool: %s", err)
 	}
 
-	executor, err := remote_executor.NewExecutor(env, executorID, getExecutorHostID(), runnerPool)
+	executor, err := remote_executor.NewExecutor(env, executorID, getExecutorHostID(), getExecutorHostName(), runnerPool)
 	if err != nil {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, &priority_task_scheduler.Options{})
+	taskLeaser := task_leaser.NewTaskLeaser(env, executorID)
+	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, taskLeaser, &priority_task_scheduler.Options{})
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
 	}
@@ -354,4 +359,19 @@ func main() {
 		http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), nil)
 	}()
 	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
+func deleteBuildRoot(ctx context.Context, rootDir string) {
+	log.Infof("Deleting build root dir at %q", rootDir)
+	stop := canary.StartWithLateFn(1*time.Minute, func(timeTaken time.Duration) {
+		log.Infof("Still deleting build root dir (%s elapsed)", timeTaken)
+	}, func(timeTaken time.Duration) {})
+	defer stop()
+
+	if err := disk.ForceRemove(ctx, rootDir); err != nil {
+		log.Warningf("Failed to remove build root dir: %s", err)
+	}
+	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
+		log.Warningf("Failed to create build root dir: %s", err)
+	}
 }

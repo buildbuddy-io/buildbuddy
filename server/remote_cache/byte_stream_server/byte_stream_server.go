@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_deprecation"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
@@ -24,7 +23,6 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -104,7 +102,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		return err
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, false /*=ac*/)
+	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetInvocationID(ctx))
 	if r.IsEmpty() {
 		if err := ht.TrackEmptyHit(); err != nil {
 			log.Debugf("ByteStream Read: hit tracker TrackEmptyHit error: %s", err)
@@ -113,7 +111,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
-	cacheRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS, r.GetDigestFunction())
+	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
 	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && req.ReadOffset == 0 && req.ReadLimit == 0
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
@@ -212,7 +210,7 @@ type writeState struct {
 	cacheCloser        io.Closer
 
 	checksum           *Checksum
-	resourceName       *digest.ResourceName
+	resourceName       *digest.CASResourceName
 	resourceNameString string
 	offset             int64
 }
@@ -257,7 +255,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		resourceNameString: req.ResourceName,
 	}
 
-	casRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS, r.GetDigestFunction())
+	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
 	if s.cache.SupportsCompressor(r.GetCompressor()) {
 		casRN.SetCompressor(r.GetCompressor())
 	}
@@ -390,7 +388,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 
-			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+			ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetInvocationID(ctx))
 
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
@@ -475,7 +473,7 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 	}, nil
 }
 
-func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht *hit_tracker.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
+func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht interfaces.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
 	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
 	if err != nil {
 		return err
@@ -558,7 +556,7 @@ func (s *Checksum) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (s *Checksum) Check(r *digest.ResourceName) error {
+func (s *Checksum) Check(r *digest.CASResourceName) error {
 	d := r.GetDigest()
 	computedDigest := fmt.Sprintf("%x", s.hash.Sum(nil))
 	if computedDigest != d.GetHash() {

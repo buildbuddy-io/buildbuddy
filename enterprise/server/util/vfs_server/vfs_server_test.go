@@ -92,7 +92,8 @@ func newServer(t *testing.T) (*vfs_server.Server, string) {
 	env := testenv.GetTestEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 
-	server := vfs_server.New(env, tmpDir)
+	server, err := vfs_server.New(env, tmpDir)
+	require.NoError(t, err)
 	return server, tmpDir
 }
 
@@ -100,7 +101,8 @@ func newServerWithEnv(t *testing.T) (context.Context, *testenv.TestEnv, *vfs_ser
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 
-	server := vfs_server.New(env, tmpDir)
+	server, err := vfs_server.New(env, tmpDir)
+	require.NoError(t, err)
 	return ctx, env, server, tmpDir
 }
 
