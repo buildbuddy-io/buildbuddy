@@ -46,7 +46,6 @@ const (
 var (
 	blobsOrManifestsReqRegexp = regexp.MustCompile("/v2/(.+?)/(blobs|manifests)/(.+)")
 	enableRegistry            = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
-	allowLocalhost            = flag.Bool("ociregistry.allow_localhost", false, "Allow upstream registry requests to localhost")
 )
 
 type registry struct {
@@ -69,13 +68,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*registry, error) {
-	timeout := time.Duration(0)
-	var client *http.Client
-	if *allowLocalhost {
-		client = httpclient.NewClientWithLocalhost(timeout)
-	} else {
-		client = httpclient.NewClientNoPrivateIPs(timeout)
-	}
+	client := httpclient.NewClient(time.Duration(0))
 	r := &registry{
 		env:    env,
 		client: client,

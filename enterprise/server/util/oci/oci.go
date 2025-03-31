@@ -6,9 +6,10 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -19,7 +20,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/prometheus/client_golang/prometheus"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
@@ -223,7 +223,8 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 			Password: credentials.Password,
 		}))
 	}
-	tr := newMetricsTransport(remote.DefaultTransport)
+
+	tr := httpclient.NewClient(time.Duration(0)).Transport
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
 	} else {
@@ -262,24 +263,6 @@ func RuntimePlatform() *rgpb.Platform {
 		Arch: runtime.GOARCH,
 		Os:   runtime.GOOS,
 	}
-}
-
-type metricsTransport struct {
-	inner http.RoundTripper
-}
-
-func newMetricsTransport(inner http.RoundTripper) http.RoundTripper {
-	return &metricsTransport{
-		inner: inner,
-	}
-}
-
-func (t *metricsTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
-	metrics.HTTPClientRequestCount.With(prometheus.Labels{
-		metrics.HTTPHostLabel:   in.URL.Hostname(),
-		metrics.HTTPMethodLabel: in.Method,
-	}).Inc()
-	return t.inner.RoundTrip(in)
 }
 
 // verify that mirrorTransport implements the RoundTripper interface.

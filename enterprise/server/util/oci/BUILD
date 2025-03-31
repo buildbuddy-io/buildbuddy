@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/platform",
         "//proto:registry_go_proto",
-        "//server/metrics",
+        "//server/http/httpclient",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
@@ -21,7 +21,6 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
         "@com_github_google_go_containerregistry//pkg/v1/types",
-        "@com_github_prometheus_client_golang//prometheus",
     ],
 )
 

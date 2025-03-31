@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"errors"
+	"flag"
 	"net"
 	"net/http"
 	"strings"
@@ -13,6 +14,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/publicsuffix"
 )
+
+var allowLocalhost = flag.Bool("httpclient.allow_localhost", false, "Allow HTTP requests to localhost")
 
 const maxHTTPTimeout = 60 * time.Minute
 
@@ -38,7 +41,7 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 	}
 }
 
-func NewClient(timeout time.Duration, allowedPrivateIPNets []*net.IPNet) *http.Client {
+func NewClientWithPrivateIPNets(timeout time.Duration, allowedPrivateIPNets []*net.IPNet) *http.Client {
 	dialerTimeout := timeout
 	if timeout == 0 || timeout > maxHTTPTimeout {
 		dialerTimeout = maxHTTPTimeout
@@ -60,23 +63,29 @@ func NewClient(timeout time.Duration, allowedPrivateIPNets []*net.IPNet) *http.C
 	}
 }
 
-func NewClientWithLocalhost(timeout time.Duration) *http.Client {
-	allowedPrivateIPNets := []*net.IPNet{
-		&net.IPNet{
-			IP:   net.IPv4(127, 0, 0, 0),
-			Mask: net.CIDRMask(8, 32),
-		},
-		&net.IPNet{
-			IP:   net.ParseIP("::1"),
-			Mask: net.CIDRMask(128, 128),
-		},
+func NewClient(timeout time.Duration) *http.Client {
+	if *allowLocalhost {
+		allowedPrivateIPNets := []*net.IPNet{
+			&net.IPNet{
+				IP:   net.IPv4(127, 0, 0, 0),
+				Mask: net.CIDRMask(8, 32),
+			},
+			&net.IPNet{
+				IP:   net.ParseIP("::1"),
+				Mask: net.CIDRMask(128, 128),
+			},
+		}
+		return NewClientWithPrivateIPNets(timeout, allowedPrivateIPNets)
 	}
-	return NewClient(timeout, allowedPrivateIPNets)
+	return NewClientNoPrivateIPs(timeout)
 }
 
 func NewClientNoPrivateIPs(timeout time.Duration) *http.Client {
-	return NewClient(timeout, []*net.IPNet{})
+	return NewClientWithPrivateIPNets(timeout, []*net.IPNet{})
 }
+
+// verify that metricsTransport implements the RoundTripper interface
+var _ http.RoundTripper = (*metricsTransport)(nil)
 
 type metricsTransport struct {
 	inner http.RoundTripper

@@ -34,7 +34,7 @@ type simplePullTestCase struct {
 
 func TestPull(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	flags.Set(t, "ociregistry.allow_localhost", true)
+	flags.Set(t, "httpclient.allow_localhost", true)
 
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
