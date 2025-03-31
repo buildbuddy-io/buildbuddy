@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
@@ -68,7 +67,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*registry, error) {
-	client := httpclient.NewClient(time.Duration(0))
+	client := httpclient.NewClient()
 	r := &registry{
 		env:    env,
 		client: client,

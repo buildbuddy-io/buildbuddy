@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
@@ -224,7 +223,7 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 		}))
 	}
 
-	tr := httpclient.NewClient(time.Duration(0)).Transport
+	tr := httpclient.NewClient().Transport
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
 	} else {

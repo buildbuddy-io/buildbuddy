@@ -63,7 +63,7 @@ func NewClientWithPrivateIPNets(timeout time.Duration, allowedPrivateIPNets []*n
 	}
 }
 
-func NewClient(timeout time.Duration) *http.Client {
+func NewClient() *http.Client {
 	if *allowLocalhost {
 		allowedPrivateIPNets := []*net.IPNet{
 			&net.IPNet{
@@ -75,9 +75,9 @@ func NewClient(timeout time.Duration) *http.Client {
 				Mask: net.CIDRMask(128, 128),
 			},
 		}
-		return NewClientWithPrivateIPNets(timeout, allowedPrivateIPNets)
+		return NewClientWithPrivateIPNets(maxHTTPTimeout, allowedPrivateIPNets)
 	}
-	return NewClientWithPrivateIPNets(timeout, []*net.IPNet{})
+	return NewClientWithPrivateIPNets(maxHTTPTimeout, []*net.IPNet{})
 }
 
 // verify that metricsTransport implements the RoundTripper interface
