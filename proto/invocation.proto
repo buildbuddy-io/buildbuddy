@@ -452,6 +452,12 @@ message InvocationStatQuery {
   // Stat filters (duration_usec, cas_cache_misses, etc.)
   repeated stat_filter.StatFilter filter = 12;
 
+  // The minimum invocation duration.
+  google.protobuf.Duration minimum_duration = 17;
+
+  // The maximum invocation duration.
+  google.protobuf.Duration maximum_duration = 18;
+
   // String-based dimensional filters (execution worker, branch, etc.)
   repeated stat_filter.DimensionFilter dimension_filter = 15;
 

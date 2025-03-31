@@ -1070,6 +1070,13 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
 	}
 
+	if minDuration := req.GetQuery().GetMinimumDuration().AsDuration(); minDuration > 0 {
+		q.AddWhereClause(`duration_usec >= ?`, minDuration.Microseconds())
+	}
+	if maxDuration := req.GetQuery().GetMaximumDuration().AsDuration(); maxDuration > 0 {
+		q.AddWhereClause(`duration_usec <= ?`, maxDuration.Microseconds())
+	}
+
 	for _, f := range req.GetQuery().GetFilter() {
 		str, args, err := filter.GenerateFilterStringAndArgs(f)
 		if err != nil {
