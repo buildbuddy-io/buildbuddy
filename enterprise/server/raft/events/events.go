@@ -9,12 +9,8 @@ import (
 type EventType int
 
 const (
-	// Value will be the added range's RangeDescriptor.
-	EventRangeAdded EventType = iota
-	// Value will be the removed range's RangeDescriptor.
-	EventRangeRemoved
 	// Value will be the range's RangeUsage.
-	EventRangeUsageUpdated
+	EventRangeUsageUpdated EventType = iota
 	// Value will be the lease-acquired range's RangeDescriptor.
 	EventRangeLeaseAcquired
 	// Value will be the lease-dropped range's RangeDescriptor.
@@ -28,8 +24,6 @@ type Event interface {
 
 func (t EventType) String() string {
 	switch t {
-	case EventRangeRemoved:
-		return "range-removed"
 	case EventRangeUsageUpdated:
 		return "range-usage-updated"
 	case EventRangeLeaseAcquired:
@@ -42,8 +36,7 @@ func (t EventType) String() string {
 }
 
 type RangeEvent struct {
-	Type            EventType
-	RangeDescriptor *rfpb.RangeDescriptor
+	Type EventType
 }
 
 func (r RangeEvent) EventType() EventType {
@@ -52,16 +45,10 @@ func (r RangeEvent) EventType() EventType {
 
 func (r RangeEvent) String() string {
 	switch r.Type {
-	case EventRangeAdded:
-		return "range-added"
-	case EventRangeRemoved:
-		return "range-removed"
-	case EventRangeLeaseAcquired:
-		return "range-lease-acquired"
-	case EventRangeLeaseDropped:
-		return "range-lease-dropped"
+	case EventRangeLeaseAcquired, EventRangeLeaseDropped:
+		return r.Type.String()
 	default:
-		return fmt.Sprintf("unknown event type: %d", r.Type)
+		return fmt.Sprintf("unknown event type: %s", r.Type)
 	}
 }
 
@@ -80,6 +67,6 @@ func (u RangeUsageEvent) String() string {
 	case EventRangeUsageUpdated:
 		return fmt.Sprintf("range-usage-updated for range ID %d", u.RangeDescriptor.GetRangeId())
 	default:
-		return fmt.Sprintf("unknown event type: %d", u.Type)
+		return fmt.Sprintf("unknown event type: %s", u.Type)
 	}
 }
