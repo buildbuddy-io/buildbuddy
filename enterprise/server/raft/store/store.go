@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
@@ -119,9 +120,10 @@ type Store struct {
 	db     pebble.IPebbleDB
 	leaser pebble.Leaser
 
-	configuredClusters int
-	rangeMu            sync.RWMutex
-	openRanges         map[uint64]*rfpb.RangeDescriptor
+	configuredClusters atomic.Int32
+
+	rangeMu    sync.RWMutex
+	openRanges map[uint64]*rfpb.RangeDescriptor
 
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
@@ -347,7 +349,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 				}
 				return status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
 			}
-			s.configuredClusters++
+			s.configuredClusters.Add(1)
 			s.log.Infof("Recreated c%dn%d in %s. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, time.Since(start), i+1, numReplicas)
 			return nil
 		})
@@ -966,7 +968,7 @@ func (s *Store) APIClient() *client.APIClient {
 }
 
 func (s *Store) ConfiguredClusters() int {
-	return s.configuredClusters
+	return int(s.configuredClusters.Load())
 }
 
 func (s *Store) NodeHost() *dragonboat.NodeHost {
