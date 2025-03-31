@@ -11,9 +11,11 @@ go_library(
         "//server/interfaces",
         "//server/util/alert",
         "//server/util/blocklist",
+        "//server/util/log",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
     ],
 )
