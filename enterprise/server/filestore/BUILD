@@ -14,6 +14,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/disk",
         "//server/util/log",
+        "//server/util/random",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
     ],
