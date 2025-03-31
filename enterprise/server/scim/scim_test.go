@@ -620,54 +620,113 @@ func TestUpdateUser(t *testing.T) {
 	require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/puttest@example.domain", u.SubID)
 
 	// Update user using PATCH request.
-	patchReq := &scim.PatchResource{
-		Operations: []scim.OperationResource{
-			{
-				Op:    "replace",
-				Path:  scim.FamilyNameAttribute,
-				Value: "Fam",
+	{
+		patchReq := &scim.PatchResource{
+			Operations: []scim.OperationResource{
+				{
+					Op:    "replace",
+					Path:  scim.FamilyNameAttribute,
+					Value: "Fam",
+				},
+				{
+					Op:    "replace",
+					Path:  scim.GivenNameAttribute,
+					Value: "Gov",
+				},
+				{
+					Op:    "replace",
+					Path:  scim.UserNameAttribute,
+					Value: "somenewemail@example.domain",
+				},
 			},
-			{
-				Op:    "replace",
-				Path:  scim.GivenNameAttribute,
-				Value: "Gov",
-			},
-			{
-				Op:    "replace",
-				Path:  scim.UserNameAttribute,
-				Value: "somenewemail@example.domain",
-			},
-		},
-		Schemas: []string{scim.PatchResourceSchema},
+			Schemas: []string{scim.PatchResourceSchema},
+		}
+		body, err = json.Marshal(patchReq)
+		require.NoError(t, err)
+		code, body = tc.Patch(baseURL+"/scim/Users/US100", body)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		updatedUser = scim.UserResource{}
+		err = json.Unmarshal(body, &updatedUser)
+		require.NoError(t, err)
+		require.True(t, updatedUser.Active)
+		require.Equal(t, "Gov", updatedUser.Name.GivenName)
+		require.Equal(t, "Fam", updatedUser.Name.FamilyName)
+		require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
+
+		// Look up patched user.
+		code, body = tc.Get(baseURL + "/scim/Users/US100")
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		updatedUser = scim.UserResource{}
+		err = json.Unmarshal(body, &updatedUser)
+		require.NoError(t, err)
+		require.True(t, updatedUser.Active)
+		require.Equal(t, "Gov", updatedUser.Name.GivenName)
+		require.Equal(t, "Fam", updatedUser.Name.FamilyName)
+		require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
+		verifyRole(t, updatedUser, role.Developer.String())
+
+		// Verify that SubID was updated to reflect the new email.
+		u, err = udb.GetUserByID(userCtx, updatedUser.ID)
+		require.NoError(t, err)
+		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/somenewemail@example.domain", u.SubID)
 	}
-	body, err = json.Marshal(patchReq)
-	require.NoError(t, err)
-	code, body = tc.Patch(baseURL+"/scim/Users/US100", body)
-	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
-	updatedUser = scim.UserResource{}
-	err = json.Unmarshal(body, &updatedUser)
-	require.NoError(t, err)
-	require.True(t, updatedUser.Active)
-	require.Equal(t, "Gov", updatedUser.Name.GivenName)
-	require.Equal(t, "Fam", updatedUser.Name.FamilyName)
-	require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
 
-	// Look up patched user.
-	code, body = tc.Get(baseURL + "/scim/Users/US100")
-	require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
-	updatedUser = scim.UserResource{}
-	err = json.Unmarshal(body, &updatedUser)
-	require.NoError(t, err)
-	require.True(t, updatedUser.Active)
-	require.Equal(t, "Gov", updatedUser.Name.GivenName)
-	require.Equal(t, "Fam", updatedUser.Name.FamilyName)
-	require.Equal(t, "somenewemail@example.domain", updatedUser.UserName)
-	verifyRole(t, updatedUser, role.Developer.String())
+	// Update the user using PATCH request with 'add' operation.
+	// An upstream system may send these instead of 'replace' if an attribute,
+	// like name, is empty.
+	{
+		newFamilyName := "Stark"
+		newGivenName := "Arya"
+		newEmail := "arya@example.domain"
+		patchReq := &scim.PatchResource{
+			Operations: []scim.OperationResource{
+				{
+					Op:    "add",
+					Path:  scim.FamilyNameAttribute,
+					Value: newFamilyName,
+				},
+				{
+					Op:    "add",
+					Path:  scim.GivenNameAttribute,
+					Value: newGivenName,
+				},
+				{
+					Op:    "add",
+					Path:  scim.UserNameAttribute,
+					Value: newEmail,
+				},
+			},
+			Schemas: []string{scim.PatchResourceSchema},
+		}
+		body, err = json.Marshal(patchReq)
+		require.NoError(t, err)
+		code, body = tc.Patch(baseURL+"/scim/Users/US100", body)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		updatedUser = scim.UserResource{}
+		err = json.Unmarshal(body, &updatedUser)
+		require.NoError(t, err)
+		require.True(t, updatedUser.Active)
+		require.Equal(t, newGivenName, updatedUser.Name.GivenName)
+		require.Equal(t, newFamilyName, updatedUser.Name.FamilyName)
+		require.Equal(t, newEmail, updatedUser.UserName)
 
-	// Verify that SubID was updated to reflect the new email.
-	u, err = udb.GetUserByID(userCtx, updatedUser.ID)
-	require.NoError(t, err)
-	require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/somenewemail@example.domain", u.SubID)
+		// Look up patched user.
+		code, body = tc.Get(baseURL + "/scim/Users/US100")
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		updatedUser = scim.UserResource{}
+		err = json.Unmarshal(body, &updatedUser)
+		require.NoError(t, err)
+		require.True(t, updatedUser.Active)
+		require.Equal(t, newGivenName, updatedUser.Name.GivenName)
+		require.Equal(t, newFamilyName, updatedUser.Name.FamilyName)
+		require.Equal(t, newEmail, updatedUser.UserName)
+		verifyRole(t, updatedUser, role.Developer.String())
+
+		// Verify that SubID was updated to reflect the new email.
+		u, err = udb.GetUserByID(userCtx, updatedUser.ID)
+		require.NoError(t, err)
+		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/"+newEmail, u.SubID)
+	}
 
 	// Promote user to admin.
 	req.Role = role.Admin.String()
@@ -700,7 +759,7 @@ func TestUpdateUser(t *testing.T) {
 	verifyRole(t, updatedUser, role.Developer.String())
 
 	// Promote user to Admin using patch request.
-	patchReq = &scim.PatchResource{
+	patchReq := &scim.PatchResource{
 		Operations: []scim.OperationResource{
 			{
 				Op:    "replace",
