@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -236,32 +235,6 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 		}
 	} else if h.actionCache {
 		if err := h.c.IncrementCount(h.ctx, h.targetMissesKey(), h.targetField(), 1); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (h *HitTracker) TrackEmptyHit() error {
-	start := time.Now()
-	metrics.CacheEvents.With(prometheus.Labels{
-		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
-		metrics.CacheEventTypeLabel: hitLabel,
-	}).Inc()
-	if h.c == nil || h.iid == "" {
-		return nil
-	}
-	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Hit), 1); err != nil {
-		return err
-	}
-	if *detailedStatsEnabled {
-		emptyDigest := &repb.Digest{Hash: digest.EmptySha256}
-		stats := &detailedStats{
-			Status:    Miss,
-			StartTime: start,
-			Duration:  time.Since(start),
-		}
-		if err := h.recordDetailedStats(emptyDigest, stats); err != nil {
 			return err
 		}
 	}
