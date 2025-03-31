@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -30,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/dgryski/go-farm"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1820,14 +1818,10 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 
 	var opts []any
 	if executorHostname != "" {
-		// Using this hash because it produces well distributed results, it's very
-		// fast, and it's supported in clickhouse (so we can identify executions
-		// that were part of the experiment).
-		hash := farm.Fingerprint64([]byte(executorHostname))
-		ratio := float64(hash) / float64(math.MaxUint64)
+		ratio := experiments.BytesToHashRatio([]byte(executorHostname))
 		opts = append(opts, experiments.WithContext("executor_farm_hash_ratio", ratio))
 	}
-	skipResaving := fp.Boolean(ctx, "skip-resaving-action-snapshots", false, opts...)
+	skipResaving := fp.Boolean(ctx, experiments.SkipResavingActionSnapshots, false, opts...)
 	if !skipResaving {
 		return task
 	}

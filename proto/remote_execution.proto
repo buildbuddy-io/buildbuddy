@@ -2542,4 +2542,6 @@ message StoredExecution {
   // TODO(sluongng): add configuration.
   string target_label = 33;
   string action_mnemonic = 57;
+
+  repeated string experiments = 61;
 }
