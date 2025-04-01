@@ -1,7 +1,7 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_push")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 go_library(
@@ -70,9 +70,16 @@ oci_image(
 )
 
 oci_push(
-    name = "push",
+    name = "oci_push",
     image = ":oci_image",
-    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
     remote_tags = "//deployment:oci_tag_file",
     repository = "gcr.io/flame-build/codesearch-oci",
+    tags = ["manual"],
+)
+
+oci_load(
+    name = "oci_load",
+    image = ":oci_image",
+    repo_tags = ["codesearch/cmd/server:oci_image"],
+    tags = ["manual"],
 )

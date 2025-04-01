@@ -1,6 +1,6 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_push")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 # We use this internally so create an alias here to
@@ -45,9 +45,16 @@ oci_image(
 )
 
 oci_push(
-    name = "push",
+    name = "oci_push",
     image = ":oci_image",
-    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
     remote_tags = "//deployment:oci_tag_file",
     repository = "gcr.io/flame-build/smarter-device-manager-oci",
+    tags = ["manual"],
+)
+
+oci_load(
+    name = "oci_load",
+    image = ":oci_image",
+    repo_tags = ["tools/smarter-device-manager:oci_image"],
+    tags = ["manual"],
 )
