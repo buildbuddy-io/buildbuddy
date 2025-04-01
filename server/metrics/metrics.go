@@ -3191,6 +3191,27 @@ var (
 		GroupID,
 		StatusLabel,
 	})
+
+	// ## Cache Proxy Remote Hit-Tracker Metrics
+	RemoteHitTrackerUpdates = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "remote_hit_tracker_updates",
+		Help:      "The number of remote hit-tracker updates enqueued, with the outcome of the enqueue operation.",
+	}, []string{
+		GroupID,
+		EnqueueUpdateOutcome,
+	})
+
+	RemoteHitTrackerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "remote_hit_tracker_requests",
+		Help:      "The number of HitTrackerService.Track RPCs sent to the remote hit-tracker service to record cache proxy cache hits.",
+	}, []string{
+		GroupID,
+		StatusLabel,
+	})
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in
