@@ -17,7 +17,7 @@ func randomBytes(t *testing.T, n int) []byte {
 }
 
 func TestTruncation(t *testing.T) {
-	screenWriter, err := terminal.NewScreenWriter()
+	screenWriter, err := terminal.NewScreenWriter(0)
 	require.NoError(t, err)
 
 	screenWriter.Write(randomBytes(t, 80))

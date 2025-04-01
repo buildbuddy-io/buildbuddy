@@ -739,8 +739,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_buildkite_terminal_to_html_v3",
         importpath = "github.com/buildkite/terminal-to-html/v3",
         replace = "github.com/buildbuddy-io/terminal-to-html/v3",
-        sum = "h1:zb+Pd9e6i1qTQv3QjWq+thOiJytNatZyNKmyK3EUAco=",
-        version = "v3.16.8-1",
+        sum = "h1:LSMpYyAPTXxhor97rtPYyVliQhQOGLmTqVizZ9ZkD6A=",
+        version = "v3.16.8-3",
     )
     go_repository(
         name = "com_github_burntsushi_toml",

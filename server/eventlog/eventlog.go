@@ -351,14 +351,13 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 		WriteHook:            writeHook,
 	}
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
-	sw, err := terminal.NewScreenWriter()
+	sw, err := terminal.NewScreenWriter(numLinesToRetain)
 	if err != nil {
 		return nil, err
 	}
 	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
-		WriteWithTailCloser:           cw,
-		terminalWriter:                sw,
-		numLinesToRetainForANSICursor: numLinesToRetain,
+		WriteWithTailCloser: cw,
+		terminalWriter:      sw,
 	}
 	eventLogWriter.chunkstoreWriter = cw
 
@@ -425,24 +424,20 @@ type WriteWithTailCloser interface {
 type ANSICursorBufferWriter struct {
 	WriteWithTailCloser
 	terminalWriter *terminal.ScreenWriter
-
-	// Number of lines to keep in the screen buffer so that they may be modified
-	// by ANSI Cursor control codes.
-	numLinesToRetainForANSICursor int
 }
 
 func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, error) {
 	if len(p) == 0 {
 		return w.WriteWithTailCloser.WriteWithTail(ctx, p, nil)
 	}
-
 	if _, err := w.terminalWriter.Write(p); err != nil {
 		return 0, err
 	}
-	popped := w.terminalWriter.PopExtraLines(w.numLinesToRetainForANSICursor)
-	if len(popped) != 0 {
-		popped = popped + "\n"
+	if w.terminalWriter.ScrollOutWriteErr != nil {
+		return 0, w.terminalWriter.ScrollOutWriteErr
 	}
+	popped := w.terminalWriter.ScrollOut.String()
+	w.terminalWriter.ScrollOut.Reset()
 	return w.WriteWithTailCloser.WriteWithTail(ctx, []byte(popped), []byte(w.terminalWriter.Render()))
 }
 
