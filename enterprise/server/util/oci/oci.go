@@ -1,27 +1,42 @@
 package oci
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+)
+
+const (
+	blobOutputFilePath         = "_bb_ociregistry_blob_"
+	blobMetadataOutputFilePath = "_bb_ociregistry_blob_metadata_"
+	actionResultInstanceName   = "_bb_ociregistry_"
 )
 
 var (
@@ -238,7 +253,7 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 	}
 
 	// Image() should resolve both images and image indices to an appropriate image
-	img, err := remoteDesc.Image()
+	remoteImg, err := remoteDesc.Image()
 	if err != nil {
 		switch remoteDesc.MediaType {
 		// This is an "image index", a meta-manifest that contains a list of
@@ -252,7 +267,8 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
 		}
 	}
-	return img, nil
+	img := &cacheAwareImage{remoteImg: remoteImg}
+	return partial.CompressedToImage(img)
 }
 
 // RuntimePlatform returns the platform on which the program is being executed,
@@ -305,3 +321,181 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	}
 	return t.inner.RoundTrip(in)
 }
+
+func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, ref ctrname.Reference) ([]byte, error) {
+	hash, err := v1.NewHash(ref.Identifier())
+	if err != nil {
+		return nil, err
+	}
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      ref.Context().RegistryStr(),
+		Repository:    ref.Context().RepositoryStr(),
+		ResourceType:  ocipb.OCIResourceType_MANIFEST,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return nil, err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		actionResultInstanceName,
+		repb.DigestFunction_SHA256,
+	)
+	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
+	if err != nil {
+		return nil, err
+	}
+
+	var blobMetadataCASDigest *repb.Digest
+	var blobCASDigest *repb.Digest
+	for _, outputFile := range ar.GetOutputFiles() {
+		switch outputFile.GetPath() {
+		case blobMetadataOutputFilePath:
+			blobMetadataCASDigest = outputFile.GetDigest()
+		case blobOutputFilePath:
+			blobCASDigest = outputFile.GetDigest()
+		default:
+			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s", outputFile.GetPath(), ref)
+		}
+	}
+	if blobMetadataCASDigest == nil || blobCASDigest == nil {
+		return nil, fmt.Errorf("missing blob metadata digest or blob digest for %s", ref)
+	}
+	blobMetadataRN := digest.NewCASResourceName(
+		blobMetadataCASDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+	blobMetadata := &ocipb.OCIBlobMetadata{}
+	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
+	if err != nil {
+		return nil, err
+	}
+
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	var buf bytes.Buffer
+	err = cachetools.GetBlob(ctx, bsClient, blobRN, &buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, ref ctrname.Reference, hash v1.Hash, contentType string, contentLength int64, upstream io.Reader) error {
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
+	}
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, upstream)
+	if err != nil {
+		return err
+	}
+
+	blobMetadata := &ocipb.OCIBlobMetadata{
+		ContentLength: contentLength,
+		ContentType:   contentType,
+	}
+	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
+	if err != nil {
+		return err
+	}
+
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      ref.Context().RegistryStr(),
+		Repository:    ref.Context().RepositoryStr(),
+		ResourceType:  ocipb.OCIResourceType_MANIFEST,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	ar := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{
+				Path:   blobOutputFilePath,
+				Digest: blobCASDigest,
+			},
+			{
+				Path:   blobMetadataOutputFilePath,
+				Digest: blobMetadataCASDigest,
+			},
+		},
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	if err != nil {
+		return err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		actionResultInstanceName,
+		repb.DigestFunction_SHA256,
+	)
+	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type cacheAwareImage struct {
+	remoteImg v1.Image
+}
+
+func (i *cacheAwareImage) RawManifest() ([]byte, error) {
+	return i.remoteImg.RawManifest()
+}
+
+func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
+	return i.remoteImg.RawConfigFile()
+}
+
+func (i *cacheAwareImage) MediaType() (types.MediaType, error) {
+	return i.remoteImg.MediaType()
+}
+
+func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, error) {
+	return i.remoteImg.LayerByDigest(hash)
+}
+
+var _ partial.CompressedImageCore = (*cacheAwareImage)(nil)
+
+type cacheAwareLayer struct {
+	remoteLayer v1.Layer
+}
+
+func (l *cacheAwareLayer) Digest() (v1.Hash, error) {
+	return l.remoteLayer.Digest()
+}
+
+func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
+	return l.remoteLayer.Compressed()
+}
+
+func (l *cacheAwareLayer) Size() (int64, error) {
+	return l.remoteLayer.Size()
+}
+
+func (l *cacheAwareLayer) MediaType() (types.MediaType, error) {
+	return l.remoteLayer.MediaType()
+}
+
+var _ partial.CompressedLayer = (*cacheAwareLayer)(nil)
