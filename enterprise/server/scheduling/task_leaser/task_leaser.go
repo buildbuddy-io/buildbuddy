@@ -38,28 +38,25 @@ var _ interfaces.TaskLeaser = (*TaskLeaser)(nil)
 var _ interfaces.TaskLease = (*TaskLease)(nil)
 
 type TaskLeaser struct {
-	env              environment.Env
-	executorID       string
-	executorHostname string
+	env        environment.Env
+	executorID string
 }
 
-func NewTaskLeaser(env environment.Env, executorID, executorHostname string) *TaskLeaser {
+func NewTaskLeaser(env environment.Env, executorID string) *TaskLeaser {
 	return &TaskLeaser{
-		env:              env,
-		executorID:       executorID,
-		executorHostname: executorHostname,
+		env:        env,
+		executorID: executorID,
 	}
 }
 
 func (t *TaskLeaser) Lease(ctx context.Context, taskID string) (interfaces.TaskLease, error) {
 	lease := &TaskLease{
-		env:              t.env,
-		executorID:       t.executorID,
-		executorHostname: t.executorHostname,
-		taskID:           taskID,
-		execTask:         &repb.ExecutionTask{},
-		quit:             make(chan struct{}),
-		ttl:              100 * time.Second,
+		env:        t.env,
+		executorID: t.executorID,
+		taskID:     taskID,
+		execTask:   &repb.ExecutionTask{},
+		quit:       make(chan struct{}),
+		ttl:        100 * time.Second,
 	}
 	ctx, serializedTask, err := lease.claim(ctx)
 	if err != nil {
@@ -74,10 +71,9 @@ func (t *TaskLeaser) Lease(ctx context.Context, taskID string) (interfaces.TaskL
 }
 
 type TaskLease struct {
-	env              environment.Env
-	executorID       string
-	executorHostname string
-	taskID           string
+	env        environment.Env
+	executorID string
+	taskID     string
 
 	ctx               context.Context
 	execTask          *repb.ExecutionTask
@@ -116,7 +112,6 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 
 	req := &scpb.LeaseTaskRequest{
 		ExecutorId:        t.executorID,
-		ExecutorHostname:  t.executorHostname,
 		TaskId:            t.taskID,
 		SupportsReconnect: *enableReconnect,
 	}

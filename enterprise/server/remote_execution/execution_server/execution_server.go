@@ -52,6 +52,7 @@ import (
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
+	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -366,21 +367,14 @@ func (s *ExecutionServer) recordExecution(
 		}
 	}()
 	links, err := s.env.GetExecutionCollector().GetInvocationLinks(ctx, executionID)
+
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
-	}
-	var experimentKeyValues []string
-	for _, name := range []string{platform.SkipResavingActionSnapshotsPropertyName} {
-		value := platform.FindValue(auxMeta.GetPlatformOverrides(), name)
-		if value != "" {
-			experimentKeyValues = append(experimentKeyValues, name+":"+value)
-		}
 	}
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	for _, link := range links {
 		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
 		// Set fields that aren't stored in the primary DB
-		executionProto.Experiments = experimentKeyValues
 		executionProto.TargetLabel = rmd.GetTargetId()
 		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
 		executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
@@ -1280,14 +1274,20 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 
 func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, *repb.Command, error) {
 	action := &repb.Action{}
-	if err := cachetools.ReadProtoFromCache(ctx, s.cache, actionResourceName, action); err != nil {
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
+		if gstatus.Code(err) == gcodes.NotFound {
+			err = digest.MissingDigestError(actionResourceName.GetDigest())
+		}
 		log.CtxWarningf(ctx, "Error fetching action: %s", err.Error())
 		return nil, nil, err
 	}
 	cmdDigest := action.GetCommandDigest()
 	cmdInstanceNameDigest := digest.NewCASResourceName(cmdDigest, actionResourceName.GetInstanceName(), actionResourceName.GetDigestFunction())
 	cmd := &repb.Command{}
-	if err := cachetools.ReadProtoFromCache(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
+		if gstatus.Code(err) == gcodes.NotFound {
+			err = digest.MissingDigestError(actionResourceName.GetDigest())
+		}
 		log.CtxWarningf(ctx, "Error fetching command: %s", err.Error())
 		return nil, nil, err
 	}
