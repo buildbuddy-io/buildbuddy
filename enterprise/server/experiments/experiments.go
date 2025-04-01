@@ -3,7 +3,6 @@ package experiments
 import (
 	"context"
 	"fmt"
-	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -14,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/dgryski/go-farm"
 	"github.com/open-feature/go-sdk/openfeature"
 
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
@@ -23,11 +21,6 @@ import (
 var (
 	appName      = flag.String("experiments.app_name", "buildbuddy-app", "Client name to use for experiments")
 	flagdBackend = flag.String("experiments.flagd_backend", "", "Flagd backend to use for evaluating flags")
-)
-
-// Platform properties for execution experiments.
-const (
-	SkipResavingActionSnapshots = "skip-resaving-action-snapshots"
 )
 
 // Register adds a new interfaces.ExperimentFlagProvider to the env. If the
@@ -167,13 +160,4 @@ func (fp *FlagProvider) Float64(ctx context.Context, flagName string, defaultVal
 // experiment provider is configured.
 func (fp *FlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
 	return fp.client.Int(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
-}
-
-// Returns a deterministic, well distributed value in [0,1).
-func BytesToHashRatio(value []byte) float64 {
-	// Using this hash because it produces well distributed results, it's very
-	// fast, and it's supported in clickhouse (so we can identify executions
-	// that were part of the experiment).
-	hash := farm.Fingerprint64(value)
-	return float64(hash) / float64(math.MaxUint64)
 }
