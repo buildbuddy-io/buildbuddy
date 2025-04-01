@@ -495,11 +495,11 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 	return membershipStatus, nil
 }
 
-func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error) {
+func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, opts *interfaces.GetGroupUsersOpts) ([]*grpb.GetGroupUsersResponse_GroupUser, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	if len(statuses) == 0 {
+	if len(opts.Statuses) == 0 {
 		return nil, status.InvalidArgumentError("A valid status or statuses are required")
 	}
 	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
@@ -513,8 +513,12 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 			FROM "Users" AS u JOIN "UserGroups" AS ug ON u.user_id = ug.user_user_id`)
 	q = q.AddWhereClause(`ug.group_group_id = ?`, groupID)
 
+	if opts.SubIDPrefix != "" {
+		q = q.AddWhereClause("u.sub_id LIKE ?", opts.SubIDPrefix+"%")
+	}
+
 	o := query_builder.OrClauses{}
-	for _, s := range statuses {
+	for _, s := range opts.Statuses {
 		if s == grpb.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS {
 			return nil, status.InvalidArgumentError("Invalid status filter")
 		}
@@ -855,7 +859,7 @@ func usersFromUserGroupJoin(ugj []*userGroupJoin) ([]*tables.User, error) {
 	return users, nil
 }
 
-func (d *UserDB) GetUserByEmail(ctx context.Context, email string) (*tables.User, error) {
+func (d *UserDB) GetUserByEmail(ctx context.Context, subID string, email string) (*tables.User, error) {
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -867,10 +871,10 @@ func (d *UserDB) GetUserByEmail(ctx context.Context, email string) (*tables.User
 				ON u.user_id = ug.user_user_id
 			LEFT JOIN "Groups" AS g
 				ON ug.group_group_id = g.group_id
-		WHERE u.email = ? AND ug.group_group_id = ?
+		WHERE u.email = ? AND u.sub_id = ? AND ug.group_group_id = ?
 		AND (ug.membership_status = ? OR ug.user_user_id IS NULL)
 		ORDER BY u.user_id, g.group_id ASC
-	`, email, u.GetGroupID(), int32(grpb.GroupMembershipStatus_MEMBER))
+	`, email, subID, u.GetGroupID(), int32(grpb.GroupMembershipStatus_MEMBER))
 	ugj, err := db.ScanAll(rq, &userGroupJoin{})
 	if err != nil {
 		return nil, err

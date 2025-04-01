@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
 	"net/http"
 	"path"
@@ -12,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -281,7 +280,7 @@ func (s *SCIMServer) getFilteredUsers(ctx context.Context, g *tables.Group, filt
 	if err != nil {
 		return nil, err
 	}
-	u, err := s.env.GetUserDB().GetUserByEmail(ctx, email)
+	u, err := s.env.GetUserDB().GetUserByEmail(ctx, saml.SubIDForEmail(email, g), email)
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, nil
@@ -325,7 +324,11 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 	users := []*UserResource{}
 	filter := r.URL.Query().Get("filter")
 	if filter == "" {
-		displayUsers, err := s.env.GetUserDB().GetGroupUsers(ctx, g.GroupID, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
+		opts := &interfaces.GetGroupUsersOpts{
+			Statuses:    []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER},
+			SubIDPrefix: saml.SubIDPrefixForGroup(g.URLIdentifier),
+		}
+		displayUsers, err := s.env.GetUserDB().GetGroupUsers(ctx, g.GroupID, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -419,10 +422,6 @@ func roleUpdateRequest(userID string, userRole role.Role) ([]*grpb.UpdateGroupUs
 	}}, nil
 }
 
-func subIDForUserName(userName string, g *tables.Group) string {
-	return fmt.Sprintf("%s/%s", build_buddy_url.WithPath("saml/metadata").String()+"?slug="+g.URLIdentifier, userName)
-}
-
 func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -448,7 +447,7 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	}
 	u := &tables.User{
 		UserID:    pk,
-		SubID:     subIDForUserName(ur.UserName, g),
+		SubID:     saml.SubIDForEmail(ur.UserName, g),
 		FirstName: ur.Name.GivenName,
 		LastName:  ur.Name.FamilyName,
 		Email:     ur.UserName,
@@ -529,7 +528,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 				return status.InvalidArgumentErrorf("expected string attribute for username but got %T", value)
 			}
 			u.Email = v
-			u.SubID = subIDForUserName(v, g)
+			u.SubID = saml.SubIDForEmail(v, g)
 		default:
 			return status.InvalidArgumentErrorf("unsupported attribute %q", name)
 		}
@@ -615,7 +614,7 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 	u.FirstName = ur.Name.GivenName
 	u.LastName = ur.Name.FamilyName
 	u.Email = ur.UserName
-	u.SubID = subIDForUserName(ur.UserName, g)
+	u.SubID = saml.SubIDForEmail(ur.UserName, g)
 	updatedUser, err := newUserResource(u, g)
 	if err != nil {
 		return nil, err
