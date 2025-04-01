@@ -142,6 +142,7 @@ pkg_tar(
     srcs = [
         ":buildbuddy",
     ],
+    include_runfiles = True,
     remap_paths = {
         "/buildbuddy": "/app/enterprise/server/cmd/server/buildbuddy",
     },
@@ -149,7 +150,6 @@ pkg_tar(
         "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/buildbuddy/enterprise/config/buildbuddy.release.yaml",
         "buildbuddy": "tmp",
     },
-    include_runfiles = True,
 )
 
 oci_image(
