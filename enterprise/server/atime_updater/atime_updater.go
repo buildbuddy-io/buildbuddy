@@ -199,8 +199,8 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 			log.CtxInfof(ctx, "Too many pending FindMissingBlobsRequests for updating remote atime for group %s, dropping %d pending atime updates", groupID, len(keys))
 			metrics.RemoteAtimeUpdates.With(
 				prometheus.Labels{
-					metrics.GroupID:            groupID,
-					metrics.AtimeUpdateOutcome: "dropped_too_many_batches",
+					metrics.GroupID:              groupID,
+					metrics.EnqueueUpdateOutcome: "dropped_too_many_batches",
 				}).Add(float64(len(digests)))
 			return
 		}
@@ -238,18 +238,18 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 
 	metrics.RemoteAtimeUpdates.With(
 		prometheus.Labels{
-			metrics.GroupID:            groupID,
-			metrics.AtimeUpdateOutcome: "enqueued",
+			metrics.GroupID:              groupID,
+			metrics.EnqueueUpdateOutcome: "enqueued",
 		}).Add(float64(enqueued))
 	metrics.RemoteAtimeUpdates.With(
 		prometheus.Labels{
-			metrics.GroupID:            groupID,
-			metrics.AtimeUpdateOutcome: "duplicate",
+			metrics.GroupID:              groupID,
+			metrics.EnqueueUpdateOutcome: "duplicate",
 		}).Add(float64(duplicate))
 	metrics.RemoteAtimeUpdates.With(
 		prometheus.Labels{
-			metrics.GroupID:            groupID,
-			metrics.AtimeUpdateOutcome: "dropped_too_many_digests",
+			metrics.GroupID:              groupID,
+			metrics.EnqueueUpdateOutcome: "dropped_too_many_updates",
 		}).Add(float64(dropped))
 }
 

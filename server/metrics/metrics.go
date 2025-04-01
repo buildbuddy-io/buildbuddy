@@ -292,10 +292,12 @@ const (
 	// Name of a file.
 	FileName = "file_name"
 
-	// Outcome of attempting to enqueue a remote atime update. One of
-	// "enqueued", "duplicate", "dropped_batch_too_large", or
+	// There are a couple of places where we enqueue RPCs to be batched and
+	// sent asynchronously: the atime_updater and the hit_tracker_client.
+	// This label tracks the outcome of these enqueue operations. One of
+	// "enqueued", "duplicate", "dropped_too_many_updates", or
 	// "dropped_too_many_batches"
-	AtimeUpdateOutcome = "status"
+	EnqueueUpdateOutcome = "status"
 
 	// CreatedFromSnapshot indicates if a firecracker execution used a
 	// snapshot.
@@ -3177,7 +3179,7 @@ var (
 		Help:      "The number of remote atime updates enqueued, with the outcome of the enqueue operation.",
 	}, []string{
 		GroupID,
-		AtimeUpdateOutcome,
+		EnqueueUpdateOutcome,
 	})
 
 	RemoteAtimeUpdatesSent = promauto.NewCounterVec(prometheus.CounterOpts{
