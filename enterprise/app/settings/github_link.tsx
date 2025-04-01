@@ -22,6 +22,7 @@ import Banner from "../../../app/components/banner/banner";
 import LinkButton from "../../../app/components/button/link_button";
 import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
 import GitHubTooltip from "./github_tooltip";
+import { installReadOnlyGitHubAppURL, installReadWriteGitHubAppURL } from "../../../app/util/github";
 
 export interface Props {
   user: User;
@@ -67,15 +68,6 @@ export default class GitHubLink extends React.Component<Props, State> {
     }
   }
 
-  private gitHubLinkUrl(): string {
-    const params = new URLSearchParams({
-      group_id: this.props.user.selectedGroup.id,
-      user_id: this.props.user.displayUser.userId?.id || "",
-      redirect_url: window.location.href,
-    });
-    return `/auth/github/link/?${params}`;
-  }
-
   private fetchInstallations() {
     this.setState({ installationsLoading: true, installationsResponse: null });
     rpcService.service
@@ -84,14 +76,21 @@ export default class GitHubLink extends React.Component<Props, State> {
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ installationsLoading: false }));
   }
-  private getInstallURL() {
-    const params = new URLSearchParams({
-      group_id: this.props.user.selectedGroup.id,
-      user_id: this.props.user.displayUser.userId?.id || "",
-      redirect_url: window.location.href,
-      install: "true",
-    });
-    return `/auth/github/app/link/?${params}`;
+  // onClickSetupGithubApp redirects to the corresponding app URL if a user has
+  // already authorized either the read-write or read-only GitHub app.
+  private onClickSetupGithubApp() {
+    rpcService.service
+      .getGitHubAppInstallPath(new github.GetGithubAppInstallPathRequest())
+      .then((response) => {
+        const path = `${response.installPath}?${new URLSearchParams({
+          group_id: this.props.user.selectedGroup.id,
+          user_id: this.props.user.displayUser.userId?.id || "",
+          redirect_url: window.location.href,
+          install: "true",
+        })}`;
+        window.location.href = path;
+      })
+      .catch((e) => errorService.handleError(e));
   }
   private unlinkInstallation(installation: github.AppInstallation) {
     this.setState({ unlinkInstallationLoading: true });
@@ -99,6 +98,7 @@ export default class GitHubLink extends React.Component<Props, State> {
       .unlinkGitHubAppInstallation(
         github.UnlinkAppInstallationRequest.create({
           installationId: installation.installationId,
+          appId: installation.appId,
         })
       )
       .then(() => {
@@ -180,7 +180,7 @@ export default class GitHubLink extends React.Component<Props, State> {
                 </Banner>
               )}
             </div>
-            {this.props.user.selectedGroup.githubLinked ? (
+            {this.props.user.selectedGroup.githubLinked && (
               <div className="linked-github-account-row">
                 <CheckCircle className="icon green" />
                 <div>GitHub account linked</div>
@@ -188,10 +188,6 @@ export default class GitHubLink extends React.Component<Props, State> {
                   Unlink
                 </OutlinedButton>
               </div>
-            ) : (
-              <FilledButton className="settings-button settings-link-button">
-                <a href={this.gitHubLinkUrl()}>Link GitHub account</a>
-              </FilledButton>
             )}
           </>
         )}
@@ -204,29 +200,41 @@ export default class GitHubLink extends React.Component<Props, State> {
             </div>
             <div className="settings-option-description">
               <p>GitHub app installations that have been imported to BuildBuddy are shown below.</p>
-              <p>You can also manage installations on GitHub using the "Manage on GitHub" button below.</p>
             </div>
-            <LinkButton className="big-button" href={this.getInstallURL()}>
-              Manage on GitHub
-            </LinkButton>
             {this.state.installationsLoading && <div className="loading loading-slim" />}
             {Boolean(this.state.installationsResponse?.installations?.length) && (
-              <div className="github-app-installations">
-                {this.state.installationsResponse?.installations.map(
-                  (installation) => (
-                    console.log(installation),
-                    (
-                      <div className="github-app-installation">
-                        <div className="installation-owner">
-                          <TextLink href={`https://github.com/${installation.owner}`}>{installation.owner}</TextLink>
-                        </div>
-                        <OutlinedButton className="destructive" onClick={() => this.showUnlinkDialog(installation)}>
-                          Unlink
-                        </OutlinedButton>
-                      </div>
-                    )
-                  )
-                )}
+              <div>
+                <div className="settings-option-description">
+                  <p>You can also manage installations on GitHub using the "Manage on GitHub" button below.</p>
+                </div>
+                <div className="setup-button-container">
+                  <LinkButton
+                    className="big-button left-aligned-button"
+                    onClick={this.onClickSetupGithubApp.bind(this)}>
+                    Manage on GitHub
+                  </LinkButton>
+                </div>
+                <div>
+                  <div className="github-app-installations">
+                    {this.state.installationsResponse?.installations.map(
+                      (installation) => (
+                        console.log(installation),
+                        (
+                          <div className="github-app-installation">
+                            <div className="installation-owner">
+                              <TextLink href={`https://github.com/${installation.owner}`}>
+                                {installation.owner}
+                              </TextLink>
+                            </div>
+                            <OutlinedButton className="destructive" onClick={() => this.showUnlinkDialog(installation)}>
+                              Unlink
+                            </OutlinedButton>
+                          </div>
+                        )
+                      )
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </>

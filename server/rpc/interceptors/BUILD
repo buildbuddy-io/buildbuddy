@@ -20,6 +20,7 @@ go_library(
         "//server/util/request_context",
         "//server/util/status",
         "//server/util/subdomain",
+        "//server/util/usageutil",
         "//server/util/uuid",
         "@com_github_grpc_ecosystem_go_grpc_middleware_providers_prometheus//:prometheus",
         "@com_github_prometheus_client_golang//prometheus",

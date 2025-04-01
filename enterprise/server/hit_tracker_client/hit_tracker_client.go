@@ -23,11 +23,11 @@ func Register(env *real_environment.RealEnv) {
 type HitTracker struct {
 }
 
-func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, invocationID string) interfaces.HitTracker {
+func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
 	return &HitTracker{}
 }
 
-func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, invocationID string) interfaces.HitTracker {
+func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
 	return &HitTracker{}
 }
 
@@ -35,10 +35,6 @@ func (h *HitTracker) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) 
 }
 
 func (h *HitTracker) TrackMiss(d *repb.Digest) error {
-	return nil
-}
-
-func (h *HitTracker) TrackEmptyHit() error {
 	return nil
 }
 

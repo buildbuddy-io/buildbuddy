@@ -17,6 +17,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/bazel_request",
         "//server/util/capabilities",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/proto",

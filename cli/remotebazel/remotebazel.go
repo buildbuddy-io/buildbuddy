@@ -425,7 +425,7 @@ func getCurrentRef() (string, error) {
 // If the branch is tracked remotely, we expect `remoteData` to contain a string looking like
 // `abc123	refs/heads/my_branch`
 func branchExistsRemotely(remoteData string, branch string) bool {
-	regex := fmt.Sprintf("\\brefs/heads/%s\\b", branch)
+	regex := fmt.Sprintf("\\brefs/heads/%s\\b", regexp.QuoteMeta(branch))
 	re := regexp.MustCompile(regex)
 	return re.MatchString(remoteData)
 }
@@ -468,7 +468,7 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 		select {
 		case <-time.After(500 * time.Millisecond):
 			log.Warnf("Mirroring your local git state is taking a long time." +
-				" See https://www.buildbuddy.io/docs/remote-bazel-introduction/#automatic-git-state-mirroring" +
+				" See https://www.buildbuddy.io/docs/remote-bazel/#automatic-git-state-mirroring" +
 				" for more details and suggestions.")
 		case <-done:
 		}

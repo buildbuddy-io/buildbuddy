@@ -9,6 +9,7 @@ go_library(
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/http/httpclient",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",

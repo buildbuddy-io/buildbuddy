@@ -30,6 +30,7 @@ go_test(
         "//server/gossip",
         "//server/testutil/testport",
         "//server/util/log",
+        "//server/util/status",
         "@com_github_stretchr_testify//require",
     ],
 )

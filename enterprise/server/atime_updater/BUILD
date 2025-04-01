@@ -16,7 +16,6 @@ go_library(
         "//server/util/authutil",
         "//server/util/log",
         "@com_github_prometheus_client_golang//prometheus",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
     ],
 )

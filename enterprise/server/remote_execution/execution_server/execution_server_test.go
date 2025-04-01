@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -499,7 +500,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 
 	// Simulate execution: set up a PublishOperation stream and publish an
 	// ExecuteResponse to it.
-	executorCtx := metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-client", "executor")
+	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
 	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
 	require.NoError(t, err)
 	stream, err := client.PublishOperation(executorCtx)

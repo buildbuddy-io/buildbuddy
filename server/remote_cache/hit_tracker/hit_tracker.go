@@ -12,9 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -159,23 +157,23 @@ type HitTracker struct {
 	executedActionMetadata *repb.ExecutedActionMetadata
 }
 
-func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, invocationID string) interfaces.HitTracker {
-	return h.newHitTracker(ctx, invocationID, true)
+func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return h.newHitTracker(ctx, requestMetadata, true)
 }
 
-func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, invocationID string) interfaces.HitTracker {
-	return h.newHitTracker(ctx, invocationID, false)
+func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return h.newHitTracker(ctx, requestMetadata, false)
 }
 
-func (h HitTrackerFactory) newHitTracker(ctx context.Context, invocationID string, actionCache bool) interfaces.HitTracker {
+func (h HitTrackerFactory) newHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, actionCache bool) interfaces.HitTracker {
 	return &HitTracker{
 		env:             h.env,
 		c:               h.env.GetMetricsCollector(),
 		usage:           h.env.GetUsageTracker(),
 		ctx:             ctx,
-		iid:             invocationID,
+		iid:             requestMetadata.GetToolInvocationId(),
 		actionCache:     actionCache,
-		requestMetadata: bazel_request.GetRequestMetadata(ctx),
+		requestMetadata: requestMetadata,
 	}
 }
 
@@ -237,32 +235,6 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 		}
 	} else if h.actionCache {
 		if err := h.c.IncrementCount(h.ctx, h.targetMissesKey(), h.targetField(), 1); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (h *HitTracker) TrackEmptyHit() error {
-	start := time.Now()
-	metrics.CacheEvents.With(prometheus.Labels{
-		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
-		metrics.CacheEventTypeLabel: hitLabel,
-	}).Inc()
-	if h.c == nil || h.iid == "" {
-		return nil
-	}
-	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Hit), 1); err != nil {
-		return err
-	}
-	if *detailedStatsEnabled {
-		emptyDigest := &repb.Digest{Hash: digest.EmptySha256}
-		stats := &detailedStats{
-			Status:    Miss,
-			StartTime: start,
-			Duration:  time.Since(start),
-		}
-		if err := h.recordDetailedStats(emptyDigest, stats); err != nil {
 			return err
 		}
 	}

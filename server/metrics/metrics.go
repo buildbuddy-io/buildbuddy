@@ -78,6 +78,9 @@ const (
 	// HTTP response code: `200`, `302`, `401`, `404`, `500`, ...
 	HTTPResponseCodeLabel = "code"
 
+	// Host (without any port number) for outgoing HTTP requests
+	HTTPHostLabel = "host"
+
 	// Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 	CacheBackendLabel = "backend"
 
@@ -194,11 +197,18 @@ const (
 	// Raft RangeCache event type: `hit`, `miss`, or `update`.
 	RaftRangeCacheEventTypeLabel = "rangecache_event_type"
 
-	// Raft Listener Event Type
+	// Raft Listener Event Type, such as "LeaderUpdated". These are events sent
+	// by dragonboat library.
 	RaftListenerEventType = "listener_event"
 
 	// The ID of a raft listener
 	RaftListenerID = "listener_id"
+
+	// The source of the event broadcast.
+	RaftEventBroadcaster = "event_broadcast_source"
+
+	// Raft Event Type, such as "range-removed", "range-usage-updated"
+	RaftEventType = "raft_event"
 
 	// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
@@ -282,10 +292,12 @@ const (
 	// Name of a file.
 	FileName = "file_name"
 
-	// Outcome of attempting to enqueue a remote atime update. One of
-	// "enqueued", "duplicate", "dropped_batch_too_large", or
+	// There are a couple of places where we enqueue RPCs to be batched and
+	// sent asynchronously: the atime_updater and the hit_tracker_client.
+	// This label tracks the outcome of these enqueue operations. One of
+	// "enqueued", "duplicate", "dropped_too_many_updates", or
 	// "dropped_too_many_batches"
-	AtimeUpdateOutcome = "status"
+	EnqueueUpdateOutcome = "status"
 
 	// CreatedFromSnapshot indicates if a firecracker execution used a
 	// snapshot.
@@ -1834,6 +1846,16 @@ var (
 	// )
 	// ```
 
+	HTTPClientRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "client_request_count",
+		Help:      "HTTP outgoing request count.",
+	}, []string{
+		HTTPHostLabel,
+		HTTPMethodLabel,
+	})
+
 	// ## Internal metrics
 	//
 	// These metrics are for monitoring lower-level subsystems of BuildBuddy.
@@ -2454,6 +2476,33 @@ var (
 	}, []string{
 		RaftListenerID,
 		RaftListenerEventType,
+	})
+
+	RaftStoreEventsChanSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "store_events",
+		Help:      "Number of events in the queue",
+	})
+
+	RaftStoreEventBroadcastDropped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "store_event_broadcast_dropped",
+		Help:      "The total number of dropped events to broadcast",
+	}, []string{
+		RaftEventBroadcaster,
+		RaftEventType,
+	})
+
+	RaftStoreEventListenerDropped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "store_event_listener_dropped",
+		Help:      "The total number of dropped events in store",
+	}, []string{
+		RaftListenerID,
+		RaftEventType,
 	})
 
 	RaftLeaseActionCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3130,7 +3179,7 @@ var (
 		Help:      "The number of remote atime updates enqueued, with the outcome of the enqueue operation.",
 	}, []string{
 		GroupID,
-		AtimeUpdateOutcome,
+		EnqueueUpdateOutcome,
 	})
 
 	RemoteAtimeUpdatesSent = promauto.NewCounterVec(prometheus.CounterOpts{

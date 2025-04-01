@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/platform",
         "//proto:registry_go_proto",
+        "//server/http/httpclient",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",

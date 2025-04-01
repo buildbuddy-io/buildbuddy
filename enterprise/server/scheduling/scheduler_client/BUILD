@@ -15,6 +15,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/statusz",
         "//server/version",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/prototext",

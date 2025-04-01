@@ -1611,11 +1611,18 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 }
 
 func (p *PebbleCache) gcsObjectIsPastTTL(gcsMetadata *sgpb.StorageMetadata_GCSMetadata) bool {
-	if customTimeUsec := gcsMetadata.GetLastCustomTimeUsec(); customTimeUsec > 0 {
-		customTime := time.UnixMicro(customTimeUsec)
-		return p.clock.Since(customTime) > time.Duration(p.gcsTTLDays*24)*time.Hour
-	}
-	return false
+	// The GCS TTL is set as an integer number of days. The docs are vague,
+	// but it seems plausible that if a file is *ever* marked for deletion,
+	// it will be deleted, even if it has changed since. Basically, there is
+	// one job marking files for deletion, and another job deleting them,
+	// and if the object has changed between those two events, it is still
+	// deleted.
+	//
+	// For this reason, if a GCS object is ever less than 1 hour away from
+	// TTL, assume it has already been marked for deletion.
+	customTimeUsec := gcsMetadata.GetLastCustomTimeUsec()
+	buffer := time.Hour
+	return p.clock.Since(time.UnixMicro(customTimeUsec))+buffer > time.Duration(p.gcsTTLDays*24)*time.Hour
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {

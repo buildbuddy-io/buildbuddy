@@ -10,9 +10,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	gstatus "google.golang.org/grpc/status"
@@ -166,4 +168,42 @@ func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticat
 		return false
 	}
 	return u.GetCacheEncryptionEnabled()
+}
+
+// Extracts auth headers from the provided context and returns them as a map.
+// This function is intended for use along with AddAuthHeadersToContext when
+// auth headers must be copied between contexts.
+func GetAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator) map[string][]string {
+	headers := map[string][]string{}
+
+	keys := metadata.ValueFromIncomingContext(ctx, ClientIdentityHeaderName)
+	if len(keys) > 0 {
+		if len(keys) > 1 {
+			log.Warningf("Expected at most 1 client-identity header (found %d)", len(keys))
+		}
+		headers[ClientIdentityHeaderName] = keys
+	}
+
+	if jwt := authenticator.TrustedJWTFromAuthContext(ctx); jwt != "" {
+		headers[ContextTokenStringKey] = []string{jwt}
+	}
+	return headers
+}
+
+// Adds the provided auth headers into the provided context and returns a new
+// context containng them. This function is intended for use along with
+// GetAuthHeaders when auth headers must be copied between contexts.
+func AddAuthHeadersToContext(ctx context.Context, headers map[string][]string, authenticator interfaces.Authenticator) context.Context {
+	for key, values := range headers {
+		for _, value := range values {
+			if key == ClientIdentityHeaderName {
+				ctx = metadata.AppendToOutgoingContext(ctx, ClientIdentityHeaderName, value)
+			} else if key == ContextTokenStringKey {
+				ctx = authenticator.AuthContextFromTrustedJWT(ctx, value)
+			} else {
+				log.Warningf("Ignoring unrecognized auth header: %s", key)
+			}
+		}
+	}
+	return ctx
 }

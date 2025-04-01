@@ -1,7 +1,7 @@
 ---
-id: remote-bazel-introduction
-title: Introduction to Remote Bazel
-sidebar_label: Remote bazel introduction
+id: remote-bazel
+title: Remote Bazel
+sidebar_label: Remote bazel
 ---
 
 Remote Bazel is an easily configurable way to run commands on a remote runner. You
@@ -26,7 +26,7 @@ Remote Bazel also has the following performance benefits:
    take advantage of **warm Bazel instances**.
 
 Remote Bazel uses the same backend technology as our CI product, BuildBuddy
-Workflows. See [our docs on BuildBuddy Workflows](https://www.buildbuddy.io/docs/workflows-introduction/)
+Workflows. See [our docs on BuildBuddy Workflows](https://www.buildbuddy.io/docs/workflows-setup/)
 for a more in-depth description of the performance optimizations and mechanism
 for workspace recycling.
 

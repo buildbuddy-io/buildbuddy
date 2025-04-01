@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
@@ -119,16 +120,17 @@ type Store struct {
 	db     pebble.IPebbleDB
 	leaser pebble.Leaser
 
-	configuredClusters int
-	rangeMu            sync.RWMutex
-	openRanges         map[uint64]*rfpb.RangeDescriptor
+	configuredClusters atomic.Int32
+
+	rangeMu    sync.RWMutex
+	openRanges map[uint64]*rfpb.RangeDescriptor
 
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
 
 	eventsMu       sync.Mutex
 	events         chan events.Event
-	eventListeners []chan events.Event
+	eventListeners map[string]chan events.Event
 
 	usages *usagetracker.Tracker
 
@@ -168,7 +170,8 @@ type registryHolder struct {
 }
 
 func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v)
+	nhLog := log.NamedSubLogger(nhid)
+	r := registry.NewDynamicNodeRegistry(rc.g, streamConnections, v, nhLog)
 	rc.r = r
 	r.AddNode(nhid, rc.raftAddr, rc.grpcAddr)
 	return r, nil
@@ -216,7 +219,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	nodeLiveness := nodeliveness.New(env.GetServerContext(), nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
-	eventsChan := make(chan events.Event, 100)
+	eventsChan := make(chan events.Event, 1000)
 
 	clock := env.GetClock()
 	session := client.NewSessionWithClock(clock)
@@ -250,7 +253,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 		eventsMu:       sync.Mutex{},
 		events:         eventsChan,
-		eventListeners: make([]chan events.Event, 0),
+		eventListeners: make(map[string]chan events.Event),
 
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
@@ -346,7 +349,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 				}
 				return status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
 			}
-			s.configuredClusters++
+			s.configuredClusters.Add(1)
 			s.log.Infof("Recreated c%dn%d in %s. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, time.Since(start), i+1, numReplicas)
 			return nil
 		})
@@ -412,9 +415,6 @@ func (s *Store) preloadRegistry(ctx context.Context) error {
 					continue
 				}
 				s.registry.AddNode(conn.GetNhid(), conn.GetRaftAddress(), conn.GetGrpcAddress())
-				for _, replica := range conn.GetReplicas() {
-					s.registry.Add(replica.GetRangeId(), replica.GetReplicaId(), conn.GetNhid())
-				}
 			}
 			return nil
 		})
@@ -587,12 +587,16 @@ func (s *Store) handleEvents(ctx context.Context) {
 		select {
 		case e := <-s.events:
 			s.eventsMu.Lock()
-			for _, ch := range s.eventListeners {
+			for id, ch := range s.eventListeners {
 				select {
 				case ch <- e:
 					continue
 				default:
-					s.log.Warningf("Dropped event: %s", e)
+					metrics.RaftStoreEventListenerDropped.With(prometheus.Labels{
+						metrics.RaftListenerID: id,
+						metrics.RaftEventType:  e.EventType().String(),
+					}).Inc()
+					s.log.Warningf("EventListener(%s) dropped event: %s", id, e)
 				}
 			}
 			s.eventsMu.Unlock()
@@ -602,12 +606,12 @@ func (s *Store) handleEvents(ctx context.Context) {
 	}
 }
 
-func (s *Store) AddEventListener() <-chan events.Event {
+func (s *Store) AddEventListener(id string) <-chan events.Event {
 	s.eventsMu.Lock()
 	defer s.eventsMu.Unlock()
 
-	ch := make(chan events.Event, 100)
-	s.eventListeners = append(s.eventListeners, ch)
+	ch := make(chan events.Event, 1000)
+	s.eventListeners[id] = ch
 	return ch
 }
 
@@ -779,20 +783,6 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 
 func (s *Store) GetRange(rangeID uint64) *rfpb.RangeDescriptor {
 	return s.lookupRange(rangeID)
-}
-
-func (s *Store) sendRangeEvent(eventType events.EventType, rd *rfpb.RangeDescriptor) {
-	ev := events.RangeEvent{
-		Type:            eventType,
-		RangeDescriptor: rd,
-	}
-
-	select {
-	case s.events <- ev:
-		break
-	default:
-		s.log.Warningf("Dropping range event: %+v", ev)
-	}
 }
 
 // We need to implement the Add/RemoveRange interface so that stores opened and
@@ -968,7 +958,7 @@ func (s *Store) APIClient() *client.APIClient {
 }
 
 func (s *Store) ConfiguredClusters() int {
-	return s.configuredClusters
+	return int(s.configuredClusters.Load())
 }
 
 func (s *Store) NodeHost() *dragonboat.NodeHost {
@@ -1027,7 +1017,7 @@ func (s *Store) isLeader(rangeID uint64, replicaID uint64) bool {
 }
 
 func (s *Store) GetRegistry(ctx context.Context, req *rfpb.GetRegistryRequest) (*rfpb.GetRegistryResponse, error) {
-	connections := s.registry.List()
+	connections := s.registry.ListNodes()
 	return &rfpb.GetRegistryResponse{
 		Connections: connections,
 	}, nil
@@ -1825,7 +1815,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 }
 
 func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, maxRangeSizeBytes int64) {
-	eventsCh := s.AddEventListener()
+	eventsCh := s.AddEventListener("splitRanges")
 	for {
 		select {
 		case <-ctx.Done():
@@ -1862,7 +1852,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, maxRangeSizeBy
 }
 
 func (s *Store) updateStoreUsageTag(ctx context.Context) {
-	eventsCh := s.AddEventListener()
+	eventsCh := s.AddEventListener("updateTags")
 	for {
 		select {
 		case <-ctx.Done():
@@ -2240,6 +2230,8 @@ func (j *nonVoterZombieJanitor) checkRepl(ctx context.Context, repl *replica.Rep
 			})
 			if err != nil {
 				return status.WrapErrorf(err, "failed to remove non-voter replica c%dn%d", rangeID, replicaID)
+			} else {
+				log.Infof("successfully removed non-voter c%dn%d", rangeID, replicaID)
 			}
 		} else {
 			j.lastDetectedAt[key] = j.clock.Now()
@@ -2286,9 +2278,9 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 				// There are probably no client sessions to delete.
 				return nil
 			}
+		} else {
+			return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to parse lastExecutionTime", rd.GetRangeId())
 		}
-
-		return status.InternalErrorf("unable to delete sessions for rangeID=%d: unable to parse lastExecutionTime", rd.GetRangeId())
 	}
 
 	if !w.store.HaveLease(ctx, rd.GetRangeId()) {
@@ -2314,7 +2306,10 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 	}
 	w.lastExecutionTime.Store(rd.GetRangeId(), now)
 	_, err = rbuilder.NewBatchResponseFromProto(rsp).DeleteSessionsResponse(0)
-	return status.InternalErrorf("unable to delete sessions for rangeID=%d: DeleteSessions fails: %s", rd.GetRangeId(), err)
+	if err != nil {
+		return status.InternalErrorf("unable to delete sessions for rangeID=%d: deleteSessions fails: %s", rd.GetRangeId(), err)
+	}
+	return nil
 }
 
 func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
@@ -2610,10 +2605,6 @@ func (s *Store) addNonVoting(ctx context.Context, rangeID uint64, newReplicaID u
 	if err != nil {
 		return status.InternalErrorf("failed to get config change ID: %s", err)
 	}
-
-	// Gossip the address of the node that is about to be added.
-	s.registry.Add(rangeID, newReplicaID, node.GetNhid())
-	s.registry.AddNode(node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
 
 	// Propose the config change (this adds the node as a non-voter to the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
@@ -3128,8 +3119,8 @@ func (s *Store) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) 
 	return res
 }
 
-func (s *Store) TestingWaitForGC() {
-	s.usages.TestingWaitForGC()
+func (s *Store) TestingWaitForGC() error {
+	return s.usages.TestingWaitForGC()
 }
 
 func (s *Store) TestingFlush() {
@@ -3153,6 +3144,7 @@ func (s *Store) refreshMetrics(ctx context.Context) {
 				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Total))
 				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Avail))
 			}
+			metrics.RaftStoreEventsChanSize.Set(float64(len(s.events)))
 		}
 	}
 }
