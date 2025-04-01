@@ -173,18 +173,19 @@ func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticat
 // Extracts auth headers from the provided context and returns them as a map.
 // This function is intended for use along with AddAuthHeadersToContext when
 // auth headers must be copied between contexts.
-func GetAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator) map[string]string {
-	headers := map[string]string{}
+func GetAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator) map[string][]string {
+	headers := map[string][]string{}
 
 	keys := metadata.ValueFromIncomingContext(ctx, ClientIdentityHeaderName)
-	if len(keys) > 1 {
-		log.Warningf("Expected at most 1 client-identity header (found %d)", len(keys))
-	} else if len(keys) == 1 {
-		headers[ClientIdentityHeaderName] = keys[0]
+	if len(keys) > 0 {
+		if len(keys) > 1 {
+			log.Warningf("Expected at most 1 client-identity header (found %d)", len(keys))
+		}
+		headers[ClientIdentityHeaderName] = keys
 	}
 
 	if jwt := authenticator.TrustedJWTFromAuthContext(ctx); jwt != "" {
-		headers[ContextTokenStringKey] = jwt
+		headers[ContextTokenStringKey] = []string{jwt}
 	}
 	return headers
 }
@@ -192,14 +193,16 @@ func GetAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator)
 // Adds the provided auth headers into the provided context and returns a new
 // context containng them. This function is intended for use along with
 // GetAuthHeaders when auth headers must be copied between contexts.
-func AddAuthHeadersToContext(ctx context.Context, headers map[string]string, authenticator interfaces.Authenticator) context.Context {
-	for key, value := range headers {
-		if key == ClientIdentityHeaderName {
-			ctx = metadata.AppendToOutgoingContext(ctx, ClientIdentityHeaderName, value)
-		} else if key == ContextTokenStringKey {
-			ctx = authenticator.AuthContextFromTrustedJWT(ctx, value)
-		} else {
-			log.Warningf("Ignoring unrecognized auth header: %s", key)
+func AddAuthHeadersToContext(ctx context.Context, headers map[string][]string, authenticator interfaces.Authenticator) context.Context {
+	for key, values := range headers {
+		for _, value := range values {
+			if key == ClientIdentityHeaderName {
+				ctx = metadata.AppendToOutgoingContext(ctx, ClientIdentityHeaderName, value)
+			} else if key == ContextTokenStringKey {
+				ctx = authenticator.AuthContextFromTrustedJWT(ctx, value)
+			} else {
+				log.Warningf("Ignoring unrecognized auth header: %s", key)
+			}
 		}
 	}
 	return ctx

@@ -62,7 +62,7 @@ func (u *atimeUpdate) toProto() *repb.FindMissingBlobsRequest {
 // discard additional digests until it's flushed.
 type atimeUpdates struct {
 	mu          sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
-	authHeaders map[string]string
+	authHeaders map[string][]string
 	updates     []*atimeUpdate
 	numDigests  int
 }
@@ -259,7 +259,7 @@ func (u *atimeUpdater) sendUpdates(ctx context.Context) int {
 	// Remove updates to send and release the mutex before sending RPCs.
 	updatesToSend := map[string]*repb.FindMissingBlobsRequest{}
 	updatesSent := 0
-	authHeaders := map[string]map[string]string{}
+	authHeaders := map[string]map[string][]string{}
 	u.mu.Lock()
 	for groupID, updates := range u.updates {
 		updates.mu.Lock()
@@ -324,7 +324,7 @@ func (u *atimeUpdater) getUpdate(updates *atimeUpdates) *repb.FindMissingBlobsRe
 	return &req
 }
 
-func (u *atimeUpdater) update(ctx context.Context, groupID string, authHeaders map[string]string, req *repb.FindMissingBlobsRequest) {
+func (u *atimeUpdater) update(ctx context.Context, groupID string, authHeaders map[string][]string, req *repb.FindMissingBlobsRequest) {
 	log.CtxDebugf(ctx, "Asynchronously processing %d atime updates for group %s", len(req.BlobDigests), groupID)
 
 	ctx = authutil.AddAuthHeadersToContext(ctx, authHeaders, u.authenticator)
