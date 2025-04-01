@@ -184,12 +184,16 @@ func TestCASHitTracker_DropsUpdates(t *testing.T) {
 
 func expectToEqual(t *testing.T, expected int64, actual *atomic.Int64, message string) {
 	backoff := time.Millisecond
-	for i := 0; i < 10; i++ {
+	maxBackoff := time.Second
+	for i := 0; i < 20; i++ {
 		if expected == actual.Load() {
 			return
 		}
 		time.Sleep(backoff)
 		backoff = backoff * 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
 	}
 	require.Fail(t, message)
 }

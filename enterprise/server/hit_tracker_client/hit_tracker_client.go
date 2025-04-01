@@ -4,11 +4,13 @@ import (
 	"context"
 	"flag"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -36,6 +38,10 @@ var (
 )
 
 func Register(env *real_environment.RealEnv) error {
+	if *remoteHitTrackerTarget == "" {
+		return nil
+	}
+
 	conn, err := grpc_client.DialInternal(env, *remoteHitTrackerTarget)
 	if err != nil {
 		return err
@@ -49,13 +55,14 @@ func newHitTrackerClient(env *real_environment.RealEnv, conn grpc.ClientConnInte
 		authenticator:          env.GetAuthenticator(),
 		ticker:                 env.GetClock().NewTicker(*remoteHitTrackerPollInterval).Chan(),
 		quit:                   make(chan struct{}, 1),
+		stopped:                atomic.Bool{},
 		maxPendingHitsPerGroup: *maxPendingHitsPerGroup,
 		hitsByGroup:            map[groupID]*cacheHits{},
 		rpcTimeout:             *remoteHitTrackerTimeout,
 		client:                 hitpb.NewHitTrackerServiceClient(conn),
 	}
 	for i := 0; i < *remoteHitTrackerWorkers; i++ {
-		go factory.start()
+		go factory.runWorker()
 	}
 	env.GetHealthChecker().RegisterShutdownFunction(factory.shutdown)
 	return &factory
@@ -70,8 +77,9 @@ type cacheHits struct {
 type HitTrackerFactory struct {
 	authenticator interfaces.Authenticator
 
-	ticker <-chan time.Time
-	quit   chan struct{}
+	ticker  <-chan time.Time
+	quit    chan struct{}
+	stopped atomic.Bool
 
 	mu                     sync.Mutex
 	maxPendingHitsPerGroup int
@@ -82,16 +90,18 @@ type HitTrackerFactory struct {
 }
 
 func (h *HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	// For Action Cache hit-tracking, explicitly ignore everything. These cache
+	// artifacts should always be served from the authoritative cache which
+	// will take care of hit-tracking.
 	return &NoOpHitTracker{}
 }
 
 func (h *HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	// For CAS hit-tracking, use a hit-tracker that sends information about
+	// local cache hits to the RPC service at the configured backend.
 	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata}
 }
 
-// For Action Cache hit-tracking, explicitly ignore everything. These cache
-// artifacts should always be served from the authoritative cache which will
-// take care of hit-tracking.
 type NoOpHitTracker struct {
 }
 
@@ -121,8 +131,6 @@ func (t *NoOpTransferTimer) Record(bytesTransferred int64, duration time.Duratio
 	return nil
 }
 
-// For CAS hit-tracking, use a hit-tracker that sends information about local
-// cache hits to the RPC service at the configured backend.
 type HitTrackerClient struct {
 	ctx             context.Context
 	enqueueFn       func(context.Context, *repb.RequestMetadata, *hitpb.CacheHit)
@@ -132,7 +140,7 @@ type HitTrackerClient struct {
 
 // This should only be used for Action Cache hit tracking.
 func (h *HitTrackerClient) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) {
-	log.Warning("Unexpected call to SetExecutedActionMetadata")
+	alert.UnexpectedEvent("Unexpected call to SetExecutedActionMetadata")
 }
 
 // Misses hit the backing cache, so no need to report on hit-tracking.
@@ -149,6 +157,15 @@ func (h *HitTrackerFactory) groupID(ctx context.Context) groupID {
 }
 
 func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.RequestMetadata, hit *hitpb.CacheHit) {
+	if h.stopped.Load() {
+		log.Warning("hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
+		hit.RequestMetadata = requestMetadata
+		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}}); err != nil {
+			log.Infof("Error sending HitTrackerService.Track RPC: %v", err)
+		}
+		return
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -224,10 +241,11 @@ func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferT
 	return &NoOpTransferTimer{}
 }
 
-func (h *HitTrackerFactory) start() {
+func (h *HitTrackerFactory) runWorker() {
 	for {
 		select {
 		case <-h.quit:
+			h.stopped.Store(false)
 			return
 		case <-h.ticker:
 			h.sendTrackRequests(context.Background())
