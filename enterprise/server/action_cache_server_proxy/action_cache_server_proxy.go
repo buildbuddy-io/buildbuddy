@@ -57,7 +57,7 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 	}, nil
 }
 
-func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
+func getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
 	hashBytes, err := req.MarshalVT()
 	if err != nil {
 		return nil, err
@@ -70,14 +70,9 @@ func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.Get
 	return digest.NewACResourceName(d, req.GetInstanceName(), req.GetDigestFunction()), nil
 }
 
-func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.Digest, *repb.ActionResult, error) {
-	key, err := s.getACKeyForGetActionResultRequest(req)
-	if err != nil {
-		return nil, nil, err
-	}
+func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Context, key *digest.ACResourceName) (*repb.Digest, *repb.ActionResult, error) {
 	ptr := &rspb.ResourceName{}
-	err = cachetools.ReadProtoFromAC(ctx, s.localCache, key, ptr)
-	if err != nil {
+	if err := cachetools.ReadProtoFromAC(ctx, s.localCache, key, ptr); err != nil {
 		return nil, nil, err
 	}
 	casRN, err := digest.CASResourceNameFromProto(ptr)
@@ -93,11 +88,7 @@ func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Contex
 	return ptr.GetDigest(), out, nil
 }
 
-func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, req *repb.GetActionResultRequest, resp *repb.ActionResult) error {
-	key, err := s.getACKeyForGetActionResultRequest(req)
-	if err != nil {
-		return err
-	}
+func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, key *digest.ACResourceName, req *repb.GetActionResultRequest, resp *repb.ActionResult) error {
 	d, err := cachetools.UploadProtoToCAS(ctx, s.localCache, req.GetInstanceName(), req.GetDigestFunction(), resp)
 	if err != nil {
 		return err
@@ -126,9 +117,14 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 
 	// First, see if we have a local copy of this ActionResult.
 	var local *repb.ActionResult
+	var localKey *digest.ACResourceName
 	if *cacheActionResults {
+		localKey, err = getACKeyForGetActionResultRequest(req)
+		if err != nil {
+			return nil, err
+		}
 		var err error
-		localDigest, localResult, err := s.getLocallyCachedActionResult(ctx, req)
+		localDigest, localResult, err := s.getLocallyCachedActionResult(ctx, localKey)
 		if err != nil && !status.IsNotFoundError(err) {
 			return nil, err
 		}
@@ -151,7 +147,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 		labels[metrics.CacheHitMissStatus] = "hit"
 	} else {
 		if *cacheActionResults && err == nil && resp != nil {
-			s.cacheActionResultLocally(ctx, req, resp)
+			s.cacheActionResultLocally(ctx, localKey, req, resp)
 		}
 		labels[metrics.CacheHitMissStatus] = "miss"
 	}
