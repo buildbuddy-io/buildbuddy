@@ -1809,8 +1809,8 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if executorHostname != "" {
 		opts = append(opts, experiments.WithContext("executor.hostname", executorHostname))
 	}
-	skipResaving := fp.Boolean(ctx, "skip-resaving-action-snapshots", false, opts...)
-	if !skipResaving {
+	skipResaving := fp.String(ctx, "skip-resaving-action-snapshots", "", opts...)
+	if skipResaving == "" {
 		return task
 	}
 	if taskProto.GetPlatformOverrides() == nil {
@@ -1819,7 +1819,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	plat := taskProto.GetPlatformOverrides()
 	plat.Properties = append(plat.Properties, &repb.Platform_Property{
 		Name:  platform.SkipResavingActionSnapshotsPropertyName,
-		Value: "true",
+		Value: skipResaving,
 	})
 	if newTask, err := proto.Marshal(taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to marshal ExecutionTask: %s", err)
