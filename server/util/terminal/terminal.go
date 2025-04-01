@@ -33,3 +33,10 @@ func (w *ScreenWriter) Render() string {
 	s, _ := w.Screen.AsANSI()
 	return s
 }
+
+func (w *ScreenWriter) Reset(windowHeight int) error {
+	w.ScrollOut.Reset()
+	var err error
+	w.Screen, err = bkterminal.NewScreen(bkterminal.WithMaxSize(0, windowHeight), bkterminal.WithANSIRenderer())
+	return err
+}
