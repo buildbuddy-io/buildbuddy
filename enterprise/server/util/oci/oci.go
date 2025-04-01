@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -221,8 +222,12 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 			Password: credentials.Password,
 		}))
 	}
+
+	tr := httpclient.New().Transport
 	if len(*mirrors) > 0 {
-		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(remote.DefaultTransport, *mirrors)))
+		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
+	} else {
+		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 	}
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {

@@ -3,7 +3,6 @@ package fetch_server
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,10 +11,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -42,7 +41,6 @@ const (
 	BazelCanonicalIDQualifier         = "bazel.canonical_id"
 	BazelHttpHeaderPrefixQualifier    = "http_header:"
 	BazelHttpHeaderUrlPrefixQualifier = "http_header_url:"
-	maxHTTPTimeout                    = 60 * time.Minute
 )
 
 type FetchServer struct {
@@ -106,23 +104,7 @@ func (s *FetchServer) newFetchClient(ctx context.Context, protoTimeout *duration
 	if protoTimeout != nil {
 		timeout = protoTimeout.AsDuration()
 	}
-	if timeout == 0 || timeout > maxHTTPTimeout {
-		timeout = maxHTTPTimeout
-	}
-
-	tp := &http.Transport{
-		Dial: (&net.Dialer{
-			Timeout: timeout,
-			Control: blockingDialerControl(ctx, s.allowedPrivateIPNets),
-		}).Dial,
-		TLSHandshakeTimeout: timeout,
-		Proxy:               http.ProxyFromEnvironment,
-	}
-
-	return &http.Client{
-		Timeout:   timeout,
-		Transport: tp,
-	}
+	return httpclient.NewWithAllowedPrivateIPs(timeout, s.allowedPrivateIPNets)
 }
 
 // parseChecksumQualifier returns a digest function and digest hash
@@ -472,26 +454,4 @@ func tempCopy(r io.Reader) (path string, err error) {
 		return "", status.UnavailableErrorf("failed to copy HTTP response to temp file: %s", err)
 	}
 	return f.Name(), nil
-}
-
-type dialerControl = func(network, address string, conn syscall.RawConn) error
-
-func blockingDialerControl(ctx context.Context, allowed []*net.IPNet) dialerControl {
-	return func(network, address string, conn syscall.RawConn) error {
-		host, _, err := net.SplitHostPort(address)
-		if err != nil {
-			return err
-		}
-		ip := net.ParseIP(host)
-		for _, ipNet := range allowed {
-			if ipNet.Contains(ip) {
-				return nil
-			}
-		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			log.CtxInfof(ctx, "Blocked Fetch for address %s", address)
-			return errors.New("IP address not allowed")
-		}
-		return nil
-	}
 }
