@@ -50,6 +50,7 @@ jobs:
           git add WORKSPACE
           git add deps.bzl
           git add .bazelversion
+          git add shared.bazelrc
           cat <<EOF > message.txt
           🔄 $COMMIT_MESSAGE
           Update buildbuddy-io/buildbuddy commit SHA
