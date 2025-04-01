@@ -433,6 +433,16 @@ func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, erro
 	if _, err := w.terminalWriter.Write(p); err != nil {
 		return 0, err
 	}
+	if w.terminalWriter.ScrollOutFunc == nil {
+		// There's no window giving us scrollOut, this isn't using curses.
+		// Just render it and write it.
+		n, err := w.WriteWithTailCloser.WriteWithTail(ctx, []byte(w.terminalWriter.Render()), []byte{})
+		if err != nil {
+			return 0, err
+		}
+		w.terminalWriter.Reset(0)
+		return n, err
+	}
 	if w.terminalWriter.ScrollOutWriteErr != nil {
 		return 0, w.terminalWriter.ScrollOutWriteErr
 	}
