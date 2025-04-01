@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -28,9 +29,10 @@ var (
 )
 
 type ActionCacheServerProxy struct {
-	env         environment.Env
-	localCache  interfaces.Cache
-	remoteCache repb.ActionCacheClient
+	env           environment.Env
+	authenticator interfaces.Authenticator
+	localCache    interfaces.Cache
+	remoteCache   repb.ActionCacheClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -48,9 +50,10 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 		return nil, fmt.Errorf("An ActionCacheClient is required to enable the ActionCacheServerProxy")
 	}
 	return &ActionCacheServerProxy{
-		env:         env,
-		localCache:  env.GetCache(),
-		remoteCache: remoteCache,
+		env:           env,
+		authenticator: env.GetAuthenticator(),
+		localCache:    env.GetCache(),
+		remoteCache:   remoteCache,
 	}, nil
 }
 
@@ -112,6 +115,10 @@ func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, r
 // request to the authoritative cache, but send a hash of the last value we
 // received to avoid transferring data on unmodified actions.
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+	if authutil.EncryptionEnabled(ctx, s.authenticator) {
+		return s.remoteCache.GetActionResult(ctx, req)
+	}
+
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err

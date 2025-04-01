@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -132,6 +133,54 @@ func TestActionCacheProxy(t *testing.T) {
 	update(ctx, ac, digestB, 998, t)
 	require.Equal(t, int32(998), get(ctx, ac, digestB, t).GetExitCode())
 	require.Equal(t, int32(998), get(ctx, proxy, digestB, t).GetExitCode())
+}
+
+func TestActionCacheProxy_CachingAndEncryptionEnabled(t *testing.T) {
+	flags.Set(t, "cache_proxy.cache_action_results", true)
+	flags.Set(t, "cache.check_client_action_result_digests", true)
+
+	env := testenv.GetTestEnv(t)
+	userWithEncryption := testauth.User("user", "GR123")
+	userWithEncryption.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{
+		"user": userWithEncryption,
+	}
+	ta := testauth.NewTestAuthenticator(users)
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user")
+	require.NoError(t, err)
+
+	ac := runACServer(ctx, t, ta)
+	countingClient := &countingActionCacheClient{
+		realAC: ac,
+	}
+	proxy := runACProxy(ctx, t, ta, countingClient)
+
+	digestA := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1024,
+	}
+
+	// DigestA shouldn't be present initially.
+	readReqA := &repb.GetActionResultRequest{
+		ActionDigest:   digestA,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	_, err = proxy.GetActionResult(ctx, readReqA)
+	require.True(t, status.IsNotFoundError(err))
+
+	// Write it through the proxy and confirm it's readable from the proxy and
+	// backing cache--this would theoretically stuff the cache if the user
+	// wasn't using encryption.
+	update(ctx, proxy, digestA, 1, t)
+	require.Equal(t, int32(1), get(ctx, ac, digestA, t).GetExitCode())
+	require.Equal(t, int32(1), get(ctx, proxy, digestA, t).GetExitCode())
+	require.Equal(t, 0, countingClient.cacheHitCount)
+
+	// Caching is eanbled, but the user is using encryption, so we shouldn't
+	// be caching.
+	require.Equal(t, int32(1), get(ctx, proxy, digestA, t).GetExitCode())
+	require.Equal(t, 0, countingClient.cacheHitCount)
 }
 
 func TestActionCacheProxy_CachingEnabled(t *testing.T) {

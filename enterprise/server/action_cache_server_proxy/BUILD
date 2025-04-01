@@ -16,6 +16,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/authutil",
         "//server/util/flag",
         "//server/util/prefix",
         "//server/util/proto",
@@ -32,6 +33,7 @@ go_test(
     embed = [":action_cache_server_proxy"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/interfaces",
         "//server/remote_cache/action_cache_server",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
