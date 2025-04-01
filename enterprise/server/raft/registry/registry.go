@@ -390,7 +390,7 @@ func (d *DynamicNodeRegistry) pushUpdate(req *rfpb.RegistryPushRequest) {
 		d.sReg.log.Errorf("error marshaling proto: %s", err)
 		return
 	}
-	err = d.gossipManager.SendUserEvent(constants.RegistryUpdateEvent, buf, true)
+	err = d.gossipManager.SendUserEvent(constants.RegistryUpdateEvent, buf /*coalesce=*/, false)
 	if err != nil {
 		d.sReg.log.Errorf("error pushing gossip update: %s", err)
 	}
