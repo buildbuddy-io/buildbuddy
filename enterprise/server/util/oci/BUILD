@@ -47,3 +47,21 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
+
+go_library(
+    name = "imgcache",
+    srcs = ["imgcache.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci/imgcache",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto:ociregistry_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//server/remote_cache/cachetools",
+        "//server/remote_cache/digest",
+        "//server/util/log",
+        "//server/util/proto",
+        "@com_github_google_go_containerregistry//pkg/name",
+        "@com_github_google_go_containerregistry//pkg/v1:pkg",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+    ],
+)
