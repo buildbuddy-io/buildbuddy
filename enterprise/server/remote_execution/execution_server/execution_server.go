@@ -370,18 +370,10 @@ func (s *ExecutionServer) recordExecution(
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
-	var experimentKeyValues []string
-	for _, name := range []string{platform.SkipResavingActionSnapshotsPropertyName} {
-		value := platform.FindValue(auxMeta.GetPlatformOverrides(), name)
-		if value != "" {
-			experimentKeyValues = append(experimentKeyValues, name+":"+value)
-		}
-	}
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	for _, link := range links {
 		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
 		// Set fields that aren't stored in the primary DB
-		executionProto.Experiments = experimentKeyValues
 		executionProto.TargetLabel = rmd.GetTargetId()
 		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
 		executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
@@ -390,6 +382,7 @@ func (s *ExecutionServer) recordExecution(
 		executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
 
 		executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
+		executionProto.Experiments = auxMeta.GetExperiments()
 
 		executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
 		executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)

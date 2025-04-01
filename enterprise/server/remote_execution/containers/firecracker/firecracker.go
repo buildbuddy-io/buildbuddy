@@ -546,7 +546,6 @@ type FirecrackerContainer struct {
 	createFromSnapshot      bool
 	supportsRemoteSnapshots bool
 	recyclingEnabled        bool
-	shouldSaveSnapshot      bool
 
 	// If set, the snapshot used to load the VM
 	snapshot *snaploader.Snapshot
@@ -719,7 +718,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		// breaking change is made to the vmexec API, the executor should not
 		// attempt to connect to snapshots that were created before the change.
 	}
-	c.shouldSaveSnapshot = c.supportsRemoteSnapshots || !c.createFromSnapshot || !platform.IsTrue(platform.FindEffectiveValue(task, platform.SkipResavingActionSnapshotsPropertyName))
 
 	return c, nil
 }
@@ -2586,35 +2584,31 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	log.CtxInfof(ctx, "Pausing VM")
 
-	if c.shouldSaveSnapshot && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
+	if c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		if err := c.reclaimMemoryWithBalloon(ctx); err != nil {
 			log.CtxErrorf(ctx, "Reclaiming memory with the balloon failed with: %s", err)
 		}
 	}
 
-	snapDetails := c.snapshotDetails()
+	snapDetails := c.snapshotDetails(ctx)
 
 	// Before taking a snapshot, set the workspace drive to point to an empty
 	// file, so that we don't have to persist the workspace contents.
-	if c.shouldSaveSnapshot {
-		if err := c.updateWorkspaceDriveToEmptyFile(ctx); err != nil {
-			return status.WrapError(err, "update workspace drive to empty file")
-		}
+	if err := c.updateWorkspaceDriveToEmptyFile(ctx); err != nil {
+		return status.WrapError(err, "update workspace drive to empty file")
 	}
 
 	if err := c.pauseVM(ctx); err != nil {
 		return err
 	}
 
-	if c.shouldSaveSnapshot {
-		// If an older snapshot is present -- nuke it since we're writing a new one.
-		if err := c.cleanupOldSnapshots(ctx, snapDetails); err != nil {
-			return err
-		}
+	// If an older snapshot is present -- nuke it since we're writing a new one.
+	if err := c.cleanupOldSnapshots(ctx, snapDetails); err != nil {
+		return err
+	}
 
-		if err := c.createSnapshot(ctx, snapDetails); err != nil {
-			return err
-		}
+	if err := c.createSnapshot(ctx, snapDetails); err != nil {
+		return err
 	}
 
 	// Stop the VM, UFFD page fault handler, and VBD servers to ensure nothing
@@ -2634,10 +2628,8 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return status.WrapError(err, "unmount vbds")
 	}
 
-	if c.shouldSaveSnapshot {
-		if err := c.saveSnapshot(ctx, snapDetails); err != nil {
-			return err
-		}
+	if err := c.saveSnapshot(ctx, snapDetails); err != nil {
+		return err
 	}
 
 	// Finish cleaning up VM resources
@@ -2755,7 +2747,7 @@ type snapshotDetails struct {
 	vmStateSnapshotName string
 }
 
-func (c *FirecrackerContainer) snapshotDetails() *snapshotDetails {
+func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) *snapshotDetails {
 	if c.recycled {
 		return &snapshotDetails{
 			snapshotType:        diffSnapshotType,
