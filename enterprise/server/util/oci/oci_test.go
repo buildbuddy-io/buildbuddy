@@ -208,7 +208,7 @@ func TestToProto(t *testing.T) {
 }
 
 func TestResolve(t *testing.T) {
-	flags.Set(t, "httpclient.allow_localhost", true)
+	flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{})
 	imageName, _ := registry.PushRandomImage(t)
 	_, err := oci.Resolve(
@@ -235,7 +235,7 @@ func TestResolve_InvalidImage(t *testing.T) {
 }
 
 func TestResolve_Unauthorized(t *testing.T) {
-	flags.Set(t, "httpclient.allow_localhost", true)
+	flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			if r.Method == "GET" {
@@ -271,7 +271,7 @@ func TestResolve_Arm64VariantIsOptional(t *testing.T) {
 		{name: "linux/arm64", platform: v1.Platform{Architecture: "arm64", OS: "linux"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			flags.Set(t, "httpclient.allow_localhost", true)
+			flags.Set(t, "http.client.allow_localhost", true)
 			ctx := context.Background()
 
 			registry := testregistry.Run(t, testregistry.Opts{})
@@ -329,7 +329,7 @@ func layerContents(t *testing.T, layer v1.Layer) map[string]string {
 }
 
 func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
-	flags.Set(t, "httpclient.allow_localhost", true)
+	flags.Set(t, "http.client.allow_localhost", true)
 	// Track requests to original and mirror registries.
 	var originalReqCount, mirrorReqCount atomic.Int32
 

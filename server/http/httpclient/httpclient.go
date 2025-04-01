@@ -15,7 +15,7 @@ import (
 )
 
 // Tests often need to make HTTP requests to localhost -- set this flag to permit those requests.
-var allowLocalhost = flag.Bool("httpclient.allow_localhost", false, "Allow HTTP requests to localhost")
+var allowLocalhost = flag.Bool("http.client.allow_localhost", false, "Allow HTTP requests to localhost")
 
 const maxHTTPTimeout = 60 * time.Minute
 
