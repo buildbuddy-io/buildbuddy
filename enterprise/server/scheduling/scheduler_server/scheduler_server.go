@@ -1813,14 +1813,17 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if skipResaving == "" {
 		return task
 	}
+	taskProto.Experiments = append(taskProto.Experiments, "skip-resaving-action-snapshots:"+skipResaving)
 	if taskProto.GetPlatformOverrides() == nil {
 		taskProto.PlatformOverrides = new(repb.Platform)
 	}
 	plat := taskProto.GetPlatformOverrides()
-	plat.Properties = append(plat.Properties, &repb.Platform_Property{
-		Name:  platform.SkipResavingActionSnapshotsPropertyName,
-		Value: skipResaving,
-	})
+	if strings.EqualFold(skipResaving, "true") { // No point in setting the property when it's false.
+		plat.Properties = append(plat.Properties, &repb.Platform_Property{
+			Name:  platform.SkipResavingActionSnapshotsPropertyName,
+			Value: skipResaving,
+		})
+	}
 	if newTask, err := proto.Marshal(taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to marshal ExecutionTask: %s", err)
 		return task
