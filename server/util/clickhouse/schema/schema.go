@@ -224,7 +224,7 @@ type Execution struct {
 	RequestedTimeoutUsec int64
 	EffectiveTimeoutUsec int64
 
-	Experiments []string `gorm:"type:Array(string)"`
+	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
 
 	// Long string fields
 	OutputPath    string
