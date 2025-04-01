@@ -370,16 +370,18 @@ func (s *ExecutionServer) recordExecution(
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
-	var exps []string
-	skipResave := platform.FindValue(auxMeta.GetPlatformOverrides(), platform.SkipResavingActionSnapshotsPropertyName)
-	if skipResave != "" {
-		exps = append(exps, platform.SkipResavingActionSnapshotsPropertyName+":"+skipResave)
+	var experimentKeyValues []string
+	for _, name := range []string{platform.SkipResavingActionSnapshotsPropertyName} {
+		value := platform.FindValue(auxMeta.GetPlatformOverrides(), name)
+		if value != "" {
+			experimentKeyValues = append(experimentKeyValues, name+":"+value)
+		}
 	}
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	for _, link := range links {
 		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
 		// Set fields that aren't stored in the primary DB
-		executionProto.Experiments = exps
+		executionProto.Experiments = experimentKeyValues
 		executionProto.TargetLabel = rmd.GetTargetId()
 		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
 		executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
