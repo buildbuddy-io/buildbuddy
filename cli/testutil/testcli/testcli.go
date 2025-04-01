@@ -174,7 +174,7 @@ func (t *Terminal) Raw() string {
 // screen. For example, if the raw contents contain an ANSI sequence to delete a
 // line, that line will not be returned by this function.
 func (t *Terminal) Render() string {
-	screen, err := terminal.NewScreenWriter()
+	screen, err := terminal.NewScreenWriter(0)
 	require.NoError(t.t, err)
 	_, err = screen.Write([]byte(t.Raw()))
 	require.NoError(t.t, err)

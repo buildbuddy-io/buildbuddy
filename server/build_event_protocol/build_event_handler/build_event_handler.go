@@ -1475,7 +1475,7 @@ func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.E
 	var screenWriter *terminal.ScreenWriter
 	if !inv.GetHasChunkedEventLogs() {
 		var err error
-		screenWriter, err = terminal.NewScreenWriter()
+		screenWriter, err = terminal.NewScreenWriter(0)
 		if err != nil {
 			return err
 		}
