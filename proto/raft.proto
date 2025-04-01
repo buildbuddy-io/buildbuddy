@@ -297,8 +297,6 @@ message RegistryPushRequest {
   // Optional.
   string grpc_address = 2;
   string raft_address = 3;
-
-  repeated ReplicaDescriptor replicas = 4;
 }
 
 // The auto-bringup protocol is very simple: if no previous data is found on
