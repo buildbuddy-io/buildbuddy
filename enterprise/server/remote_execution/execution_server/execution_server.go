@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -372,9 +371,9 @@ func (s *ExecutionServer) recordExecution(
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
 	var exps []string
-	resave := platform.FindValue(auxMeta.GetPlatformOverrides(), experiments.SkipResavingActionSnapshots)
-	if resave != "" {
-		exps = append(exps, experiments.SkipResavingActionSnapshots+":"+resave)
+	skipResave := platform.FindValue(auxMeta.GetPlatformOverrides(), platform.SkipResavingActionSnapshotsPropertyName)
+	if skipResave != "" {
+		exps = append(exps, platform.SkipResavingActionSnapshotsPropertyName+":"+skipResave)
 	}
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	for _, link := range links {

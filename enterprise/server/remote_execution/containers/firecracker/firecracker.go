@@ -719,7 +719,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		// breaking change is made to the vmexec API, the executor should not
 		// attempt to connect to snapshots that were created before the change.
 	}
-	c.shouldSaveSnapshot = c.supportsRemoteSnapshots || !c.createFromSnapshot || !platform.IsTrue(platform.FindEffectiveValue(task, platform.DontResaveActionSnapshotsPropertyName))
+	c.shouldSaveSnapshot = c.supportsRemoteSnapshots || !c.createFromSnapshot || !platform.IsTrue(platform.FindEffectiveValue(task, platform.SkipResavingActionSnapshotsPropertyName))
 
 	return c, nil
 }

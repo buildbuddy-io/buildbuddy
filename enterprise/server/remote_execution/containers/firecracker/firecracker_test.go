@@ -711,7 +711,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 			// Note: platform must match in order to share snapshots
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
-				{Name: platform.DontResaveActionSnapshotsPropertyName, Value: "true"},
+				{Name: platform.SkipResavingActionSnapshotsPropertyName, Value: "true"},
 			}},
 		},
 	}

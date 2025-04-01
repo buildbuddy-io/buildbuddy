@@ -12,7 +12,6 @@ go_library(
         "//server/util/claims",
         "//server/util/flag",
         "//server/util/statusz",
-        "@com_github_dgryski_go_farm//:go-farm",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk_contrib_providers_flagd//pkg",
     ],
