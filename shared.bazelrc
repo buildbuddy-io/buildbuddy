@@ -1,0 +1,98 @@
+#################
+# STARTUP FLAGS #
+#################
+
+# Use BLAKE3 digest function.
+startup --digest_function=BLAKE3
+
+# Bazel doesn't track the contents of source directories by default, which can result
+# in non-hermeticity.
+startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
+
+
+################
+# COMMON FLAGS #
+################
+
+common --noenable_bzlmod
+common --enable_workspace
+# Avoid being broken by version requirement changes in transitive deps.
+common --check_direct_dependencies=error
+
+# Sanitize environment variables to avoid cache misses.
+common --incompatible_strict_action_env
+
+# Write build outputs in a platform-specific directory,
+# avoid outputs being wiped and rewritten when switching between platforms.
+common --experimental_platform_in_output_dir
+
+# Workaround for Bazel 7,8:
+# rules_docker (archived) defines a transition that helps ensure building containers with binary would use the same platform for both.
+# Reference: https://github.com/bazelbuild/rules_docker/pull/1963
+#
+# However, the platform and transition made use of `label_setting` instead of `constraint_value`.
+# This used to work in Bazel 6, but Bazel 7 introduced a new mandatory provider `ConstraintValueInfo` for all constraints_value targets.
+# Since `label_setting` does not return this provider, it is no longer possible to use `label_setting` in Bazel 7.
+#
+# Disabling this is safe because today, we are building these constainers on Linux host, executing Linux actions and targeting Linux machines.
+# This assumption might not hold in the future, but we can revisit this when that happens.
+common --@io_bazel_rules_docker//transitions:enable=false
+
+# Use tsconfig.json for skipLibCheck setting.
+common --@aspect_rules_ts//ts:skipLibCheck=honor_tsconfig
+
+# Currently only works for go tests
+# Coverage outputs could be viewed with `genhtml`:
+#   $ genhtml -o cover bazel-out/_coverage/_coverage_report.dat
+#   $ open cover/index.html
+common --combined_report=lcov
+
+# Include target names in timing profile so it's clickable.
+common --experimental_profile_include_target_label
+# Include primary output name in timing profile.
+common --experimental_profile_include_primary_output
+# Don't merge timing profile actions.
+common --noslim_profile
+# Include compact execution log
+# TODO(sluongng): make Bazel writes this to output_base automatically
+common --execution_log_compact_file=bazel_compact_exec_log.binpb.zst
+
+# By default, build logs get sent to the production server
+common --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
+common --bes_backend=grpcs://buildbuddy.buildbuddy.io
+
+
+###################################
+# PLATFORM-SPECIFIC CONFIGURATION #
+###################################
+
+# Enable special "macos", "linux" and "windows" config that are automatically applied
+# based on the host machine.
+common --enable_platform_specific_config
+
+# rules_nodejs needs runfiles to be explicitly enabled.
+common:linux --enable_runfiles
+common:macos --enable_runfiles
+
+# Use C++17 standard for all C++ compilation
+common:linux --host_cxxopt=-std=c++17
+common:linux --cxxopt=-std=c++17
+common:macos --host_cxxopt=-std=c++17
+common:macos --cxxopt=-std=c++17
+common:windows --host_cxxopt=/std:c++17
+common:windows --cxxopt=/std:c++17
+
+# Populate workspace info like commit sha and repo name to your invocation.
+common:linux --workspace_status_command=$(pwd)/workspace_status.sh
+common:macos --workspace_status_command=$(pwd)/workspace_status.sh
+common:windows --workspace_status_command="bash workspace_status.sh"
+
+
+#######################
+# SPECIALIZED CONFIGS #
+#######################
+
+# Build with --config=local to send build logs to your local server
+common:local --bes_results_url=http://localhost:8080/invocation/
+common:local --bes_backend=grpc://localhost:1985
+common:local --remote_cache=grpc://localhost:1985
