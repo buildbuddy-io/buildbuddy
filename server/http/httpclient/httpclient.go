@@ -5,7 +5,6 @@ import (
 	"flag"
 	"net"
 	"net/http"
-	"strings"
 	"syscall"
 	"time"
 
@@ -20,7 +19,7 @@ var allowLocalhost = flag.Bool("httpclient.allow_localhost", false, "Allow HTTP 
 
 const maxHTTPTimeout = 60 * time.Minute
 
-// Create an HTTP client that blocks connections to private IPs, records metrics on any requests made,
+// New creates an HTTP client that blocks connections to private IPs, records metrics on any requests made,
 // and has a consistent timeout (see maxHTTPTimeout).
 //
 // If you just want to make an HTTP request, this is the client to use.
@@ -28,7 +27,7 @@ func New() *http.Client {
 	return NewWithAllowedPrivateIPs(maxHTTPTimeout, []*net.IPNet{})
 }
 
-// Create an HTTP client blocks connections to all but the specified private IPs, records metrics on any requests made,
+// NewWithAllowPrivateIPs creates an HTTP client blocks connections to all but the specified private IPs, records metrics on any requests made,
 // and uses the specified timeout (passing a timeout of 0 will use maxHTTPTimeout),
 func NewWithAllowedPrivateIPs(timeout time.Duration, allowedPrivateIPNets []*net.IPNet) *http.Client {
 	dialerTimeout := timeout
@@ -85,19 +84,6 @@ func newMetricsTransport(inner http.RoundTripper) http.RoundTripper {
 	return &metricsTransport{
 		inner: inner,
 	}
-}
-
-func sanitizeHost(host string) string {
-	if net.ParseIP(host) != nil {
-		return "ip_address"
-	}
-
-	parts := strings.Split(host, ".")
-	if len(parts) >= 2 {
-		return strings.Join(parts[len(parts)-2:], ".")
-	}
-
-	return host
 }
 
 func (t *metricsTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
