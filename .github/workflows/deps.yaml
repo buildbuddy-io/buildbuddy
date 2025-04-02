@@ -31,6 +31,7 @@ jobs:
         run: |
           cp buildbuddy/deps.bzl buildbuddy-internal/deps.bzl
           cp buildbuddy/.bazelversion buildbuddy-internal/.bazelversion
+          cp buildbuddy/shared.bazelrc buildbuddy-internal/shared.bazelrc
 
       - name: Update SHA
         run: |
