@@ -23,7 +23,6 @@ go_test(
     srcs = ["resources_test.go"],
     deps = [
         ":resources",
-        "//server/testutil/testenviron",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
