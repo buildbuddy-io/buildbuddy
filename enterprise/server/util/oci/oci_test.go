@@ -292,6 +292,8 @@ func TestResolve_Arm64VariantIsOptional(t *testing.T) {
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
 
+	require.NotNil(t, te.GetByteStreamClient())
+
 	flags.Set(t, "http.client.allow_localhost", true)
 	for _, test := range []struct {
 		name     string
