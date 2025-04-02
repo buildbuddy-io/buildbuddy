@@ -111,8 +111,11 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 					break
 				}
 				if err != nil {
-					log.CtxWarningf(ctx, "Got error while getting response from proxy: %s", err)
-					return err
+					if !s.synchronous {
+						log.CtxWarningf(ctx, "Proxying build event stream failed: recv: %s", err)
+						return nil
+					}
+					return status.WrapError(err, "recv from proxy stream")
 				}
 			}
 			return nil
