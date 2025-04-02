@@ -25,7 +25,7 @@ import (
 
 var (
 	cacheActionResults = flag.Bool("cache_proxy.cache_action_results", false, "If true, the proxy will cache ActionCache.GetActionResult responses.")
-	actionCacheSalt    = flag.String("cache_proxy.action_cache_salt", "actioncache-170325", "A salt to reset action cache contents when needed.")
+	actionCacheSalt    = flag.String("cache_proxy.action_cache_salt", "actioncache-170401", "A salt to reset action cache contents when needed.")
 )
 
 type ActionCacheServerProxy struct {
@@ -58,7 +58,7 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 }
 
 func getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
-	hashBytes, err := req.MarshalVT()
+	hashBytes, err := proto.Marshal(req)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, k
 		return err
 	}
 	casRN := digest.NewCASResourceName(d, req.GetInstanceName(), req.GetDigestFunction())
-	buf, err := casRN.ToProto().MarshalVT()
+	buf, err := proto.Marshal(casRN.ToProto())
 	if err != nil {
 		return err
 	}
