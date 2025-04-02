@@ -1,5 +1,5 @@
 # Import shared config
-try-import %workspace%/shared.bazelrc
+import %workspace%/shared.bazelrc
 
 # Build with --config=local to send build logs to your local server
 common:local --extra_execution_platforms=@buildbuddy_toolchain//:platform
