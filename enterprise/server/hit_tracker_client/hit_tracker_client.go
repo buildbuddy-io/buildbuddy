@@ -28,6 +28,9 @@ import (
 )
 
 const (
+	// The initial capacity to allocate for slices storing per-group cache
+	// hits. This is intended to be large enough to avoid too many allocations
+	// due to  slice growth, but not so large to incur excessive memory use.
 	initialSliceCapacity = 4_096
 )
 
