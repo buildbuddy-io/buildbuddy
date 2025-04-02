@@ -1,5 +1,19 @@
-# Import shared config
+###################################
+# BUILDBUDDY SHARED BAZEL CONFIGS #
+###################################
+#
+# Prefer adding flags to the shared file over the current file
+# so that we can have a consistent set of flags across all repos.
+#
+# Only add to this file if the flags are intended for our public
+# repo _exclusively_.
+#
 import %workspace%/shared.bazelrc
+
+
+#################################
+# PUBLIC REPO EXCLUSIVE CONFIGS #
+#################################
 
 # Build with --config=local to send build logs to your local server
 common:local --extra_execution_platforms=@buildbuddy_toolchain//:platform
