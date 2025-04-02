@@ -265,6 +265,9 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 			manifest: m,
 		}
 		return partial.CompressedToImage(img)
+	} else if !status.IsNotFoundError(err) {
+		log.CtxErrorf(ctx, "error fetching image %s from the CAS: %s", imageRef, err)
+		return nil, err
 	}
 
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)

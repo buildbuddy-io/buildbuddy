@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenviron"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -210,6 +211,10 @@ func TestToProto(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{})
 	imageName, _ := registry.PushRandomImage(t)
@@ -229,6 +234,10 @@ func TestResolve(t *testing.T) {
 
 func TestResolve_InvalidImage(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	_, err := oci.Resolve(
 		context.Background(),
 		te.GetActionCacheClient(),
@@ -244,6 +253,10 @@ func TestResolve_InvalidImage(t *testing.T) {
 
 func TestResolve_Unauthorized(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -275,6 +288,10 @@ func TestResolve_Unauthorized(t *testing.T) {
 
 func TestResolve_Arm64VariantIsOptional(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	flags.Set(t, "http.client.allow_localhost", true)
 	for _, test := range []struct {
 		name     string
@@ -349,6 +366,10 @@ func layerContents(t *testing.T, layer v1.Layer) map[string]string {
 
 func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	flags.Set(t, "http.client.allow_localhost", true)
 	// Track requests to original and mirror registries.
 	var originalReqCount, mirrorReqCount atomic.Int32
