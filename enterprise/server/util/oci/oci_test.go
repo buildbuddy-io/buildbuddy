@@ -436,3 +436,47 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	assert.Equal(t, int32(1), mirrorReqCount.Load(), "mirror should have been queried once")
 	assert.Equal(t, int32(1), originalReqCount.Load(), "original registry should have been queried after mirror failed")
 }
+
+func TestResolve_CachesManifest(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	flags.Set(t, "http.client.allow_localhost", true)
+
+	var count atomic.Int32
+	testreg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == http.MethodGet && r.URL.Path != "/v2/" {
+				count.Add(1)
+			}
+			return true
+		},
+	})
+
+	imageName, image := testreg.PushRandomImage(t)
+	imageDigest, err := image.Digest()
+	require.NoError(t, err)
+
+	before := count.Load()
+	for i := 0; i < 2; i++ {
+		img, err := oci.Resolve(
+			context.Background(),
+			te.GetActionCacheClient(),
+			te.GetByteStreamClient(),
+			imageName,
+			&rgpb.Platform{
+				Arch: runtime.GOARCH,
+				Os:   runtime.GOOS,
+			},
+			oci.Credentials{},
+		)
+		require.NoError(t, err)
+
+		digest, err := img.Digest()
+		require.NoError(t, err)
+		assert.Equal(t, imageDigest.String(), digest.String())
+	}
+
+	assert.Equal(t, int32(1), count.Load()-before)
+}
