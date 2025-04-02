@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -119,6 +120,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	var local *repb.ActionResult
 	var localKey *digest.ACResourceName
 	if *cacheActionResults {
+		log.Debugf("jdhollen | req %v, key %v", req, localKey)
 		localKey, err = getACKeyForGetActionResultRequest(req)
 		if err != nil {
 			return nil, err
@@ -129,9 +131,12 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 			return nil, err
 		}
 		if localDigest != nil {
+			log.Debugf("jdhollen | req %v, key %v did exist locally. digest: %v", req, localKey, localDigest)
 			// See if remote matches our locally-cached result.
 			req.CachedActionResultDigest = localDigest
 			local = localResult
+		} else {
+			log.Debugf("jdhollen | req %v, key %v did not exist locally.", req, localKey)
 		}
 	}
 
@@ -143,11 +148,17 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	// The response indicates that our cached value is valid; use it.
 	if *cacheActionResults && req.GetCachedActionResultDigest().GetHash() != "" &&
 		proto.Equal(req.GetCachedActionResultDigest(), resp.GetActionResultDigest()) {
+		log.Debugf("jdhollen | HIT: req %v, key %v", req, localKey)
 		resp = local
 		labels[metrics.CacheHitMissStatus] = "hit"
 	} else {
+		log.Debugf("jdhollen | MISS: req %v, key %v", req, localKey)
 		if *cacheActionResults && err == nil && resp != nil {
 			s.cacheActionResultLocally(ctx, localKey, req, resp)
+		}
+		if req.GetCachedActionResultDigest() != nil {
+			d, _ := digest.ComputeForMessage(resp, req.GetDigestFunction())
+			log.Debugf("jdhollen | MISS RESPONSE: req %v, key %v, resp digest: %v", req, localKey, d)
 		}
 		labels[metrics.CacheHitMissStatus] = "miss"
 	}
