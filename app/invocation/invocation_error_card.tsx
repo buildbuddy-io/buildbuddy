@@ -176,8 +176,17 @@ function getModel(props: Props): CardModel {
     model.errors.push({ action: props.model.failedAction.action });
   }
   for (const event of props.model.aborted) {
-    if (!event.aborted) continue;
-    model.errors.push({ aborted: event });
+    if (event.aborted) {
+      if (
+        // Bazel always include "--nobuild" in a "cquery" command, which results in
+        // many "NO_BUILD" aborted events. We ignore those.
+        props.model.invocation.command === "cquery" &&
+        event.aborted.reason === build_event_stream.Aborted.AbortReason.NO_BUILD
+      ) {
+        continue;
+      }
+      model.errors.push({ aborted: event });
+    }
   }
   if (props.model.finished?.failureDetail?.message) {
     model.errors.push({ finished: props.model.finished });

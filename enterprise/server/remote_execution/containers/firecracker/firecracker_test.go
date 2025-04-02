@@ -679,6 +679,101 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	err = c.Pause(ctx)
 	require.NoError(t, err)
 }
+func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	rootDir := testfs.MakeTempDir(t)
+	cfg := getExecutorConfig(t)
+
+	var containersToCleanup []*firecracker.FirecrackerContainer
+	t.Cleanup(func() {
+		for _, vm := range containersToCleanup {
+			err := vm.Remove(ctx)
+			assert.NoError(t, err)
+		}
+	})
+
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: cfg,
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			// Note: platform must match in order to share snapshots
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: platform.SkipResavingActionSnapshotsPropertyName, Value: "true"},
+			}},
+		},
+	}
+	baseVM, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	containersToCleanup = append(containersToCleanup, baseVM)
+	err = container.PullImageIfNecessary(ctx, env, baseVM, oci.Credentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = baseVM.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+
+	// Create a snapshot. Data written to this snapshot should persist
+	// when other VMs reuse the snapshot
+	cmd := appendToLog("Base")
+	res := baseVM.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "Base\n", string(res.Stdout))
+	err = baseVM.Pause(ctx)
+	require.NoError(t, err)
+
+	// Load the same base snapshot from multiple VMs - there should be no
+	// corruption or data transfer from snapshot sharing
+	for i := 0; i < 4; i++ {
+		workDir = testfs.MakeDirAll(t, rootDir, fmt.Sprintf("work-%d", i))
+		opts = firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+				EnableNetworking:  false,
+				ScratchDiskSizeMb: 100,
+			},
+			ExecutorConfig: cfg,
+		}
+		forkedVM, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		containersToCleanup = append(containersToCleanup, forkedVM)
+
+		// The new VM should reuse the Base VM's snapshot, whether we call
+		// Create() or Unpause()
+		if i%2 == 0 {
+			err = forkedVM.Unpause(ctx)
+			require.NoError(t, err)
+		} else {
+			err = forkedVM.Create(ctx, workDir)
+			require.NoError(t, err)
+		}
+
+		// Write VM-specific data to the log
+		cmd = appendToLog(fmt.Sprintf("Fork-%d", i))
+		res = forkedVM.Exec(ctx, cmd, nil /*=stdio*/)
+		require.NoError(t, res.Error)
+		// The log should contain data written to the original snapshot
+		// and the current VM, but not from any of the other VMs sharing
+		// the same original snapshot
+		require.Equal(t, fmt.Sprintf("Base\nFork-%d\n", i), string(res.Stdout))
+		// This shouldn't save a snapshot
+		err = forkedVM.Pause(ctx)
+		require.NoError(t, err)
+	}
+}
 
 func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	ctx := context.Background()

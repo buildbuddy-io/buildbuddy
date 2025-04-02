@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenviron"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 )
@@ -62,7 +61,7 @@ func TestConfigure(t *testing.T) {
 				flags.Set(t, flag, value)
 			}
 			for name, value := range test.env {
-				testenviron.Set(t, name, value)
+				t.Setenv(name, value)
 			}
 
 			err := resources.Configure(false /*=mmapLRUEnabled*/)

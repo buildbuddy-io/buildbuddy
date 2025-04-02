@@ -121,6 +121,28 @@ export default class HistoryComponent extends React.Component<Props, State> {
     return invocation.InvocationSort.SortField.UNKNOWN_SORT_FIELD;
   }
 
+  getInvocationQueryFields(): invocation.IInvocationQuery & invocation.IInvocationStatQuery {
+    const filterParams = getProtoFilterParams(this.props.search);
+    return {
+      host: this.props.hostname || filterParams.host,
+      user: this.props.username || filterParams.user,
+      repoUrl: this.props.repo || filterParams.repo,
+      branchName: this.props.branch || filterParams.branch,
+      commitSha: this.props.commit || filterParams.commit,
+      command: filterParams.command,
+      pattern: filterParams.pattern,
+      tags: filterParams.tags,
+      groupId: this.props.user?.selectedGroup?.id,
+      role: filterParams.role,
+      updatedAfter: filterParams.updatedAfter,
+      updatedBefore: filterParams.updatedBefore,
+      status: filterParams.status,
+      minimumDuration: filterParams.minimumDuration,
+      maximumDuration: filterParams.maximumDuration,
+      genericFilters: filterParams.genericFilters,
+    };
+  }
+
   getInvocations(nextPage?: boolean) {
     this.setState({
       loadingInvocations: true,
@@ -131,24 +153,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
 
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
-      query: new invocation.InvocationQuery({
-        host: this.props.hostname || filterParams.host,
-        user: this.props.username || filterParams.user,
-        repoUrl: this.props.repo || filterParams.repo,
-        branchName: this.props.branch || filterParams.branch,
-        commitSha: this.props.commit || filterParams.commit,
-        command: filterParams.command,
-        pattern: filterParams.pattern,
-        tags: filterParams.tags,
-        groupId: this.props.user?.selectedGroup?.id,
-        role: filterParams.role,
-        updatedAfter: filterParams.updatedAfter,
-        updatedBefore: filterParams.updatedBefore,
-        status: filterParams.status,
-        minimumDuration: filterParams.minimumDuration,
-        maximumDuration: filterParams.maximumDuration,
-        genericFilters: filterParams.genericFilters,
-      }),
+      query: new invocation.InvocationQuery(this.getInvocationQueryFields()),
       sort: new invocation.InvocationSort({
         sortField: this.getSortField(filterParams),
         ascending: filterParams.sortOrder === "asc",
@@ -182,31 +187,17 @@ export default class HistoryComponent extends React.Component<Props, State> {
       .finally(() => this.setState({ loadingInvocations: false }));
   }
 
+  /**
+   * Returns stats grouped by the currently selected dimension, such as host,
+   * user, repo, etc.
+   */
   getAggregateStats() {
     this.setState({ aggregateStats: undefined, loadingAggregateStats: true });
-
-    const aggregationType = this.hashToAggregationTypeMap.get(this.props.tab);
-    const request = new invocation.GetInvocationStatRequest({ aggregationType });
-    const filterParams = getProtoFilterParams(this.props.search);
-    request.query = new invocation.InvocationStatQuery({
-      host: this.props.hostname || filterParams.host,
-      user: this.props.username || filterParams.user,
-      repoUrl: this.props.repo || filterParams.repo,
-      branchName: this.props.branch || filterParams.branch,
-      commitSha: this.props.commit || filterParams.commit,
-      command: filterParams.command,
-      pattern: filterParams.pattern,
-      tags: filterParams.tags,
-      role: filterParams.role,
-      updatedBefore: filterParams.updatedBefore,
-      updatedAfter: filterParams.updatedAfter,
-      status: filterParams.status,
-      dimensionFilter: filterParams.dimensionFilters,
-      genericFilters: filterParams.genericFilters,
-    });
-
     this.aggregateStatsRpc = rpcService.service
-      .getInvocationStat(request)
+      .getInvocationStat({
+        aggregationType: this.hashToAggregationTypeMap.get(this.props.tab),
+        query: new invocation.InvocationStatQuery(this.getInvocationQueryFields()),
+      })
       .then((response) => {
         console.log(response);
         this.setState({ aggregateStats: response.invocationStat.filter((stat) => stat.name) });
@@ -214,32 +205,17 @@ export default class HistoryComponent extends React.Component<Props, State> {
       .finally(() => this.setState({ loadingAggregateStats: false }));
   }
 
+  /**
+   * Returns summary stats for an invocation listing, such as total count,
+   * total duration, etc.
+   */
   getSummaryStat() {
     this.setState({ summaryStat: undefined, loadingSummaryStat: true });
-
-    const filterParams = getProtoFilterParams(this.props.search);
-    const request = new invocation.GetInvocationStatRequest({
-      aggregationType: invocation.AggType.GROUP_ID_AGGREGATION_TYPE,
-    });
-    request.query = new invocation.InvocationQuery({
-      host: this.props.hostname || filterParams.host,
-      user: this.props.username || filterParams.user,
-      repoUrl: this.props.repo || filterParams.repo,
-      branchName: this.props.branch || filterParams.branch,
-      commitSha: this.props.commit || filterParams.commit,
-      command: filterParams.command,
-      pattern: filterParams.pattern,
-      tags: filterParams.tags,
-      role: filterParams.role,
-      updatedAfter: filterParams.updatedAfter,
-      updatedBefore: filterParams.updatedBefore,
-      status: filterParams.status,
-      dimensionFilter: filterParams.dimensionFilters,
-      genericFilters: filterParams.genericFilters,
-    });
-
     this.summaryStatRpc = rpcService.service
-      .getInvocationStat(request)
+      .getInvocationStat({
+        query: new invocation.InvocationStatQuery(this.getInvocationQueryFields()),
+        aggregationType: invocation.AggType.GROUP_ID_AGGREGATION_TYPE,
+      })
       .then((response) => this.setState({ summaryStat: response.invocationStat?.[0] }))
       .finally(() => this.setState({ loadingSummaryStat: false }));
   }
