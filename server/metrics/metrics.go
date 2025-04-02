@@ -3065,7 +3065,7 @@ var (
 		StatusLabel,
 		CacheHitMissStatus,
 	})
-	ActionCacheProxiedReadByes = promauto.NewCounterVec(prometheus.CounterOpts{
+	ActionCacheProxiedReadBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "action_cache_read_bytes",
@@ -3074,7 +3074,7 @@ var (
 		StatusLabel,
 		CacheHitMissStatus,
 	})
-	ActionCacheProxiedWriteByes = promauto.NewCounterVec(prometheus.CounterOpts{
+	ActionCacheProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "action_cache_write_bytes",

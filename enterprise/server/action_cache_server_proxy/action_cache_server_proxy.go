@@ -107,7 +107,14 @@ func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, k
 // received to avoid transferring data on unmodified actions.
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
-		return s.remoteCache.GetActionResult(ctx, req)
+		resp, err := s.remoteCache.GetActionResult(ctx, req)
+		labels := prometheus.Labels{
+			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+			metrics.CacheHitMissStatus: metrics.UncacheableStatusLabel,
+		}
+		metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
+		metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(proto.Size(resp)))
+		return resp, err
 	}
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
@@ -144,16 +151,16 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	if *cacheActionResults && req.GetCachedActionResultDigest().GetHash() != "" &&
 		proto.Equal(req.GetCachedActionResultDigest(), resp.GetActionResultDigest()) {
 		resp = local
-		labels[metrics.CacheHitMissStatus] = "hit"
+		labels[metrics.CacheHitMissStatus] = metrics.HitStatusLabel
 	} else {
 		if *cacheActionResults && err == nil && resp != nil {
 			s.cacheActionResultLocally(ctx, localKey, req, resp)
 		}
-		labels[metrics.CacheHitMissStatus] = "miss"
+		labels[metrics.CacheHitMissStatus] = metrics.MissStatusLabel
 	}
 
 	metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
-	metrics.ActionCacheProxiedReadByes.With(labels).Add(float64(proto.Size(resp)))
+	metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(proto.Size(resp)))
 	return resp, err
 }
 
@@ -164,9 +171,9 @@ func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *re
 	resp, err := s.remoteCache.UpdateActionResult(ctx, req)
 	labels := prometheus.Labels{
 		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
-		metrics.CacheHitMissStatus: "miss",
+		metrics.CacheHitMissStatus: metrics.MissStatusLabel,
 	}
 	metrics.ActionCacheProxiedWriteRequests.With(labels).Inc()
-	metrics.ActionCacheProxiedWriteByes.With(labels).Add(float64(proto.Size(req)))
+	metrics.ActionCacheProxiedWriteBytes.With(labels).Add(float64(proto.Size(req)))
 	return resp, err
 }
