@@ -120,8 +120,8 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	var local *repb.ActionResult
 	var localKey *digest.ACResourceName
 	if *cacheActionResults {
-		log.Debugf("jdhollen | req %v, key %v", req, localKey)
 		localKey, err = getACKeyForGetActionResultRequest(req)
+		log.Debugf("jdhollen | req %v, key %v", req, localKey.ToProto())
 		if err != nil {
 			return nil, err
 		}
@@ -148,17 +148,17 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	// The response indicates that our cached value is valid; use it.
 	if *cacheActionResults && req.GetCachedActionResultDigest().GetHash() != "" &&
 		proto.Equal(req.GetCachedActionResultDigest(), resp.GetActionResultDigest()) {
-		log.Debugf("jdhollen | HIT: req %v, key %v", req, localKey)
+		log.Debugf("jdhollen | HIT: req %v, key %v", req, localKey.ToProto())
 		resp = local
 		labels[metrics.CacheHitMissStatus] = "hit"
 	} else {
-		log.Debugf("jdhollen | MISS: req %v, key %v", req, localKey)
+		log.Debugf("jdhollen | MISS: req %v, key %v", req, localKey.ToProto())
 		if *cacheActionResults && err == nil && resp != nil {
 			s.cacheActionResultLocally(ctx, localKey, req, resp)
 		}
 		if req.GetCachedActionResultDigest() != nil {
 			d, _ := digest.ComputeForMessage(resp, req.GetDigestFunction())
-			log.Debugf("jdhollen | MISS RESPONSE: req %v, key %v, resp digest: %v", req, localKey, d)
+			log.Debugf("jdhollen | MISS RESPONSE: req %v, key %v, resp digest: %v", req, localKey.ToProto(), d)
 		}
 		labels[metrics.CacheHitMissStatus] = "miss"
 	}

@@ -196,14 +196,18 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	// the full response that we just computed, then we won't bother sending the
 	// data, and instead just tell the caller that their cache is correct.
 	if *checkClientActionResultDigests && req.GetCachedActionResultDigest().GetHash() != "" {
+		log.Debugf("jdhollen | Checking hash in ac server (app): req: %v", req)
 		d, err := digest.ComputeForMessage(rsp, req.GetDigestFunction())
 		if err != nil {
 			return nil, err
 		}
 		if proto.Equal(req.GetCachedActionResultDigest(), d) {
+			log.Debugf("jdhollen | HIT in ac server (app): req: %v", req)
 			rsp = &repb.ActionResult{
 				ActionResultDigest: d,
 			}
+		} else {
+			log.Debugf("jdhollen | MISS in ac server (app): req: %v, app-side digest: %v", req, d)
 		}
 	}
 
