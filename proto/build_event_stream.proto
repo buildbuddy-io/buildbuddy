@@ -575,14 +575,6 @@ message File {
   int64 length = 6;
 }
 
-// BUILDBUDDY-SPECIFIC EVENT
-message Tree {
-  // Where the tree is to be planted.
-  string name = 1;
-  // Bytestream URI for the tree digest.
-  string uri = 2;
-}
-
 // Payload of a message to describe a set of files, usually build artifacts, to
 // be referred to later by their name. In this way, files that occur identically
 // as outputs of several targets have to be named only once.
@@ -1594,6 +1586,13 @@ message ChildInvocationCompleted {
 
   // How long it took for the invocation to complete.
   google.protobuf.Duration duration = 5;
+}
+
+message Tree {
+  // Where the tree is to be planted.
+  string name = 1;
+  // Bytestream URI for the tree digest.
+  string uri = 2;
 }
 
 // Event describing the runtime properties of a runnable target.
