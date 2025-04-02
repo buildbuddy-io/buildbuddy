@@ -250,11 +250,10 @@ func (h *HitTrackerFactory) runWorker(ctx context.Context) {
 		select {
 		case <-h.quit:
 			return
-		default:
-			if h.sendTrackRequest(ctx) == 0 {
-				time.Sleep(h.pollInterval)
-			}
+		case <-time.After(h.pollInterval):
 		}
+		// Keep flushing until there is nothing to flush.
+		for h.sendTrackRequest(ctx) > 0 {}
 	}
 }
 
