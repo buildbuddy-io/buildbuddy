@@ -519,16 +519,32 @@ func (i *cacheAwareImage) MediaType() (types.MediaType, error) {
 }
 
 func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, error) {
-	return i.remoteImg.LayerByDigest(hash)
+	if i.manifest != nil {
+		for _, d := range i.manifest.Layers {
+			if d.Digest == hash {
+				return &cacheAwareLayer{descriptor: &d}, nil
+			}
+		}
+		return nil, fmt.Errorf("could not find layer %s", hash)
+	}
+	rl, err := i.remoteImg.LayerByDigest(hash)
+	if err != nil {
+		return nil, err
+	}
+	return &cacheAwareLayer{remoteLayer: rl}, nil
 }
 
 var _ partial.CompressedImageCore = (*cacheAwareImage)(nil)
 
 type cacheAwareLayer struct {
+	descriptor  *v1.Descriptor
 	remoteLayer v1.Layer
 }
 
 func (l *cacheAwareLayer) Digest() (v1.Hash, error) {
+	if l.descriptor != nil {
+		return l.descriptor.Digest, nil
+	}
 	return l.remoteLayer.Digest()
 }
 
@@ -537,10 +553,16 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 }
 
 func (l *cacheAwareLayer) Size() (int64, error) {
+	if l.descriptor != nil {
+		return l.descriptor.Size, nil
+	}
 	return l.remoteLayer.Size()
 }
 
 func (l *cacheAwareLayer) MediaType() (types.MediaType, error) {
+	if l.descriptor != nil {
+		return l.descriptor.MediaType, nil
+	}
 	return l.remoteLayer.MediaType()
 }
 
