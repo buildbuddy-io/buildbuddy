@@ -3,6 +3,7 @@ package hit_tracker_client
 import (
 	"context"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,6 +44,7 @@ func digestProto(hash string, sizeBytes int64) *repb.Digest {
 type testHitTracker struct {
 	t               *testing.T
 	authenticator   interfaces.Authenticator
+	mu              sync.Mutex
 	downloads       map[string]*atomic.Int64
 	bytesDownloaded map[string]*atomic.Int64
 }
@@ -63,6 +65,8 @@ func newTestHitTracker(t *testing.T, authenticator interfaces.Authenticator) *te
 }
 
 func (ht *testHitTracker) Track(ctx context.Context, req *hitpb.TrackRequest) (*hitpb.TrackResponse, error) {
+	ht.mu.Lock()
+	defer ht.mu.Unlock()
 	groupID := interfaces.AuthAnonymousUser
 	user, err := ht.authenticator.AuthenticatedUser(ctx)
 	if err == nil {
@@ -136,9 +140,18 @@ func TestCASHitTracker_NoDeduplication(t *testing.T) {
 
 func TestCASHitTracker_DropsUpdates(t *testing.T) {
 	authenticator, hitTrackerFactory, hitTrackerService := setup(t)
-	ctx := context.Background()
-	hitTracker := hitTrackerFactory.NewCASHitTracker(ctx, &repb.RequestMetadata{})
-	for i := 0; i < 100; i++ {
+
+	// Pause the hit-tracker RPC service and send an RPC that'll block the
+	// hit-tracker-client worker so updates are queued.
+	hitTrackerService.mu.Lock()
+	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
+	hitTracker := hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
+	hitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
+
+	anonCtx := context.Background()
+	hitTracker = hitTrackerFactory.NewCASHitTracker(anonCtx, &repb.RequestMetadata{})
+
+	for i := 0; i < 10; i++ {
 		hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
 		hitTracker.TrackDownload(bDigest).CloseWithBytesTransferred(10, 20, repb.Compressor_IDENTITY, "test")
 		hitTracker.TrackDownload(cDigest).CloseWithBytesTransferred(100, 200, repb.Compressor_IDENTITY, "test")
@@ -146,18 +159,17 @@ func TestCASHitTracker_DropsUpdates(t *testing.T) {
 		hitTracker.TrackDownload(eDigest).CloseWithBytesTransferred(10_000, 20_000, repb.Compressor_IDENTITY, "test")
 	}
 
-	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	hitTracker = hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
 	hitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
+	hitTrackerService.mu.Unlock()
 
-	time.Sleep(100 * time.Millisecond)
+	// Expect A, B, C, D, E, A, B, C, D, E to be sent for ANON.
+	expectToEqual(t, 10, hitTrackerService.downloads[interfaces.AuthAnonymousUser], "Expected 10 updates for group ANON")
+	require.Equal(t, int64(44_444), hitTrackerService.bytesDownloaded[interfaces.AuthAnonymousUser].Load())
 
-	// Expect some of the updates for ANON to be dropped.
-	require.Less(t, hitTrackerService.downloads[interfaces.AuthAnonymousUser].Load(), int64(500))
-
-	// Even though group 1's update came at the end, it should still be sent.
-	expectToEqual(t, int64(1), hitTrackerService.downloads[group1], "Expected 1 cache hits for group 1")
-	require.Equal(t, int64(2_000_000), hitTrackerService.bytesDownloaded[group1].Load())
+	// Even though group 1's second update came at the end, it should still be sent.
+	expectToEqual(t, int64(2), hitTrackerService.downloads[group1], "Expected 1 cache hits for group 1")
+	require.Equal(t, int64(4_000_000), hitTrackerService.bytesDownloaded[group1].Load())
 }
 
 func expectToEqual(t *testing.T, expected int64, actual *atomic.Int64, message string) {
@@ -173,5 +185,5 @@ func expectToEqual(t *testing.T, expected int64, actual *atomic.Int64, message s
 			backoff = maxBackoff
 		}
 	}
-	require.Fail(t, message)
+	require.Equal(t, expected, actual.Load(), message)
 }
