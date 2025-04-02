@@ -69,11 +69,15 @@ func OwnerRepoFromRepoURL(repoURL string) (string, error) {
 }
 
 type RepoURL struct {
-	Host, Owner, Repo string
+	Host, Owner, Repo, Scheme string
 }
 
 // String returns the normalized repo URL.
 func (r *RepoURL) String() string {
+	if r.Scheme == "file" {
+		return r.Repo
+	}
+
 	return fmt.Sprintf("https://%s/%s/%s", r.Host, r.Owner, r.Repo)
 }
 
@@ -82,6 +86,10 @@ func ParseGitHubRepoURL(repoURL string) (*RepoURL, error) {
 	if err != nil {
 		return nil, status.WrapError(err, "failed to parse GitHub repo URL")
 	}
+	// Remote github repos based on files are used for tests. Don't try to parse them.
+	if u.Scheme == "file" {
+		return &RepoURL{Repo: repoURL, Scheme: u.Scheme}, nil
+	}
 	if u.Host != "github.com" {
 		return nil, status.InvalidArgumentError("unexpected non-GitHub URL")
 	}
@@ -89,7 +97,7 @@ func ParseGitHubRepoURL(repoURL string) (*RepoURL, error) {
 	if len(pathParts) < 2 {
 		return nil, status.InvalidArgumentErrorf("invalid repo URL")
 	}
-	return &RepoURL{Host: u.Host, Owner: pathParts[0], Repo: pathParts[1]}, nil
+	return &RepoURL{Host: u.Host, Owner: pathParts[0], Repo: pathParts[1], Scheme: u.Scheme}, nil
 }
 
 func ParseRepoURL(repo string) (*url.URL, error) {

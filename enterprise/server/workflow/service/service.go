@@ -1563,6 +1563,9 @@ func workflowHomeDir(user string) string {
 	return "/root"
 }
 
+// ServeHTTP is a deprecated way to handle webhook events for legacy workflows.
+// Modern workflows should use the GitHub app, which should route through
+// `HandleRepositoryEvent` instead.
 func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	workflowMatch := workflowURLMatcher.FindStringSubmatch(r.URL.Path)
 	if len(workflowMatch) != 2 {
