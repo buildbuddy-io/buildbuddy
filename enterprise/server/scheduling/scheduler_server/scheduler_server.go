@@ -1787,7 +1787,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	// RPC doesn't get this metadata, because the executor doesn't get it until
 	// the lease returns. Instead of piping it all the way through, create a new
 	// gRPC incoming context, from the serialized task's metadata.
-	taskProto := new(repb.ExecutionTask)
+	taskProto := &repb.ExecutionTask{}
 	if err := proto.Unmarshal(task, taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
 		return task
@@ -1805,23 +1805,19 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	ctx = metadata.NewIncomingContext(ctx, md)
 	ctx = bazel_request.ParseRequestMetadataOnce(ctx)
 
-	var opts []any
-	if executorHostname != "" {
-		opts = append(opts, experiments.WithContext("executor.hostname", executorHostname))
-	}
-	skipResaving := fp.String(ctx, "skip-resaving-action-snapshots", "", opts...)
-	if skipResaving == "" {
+	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", experiments.WithContext("executor_hostname", executorHostname))
+	if skipResavingGroup == "" {
 		return task
 	}
-	taskProto.Experiments = append(taskProto.Experiments, "skip-resaving-action-snapshots:"+skipResaving)
+	taskProto.Experiments = append(taskProto.Experiments, "skip-resaving-action-snapshots:"+skipResavingGroup)
 	if taskProto.GetPlatformOverrides() == nil {
 		taskProto.PlatformOverrides = new(repb.Platform)
 	}
 	plat := taskProto.GetPlatformOverrides()
-	if strings.EqualFold(skipResaving, "true") { // No point in setting the property when it's false.
+	if strings.EqualFold(skipResavingGroup, "treatment") { // No point in setting the property when it's false.
 		plat.Properties = append(plat.Properties, &repb.Platform_Property{
 			Name:  platform.SkipResavingActionSnapshotsPropertyName,
-			Value: skipResaving,
+			Value: "true",
 		})
 	}
 	if newTask, err := proto.Marshal(taskProto); err != nil {
