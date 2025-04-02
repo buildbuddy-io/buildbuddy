@@ -213,6 +213,12 @@ func (c Credentials) Equals(o Credentials) bool {
 	return c.Username == o.Username && c.Password == o.Password
 }
 
+type cacheableRef struct {
+	registry   string
+	repository string
+	hash       v1.Hash
+}
+
 func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -258,7 +264,15 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 		if err != nil {
 			return nil, err
 		}
+		cref := cacheableRef{
+			registry:   imageRef.Context().RegistryStr(),
+			repository: imageRef.Context().RepositoryStr(),
+			hash:       desc.Digest,
+		}
 		img := &cacheAwareImage{
+			ref:      cref,
+			acc:      acClient,
+			bsc:      bsClient,
 			raw:      raw,
 			manifest: m,
 		}
@@ -491,7 +505,72 @@ func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, 
 	return nil
 }
 
+func FetchLayerFromCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, registry, repository string, hash v1.Hash, w io.Writer) error {
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      registry,
+		Repository:    repository,
+		ResourceType:  ocipb.OCIResourceType_BLOB,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	if err != nil {
+		return err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		actionResultInstanceName,
+		repb.DigestFunction_SHA256,
+	)
+	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
+	if err != nil {
+		return err
+	}
+
+	var blobMetadataCASDigest *repb.Digest
+	var blobCASDigest *repb.Digest
+	for _, outputFile := range ar.GetOutputFiles() {
+		switch outputFile.GetPath() {
+		case blobMetadataOutputFilePath:
+			blobMetadataCASDigest = outputFile.GetDigest()
+		case blobOutputFilePath:
+			blobCASDigest = outputFile.GetDigest()
+		default:
+			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s/%s:%s", outputFile.GetPath(), registry, repository, hash)
+		}
+	}
+	if blobMetadataCASDigest == nil || blobCASDigest == nil {
+		return fmt.Errorf("missing blob metadata digest or blob digest for %s/%s:%s", registry, repository, hash)
+	}
+	blobMetadataRN := digest.NewCASResourceName(
+		blobMetadataCASDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+	blobMetadata := &ocipb.OCIBlobMetadata{}
+	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
+	if err != nil {
+		return err
+	}
+
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	return cachetools.GetBlob(ctx, bsClient, blobRN, w)
+}
+
 type cacheAwareImage struct {
+	ref cacheableRef
+	acc repb.ActionCacheClient
+	bsc bspb.ByteStreamClient
+
 	raw       []byte
 	manifest  *v1.Manifest
 	remoteImg v1.Image
@@ -522,7 +601,13 @@ func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, 
 	if i.manifest != nil {
 		for _, d := range i.manifest.Layers {
 			if d.Digest == hash {
-				return &cacheAwareLayer{descriptor: &d}, nil
+				l := &cacheAwareLayer{
+					ref:        i.ref,
+					acc:        i.acc,
+					bsc:        i.bsc,
+					descriptor: &d,
+				}
+				return l, nil
 			}
 		}
 		return nil, fmt.Errorf("could not find layer %s", hash)
@@ -531,12 +616,22 @@ func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, 
 	if err != nil {
 		return nil, err
 	}
-	return &cacheAwareLayer{remoteLayer: rl}, nil
+	l := &cacheAwareLayer{
+		ref:         i.ref,
+		acc:         i.acc,
+		bsc:         i.bsc,
+		remoteLayer: rl,
+	}
+	return l, nil
 }
 
 var _ partial.CompressedImageCore = (*cacheAwareImage)(nil)
 
 type cacheAwareLayer struct {
+	ref cacheableRef
+	acc repb.ActionCacheClient
+	bsc bspb.ByteStreamClient
+
 	descriptor  *v1.Descriptor
 	remoteLayer v1.Layer
 }
@@ -549,6 +644,28 @@ func (l *cacheAwareLayer) Digest() (v1.Hash, error) {
 }
 
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
+	if l.descriptor != nil {
+		r, w := io.Pipe()
+		err := FetchLayerFromCache(
+			context.TODO(),
+			l.acc,
+			l.bsc,
+			l.ref.registry,
+			l.ref.repository,
+			l.ref.hash,
+			w,
+		)
+		if err != nil && status.IsNotFoundError(err) {
+			// TODO: fallback to remote
+			return nil, err
+		}
+		if err != nil {
+			log.Errorf("error fetching layer %s/%s:%s: %s", l.ref.registry, l.ref.repository, l.ref.hash, err)
+			w.CloseWithError(err)
+			return nil, err
+		}
+		return r, nil
+	}
 	return l.remoteLayer.Compressed()
 }
 
