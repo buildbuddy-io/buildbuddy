@@ -454,9 +454,22 @@ func TestResolve_CachesManifest(t *testing.T) {
 		},
 	})
 
-	imageName, image := testreg.PushRandomImage(t)
-	imageDigest, err := image.Digest()
+	imageName, ogimage := testreg.PushRandomImage(t)
+	imageDigest, err := ogimage.Digest()
 	require.NoError(t, err)
+
+	hashToLayer := map[v1.Hash][]byte{}
+	oglayers, err := ogimage.Layers()
+	require.NoError(t, err)
+	for _, oglayer := range oglayers {
+		rc, err := oglayer.Compressed()
+		require.NoError(t, err)
+		hash, err := oglayer.Digest()
+		require.NoError(t, err)
+		b, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		hashToLayer[hash] = b
+	}
 
 	before := count.Load()
 	for i := 0; i < 2; i++ {
@@ -476,6 +489,21 @@ func TestResolve_CachesManifest(t *testing.T) {
 		digest, err := img.Digest()
 		require.NoError(t, err)
 		assert.Equal(t, imageDigest.String(), digest.String())
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		assert.Equal(t, len(hashToLayer), len(layers))
+		for _, layer := range layers {
+			hash, err := layer.Digest()
+			require.NoError(t, err)
+			_, ok := hashToLayer[hash]
+			require.True(t, ok)
+			// rc, err := layer.Compressed()
+			// require.NoError(t, err)
+			// b, err := io.ReadAll(rc)
+			// require.NoError(t, err)
+			// assert.Equal(t, ogbytes, b)
+		}
 	}
 
 	assert.Equal(t, int32(1), count.Load()-before)
