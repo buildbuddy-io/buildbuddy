@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
@@ -83,7 +82,9 @@ func (ht *testHitTracker) Track(ctx context.Context, req *hitpb.TrackRequest) (*
 	return &hitpb.TrackResponse{}, nil
 }
 
-func setup(t *testing.T) (interfaces.Authenticator, *HitTrackerFactory, *testHitTracker, clockwork.FakeClock) {
+func setup(t *testing.T) (interfaces.Authenticator, *HitTrackerFactory, *testHitTracker) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	te := testenv.GetTestEnv(t)
 	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1))
 	te.SetAuthenticator(authenticator)
@@ -91,68 +92,50 @@ func setup(t *testing.T) (interfaces.Authenticator, *HitTrackerFactory, *testHit
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	hitpb.RegisterHitTrackerServiceServer(grpcServer, hitTrackerService)
 	go runServer()
-	conn, err := testenv.LocalGRPCConn(context.Background(), lis)
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	flags.Set(t, "cache.remote_hit_tracker.update_interval", 995*time.Millisecond)
 	flags.Set(t, "cache.remote_hit_tracker.max_pending_hits_per_group", 10)
-	fakeClock := clockwork.NewFakeClock()
-	te.SetClock(fakeClock)
-	return authenticator, newHitTrackerClient(te, conn), hitTrackerService, fakeClock
+	return authenticator, newHitTrackerClient(ctx, te, conn), hitTrackerService
 }
 
 func TestACHitTracker(t *testing.T) {
-	_, hitTrackerFactory, hitTrackerService, fakeClock := setup(t)
+	_, hitTrackerFactory, hitTrackerService := setup(t)
 	ctx := context.Background()
 	hitTracker := hitTrackerFactory.NewACHitTracker(ctx, &repb.RequestMetadata{})
 	hitTracker.TrackMiss(aDigest)
 	hitTracker.TrackDownload(bDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 	hitTracker.TrackUpload(cDigest).CloseWithBytesTransferred(3000, 4000, repb.Compressor_IDENTITY, "test")
 
-	for i := 0; i < 10; i++ {
-		fakeClock.Advance(time.Second)
-		time.Sleep(5 * time.Millisecond)
-	}
-
 	time.Sleep(100 * time.Millisecond)
 	require.Equal(t, int64(0), hitTrackerService.downloads[interfaces.AuthAnonymousUser].Load())
 }
 
 func TestCASHitTracker(t *testing.T) {
-	_, hitTrackerFactory, hitTrackerService, fakeClock := setup(t)
+	_, hitTrackerFactory, hitTrackerService := setup(t)
 	ctx := context.Background()
 	hitTracker := hitTrackerFactory.NewCASHitTracker(ctx, &repb.RequestMetadata{})
 	hitTracker.TrackMiss(aDigest)
 	hitTracker.TrackDownload(bDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 	hitTracker.TrackUpload(cDigest).CloseWithBytesTransferred(3000, 4000, repb.Compressor_IDENTITY, "test")
 
-	for i := 0; i < 10; i++ {
-		fakeClock.Advance(time.Second)
-		time.Sleep(5 * time.Millisecond)
-	}
-
 	expectToEqual(t, 1, hitTrackerService.downloads[interfaces.AuthAnonymousUser], "Expected 1 HitTracker.Track download")
 	require.Equal(t, int64(2000), hitTrackerService.bytesDownloaded[interfaces.AuthAnonymousUser].Load())
 }
 
 func TestCASHitTracker_NoDeduplication(t *testing.T) {
-	_, hitTrackerFactory, hitTrackerService, fakeClock := setup(t)
+	_, hitTrackerFactory, hitTrackerService := setup(t)
 	ctx := context.Background()
 	hitTracker := hitTrackerFactory.NewCASHitTracker(ctx, &repb.RequestMetadata{})
 	hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 	hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
-
-	for i := 0; i < 10; i++ {
-		fakeClock.Advance(time.Second)
-		time.Sleep(5 * time.Millisecond)
-	}
 
 	expectToEqual(t, int64(2), hitTrackerService.downloads[interfaces.AuthAnonymousUser], "Expected 2 cache hits")
 	require.Equal(t, int64(4000), hitTrackerService.bytesDownloaded[interfaces.AuthAnonymousUser].Load())
 }
 
 func TestCASHitTracker_DropsUpdates(t *testing.T) {
-	authenticator, hitTrackerFactory, hitTrackerService, fakeClock := setup(t)
+	authenticator, hitTrackerFactory, hitTrackerService := setup(t)
 	ctx := context.Background()
 	hitTracker := hitTrackerFactory.NewCASHitTracker(ctx, &repb.RequestMetadata{})
 	for i := 0; i < 100; i++ {
@@ -167,15 +150,10 @@ func TestCASHitTracker_DropsUpdates(t *testing.T) {
 	hitTracker = hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
 	hitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
 
-	for i := 0; i < 10; i++ {
-		fakeClock.Advance(time.Second)
-		time.Sleep(5 * time.Millisecond)
-	}
+	time.Sleep(100 * time.Millisecond)
 
-	// These updates should come in in-order, so they should be:
-	// ANON: a, b, c, d, e, a, b, c, d, e
-	expectToEqual(t, int64(10), hitTrackerService.downloads[interfaces.AuthAnonymousUser], "Expected 10 cache hits for ANON")
-	require.Equal(t, int64(44_444), hitTrackerService.bytesDownloaded[interfaces.AuthAnonymousUser].Load())
+	// Expect some of the updates for ANON to be dropped.
+	require.Less(t, hitTrackerService.downloads[interfaces.AuthAnonymousUser].Load(), int64(500))
 
 	// Even though group 1's update came at the end, it should still be sent.
 	expectToEqual(t, int64(1), hitTrackerService.downloads[group1], "Expected 1 cache hits for group 1")

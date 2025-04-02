@@ -3171,7 +3171,6 @@ var (
 		CacheHitMissStatus,
 	})
 
-	// ## Cache Proxy Remote Atime Update Metrics
 	RemoteAtimeUpdates = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
@@ -3192,7 +3191,6 @@ var (
 		StatusLabel,
 	})
 
-	// ## Cache Proxy Remote Hit-Tracker Metrics
 	RemoteHitTrackerUpdates = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
@@ -3203,11 +3201,12 @@ var (
 		EnqueueUpdateOutcome,
 	})
 
-	RemoteHitTrackerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+	RemoteHitTrackerRequests = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "remote_hit_tracker_requests",
-		Help:      "The number of HitTrackerService.Track RPCs sent to the remote hit-tracker service to record cache proxy cache hits.",
+		Buckets:   prometheus.ExponentialBuckets(1, 2, 20), // 2^19 = 524,288
+		Help:      "The number of HitTrackerService.Track RPCs sent to the remote hit-tracker service to record cache proxy cache hits. Histogram values are the number of hit-updates per request.",
 	}, []string{
 		GroupID,
 		StatusLabel,

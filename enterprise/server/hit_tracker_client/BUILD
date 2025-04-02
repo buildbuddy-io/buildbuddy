@@ -38,7 +38,6 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/testing/flags",
-        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
 )

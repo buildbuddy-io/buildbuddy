@@ -3,8 +3,8 @@ package hit_tracker_client
 import (
 	"context"
 	"flag"
+	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -27,13 +27,6 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	// The initial capacity to allocate for slices storing per-group cache
-	// hits. This is intended to be large enough to avoid too many allocations
-	// due to  slice growth, but not so large to incur excessive memory use.
-	initialSliceCapacity = 4_096
-)
-
 var (
 	remoteHitTrackerTarget       = flag.String("cache.remote_hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracking service.")
 	remoteHitTrackerPollInterval = flag.Duration("cache.remote_hit_tracker.update_interval", 250*time.Millisecond, "The time interval to wait between sending remote cache-hit-tracking RPCs.")
@@ -42,7 +35,7 @@ var (
 )
 
 func Register(env *real_environment.RealEnv) error {
-	if *remoteHitTrackerTarget == "" {
+	if *remoteHitTrackerTarget == "" || *remoteHitTrackerWorkers < 1 {
 		return nil
 	}
 
@@ -50,22 +43,25 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
-	env.SetHitTrackerFactory(newHitTrackerClient(env, conn))
+	env.SetHitTrackerFactory(newHitTrackerClient(env.GetServerContext(), env, conn))
 	return nil
 }
 
-func newHitTrackerClient(env *real_environment.RealEnv, conn grpc.ClientConnInterface) *HitTrackerFactory {
+func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, conn grpc.ClientConnInterface) *HitTrackerFactory {
 	factory := HitTrackerFactory{
 		authenticator:          env.GetAuthenticator(),
-		ticker:                 env.GetClock().NewTicker(*remoteHitTrackerPollInterval).Chan(),
+		pollInterval:           *remoteHitTrackerPollInterval,
 		quit:                   make(chan struct{}, 1),
-		stopped:                atomic.Bool{},
 		maxPendingHitsPerGroup: *maxPendingHitsPerGroup,
 		hitsByGroup:            map[groupID]*cacheHits{},
 		client:                 hitpb.NewHitTrackerServiceClient(conn),
 	}
 	for i := 0; i < *remoteHitTrackerWorkers; i++ {
-		go factory.runWorker()
+		factory.wg.Add(1)
+		go func() {
+			factory.runWorker(ctx)
+			factory.wg.Done()
+		}()
 	}
 	env.GetHealthChecker().RegisterShutdownFunction(factory.shutdown)
 	return &factory
@@ -73,6 +69,7 @@ func newHitTrackerClient(env *real_environment.RealEnv, conn grpc.ClientConnInte
 
 type groupID string
 type cacheHits struct {
+	gid         groupID
 	authHeaders map[string][]string
 	hits        []*hitpb.CacheHit
 }
@@ -80,13 +77,14 @@ type cacheHits struct {
 type HitTrackerFactory struct {
 	authenticator interfaces.Authenticator
 
-	ticker  <-chan time.Time
-	quit    chan struct{}
-	stopped atomic.Bool
+	pollInterval time.Duration
+	quit         chan struct{}
+	wg           sync.WaitGroup
 
 	mu                     sync.Mutex
 	maxPendingHitsPerGroup int
 	hitsByGroup            map[groupID]*cacheHits
+	hitsQueue              []*cacheHits
 
 	client hitpb.HitTrackerServiceClient
 }
@@ -161,7 +159,9 @@ func (h *HitTrackerFactory) groupID(ctx context.Context) groupID {
 func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.RequestMetadata, hit *hitpb.CacheHit) {
 	requestMetadata = proto.Clone(requestMetadata).(*repb.RequestMetadata)
 
-	if h.stopped.Load() {
+	h.mu.Lock()
+	if h.shouldFlushSynchronously() {
+		h.mu.Unlock()
 		log.Warning("hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
 		hit.RequestMetadata = requestMetadata
 		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}}); err != nil {
@@ -169,20 +169,18 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 		}
 		return
 	}
-
-	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	groupID := h.groupID(ctx)
 	if _, ok := h.hitsByGroup[groupID]; !ok {
-		h.hitsByGroup[groupID] = &cacheHits{
-			hits: make([]*hitpb.CacheHit, 0, initialSliceCapacity),
-		}
+		hits := cacheHits{gid: groupID, hits: []*hitpb.CacheHit{}}
+		h.hitsByGroup[groupID] = &hits
+		h.hitsQueue = append(h.hitsQueue, &hits)
 	}
 
 	groupHits := h.hitsByGroup[groupID]
 	if len(groupHits.hits) >= h.maxPendingHitsPerGroup {
-		log.CtxWarning(ctx, "Exceeded maximum number of pending cache hits, dropping some.")
+		alert.UnexpectedEvent(fmt.Sprintf("Exceeded maximum number of pending cache hits for group %s, dropping some.", string(groupID)))
 		metrics.RemoteHitTrackerUpdates.With(
 			prometheus.Labels{
 				metrics.GroupID:              string(groupID),
@@ -247,61 +245,63 @@ func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferT
 	return &NoOpTransferTimer{}
 }
 
-func (h *HitTrackerFactory) runWorker() {
+func (h *HitTrackerFactory) runWorker(ctx context.Context) {
 	for {
 		select {
 		case <-h.quit:
-			h.stopped.Store(false)
 			return
-		case <-h.ticker:
-			h.sendTrackRequests(context.Background())
+		default:
+			if h.sendTrackRequest(ctx) == 0 {
+				time.Sleep(h.pollInterval)
+			}
 		}
 	}
 }
 
-// Sends one round of HitTrackerService.Track requests from the queue. This
-// funciton will send one RPC per group that has any pending hit-updates, and
-// return the number of hit-updates sent.
-func (h *HitTrackerFactory) sendTrackRequests(ctx context.Context) int {
-	i := 0
-	groups := make([]groupID, len(h.hitsByGroup))
-	h.mu.Lock()
-	for group := range h.hitsByGroup {
-		groups[i] = group
-		i++
+func (h *HitTrackerFactory) shouldFlushSynchronously() bool {
+	select {
+	case <-h.quit:
+		return true
+	default:
+		return false
 	}
+}
+
+// Sends the oldest pending batch of hits from the queue. This function sends
+// one RPC and returns the number of updates sent.
+func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
+	h.mu.Lock()
+	if len(h.hitsQueue) == 0 {
+		h.mu.Unlock()
+		return 0
+	}
+	hitsToSend := h.hitsQueue[0]
+	h.hitsQueue = h.hitsQueue[1:]
+	delete(h.hitsByGroup, hitsToSend.gid)
 	h.mu.Unlock()
 
-	for _, groupID := range groups {
-		h.mu.Lock()
-		headers := h.hitsByGroup[groupID].authHeaders
-		trackRequest := hitpb.TrackRequest{Hits: h.hitsByGroup[groupID].hits}
-		h.hitsByGroup[groupID] = &cacheHits{}
-		h.mu.Unlock()
-
-		if len(trackRequest.Hits) > 0 {
-			ctx = authutil.AddAuthHeadersToContext(ctx, headers, h.authenticator)
-			_, err := h.client.Track(ctx, &trackRequest)
-			metrics.RemoteAtimeUpdatesSent.With(
-				prometheus.Labels{
-					metrics.GroupID:     string(groupID),
-					metrics.StatusLabel: gstatus.Code(err).String(),
-				}).Inc()
-			if err != nil {
-				log.CtxWarningf(ctx, "Error sending Track request to record cache hit-tracking state group %s: %v", groupID, err)
-			}
-		}
+	ctx = authutil.AddAuthHeadersToContext(ctx, hitsToSend.authHeaders, h.authenticator)
+	trackRequest := hitpb.TrackRequest{Hits: hitsToSend.hits}
+	_, err := h.client.Track(ctx, &trackRequest)
+	metrics.RemoteHitTrackerRequests.With(
+		prometheus.Labels{
+			metrics.GroupID:     string(hitsToSend.gid),
+			metrics.StatusLabel: gstatus.Code(err).String(),
+		}).Observe(float64(len(hitsToSend.hits)))
+	if err != nil {
+		log.CtxWarningf(ctx, "Error sending Track request to record cache hit-tracking state group %s: %v", hitsToSend.gid, err)
 	}
-	return 0
+	return len(hitsToSend.hits)
 }
 
 func (h *HitTrackerFactory) shutdown(ctx context.Context) error {
 	close(h.quit)
+	h.wg.Wait()
 
 	// Make a best-effort attempt to flush pending updates.
 	// TODO(iain): we could do something fancier here if necessary, like
 	// fire-and-forget these RPCs with a rate-limiter. Let's try this for now.
-	for h.sendTrackRequests(ctx) > 0 {
+	for h.sendTrackRequest(ctx) > 0 {
 	}
 
 	return nil
