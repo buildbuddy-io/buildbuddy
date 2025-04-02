@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
@@ -36,13 +38,14 @@ import (
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
+	mockGithubAppID = int64(98765)
+
 	configWithLinuxWorkflow = `
 actions:
   - name: "Test (linux_amd64)"
@@ -52,6 +55,7 @@ actions:
 )
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
+	flags.Set(t, "github.app.enabled", true)
 	te := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, te)
 	tu := &tables.User{
@@ -70,6 +74,9 @@ func newTestEnv(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	te.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
+	gh, err := githubapp.NewAppService(te, &testgit.FakeGitHubApp{MockAppID: mockGithubAppID}, nil)
+	require.NoError(t, err)
+	te.SetGitHubAppService(gh)
 
 	execClient := NewFakeExecutionClient()
 	te.SetRemoteExecutionClient(execClient)
@@ -127,10 +134,30 @@ func makeTempRepo(t *testing.T) string {
 	return fmt.Sprintf("file://%s", path)
 }
 
-// pingWebhook makes an empty request to the given webhook URL. The fake git
+func createWorkflow(t *testing.T, env *testenv.TestEnv, repoURL, groupID string) *tables.GitRepository {
+	dbh := env.GetDBHandle()
+	require.NotNil(t, dbh)
+	repo := &tables.GitRepository{
+		RepoURL: repoURL,
+		GroupID: groupID,
+		AppID:   mockGithubAppID,
+		Perms:   perms.GROUP_READ | perms.GROUP_WRITE,
+	}
+	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(repo)
+	require.NoError(t, err)
+	appInstallation := &tables.GitHubAppInstallation{
+		GroupID: groupID,
+		AppID:   mockGithubAppID,
+	}
+	err = dbh.NewQuery(context.Background(), "create_app_installation_for_test").Create(appInstallation)
+	require.NoError(t, err)
+	return repo
+}
+
+// pingLegacyWorkflowWebhook makes an empty request to the given webhook URL. The fake git
 // provider's WebhookData field determines the webhook data parsed from the
 // request.
-func pingWebhook(t *testing.T, url string) {
+func pingLegacyWorkflowWebhook(t *testing.T, url string) {
 	res, err := http.Post(url, "", bytes.NewReader([]byte{}))
 	require.NoError(t, err)
 	// Log the response body for debug purposes.
@@ -232,107 +259,7 @@ func authenticateAsUser(t *testing.T, ctx context.Context, env environment.Env, 
 	return authCtx, tu.UserID, gid
 }
 
-func TestCreate_SuccessfullyRegisterWebhook(t *testing.T) {
-	ctx := context.Background()
-	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
-	provider := setupFakeGitProvider(t, te)
-	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, t, te)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		Name:           "BuildBuddy OS Workflow",
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	rsp, err := bbClient.CreateWorkflow(ctx, req)
-
-	require.NoError(t, err)
-	assert.Regexp(t, "^WF.*", rsp.GetId(), "workflow ID should exist and match WF.*")
-	assert.Regexp(t, "^.*/webhooks/workflow/.*", rsp.GetWebhookUrl(), "workflow webhook URL should exist and match /webhooks/workflow/.*")
-	assert.True(t, rsp.GetWebhookRegistered())
-
-	var row tables.Workflow
-	err = te.GetDBHandle().NewQuery(ctx, "get_worflow").Raw(`SELECT * FROM "Workflows"`).Take(&row)
-	require.NoError(t, err)
-	assert.Equal(t, rsp.GetId(), row.WorkflowID, "inserted table workflow ID should match create response")
-	assert.Equal(t, gid, row.UserID, "inserted table workflow user should match auth")
-	assert.Equal(t, gid, row.GroupID, "inserted table workflow group should match auth")
-	assert.Equal(
-		t, testgit.FakeWebhookID, row.GitProviderWebhookID,
-		"inserted table workflow git provider webhook ID should be set based on git provider response",
-	)
-	assert.NotEmpty(t, row.WebhookID, "webhook ID in DB should be nonempty")
-	assert.Contains(t, rsp.GetWebhookUrl(), row.WebhookID, "webhook ID in DB should match the URL")
-	assert.Equal(t, rsp.GetWebhookUrl(), provider.RegisteredWebhookURL, "returned webhook URL should be registered to the provider")
-}
-
-func TestCreate_NoWebhookPermissions(t *testing.T) {
-	ctx := context.Background()
-	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
-	provider := setupFakeGitProvider(t, te)
-	provider.RegisterWebhookError = fmt.Errorf("(fake error) You do not have permissions to register webhooks!")
-	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, t, te)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		Name:           "BuildBuddy OS Workflow",
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	rsp, err := bbClient.CreateWorkflow(ctx, req)
-
-	require.NoError(t, err)
-	assert.Regexp(t, "^WF.*", rsp.GetId(), "workflow ID should exist and match WF.*")
-	assert.Regexp(t, "^.*/webhooks/workflow/.*", rsp.GetWebhookUrl(), "workflow webhook URL should exist and match /webhooks/workflow/.*")
-	assert.False(t, rsp.GetWebhookRegistered(), "webhook should have failed to register")
-
-	var row tables.Workflow
-	err = te.GetDBHandle().NewQuery(ctx, "get_worflow").Raw(`SELECT * FROM "Workflows"`).Take(&row)
-	require.NoError(t, err)
-	assert.Equal(t, rsp.GetId(), row.WorkflowID, "inserted table workflow ID should match create response")
-	assert.Equal(t, repoURL, row.RepoURL)
-	assert.Equal(t, gid, row.UserID, "inserted table workflow user should match auth")
-	assert.Equal(t, gid, row.GroupID, "inserted table workflow group should match auth")
-	assert.NotEmpty(t, row.WebhookID, "webhook ID in DB should be nonempty")
-	assert.Contains(t, rsp.GetWebhookUrl(), row.WebhookID, "webhook ID in DB should match the URL")
-	assert.Equal(t, "", row.GitProviderWebhookID, "git provider should not have returned a webhook ID")
-}
-
-func TestCreate_NonNormalizedRepoURL(t *testing.T) {
-	ctx := context.Background()
-	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
-	// We are using a github.com URL to test normalization, so disable the repo
-	// downloader just for this test so that it doesn't depend on GitHub.
-	te.SetRepoDownloader(nil)
-	setupFakeGitProvider(t, te)
-	repoURL := "git@github.com:/foo/bar"
-	clientConn := runBBServer(ctx, t, te)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo: &gitpb.GitRepo{
-			// Access token is required for GitHub URLs
-			AccessToken: "test-access-token",
-			RepoUrl:     repoURL,
-		},
-	}
-	_, err := bbClient.CreateWorkflow(ctx, req)
-
-	require.NoError(t, err)
-
-	var row tables.Workflow
-	err = te.GetDBHandle().NewQuery(ctx, "get_worflow").Raw(`SELECT * FROM "Workflows"`).Take(&row)
-	assert.NoError(t, err)
-	assert.Equal(t, "https://github.com/foo/bar", row.RepoURL, "repo URL stored in DB should be normalized")
-}
-
-func TestDelete(t *testing.T) {
+func TestDeleteLegacyWorkflow(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
 	ctx, _, gid := authenticate(t, ctx, te)
@@ -355,7 +282,6 @@ func TestDelete(t *testing.T) {
 
 	req := &wfpb.DeleteWorkflowRequest{Id: "WF1"}
 	_, err = bbClient.DeleteWorkflow(ctx, req)
-
 	require.NoError(t, err)
 	assert.Equal(t, testgit.FakeWebhookID, provider.UnregisteredWebhookID, "should unregister webhook upon deletion")
 
@@ -363,7 +289,7 @@ func TestDelete(t *testing.T) {
 	assert.True(t, db.IsRecordNotFound(err))
 }
 
-func TestList(t *testing.T) {
+func TestListLegacyWorkflows(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
 
@@ -434,21 +360,16 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, t, te)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	runBBServer(ctx, t, te)
+
+	repo := createWorkflow(t, te, repoURL, gid)
+
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:          "pull_request",
@@ -462,7 +383,8 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
@@ -483,21 +405,14 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
-	clientConn := runBBServer(ctx, t, te)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid)
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:          "pull_request",
@@ -511,7 +426,8 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
@@ -532,21 +448,15 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
 	clientConn := runBBServer(ctx, t, te)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid)
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:           "pull_request",
@@ -561,7 +471,8 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
@@ -582,21 +493,15 @@ func TestWebhook_TrustedApprovalOnAlreadyTrustedPullRequest_NOP(t *testing.T) {
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
 	clientConn := runBBServer(ctx, t, te)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid)
 	provider.TrustedUsers = []string{"acme-inc-user-1", "acme-inc-user-2"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:           "pull_request",
@@ -611,7 +516,8 @@ func TestWebhook_TrustedApprovalOnAlreadyTrustedPullRequest_NOP(t *testing.T) {
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 }
 
 func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
@@ -620,21 +526,15 @@ func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
 	clientConn := runBBServer(ctx, t, te)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid)
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:           "pull_request",
@@ -649,7 +549,8 @@ func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 }
 
 func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
@@ -658,21 +559,15 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 	flags.Set(t, "app.build_buddy_url", *u)
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	te := newTestEnv(t)
-	ctx, uid, gid := authenticate(t, ctx, te)
+	ctx, _, gid := authenticate(t, ctx, te)
 	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
 	te.SetRemoteExecutionClient(execClient)
 	go http.Serve(lis, te.GetWorkflowService())
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
 	clientConn := runBBServer(ctx, t, te)
-	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: testauth.RequestContext(uid, gid),
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
-	webhookURL := wfRes.GetWebhookUrl()
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+	repo := createWorkflow(t, te, repoURL, gid)
 	provider.TrustedUsers = []string{"acme-inc-user-1"}
 	provider.WebhookData = &interfaces.WebhookData{
 		EventName:          "push",
@@ -685,7 +580,8 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 	}
 	provider.FileContents = map[string]string{"buildbuddy.yaml": configWithLinuxWorkflow}
 
-	pingWebhook(t, webhookURL)
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
 
 	execReq := execClient.NextExecuteRequest()
 	exec := getExecution(t, ctx, te, execReq.Payload)
@@ -717,12 +613,7 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 	clientConn := runBBServer(ctx, t, te)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 	reqCtx := testauth.RequestContext(uid, gid)
-	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: reqCtx,
-		GitRepo:        &gitpb.GitRepo{RepoUrl: repoURL},
-	}
-	wfRes, err := bbClient.CreateWorkflow(ctx, req)
-	require.NoError(t, err)
+	createWorkflow(t, te, repoURL, gid)
 
 	testCases := []struct {
 		name            string
@@ -770,9 +661,10 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 		_, err = te.GetUserDB().UpdateGroup(ctx, g)
 		require.NoError(t, err)
 
+		workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid, repoURL)
 		rsp, err := bbClient.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
 			RequestContext: reqCtx,
-			WorkflowId:     wfRes.Id,
+			WorkflowId:     workflowID,
 			CommitSha:      "c04d68571cb519e095772c865847007ed3e7fea9",
 			PushedRepoUrl:  "https://github.com/acme-inc/acme",
 			PushedBranch:   "main",

@@ -258,7 +258,7 @@ func (ws *workflowService) checkPreconditions(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
+func (ws *workflowService) DeleteLegacyWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
@@ -311,7 +311,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	return &wfpb.DeleteWorkflowResponse{}, nil
 }
 
-func (ws *workflowService) GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error) {
+func (ws *workflowService) GetLinkedLegacyWorkflows(ctx context.Context, accessToken string) ([]string, error) {
 	q, args := query_builder.
 		NewQuery(`SELECT workflow_id FROM "Workflows"`).
 		AddWhereClause("access_token = ?", accessToken).
@@ -342,7 +342,7 @@ func (ws *workflowService) providerForRepo(repoURL string) (interfaces.GitProvid
 	return nil, status.InvalidArgumentErrorf("could not find git provider for %s", u.Hostname())
 }
 
-func (ws *workflowService) GetWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error) {
+func (ws *workflowService) GetLegacyWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error) {
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
@@ -755,7 +755,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	if len(repos) == 0 {
 		// Fall back to legacy workflow registrations.
 		repos = []string{}
-		workflows, err := ws.GetWorkflows(ctx)
+		workflows, err := ws.GetLegacyWorkflows(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1563,6 +1563,9 @@ func workflowHomeDir(user string) string {
 	return "/root"
 }
 
+// ServeHTTP is a deprecated way to handle webhook events for legacy workflows.
+// Modern workflows should use the GitHub app, which should route through
+// `HandleRepositoryEvent` instead.
 func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	workflowMatch := workflowURLMatcher.FindStringSubmatch(r.URL.Path)
 	if len(workflowMatch) != 2 {

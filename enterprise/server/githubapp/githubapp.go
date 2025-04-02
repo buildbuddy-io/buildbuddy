@@ -839,7 +839,7 @@ func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.L
 	deleteReq := &wfpb.DeleteWorkflowRequest{
 		RepoUrl: repoURL,
 	}
-	if _, err := a.env.GetWorkflowService().DeleteWorkflow(ctx, deleteReq); err != nil {
+	if _, err := a.env.GetWorkflowService().DeleteLegacyWorkflow(ctx, deleteReq); err != nil {
 		if !db.IsRecordNotFound(err) {
 			log.CtxInfof(ctx, "Failed to delete legacy workflow for linked repo: %s", err)
 		}
