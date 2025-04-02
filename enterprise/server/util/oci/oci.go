@@ -251,9 +251,7 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 		}
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
-	// fetch manifest from cache: registry, repository, hash
 
-	// func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, ref ctrname.Reference) ([]byte, error) {
 	raw, err := FetchManifestFromCache(ctx, acClient, bsClient, imageRef.Context().RegistryStr(), imageRef.Context().RepositoryStr(), desc.Digest)
 	if err == nil {
 		m, err := v1.ParseManifest(bytes.NewReader(raw))
@@ -276,6 +274,20 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
 		}
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
+	err = WriteManifestToCache(
+		ctx,
+		acClient,
+		bsClient,
+		imageRef.Context().RegistryStr(),
+		imageRef.Context().RepositoryStr(),
+		desc.Digest,
+		string(remoteDesc.MediaType),
+		remoteDesc.Size,
+		remoteDesc.Manifest,
+	)
+	if err != nil {
+		log.CtxErrorf(ctx, "error writing image %s to the CAS: %s", imageRef, err)
 	}
 
 	// Image() should resolve both images and image indices to an appropriate image
@@ -414,7 +426,7 @@ func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient
 	return buf.Bytes(), nil
 }
 
-func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, registry, repository string, hash v1.Hash, contentType string, contentLength int64, upstream io.Reader) error {
+func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, registry, repository string, hash v1.Hash, contentType string, contentLength int64, raw []byte) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -425,7 +437,8 @@ func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, 
 		repb.DigestFunction_SHA256,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, upstream)
+	buf := bytes.NewBuffer(raw)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, buf)
 	if err != nil {
 		return err
 	}
