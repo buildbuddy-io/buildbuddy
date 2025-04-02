@@ -58,6 +58,10 @@ var (
 	samlSubjectAttributes   = append([]string{"urn:oasis:names:tc:SAML:attribute:subject-id", "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent", "user_id", "username"}, samlEmailAttributes...)
 )
 
+func SubIDForUserName(userName string, g *tables.Group) string {
+	return fmt.Sprintf("%s/%s", build_buddy_url.WithPath("saml/metadata").String()+"?slug="+g.URLIdentifier, userName)
+}
+
 // CookieRequestTracker tracks requests by setting a uniquely named
 // cookie for each request.
 //
