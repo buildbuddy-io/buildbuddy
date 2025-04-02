@@ -15,7 +15,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenviron"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -161,10 +160,10 @@ func TestCredentialsFromProperties_DefaultKeychain(t *testing.T) {
 	testfs.MakeExecutable(t, tmp, "bin/docker-credential-test")
 	// The default keychain reads config.json from the path specified in the
 	// DOCKER_CONFIG environment variable, if set. Point that to our directory.
-	testenviron.Set(t, "DOCKER_CONFIG", filepath.Join(tmp, ".docker"))
+	t.Setenv("DOCKER_CONFIG", filepath.Join(tmp, ".docker"))
 	// Add our directory to PATH so the default keychain can find our credential
 	// helper binary.
-	testenviron.Set(t, "PATH", filepath.Join(tmp, "bin")+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", filepath.Join(tmp, "bin")+":"+os.Getenv("PATH"))
 
 	for _, test := range []struct {
 		Name                   string
