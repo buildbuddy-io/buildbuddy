@@ -253,7 +253,8 @@ func (h *HitTrackerFactory) runWorker(ctx context.Context) {
 		case <-time.After(h.pollInterval):
 		}
 		// Keep flushing until there is nothing to flush.
-		for h.sendTrackRequest(ctx) > 0 {}
+		for h.sendTrackRequest(ctx) > 0 {
+		}
 	}
 }
 
