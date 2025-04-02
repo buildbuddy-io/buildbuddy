@@ -99,7 +99,7 @@ func setup(t *testing.T) (interfaces.Authenticator, *HitTrackerFactory, *testHit
 	conn, err := testenv.LocalGRPCConn(ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	flags.Set(t, "cache.remote_hit_tracker.max_pending_hits_per_group", 10)
+	flags.Set(t, "cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 10)
 	return authenticator, newHitTrackerClient(ctx, te, conn), hitTrackerService
 }
 
