@@ -162,10 +162,10 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 	h.mu.Lock()
 	if h.shouldFlushSynchronously() {
 		h.mu.Unlock()
-		log.Warning("hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
+		log.CtxInfof(ctx, "hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
 		hit.RequestMetadata = requestMetadata
 		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}}); err != nil {
-			log.Infof("Error sending HitTrackerService.Track RPC: %v", err)
+			log.CtxWarningf(ctx, "Error sending HitTrackerService.Track RPC: %v", err)
 		}
 		return
 	}
