@@ -40,6 +40,7 @@ go_test(
         ":oci",
         "//enterprise/server/remote_execution/platform",
         "//proto:registry_go_proto",
+        "//server/testutil/testenv",
         "//server/testutil/testenviron",
         "//server/testutil/testfs",
         "//server/testutil/testregistry",

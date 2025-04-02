@@ -213,7 +213,7 @@ func (c Credentials) Equals(o Credentials) bool {
 	return c.Username == o.Username && c.Password == o.Password
 }
 
-func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
+func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	imageRef, err := ctrname.ParseReference(imageName)
@@ -244,6 +244,29 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 	} else {
 		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 	}
+	desc, err := remote.Head(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
+	// fetch manifest from cache: registry, repository, hash
+
+	// func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, ref ctrname.Reference) ([]byte, error) {
+	raw, err := FetchManifestFromCache(ctx, acClient, bsClient, imageRef.Context().RegistryStr(), imageRef.Context().RepositoryStr(), desc.Digest)
+	if err == nil {
+		m, err := v1.ParseManifest(bytes.NewReader(raw))
+		if err != nil {
+			return nil, err
+		}
+		img := &cacheAwareImage{
+			raw:      raw,
+			manifest: m,
+		}
+		return partial.CompressedToImage(img)
+	}
+
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -322,14 +345,10 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
-func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, ref ctrname.Reference) ([]byte, error) {
-	hash, err := v1.NewHash(ref.Identifier())
-	if err != nil {
-		return nil, err
-	}
+func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, registry, repository string, hash v1.Hash) ([]byte, error) {
 	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
+		Registry:      registry,
+		Repository:    repository,
 		ResourceType:  ocipb.OCIResourceType_MANIFEST,
 		HashAlgorithm: hash.Algorithm,
 		HashHex:       hash.Hex,
@@ -361,11 +380,11 @@ func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient
 		case blobOutputFilePath:
 			blobCASDigest = outputFile.GetDigest()
 		default:
-			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s", outputFile.GetPath(), ref)
+			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s/%s:%s", outputFile.GetPath(), registry, repository, hash)
 		}
 	}
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
-		return nil, fmt.Errorf("missing blob metadata digest or blob digest for %s", ref)
+		return nil, fmt.Errorf("missing blob metadata digest or blob digest for %s/%s:%s", registry, repository, hash)
 	}
 	blobMetadataRN := digest.NewCASResourceName(
 		blobMetadataCASDigest,
@@ -392,7 +411,7 @@ func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient
 	return buf.Bytes(), nil
 }
 
-func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, ref ctrname.Reference, hash v1.Hash, contentType string, contentLength int64, upstream io.Reader) error {
+func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, registry, repository string, hash v1.Hash, contentType string, contentLength int64, upstream io.Reader) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -418,8 +437,8 @@ func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, 
 	}
 
 	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
+		Registry:      registry,
+		Repository:    repository,
 		ResourceType:  ocipb.OCIResourceType_MANIFEST,
 		HashAlgorithm: hash.Algorithm,
 		HashHex:       hash.Hex,
@@ -457,18 +476,29 @@ func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, 
 }
 
 type cacheAwareImage struct {
+	raw       []byte
+	manifest  *v1.Manifest
 	remoteImg v1.Image
 }
 
 func (i *cacheAwareImage) RawManifest() ([]byte, error) {
+	if i.raw != nil {
+		return i.raw, nil
+	}
 	return i.remoteImg.RawManifest()
 }
 
 func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
+	if i.manifest != nil {
+		return i.manifest.Config.Data, nil
+	}
 	return i.remoteImg.RawConfigFile()
 }
 
 func (i *cacheAwareImage) MediaType() (types.MediaType, error) {
+	if i.manifest != nil {
+		return i.manifest.MediaType, nil
+	}
 	return i.remoteImg.MediaType()
 }
 
