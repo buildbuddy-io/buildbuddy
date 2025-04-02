@@ -7,11 +7,18 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
 )
 
 func TestOciconv(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	ctx := context.Background()
 	root := testfs.MakeTempDir(t)
 	os.Setenv("REGISTRY_AUTH_FILE", "_null")
@@ -21,7 +28,7 @@ func TestOciconv(t *testing.T) {
 		"mirror.gcr.io/ubuntu:22.04",
 	} {
 		t.Run("image="+img, func(t *testing.T) {
-			_, err := ociconv.CreateDiskImage(ctx, root, img, oci.Credentials{})
+			_, err := ociconv.CreateDiskImage(ctx, te.GetActionCacheClient(), te.GetByteStreamClient(), root, img, oci.Credentials{})
 			require.NoError(t, err)
 		})
 	}
