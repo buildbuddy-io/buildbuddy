@@ -182,8 +182,9 @@ function getModel(props: Props): CardModel {
         // many "NO_BUILD" aborted events. We ignore those.
         props.model.invocation.command === "cquery" &&
         event.aborted.reason === build_event_stream.Aborted.AbortReason.NO_BUILD
-      )
+      ) {
         continue;
+      }
       model.errors.push({ aborted: event });
     }
   }
