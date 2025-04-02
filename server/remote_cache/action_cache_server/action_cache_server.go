@@ -192,6 +192,11 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
 		return nil, err
 	}
+
+	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
+		rsp.GetExecutionMetadata().GetUsageStats().Timeline = nil
+	}
+
 	// See if the caller specified a cached value.  If they did and it matches
 	// the full response that we just computed, then we won't bother sending the
 	// data, and instead just tell the caller that their cache is correct.
@@ -209,10 +214,6 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		} else {
 			log.Debugf("jdhollen | MISS in ac server (app): req: %v, app-side digest: %v", req, d)
 		}
-	}
-
-	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
-		rsp.GetExecutionMetadata().GetUsageStats().Timeline = nil
 	}
 
 	isCacheHit = true
