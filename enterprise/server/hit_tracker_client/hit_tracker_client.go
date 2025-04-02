@@ -12,8 +12,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
@@ -31,7 +33,6 @@ const (
 
 var (
 	remoteHitTrackerTarget       = flag.String("cache.remote_hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracking service.")
-	remoteHitTrackerTimeout      = flag.Duration("cache.remote_hit_tracker.rpc_timeout", 5*time.Second, "The timout to use for gRPC requests to the remote cache-hit-tracking service.")
 	remoteHitTrackerPollInterval = flag.Duration("cache.remote_hit_tracker.update_interval", 250*time.Millisecond, "The time interval to wait between sending remote cache-hit-tracking RPCs.")
 	maxPendingHitsPerGroup       = flag.Int("cache.remote_hit_tracker.max_pending_hits_per_group", 100_000, "The maximum number of pending cache-hit updates to store in memory for a given group.")
 	remoteHitTrackerWorkers      = flag.Int("cache.remote_hit_tracker.workers", 1, "The number of workers to use to send asynchronous remote cache-hit-tracking RPCs.")
@@ -58,7 +59,6 @@ func newHitTrackerClient(env *real_environment.RealEnv, conn grpc.ClientConnInte
 		stopped:                atomic.Bool{},
 		maxPendingHitsPerGroup: *maxPendingHitsPerGroup,
 		hitsByGroup:            map[groupID]*cacheHits{},
-		rpcTimeout:             *remoteHitTrackerTimeout,
 		client:                 hitpb.NewHitTrackerServiceClient(conn),
 	}
 	for i := 0; i < *remoteHitTrackerWorkers; i++ {
@@ -85,8 +85,7 @@ type HitTrackerFactory struct {
 	maxPendingHitsPerGroup int
 	hitsByGroup            map[groupID]*cacheHits
 
-	rpcTimeout time.Duration
-	client     hitpb.HitTrackerServiceClient
+	client hitpb.HitTrackerServiceClient
 }
 
 func (h *HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
@@ -102,8 +101,7 @@ func (h *HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadat
 	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata}
 }
 
-type NoOpHitTracker struct {
-}
+type NoOpHitTracker struct{}
 
 func (h *NoOpHitTracker) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) {
 }
@@ -143,20 +141,23 @@ func (h *HitTrackerClient) SetExecutedActionMetadata(md *repb.ExecutedActionMeta
 	alert.UnexpectedEvent("Unexpected call to SetExecutedActionMetadata")
 }
 
-// Misses hit the backing cache, so no need to report on hit-tracking.
+// Local cache misses hit the backing cache, which will take care of
+// hit-tracking for this request.
 func (h *HitTrackerClient) TrackMiss(d *repb.Digest) error {
 	return nil
 }
 
 func (h *HitTrackerFactory) groupID(ctx context.Context) groupID {
-	user, err := h.authenticator.AuthenticatedUser(ctx)
+	claims, err := claims.ClaimsFromContext(ctx)
 	if err != nil {
 		return interfaces.AuthAnonymousUser
 	}
-	return groupID(user.GetGroupID())
+	return groupID(claims.GetGroupID())
 }
 
 func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.RequestMetadata, hit *hitpb.CacheHit) {
+	requestMetadata = proto.Clone(requestMetadata).(*repb.RequestMetadata)
+
 	if h.stopped.Load() {
 		log.Warning("hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
 		hit.RequestMetadata = requestMetadata
@@ -192,8 +193,10 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 			metrics.EnqueueUpdateOutcome: "enqueued",
 		}).Add(float64(1))
 
+	// Store the latest auth headers for this group for use in the async RPC.
 	authHeaders := authutil.GetAuthHeaders(ctx, h.authenticator)
 	groupHits.authHeaders = authHeaders
+
 	groupHits.hits = append(groupHits.hits, hit)
 }
 
@@ -253,6 +256,9 @@ func (h *HitTrackerFactory) runWorker() {
 	}
 }
 
+// Sends one round of HitTrackerService.Track requests from the queue. This
+// funciton will send one RPC per group that has any pending hit-updates, and
+// return the number of hit-updates sent.
 func (h *HitTrackerFactory) sendTrackRequests(ctx context.Context) int {
 	i := 0
 	groups := make([]groupID, len(h.hitsByGroup))
