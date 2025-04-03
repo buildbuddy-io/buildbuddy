@@ -521,9 +521,6 @@ type UserDB interface {
 	GetUser(ctx context.Context) (*tables.User, error)
 	GetUserByID(ctx context.Context, id string) (*tables.User, error)
 	GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error)
-	// GetUserByEmail lookups a user with the given e-mail and subID within the
-	// currently authenticated group.
-	GetUserByEmail(ctx context.Context, subID string, email string) (*tables.User, error)
 	UpdateUser(ctx context.Context, u *tables.User) error
 	// DeleteUser deletes a user and associated data.
 	DeleteUser(ctx context.Context, id string) error

@@ -859,40 +859,6 @@ func usersFromUserGroupJoin(ugj []*userGroupJoin) ([]*tables.User, error) {
 	return users, nil
 }
 
-func (d *UserDB) GetUserByEmail(ctx context.Context, subID string, email string) (*tables.User, error) {
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rq := d.h.NewQuery(ctx, "userdb_get_user_by_email").Raw(`
-		SELECT u.*, ug.*, g.*
-		FROM "Users" u 
-			LEFT JOIN "UserGroups" AS ug
-				ON u.user_id = ug.user_user_id
-			LEFT JOIN "Groups" AS g
-				ON ug.group_group_id = g.group_id
-		WHERE u.email = ? AND u.sub_id = ? AND ug.group_group_id = ?
-		AND (ug.membership_status = ? OR ug.user_user_id IS NULL)
-		ORDER BY u.user_id, g.group_id ASC
-	`, email, subID, u.GetGroupID(), int32(grpb.GroupMembershipStatus_MEMBER))
-	ugj, err := db.ScanAll(rq, &userGroupJoin{})
-	if err != nil {
-		return nil, err
-	}
-	users, err := usersFromUserGroupJoin(ugj)
-	if err != nil {
-		return nil, err
-	}
-	switch len(users) {
-	case 0:
-		return nil, status.NotFoundErrorf("no users found with email %q", email)
-	case 1:
-		return users[0], nil
-	default:
-		return nil, status.FailedPreconditionErrorf("multiple users found for email %q", email)
-	}
-}
-
 func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {

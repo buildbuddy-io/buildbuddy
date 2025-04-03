@@ -280,18 +280,25 @@ func (s *SCIMServer) getFilteredUsers(ctx context.Context, g *tables.Group, filt
 	if err != nil {
 		return nil, err
 	}
-	u, err := s.env.GetUserDB().GetUserByEmail(ctx, saml.SubIDForEmail(email, g), email)
+	u, err := s.env.GetAuthDB().LookupUserFromSubID(ctx, saml.SubIDForEmail(email, g))
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	ur, err := newUserResource(u, g)
-	if err != nil {
-		return nil, err
+	// Only return the user as a match if it's a member of the SCIM-managed
+	// group.
+	for _, ug := range u.Groups {
+		if ug.GroupID == g.GroupID {
+			ur, err := newUserResource(u, g)
+			if err != nil {
+				return nil, err
+			}
+			return []*UserResource{ur}, nil
+		}
 	}
-	return []*UserResource{ur}, nil
+	return nil, nil
 }
 
 func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
