@@ -105,21 +105,16 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 			// Note: this is safe even though we also defer close() above, since we
 			// wrap decompressor.Close with sync.OnceValue.
 			if err := close(); err != nil {
-				log.Infof("getBlob close() error: %s", err)
 				return err
 			}
-			log.Info("getBlob EOF")
 			break
 		}
 		if err != nil {
-			log.Infof("getBlob RecvWithTimeoutCause error: %s", err)
 			return err
 		}
 		if _, err := w.Write(rsp.Data); err != nil {
-			log.Infof("getBlob Write error: %s", err)
 			return err
 		}
-		log.Infof("getBlob wrote %d bytes", len(rsp.Data))
 	}
 	computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
 	if computedDigest != r.GetDigest().GetHash() {
@@ -1132,7 +1127,6 @@ func (w *casWriteCloser) Write(p []byte) (n int, err error) {
 	defer w.mu.Unlock()
 
 	if len(p) == 0 {
-		log.Info("casWriteCloser Write 0")
 		return 0, nil
 	}
 
@@ -1145,17 +1139,14 @@ func (w *casWriteCloser) Write(p []byte) (n int, err error) {
 
 	err = w.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 	if err != nil && err != io.EOF {
-		log.Infof("casWriteCloser Write SendWithTimeoutCause error: %s", err)
 		return 0, err
 	}
 
 	w.bytesUploaded += int64(len(p))
-	log.Infof("casWriteCloser Write p %d bytesUploaded %d", len(p), w.bytesUploaded)
 	return len(p), nil
 }
 
 func (w *casWriteCloser) Close() error {
-	log.Info("casWriteCloser Close")
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -1169,13 +1160,11 @@ func (w *casWriteCloser) Close() error {
 
 	err := w.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending final Write request"))
 	if err != nil && err != io.EOF {
-		log.Infof("casWriteCloser Close SendWithTimeoutCause error: %s", err)
 		return err
 	}
 
 	rsp, err := w.stream.CloseAndRecv()
 	if err != nil {
-		log.Infof("casWriteCloser Close CloseAndRecv error: %s", err)
 		return err
 	}
 
@@ -1186,7 +1175,6 @@ func (w *casWriteCloser) Close() error {
 		if remoteSize != w.resource.GetDigest().GetSizeBytes() {
 			err := status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)",
 				remoteSize, w.resource.GetDigest().GetSizeBytes())
-			log.Infof("casWriteCloser Close GetSizeBytes error: %s", err)
 			return err
 		}
 	} else {
@@ -1195,11 +1183,9 @@ func (w *casWriteCloser) Close() error {
 		if remoteSize != w.bytesUploaded && remoteSize != -1 {
 			err := status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)",
 				remoteSize, w.bytesUploaded)
-			log.Infof("casWriteCloser Close bytesUploaded error: %s", err)
 			return err
 		}
 	}
 
-	log.Infof("casWriteCloser Close %d bytesUploaded OK", w.bytesUploaded)
 	return nil
 }
