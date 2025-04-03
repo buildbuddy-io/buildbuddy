@@ -427,7 +427,7 @@ func (s *ExecutionServer) recordExecution(
 			} else {
 				log.CtxInfof(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
 			}
-		} else {
+		} else if s.env.GetOLAPDBHandle() != nil {
 			err = s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, []*repb.StoredExecution{executionProto})
 			if err != nil {
 				log.CtxErrorf(ctx, "failed to flush execution %q for invocation %q to clickhouse: %s", executionID, link.GetInvocationId(), err)
