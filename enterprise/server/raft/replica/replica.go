@@ -242,7 +242,6 @@ func (sm *Replica) setRangeLease(val []byte) error {
 	sm.leaseMu.Lock()
 	sm.rangeLease = lease
 	sm.leaseMu.Unlock()
-	sm.log.Infof("set range lease to %v", lease)
 	return nil
 }
 
