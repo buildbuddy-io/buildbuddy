@@ -269,6 +269,7 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 		if err != nil {
 			return nil, err
 		}
+		log.Infof("Resolve cacheAwareImage %d raw bytes, m.Config %v", len(raw), m.Config)
 		img := &cacheAwareImage{
 			ref:      cref,
 			acc:      acClient,
@@ -320,6 +321,7 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
 		}
 	}
+	log.Infof("Resolve cacheAwareImage remoteImg %v", remoteImg)
 	img := &cacheAwareImage{
 		ref:       cref,
 		acc:       acClient,
@@ -380,6 +382,72 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 		}
 	}
 	return t.inner.RoundTrip(in)
+}
+
+func FetchConfigFromCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, registry, repository string, hash v1.Hash) ([]byte, error) {
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      registry,
+		Repository:    repository,
+		ResourceType:  ocipb.OCIResourceType_MANIFEST,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return nil, err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		actionResultInstanceName,
+		repb.DigestFunction_SHA256,
+	)
+	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
+	if err != nil {
+		return nil, err
+	}
+
+	var blobMetadataCASDigest *repb.Digest
+	var blobCASDigest *repb.Digest
+	for _, outputFile := range ar.GetOutputFiles() {
+		switch outputFile.GetPath() {
+		case blobMetadataOutputFilePath:
+			blobMetadataCASDigest = outputFile.GetDigest()
+		case blobOutputFilePath:
+			blobCASDigest = outputFile.GetDigest()
+		default:
+			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s/%s:%s", outputFile.GetPath(), registry, repository, hash)
+		}
+	}
+	if blobMetadataCASDigest == nil || blobCASDigest == nil {
+		return nil, fmt.Errorf("missing blob metadata digest or blob digest for %s/%s:%s", registry, repository, hash)
+	}
+	blobMetadataRN := digest.NewCASResourceName(
+		blobMetadataCASDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+	blobMetadata := &ocipb.OCIBlobMetadata{}
+	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
+	if err != nil {
+		return nil, err
+	}
+
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	var buf bytes.Buffer
+	err = cachetools.GetBlob(ctx, bsClient, blobRN, &buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, registry, repository string, hash v1.Hash) ([]byte, error) {
@@ -805,16 +873,21 @@ type cacheAwareImage struct {
 
 func (i *cacheAwareImage) RawManifest() ([]byte, error) {
 	if i.raw != nil {
+		log.Info("cacheAwareImage RawManifest i.raw OK")
 		return i.raw, nil
 	}
+	log.Info("cacheAwareImage RawManifest remoteImg")
 	return i.remoteImg.RawManifest()
 }
 
 func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 	if i.manifest != nil {
+		log.Infof("cacheAwareImage RawConfigFile Config.Digest %s", i.manifest.Config.Digest)
 		return i.manifest.Config.Data, nil
 	}
-	return i.remoteImg.RawConfigFile()
+	b, err := i.remoteImg.RawConfigFile()
+	log.Infof("cacheAwareImage RawConfigFile remoteImg bytes %d err %q", len(b), err)
+	return b, err
 }
 
 func (i *cacheAwareImage) MediaType() (types.MediaType, error) {
