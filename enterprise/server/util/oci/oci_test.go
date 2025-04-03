@@ -496,13 +496,13 @@ func TestResolve_CachesManifest(t *testing.T) {
 		for _, layer := range layers {
 			hash, err := layer.Digest()
 			require.NoError(t, err)
-			_, ok := hashToLayer[hash]
+			ogbytes, ok := hashToLayer[hash]
 			require.True(t, ok)
-			// rc, err := layer.Compressed()
-			// require.NoError(t, err)
-			// b, err := io.ReadAll(rc)
-			// require.NoError(t, err)
-			// assert.Equal(t, ogbytes, b)
+			rc, err := layer.Compressed()
+			require.NoError(t, err)
+			b, err := io.ReadAll(rc)
+			require.NoError(t, err)
+			assert.Equal(t, ogbytes, b)
 		}
 	}
 

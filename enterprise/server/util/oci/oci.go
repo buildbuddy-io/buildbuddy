@@ -275,6 +275,7 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 			bsc:      bsClient,
 			raw:      raw,
 			manifest: m,
+			options:  remoteOpts,
 		}
 		return partial.CompressedToImage(img)
 	} else if !status.IsNotFoundError(err) {
@@ -325,6 +326,7 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 		bsc:       bsClient,
 		raw:       raw,
 		remoteImg: remoteImg,
+		options:   remoteOpts,
 	}
 	return partial.CompressedToImage(img)
 }
@@ -697,6 +699,7 @@ type cacheAwareImage struct {
 	raw       []byte
 	manifest  *v1.Manifest
 	remoteImg v1.Image
+	options   []remote.Option
 }
 
 func (i *cacheAwareImage) RawManifest() ([]byte, error) {
@@ -725,17 +728,28 @@ func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, 
 	if i.manifest != nil {
 		for _, d := range i.manifest.Layers {
 			if d.Digest == hash {
+				rlref, err := ctrname.NewDigest(i.ref.registry + "/" + i.ref.repository + "@" + hash.String())
+				if err != nil {
+					return nil, fmt.Errorf("could not construct ref for layer %s", d.Digest)
+				}
+				log.Infof("LayerByDigest rlref %s", rlref)
+				rl, err := remote.Layer(rlref, i.options...)
+				if err != nil {
+					return nil, fmt.Errorf("could not create remote layer for %s", rlref)
+				}
 				l := &cacheAwareLayer{
-					ref:        i.ref,
-					acc:        i.acc,
-					bsc:        i.bsc,
-					descriptor: &d,
+					ref:         i.ref,
+					acc:         i.acc,
+					bsc:         i.bsc,
+					descriptor:  &d,
+					remoteLayer: rl,
 				}
 				return l, nil
 			}
 		}
 		return nil, fmt.Errorf("could not find layer %s", hash)
 	}
+
 	rl, err := i.remoteImg.LayerByDigest(hash)
 	if err != nil {
 		return nil, err
@@ -767,70 +781,12 @@ func (l *cacheAwareLayer) Digest() (v1.Hash, error) {
 	return l.remoteLayer.Digest()
 }
 
-type teeReaderCloser struct {
-	r io.ReadCloser
-	w io.Writer
-}
-
-func (t *teeReaderCloser) Close() error {
-	log.Infof("teeReaderCloser Close")
-	return t.r.Close()
-}
-
-func (t *teeReaderCloser) Read(p []byte) (int, error) {
-	log.Infof("teeReaderCloser Read %d", len(p))
-	n, err := t.r.Read(p)
-	if n > 0 {
-		if n, err := t.w.Write(p[:n]); err != nil {
-			log.Infof("teeReaderCloser Read %d Write error: %s", n, err)
-			return n, err
-		}
-	}
-	log.Infof("teeReaderCloser Read return %d, %s", n, err)
-	return n, err
-}
-
-func SplitReader(originalReader io.ReadCloser) (readCloser io.ReadCloser, cacheReader io.Reader, err error) {
-	// Create a pipe for the cache reader
-	pr, pw := io.Pipe()
-
-	// Create a TeeReader that duplicates everything read from originalReader to pw
-	teeReader := io.TeeReader(originalReader, pw)
-
-	// Create a read closer for client consumption that closes both the original
-	// reader and the pipe when it's closed
-	readCloser = &splitReadCloser{
-		Reader: teeReader,
-		closer: func() error {
-			originalErr := originalReader.Close()
-			pipeErr := pw.Close()
-			if originalErr != nil {
-				return originalErr
-			}
-			return pipeErr
-		},
-	}
-
-	// Return the readCloser and the pipe reader for caching
-	return readCloser, pr, nil
-}
-
-// Custom implementation of ReadCloser for our split reader
-type splitReadCloser struct {
-	io.Reader
-	closer func() error
-}
-
-func (rc *splitReadCloser) Close() error {
-	return rc.closer()
-}
-
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	log.Infof("Compressed %s/%s:%s", l.ref.registry, l.ref.repository, l.ref.hash)
 	ctx := context.Background()
 	if l.descriptor != nil {
 		d, err := FetchLayerCASDigest(ctx, l.acc, l.ref.registry, l.ref.repository, l.ref.hash)
-		if err != nil {
+		if err != nil && !status.IsNotFoundError(err) {
 			log.CtxErrorf(ctx, "error fetching CAS digest for %s/%s:%s: %s", l.ref.registry, l.ref.repository, l.ref.hash, err)
 		}
 		if err == nil && d != nil {
@@ -846,44 +802,10 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 			}()
 			return r, nil
 		}
+		// TODO: fetch remote layer for descriptor
 	}
 
-	upstream, err := l.remoteLayer.Compressed()
-	if err != nil {
-		return nil, err
-	}
-	rc, r, err := SplitReader(upstream)
-	if err != nil {
-		return nil, err
-	}
-	go func() {
-		mediaType, err := l.remoteLayer.MediaType()
-		if err != nil {
-			log.Errorf("could not fetch media type for %s/%s:%s: %s", l.ref.registry, l.ref.repository, l.ref.hash, err)
-			return
-		}
-		size, err := l.remoteLayer.Size()
-		if err != nil {
-			log.Errorf("could not fetch size for %s/%s:%s: %s", l.ref.registry, l.ref.repository, l.ref.hash, err)
-			return
-		}
-		err = WriteLayerToCache(
-			ctx,
-			l.acc,
-			l.bsc,
-			l.ref.registry,
-			l.ref.repository,
-			l.ref.hash,
-			string(mediaType),
-			size,
-			r,
-		)
-		if err != nil {
-			log.Errorf("could not write layer %s/%s:%s to cache: %s", l.ref.registry, l.ref.repository, l.ref.hash, err)
-			return
-		}
-	}()
-	return rc, nil
+	return l.remoteLayer.Compressed()
 }
 
 func (l *cacheAwareLayer) Size() (int64, error) {
