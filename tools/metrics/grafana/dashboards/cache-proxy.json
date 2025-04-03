@@ -2658,7 +2658,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum by (le, group_id, status) (rate(buildbuddy_proxy_remote_hit_tracker_requests_bucket{region=\"${region}\", job=\"cache-proxy\"})[$window]))",
+              "expr": "histogram_quantile(${quantile}, sum by (le, status) (rate(buildbuddy_proxy_remote_hit_tracker_requests_bucket{region=\"${region}\", job=\"cache-proxy\"})[$window]))",
               "hide": false,
               "instant": false,
               "legendFormat": "{{status}}",
