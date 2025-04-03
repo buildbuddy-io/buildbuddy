@@ -224,6 +224,8 @@ type Execution struct {
 	RequestedTimeoutUsec int64
 	EffectiveTimeoutUsec int64
 
+	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
+
 	// Long string fields
 	OutputPath    string
 	StatusMessage string
@@ -302,6 +304,7 @@ func (e *Execution) AdditionalFields() []string {
 		"Region",
 		"SelfHosted",
 		"ExecutorHostname",
+		"Experiments",
 	}
 }
 

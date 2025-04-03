@@ -31,6 +31,7 @@ jobs:
         run: |
           cp buildbuddy/deps.bzl buildbuddy-internal/deps.bzl
           cp buildbuddy/.bazelversion buildbuddy-internal/.bazelversion
+          cp buildbuddy/shared.bazelrc buildbuddy-internal/shared.bazelrc
 
       - name: Update SHA
         run: |
@@ -50,6 +51,7 @@ jobs:
           git add WORKSPACE
           git add deps.bzl
           git add .bazelversion
+          git add shared.bazelrc
           cat <<EOF > message.txt
           🔄 $COMMIT_MESSAGE
           Update buildbuddy-io/buildbuddy commit SHA

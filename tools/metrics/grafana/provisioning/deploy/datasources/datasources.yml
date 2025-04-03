@@ -10,3 +10,12 @@ datasources:
     url: http://victoria-metrics-cluster-global-vmselect.monitor-%{ENV}:8481/select/0/prometheus
     version: 1
     editable: false
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    uid: grafana
+    jsonData:
+      port: 9000
+      host: clickhouse-repl-%{ENV}.clickhouse-operator-%{ENV}.svc.cluster.local
+      username: buildbuddy_%{ENV}_readonly
+    secureJsonData:
+      password: ${CLICKHOUSE_PASSWORD}

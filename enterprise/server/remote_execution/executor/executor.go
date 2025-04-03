@@ -211,6 +211,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		ExecuteRequest:     task.GetExecuteRequest(),
 		SchedulingMetadata: st.GetSchedulingMetadata(),
 		ExecutorHostname:   s.hostname,
+		Experiments:        task.GetExperiments(),
 	}
 	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest.GetDigest())
 	stateChangeFn := operation.StateChangeFunc(func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
