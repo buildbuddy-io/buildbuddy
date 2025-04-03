@@ -68,7 +68,7 @@ func run() error {
 		// Start docker-compose
 		os.Setenv("DASHBOARDS_DIR", filepath.Join(workspaceRoot, dashboardsDir))
 		os.Setenv("GF_DATASOURCE_URL", strings.Replace(datasourceURL(), "localhost", "host.docker.internal", 1))
-		args := []string{"--file", "docker-compose.grafana.yml"}
+		args := []string{"compose", "--file", "docker-compose.grafana.yml"}
 		if !*kube {
 			args = append(args, "--file", "docker-compose.redis-exporter.yml")
 			args = append(args, "--file", "docker-compose.victoria-metrics.yml")
@@ -76,7 +76,7 @@ func run() error {
 		args = append(args, "up")
 		// Note: CommandContext kills with SIGKILL - we don't want that since it
 		// doesn't give docker a chance to clean up.
-		cmd := exec.Command("docker-compose", args...)
+		cmd := exec.Command("docker", args...)
 		cmd.Dir = dockerComposeDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
