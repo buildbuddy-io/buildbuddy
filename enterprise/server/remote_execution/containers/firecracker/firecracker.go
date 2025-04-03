@@ -1538,7 +1538,7 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		// 1. The cgroup FS root: "/sys/fs/cgroup"
 		// 2. This ParentCgroup setting
 		// 3. The ID setting
-		ParentCgroup: fcclient.String(c.cgroupParent),
+		ParentCgroup: c.cgroupParent,
 	}, nil
 }
 
