@@ -454,6 +454,98 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	require.Equal(t, 1, len(rd.GetReplicas()))
 }
 
+func TestAddRangeBack(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	s4 := sf.NewStore(t)
+	ctx := context.Background()
+	stores := []*testutil.TestingStore{s1, s2, s3, s4}
+	sf.StartShard(t, ctx, stores...)
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+
+	// RemoveReplica can't remove the replica on its own machine.
+	rd := s.GetRange(2)
+	replicaIdToRemove := uint64(0)
+	nhid := ""
+	var testStore *testutil.TestingStore
+	for _, repl := range rd.GetReplicas() {
+		if repl.GetNhid() != s.NHID() {
+			replicaIdToRemove = repl.GetReplicaId()
+			nhid = repl.GetNhid()
+			break
+		}
+	}
+	for _, store := range stores {
+		if store.NHID() == nhid {
+			testStore = store
+			break
+		}
+	}
+	require.NotNil(t, testStore)
+	log.Infof("remove replica c%dn%d on nodehost %s", rd.GetRangeId(), replicaIdToRemove, testStore.NHID())
+
+	rsp, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+		Range:     rd,
+		ReplicaId: replicaIdToRemove,
+	})
+	require.NoError(t, err)
+	_, err = testStore.RemoveData(ctx, &rfpb.RemoveDataRequest{
+		ReplicaId: replicaIdToRemove,
+		Range:     rsp.GetRange(),
+	})
+	require.NoError(t, err)
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	replicas := getMembership(t, s, ctx, 2)
+	require.Equal(t, 3, len(replicas))
+
+	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+		Range: s.GetRange(2),
+		Node: &rfpb.NodeDescriptor{
+			Nhid:        testStore.NHID(),
+			GrpcAddress: testStore.GRPCAddress,
+			RaftAddress: testStore.RaftAddress,
+		},
+	})
+	require.NoError(t, err)
+
+	r1, err := s.GetReplica(2)
+	require.NoError(t, err)
+
+	lastAppliedIndex, err := r1.LastAppliedIndex()
+	require.NoError(t, err)
+
+	r2 := getReplica(t, testStore, 2)
+	require.NotEqual(t, replicaIdToRemove, r2.ReplicaID())
+
+	// Wait for raft replication to finish bringing the new node up to date.
+	waitForReplicaToCatchUp(t, ctx, r2, lastAppliedIndex)
+
+	// Transfer Leadership to the new node
+	_, err = s.TransferLeadership(ctx, &rfpb.TransferLeadershipRequest{
+		RangeId:         2,
+		TargetReplicaId: r2.ReplicaID(),
+	})
+	require.NoError(t, err)
+
+	start := time.Now()
+	for {
+		if testStore.HaveLease(ctx, 2) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+		if time.Since(start) > 60*time.Second {
+			require.Failf(t, "failed to get lease", "store %s doesn't get lease for range 2", testStore.NHID())
+		}
+	}
+}
+
 func writeRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, groupID string, sizeBytes int64) *sgpb.FileRecord {
 	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
 	fr := &sgpb.FileRecord{
