@@ -886,17 +886,22 @@ type teeReadCloser struct {
 	wc io.WriteCloser
 }
 
-func (t *teeReadCloser) Read(p []byte) (n int, err error) {
-	n, err = t.rc.Read(p)
+func (t *teeReadCloser) Read(p []byte) (int, error) {
+	n, err := t.rc.Read(p)
 	log.Infof("teeReadCloser rc.Read n %d, err %q", n, err)
 	if n > 0 {
-		if n, err := t.wc.Write(p[:n]); err != nil {
+		wn, werr := t.wc.Write(p[:n])
+		if werr != nil && werr == io.EOF {
+			log.Infof("teeReadCloser wc.Write EOF n %d, wn %d", n, wn)
+			return n, io.EOF
+		}
+		if werr != nil {
 			log.Infof("teeReadCloser wc.Write error n %d, err %q", n, err)
 			return n, err
 		}
 	}
 	log.Infof("teeReadCloser return n %d, err %q", n, err)
-	return
+	return n, err
 }
 
 func (t *teeReadCloser) Close() error {

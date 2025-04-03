@@ -254,3 +254,35 @@ func (p *ZstdDecoderPool) Put(ref *DecoderRef) error {
 	p.pool.Put(ref)
 	return nil
 }
+
+type zstdCompressor struct {
+	writer io.Writer
+	enc    *zstd.Encoder
+}
+
+// NewZstdCompressingWriter returns a WriteCloser that accepts uncompressed bytes,
+// compresses them using zstd compression at the default level, and writes the
+// compressed bytes to the given writer.
+func NewZstdCompressingWriter(writer io.Writer) (io.WriteCloser, error) {
+	enc, err := zstd.NewWriter(writer)
+	if err != nil {
+		return nil, err
+	}
+
+	return &zstdCompressor{
+		writer: writer,
+		enc:    enc,
+	}, nil
+}
+
+func (c *zstdCompressor) Write(p []byte) (int, error) {
+	n, err := c.enc.Write(p)
+	metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(n))
+	log.Infof("zstdCompressor Write p %d, n %d, err %q", p, n, err)
+	return n, err
+}
+
+func (c *zstdCompressor) Close() error {
+	log.Info("zstdCompressor Close")
+	return c.enc.Close()
+}

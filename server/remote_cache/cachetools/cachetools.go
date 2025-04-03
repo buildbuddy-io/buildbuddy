@@ -1090,14 +1090,25 @@ func NewUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r
 
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
 
-	return &casWriteCloser{
+	cwc := &casWriteCloser{
 		ctx:           ctx,
 		stream:        stream,
 		sender:        sender,
 		resource:      r,
 		uploadString:  r.NewUploadString(),
 		bytesUploaded: 0,
-	}, nil
+	}
+
+	// If zstd compression is enabled, wrap the writer with a compressing writer
+	if r.GetCompressor() == repb.Compressor_ZSTD {
+		compressingWriter, err := compression.NewZstdCompressingWriter(cwc)
+		if err != nil {
+			return nil, status.InternalErrorf("Failed to create zstd compressing writer: %s", err)
+		}
+		return compressingWriter, nil
+	}
+
+	return cwc, nil
 }
 
 // casWriteCloser implements io.WriteCloser for streaming to CAS
@@ -1129,7 +1140,7 @@ func (w *casWriteCloser) Write(p []byte) (n int, err error) {
 	}
 
 	err = w.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
-	if err != nil {
+	if err != nil && err != io.EOF {
 		log.Infof("casWriteCloser Write error: %s", err)
 		return 0, err
 	}
