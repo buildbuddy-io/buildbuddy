@@ -45,7 +45,7 @@ func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID 
 	return ctx
 }
 
-func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) (string, string) {
+func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) (string, *tables.Group) {
 	u, err := env.GetUserDB().GetUser(ctx)
 	require.NoError(t, err)
 	g := u.Groups[0].Group
@@ -69,7 +69,7 @@ func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) (strin
 	_, err = env.GetUserDB().UpdateGroup(ctx, &gr)
 	require.NoError(t, err)
 
-	return apiKey.Value, gr.GroupID
+	return apiKey.Value, &gr
 }
 
 type testClient struct {
@@ -146,7 +146,7 @@ func TestGetUsers(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey := prepareGroup(t, userCtx, env)
+	apiKey, gr := prepareGroup(t, userCtx, env)
 	updateUserSubID(t, userCtx, udb, "US100", gr)
 
 	// Add another user to the group with the same e-mail but non-matching
@@ -320,7 +320,7 @@ func TestCreateUser(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey := prepareGroup(t, userCtx, env)
+	apiKey, group := prepareGroup(t, userCtx, env)
 
 	ss := scim.NewSCIMServer(env)
 	mux := http.NewServeMux()
@@ -431,7 +431,7 @@ func TestCreateUser(t *testing.T) {
 	// Remove a user manually from the SCIM-managed group and try creating the
 	// user through the SCIM API. The user should be added to the target group.
 	{
-		err = udb.UpdateGroupUsers(userCtx, groupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		err = udb.UpdateGroupUsers(userCtx, group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
 			UserId:           &uidpb.UserId{Id: user501ID},
 			MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
 		}})

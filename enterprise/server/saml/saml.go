@@ -58,8 +58,12 @@ var (
 	samlSubjectAttributes   = append([]string{"urn:oasis:names:tc:SAML:attribute:subject-id", "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent", "user_id", "username"}, samlEmailAttributes...)
 )
 
+func SubIDPrefixForGroup(slug string) string {
+	return build_buddy_url.WithPath("saml/metadata").String() + "?slug=" + slug + "/"
+}
+
 func SubIDForUserName(userName string, g *tables.Group) string {
-	return fmt.Sprintf("%s/%s", build_buddy_url.WithPath("saml/metadata").String()+"?slug="+g.URLIdentifier, userName)
+	return SubIDPrefixForGroup(g.URLIdentifier) + userName
 }
 
 // CookieRequestTracker tracks requests by setting a uniquely named
@@ -345,14 +349,6 @@ func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 
 	sp.ServeHTTP(w, r)
 	return nil
-}
-
-func SubIDPrefixForGroup(slug string) string {
-	return build_buddy_url.WithPath("saml/metadata").String() + "?slug=" + slug + "/"
-}
-
-func SubIDForUserName(userName string, g *tables.Group) string {
-	return SubIDPrefixForGroup(g.URLIdentifier) + userName
 }
 
 func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp.Middleware, error) {
