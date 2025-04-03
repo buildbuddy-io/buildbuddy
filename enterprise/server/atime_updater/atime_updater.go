@@ -30,7 +30,6 @@ var (
 	atimeUpdaterMaxUpdatesPerGroup  = flag.Int("cache_proxy.remote_atime_max_updates_per_group", 50, "The maximum number of FindMissingBlobRequests to accumulate per group for updating blob access times in the remote cache.")
 	atimeUpdaterMaxDigestsPerGroup  = flag.Int("cache_proxy.remote_atime_max_digests_per_group", 200*1000, "The maximum number of blob digests to enqueue atime updates for, per group, across all instance names / hash fucntions.")
 	atimeUpdaterBatchUpdateInterval = flag.Duration("cache_proxy.remote_atime_update_interval", 10*time.Second, "The time interval to wait between sending access time updates to the remote cache.")
-	atimeUpdaterRpcTimeout          = flag.Duration("cache_proxy.remote_atime_rpc_timeout", 2*time.Second, "RPC timeout to use when updating blob access times in the remote cache.")
 )
 
 // A pending batch of atime updates (basically a FindMissingBlobsRequest).
@@ -79,7 +78,6 @@ type atimeUpdater struct {
 	maxDigestsPerUpdate int
 	maxUpdatesPerGroup  int
 	maxDigestsPerGroup  int
-	rpcTimeout          time.Duration
 
 	remote repb.ContentAddressableStorageClient
 }
@@ -101,7 +99,6 @@ func Register(env *real_environment.RealEnv) error {
 		maxDigestsPerUpdate: *atimeUpdaterMaxDigestsPerUpdate,
 		maxUpdatesPerGroup:  *atimeUpdaterMaxUpdatesPerGroup,
 		maxDigestsPerGroup:  *atimeUpdaterMaxDigestsPerGroup,
-		rpcTimeout:          *atimeUpdaterRpcTimeout,
 		remote:              remote,
 	}
 	// TODO(iain): make an effort to drain queue on server shutdown.
@@ -277,9 +274,7 @@ func (u *atimeUpdater) sendUpdates(ctx context.Context) int {
 
 	for groupID, update := range updatesToSend {
 		updatesSent++
-		ctx, cancel := context.WithTimeout(ctx, u.rpcTimeout)
 		u.update(ctx, groupID, authHeaders[groupID], update)
-		cancel()
 	}
 	return updatesSent
 }
