@@ -2360,7 +2360,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.executorConfig.CacheRoot, c.containerImage, creds)
+	_, err := ociconv.CreateDiskImage(ctx, c.env.GetActionCacheClient(), c.env.GetByteStreamClient(), c.executorConfig.CacheRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}
