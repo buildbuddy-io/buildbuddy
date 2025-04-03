@@ -1,7 +1,7 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 # gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
@@ -142,8 +142,9 @@ pkg_tar(
     srcs = [
         ":buildbuddy",
     ],
+    include_runfiles = True,
     remap_paths = {
-        "/buildbuddy": "/app/server/cmd/buildbuddy/buildbuddy",
+        "/buildbuddy": "/app/enterprise/server/cmd/server/buildbuddy",
     },
     symlinks = {
         "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/buildbuddy/enterprise/config/buildbuddy.release.yaml",
@@ -154,8 +155,15 @@ pkg_tar(
 oci_image(
     name = "oci_image",
     base = "@buildbuddy_go_oci_image_base",
-    entrypoint = ["/app/server/cmd/buildbuddy/buildbuddy"],
+    entrypoint = ["/app/enterprise/server/cmd/server/buildbuddy"],
     target_compatible_with = ["@platforms//os:linux"],
     tars = [":tar"],
     visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "oci_load",
+    image = ":oci_image",
+    repo_tags = ["enterprise/server:oci_image"],
+    tags = ["manual"],
 )
