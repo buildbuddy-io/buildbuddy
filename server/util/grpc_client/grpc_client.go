@@ -36,7 +36,7 @@ const (
 
 var (
 	poolSize          = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
-	reconnectInterval = flag.Duration("grpc_client.transient_failure_reconnect_interval", 30*time.Second, "TODO(iain)")
+	reconnectInterval = flag.Duration("grpc_client.transient_failure_reconnect_interval", 30*time.Second, "Attempt to reconnect gRPC client connections that are in the TRANSIENT_FAILURE state for longer than this duration.")
 )
 
 type clientConn struct {
