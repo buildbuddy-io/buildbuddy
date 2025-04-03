@@ -46,7 +46,7 @@ RUN DOCKER_VERSION="5:28.0.4-1~debian.12~bookworm" && \
     apt-mark auto \
     curl ca-certificates apt-transport-https && \
     apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/* && apt-get clean
+    rm -rf /var/lib/apt/lists/* && apt-get clean && \
     rm \
     # keep these in sync with the binaries we are manually
     # adding in enterprise/server/cmd/executor/BUILD.
