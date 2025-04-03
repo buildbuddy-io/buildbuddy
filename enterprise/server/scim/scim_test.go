@@ -117,7 +117,7 @@ func verifyRole(t *testing.T, ur scim.UserResource, expectedRole string) {
 func updateUserSubID(t *testing.T, ctx context.Context, udb interfaces.UserDB, userID string, g *tables.Group) {
 	u, err := udb.GetUserByID(ctx, userID)
 	require.NoError(t, err)
-	u.SubID = saml.SubIDForEmail(u.Email, g)
+	u.SubID = saml.SubIDForUserName(u.Email, g)
 	err = udb.UpdateUser(ctx, u)
 	require.NoError(t, err)
 }
@@ -161,7 +161,7 @@ func TestGetUsers(t *testing.T) {
 		email := fmt.Sprintf("user%d@org1.io", i)
 		extraUsers = append(extraUsers, &tables.User{
 			UserID: fmt.Sprintf("US%d", i),
-			SubID:  saml.SubIDForEmail(email, gr),
+			SubID:  saml.SubIDForUserName(email, gr),
 			Email:  email,
 		})
 	}

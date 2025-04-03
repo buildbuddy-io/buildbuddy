@@ -347,8 +347,8 @@ func SubIDPrefixForGroup(slug string) string {
 	return build_buddy_url.WithPath("saml/metadata").String() + "?slug=" + slug + "/"
 }
 
-func SubIDForEmail(email string, g *tables.Group) string {
-	return SubIDPrefixForGroup(g.URLIdentifier) + email
+func SubIDForUserName(userName string, g *tables.Group) string {
+	return SubIDPrefixForGroup(g.URLIdentifier) + userName
 }
 
 func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp.Middleware, error) {

@@ -280,7 +280,7 @@ func (s *SCIMServer) getFilteredUsers(ctx context.Context, g *tables.Group, filt
 	if err != nil {
 		return nil, err
 	}
-	u, err := s.env.GetAuthDB().LookupUserFromSubID(ctx, saml.SubIDForEmail(email, g))
+	u, err := s.env.GetAuthDB().LookupUserFromSubID(ctx, saml.SubIDForUserName(email, g))
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, nil
@@ -454,7 +454,7 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	}
 	u := &tables.User{
 		UserID:    pk,
-		SubID:     saml.SubIDForEmail(ur.UserName, g),
+		SubID:     saml.SubIDForUserName(ur.UserName, g),
 		FirstName: ur.Name.GivenName,
 		LastName:  ur.Name.FamilyName,
 		Email:     ur.UserName,
@@ -535,7 +535,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 				return status.InvalidArgumentErrorf("expected string attribute for username but got %T", value)
 			}
 			u.Email = v
-			u.SubID = saml.SubIDForEmail(v, g)
+			u.SubID = saml.SubIDForUserName(v, g)
 		default:
 			return status.InvalidArgumentErrorf("unsupported attribute %q", name)
 		}
@@ -621,7 +621,7 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 	u.FirstName = ur.Name.GivenName
 	u.LastName = ur.Name.FamilyName
 	u.Email = ur.UserName
-	u.SubID = saml.SubIDForEmail(ur.UserName, g)
+	u.SubID = saml.SubIDForUserName(ur.UserName, g)
 	updatedUser, err := newUserResource(u, g)
 	if err != nil {
 		return nil, err
