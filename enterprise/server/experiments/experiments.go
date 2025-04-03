@@ -112,10 +112,11 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 		options.attributes["group_id"] = claims.GetGroupID()
 		options.attributes["user_id"] = claims.GetUserID()
 	}
-	if iid := bazel_request.GetInvocationID(ctx); len(iid) > 0 {
+	rmd := bazel_request.GetRequestMetadata(ctx)
+	if iid := rmd.GetToolInvocationId(); len(iid) > 0 {
 		options.attributes["invocation_id"] = iid
 	}
-	if aid := bazel_request.GetActionID(ctx); len(aid) > 0 {
+	if aid := rmd.GetActionId(); len(aid) > 0 {
 		options.attributes["action_id"] = aid
 	}
 

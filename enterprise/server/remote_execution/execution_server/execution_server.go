@@ -367,7 +367,6 @@ func (s *ExecutionServer) recordExecution(
 		}
 	}()
 	links, err := s.env.GetExecutionCollector().GetInvocationLinks(ctx, executionID)
-
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
@@ -383,6 +382,7 @@ func (s *ExecutionServer) recordExecution(
 		executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
 
 		executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
+		executionProto.Experiments = auxMeta.GetExperiments()
 
 		executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
 		executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)

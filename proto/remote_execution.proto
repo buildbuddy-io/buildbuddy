@@ -2224,6 +2224,7 @@ message ExecutionTask {
   google.protobuf.Timestamp queued_timestamp = 7;
   Platform platform_overrides = 8;
   RequestMetadata request_metadata = 9;
+  repeated string experiments = 10;
 }
 
 // ScheduledTask encapsulates a task based on a client's ExecuteRequest as well
@@ -2542,4 +2543,7 @@ message StoredExecution {
   // TODO(sluongng): add configuration.
   string target_label = 33;
   string action_mnemonic = 57;
+
+  // Experiments used by this execution.
+  repeated string experiments = 61;
 }
