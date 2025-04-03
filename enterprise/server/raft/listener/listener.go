@@ -13,6 +13,7 @@ import (
 var (
 	leaderUpdatedChanSize = flag.Int64("cache.raft.leader_updated_chan_size", 10_000, "The length of the leader updated channel; Should be greather than the max number of ranges on a node.")
 	nodeReadyChanSize     = flag.Int64("cache.raft.node_ready_chan_size", 10_000, "The length of the node ready channel")
+	nodeUnloadedChanSize  = flag.Int64("cache.raft.node_unloaded_chan_size", 1000, "The length of the node unloaded channel")
 )
 
 type leaderUpdate struct {
@@ -20,24 +21,29 @@ type leaderUpdate struct {
 	lastInfo  *raftio.LeaderInfo
 	listeners map[string]chan raftio.LeaderInfo
 }
-type nodeReady struct {
+type nodeUpdate struct {
 	mu        sync.Mutex
 	listeners map[string]chan raftio.NodeInfo
 }
 type RaftListener struct {
 	log log.Logger
 
-	leaderUpdate leaderUpdate
-	nodeReady    nodeReady
+	leaderUpdate *leaderUpdate
+	nodeReady    *nodeUpdate
+	nodeUnloaded *nodeUpdate
 }
 
 func NewRaftListener() *RaftListener {
 	return &RaftListener{
-		leaderUpdate: leaderUpdate{
+		leaderUpdate: &leaderUpdate{
 			mu:        sync.Mutex{},
 			listeners: make(map[string]chan raftio.LeaderInfo),
 		},
-		nodeReady: nodeReady{
+		nodeReady: &nodeUpdate{
+			mu:        sync.Mutex{},
+			listeners: make(map[string]chan raftio.NodeInfo),
+		},
+		nodeUnloaded: &nodeUpdate{
 			mu:        sync.Mutex{},
 			listeners: make(map[string]chan raftio.NodeInfo),
 		},
@@ -92,47 +98,70 @@ func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
 	}
 }
 
-func (rl *RaftListener) AddNodeReadyListener(id string) <-chan raftio.NodeInfo {
-	rl.nodeReady.mu.Lock()
-	defer rl.nodeReady.mu.Unlock()
+func (nu *nodeUpdate) addListener(id string, chanSize int64) <-chan raftio.NodeInfo {
+	nu.mu.Lock()
+	defer nu.mu.Unlock()
 
-	ch := make(chan raftio.NodeInfo, *nodeReadyChanSize)
-	rl.nodeReady.listeners[id] = ch
+	ch := make(chan raftio.NodeInfo, chanSize)
+	nu.listeners[id] = ch
 	return ch
 }
 
-func (rl *RaftListener) RemoveNodeReadyListener(id string) {
-	rl.nodeReady.mu.Lock()
-	defer rl.nodeReady.mu.Unlock()
+func (nu *nodeUpdate) removeListener(id string) {
+	nu.mu.Lock()
+	defer nu.mu.Unlock()
 
-	ch := rl.nodeReady.listeners[id]
+	ch := nu.listeners[id]
 	close(ch)
-	delete(rl.nodeReady.listeners, id)
+	delete(nu.listeners, id)
 }
 
-func (rl *RaftListener) NodeReady(info raftio.NodeInfo) {
-	rl.log.Debugf("NodeReady: %+v", info)
-	rl.nodeReady.mu.Lock()
-	defer rl.nodeReady.mu.Unlock()
+func (nu *nodeUpdate) handle(info raftio.NodeInfo, eventType string) {
+	nu.mu.Lock()
+	defer nu.mu.Unlock()
 
-	for id, ch := range rl.nodeReady.listeners {
+	for id, ch := range nu.listeners {
 		select {
 		case ch <- info:
 		default:
 			metrics.RaftListenerEventsDropped.With(prometheus.Labels{
 				metrics.RaftListenerID:        id,
-				metrics.RaftListenerEventType: "NodeReady",
+				metrics.RaftListenerEventType: eventType,
 			}).Inc()
-			log.Warningf("dropping nodeReady message for %s", id)
+			log.Warningf("dropping %s message for %s", eventType, id)
 		}
 	}
 }
+
+func (rl *RaftListener) AddNodeReadyListener(id string) <-chan raftio.NodeInfo {
+	return rl.nodeReady.addListener(id, *nodeReadyChanSize)
+}
+
+func (rl *RaftListener) RemoveNodeReadyListener(id string) {
+	rl.nodeReady.removeListener(id)
+}
+
+func (rl *RaftListener) NodeReady(info raftio.NodeInfo) {
+	rl.log.Debugf("NodeReady: %+v", info)
+	rl.nodeReady.handle(info, "NodeReady")
+}
+
 func (rl *RaftListener) NodeHostShuttingDown() {
 	rl.log.Debugf("NodeHostShuttingDown")
 }
-func (rl *RaftListener) NodeUnloaded(info raftio.NodeInfo) {
-	rl.log.Debugf("NodeUnloaded: %+v", info)
+
+func (rl *RaftListener) AddNodeUnloadedListener(id string) <-chan raftio.NodeInfo {
+	return rl.nodeUnloaded.addListener(id, *nodeUnloadedChanSize)
 }
+
+func (rl *RaftListener) RemoveNodeUnloadedListener(id string) {
+	rl.nodeUnloaded.removeListener(id)
+}
+
+func (rl *RaftListener) NodeUnloaded(info raftio.NodeInfo) {
+	rl.nodeReady.handle(info, "NodeUnloaded")
+}
+
 func (rl *RaftListener) NodeDeleted(info raftio.NodeInfo) {
 	rl.log.Debugf("NodeDeleted: %+v", info)
 }
