@@ -343,6 +343,14 @@ func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func SubIDPrefixForGroup(slug string) string {
+	return build_buddy_url.WithPath("saml/metadata").String() + "?slug=" + slug + "/"
+}
+
+func SubIDForUserName(userName string, g *tables.Group) string {
+	return SubIDPrefixForGroup(g.URLIdentifier) + userName
+}
+
 func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp.Middleware, error) {
 	slug := a.getSlugFromRequest(r)
 	if slug == "" {

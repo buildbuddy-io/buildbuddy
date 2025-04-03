@@ -502,6 +502,15 @@ type AuthDB interface {
 	DeleteAPIKey(ctx context.Context, apiKeyID string) error
 }
 
+type GetGroupUsersOpts struct {
+	// Limit returned users to those with any of the specified statuses.
+	// At least one status is required.
+	Statuses []grpb.GroupMembershipStatus
+	// Limit returned users to those with the matching SubID prefix.
+	// Optional.
+	SubIDPrefix string
+}
+
 type UserDB interface {
 	// User API
 	InsertUser(ctx context.Context, u *tables.User) error
@@ -512,13 +521,6 @@ type UserDB interface {
 	GetUser(ctx context.Context) (*tables.User, error)
 	GetUserByID(ctx context.Context, id string) (*tables.User, error)
 	GetUserByIDWithoutAuthCheck(ctx context.Context, id string) (*tables.User, error)
-	// GetUserByEmail lookups a user with the given e-mail address within the
-	// currently authenticated group.
-	//
-	// An error will be returned if there are multiple users with the same
-	// e-mail address. Normally this should not be the case, but it can occur
-	// if a user transitions between auth providers (e.g. oidc to saml).
-	GetUserByEmail(ctx context.Context, email string) (*tables.User, error)
 	UpdateUser(ctx context.Context, u *tables.User) error
 	// DeleteUser deletes a user and associated data.
 	DeleteUser(ctx context.Context, id string) error
@@ -550,7 +552,7 @@ type UserDB interface {
 	// REQUESTED or MEMBER).
 	RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error)
 
-	GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
+	GetGroupUsers(ctx context.Context, groupID string, opts *GetGroupUsersOpts) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
 	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
 	DeleteGroupGitHubToken(ctx context.Context, groupID string) error
 	// DeleteUserGitHubToken deletes the authenticated user's GitHub token.
