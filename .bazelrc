@@ -1,15 +1,21 @@
-common --noenable_bzlmod
-common --enable_workspace
-# Avoid being broken by version requirement changes in transitive deps.
-common --check_direct_dependencies=error
+###################################
+# BUILDBUDDY SHARED BAZEL CONFIGS #
+###################################
+#
+# Prefer adding flags to the shared file over the current file
+# so that we can have a consistent set of flags across all repos.
+#
+# Only add to this file if the flags are intended for our public
+# repo _exclusively_.
+#
+import %workspace%/shared.bazelrc
 
-common --enable_platform_specific_config
+
+#################################
+# PUBLIC REPO EXCLUSIVE CONFIGS #
+#################################
 
 # Build with --config=local to send build logs to your local server
-common:local --bes_results_url=http://localhost:8080/invocation/
-common:local --bes_backend=grpc://localhost:1985
-common:local --remote_cache=grpc://localhost:1985
-common:local --remote_upload_local_results
 common:local --extra_execution_platforms=@buildbuddy_toolchain//:platform
 
 # Build with --config=dev to send build logs to the dev server
@@ -17,7 +23,6 @@ common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
 common:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
 
 # Common flags to be used with remote cache
-common:cache-shared --remote_upload_local_results
 common:cache-shared --remote_cache_compression
 common:cache-shared --experimental_remote_cache_compression_threshold=100
 
@@ -112,10 +117,6 @@ common:probers-dev --bes_results_url=https://buildbuddy-probers.buildbuddy.dev/i
 common:probers-dev --bes_backend=grpcs://buildbuddy-probers.buildbuddy.dev
 common:probers-dev --remote_cache=grpcs://buildbuddy-probers.buildbuddy.dev
 common:probers-dev --remote_executor=grpcs://buildbuddy-probers.buildbuddy.dev
-
-# Write build outputs in a platform-specific directory,
-# avoid outputs being wiped and rewritten when switching between platforms.
-common --experimental_platform_in_output_dir
 
 # Configuration used for GitHub actions-based CI
 common:ci --config=remote-minimal
@@ -230,28 +231,8 @@ common:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/
 common:static --platforms=//platforms:linux_x86_64_musl
 common:static-arm64 --platforms=//platforms:linux_arm64_musl
 
-# By default, build logs get sent to the production server
-common --bes_results_url=https://app.buildbuddy.io/invocation/
-common --bes_backend=grpcs://remote.buildbuddy.io
-
-# Recommended if connecting to a remote (upload speed constrained) BuildBuddy instance
-common --noremote_upload_local_results # Uploads logs & artifacts without writing to cache
-
-# Populate workspace info like commit sha and repo name to your invocation.
-common:linux --workspace_status_command=$(pwd)/workspace_status.sh
-common:macos --workspace_status_command=$(pwd)/workspace_status.sh
-common:windows --workspace_status_command="bash workspace_status.sh"
-
-# Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
-common --incompatible_strict_action_env
 common:macos --action_env=DEVELOPER_DIR
 common:macos --host_action_env=DEVELOPER_DIR
-
-# rules_nodejs needs runfiles to be explicitly enabled.
-common:linux --enable_runfiles
-common:macos --enable_runfiles
-
-common --@aspect_rules_ts//ts:skipLibCheck=honor_tsconfig
 
 # Add `-test.v` to all Go tests so that each test func is reported as a separate test case
 # in the XML output.  This allows our webUI to display the run time of each test case
@@ -269,31 +250,16 @@ common --test_env=GO_TEST_WRAP_TESTV=1
 # *: https://bazel.build/extending/rules#validation_actions
 common --experimental_use_validation_aspect=true
 
-# Workaround for Bazel 7:
-# rules_docker (archived) defines a transition that helps ensure building containers with binary would use the same platform for both.
-# Reference: https://github.com/bazelbuild/rules_docker/pull/1963
-#
-# However, the platform and transition made use of `label_setting` instead of `constraint_value`.
-# This used to work in Bazel 6, but Bazel 7 introduced a new mandatory provider `ConstraintValueInfo` for all constraints_value targets.
-# Since `label_setting` does not return this provider, it is no longer possible to use `label_setting` in Bazel 7.
-#
-# Disabling this is safe because today, we are building these constainers on Linux host, executing Linux actions and targeting Linux machines.
-# This assumption might not hold in the future, but we can revisit this when that happens.
-common --@io_bazel_rules_docker//transitions:enable=false
-
 # Don't run Docker and Firecracker tests by default, because they cannot be run on all environments
 # Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
 # on Docker for development
 test --test_tag_filters=-docker,-bare
 build --build_tag_filters=-secrets
 
-# Use C++17 standard for all C++ compilation
-common:linux --host_cxxopt=-std=c++17
-common:linux --cxxopt=-std=c++17
-common:macos --host_cxxopt=-std=c++17
-common:macos --cxxopt=-std=c++17
-common:windows --host_cxxopt=/std:c++17
-common:windows --cxxopt=/std:c++17
+# Don't show cached test results in the test summary
+# We have many tests that can fill up the console with cached results.
+# If you prefer to see cached results, set this to 'short' in user.bazelrc file.
+test --test_summary=terse
 
 # Ensure that we don't use the apple_support cc_toolchain
 common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
@@ -311,33 +277,6 @@ common:webdriver-debug --test_env=DISPLAY
 # When debugging, only run one webdriver test at a time (it's overwhelming
 # otherwise).
 common:webdriver-debug --local_test_jobs=1
-
-# Currently only works for go tests
-# Coverage outputs could be viewed with `genhtml`:
-#   $ genhtml -o cover bazel-out/_coverage/_coverage_report.dat
-#   $ open cover/index.html
-common --combined_report=lcov
-
-# Use BLAKE3 digest function.
-startup --digest_function=BLAKE3
-# Bazel doesn't track the contents of source directories by default, which can result
-# in non-hermeticity.
-startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
-
-# Include target names in timing profile so it's clickable.
-common --experimental_profile_include_target_label
-# Include primary output name in timing profile.
-common --experimental_profile_include_primary_output
-# Don't merge timing profile actions.
-common --noslim_profile
-# Include compact execution log
-# TODO(sluongng): make Bazel writes this to output_base automatically
-common --execution_log_compact_file=bazel_compact_exec_log.binpb.zst
-
-# Don't show cached test results in the test summary
-# We have many tests that can fill up the console with cached results.
-# If you prefer to see cached results, set this to 'short' in user.bazelrc file.
-test --test_summary=terse
 
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:
