@@ -474,6 +474,11 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 		return nil, err
 	}
 	if err == nil {
+		// User already exists in our system.
+
+		// User shouldn't already be part of the SCIM-managed group. If it is,
+		// the upstream system should be sending update requests not create
+		// requests.
 		for _, eg := range user.Groups {
 			if eg.GroupID == g.GroupID {
 				return status.AlreadyExistsErrorf("user %q already exists", ur.UserName), nil
@@ -481,6 +486,8 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 		}
 		updateExistingUser = true
 	} else {
+		// User doesn't exist. We can do a normal create.
+
 		pk, err := tables.PrimaryKeyForTable("Users")
 		if err != nil {
 			return nil, err
@@ -497,6 +504,8 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 		return nil, err
 	}
 	if updateExistingUser {
+		// Need to add the user to the group first in order to get past the
+		// permission check in UpdateUser.
 		if err := s.env.GetUserDB().UpdateGroupUsers(ctx, g.GroupID, roleUpdate); err != nil {
 			return nil, err
 		}
