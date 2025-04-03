@@ -80,7 +80,7 @@ var (
 	monitoringPort    = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 	monitoringSSLPort = flag.Int("monitoring.ssl_port", -1, "If non-negative, the SSL port to listen for monitoring traffic on. `ssl` config must have `ssl_enabled: true` and be properly configured.")
 	serverType        = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
-	maxThreads        = flag.Int("max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
+	maxThreads        = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
 )
 
 func init() {
