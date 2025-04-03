@@ -28,18 +28,19 @@ import (
 
 var (
 	// AWS S3 flags
-	awsS3Region                   = flag.String("storage.aws_s3.region", "", "The AWS region.")
-	awsS3Bucket                   = flag.String("storage.aws_s3.bucket", "", "The AWS S3 bucket to store files in.")
-	awsS3CredentialsProfile       = flag.String("storage.aws_s3.credentials_profile", "", "A custom credentials profile to use.")
-	awsS3WebIdentityTokenFilePath = flag.String("storage.aws_s3.web_identity_token_file", "", "The file path to the web identity token file.")
-	awsS3RoleARN                  = flag.String("storage.aws_s3.role_arn", "", "The role ARN to use for web identity auth.")
-	awsS3RoleSessionName          = flag.String("storage.aws_s3.role_session_name", "", "The role session name to use for web identity auth.")
-	awsS3Endpoint                 = flag.String("storage.aws_s3.endpoint", "", "The AWS endpoint to use, useful for configuring the use of MinIO.")
-	awsS3StaticCredentialsID      = flag.String("storage.aws_s3.static_credentials_id", "", "Static credentials ID to use, useful for configuring the use of MinIO.")
-	awsS3StaticCredentialsSecret  = flag.String("storage.aws_s3.static_credentials_secret", "", "Static credentials secret to use, useful for configuring the use of MinIO.", flag.Secret)
-	awsS3StaticCredentialsToken   = flag.String("storage.aws_s3.static_credentials_token", "", "Static credentials token to use, useful for configuring the use of MinIO.")
-	awsS3DisableSSL               = flag.Bool("storage.aws_s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.", flag.Deprecated("Specify a non-HTTPS endpoint instead."))
-	awsS3ForcePathStyle           = flag.Bool("storage.aws_s3.s3_force_path_style", false, "Force path style urls for objects, useful for configuring the use of MinIO.")
+	awsS3Region                    = flag.String("storage.aws_s3.region", "", "The AWS region.")
+	awsS3Bucket                    = flag.String("storage.aws_s3.bucket", "", "The AWS S3 bucket to store files in.")
+	awsS3CredentialsProfile        = flag.String("storage.aws_s3.credentials_profile", "", "A custom credentials profile to use.")
+	awsS3WebIdentityTokenFilePath  = flag.String("storage.aws_s3.web_identity_token_file", "", "The file path to the web identity token file.")
+	awsS3RoleARN                   = flag.String("storage.aws_s3.role_arn", "", "The role ARN to use for web identity auth.")
+	awsS3RoleSessionName           = flag.String("storage.aws_s3.role_session_name", "", "The role session name to use for web identity auth.")
+	awsS3Endpoint                  = flag.String("storage.aws_s3.endpoint", "", "The AWS endpoint to use, useful for configuring the use of MinIO.")
+	awsS3StaticCredentialsID       = flag.String("storage.aws_s3.static_credentials_id", "", "Static credentials ID to use, useful for configuring the use of MinIO.")
+	awsS3StaticCredentialsSecret   = flag.String("storage.aws_s3.static_credentials_secret", "", "Static credentials secret to use, useful for configuring the use of MinIO.", flag.Secret)
+	awsS3StaticCredentialsToken    = flag.String("storage.aws_s3.static_credentials_token", "", "Static credentials token to use, useful for configuring the use of MinIO.")
+	awsS3DisableSSL                = flag.Bool("storage.aws_s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.", flag.Deprecated("Specify a non-HTTPS endpoint instead."))
+	awsS3ForcePathStyle            = flag.Bool("storage.aws_s3.s3_force_path_style", false, "Force path style urls for objects, useful for configuring the use of MinIO.")
+	awsS3DisableChecksumValidation = flag.Bool("storage.aws_s3.disable_checksum_validation", false, "If true, disable checksum validation. Useful for non-AWS S3 API providers.")
 )
 
 const (
@@ -113,6 +114,10 @@ func NewAwsS3BlobStore(ctx context.Context) (*AwsS3BlobStore, error) {
 		func(o *s3.Options) {
 			log.Debug("AWS blobstore forcing path style")
 			o.UsePathStyle = *awsS3ForcePathStyle
+			if *awsS3DisableChecksumValidation {
+				log.Debug("AWS request checksum calculation: only when required")
+				o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+			}
 		},
 	)
 	log.Debug("AWS blobstore service client created")
