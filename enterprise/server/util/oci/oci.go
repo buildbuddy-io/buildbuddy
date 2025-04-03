@@ -820,7 +820,6 @@ func (i *cacheAwareImage) MediaType() (types.MediaType, error) {
 }
 
 func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, error) {
-	log.Infof("LayerByDigest %s", hash)
 	if i.manifest != nil {
 		for _, d := range i.manifest.Layers {
 			if d.Digest == hash {
@@ -828,7 +827,6 @@ func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, 
 				if err != nil {
 					return nil, fmt.Errorf("could not construct ref for layer %s", d.Digest)
 				}
-				log.Infof("LayerByDigest rlref %s", rlref)
 				rl, err := remote.Layer(rlref, i.options...)
 				if err != nil {
 					return nil, fmt.Errorf("could not create remote layer for %s", rlref)
@@ -888,30 +886,24 @@ type teeReadCloser struct {
 
 func (t *teeReadCloser) Read(p []byte) (int, error) {
 	n, err := t.rc.Read(p)
-	log.Infof("teeReadCloser rc.Read n %d, err %q", n, err)
 	if n > 0 {
-		wn, werr := t.wc.Write(p[:n])
+		_, werr := t.wc.Write(p[:n])
 		if werr != nil && werr == io.EOF {
-			log.Infof("teeReadCloser wc.Write EOF n %d, wn %d", n, wn)
 			return n, io.EOF
 		}
 		if werr != nil {
-			log.Infof("teeReadCloser wc.Write error n %d, err %q", n, err)
 			return n, err
 		}
 	}
-	log.Infof("teeReadCloser return n %d, err %q", n, err)
 	return n, err
 }
 
 func (t *teeReadCloser) Close() error {
-	log.Info("teeReadCloser Close")
 	t.wc.Close()
 	return t.rc.Close()
 }
 
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
-	log.Infof("Compressed %s/%s:%s", l.ref.registry, l.ref.repository, l.ref.hash)
 	ctx := context.Background()
 	if l.descriptor != nil {
 		d, err := FetchLayerCASDigest(ctx, l.acc, l.ref.registry, l.ref.repository, l.ref.hash)
@@ -919,7 +911,6 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 			log.CtxErrorf(ctx, "error fetching CAS digest for %s/%s:%s: %s", l.ref.registry, l.ref.repository, l.ref.hash, err)
 		}
 		if err == nil && d != nil {
-			log.Infof("fetching layer from CAS %s/%s:%s", l.ref.registry, l.ref.repository, l.ref.hash)
 			r, w := io.Pipe()
 			go func() {
 				defer w.Close()

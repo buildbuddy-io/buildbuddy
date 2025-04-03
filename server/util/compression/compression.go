@@ -278,11 +278,9 @@ func NewZstdCompressingWriter(writer io.Writer) (io.WriteCloser, error) {
 func (c *zstdCompressor) Write(p []byte) (int, error) {
 	n, err := c.enc.Write(p)
 	metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(n))
-	log.Infof("zstdCompressor Write p %d, n %d, err %q", p, n, err)
 	return n, err
 }
 
 func (c *zstdCompressor) Close() error {
-	log.Info("zstdCompressor Close")
 	return c.enc.Close()
 }

@@ -471,7 +471,7 @@ func TestResolve_CachesManifest(t *testing.T) {
 		hashToLayer[hash] = b
 	}
 
-	// before := count.Load()
+	before := count.Load()
 	for i := 0; i < 1; i++ {
 		img, err := oci.Resolve(
 			context.Background(),
@@ -503,8 +503,9 @@ func TestResolve_CachesManifest(t *testing.T) {
 			b, err := io.ReadAll(rc)
 			require.NoError(t, err)
 			assert.Equal(t, len(ogbytes), len(b))
+			assert.True(t, bytes.Equal(ogbytes, b))
 		}
 	}
 
-	// assert.Equal(t, int32(1), count.Load()-before)
+	assert.Equal(t, int32(2), count.Load()-before)
 }
