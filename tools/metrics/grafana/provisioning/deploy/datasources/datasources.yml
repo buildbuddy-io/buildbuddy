@@ -15,7 +15,7 @@ datasources:
     uid: grafana
     jsonData:
       port: 9000
-      host: clickhouse-repl-%{ENV}.clickhouse-operator-dev.svc.cluster.local
+      host: clickhouse-repl-%{ENV}.clickhouse-operator-%{ENV}.svc.cluster.local
       username: buildbuddy_%{ENV}_readonly
     secureJsonData:
       password: ${CLICKHOUSE_PASSWORD}
