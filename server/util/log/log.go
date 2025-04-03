@@ -31,7 +31,7 @@ var (
 	EnableStructuredLogging = flag.Bool("app.enable_structured_logging", false, "If true, log messages will be json-formatted.")
 	IncludeShortFileName    = flag.Bool("app.log_include_short_file_name", false, "If true, log messages will include shortened originating file name.")
 	EnableGCPLoggingFormat  = flag.Bool("app.log_enable_gcp_logging_format", false, "If true, the output structured logs will be compatible with format expected by GCP Logging.")
-	EnableLogGRPCRequest    = flag.Bool("app.log_enable_grpc_request", true, "If true, log grpc request when log level is default")
+	EnableLogGRPCRequest    = flag.Bool("app.log_enable_grpc_request", true, "If true, log grpc request when log level is debug")
 	LogErrorStackTraces     = flag.Bool("app.log_error_stack_traces", false, "If true, stack traces will be printed for errors that have them.")
 )
 
