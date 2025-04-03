@@ -68,10 +68,8 @@ type LeaseKeeper struct {
 	listener  *listener.RaftListener
 	broadcast chan<- events.Event
 
-	// map rangeID -> leaseAgent
-	leases sync.Map
-
 	mu      sync.Mutex
+	leases  map[rangeID]*leaseAgent
 	leaders map[rangeID]bool
 	open    map[rangeID]bool
 
@@ -82,6 +80,7 @@ type LeaseKeeper struct {
 	quitAll chan struct{}
 
 	leaderUpdates       <-chan raftio.LeaderInfo
+	nodeUnloaded        <-chan raftio.NodeInfo
 	nodeLivenessUpdates <-chan *rfpb.NodeLivenessRecord
 }
 
@@ -95,10 +94,11 @@ func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.L
 		session:             session,
 		listener:            listener,
 		broadcast:           broadcast,
-		leases:              sync.Map{},
+		leases:              make(map[rangeID]*leaseAgent),
 		leaders:             make(map[rangeID]bool),
 		open:                make(map[rangeID]bool),
 		leaderUpdates:       listener.AddLeaderChangeListener(listenerID),
+		nodeUnloaded:        listener.AddNodeUnloadedListener(listenerID),
 		nodeLivenessUpdates: liveness.AddListener(),
 
 		eg:       eg,
@@ -130,6 +130,7 @@ func (lk *LeaseKeeper) Stop() {
 // and created via LoadOrStore(), a leaseAgent's goroutine is not started until
 // the first instruction is enqueued.
 type leaseAgent struct {
+	replicaID uint64
 	log       log.Logger
 	l         *rangelease.Lease
 	ctx       context.Context
@@ -246,14 +247,15 @@ func (la *leaseAgent) queueInstruction(instruction *leaseInstruction) {
 	la.updates.Push(instruction)
 }
 
-func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replica) leaseAgent {
+func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replica) *leaseAgent {
 	ctx, cancel := context.WithCancel(context.TODO())
 	updates, err := boundedstack.New[*leaseInstruction](1)
 	eg, gctx := errgroup.WithContext(ctx)
 	if err != nil {
 		alert.UnexpectedEvent("unexpected_boundedstack_error", err)
 	}
-	return leaseAgent{
+	return &leaseAgent{
+		replicaID: r.ReplicaID(),
 		log:       lk.log,
 		l:         rangelease.New(lk.nodeHost, lk.session, lk.log, lk.liveness, rd, r),
 		ctx:       gctx,
@@ -288,14 +290,13 @@ func (lk *LeaseKeeper) watchLeases() {
 			lk.mu.Lock()
 			open := lk.open[rangeID]
 			lk.leaders[rangeID] = leader
+			la := lk.leases[rangeID]
 			lk.mu.Unlock()
 
-			laI, ok := lk.leases.Load(rangeID)
-			if !ok {
+			if la == nil {
 				lk.log.Debugf("Range %d has not been opened yet (ignoring leader update)", rangeID)
 				continue
 			}
-			la := laI.(leaseAgent)
 			action := Drop
 			if open && leader {
 				action = Acquire
@@ -306,18 +307,26 @@ func (lk *LeaseKeeper) watchLeases() {
 				action:  action,
 			})
 		case <-lk.egCtx.Done():
-			lk.leases.Range(func(key, val any) bool {
-				la := val.(leaseAgent)
+			lk.mu.Lock()
+			leases := make([]*leaseAgent, 0, len(lk.leases))
+			for _, la := range lk.leases {
+				leases = append(leases, la)
+			}
+			lk.mu.Unlock()
+			for _, la := range leases {
 				la.stop()
-				return true // continue iterating
-			})
+			}
 			lk.listener.RemoveLeaderChangeListener(listenerID)
+			lk.listener.RemoveNodeUnloadedListener(listenerID)
 			return
 		case <-lk.nodeLivenessUpdates:
-			lk.leases.Range(func(key, val any) bool {
-				rangeID := key.(rangeID)
-				la := val.(leaseAgent)
-
+			lk.mu.Lock()
+			leases := make(map[rangeID]*leaseAgent, len(lk.leases))
+			for rangeID, la := range lk.leases {
+				leases[rangeID] = la
+			}
+			lk.mu.Unlock()
+			for rangeID, la := range leases {
 				action := Drop
 				lk.mu.Lock()
 				if lk.open[rangeID] && lk.leaders[rangeID] {
@@ -330,8 +339,22 @@ func (lk *LeaseKeeper) watchLeases() {
 					reason:  "node liveness update",
 					action:  action,
 				})
-				return true // continue iterating
-			})
+			}
+		case nodeInfo, ok := <-lk.nodeUnloaded:
+			if !ok {
+				// channel was closed and drained
+				continue
+			}
+			rangeID := rangeID(nodeInfo.ShardID)
+			lk.mu.Lock()
+			la := lk.leases[rangeID]
+			delete(lk.leases, rangeID)
+			lk.mu.Unlock()
+			if la != nil {
+				if la.replicaID == nodeInfo.ReplicaID {
+					la.stop()
+				}
+			}
 		}
 	}
 }
@@ -345,6 +368,24 @@ func (lk *LeaseKeeper) isStopped() bool {
 	}
 }
 
+func (lk *LeaseKeeper) loadOrStoreNewLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replica) *leaseAgent {
+	lk.mu.Lock()
+	defer lk.mu.Unlock()
+	rangeID := rangeID(rd.GetRangeId())
+	la := lk.leases[rangeID]
+	if la != nil {
+		if la.replicaID == r.ReplicaID() {
+			// the store lease agent is for the same replica id, we don't need to create a new lease agent.
+			return la
+		}
+		lk.log.Warningf("stored leaseAgent is for c%dn%d, but the current replica is c%dn%d, overwriting", rangeID, la.replicaID, rangeID, r.ReplicaID())
+	}
+	la = lk.newLeaseAgent(rd, r)
+	lk.leases[rangeID] = la
+	lk.log.Infof("create new lease agent for c%dn%d", rangeID, la.replicaID)
+	return la
+}
+
 func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	if lk.isStopped() {
 		return
@@ -354,9 +395,9 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	if len(rd.GetReplicas()) == 0 {
 		return
 	}
-	rangeID := rangeID(rd.GetRangeId())
-	laI, _ := lk.leases.LoadOrStore(rangeID, lk.newLeaseAgent(rd, r))
+	la := lk.loadOrStoreNewLeaseAgent(rd, r)
 
+	rangeID := rangeID(rd.GetRangeId())
 	// When a range is added via AddRange(), the raft leader may already
 	// have been chosen, meaning that `watchLeases` will not receive
 	// additional callbacks that would trigger range lease acquisition. So
@@ -372,7 +413,6 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		action = Acquire
 	}
 
-	la := laI.(leaseAgent)
 	la.queueInstruction(&leaseInstruction{
 		rangeID: rangeID,
 		reason:  "Add range",
@@ -393,10 +433,10 @@ func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica)
 
 	lk.mu.Lock()
 	lk.open[rangeID] = false
+	la := lk.leases[rangeID]
 	lk.mu.Unlock()
 
-	if laI, ok := lk.leases.Load(rangeID); ok {
-		la := laI.(leaseAgent)
+	if la != nil {
 		la.queueInstruction(&leaseInstruction{
 			rangeID: rangeID,
 			reason:  "remove range",
@@ -407,44 +447,52 @@ func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica)
 
 func (lk *LeaseKeeper) LeaseCount(ctx context.Context) int64 {
 	leaseCount := int64(0)
-	lk.leases.Range(func(key, value any) bool {
-		la := value.(leaseAgent)
+	lk.mu.Lock()
+	leases := make([]*leaseAgent, 0, len(lk.leases))
+	for _, la := range lk.leases {
+		leases = append(leases, la)
+	}
+	lk.mu.Unlock()
+
+	for _, la := range leases {
 		if la.l.Valid(ctx) {
 			leaseCount += 1
 		}
-		return true
-	})
+	}
 	return leaseCount
 }
 
 func (lk *LeaseKeeper) HaveLease(ctx context.Context, rid uint64) bool {
 	rangeID := rangeID(rid)
-	if lacI, ok := lk.leases.Load(rangeID); ok {
-		la := lacI.(leaseAgent)
-		valid := la.l.Valid(ctx)
+	lk.mu.Lock()
+	la := lk.leases[rangeID]
+	lk.mu.Unlock()
 
-		lk.mu.Lock()
-		leader := lk.leaders[rangeID]
-		open := lk.open[rangeID]
-		lk.mu.Unlock()
-
-		shouldHaveLease := leader && open
-		if shouldHaveLease && !valid {
-			lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
-			la.queueInstruction(&leaseInstruction{
-				rangeID: rangeID,
-				reason:  "should have range",
-				action:  Acquire,
-			})
-		} else if !shouldHaveLease && valid {
-			lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
-			la.queueInstruction(&leaseInstruction{
-				rangeID: rangeID,
-				reason:  "should not have range",
-				action:  Drop,
-			})
-		}
-		return valid
+	if la == nil {
+		return false
 	}
-	return false
+	valid := la.l.Valid(ctx)
+
+	lk.mu.Lock()
+	leader := lk.leaders[rangeID]
+	open := lk.open[rangeID]
+	lk.mu.Unlock()
+
+	shouldHaveLease := leader && open
+	if shouldHaveLease && !valid {
+		lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
+		la.queueInstruction(&leaseInstruction{
+			rangeID: rangeID,
+			reason:  "should have range",
+			action:  Acquire,
+		})
+	} else if !shouldHaveLease && valid {
+		lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
+		la.queueInstruction(&leaseInstruction{
+			rangeID: rangeID,
+			reason:  "should not have range",
+			action:  Drop,
+		})
+	}
+	return valid
 }
