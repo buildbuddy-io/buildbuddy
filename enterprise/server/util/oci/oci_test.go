@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenviron"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -468,11 +469,13 @@ func TestResolve_CachesManifest(t *testing.T) {
 		require.NoError(t, err)
 		b, err := io.ReadAll(rc)
 		require.NoError(t, err)
+		err = rc.Close()
+		require.NoError(t, err)
 		hashToLayer[hash] = b
 	}
 
 	before := count.Load()
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 2; i++ {
 		img, err := oci.Resolve(
 			context.Background(),
 			te.GetActionCacheClient(),
@@ -500,7 +503,9 @@ func TestResolve_CachesManifest(t *testing.T) {
 			require.True(t, ok)
 			rc, err := layer.Compressed()
 			require.NoError(t, err)
-			b, err := io.ReadAll(rc)
+			b, err := readAll(rc)
+			require.NoError(t, err)
+			err = rc.Close()
 			require.NoError(t, err)
 			assert.Equal(t, len(ogbytes), len(b))
 			assert.True(t, bytes.Equal(ogbytes, b))
@@ -508,4 +513,25 @@ func TestResolve_CachesManifest(t *testing.T) {
 	}
 
 	assert.Equal(t, int32(2), count.Load()-before)
+}
+
+func readAll(r io.Reader) ([]byte, error) {
+	b := make([]byte, 0, 512)
+	for {
+		n, err := r.Read(b[len(b):cap(b)])
+		b = b[:len(b)+n]
+		if err != nil {
+			log.Infof("readAll r.Read error: %s", err)
+			if err == io.EOF {
+				err = nil
+			}
+			log.Infof("readAll r.Read return b %d %d err %q", len(b), cap(b), err)
+			return b, err
+		}
+
+		if len(b) == cap(b) {
+			// Add more capacity (let append pick how much).
+			b = append(b, 0)[:len(b)]
+		}
+	}
 }

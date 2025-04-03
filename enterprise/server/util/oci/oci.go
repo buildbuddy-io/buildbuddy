@@ -403,6 +403,7 @@ func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
+	log.Info("FetchManifestFromCache cachetools.GetActionResult")
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
 		return nil, err
@@ -429,6 +430,7 @@ func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient
 		repb.DigestFunction_SHA256,
 	)
 	blobMetadata := &ocipb.OCIBlobMetadata{}
+	log.Info("FetchManifestFromCache cachetools.GetBlobAsProto")
 	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
 	if err != nil {
 		return nil, err
@@ -441,6 +443,7 @@ func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
 	var buf bytes.Buffer
+	log.Info("FetchManifestFromCache cachetools.GetBlob")
 	err = cachetools.GetBlob(ctx, bsClient, blobRN, &buf)
 	if err != nil {
 		return nil, err
@@ -460,6 +463,7 @@ func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, 
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
 	buf := bytes.NewBuffer(raw)
+	log.Info("WriteManifestToCache cachetools.UploadFromReader")
 	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, buf)
 	if err != nil {
 		return err
@@ -469,6 +473,7 @@ func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, 
 		ContentLength: contentLength,
 		ContentType:   contentType,
 	}
+	log.Info("WriteManifestToCache cachetools.UploadProto")
 	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
 	if err != nil {
 		return err
@@ -506,6 +511,7 @@ func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, 
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
+	log.Info("WriteManifestToCache cachetools.UploadActionResult")
 	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
 	if err != nil {
 		return err
@@ -534,6 +540,7 @@ func FetchLayerCASDigest(ctx context.Context, acClient repb.ActionCacheClient, r
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
+	log.Info("FetchLayerCASDigest cachetools.GetActionResult")
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
 		return nil, err
@@ -563,6 +570,7 @@ func FetchLayerFromCAS(ctx context.Context, bsClient bspb.ByteStreamClient, blob
 		repb.DigestFunction_SHA256,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	log.Info("FetchLayerFromCAS cachetools.GetBlob")
 	return cachetools.GetBlob(ctx, bsClient, blobRN, w)
 }
 
@@ -587,6 +595,7 @@ func FetchLayerFromCache(ctx context.Context, acClient repb.ActionCacheClient, b
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
+	log.Info("FetchLayerFromCache cachetools.GetActionResult")
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
 		return err
@@ -613,6 +622,7 @@ func FetchLayerFromCache(ctx context.Context, acClient repb.ActionCacheClient, b
 		repb.DigestFunction_SHA256,
 	)
 	blobMetadata := &ocipb.OCIBlobMetadata{}
+	log.Info("FetchLayerFromCache cachetools.GetBlobAsProto")
 	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
 	if err != nil {
 		return err
@@ -624,6 +634,7 @@ func FetchLayerFromCache(ctx context.Context, acClient repb.ActionCacheClient, b
 		repb.DigestFunction_SHA256,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	log.Info("FetchLayerFromCache cachetools.GetBlob")
 	return cachetools.GetBlob(ctx, bsClient, blobRN, w)
 }
 
@@ -641,17 +652,27 @@ type cachingLayerWriteCloser struct {
 }
 
 func (clwc *cachingLayerWriteCloser) Write(p []byte) (int, error) {
-	return clwc.wc.Write(p)
+	n, err := clwc.wc.Write(p)
+	log.Infof("cachingLayerWriteCloser Write n %d err %q", n, err)
+	return n, err
 }
 
 func (clwc *cachingLayerWriteCloser) Close() error {
-	defer clwc.wc.Close()
+	log.Info("cachingLayerWriteCloser Close")
+	err := clwc.wc.Close()
+	if err != nil {
+		log.Infof("cachingLayerWriteCloser Close wc error: %s", err)
+		return err
+	}
+
 	blobMetadata := &ocipb.OCIBlobMetadata{
 		ContentLength: clwc.contentLength,
 		ContentType:   clwc.contentType,
 	}
+	log.Info("cachingLayerWriteCloser Close cachetools.UploadProto")
 	blobMetadataCASDigest, err := cachetools.UploadProto(clwc.ctx, clwc.bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
 	if err != nil {
+		log.Infof("cachingLayerWriteCloser Close UploadProto error: %s", err)
 		return err
 	}
 
@@ -676,10 +697,12 @@ func (clwc *cachingLayerWriteCloser) Close() error {
 	}
 	arKeyBytes, err := proto.Marshal(arKey)
 	if err != nil {
+		log.Infof("cachingLayerWriteCloser Close Marhsal error: %s", err)
 		return err
 	}
 	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
 	if err != nil {
+		log.Infof("cachingLayerWriteCloser Close NewReader error: %s", err)
 		return err
 	}
 	arRN := digest.NewACResourceName(
@@ -687,10 +710,13 @@ func (clwc *cachingLayerWriteCloser) Close() error {
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
+	log.Info("cachingLayerWriteCloser Close cachetools.UploadActionResult")
 	err = cachetools.UploadActionResult(clwc.ctx, clwc.acClient, arRN, ar)
 	if err != nil {
+		log.Infof("cachingLayerWriteCloser Close UploadActionResult error: %s", err)
 		return err
 	}
+	log.Info("cachingLayerWriteCloser Close OK")
 	return nil
 }
 
@@ -705,6 +731,7 @@ func NewCachingLayerWriteCloser(ctx context.Context, acClient repb.ActionCacheCl
 		repb.DigestFunction_SHA256,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	log.Info("NewCachingLayerWriteCloser cachetools.NewUploadWriteCloser")
 	wc, err := cachetools.NewUploadWriteCloser(ctx, bsClient, blobRN)
 	if err != nil {
 		return nil, err
@@ -734,6 +761,7 @@ func WriteLayerToCache(ctx context.Context, acClient repb.ActionCacheClient, bsC
 		repb.DigestFunction_SHA256,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	log.Info("WriteLayerToCache cachetools.UploadFromReader")
 	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
 	if err != nil {
 		return err
@@ -743,6 +771,7 @@ func WriteLayerToCache(ctx context.Context, acClient repb.ActionCacheClient, bsC
 		ContentLength: contentLength,
 		ContentType:   contentType,
 	}
+	log.Info("WriteLayerToCache cachetools.UploadProto")
 	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
 	if err != nil {
 		return err
@@ -780,6 +809,7 @@ func WriteLayerToCache(ctx context.Context, acClient repb.ActionCacheClient, bsC
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
+	log.Info("WriteLayerToCache cachetools.UploadActionResult")
 	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
 	if err != nil {
 		return err
@@ -820,10 +850,15 @@ func (i *cacheAwareImage) MediaType() (types.MediaType, error) {
 }
 
 func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, error) {
+	lcref := cacheableRef{
+		registry:   i.ref.registry,
+		repository: i.ref.repository,
+		hash:       hash,
+	}
 	if i.manifest != nil {
 		for _, d := range i.manifest.Layers {
 			if d.Digest == hash {
-				rlref, err := ctrname.NewDigest(i.ref.registry + "/" + i.ref.repository + "@" + hash.String())
+				rlref, err := ctrname.NewDigest(lcref.registry + "/" + lcref.repository + "@" + hash.String())
 				if err != nil {
 					return nil, fmt.Errorf("could not construct ref for layer %s", d.Digest)
 				}
@@ -832,7 +867,7 @@ func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, 
 					return nil, fmt.Errorf("could not create remote layer for %s", rlref)
 				}
 				l := &cacheAwareLayer{
-					ref:         i.ref,
+					ref:         lcref,
 					acc:         i.acc,
 					bsc:         i.bsc,
 					descriptor:  &d,
@@ -849,7 +884,7 @@ func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, 
 		return nil, err
 	}
 	l := &cacheAwareLayer{
-		ref:         i.ref,
+		ref:         lcref,
 		acc:         i.acc,
 		bsc:         i.bsc,
 		remoteLayer: rl,
@@ -905,32 +940,36 @@ func (t *teeReadCloser) Close() error {
 
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	ctx := context.Background()
-	if l.descriptor != nil {
-		d, err := FetchLayerCASDigest(ctx, l.acc, l.ref.registry, l.ref.repository, l.ref.hash)
-		if err != nil && !status.IsNotFoundError(err) {
-			log.CtxErrorf(ctx, "error fetching CAS digest for %s/%s:%s: %s", l.ref.registry, l.ref.repository, l.ref.hash, err)
-		}
-		if err == nil && d != nil {
-			r, w := io.Pipe()
-			go func() {
-				defer w.Close()
-				err := FetchLayerFromCAS(ctx, l.bsc, d, w)
-				if err != nil {
-					log.Errorf("error fetching layer %s/%s:%s: %s", l.ref.registry, l.ref.repository, l.ref.hash, err)
-					w.CloseWithError(err)
-				}
-			}()
-			return r, nil
-		}
+	d, err := FetchLayerCASDigest(ctx, l.acc, l.ref.registry, l.ref.repository, l.ref.hash)
+	log.Infof("FetchLayerCASDigest %s: %q", d, err)
+	if err != nil && !status.IsNotFoundError(err) {
+		log.CtxErrorf(ctx, "error fetching CAS digest for %s/%s:%s: %s", l.ref.registry, l.ref.repository, l.ref.hash, err)
 	}
+	if err == nil && d != nil {
+		r, w := io.Pipe()
+		go func() {
+			defer w.Close()
+			log.Infof("FetchLayerFromCAS %s/%s@%s", l.ref.registry, l.ref.repository, l.ref.hash)
+			err := FetchLayerFromCAS(ctx, l.bsc, d, w)
+			if err != nil {
+				log.Errorf("error fetching layer %s/%s:%s: %s", l.ref.registry, l.ref.repository, l.ref.hash, err)
+				w.CloseWithError(err)
+			}
+		}()
+		return r, nil
+	}
+
+	log.Infof("rl.MediaType %s", l.ref.hash)
 	mediaType, err := l.remoteLayer.MediaType()
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("rl.Size %s", l.ref.hash)
 	size, err := l.remoteLayer.Size()
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("rl.Compressed %s", l.ref.hash)
 	uprc, err := l.remoteLayer.Compressed()
 	if err != nil {
 		return nil, err

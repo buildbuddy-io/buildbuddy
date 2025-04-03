@@ -256,31 +256,43 @@ func (p *ZstdDecoderPool) Put(ref *DecoderRef) error {
 }
 
 type zstdCompressor struct {
-	writer io.Writer
-	enc    *zstd.Encoder
+	wc  io.WriteCloser
+	enc *zstd.Encoder
 }
 
 // NewZstdCompressingWriter returns a WriteCloser that accepts uncompressed bytes,
 // compresses them using zstd compression at the default level, and writes the
 // compressed bytes to the given writer.
-func NewZstdCompressingWriter(writer io.Writer) (io.WriteCloser, error) {
-	enc, err := zstd.NewWriter(writer)
+func NewZstdCompressingWriter(wc io.WriteCloser) (io.WriteCloser, error) {
+	enc, err := zstd.NewWriter(wc)
 	if err != nil {
 		return nil, err
 	}
 
 	return &zstdCompressor{
-		writer: writer,
-		enc:    enc,
+		wc:  wc,
+		enc: enc,
 	}, nil
 }
 
 func (c *zstdCompressor) Write(p []byte) (int, error) {
 	n, err := c.enc.Write(p)
 	metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(n))
+	log.Infof("zstdCompressor Write p %d n %d err %q", len(p), n, err)
 	return n, err
 }
 
 func (c *zstdCompressor) Close() error {
-	return c.enc.Close()
+	log.Info("zstdCompressor Close")
+	err := c.enc.Close()
+	if wcerr := c.wc.Close(); wcerr != nil && err == nil {
+		log.Infof("zstdCompressor Close wcerr: %s", wcerr)
+		return wcerr
+	}
+	if err != nil {
+		log.Infof("zstdCompressor Close err: %s", err)
+		return err
+	}
+	log.Info("zstdCompressor Close OK")
+	return nil
 }
