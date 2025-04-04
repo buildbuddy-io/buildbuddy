@@ -133,16 +133,16 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               {this.props.model.getTargetConfiguredCount() == 1 ? "target" : "targets"}
             </div>
           )}
-          {isBazelInvocation && (
+          {isBazelInvocation && Boolean(this.props.model.buildMetrics?.actionSummary) && (
             <div title={`${this.props.model.buildMetrics?.actionSummary?.actionsCreated} created`} className="detail">
               <Activity className="icon" />
-              {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted ?? 0)} actions
+              {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted)} actions
             </div>
           )}
-          {isBazelInvocation && (
+          {isBazelInvocation && Boolean(this.props.model.buildMetrics?.packageMetrics) && (
             <div className="detail">
               <Box className="icon" />
-              {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded ?? 0)} packages
+              {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded)} packages
             </div>
           )}
           {isBazelInvocation && (
