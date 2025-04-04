@@ -36,6 +36,7 @@ var (
 
 func Register(env *real_environment.RealEnv) error {
 	if *remoteHitTrackerTarget == "" || *remoteHitTrackerWorkers < 1 {
+		env.SetHitTrackerFactory(&NoOpHitTrackerFactory{})
 		return nil
 	}
 
@@ -45,6 +46,16 @@ func Register(env *real_environment.RealEnv) error {
 	}
 	env.SetHitTrackerFactory(newHitTrackerClient(env.GetServerContext(), env, conn))
 	return nil
+}
+
+type NoOpHitTrackerFactory struct{}
+
+func (h *NoOpHitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return &NoOpHitTracker{}
+}
+
+func (h *NoOpHitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return &NoOpHitTracker{}
 }
 
 func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, conn grpc.ClientConnInterface) *HitTrackerFactory {
