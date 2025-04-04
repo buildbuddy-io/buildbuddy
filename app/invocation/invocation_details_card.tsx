@@ -137,7 +137,8 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                 <div className="invocation-section">
                   <div className="invocation-section-title">Actions</div>
                   <div>
-                    {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted)} actions
+                    {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted ?? 0)}{" "}
+                    actions
                     {!!this.props.model.buildMetrics?.actionSummary?.actionsCreated && (
                       <span>
                         {" "}
@@ -149,7 +150,8 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                 <div className="invocation-section">
                   <div className="invocation-section-title">Packages</div>
                   <div>
-                    {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded)} packages
+                    {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded ?? 0)}{" "}
+                    packages
                   </div>
                 </div>
               </>
@@ -191,7 +193,8 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                   <a
                     href={`${this.props.model
                       .getGithubRepo()
-                      .replace(/\.git$/, "")}/commit/${this.props.model.getGithubSHA()}`}>
+                      .replace(/\.git$/, "")}/commit/${this.props.model.getGithubSHA()}`}
+                  >
                     {this.props.model.getGithubSHA()}
                   </a>
                 </div>
@@ -214,7 +217,8 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                 <div className="invocation-section-title">GKE project</div>
                 <div>
                   <a
-                    href={`http://console.cloud.google.com/home/dashboard?project=${this.props.model.getGKEProject()}`}>
+                    href={`http://console.cloud.google.com/home/dashboard?project=${this.props.model.getGKEProject()}`}
+                  >
                     {this.props.model.getGKEProject()}
                   </a>
                 </div>
@@ -226,7 +230,8 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                 <div className="invocation-section-title">GKE cluster</div>
                 <div>
                   <a
-                    href={`https://console.cloud.google.com/kubernetes/list?project=${this.props.model.getGKEProject()}&filter=name:${this.props.model.getGKECluster()}`}>
+                    href={`https://console.cloud.google.com/kubernetes/list?project=${this.props.model.getGKEProject()}&filter=name:${this.props.model.getGKECluster()}`}
+                  >
                     {this.props.model.getGKECluster()}
                   </a>
                 </div>
@@ -310,7 +315,8 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                                 <a
                                   className="invocation-option-name"
                                   href={`https://bazel.build/reference/command-line-reference#flag--${option.optionName}`}
-                                  target="_blank">
+                                  target="_blank"
+                                >
                                   {option.optionName}
                                 </a>
                               )}

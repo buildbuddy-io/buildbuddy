@@ -127,7 +127,8 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           {isBazelInvocation && (
             <div
               className="detail"
-              title={`${this.props.model.buildMetrics?.targetMetrics?.targetsConfigured} configured`}>
+              title={`${this.props.model.buildMetrics?.targetMetrics?.targetsConfigured} configured`}
+            >
               <Target className="icon" />
               {format.formatWithCommas(this.props.model.getTargetConfiguredCount())}{" "}
               {this.props.model.getTargetConfiguredCount() == 1 ? "target" : "targets"}
@@ -136,13 +137,13 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           {isBazelInvocation && (
             <div title={`${this.props.model.buildMetrics?.actionSummary?.actionsCreated} created`} className="detail">
               <Activity className="icon" />
-              {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted)} actions
+              {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted ?? 0)} actions
             </div>
           )}
           {isBazelInvocation && (
             <div className="detail">
               <Box className="icon" />
-              {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded)} packages
+              {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded ?? 0)} packages
             </div>
           )}
           {isBazelInvocation && (
@@ -164,7 +165,8 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           {this.props.model.getRepo() && (
             <Link
               className="detail clickable"
-              href={Path.repoHistoryPath + getRepoUrlPathParam(this.props.model.getRepo())}>
+              href={Path.repoHistoryPath + getRepoUrlPathParam(this.props.model.getRepo())}
+            >
               <Github className="icon" />
               {format.formatGitUrl(this.props.model.getRepo())}
             </Link>
@@ -174,7 +176,8 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               className="detail"
               href={RepoURL.parse(this.props.model.getRepo())?.pullRequestLink(
                 this.props.model.getPullRequestNumber()!
-              )}>
+              )}
+            >
               <GitPullRequest className="icon" />#{this.props.model.getPullRequestNumber()}
             </Link>
           )}
@@ -207,7 +210,8 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           {isBazelInvocation && (
             <Link
               className="detail clickable"
-              href={this.props.model.getIsRBEEnabled() ? "#execution" : Path.setupPath}>
+              href={this.props.model.getIsRBEEnabled() ? "#execution" : Path.setupPath}
+            >
               <Cloud className="icon" />
               {this.props.model.getRBE()}
             </Link>
