@@ -234,6 +234,9 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 	require.Equal(t, int32(2), get(ctx, proxy, digestA, t).GetExitCode())
 	// That should _not_ be a cache hit.
 	require.Equal(t, 1, countingClient.cacheHitCount)
+	// But reading from the proxy again _should_ be a cache hit.
+	require.Equal(t, int32(2), get(ctx, proxy, digestA, t).GetExitCode())
+	require.Equal(t, 2, countingClient.cacheHitCount)
 
 	countingClient.cacheHitCount = 0
 	// DigestB shouldn't be present initially,

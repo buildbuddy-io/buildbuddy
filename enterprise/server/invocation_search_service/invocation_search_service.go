@@ -338,16 +338,11 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
 	}
 
-	// The underlying data is not precise enough to accurately support nanoseconds and there's no use case for it yet.
-	if req.GetQuery().GetMinimumDuration().GetNanos() != 0 || req.GetQuery().GetMaximumDuration().GetNanos() != 0 {
-		return "", nil, status.InvalidArgumentError("InvocationSearchService does not support nanoseconds in duration queries")
+	if minDuration := req.GetQuery().GetMinimumDuration().AsDuration(); minDuration > 0 {
+		q.AddWhereClause(`duration_usec >= ?`, minDuration.Microseconds())
 	}
-
-	if req.GetQuery().GetMinimumDuration().GetSeconds() != 0 {
-		q.AddWhereClause(`duration_usec >= ?`, req.GetQuery().GetMinimumDuration().GetSeconds()*1000*1000)
-	}
-	if req.GetQuery().GetMaximumDuration().GetSeconds() != 0 {
-		q.AddWhereClause(`duration_usec <= ?`, req.GetQuery().GetMaximumDuration().GetSeconds()*1000*1000)
+	if maxDuration := req.GetQuery().GetMaximumDuration().AsDuration(); maxDuration > 0 {
+		q.AddWhereClause(`duration_usec <= ?`, maxDuration.Microseconds())
 	}
 
 	for _, f := range req.GetQuery().GetFilter() {

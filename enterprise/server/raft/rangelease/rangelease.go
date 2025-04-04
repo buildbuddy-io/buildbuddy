@@ -135,7 +135,7 @@ func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) (ret
 
 	replicaRL := l.replica.GetRangeLease()
 	if !proto.Equal(replicaRL, rl) {
-		return status.FailedPreconditionErrorf("rangeLease %v does not match replica %v", rl, replicaRL)
+		return status.FailedPreconditionErrorf("rangeLease %v does not match replica(c%dn%d) %v", rl, l.replica.RangeID(), l.replica.ReplicaID(), replicaRL)
 	}
 
 	// This is a node epoch based lease, so check node and epoch.

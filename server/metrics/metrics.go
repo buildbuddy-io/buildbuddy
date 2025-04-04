@@ -292,10 +292,12 @@ const (
 	// Name of a file.
 	FileName = "file_name"
 
-	// Outcome of attempting to enqueue a remote atime update. One of
-	// "enqueued", "duplicate", "dropped_batch_too_large", or
+	// There are a couple of places where we enqueue RPCs to be batched and
+	// sent asynchronously: the atime_updater and the hit_tracker_client.
+	// This label tracks the outcome of these enqueue operations. One of
+	// "enqueued", "duplicate", "dropped_too_many_updates", or
 	// "dropped_too_many_batches"
-	AtimeUpdateOutcome = "status"
+	EnqueueUpdateOutcome = "status"
 
 	// CreatedFromSnapshot indicates if a firecracker execution used a
 	// snapshot.
@@ -3063,7 +3065,7 @@ var (
 		StatusLabel,
 		CacheHitMissStatus,
 	})
-	ActionCacheProxiedReadByes = promauto.NewCounterVec(prometheus.CounterOpts{
+	ActionCacheProxiedReadBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "action_cache_read_bytes",
@@ -3072,7 +3074,7 @@ var (
 		StatusLabel,
 		CacheHitMissStatus,
 	})
-	ActionCacheProxiedWriteByes = promauto.NewCounterVec(prometheus.CounterOpts{
+	ActionCacheProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
 		Name:      "action_cache_write_bytes",
@@ -3169,7 +3171,6 @@ var (
 		CacheHitMissStatus,
 	})
 
-	// ## Cache Proxy Remote Atime Update Metrics
 	RemoteAtimeUpdates = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
@@ -3177,7 +3178,7 @@ var (
 		Help:      "The number of remote atime updates enqueued, with the outcome of the enqueue operation.",
 	}, []string{
 		GroupID,
-		AtimeUpdateOutcome,
+		EnqueueUpdateOutcome,
 	})
 
 	RemoteAtimeUpdatesSent = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3185,6 +3186,27 @@ var (
 		Subsystem: "proxy",
 		Name:      "remote_atime_update_requests",
 		Help:      "The number of FindMissingBlobRequests sent to the remote cache to update remote blob atimes.",
+	}, []string{
+		GroupID,
+		StatusLabel,
+	})
+
+	RemoteHitTrackerUpdates = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "remote_hit_tracker_updates",
+		Help:      "The number of remote hit-tracker updates enqueued, with the outcome of the enqueue operation.",
+	}, []string{
+		GroupID,
+		EnqueueUpdateOutcome,
+	})
+
+	RemoteHitTrackerRequests = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "remote_hit_tracker_requests",
+		Buckets:   prometheus.ExponentialBuckets(1, 2, 20), // 2^19 = 524,288
+		Help:      "The number of HitTrackerService.Track RPCs sent to the remote hit-tracker service to record cache proxy cache hits. Histogram values are the number of hit-updates per request.",
 	}, []string{
 		GroupID,
 		StatusLabel,

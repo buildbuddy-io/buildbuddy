@@ -833,7 +833,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}
-	taskLeaser := task_leaser.NewTaskLeaser(env, executorID)
+	taskLeaser := task_leaser.NewTaskLeaser(env, executorID, "fake-hostname")
 	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, runnerPool, taskLeaser, &options.priorityTaskSchedulerOptions)
 	taskScheduler.Start()
 

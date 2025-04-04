@@ -321,9 +321,6 @@ func (d *DynamicNodeRegistry) handleEvent(event *serf.UserEvent) {
 	if req.GetGrpcAddress() != "" || req.GetRaftAddress() != "" {
 		d.sReg.AddNode(req.GetNhid(), req.GetRaftAddress(), req.GetGrpcAddress())
 	}
-	for _, r := range req.GetReplicas() {
-		d.sReg.Add(r.GetRangeId(), r.GetReplicaId(), req.GetNhid())
-	}
 }
 
 // handleQuery handles a registry query event. It looks up the NHID, the raft
@@ -390,7 +387,7 @@ func (d *DynamicNodeRegistry) pushUpdate(req *rfpb.RegistryPushRequest) {
 		d.sReg.log.Errorf("error marshaling proto: %s", err)
 		return
 	}
-	err = d.gossipManager.SendUserEvent(constants.RegistryUpdateEvent, buf, true)
+	err = d.gossipManager.SendUserEvent(constants.RegistryUpdateEvent, buf /*coalesce=*/, false)
 	if err != nil {
 		d.sReg.log.Errorf("error pushing gossip update: %s", err)
 	}

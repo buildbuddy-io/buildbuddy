@@ -265,6 +265,7 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		Tags:                               invocation_format.ConvertDBTagsToOLAP(inv.GetTags()),
 		TargetLabel:                        in.GetTargetLabel(),
 		ActionMnemonic:                     in.GetActionMnemonic(),
+		Experiments:                        in.Experiments,
 	}
 }
 

@@ -234,10 +234,7 @@ func (sm *Replica) notifyListenersOfUsage(rd *rfpb.RangeDescriptor, usage *rfpb.
 	}
 }
 
-func (sm *Replica) setRangeLease(key, val []byte) error {
-	if !bytes.HasPrefix(key, constants.LocalRangeLeaseKey) {
-		return status.FailedPreconditionErrorf("[%s] setRangeLease called with non-range-lease key: %s", sm.name(), key)
-	}
+func (sm *Replica) setRangeLease(val []byte) error {
 	lease := &rfpb.RangeLeaseRecord{}
 	if err := proto.Unmarshal(val, lease); err != nil {
 		return err
@@ -254,11 +251,7 @@ func (sm *Replica) GetRangeLease() *rfpb.RangeLeaseRecord {
 	return sm.rangeLease
 }
 
-func (sm *Replica) setRange(key, val []byte) error {
-	if !bytes.HasPrefix(key, constants.LocalRangeKey) {
-		return status.FailedPreconditionErrorf("[%s] setRange called with non-range key: %s", sm.name(), key)
-	}
-
+func (sm *Replica) setRange(val []byte) error {
 	rangeDescriptor := &rfpb.RangeDescriptor{}
 	if err := proto.Unmarshal(val, rangeDescriptor); err != nil {
 		return err
@@ -683,7 +676,7 @@ func (sm *Replica) loadRangeDescriptor(db ReplicaReader) {
 		sm.log.Debugf("Replica opened but range not yet set: %s", err)
 		return
 	}
-	sm.setRange(constants.LocalRangeKey, buf)
+	sm.setRange(buf)
 }
 
 func (sm *Replica) loadRangeLease(db ReplicaReader) {
@@ -691,7 +684,10 @@ func (sm *Replica) loadRangeLease(db ReplicaReader) {
 	if err != nil {
 		return
 	}
-	sm.setRangeLease(constants.LocalRangeLeaseKey, buf)
+	err = sm.setRangeLease(buf)
+	if err != nil {
+		sm.log.Errorf("failed to set range lease: %s", err)
+	}
 }
 
 // clearInMemoryReplicaState clears in-memory replica state.
@@ -1395,13 +1391,15 @@ func (sm *Replica) updateInMemoryState(wb pebble.Batch) {
 	// Update the local in-memory range descriptor iff this batch modified
 	// it.
 	if buf, ok := sm.batchContainsKey(wb, constants.LocalRangeKey); ok {
-		sm.setRange(constants.LocalRangeKey, buf)
+		sm.setRange(buf)
 	}
 	// Update the rangelease iff this batch sets it.
 	if buf, ok := sm.batchContainsKey(wb, constants.LocalRangeLeaseKey); ok {
-		sm.setRangeLease(constants.LocalRangeLeaseKey, buf)
+		err := sm.setRangeLease(buf)
+		if err != nil {
+			sm.log.Errorf("failed to set range lease: %s", err)
+		}
 	}
-
 }
 
 func errorEntry(err error) dbsm.Result {

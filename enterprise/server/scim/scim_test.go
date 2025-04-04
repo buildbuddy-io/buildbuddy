@@ -12,10 +12,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scim"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -41,7 +43,7 @@ func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID 
 	return ctx
 }
 
-func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) string {
+func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) (string, *tables.Group) {
 	u, err := env.GetUserDB().GetUser(ctx)
 	require.NoError(t, err)
 	g := u.Groups[0].Group
@@ -65,7 +67,7 @@ func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) string
 	_, err = env.GetUserDB().UpdateGroup(ctx, &gr)
 	require.NoError(t, err)
 
-	return apiKey.Value
+	return apiKey.Value, &gr
 }
 
 type testClient struct {
@@ -112,6 +114,14 @@ func verifyRole(t *testing.T, ur scim.UserResource, expectedRole string) {
 	require.Equal(t, true, ur.Roles[0].Primary)
 }
 
+func updateUserSubID(t *testing.T, ctx context.Context, udb interfaces.UserDB, userID string, g *tables.Group) {
+	u, err := udb.GetUserByID(ctx, userID)
+	require.NoError(t, err)
+	u.SubID = saml.SubIDForUserName(u.Email, g)
+	err = udb.UpdateUser(ctx, u)
+	require.NoError(t, err)
+}
+
 func TestGetUsers(t *testing.T) {
 	env := getEnv(t)
 	udb := env.GetUserDB()
@@ -134,14 +144,25 @@ func TestGetUsers(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey := prepareGroup(t, userCtx, env)
+	apiKey, gr := prepareGroup(t, userCtx, env)
+	updateUserSubID(t, userCtx, udb, "US100", gr)
+
+	// Add another user to the group with the same e-mail but non-matching
+	// SubID prefix. This user should not be returned by the SCIM call.
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID: "US777",
+		SubID:  "SubID777",
+		Email:  "user100@org1.io",
+	})
+	require.NoError(t, err)
 
 	extraUsers := []*tables.User{}
 	for i := 101; i < 111; i++ {
+		email := fmt.Sprintf("user%d@org1.io", i)
 		extraUsers = append(extraUsers, &tables.User{
 			UserID: fmt.Sprintf("US%d", i),
-			SubID:  fmt.Sprintf("SubID%d", i),
-			Email:  fmt.Sprintf("user%d@org1.io", i),
+			SubID:  saml.SubIDForUserName(email, gr),
+			Email:  email,
 		})
 	}
 	rand.Shuffle(len(extraUsers), func(i, j int) {
@@ -203,8 +224,12 @@ func TestGetUsers(t *testing.T) {
 	}
 
 	// Test using filter to look up a specific user.
+	// There are two users with the same e-mail address but only one has a
+	// SubID that matches the SAML application.
+	// The query should ignore the existence of the user with the non-matching
+	// SubID.
 	{
-		code, body := tc.Get(baseURL + "/scim/Users?filter=" + url.QueryEscape(`userName eq "user109@org1.io"`))
+		code, body := tc.Get(baseURL + "/scim/Users?filter=" + url.QueryEscape(`userName eq "user100@org1.io"`))
 		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
 		lr := scim.UserListResponseResource{}
 		err = json.Unmarshal(body, &lr)
@@ -217,8 +242,8 @@ func TestGetUsers(t *testing.T) {
 		require.Len(t, lr.Resources, 1)
 
 		r := lr.Resources[0]
-		require.Equal(t, "US109", r.ID)
-		require.Equal(t, "user109@org1.io", r.UserName)
+		require.Equal(t, "US100", r.ID)
+		require.Equal(t, "user100@org1.io", r.UserName)
 		require.True(t, r.Active)
 	}
 
@@ -293,7 +318,7 @@ func TestCreateUser(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey := prepareGroup(t, userCtx, env)
+	apiKey, _ := prepareGroup(t, userCtx, env)
 
 	ss := scim.NewSCIMServer(env)
 	mux := http.NewServeMux()
@@ -420,7 +445,7 @@ func TestDeleteUser(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey := prepareGroup(t, userCtx, env)
+	apiKey, _ := prepareGroup(t, userCtx, env)
 
 	// Deletion victims.
 	err = udb.InsertUser(userCtx, &tables.User{
@@ -571,7 +596,7 @@ func TestUpdateUser(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey := prepareGroup(t, userCtx, env)
+	apiKey, _ := prepareGroup(t, userCtx, env)
 
 	ss := scim.NewSCIMServer(env)
 	mux := http.NewServeMux()

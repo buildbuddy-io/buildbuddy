@@ -112,18 +112,15 @@ func (r *Replayer) copyTree(ctx context.Context, sourceRemoteInstanceName string
 			return err
 		})
 		for _, file := range dir.GetFiles() {
-			file := file
+			if _, alreadyStarted := r.uploadsStarted.LoadOrStore(file.GetDigest().GetHash(), struct{}{}); alreadyStarted {
+				continue
+			}
 			eg.Go(func() error {
-				// TODO: singleflight
-				if _, copied := r.copiedDigests.Load(file.GetDigest().GetHash()); copied {
-					return nil
-				}
 				rn := digest.NewCASResourceName(file.GetDigest(), sourceRemoteInstanceName, digestType)
 				err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, rn)
 				if err != nil {
 					return err
 				}
-				r.copiedDigests.Store(file.GetDigest().GetHash(), true)
 				return nil
 			})
 		}
@@ -311,8 +308,9 @@ type Replayer struct {
 	sourceCASClient, destCASClient repb.ContentAddressableStorageClient
 	execClient                     repb.ExecutionClient
 
-	// Digests that were copied to the remote (for deduping)
-	copiedDigests sync.Map
+	// Digests that have already started uploading and do not need to be
+	// re-uploaded. Keys are digest hashes; values are arbitrary.
+	uploadsStarted sync.Map
 }
 
 func (r *Replayer) Start(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.CASResourceName) error {

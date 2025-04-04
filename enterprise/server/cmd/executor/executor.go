@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -79,6 +80,7 @@ var (
 	monitoringPort    = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 	monitoringSSLPort = flag.Int("monitoring.ssl_port", -1, "If non-negative, the SSL port to listen for monitoring traffic on. `ssl` config must have `ssl_enabled: true` and be properly configured.")
 	serverType        = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
+	maxThreads        = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
 )
 
 func init() {
@@ -250,6 +252,10 @@ func main() {
 
 	setUmask()
 
+	if *maxThreads > 0 {
+		debug.SetMaxThreads(*maxThreads)
+	}
+
 	rootContext := context.Background()
 
 	// Flags must be parsed before config secrets integration is enabled since
@@ -307,11 +313,12 @@ func main() {
 		log.Fatalf("Failed to initialize runner pool: %s", err)
 	}
 
-	executor, err := remote_executor.NewExecutor(env, executorID, getExecutorHostID(), getExecutorHostName(), runnerPool)
+	executorHostName := getExecutorHostName()
+	executor, err := remote_executor.NewExecutor(env, executorID, getExecutorHostID(), executorHostName, runnerPool)
 	if err != nil {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}
-	taskLeaser := task_leaser.NewTaskLeaser(env, executorID)
+	taskLeaser := task_leaser.NewTaskLeaser(env, executorID, executorHostName)
 	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, taskLeaser, &priority_task_scheduler.Options{})
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)

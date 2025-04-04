@@ -29,9 +29,7 @@ ts_library(
         "//app/util:clipboard",
         "//app/util:git",
         "//enterprise/app/workflows:action_list",
-        "//enterprise/app/workflows:create_workflow",
         "//enterprise/app/workflows:github_app_import",
-        "//enterprise/app/workflows:github_import",
         "//enterprise/app/workflows:zero_state",
         "//proto:github_ts_proto",
         "//proto:workflow_ts_proto",
@@ -52,46 +50,6 @@ ts_library(
         "//app/router",
         "//app/util:proto",
         "//proto:invocation_status_ts_proto",
-        "//proto:workflow_ts_proto",
-    ],
-)
-
-ts_library(
-    name = "create_workflow",
-    srcs = ["create_workflow.tsx"],
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/tslib",
-        "//app/alert:alert_service",
-        "//app/auth:auth_service",
-        "//app/components/button",
-        "//app/components/dialog",
-        "//app/components/input",
-        "//app/components/modal",
-        "//app/errors:error_service",
-        "//app/router",
-        "//app/service:rpc_service",
-        "//proto:git_ts_proto",
-        "//proto:workflow_ts_proto",
-    ],
-)
-
-ts_library(
-    name = "github_import",
-    srcs = ["github_import.tsx"],
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-        "//app/alert:alert_service",
-        "//app/components/button",
-        "//app/components/link",
-        "//app/errors:error_service",
-        "//app/router",
-        "//app/service:rpc_service",
-        "//app/util:errors",
-        "//proto:git_ts_proto",
         "//proto:workflow_ts_proto",
     ],
 )

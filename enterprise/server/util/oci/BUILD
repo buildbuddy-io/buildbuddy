@@ -42,7 +42,6 @@ go_test(
         "//proto:registry_go_proto",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
-        "//server/testutil/testenviron",
         "//server/testutil/testfs",
         "//server/testutil/testregistry",
         "//server/util/log",

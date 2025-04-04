@@ -25,7 +25,7 @@ import (
 
 var (
 	cacheActionResults = flag.Bool("cache_proxy.cache_action_results", false, "If true, the proxy will cache ActionCache.GetActionResult responses.")
-	actionCacheSalt    = flag.String("cache_proxy.action_cache_salt", "actioncache-170325", "A salt to reset action cache contents when needed.")
+	actionCacheSalt    = flag.String("cache_proxy.action_cache_salt", "actioncache-170401", "A salt to reset action cache contents when needed.")
 )
 
 type ActionCacheServerProxy struct {
@@ -57,8 +57,8 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 	}, nil
 }
 
-func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
-	hashBytes, err := req.MarshalVT()
+func getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
+	hashBytes, err := proto.Marshal(req)
 	if err != nil {
 		return nil, err
 	}
@@ -70,14 +70,9 @@ func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(req *repb.Get
 	return digest.NewACResourceName(d, req.GetInstanceName(), req.GetDigestFunction()), nil
 }
 
-func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.Digest, *repb.ActionResult, error) {
-	key, err := s.getACKeyForGetActionResultRequest(req)
-	if err != nil {
-		return nil, nil, err
-	}
+func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Context, key *digest.ACResourceName) (*repb.Digest, *repb.ActionResult, error) {
 	ptr := &rspb.ResourceName{}
-	err = cachetools.ReadProtoFromAC(ctx, s.localCache, key, ptr)
-	if err != nil {
+	if err := cachetools.ReadProtoFromAC(ctx, s.localCache, key, ptr); err != nil {
 		return nil, nil, err
 	}
 	casRN, err := digest.CASResourceNameFromProto(ptr)
@@ -93,17 +88,13 @@ func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Contex
 	return ptr.GetDigest(), out, nil
 }
 
-func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, req *repb.GetActionResultRequest, resp *repb.ActionResult) error {
-	key, err := s.getACKeyForGetActionResultRequest(req)
-	if err != nil {
-		return err
-	}
+func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, key *digest.ACResourceName, req *repb.GetActionResultRequest, resp *repb.ActionResult) error {
 	d, err := cachetools.UploadProtoToCAS(ctx, s.localCache, req.GetInstanceName(), req.GetDigestFunction(), resp)
 	if err != nil {
 		return err
 	}
 	casRN := digest.NewCASResourceName(d, req.GetInstanceName(), req.GetDigestFunction())
-	buf, err := casRN.ToProto().MarshalVT()
+	buf, err := proto.Marshal(casRN.ToProto())
 	if err != nil {
 		return err
 	}
@@ -116,7 +107,14 @@ func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, r
 // received to avoid transferring data on unmodified actions.
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
-		return s.remoteCache.GetActionResult(ctx, req)
+		resp, err := s.remoteCache.GetActionResult(ctx, req)
+		labels := prometheus.Labels{
+			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+			metrics.CacheHitMissStatus: metrics.UncacheableStatusLabel,
+		}
+		metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
+		metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(proto.Size(resp)))
+		return resp, err
 	}
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
@@ -126,9 +124,14 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 
 	// First, see if we have a local copy of this ActionResult.
 	var local *repb.ActionResult
+	var localKey *digest.ACResourceName
 	if *cacheActionResults {
+		localKey, err = getACKeyForGetActionResultRequest(req)
+		if err != nil {
+			return nil, err
+		}
 		var err error
-		localDigest, localResult, err := s.getLocallyCachedActionResult(ctx, req)
+		localDigest, localResult, err := s.getLocallyCachedActionResult(ctx, localKey)
 		if err != nil && !status.IsNotFoundError(err) {
 			return nil, err
 		}
@@ -148,16 +151,16 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	if *cacheActionResults && req.GetCachedActionResultDigest().GetHash() != "" &&
 		proto.Equal(req.GetCachedActionResultDigest(), resp.GetActionResultDigest()) {
 		resp = local
-		labels[metrics.CacheHitMissStatus] = "hit"
+		labels[metrics.CacheHitMissStatus] = metrics.HitStatusLabel
 	} else {
 		if *cacheActionResults && err == nil && resp != nil {
-			s.cacheActionResultLocally(ctx, req, resp)
+			s.cacheActionResultLocally(ctx, localKey, req, resp)
 		}
-		labels[metrics.CacheHitMissStatus] = "miss"
+		labels[metrics.CacheHitMissStatus] = metrics.MissStatusLabel
 	}
 
 	metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
-	metrics.ActionCacheProxiedReadByes.With(labels).Add(float64(proto.Size(resp)))
+	metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(proto.Size(resp)))
 	return resp, err
 }
 
@@ -168,9 +171,9 @@ func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *re
 	resp, err := s.remoteCache.UpdateActionResult(ctx, req)
 	labels := prometheus.Labels{
 		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
-		metrics.CacheHitMissStatus: "miss",
+		metrics.CacheHitMissStatus: metrics.MissStatusLabel,
 	}
 	metrics.ActionCacheProxiedWriteRequests.With(labels).Inc()
-	metrics.ActionCacheProxiedWriteByes.With(labels).Add(float64(proto.Size(req)))
+	metrics.ActionCacheProxiedWriteBytes.With(labels).Add(float64(proto.Size(req)))
 	return resp, err
 }

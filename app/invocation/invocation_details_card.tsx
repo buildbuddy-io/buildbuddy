@@ -134,24 +134,29 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                     )}
                   </div>
                 </div>
-                <div className="invocation-section">
-                  <div className="invocation-section-title">Actions</div>
-                  <div>
-                    {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted)} actions
-                    {!!this.props.model.buildMetrics?.actionSummary?.actionsCreated && (
-                      <span>
-                        {" "}
-                        ({format.formatWithCommas(this.props.model.buildMetrics?.actionSummary.actionsCreated)} created)
-                      </span>
-                    )}
+                {Boolean(this.props.model.buildMetrics?.actionSummary) && (
+                  <div className="invocation-section">
+                    <div className="invocation-section-title">Actions</div>
+                    <div>
+                      {format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsExecuted)} actions
+                      {!!this.props.model.buildMetrics?.actionSummary?.actionsCreated && (
+                        <span>
+                          {" "}
+                          ({format.formatWithCommas(this.props.model.buildMetrics?.actionSummary?.actionsCreated)}{" "}
+                          created)
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="invocation-section">
-                  <div className="invocation-section-title">Packages</div>
-                  <div>
-                    {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded)} packages
+                )}
+                {Boolean(this.props.model.buildMetrics?.packageMetrics) && (
+                  <div className="invocation-section">
+                    <div className="invocation-section-title">Packages</div>
+                    <div>
+                      {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded)} packages
+                    </div>
                   </div>
-                </div>
+                )}
               </>
             )}
 

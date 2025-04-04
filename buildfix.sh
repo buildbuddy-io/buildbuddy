@@ -24,21 +24,22 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-BAZEL_QUIET_FLAGS=(
+BAZEL_FLAGS=(
   "--ui_event_filters=-info,-stdout,-stderr"
   "--noshow_progress"
+  "--config=cache"
 )
 
 # buildifier format all BUILD files
 echo "Formatting WORKSPACE/BUILD files..."
-bazel run "${BAZEL_QUIET_FLAGS[@]}" :buildifier
+bazel run "${BAZEL_FLAGS[@]}" :buildifier
 
 echo "Building and running goimports..."
 GO_SRCS=()
 while IFS= read -r line; do
   GO_SRCS+=("$line")
 done < <(git ls-files '*.go')
-bazel run "${BAZEL_QUIET_FLAGS[@]}" //tools/goimports -- -w "${GO_SRCS[@]}"
+bazel run "${BAZEL_FLAGS[@]}" //tools/goimports -- -w "${GO_SRCS[@]}"
 
 echo "Formatting .proto files..."
 protos=()
@@ -46,11 +47,11 @@ while read -r proto; do
   protos+=("$PWD/$proto")
 done < <(git ls-files --exclude-standard | grep '\.proto$')
 if [ ${#protos[@]} -gt 0 ]; then
-  bazel run "${BAZEL_QUIET_FLAGS[@]}" //tools/clang-format -- -i --style=Google "${protos[@]}"
+  bazel run "${BAZEL_FLAGS[@]}" //tools/clang-format -- -i --style=Google "${protos[@]}"
 fi
 
 echo "Formatting frontend and markup files with prettier..."
-bazel run "${BAZEL_QUIET_FLAGS[@]}" //tools/prettier -- --write
+bazel run "${BAZEL_FLAGS[@]}" //tools/prettier -- --write
 
 if ((GO_DEPS)); then
   echo "Fixing go.mod, go.sum, deps.bzl, and MODULE.bazel..."
