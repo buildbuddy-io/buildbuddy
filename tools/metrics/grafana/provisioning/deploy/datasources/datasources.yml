@@ -12,7 +12,7 @@ datasources:
     editable: false
   - name: ClickHouse
     type: grafana-clickhouse-datasource
-    uid: grafana
+    uid: clickhouse
     jsonData:
       port: 9000
       host: clickhouse-repl-%{ENV}.clickhouse-operator-%{ENV}.svc.cluster.local
