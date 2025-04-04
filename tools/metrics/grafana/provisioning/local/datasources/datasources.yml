@@ -11,3 +11,12 @@ datasources:
     editable: false
     jsonData:
       timeInterval: 1s
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    uid: clickhouse
+    jsonData:
+      port: ${CLICKHOUSE_PORT}
+      host: host.docker.internal
+      username: ${CLICKHOUSE_USERNAME}
+    secureJsonData:
+      password: ${CLICKHOUSE_PASSWORD}

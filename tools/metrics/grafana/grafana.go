@@ -30,6 +30,8 @@ var (
 	// Note: these flags only take effect when setting -kube=true:
 	namespace = flag.String("namespace", "monitor-dev", "k8s namespace")
 	service   = flag.String("service", "victoria-metrics-cluster-global-vmselect", "k8s VictoriaMetrics service name")
+
+	clickhouse = flag.String("clickhouse", "", "Optional clickhouse environment to connect to. If set, must be one of (local, dev, prod)")
 )
 
 const (
@@ -58,6 +60,21 @@ func run() error {
 	if err := os.Chdir(workspaceRoot); err != nil {
 		return err
 	}
+	switch *clickhouse {
+	case "":
+	case "local":
+		os.Setenv("CLICKHOUSE_PORT", "9000") // Assume the default from tools/clickhouse
+	case "dev", "prod":
+		os.Setenv("CLICKHOUSE_PORT", "9001")
+		os.Setenv("CLICKHOUSE_USERNAME", "buildbuddy_"+*clickhouse+"_readonly")
+		pw, err := getSecret("BB_" + strings.ToUpper(*clickhouse) + "_CLICKHOUSE_READONLY_PASSWORD")
+		if err != nil {
+			return err
+		}
+		os.Setenv("CLICKHOUSE_PASSWORD", string(pw))
+	default:
+		return fmt.Errorf("Invalid value for --clickhouse: %v", *clickhouse)
+	}
 	ctx := context.Background()
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -68,7 +85,15 @@ func run() error {
 		// Start docker-compose
 		os.Setenv("DASHBOARDS_DIR", filepath.Join(workspaceRoot, dashboardsDir))
 		os.Setenv("GF_DATASOURCE_URL", strings.Replace(datasourceURL(), "localhost", "host.docker.internal", 1))
-		args := []string{"--file", "docker-compose.grafana.yml"}
+
+		commandName := "docker-compose"
+		var args []string
+		if _, err := exec.LookPath("docker-compose"); err != nil {
+			commandName = "docker"
+			args = append(args, "compose")
+		}
+
+		args = append(args, "--file", "docker-compose.grafana.yml")
 		if !*kube {
 			args = append(args, "--file", "docker-compose.redis-exporter.yml")
 			args = append(args, "--file", "docker-compose.victoria-metrics.yml")
@@ -76,7 +101,7 @@ func run() error {
 		args = append(args, "up")
 		// Note: CommandContext kills with SIGKILL - we don't want that since it
 		// doesn't give docker a chance to clean up.
-		cmd := exec.Command("docker-compose", args...)
+		cmd := exec.Command(commandName, args...)
 		cmd.Dir = dockerComposeDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -86,14 +111,43 @@ func run() error {
 		if !*kube {
 			return nil
 		}
-		// Start kubectl port-forward
+		// Start kubectl port-forward for victoria metrics
 		cmd := exec.CommandContext(
 			ctx, "kubectl", "--namespace", *namespace,
 			"port-forward", "service/"+*service,
 			"--address=0.0.0.0", "8481:8481")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		return cmd.Run()
+		err := cmd.Run()
+		if err != nil {
+			log.Printf("*********** Failed to port forward victoria metrics connection: %s", err)
+		}
+		return err
+	})
+	eg.Go(func() error {
+		var context, namespace, service string
+		if *clickhouse == "dev" {
+			context = "gke_flame-build_us-west1_dev-nv8eh"
+			namespace = "clickhouse-operator-dev"
+			service = "chi-repl-dev-replicated-0-0-0"
+		} else if *clickhouse == "prod" {
+			context = "gke_flame-build_us-west1_prod-hs6in"
+			namespace = "clickhouse-operator-prod"
+			service = "chi-repl-prod-replicated-0-0-0"
+		} else {
+			return nil
+		}
+		// Start kubectl port-forward for clickhouse
+		cmd := exec.CommandContext(
+			ctx, "kubectl", "--namespace", namespace, "port-forward", service,
+			"--context="+context, "--address=0.0.0.0", "9001:9000")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err := cmd.Run()
+		if err != nil {
+			log.Printf("*********** Failed to port forward clickhouse connection: %s", err)
+		}
+		return err
 	})
 	eg.Go(func() error {
 		// Periodically export dashboards
@@ -151,6 +205,10 @@ func run() error {
 		}
 	})
 	return eg.Wait()
+}
+
+func getSecret(secret string) ([]byte, error) {
+	return exec.Command("gcloud", "secrets", "versions", "access", "latest", "--secret="+secret).CombinedOutput()
 }
 
 func datasourceURL() string {
