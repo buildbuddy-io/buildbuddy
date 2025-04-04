@@ -82,6 +82,7 @@ func run() error {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
+		defer cancel() // stop everything else even when docker exits cleanly
 		// Start docker-compose
 		os.Setenv("DASHBOARDS_DIR", filepath.Join(workspaceRoot, dashboardsDir))
 		os.Setenv("GF_DATASOURCE_URL", strings.Replace(datasourceURL(), "localhost", "host.docker.internal", 1))
