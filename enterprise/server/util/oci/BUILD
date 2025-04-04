@@ -8,8 +8,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci",
     deps = [
         "//enterprise/server/remote_execution/platform",
-        "//proto:registry_go_proto",
         "//proto:ociregistry_go_proto",
+        "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/http/httpclient",
         "//server/remote_cache/cachetools",
@@ -44,7 +44,6 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testregistry",
-        "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
