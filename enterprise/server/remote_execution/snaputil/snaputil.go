@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -21,6 +20,7 @@ import (
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/metadata"
 
+	proxy_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -98,7 +98,7 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	// If the proxy is enabled, snapshots are not saved to the remote cache to minimize
 	// high network transfer. Snapshots can't be shared across different machine
 	// types, so there's no reason to support snapshot sharing across clusters.
-	ctx = metadata.AppendToOutgoingContext(ctx, byte_stream_server_proxy.SkipRemoteKey, "true")
+	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
 
 	r := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
@@ -161,7 +161,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	// If the proxy is enabled, skip writing snapshots to the remote cache to minimize
 	// high network transfer. Snapshots can't be shared across different machine
 	// types, so there's no reason to support snapshot sharing across clusters.
-	ctx = metadata.AppendToOutgoingContext(ctx, byte_stream_server_proxy.SkipRemoteKey, "true")
+	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
 
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
 	if err == nil && bytesUploaded > 0 {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -15,15 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc/metadata"
-
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
-)
-
-const (
-	// If set to "true" in the context metadata, skip remote reads and writes.
-	SkipRemoteKey = "proxy_skip_remote"
 )
 
 type ByteStreamServerProxy struct {
@@ -79,9 +73,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 
 	localReadStream, err := s.local.Read(ctx, req)
 	if err != nil {
-		md := metadata.ValueFromIncomingContext(ctx, SkipRemoteKey)
-		skipRemote := len(md) > 0 && md[0] == "true"
-		if skipRemote {
+		if proxy_util.SkipRemote(ctx) {
 			return err
 		}
 
@@ -278,9 +270,8 @@ func (s *ByteStreamServerProxy) write(stream bspb.ByteStream_WriteServer) (*bspb
 		local = localWriter
 	}
 
-	md := metadata.ValueFromIncomingContext(ctx, SkipRemoteKey)
 	var remote bspb.ByteStream_WriteClient
-	if len(md) == 0 || md[0] != "true" || local == nil {
+	if !proxy_util.SkipRemote(ctx) || local == nil {
 		var err error
 		remote, err = s.remote.Write(ctx)
 		if err != nil {

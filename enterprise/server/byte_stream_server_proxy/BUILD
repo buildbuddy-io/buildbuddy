@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/util/proxy",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
@@ -19,7 +20,6 @@ go_library(
         "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
     ],
 )
