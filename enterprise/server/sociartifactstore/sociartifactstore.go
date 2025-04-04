@@ -43,6 +43,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -108,13 +109,13 @@ func newSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
 	}
 }
 
-func getTargetImageInfo(ctx context.Context, image string, platform *rgpb.Platform, creds oci.Credentials) (targetImage ctrname.Digest, manifestConfig v1.Hash, err error) {
+func getTargetImageInfo(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, image string, platform *rgpb.Platform, creds oci.Credentials) (targetImage ctrname.Digest, manifestConfig v1.Hash, err error) {
 	imageRef, err := ctrname.ParseReference(image)
 	if err != nil {
 		return ctrname.Digest{}, v1.Hash{}, status.InvalidArgumentErrorf("invalid image %q", image)
 	}
 
-	targetImg, err := oci.Resolve(ctx, image, platform, creds)
+	targetImg, err := oci.Resolve(ctx, acClient, bsClient, image, platform, creds)
 	if err != nil {
 		return ctrname.Digest{}, v1.Hash{}, err
 	}
@@ -140,7 +141,7 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	if err != nil {
 		return nil, err
 	}
-	targetImageRef, configHash, err := getTargetImageInfo(ctx, req.Image, req.Platform, creds)
+	targetImageRef, configHash, err := getTargetImageInfo(ctx, s.env.GetActionCacheClient(), s.env.GetByteStreamClient(), req.Image, req.Platform, creds)
 	if err != nil {
 		return nil, err
 	}
