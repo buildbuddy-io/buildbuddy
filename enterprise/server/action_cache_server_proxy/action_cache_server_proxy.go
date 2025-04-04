@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -29,10 +31,11 @@ var (
 )
 
 type ActionCacheServerProxy struct {
-	env           environment.Env
-	authenticator interfaces.Authenticator
-	localCache    interfaces.Cache
-	remoteCache   repb.ActionCacheClient
+	env            environment.Env
+	authenticator  interfaces.Authenticator
+	localCache     interfaces.Cache
+	remoteACClient repb.ActionCacheClient
+	localACClient  repb.ActionCacheClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -50,10 +53,11 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 		return nil, fmt.Errorf("An ActionCacheClient is required to enable the ActionCacheServerProxy")
 	}
 	return &ActionCacheServerProxy{
-		env:           env,
-		authenticator: env.GetAuthenticator(),
-		localCache:    env.GetCache(),
-		remoteCache:   remoteCache,
+		env:            env,
+		authenticator:  env.GetAuthenticator(),
+		localCache:     env.GetCache(),
+		remoteACClient: remoteCache,
+		localACClient:  env.GetLocalActionCacheClient(),
 	}, nil
 }
 
@@ -70,6 +74,7 @@ func getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*diges
 	return digest.NewACResourceName(d, req.GetInstanceName(), req.GetDigestFunction()), nil
 }
 
+// TODO: Add comment for this function
 func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Context, key *digest.ACResourceName) (*repb.Digest, *repb.ActionResult, error) {
 	ptr := &rspb.ResourceName{}
 	if err := cachetools.ReadProtoFromAC(ctx, s.localCache, key, ptr); err != nil {
@@ -88,7 +93,15 @@ func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Contex
 	return ptr.GetDigest(), out, nil
 }
 
-func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, key *digest.ACResourceName, req *repb.GetActionResultRequest, resp *repb.ActionResult) error {
+// TODO: Improve comment and name to explain the extra layer of indirection
+// cacheActionResultLocally stores the ActionResult `resp` in the CAS and then
+// creates an AC entry that points from `acKey` to the generated CAS key.
+// In the cache: { `acKey` => CAS key, CAS key => `resp` }
+//
+// Typically, the contents fetched from an action cache key do not have to match the
+// digest, while for the CAS we validate that the contents do match the digest.
+// Storing the ActionResult in the CAS lets us generate a digest we can validate
+func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, acKey *digest.ACResourceName, req *repb.GetActionResultRequest, resp *repb.ActionResult) error {
 	d, err := cachetools.UploadProtoToCAS(ctx, s.localCache, req.GetInstanceName(), req.GetDigestFunction(), resp)
 	if err != nil {
 		return err
@@ -98,7 +111,7 @@ func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, k
 	if err != nil {
 		return err
 	}
-	return s.localCache.Set(ctx, key.ToProto(), buf)
+	return s.localCache.Set(ctx, acKey.ToProto(), buf)
 }
 
 // Action Cache entries are not content-addressable, so the value pointed to
@@ -107,7 +120,7 @@ func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, k
 // received to avoid transferring data on unmodified actions.
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
-		resp, err := s.remoteCache.GetActionResult(ctx, req)
+		resp, err := s.remoteACClient.GetActionResult(ctx, req)
 		labels := prometheus.Labels{
 			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
 			metrics.CacheHitMissStatus: metrics.UncacheableStatusLabel,
@@ -122,7 +135,12 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 		return nil, err
 	}
 
-	// First, see if we have a local copy of this ActionResult.
+	if proxy_util.SkipRemote(ctx) {
+		return s.localACClient.GetActionResult(ctx, req)
+	}
+
+	// If using the remote cache as the source of truth, we must validate that
+	// any locally stored action result matches that stored remotely.
 	var local *repb.ActionResult
 	var localKey *digest.ACResourceName
 	if *cacheActionResults {
@@ -136,18 +154,25 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 			return nil, err
 		}
 		if localDigest != nil {
-			// See if remote matches our locally-cached result.
+			// When `CachedActionResultDigest` is set, the remote AC server
+			// will validate whether its cached result has the same digest as
+			// `CachedActionResultDigest`. If they match, it will not send
+			// the full contents of the action result back, in order to reduce
+			// network transfer.
 			req.CachedActionResultDigest = localDigest
 			local = localResult
 		}
 	}
 
-	resp, err := s.remoteCache.GetActionResult(ctx, req)
+	resp, err := s.remoteACClient.GetActionResult(ctx, req)
 	labels := prometheus.Labels{
 		metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
 	}
 
-	// The response indicates that our cached value is valid; use it.
+	// If `ActionResultDigest` is set on the response, the contents stored
+	// in the remote AC key match those stored locally, and the remote server
+	// will not send back the full contents of the action result. Return
+	// the locally cached value.
 	if *cacheActionResults && req.GetCachedActionResultDigest().GetHash() != "" &&
 		proto.Equal(req.GetCachedActionResultDigest(), resp.GetActionResultDigest()) {
 		resp = local
@@ -164,11 +189,20 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	return resp, err
 }
 
-// Action Cache entries are not content-addressable, so the value pointed to
-// by a given key may change in the backing cache. Thus, don't cache them
-// locally when writing to the authoritative cache.
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
-	resp, err := s.remoteCache.UpdateActionResult(ctx, req)
+	// Only if it's explicitly requested do we cache AC results locally.
+	md := metadata.ValueFromIncomingContext(ctx, "proxy_skip_remote")
+	skipRemote := len(md) > 0 && md[0] == "true"
+	if skipRemote {
+		return s.localACClient.UpdateActionResult(ctx, req)
+	}
+
+	// By default, we use the remote cache as the source of truth for AC results.
+	// Action Cache entries are not content-addressable, so the value pointed to
+	// by a given key may change. Cache proxies in different clusters could have
+	// different values stored locally, so simplify by always using the remote value.
+	// Thus, don't cache action results locally by default.
+	resp, err := s.remoteACClient.UpdateActionResult(ctx, req)
 	labels := prometheus.Labels{
 		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
 		metrics.CacheHitMissStatus: metrics.MissStatusLabel,

@@ -18,7 +18,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc/metadata"
 
+	proxy_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -92,6 +94,12 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 		return 0, err
 	}
 	defer f.Close()
+
+	// If the proxy is enabled, snapshots are not saved to the remote cache to minimize
+	// high network transfer. Snapshots can't be shared across different machine
+	// types, so there's no reason to support snapshot sharing across clusters.
+	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
+
 	r := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
 	if err := cachetools.GetBlob(ctx, bsClient, r, f); err != nil {
@@ -149,6 +157,12 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 		return 0, err
 	}
 	defer file.Close()
+
+	// If the proxy is enabled, skip writing snapshots to the remote cache to minimize
+	// high network transfer. Snapshots can't be shared across different machine
+	// types, so there's no reason to support snapshot sharing across clusters.
+	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
+
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
 	if err == nil && bytesUploaded > 0 {
 		metrics.SnapshotRemoteCacheUploadSizeBytes.With(prometheus.Labels{
