@@ -337,6 +337,7 @@ func TestResolve_Arm64VariantIsOptional(t *testing.T) {
 			require.NoError(t, err)
 			layers, err := pulledImg.Layers()
 			require.NoError(t, err)
+			assert.Equal(t, 1, len(layers))
 			contents := layerContents(t, layers[0])
 			require.Equal(t, map[string]string{
 				"/variant.txt": test.platform.Variant,
