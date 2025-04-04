@@ -15,6 +15,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -207,23 +209,38 @@ func TestToProto(t *testing.T) {
 }
 
 func TestResolve(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{})
 	imageName, _ := registry.PushRandomImage(t)
 	_, err := oci.Resolve(
 		context.Background(),
+		te.GetActionCacheClient(),
+		te.GetByteStreamClient(),
 		imageName,
 		&rgpb.Platform{
 			Arch: runtime.GOARCH,
 			Os:   runtime.GOOS,
 		},
-		oci.Credentials{})
+		oci.Credentials{},
+	)
 	require.NoError(t, err)
 }
 
 func TestResolve_InvalidImage(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	_, err := oci.Resolve(
 		context.Background(),
+		te.GetActionCacheClient(),
+		te.GetByteStreamClient(),
 		":invalid",
 		&rgpb.Platform{
 			Arch: runtime.GOARCH,
@@ -234,6 +251,11 @@ func TestResolve_InvalidImage(t *testing.T) {
 }
 
 func TestResolve_Unauthorized(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -252,6 +274,8 @@ func TestResolve_Unauthorized(t *testing.T) {
 	imageName, _ := registry.PushRandomImage(t)
 	_, err := oci.Resolve(
 		context.Background(),
+		te.GetActionCacheClient(),
+		te.GetByteStreamClient(),
 		imageName,
 		&rgpb.Platform{
 			Arch: runtime.GOARCH,
@@ -262,6 +286,14 @@ func TestResolve_Unauthorized(t *testing.T) {
 }
 
 func TestResolve_Arm64VariantIsOptional(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	require.NotNil(t, te.GetByteStreamClient())
+
+	flags.Set(t, "http.client.allow_localhost", true)
 	for _, test := range []struct {
 		name     string
 		platform v1.Platform
@@ -270,7 +302,6 @@ func TestResolve_Arm64VariantIsOptional(t *testing.T) {
 		{name: "linux/arm64", platform: v1.Platform{Architecture: "arm64", OS: "linux"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			flags.Set(t, "http.client.allow_localhost", true)
 			ctx := context.Background()
 
 			registry := testregistry.Run(t, testregistry.Opts{})
@@ -291,13 +322,21 @@ func TestResolve_Arm64VariantIsOptional(t *testing.T) {
 
 			ref := registry.PushIndex(t, index, "test-multiplatform-image")
 
-			pulledImg, err := oci.Resolve(ctx, ref, &rgpb.Platform{
-				Arch: "arm64",
-				Os:   "linux",
-			}, oci.Credentials{})
+			pulledImg, err := oci.Resolve(
+				ctx,
+				te.GetActionCacheClient(),
+				te.GetByteStreamClient(),
+				ref,
+				&rgpb.Platform{
+					Arch: "arm64",
+					Os:   "linux",
+				},
+				oci.Credentials{},
+			)
 			require.NoError(t, err)
 			layers, err := pulledImg.Layers()
 			require.NoError(t, err)
+			assert.Equal(t, 1, len(layers))
 			contents := layerContents(t, layers[0])
 			require.Equal(t, map[string]string{
 				"/variant.txt": test.platform.Variant,
@@ -328,6 +367,11 @@ func layerContents(t *testing.T, layer v1.Layer) map[string]string {
 }
 
 func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	flags.Set(t, "http.client.allow_localhost", true)
 	// Track requests to original and mirror registries.
 	var originalReqCount, mirrorReqCount atomic.Int32
@@ -372,6 +416,8 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	// Resolve the image, which should fall back to the original after mirror fails.
 	img, err := oci.Resolve(
 		context.Background(),
+		te.GetActionCacheClient(),
+		te.GetByteStreamClient(),
 		imageName,
 		&rgpb.Platform{
 			Arch: runtime.GOARCH,
@@ -389,4 +435,100 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	// Ensure the mirror was attempted first, then the original.
 	assert.Equal(t, int32(1), mirrorReqCount.Load(), "mirror should have been queried once")
 	assert.Equal(t, int32(1), originalReqCount.Load(), "original registry should have been queried after mirror failed")
+}
+
+func TestResolve_CachesManifest(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	flags.Set(t, "http.client.allow_localhost", true)
+
+	var count atomic.Int32
+	testreg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == http.MethodGet && r.URL.Path != "/v2/" {
+				count.Add(1)
+			}
+			return true
+		},
+	})
+
+	imageName, ogimage := testreg.PushRandomImage(t)
+	imageDigest, err := ogimage.Digest()
+	require.NoError(t, err)
+
+	hashToLayer := map[v1.Hash][]byte{}
+	oglayers, err := ogimage.Layers()
+	require.NoError(t, err)
+	for _, oglayer := range oglayers {
+		rc, err := oglayer.Compressed()
+		require.NoError(t, err)
+		hash, err := oglayer.Digest()
+		require.NoError(t, err)
+		b, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		err = rc.Close()
+		require.NoError(t, err)
+		hashToLayer[hash] = b
+	}
+
+	before := count.Load()
+	for i := 0; i < 2; i++ {
+		img, err := oci.Resolve(
+			context.Background(),
+			te.GetActionCacheClient(),
+			te.GetByteStreamClient(),
+			imageName,
+			&rgpb.Platform{
+				Arch: runtime.GOARCH,
+				Os:   runtime.GOOS,
+			},
+			oci.Credentials{},
+		)
+		require.NoError(t, err)
+
+		digest, err := img.Digest()
+		require.NoError(t, err)
+		assert.Equal(t, imageDigest.String(), digest.String())
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		assert.Equal(t, len(hashToLayer), len(layers))
+		for _, layer := range layers {
+			hash, err := layer.Digest()
+			require.NoError(t, err)
+			ogbytes, ok := hashToLayer[hash]
+			require.True(t, ok)
+			rc, err := layer.Compressed()
+			require.NoError(t, err)
+			b, err := readAll(rc)
+			require.NoError(t, err)
+			err = rc.Close()
+			require.NoError(t, err)
+			assert.Equal(t, len(ogbytes), len(b))
+			assert.True(t, bytes.Equal(ogbytes, b))
+		}
+	}
+
+	assert.Equal(t, int32(2), count.Load()-before)
+}
+
+func readAll(r io.Reader) ([]byte, error) {
+	b := make([]byte, 0, 512)
+	for {
+		n, err := r.Read(b[len(b):cap(b)])
+		b = b[:len(b)+n]
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return b, err
+		}
+
+		if len(b) == cap(b) {
+			// Add more capacity (let append pick how much).
+			b = append(b, 0)[:len(b)]
+		}
+	}
 }

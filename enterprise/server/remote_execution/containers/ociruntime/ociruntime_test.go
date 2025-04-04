@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
@@ -131,13 +132,17 @@ func installLeaserInEnv(t testing.TB, env *real_environment.RealEnv) {
 }
 
 func TestRun(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -145,7 +150,7 @@ func TestRun(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 	testfs.WriteAllFileContents(t, wd, map[string]string{
@@ -180,13 +185,17 @@ func TestRun(t *testing.T) {
 }
 
 func TestCgroupSettings(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -194,7 +203,7 @@ func TestCgroupSettings(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -242,13 +251,17 @@ func TestCgroupSettings(t *testing.T) {
 }
 
 func TestRunUsageStats(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := realBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -256,7 +269,7 @@ func TestRunUsageStats(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -282,13 +295,17 @@ func TestRunUsageStats(t *testing.T) {
 }
 
 func TestRunWithImage(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := imageConfigTestImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -296,7 +313,7 @@ func TestRunWithImage(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -336,12 +353,15 @@ TEST_ENV_VAR=foo
 
 func TestRunOOM(t *testing.T) {
 	setupNetworking(t)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
 
 	image := realBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -353,7 +373,7 @@ func TestRunOOM(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -429,13 +449,17 @@ cat /sys/fs/cgroup/memory.events
 }
 
 func TestCreateExecRemove(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -443,7 +467,7 @@ func TestCreateExecRemove(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -475,13 +499,17 @@ func TestCreateExecRemove(t *testing.T) {
 }
 
 func TestTiniProcessReaping(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := realBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	tiniPath, err := runfiles.Rlocation(tiniRlocationpath)
 	require.NoError(t, err)
@@ -491,7 +519,7 @@ func TestTiniProcessReaping(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -542,13 +570,17 @@ func TestTiniProcessReaping(t *testing.T) {
 }
 
 func TestExecUsageStats(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := realBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -556,7 +588,7 @@ func TestExecUsageStats(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -590,12 +622,15 @@ func TestExecUsageStats(t *testing.T) {
 
 func TestPullCreateExecRemove(t *testing.T) {
 	setupNetworking(t)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
 
 	image := imageConfigTestImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -603,7 +638,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -670,13 +705,17 @@ TEST_ENV_VAR=foo
 }
 
 func TestCreateExecPauseUnpause(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -684,7 +723,7 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -775,13 +814,17 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 }
 
 func TestCreateFailureHasStderr(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -789,7 +832,7 @@ func TestCreateFailureHasStderr(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -810,13 +853,17 @@ func TestCreateFailureHasStderr(t *testing.T) {
 }
 
 func TestDevices(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -824,7 +871,7 @@ func TestDevices(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -865,13 +912,17 @@ func TestDevices(t *testing.T) {
 }
 
 func TestSignal(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -879,7 +930,7 @@ func TestSignal(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -915,6 +966,10 @@ func TestSignal(t *testing.T) {
 
 func TestNetwork_Enabled(t *testing.T) {
 	setupNetworking(t)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
 	// root?)' This is fixed by adding CAP_NET_RAW but we don't want to do this.
@@ -925,8 +980,7 @@ func TestNetwork_Enabled(t *testing.T) {
 	image := netToolsImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -934,7 +988,7 @@ func TestNetwork_Enabled(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -963,6 +1017,11 @@ func TestNetwork_Enabled(t *testing.T) {
 }
 
 func TestNetwork_Disabled(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
@@ -974,8 +1033,7 @@ func TestNetwork_Disabled(t *testing.T) {
 	image := netToolsImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -983,7 +1041,7 @@ func TestNetwork_Disabled(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -1017,11 +1075,15 @@ func TestNetwork_Disabled(t *testing.T) {
 }
 
 func TestUser(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1029,7 +1091,7 @@ func TestUser(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 
 	for _, test := range []struct {
@@ -1126,12 +1188,15 @@ func TestUser(t *testing.T) {
 
 func TestOverlayfsEdgeCases(t *testing.T) {
 	setupNetworking(t)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
 
 	image := imageConfigTestImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1139,7 +1204,7 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -1167,6 +1232,11 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 }
 
 func TestHighLayerCount(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	// Load busybox oci image
 	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
 
@@ -1206,11 +1276,10 @@ func TestHighLayerCount(t *testing.T) {
 			// Start container to verify content
 			setupNetworking(t)
 			ctx := context.Background()
-			env := testenv.GetTestEnv(t)
-			installLeaserInEnv(t, env)
+			installLeaserInEnv(t, te)
 			buildRoot := testfs.MakeTempDir(t)
 			cacheRoot := testfs.MakeTempDir(t)
-			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+			provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 			require.NoError(t, err)
 			wd := testfs.MakeDirAll(t, buildRoot, "work")
 			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
@@ -1232,6 +1301,11 @@ func TestHighLayerCount(t *testing.T) {
 }
 
 func TestEntrypoint(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 	// Load busybox oci image
 	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
@@ -1248,13 +1322,12 @@ func TestEntrypoint(t *testing.T) {
 	image := reg.Push(t, img, "test-entrypoint:latest")
 	// Set up the container
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
@@ -1276,6 +1349,11 @@ func TestEntrypoint(t *testing.T) {
 
 func TestFileOwnership(t *testing.T) {
 	setupNetworking(t)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	// Load busybox oci image
 	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
 	// Append a layer with a file, dir, and symlink that are owned by a
@@ -1327,13 +1405,12 @@ func TestFileOwnership(t *testing.T) {
 	image := reg.Push(t, img, "test-file-ownership:latest")
 	// Set up the container
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
@@ -1360,6 +1437,11 @@ func TestFileOwnership(t *testing.T) {
 
 func TestPathSanitization(t *testing.T) {
 	setupNetworking(t)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	for _, test := range []struct {
 		Name          string
 		Tar           []byte
@@ -1390,7 +1472,7 @@ func TestPathSanitization(t *testing.T) {
 			testfs.WriteAllFileContents(t, cacheRoot, map[string]string{
 				"test-link-target": "Hello",
 			})
-			imageStore := ociruntime.NewImageStore(cacheRoot)
+			imageStore := ociruntime.NewImageStore(te, cacheRoot)
 			// Load busybox oci image
 			busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
 			// Append an invalid layer
@@ -1413,12 +1495,15 @@ func TestPathSanitization(t *testing.T) {
 
 func TestPersistentWorker(t *testing.T) {
 	setupNetworking(t)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
 
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1426,13 +1511,13 @@ func TestPersistentWorker(t *testing.T) {
 	// Create workspace with testworker binary
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
-	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
+	ws, err := workspace.New(te, buildRoot, &workspace.Opts{Preserve: true})
 	require.NoError(t, err)
 	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
 	require.NoError(t, err)
 	testfs.CopyFile(t, testworkerPath, ws.Path(), "testworker")
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
@@ -1487,11 +1572,15 @@ func TestPersistentWorker(t *testing.T) {
 func TestCancelRun(t *testing.T) {
 	setupNetworking(t)
 
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1499,7 +1588,7 @@ func TestCancelRun(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -1540,13 +1629,17 @@ func TestCancelRun(t *testing.T) {
 }
 
 func TestCancelExec(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	installLeaserInEnv(t, env)
+	installLeaserInEnv(t, te)
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
@@ -1554,7 +1647,7 @@ func TestCancelExec(t *testing.T) {
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	provider, err := ociruntime.NewProvider(te, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -1630,6 +1723,11 @@ func hasMountPermissions(t *testing.T) bool {
 //	     --test_env=TEST_PULLIMAGE=1 \
 //	     enterprise/server/remote_execution/containers/ociruntime:ociruntime_test
 func TestPullImage(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
 	if os.Getenv("TEST_PULLIMAGE") == "" {
 		t.Skip("Skipping integration test..")
 	}
@@ -1665,7 +1763,7 @@ func TestPullImage(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			layerDir := t.TempDir()
-			imgStore := ociruntime.NewImageStore(layerDir)
+			imgStore := ociruntime.NewImageStore(te, layerDir)
 
 			ctx := context.Background()
 			img, err := imgStore.Pull(ctx, tc.image, oci.Credentials{})

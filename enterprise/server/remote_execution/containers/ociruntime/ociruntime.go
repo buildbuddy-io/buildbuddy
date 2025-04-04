@@ -268,7 +268,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err := cleanStaleImageCacheDirs(imageCacheRoot); err != nil {
 		log.Warningf("Failed to clean up old image cache versions: %s", err)
 	}
-	imageStore := NewImageStore(imageCacheRoot)
+	imageStore := NewImageStore(env, imageCacheRoot)
 
 	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
@@ -1316,6 +1316,8 @@ func layerPath(imageCacheRoot string, hash ctr.Hash) string {
 
 // ImageStore handles image layer storage for OCI containers.
 type ImageStore struct {
+	env environment.Env
+
 	layersDir      string
 	imagePullGroup singleflight.Group[string, *Image]
 	layerPullGroup singleflight.Group[string, any]
@@ -1341,8 +1343,9 @@ type ImageLayer struct {
 	DiffID ctr.Hash
 }
 
-func NewImageStore(layersDir string) *ImageStore {
+func NewImageStore(env environment.Env, layersDir string) *ImageStore {
 	return &ImageStore{
+		env:          env,
 		layersDir:    layersDir,
 		cachedImages: map[string]*Image{},
 	}
@@ -1389,7 +1392,8 @@ func (s *ImageStore) CachedImage(imageName string) (image *Image, ok bool) {
 }
 
 func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
-	img, err := oci.Resolve(ctx, imageName, oci.RuntimePlatform(), creds)
+	log.Infof("ImageStore pull %s ACC %q", imageName, s.env.GetActionCacheClient())
+	img, err := oci.Resolve(ctx, s.env.GetActionCacheClient(), s.env.GetByteStreamClient(), imageName, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return nil, status.WrapError(err, "resolve image")
 	}
