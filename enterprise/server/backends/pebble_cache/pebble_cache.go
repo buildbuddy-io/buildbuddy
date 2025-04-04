@@ -469,6 +469,16 @@ func ensureDefaultPartitionExists(opts *Options) {
 	})
 }
 
+func warnIfCacheTooLarge(opts *Options) {
+	usage, err := disk.GetDirUsage(opts.RootDirectory)
+	if err != nil {
+		log.Warningf("Error getting usage of pebble root directory %s: %v", opts.RootDirectory, err)
+	}
+	if opts.MaxSizeBytes > int64(usage.TotalBytes) {
+		alert.UnexpectedEvent(fmt.Sprintf("Pebble cache maximum size (%d) exceeds disk partition size (%d)", opts.MaxSizeBytes, usage.TotalBytes))
+	}
+}
+
 // defaultPebbleOptions returns default pebble config options.
 func defaultPebbleOptions(mc *pebble.MetricsCollector) *pebble.Options {
 	// These values Borrowed from CockroachDB.
@@ -529,6 +539,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	ensureDefaultPartitionExists(opts)
+	warnIfCacheTooLarge(opts)
 
 	mc := &pebble.MetricsCollector{}
 	pebbleOptions := defaultPebbleOptions(mc)
