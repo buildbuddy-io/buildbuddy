@@ -43,7 +43,8 @@ REPO_CONFIGS = [
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --flaky_test_attempts=3 \
                 --build_metadata=TAGS=dev-qa \
-                --remote_header=x-buildbuddy-api-key={}
+                --remote_header=x-buildbuddy-api-key={} \
+                --remote_grpc_log=grpc_log.bin
         """.format(API_KEY),
     },
     {
@@ -63,7 +64,8 @@ REPO_CONFIGS = [
                 --noenable_bzlmod \
                 --extra_execution_platforms=@buildbuddy_toolchain//:platform \
                 --platforms=@buildbuddy_toolchain//:platform \
-                --remote_header=x-buildbuddy-api-key={}
+                --remote_header=x-buildbuddy-api-key={} \
+                --remote_grpc_log=grpc_log.bin
         """.format(API_KEY),
     },
     {
@@ -83,7 +85,8 @@ REPO_CONFIGS = [
                 --noenable_bzlmod \
                 --extra_execution_platforms=@buildbuddy_toolchain//:platform \
                 --platforms=@buildbuddy_toolchain//:platform \
-                --remote_header=x-buildbuddy-api-key={}
+                --remote_header=x-buildbuddy-api-key={} \
+                --remote_grpc_log=grpc_log.bin
         """.format(API_KEY),
     },
     {
@@ -119,7 +122,8 @@ REPO_CONFIGS = [
                 --bes_results_url=https://app.buildbuddy.dev/invocation/ \
                 --nogoogle_default_credentials \
                 --build_metadata=TAGS=dev-qa \
-                --remote_header=x-buildbuddy-api-key={}
+                --remote_header=x-buildbuddy-api-key={} \
+                --remote_grpc_log=grpc_log.bin
         """.format(API_KEY),
     },
 ]
