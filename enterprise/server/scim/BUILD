@@ -32,6 +32,8 @@ go_test(
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:api_key_go_proto",
+        "//proto:group_go_proto",
+        "//proto:user_id_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
