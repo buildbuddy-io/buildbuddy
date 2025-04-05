@@ -57,10 +57,6 @@ common --noslim_profile
 # TODO(sluongng): make Bazel writes this to output_base automatically
 common --execution_log_compact_file=bazel_compact_exec_log.binpb.zst
 
-# By default, build logs get sent to the production server
-common --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
-common --bes_backend=grpcs://buildbuddy.buildbuddy.io
-
 
 ###################################
 # PLATFORM-SPECIFIC CONFIGURATION #
