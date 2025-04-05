@@ -692,16 +692,22 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 		return results, nil
 	}
 
-	results, err := c.distributedProxy.RemoteGetMulti(ctx, peer, isolation, stillMissing)
+	remoteResults, err := c.distributedProxy.RemoteGetMulti(ctx, peer, isolation, stillMissing)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, r := range stillMissing {
-		buf, ok := results[r.GetDigest()]
+		buf, ok := remoteResults[r.GetDigest()]
 		if ok {
 			c.addLookasideEntry(r, buf)
 		}
+	}
+	if len(results) == 0 {
+		return remoteResults, nil
+	}
+	for k, v := range remoteResults {
+		results[k] = v
 	}
 	return results, nil
 }
