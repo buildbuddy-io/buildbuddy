@@ -30,7 +30,8 @@ import (
 var (
 	remoteHitTrackerTarget       = flag.String("cache_proxy.remote_hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracking service.")
 	remoteHitTrackerPollInterval = flag.Duration("cache_proxy.remote_hit_tracker.update_interval", 250*time.Millisecond, "The time interval to wait between sending remote cache-hit-tracking RPCs.")
-	maxPendingHitsPerGroup       = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 100_000, "The maximum number of pending cache-hit updates to store in memory for a given group.")
+	maxPendingHitsPerGroup       = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 500_000, "The maximum number of pending cache-hit updates to store in memory for a given group.")
+	maxHitsPerUpdate             = flag.Int("cache_proxy.remote_hit_tracker.max_hits_per_update", 100_000, "The maximum number of cache-hit updates to send in one request to the hit-tracking backend.")
 	remoteHitTrackerWorkers      = flag.Int("cache_proxy.remote_hit_tracker.workers", 1, "The number of workers to use to send asynchronous remote cache-hit-tracking RPCs.")
 )
 
@@ -64,6 +65,7 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 		pollInterval:           *remoteHitTrackerPollInterval,
 		quit:                   make(chan struct{}, 1),
 		maxPendingHitsPerGroup: *maxPendingHitsPerGroup,
+		maxHitsPerUpdate:       *maxHitsPerUpdate,
 		hitsByGroup:            map[groupID]*cacheHits{},
 		client:                 hitpb.NewHitTrackerServiceClient(conn),
 	}
@@ -94,6 +96,7 @@ type HitTrackerFactory struct {
 
 	mu                     sync.Mutex
 	maxPendingHitsPerGroup int
+	maxHitsPerUpdate       int
 	hitsByGroup            map[groupID]*cacheHits
 	hitsQueue              []*cacheHits
 
@@ -288,7 +291,18 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 	}
 	hitsToSend := h.hitsQueue[0]
 	h.hitsQueue = h.hitsQueue[1:]
-	delete(h.hitsByGroup, hitsToSend.gid)
+	if len(hitsToSend.hits) <= h.maxHitsPerUpdate {
+		delete(h.hitsByGroup, hitsToSend.gid)
+	} else {
+		hitsToEnqueue := cacheHits{
+			gid:         hitsToSend.gid,
+			authHeaders: hitsToSend.authHeaders,
+			hits:        hitsToSend.hits[h.maxHitsPerUpdate:],
+		}
+		hitsToSend.hits = hitsToSend.hits[:h.maxHitsPerUpdate]
+		h.hitsQueue = append(h.hitsQueue, &hitsToEnqueue)
+		h.hitsByGroup[hitsToEnqueue.gid] = &hitsToEnqueue
+	}
 	h.mu.Unlock()
 
 	ctx = authutil.AddAuthHeadersToContext(ctx, hitsToSend.authHeaders, h.authenticator)
