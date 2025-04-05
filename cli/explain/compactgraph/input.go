@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unique"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
@@ -492,7 +493,7 @@ func (o *OpaqueRunfilesDirectory) String() string {
 	return fmt.Sprintf("runfilesDirectory:%s", o.runfilesTree.Path())
 }
 
-func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[uint32]Input, hashFunctionName string, interner func(string) string) *RunfilesTree {
+func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[uint32]Input, hashFunctionName string) *RunfilesTree {
 	pathHash := sha256.New()
 	pathHash.Write([]byte{directPath})
 	pathHash.Write([]byte(r.Path))
@@ -536,7 +537,7 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 		// Bazel emits an empty file for each parent of a directory with a Python file in it. This typically results in
 		// many duplicated paths across Python runfiles trees. Interning them reduces the retained memory to be roughly
 		// linear in the compressed size of the exec log.
-		internedEmptyFiles = append(internedEmptyFiles, interner(emptyFilePath))
+		internedEmptyFiles = append(internedEmptyFiles, unique.Make(emptyFilePath).Value())
 	}
 
 	return &RunfilesTree{
@@ -612,7 +613,7 @@ var volatileEnvVars = map[string]struct{}{
 	"XML_OUTPUT_FILE":                         {},
 }
 
-func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input, interner func(string) string) (*Spawn, []string) {
+func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) (*Spawn, []string) {
 	outputs := make([]Input, 0, len(s.Outputs))
 	outputPaths := make([]string, 0, len(s.Outputs))
 	for _, outputProto := range s.Outputs {
@@ -674,14 +675,16 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input, 
 		if _, volatile := volatileEnvVars[kv.Name]; volatile {
 			value = kv.Value
 		} else {
-			value = interner(kv.Value)
+			value = unique.Make(kv.Value).Value()
 		}
-		env[interner(kv.Name)] = value
+		env[unique.Make(kv.Name).Value()] = value
 	}
 	// Exec property keys and values are typically repeated across spawns.
 	execProperties := make(map[string]string, len(s.Platform.GetProperties()))
 	for _, kv := range s.Platform.GetProperties() {
-		execProperties[interner(kv.Name)] = interner(kv.Value)
+		name := unique.Make(kv.Name).Value()
+		value := unique.Make(kv.Value).Value()
+		execProperties[name] = value
 	}
 	inputs := previousInputs[s.InputSetId].(*InputSet)
 	paramFiles := drainParamFiles(inputs)

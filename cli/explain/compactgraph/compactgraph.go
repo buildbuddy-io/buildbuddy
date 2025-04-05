@@ -76,7 +76,6 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 	cg := &CompactGraph{}
 	diffEG.Go(func() error {
 		cg.spawns = make(map[string]*Spawn)
-		interner := newInterner()
 		previousInputs := make(map[uint32]Input)
 		previousInputs[0] = emptyInputSet
 		for entry := range entries {
@@ -101,7 +100,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 				inputSet := protoToInputSet(entry.GetInputSet(), previousInputs)
 				previousInputs[entry.Id] = inputSet
 			case *spawnproto.ExecLogEntry_Spawn_:
-				spawn, outputPaths := protoToSpawn(entry.GetSpawn(), previousInputs, interner)
+				spawn, outputPaths := protoToSpawn(entry.GetSpawn(), previousInputs)
 				if spawn != nil {
 					for _, p := range outputPaths {
 						cg.spawns[p] = spawn
@@ -127,7 +126,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 					// build.
 					cg.settings.legacyExternalRunfiles = &runfilesTreeProto.LegacyExternalRunfiles
 				}
-				runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, cg.settings.hashFunction, interner)
+				runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, cg.settings.hashFunction)
 				previousInputs[entry.Id] = addRunfilesTreeSpawn(cg, runfilesTree)
 			default:
 				log.Fatalf("unexpected entry type: %T", entry.Type)
@@ -141,17 +140,6 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 		return nil, err
 	}
 	return cg, nil
-}
-
-func newInterner() func(string) string {
-	interned := make(map[string]string)
-	return func(s string) string {
-		if i, ok := interned[s]; ok {
-			return i
-		}
-		interned[s] = s
-		return s
-	}
 }
 
 // This synthetic mnemonic contains a space to ensure it doesn't conflict with any real mnemonic.
