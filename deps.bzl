@@ -6,9 +6,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # When changing this version, a new release of podman-static may be needed.
 # See dockerfiles/executor_image/README.md for instructions.
 # The checksums below will also need to be updated.
-PODMAN_VERSION = "v5.4.0"
-PODMAN_STATIC_SHA256_AMD64 = "6b58fe68608b2a54fd2319a56ae5b7510fbe284c726e308cc28b55091baf9a3b"
-PODMAN_STATIC_SHA256_ARM64 = "0d285fe272e8d9bbfa14a42cecea5fe2306e6f9ddaa1088c1ff0378b8df1363b"
+PODMAN_VERSION = "v5.4.1"
+PODMAN_STATIC_SHA256_AMD64 = "d00a72a6eefd46f48d1dfc35857e9553053635294ce896dd8ac8e4d47bb43be2"
+PODMAN_STATIC_SHA256_ARM64 = "f07f67d96b858293f32a1ad63b44ada74abc03e8f45a006592fe0f657743ffd7"
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_go_mod_dependencies -prune
 def install_go_mod_dependencies(workspace_name = "buildbuddy"):
@@ -6869,8 +6869,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.0.2/containerd-2.0.2-linux-amd64.tar.gz"],
-        sha256 = "9bd5b6a1bdf505d520d9a329c520258ed0a17faa9fe3db12712ee858ad59aae3",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.0.4/containerd-2.0.4-linux-amd64.tar.gz"],
+        sha256 = "e1c64c5fd60ecd555e750744eaef150b6f78d7f750da5c08c52825aa6b791737",
     )
     http_archive(
         name = "com_github_containerd_containerd-linux-arm64",
@@ -6881,8 +6881,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.0.2/containerd-2.0.2-linux-arm64.tar.gz"],
-        sha256 = "14a2a9f7f75f73e5bcfb8b183d0b84830c54b98ef8c5f6ed70e51f1a230c673e",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.0.4/containerd-2.0.4-linux-arm64.tar.gz"],
+        sha256 = "0fde98b24bb55363a54150732e0ac99a43bccf2a9711371bd5470f32790316f2",
     )
 
     http_file(
