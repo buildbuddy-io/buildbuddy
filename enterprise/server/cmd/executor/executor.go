@@ -198,7 +198,7 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	xl := xcode.NewXcodeLocator()
 	realEnv.SetXcodeLocator(xl)
 
-	leaser, err := cpuset.NewLeaser()
+	leaser, err := cpuset.NewLeaser(cpuset.LeaserOpts{})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
