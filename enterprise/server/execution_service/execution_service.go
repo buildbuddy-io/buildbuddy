@@ -95,7 +95,8 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	if err := checkPreconditions(req); err != nil {
 		return nil, err
 	}
-	executions, err := es.getInvocationExecutions(ctx, req.GetExecutionLookup().GetInvocationId(), req.GetExecutionLookup().GetActionDigestHash())
+	invocationID := req.GetExecutionLookup().GetInvocationId()
+	executions, err := es.getInvocationExecutions(ctx, invocationID, req.GetExecutionLookup().GetActionDigestHash())
 	if err != nil {
 		return nil, err
 	}
@@ -103,13 +104,39 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	sort.Slice(executions, func(i, j int) bool {
 		return executions[i].Model.CreatedAtUsec < executions[j].Model.CreatedAtUsec
 	})
+	var lastExecutionUpdatedAt int64
+	var completedExecIDs []string
 	rsp := &espb.GetExecutionResponse{}
 	for _, ex := range executions {
 		protoExec, err := execution.TableExecToClientProto(ex)
 		if err != nil {
 			return nil, err
 		}
+		if repb.ExecutionStage_Value(ex.Stage) == repb.ExecutionStage_COMPLETED {
+			if ex.Model.UpdatedAtUsec > lastExecutionUpdatedAt {
+				lastExecutionUpdatedAt = ex.Model.UpdatedAtUsec
+			}
+			completedExecIDs = append(completedExecIDs, ex.ExecutionID)
+		}
 		rsp.Execution = append(rsp.Execution, protoExec)
+	}
+	if es.env.GetOLAPDBHandle() != nil {
+		if ess := es.env.GetExecutionSearchService(); ess != nil && len(completedExecIDs) > 0 && lastExecutionUpdatedAt > 0 {
+			lastUpdateAt := time.UnixMicro(lastExecutionUpdatedAt)
+			startTime := lastUpdateAt.Add(-3 * time.Hour).UnixMicro()
+			endTime := lastUpdateAt.Add(3 * time.Hour).UnixMicro()
+			execToMetadata, err := ess.FetchExecutionRequestMetadata(ctx, invocationID, startTime, endTime, completedExecIDs)
+			if err != nil {
+				log.CtxWarningf(ctx, "could not find invocation %s executions req metadata from olapdb: %v", invocationID, err)
+			} else {
+				for _, ex := range rsp.Execution {
+					if metadata, ok := execToMetadata[ex.GetExecutionId()]; ok {
+						ex.TargetLabel = metadata.GetTargetId()
+						ex.ActionMnemonic = metadata.GetActionMnemonic()
+					}
+				}
+			}
+		}
 	}
 	if req.GetInlineExecuteResponse() {
 		// If inlined responses are requested, fetch them now.
