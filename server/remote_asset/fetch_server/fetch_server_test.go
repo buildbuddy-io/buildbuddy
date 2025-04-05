@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +27,9 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gerrdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
+	gcodes "google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 )
 
 func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
@@ -548,15 +552,35 @@ func TestFetchBlobWithUnknownQualifiers(t *testing.T) {
 		Uris: []string{ts.URL},
 		Qualifiers: []*rapb.Qualifier{
 			{
+				Name:  fetch_server.BazelCanonicalIDQualifier,
+				Value: "known-qualifier",
+			},
+			{
 				Name:  "unknown-qualifier",
 				Value: "some-value",
 			},
 		},
 	}
 	resp, err := fetchClient.FetchBlob(ctx, request)
-	// TODO: Return an error when an unknown qualifier is used
-	assert.NoError(t, err)
-	assert.NotNil(t, resp)
+	require.Error(t, err)
+	status, ok := gstatus.FromError(err)
+	assert.Nil(t, resp)
+	assert.True(t, ok)
+	require.NotNil(t, status)
+	assert.Equal(t, gcodes.InvalidArgument, status.Code())
+	assert.Equal(t, "Unsupported qualifiers: unknown-qualifier", status.Message())
+	require.Len(t, status.Details(), 1)
+	expectedDetail := &gerrdetails.BadRequest{
+		FieldViolations: []*gerrdetails.BadRequest_FieldViolation{
+			{
+				Field:       "qualifiers.name",
+				Description: `"unknown-qualifier" not supported`,
+			},
+		},
+	}
+	require.IsType(t, expectedDetail, status.Details()[0])
+	actualDetail := status.Details()[0].(*gerrdetails.BadRequest)
+	assert.True(t, proto.Equal(expectedDetail, actualDetail))
 }
 
 func TestFetchDirectory(t *testing.T) {
