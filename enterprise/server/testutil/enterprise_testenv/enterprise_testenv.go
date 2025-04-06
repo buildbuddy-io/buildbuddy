@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -18,7 +19,13 @@ import (
 )
 
 type Options struct {
-	RedisTarget string
+	RedisTarget            string
+	CacheEncryptionEnabled bool
+}
+
+func WithTestRedis(t *testing.T) *Options {
+	redisTarget := testredis.Start(t).Target
+	return &Options{RedisTarget: redisTarget}
 }
 
 func New(t *testing.T) *testenv.TestEnv {
