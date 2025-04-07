@@ -64,6 +64,7 @@ type PebbleCacheConfig struct {
 	ActiveKeyVersion            *int64                  `yaml:"active_key_version"`
 	GCSConfig                   GCSConfig               `yaml:"gcs"`
 	IncludeMetadataSize         bool                    `yaml:"include_metadata_size"`
+	EnableAutoRatchet           bool                    `yaml:"enable_auto_ratchet"`
 }
 
 func (cfg *MigrationConfig) SetConfigDefaults() {
