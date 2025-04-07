@@ -504,8 +504,10 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 		return nil, err
 	}
 	if updateExistingUser {
-		// Need to add the user to the group first in order to get past the
-		// permission check in UpdateUser.
+		// UpdateUser performs a permission check that allows the update only
+		// if the caller is an admin of any groups of which the target user is a
+		// member of. That means we need to add the user to the group first
+		// before performing the update.
 		if err := s.env.GetUserDB().UpdateGroupUsers(ctx, g.GroupID, roleUpdate); err != nil {
 			return nil, err
 		}
