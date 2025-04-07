@@ -1960,7 +1960,7 @@ func TestGetMultiLookaside(t *testing.T) {
 
 	for _, distributedCache := range distributedCaches {
 		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		for _, r := range resourcesWritten {
 			d := r.GetDigest()
 			buf, ok := gotMap[d]
@@ -1979,7 +1979,7 @@ func TestGetMultiLookaside(t *testing.T) {
 	// be served from the lookaside cache.
 	for _, distributedCache := range distributedCaches {
 		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		for _, r := range resourcesWritten {
 			d := r.GetDigest()
 			buf, ok := gotMap[d]
@@ -1991,6 +1991,25 @@ func TestGetMultiLookaside(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer1], len(memoryCache1.ops))
 	assert.Equal(t, opCountBefore[peer2], len(memoryCache2.ops))
 	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))
+
+	// Now read again, with one extra resource that's missing
+	missingRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+	resourcesWritten = append(resourcesWritten, missingRN)
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
+		assert.NoError(t, err)
+		assert.Equal(t, len(resourcesWritten)-1, len(gotMap))
+		for _, r := range resourcesWritten[:len(resourcesWritten)-1] {
+			d := r.GetDigest()
+			buf, ok := gotMap[d]
+			assert.True(t, ok)
+			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))
+		}
+		assert.NotContains(t, gotMap, missingRN.GetDigest())
+	}
+	assert.Equal(t, opCountBefore[peer1]+3, len(memoryCache1.ops))
+	assert.Equal(t, opCountBefore[peer2]+3, len(memoryCache2.ops))
+	assert.Equal(t, opCountBefore[peer3]+3, len(memoryCache3.ops))
 }
 
 func TestLookasideLimits(t *testing.T) {
