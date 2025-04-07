@@ -81,11 +81,10 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 	}
 
-	cref, raw, fromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, imageRef, remoteOpts)
+	digest, raw, fromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, imageRef, remoteOpts)
 	if err != nil {
 		return nil, err
 	}
-	digest := imageRef.Context().Digest(cref.hash.String())
 	m, err := v1.ParseManifest(bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
@@ -95,7 +94,7 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 			ctx,
 			acc,
 			bsc,
-			digest,
+			*digest,
 			string(m.MediaType),
 			int64(len(raw)),
 			raw,
@@ -107,8 +106,7 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 
 	if m.MediaType != types.OCIImageIndex && m.MediaType != types.DockerManifestList {
 		img := &cacheAwareImage{
-			ref:      *cref,
-			digest:   imageRef.Context().Digest(cref.hash.String()),
+			digest:   *digest,
 			acc:      acc,
 			bsc:      bsc,
 			raw:      raw,
@@ -134,10 +132,10 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 		}
 	}
 	if child == nil {
-		return nil, fmt.Errorf("no child with platform %+v in index %s/%s@%s", platform, cref.registry, cref.repository, cref.hash)
+		return nil, fmt.Errorf("no child with platform %+v for %s", platform, imageRef.Context())
 	}
 	childRef := imageRef.Context().Digest(child.Digest.String())
-	childcref, childraw, childFromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, childRef, remoteOpts)
+	childDigest, childraw, childFromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, childRef, remoteOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -150,21 +148,20 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 			ctx,
 			acc,
 			bsc,
-			childRef,
+			*childDigest,
 			string(childm.MediaType),
 			int64(len(childraw)),
 			childraw,
 		)
 		if err != nil {
-			log.CtxErrorf(ctx, "error writing image %s to the CAS: %s", childRef, err)
+			log.CtxErrorf(ctx, "error writing image %s to the CAS: %s", childDigest.Context(), err)
 		}
 	}
 	if childm.MediaType == types.OCIImageIndex || childm.MediaType == types.DockerManifestList {
-		return nil, fmt.Errorf("child manifest %s is itself an image index", childRef)
+		return nil, fmt.Errorf("child manifest %s is itself an image index", childDigest.Context())
 	}
 	childimg := &cacheAwareImage{
-		ref:      *childcref,
-		digest:   childRef,
+		digest:   *childDigest,
 		acc:      acc,
 		bsc:      bsc,
 		raw:      childraw,
@@ -393,18 +390,13 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
-func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, digestOrTagRef ctrname.Reference, remoteOpts []remote.Option) (*cacheableRef, []byte, bool, error) {
+func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, digestOrTagRef ctrname.Reference, remoteOpts []remote.Option) (*ctrname.Digest, []byte, bool, error) {
 	desc, err := remote.Head(digestOrTagRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, nil, false, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
 		}
 		return nil, nil, false, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-	}
-	cref := &cacheableRef{
-		registry:   digestOrTagRef.Context().RegistryStr(),
-		repository: digestOrTagRef.Context().RepositoryStr(),
-		hash:       desc.Digest,
 	}
 
 	digest := digestOrTagRef.Context().Digest(desc.Digest.String())
@@ -413,7 +405,7 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCache
 		raw := &bytes.Buffer{}
 		err := FetchBlobOrManifestFromCache(ctx, bsc, casDigest, raw)
 		if err == nil {
-			return cref, raw.Bytes(), true, nil
+			return &digest, raw.Bytes(), true, nil
 		}
 		if !status.IsNotFoundError(err) {
 			log.CtxErrorf(ctx, "error fetching manifest %s from the CAS: %s", digest.Context(), err)
@@ -428,7 +420,7 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCache
 		}
 		return nil, nil, false, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
-	return cref, remoteDesc.Manifest, false, nil
+	return &digest, remoteDesc.Manifest, false, nil
 }
 
 func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Reference, ociResourceType ocipb.OCIResourceType) (*repb.Digest, *v1.Hash, string, int64, error) {
@@ -580,12 +572,6 @@ func writeManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc b
 		contentLength,
 		r,
 	)
-}
-
-type cacheableRef struct {
-	registry   string
-	repository string
-	hash       v1.Hash
 }
 
 // matchesPlatform checks if the given platform matches the required platforms.
@@ -740,7 +726,6 @@ func newCachingLayerWriteCloser(ctx context.Context, acClient repb.ActionCacheCl
 }
 
 type cacheAwareImage struct {
-	ref    cacheableRef
 	digest ctrname.Digest
 	acc    repb.ActionCacheClient
 	bsc    bspb.ByteStreamClient
@@ -816,24 +801,15 @@ func (i *cacheAwareImage) MediaType() (types.MediaType, error) {
 }
 
 func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, error) {
-	lcref := cacheableRef{
-		registry:   i.ref.registry,
-		repository: i.ref.repository,
-		hash:       hash,
-	}
 	for _, d := range i.manifest.Layers {
 		if d.Digest == hash {
-			rlref, err := ctrname.NewDigest(lcref.registry + "/" + lcref.repository + "@" + hash.String())
-			if err != nil {
-				return nil, fmt.Errorf("could not construct ref for layer %s", d.Digest)
-			}
+			rlref := i.digest.Context().Digest(hash.String())
 			rl, err := remote.Layer(rlref, i.options...)
 			if err != nil {
-				return nil, fmt.Errorf("could not create remote layer for %s", rlref)
+				return nil, fmt.Errorf("could not create remote layer in %s", rlref.Context())
 			}
 			l := &cacheAwareLayer{
 				digest:      i.digest.Context().Digest(hash.String()),
-				ref:         lcref,
 				acc:         i.acc,
 				bsc:         i.bsc,
 				descriptor:  &d,
@@ -848,7 +824,6 @@ func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, 
 var _ partial.CompressedImageCore = (*cacheAwareImage)(nil)
 
 type cacheAwareLayer struct {
-	ref cacheableRef
 	acc repb.ActionCacheClient
 	bsc bspb.ByteStreamClient
 
@@ -934,19 +909,23 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
+	hash, err := v1.NewHash(l.digest.DigestStr())
+	if err != nil {
+		return nil, err
+	}
 	caswc, err := newCachingLayerWriteCloser(
 		ctx,
 		l.acc,
 		l.bsc,
-		l.ref.registry,
-		l.ref.repository,
-		l.ref.hash,
+		l.digest.Context().RegistryStr(),
+		l.digest.Context().RepositoryStr(),
+		hash,
 		string(mediaType),
 		size,
 	)
 	if err != nil {
 		// cannot cache, but we can still fetch the remote layer
-		log.CtxErrorf(ctx, "cannot cache OCI image layer for %s/%s@%s: %s", l.ref.registry, l.ref.repository, l.ref.hash, err)
+		log.CtxErrorf(ctx, "cannot cache OCI image layer in %s: %s", l.digest, err)
 		return uprc, nil
 	}
 	return newTeeReadCloser(uprc, caswc), nil
