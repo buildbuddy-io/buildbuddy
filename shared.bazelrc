@@ -68,7 +68,7 @@ common --bes_backend=grpcs://buildbuddy.buildbuddy.io
 
 # Enable special "macos", "linux" and "windows" config that are automatically applied
 # based on the host machine.
-common --enable_platform_specific_config
+common --enable_platform_specific_config=true
 
 # rules_nodejs needs runfiles to be explicitly enabled.
 common:linux --enable_runfiles
