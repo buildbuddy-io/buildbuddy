@@ -263,7 +263,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
 
-	leaser, err := cpuset.NewLeaser()
+	leaser, err := cpuset.NewLeaser(cpuset.LeaserOpts{})
 	require.NoError(t, err)
 	env.SetCPULeaser(leaser)
 	flags.Set(t, "executor.cpu_leaser.enable", true)

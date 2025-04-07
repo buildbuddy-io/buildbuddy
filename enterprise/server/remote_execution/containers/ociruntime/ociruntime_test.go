@@ -119,7 +119,7 @@ func imageConfigTestImage(t *testing.T) string {
 }
 
 func installLeaserInEnv(t testing.TB, env *real_environment.RealEnv) {
-	leaser, err := cpuset.NewLeaser()
+	leaser, err := cpuset.NewLeaser(cpuset.LeaserOpts{})
 	require.NoError(t, err)
 	env.SetCPULeaser(leaser)
 	flags.Set(t, "executor.cpu_leaser.enable", true)
