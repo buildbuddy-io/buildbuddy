@@ -372,12 +372,12 @@ func (d *dirHandle) Fsyncdir(ctx context.Context, flags uint32) syscall.Errno {
 	return 0
 }
 
-func (n *Node) OpendirHandle(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+func (n *Node) OpendirHandle(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
 	n.startOP("OpendirHandle")
 	if n.vfs.verbose {
 		log.CtxDebugf(n.vfs.rpcCtx, "OpendirHandle %q", n.relativePath())
 	}
-	return &dirHandle{vfs: n.vfs, node: n, pos: -1}, 0, 0
+	return &dirHandle{vfs: n.vfs, node: n, pos: -1}, fuse.FOPEN_CACHE_DIR, 0
 }
 
 func (f *remoteFile) startOP(op string) {
