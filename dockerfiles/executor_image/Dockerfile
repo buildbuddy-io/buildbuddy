@@ -56,7 +56,7 @@ RUN DOCKER_VERSION="5:28.0.4-1~debian.12~bookworm" && \
     /usr/bin/containerd-shim \
     /usr/bin/containerd-shim-runc-v1 \
     /usr/bin/ctr \
-    # Not currently updatign these binaries manually, so leave them in.
+    # Not currently updating these binaries manually, so leave them in.
     # rootlesskit
     # /usr/bin/rootlesskit \
     # runc
