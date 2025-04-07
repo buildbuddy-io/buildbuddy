@@ -3019,7 +3019,6 @@ func TestSampling(t *testing.T) {
 }
 
 func TestRatchetDB(t *testing.T) {
-	flags.Set(t, "cache.pebble.enable_auto_ratchet", true)
 	rootDir := testfs.MakeTempDir(t)
 
 	// Init DB with default format
@@ -3034,7 +3033,7 @@ func TestRatchetDB(t *testing.T) {
 	// Create pebble_cache to upgrade the DB
 	te := testenv.GetTestEnv(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes, EnableAutoRatchet: true})
 	require.NoError(t, err)
 	err = pc.Start()
 	require.NoError(t, err)
