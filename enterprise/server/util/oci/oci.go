@@ -85,6 +85,7 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 	if err != nil {
 		return nil, err
 	}
+	digest := imageRef.Context().Digest(cref.hash.String())
 	m, err := v1.ParseManifest(bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
@@ -94,9 +95,7 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 			ctx,
 			acc,
 			bsc,
-			cref.registry,
-			cref.repository,
-			cref.hash,
+			digest,
 			string(m.MediaType),
 			int64(len(raw)),
 			raw,
@@ -151,9 +150,7 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 			ctx,
 			acc,
 			bsc,
-			childcref.registry,
-			childcref.repository,
-			childcref.hash,
+			childRef,
 			string(childm.MediaType),
 			int64(len(childraw)),
 			childraw,
@@ -434,72 +431,6 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCache
 	return cref, remoteDesc.Manifest, false, nil
 }
 
-func fetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, registry, repository string, hash v1.Hash) ([]byte, error) {
-	arKey := &ocipb.OCIActionResultKey{
-		Registry:      registry,
-		Repository:    repository,
-		ResourceType:  ocipb.OCIResourceType_MANIFEST,
-		HashAlgorithm: hash.Algorithm,
-		HashHex:       hash.Hex,
-	}
-	arKeyBytes, err := proto.Marshal(arKey)
-	if err != nil {
-		return nil, err
-	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
-	if err != nil {
-		return nil, err
-	}
-	arRN := digest.NewACResourceName(
-		arDigest,
-		arInstanceName(registry, repository),
-		repb.DigestFunction_SHA256,
-	)
-	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
-	if err != nil {
-		return nil, err
-	}
-
-	var blobMetadataCASDigest *repb.Digest
-	var blobCASDigest *repb.Digest
-	for _, outputFile := range ar.GetOutputFiles() {
-		switch outputFile.GetPath() {
-		case blobMetadataOutputFilePath:
-			blobMetadataCASDigest = outputFile.GetDigest()
-		case blobOutputFilePath:
-			blobCASDigest = outputFile.GetDigest()
-		default:
-			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s/%s:%s", outputFile.GetPath(), registry, repository, hash)
-		}
-	}
-	if blobMetadataCASDigest == nil || blobCASDigest == nil {
-		return nil, fmt.Errorf("missing blob metadata digest or blob digest for %s/%s:%s", registry, repository, hash)
-	}
-	blobMetadataRN := digest.NewCASResourceName(
-		blobMetadataCASDigest,
-		"",
-		repb.DigestFunction_SHA256,
-	)
-	blobMetadata := &ocipb.OCIBlobMetadata{}
-	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
-	if err != nil {
-		return nil, err
-	}
-
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		"",
-		repb.DigestFunction_SHA256,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	var buf bytes.Buffer
-	err = cachetools.GetBlob(ctx, bsClient, blobRN, &buf)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
 func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Reference, ociResourceType ocipb.OCIResourceType) (*repb.Digest, *v1.Hash, string, int64, error) {
 	hash, err := v1.NewHash(ref.Identifier())
 	if err != nil {
@@ -568,7 +499,7 @@ func FetchBlobOrManifestFromCache(ctx context.Context, bsc bspb.ByteStreamClient
 	return cachetools.GetBlob(ctx, bsc, blobRN, w)
 }
 
-func WriteBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref ctrname.Reference, ociResourceType ocipb.OCIResourceType, hash v1.Hash, contentType string, contentLength int64) error {
+func UploadBlobOrManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Reference, ociResourceType ocipb.OCIResourceType, hash v1.Hash, contentType string, contentLength int64, r io.Reader) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -579,8 +510,7 @@ func WriteBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		repb.DigestFunction_SHA256,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	tr := io.TeeReader(upstream, w)
-	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, tr)
+	_, _, err := cachetools.UploadFromReader(ctx, bsc, blobRN, r)
 	if err != nil {
 		return err
 	}
@@ -589,7 +519,7 @@ func WriteBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		ContentLength: contentLength,
 		ContentType:   contentType,
 	}
-	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
+	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsc, "", repb.DigestFunction_SHA256, blobMetadata)
 	if err != nil {
 		return err
 	}
@@ -626,76 +556,30 @@ func WriteBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		arInstanceName(ref.Context().RegistryStr(), ref.Context().RepositoryStr()),
 		repb.DigestFunction_SHA256,
 	)
-	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
+	err = cachetools.UploadActionResult(ctx, acc, arRN, ar)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func writeManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, registry, repository string, hash v1.Hash, contentType string, contentLength int64, raw []byte) error {
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: contentLength,
+func writeManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, digest ctrname.Digest, contentType string, contentLength int64, raw []byte) error {
+	hash, err := v1.NewHash(digest.DigestStr())
+	if err != nil {
+		return fmt.Errorf("could not parse hash from %s: %s", digest.Context(), err)
 	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		"",
-		repb.DigestFunction_SHA256,
+	r := bytes.NewReader(raw)
+	return UploadBlobOrManifestToCache(
+		ctx,
+		acc,
+		bsc,
+		digest,
+		ocipb.OCIResourceType_MANIFEST,
+		hash,
+		contentType,
+		contentLength,
+		r,
 	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	buf := bytes.NewBuffer(raw)
-	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, buf)
-	if err != nil {
-		return err
-	}
-
-	blobMetadata := &ocipb.OCIBlobMetadata{
-		ContentLength: contentLength,
-		ContentType:   contentType,
-	}
-	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
-	if err != nil {
-		return err
-	}
-
-	arKey := &ocipb.OCIActionResultKey{
-		Registry:      registry,
-		Repository:    repository,
-		ResourceType:  ocipb.OCIResourceType_MANIFEST,
-		HashAlgorithm: hash.Algorithm,
-		HashHex:       hash.Hex,
-	}
-	ar := &repb.ActionResult{
-		OutputFiles: []*repb.OutputFile{
-			{
-				Path:   blobOutputFilePath,
-				Digest: blobCASDigest,
-			},
-			{
-				Path:   blobMetadataOutputFilePath,
-				Digest: blobMetadataCASDigest,
-			},
-		},
-	}
-	arKeyBytes, err := proto.Marshal(arKey)
-	if err != nil {
-		return err
-	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
-	if err != nil {
-		return err
-	}
-	arRN := digest.NewACResourceName(
-		arDigest,
-		arInstanceName(registry, repository),
-		repb.DigestFunction_SHA256,
-	)
-	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 type cacheableRef struct {

@@ -348,7 +348,8 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 
 	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasLength && hash != nil && hasContentType {
-		err := oci.WriteBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsc, acc, resolvedRef, ociResourceType, *hash, contentType, contentLength)
+		tr := io.TeeReader(upresp.Body, w)
+		err := oci.UploadBlobOrManifestToCache(ctx, acc, bsc, resolvedRef, ociResourceType, *hash, contentType, contentLength, tr)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
 		}
