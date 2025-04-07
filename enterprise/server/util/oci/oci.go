@@ -51,7 +51,7 @@ var (
 	}
 )
 
-func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
+func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	imageRef, err := ctrname.ParseReference(imageName)
@@ -81,7 +81,7 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 	}
 
-	cref, raw, fromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acClient, bsClient, imageRef, remoteOpts)
+	cref, raw, fromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, imageRef, remoteOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +92,8 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 	if !fromCache {
 		err := writeManifestToCache(
 			ctx,
-			acClient,
-			bsClient,
+			acc,
+			bsc,
 			cref.registry,
 			cref.repository,
 			cref.hash,
@@ -110,8 +110,8 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 		img := &cacheAwareImage{
 			ref:      *cref,
 			digest:   imageRef.Context().Digest(cref.hash.String()),
-			acc:      acClient,
-			bsc:      bsClient,
+			acc:      acc,
+			bsc:      bsc,
 			raw:      raw,
 			manifest: m,
 			options:  remoteOpts,
@@ -138,7 +138,7 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 		return nil, fmt.Errorf("no child with platform %+v in index %s/%s@%s", platform, cref.registry, cref.repository, cref.hash)
 	}
 	childRef := imageRef.Context().Digest(child.Digest.String())
-	childcref, childraw, childFromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acClient, bsClient, childRef, remoteOpts)
+	childcref, childraw, childFromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, childRef, remoteOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -149,8 +149,8 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 	if !childFromCache {
 		err := writeManifestToCache(
 			ctx,
-			acClient,
-			bsClient,
+			acc,
+			bsc,
 			childcref.registry,
 			childcref.repository,
 			childcref.hash,
@@ -168,8 +168,8 @@ func Resolve(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb
 	childimg := &cacheAwareImage{
 		ref:      *childcref,
 		digest:   childRef,
-		acc:      acClient,
-		bsc:      bsClient,
+		acc:      acc,
+		bsc:      bsc,
 		raw:      childraw,
 		manifest: childm,
 		options:  remoteOpts,
@@ -396,7 +396,7 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
-func fetchRawManifestFromCacheOrRemote(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, digestOrTagRef ctrname.Reference, remoteOpts []remote.Option) (*cacheableRef, []byte, bool, error) {
+func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, digestOrTagRef ctrname.Reference, remoteOpts []remote.Option) (*cacheableRef, []byte, bool, error) {
 	desc, err := remote.Head(digestOrTagRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -410,13 +410,20 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acClient repb.Action
 		hash:       desc.Digest,
 	}
 
-	raw, err := fetchManifestFromCache(ctx, acClient, bsClient, cref.registry, cref.repository, cref.hash)
+	digest := digestOrTagRef.Context().Digest(desc.Digest.String())
+	casDigest, _, _, _, err := FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, digest, ocipb.OCIResourceType_MANIFEST)
 	if err == nil {
-		return cref, raw, true, nil
-	} else if !status.IsNotFoundError(err) {
-		log.CtxErrorf(ctx, "error fetching manifest %s/%s@%s from the CAS: %s", cref.registry, cref.repository, cref.hash, err)
-		return nil, nil, false, err
+		raw := &bytes.Buffer{}
+		err := FetchBlobOrManifestFromCache(ctx, bsc, casDigest, raw)
+		if err == nil {
+			return cref, raw.Bytes(), true, nil
+		}
+		if !status.IsNotFoundError(err) {
+			log.CtxErrorf(ctx, "error fetching manifest %s from the CAS: %s", digest.Context(), err)
+			return nil, nil, false, err
+		}
 	}
+
 	remoteDesc, err := remote.Get(digestOrTagRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -493,7 +500,7 @@ func fetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient
 	return buf.Bytes(), nil
 }
 
-func FetchBlobOrManifestMetadataFromCache(ctx context.Context, bsc bspb.ByteStreamClient, acc repb.ActionCacheClient, ref ctrname.Reference, ociResourceType ocipb.OCIResourceType) (*repb.Digest, *v1.Hash, string, int64, error) {
+func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Reference, ociResourceType ocipb.OCIResourceType) (*repb.Digest, *v1.Hash, string, int64, error) {
 	hash, err := v1.NewHash(ref.Identifier())
 	if err != nil {
 		return nil, nil, "", 0, err

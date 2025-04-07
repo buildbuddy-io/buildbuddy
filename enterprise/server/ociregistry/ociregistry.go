@@ -292,7 +292,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	bsc := r.env.GetByteStreamClient()
 	acc := r.env.GetActionCacheClient()
 	if resolvedRefIsDigest {
-		casDigest, hash, contentType, contentLength, err := oci.FetchBlobOrManifestMetadataFromCache(ctx, bsc, acc, resolvedRef, ociResourceType)
+		casDigest, hash, contentType, contentLength, err := oci.FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, resolvedRef, ociResourceType)
 		if err == nil {
 			w.Header().Add(headerDockerContentDigest, hash.String())
 			w.Header().Add(headerContentLength, strconv.FormatInt(contentLength, 10))
