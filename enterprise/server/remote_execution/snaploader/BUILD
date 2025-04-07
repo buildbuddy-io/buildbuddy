@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/snaputil",
+        "//enterprise/server/util/proxy",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -26,6 +27,7 @@ go_library(
         "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_x_sync//errgroup",
@@ -35,6 +37,9 @@ go_library(
 go_test(
     name = "snaploader_test",
     srcs = ["snaploader_test.go"],
+    args = [
+        "--executor.enable_local_snapshot_sharing=true",
+    ],
     deps = [
         ":snaploader",
         "//enterprise/server/remote_execution/copy_on_write",
