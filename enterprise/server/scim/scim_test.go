@@ -28,6 +28,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 func getEnv(t *testing.T) *testenv.TestEnv {
@@ -318,7 +320,7 @@ func TestCreateUser(t *testing.T) {
 	require.NoError(t, err)
 
 	userCtx := authUserCtx(ctx, env, t, "US100")
-	apiKey, _ := prepareGroup(t, userCtx, env)
+	apiKey, group := prepareGroup(t, userCtx, env)
 
 	ss := scim.NewSCIMServer(env)
 	mux := http.NewServeMux()
@@ -377,6 +379,7 @@ func TestCreateUser(t *testing.T) {
 	}
 
 	// Create admin user.
+	user501ID := ""
 	{
 		newUser := &scim.UserResource{
 			Schemas:  []string{scim.UserResourceSchema},
@@ -421,6 +424,64 @@ func TestCreateUser(t *testing.T) {
 		require.Equal(t, "user501@org1.io", ur.UserName)
 		verifyRole(t, ur, role.Admin.String())
 		require.True(t, ur.Active)
+
+		user501ID = createdUser.ID
+	}
+
+	// Remove a user manually from the SCIM-managed group and try creating the
+	// user through the SCIM API. The user should be added to the target group.
+	{
+		err = udb.UpdateGroupUsers(userCtx, group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+			UserId:           &uidpb.UserId{Id: user501ID},
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		}})
+		require.NoError(t, err)
+
+		newUser := &scim.UserResource{
+			Schemas:  []string{scim.UserResourceSchema},
+			UserName: "user501@org1.io",
+			Name: scim.NameResource{
+				GivenName:  "User",
+				FamilyName: "Doe",
+			},
+			Emails: []scim.EmailResource{
+				{
+					Primary: true,
+					Value:   "user501@org1.io",
+				},
+			},
+			Active: true,
+		}
+		body, err := json.Marshal(newUser)
+		require.NoError(t, err)
+
+		code, body := tc.Post(baseURL+"/scim/Users", body)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		createdUser := scim.UserResource{}
+		err = json.Unmarshal(body, &createdUser)
+		require.NoError(t, err)
+		require.Equal(t, "User", createdUser.Name.GivenName)
+		require.Equal(t, "Doe", createdUser.Name.FamilyName)
+		require.Equal(t, "user501@org1.io", createdUser.UserName)
+		require.True(t, createdUser.Active)
+
+		code, body = tc.Get(baseURL + "/scim/Users/" + createdUser.ID)
+		require.Equal(tc.t, http.StatusOK, code, "body: %s", string(body))
+		ur := scim.UserResource{}
+		err = json.Unmarshal(body, &ur)
+		require.NoError(t, err)
+		require.Len(t, ur.Schemas, 1)
+		require.Equal(t, scim.UserResourceSchema, ur.Schemas[0])
+		require.Equal(t, createdUser.ID, ur.ID)
+		require.Equal(t, "User", ur.Name.GivenName)
+		require.Equal(t, "Doe", ur.Name.FamilyName)
+		require.Equal(t, "user501@org1.io", ur.UserName)
+		verifyRole(t, ur, role.Developer.String())
+		require.True(t, ur.Active)
+
+		u, err := udb.GetUserByID(userCtx, createdUser.ID)
+		require.NoError(t, err)
+		require.Equal(t, "http://localhost:8080/saml/metadata?slug=gr100-slug/user501@org1.io", u.SubID)
 	}
 }
 
