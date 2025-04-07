@@ -36,7 +36,8 @@ import (
 const (
 	blobOutputFilePath         = "_bb_ociregistry_blob_"
 	blobMetadataOutputFilePath = "_bb_ociregistry_blob_metadata_"
-	actionResultInstanceName   = "_bb_ociregistry_"
+
+	actionResultInstanceNameSalt = "_bb_oci_salt_" // STOPSHIP(dan): make this a secret
 )
 
 var (
@@ -478,6 +479,10 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
+func arInstanceName(registry, repository string) string {
+	return registry + "|" + repository + "|" + actionResultInstanceNameSalt
+}
+
 func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, registry, repository string, hash v1.Hash) ([]byte, error) {
 	arKey := &ocipb.OCIActionResultKey{
 		Registry:      registry,
@@ -496,7 +501,7 @@ func FetchManifestFromCache(ctx context.Context, acClient repb.ActionCacheClient
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		actionResultInstanceName,
+		arInstanceName(registry, repository),
 		repb.DigestFunction_SHA256,
 	)
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
@@ -599,7 +604,7 @@ func WriteConfigToCache(ctx context.Context, acClient repb.ActionCacheClient, bs
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		actionResultInstanceName,
+		arInstanceName(registry, repository),
 		repb.DigestFunction_SHA256,
 	)
 	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
@@ -664,7 +669,7 @@ func WriteManifestToCache(ctx context.Context, acClient repb.ActionCacheClient, 
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		actionResultInstanceName,
+		arInstanceName(registry, repository),
 		repb.DigestFunction_SHA256,
 	)
 	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
@@ -692,7 +697,7 @@ func FetchLayerCASDigest(ctx context.Context, acClient repb.ActionCacheClient, r
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		actionResultInstanceName,
+		arInstanceName(registry, repository),
 		repb.DigestFunction_SHA256,
 	)
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
@@ -745,7 +750,7 @@ func FetchConfigFromCache(ctx context.Context, acClient repb.ActionCacheClient, 
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		actionResultInstanceName,
+		arInstanceName(registry, repository),
 		repb.DigestFunction_SHA256,
 	)
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
@@ -854,7 +859,7 @@ func (clwc *cachingLayerWriteCloser) Close() error {
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		actionResultInstanceName,
+		arInstanceName(clwc.registry, clwc.repository),
 		repb.DigestFunction_SHA256,
 	)
 	err = cachetools.UploadActionResult(clwc.ctx, clwc.acClient, arRN, ar)
@@ -947,7 +952,7 @@ func WriteLayerToCache(ctx context.Context, acClient repb.ActionCacheClient, bsC
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		actionResultInstanceName,
+		arInstanceName(registry, repository),
 		repb.DigestFunction_SHA256,
 	)
 	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
