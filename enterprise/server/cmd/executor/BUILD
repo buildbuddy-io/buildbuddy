@@ -239,6 +239,8 @@ container_image(
         ":docker_credential_gcr_layer",
         ":docker_credential_gcr_docker_config_layer",
         ":containerd_layer",
+        # Updating these layers does not currently afford is any vulnerability
+        # fixes; leave them out for now.
         # ":runc_layer",
         # ":rootlesskit_layer",
         ":executor_tools_layer",
