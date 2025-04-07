@@ -704,6 +704,8 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 		}
 	}
 	if len(results) == 0 {
+		// If there weren't any local results, we can just return the remote
+		// ones, instead instead of copying into an empty map.
 		return remoteResults, nil
 	}
 	for k, v := range remoteResults {
