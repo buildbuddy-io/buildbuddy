@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -96,7 +97,7 @@ func getPreviousFlagPath(flagName string) string {
 	if err != nil {
 		return ""
 	}
-	cacheDir, err := CacheDir()
+	cacheDir, err := storage.CacheDir()
 	if err != nil {
 		return ""
 	}
