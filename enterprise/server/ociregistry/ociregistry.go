@@ -298,14 +298,27 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		}
 	}
 
-	bsClient := r.env.GetByteStreamClient()
-	acClient := r.env.GetActionCacheClient()
+	bsc := r.env.GetByteStreamClient()
+	acc := r.env.GetActionCacheClient()
 	if resolvedRefIsDigest {
-		writeBody := inreq.Method == http.MethodGet
-		err := fetchBlobOrManifestFromCache(ctx, w, bsClient, acClient, resolvedRef, ociResourceType, writeBody)
+		casDigest, hash, contentType, contentLength, err := fetchBlobOrManifestMetadataFromCache(ctx, bsc, acc, resolvedRef, ociResourceType)
 		if err == nil {
+			w.Header().Add(headerDockerContentDigest, hash.String())
+			w.Header().Add(headerContentLength, strconv.FormatInt(contentLength, 10))
+			w.Header().Add(headerContentType, contentType)
+			w.WriteHeader(http.StatusOK)
+
+			if inreq.Method == http.MethodGet {
+				err := fetchBlobOrManifestFromCache(ctx, bsc, casDigest, w)
+				if err != nil {
+					message := fmt.Sprintf("error fetching image %s from the CAS: %s", ref, err)
+					log.CtxError(ctx, message)
+					http.Error(w, message, http.StatusNotFound)
+				}
+			}
 			return
-		} else if !status.IsNotFoundError(err) {
+		}
+		if !status.IsNotFoundError(err) {
 			message := fmt.Sprintf("error fetching image %s from the CAS: %s", ref, err)
 			log.CtxError(ctx, message)
 			http.Error(w, message, http.StatusNotFound)
@@ -344,7 +357,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 
 	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasLength && hash != nil && hasContentType {
-		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, *hash, contentType, contentLength)
+		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsc, acc, resolvedRef, ociResourceType, *hash, contentType, contentLength)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
 		}
@@ -356,10 +369,10 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 }
 
-func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
+func fetchBlobOrManifestMetadataFromCache(ctx context.Context, bsc bspb.ByteStreamClient, acc repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType) (*repb.Digest, *gcr.Hash, string, int64, error) {
 	hash, err := gcr.NewHash(ref.Identifier())
 	if err != nil {
-		return err
+		return nil, nil, "", 0, err
 	}
 	arKey := &ocipb.OCIActionResultKey{
 		Registry:      ref.Context().RegistryStr(),
@@ -370,20 +383,20 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	}
 	arKeyBytes, err := proto.Marshal(arKey)
 	if err != nil {
-		return err
+		return nil, nil, "", 0, err
 	}
 	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
 	if err != nil {
-		return err
+		return nil, nil, "", 0, err
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
-	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
+	ar, err := cachetools.GetActionResult(ctx, acc, arRN)
 	if err != nil {
-		return err
+		return nil, nil, "", 0, err
 	}
 
 	var blobMetadataCASDigest *repb.Digest
@@ -399,7 +412,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		}
 	}
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
-		return fmt.Errorf("missing blob metadata digest or blob digest for %s", ref)
+		return nil, nil, "", 0, fmt.Errorf("missing blob metadata digest or blob digest for %s", ref)
 	}
 	blobMetadataRN := digest.NewCASResourceName(
 		blobMetadataCASDigest,
@@ -407,26 +420,21 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		repb.DigestFunction_SHA256,
 	)
 	blobMetadata := &ocipb.OCIBlobMetadata{}
-	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
+	err = cachetools.GetBlobAsProto(ctx, bsc, blobMetadataRN, blobMetadata)
 	if err != nil {
-		return err
+		return nil, nil, "", 0, err
 	}
-	w.Header().Add(headerDockerContentDigest, hash.String())
-	w.Header().Add(headerContentLength, strconv.FormatInt(blobMetadata.GetContentLength(), 10))
-	w.Header().Add(headerContentType, blobMetadata.GetContentType())
-	w.WriteHeader(http.StatusOK)
+	return blobCASDigest, &hash, blobMetadata.GetContentType(), blobMetadata.GetContentLength(), nil
+}
 
-	if writeBody {
-		blobRN := digest.NewCASResourceName(
-			blobCASDigest,
-			"",
-			repb.DigestFunction_SHA256,
-		)
-		blobRN.SetCompressor(repb.Compressor_ZSTD)
-		return cachetools.GetBlob(ctx, bsClient, blobRN, w)
-	} else {
-		return nil
-	}
+func fetchBlobOrManifestFromCache(ctx context.Context, bsc bspb.ByteStreamClient, casDigest *repb.Digest, w io.Writer) error {
+	blobRN := digest.NewCASResourceName(
+		casDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	return cachetools.GetBlob(ctx, bsc, blobRN, w)
 }
 
 func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
