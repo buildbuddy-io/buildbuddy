@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 
+	proxy_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -73,6 +74,11 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 
 	localReadStream, err := s.local.Read(ctx, req)
 	if err != nil {
+		if proxy_util.SkipRemote(ctx) {
+			return err
+		}
+
+		// Fall back to reading from the remote cache.
 		if !status.IsNotFoundError(err) {
 			log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
 		}
@@ -264,9 +270,14 @@ func (s *ByteStreamServerProxy) write(stream bspb.ByteStream_WriteServer) (*bspb
 		}
 		local = localWriter
 	}
-	remote, err := s.remote.Write(ctx)
-	if err != nil {
-		return nil, err
+
+	var remote bspb.ByteStream_WriteClient
+	if !proxy_util.SkipRemote(ctx) || local == nil {
+		var err error
+		remote, err = s.remote.Write(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	for {
@@ -282,25 +293,41 @@ func (s *ByteStreamServerProxy) write(stream bspb.ByteStream_WriteServer) (*bspb
 				if err == io.EOF {
 					localDone = true
 				} else {
-					log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", err)
+					// Swallow local write errors if we're writing remotely too
+					if remote != nil {
+						log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", err)
+						local = nil
+					} else {
+						return nil, err
+					}
 				}
-				local = nil
 			}
 		}
 
 		// Send to the remote ByteStreamServer
-		done := req.GetFinishWrite()
-		if err := remote.Send(req); err != nil {
-			if err == io.EOF {
-				done = true
-			} else {
-				return nil, err
+		remoteDone := req.GetFinishWrite()
+		if remote != nil {
+			if err := remote.Send(req); err != nil {
+				if err == io.EOF {
+					remoteDone = true
+				} else {
+					return nil, err
+				}
 			}
 		}
 
 		// If the client or the remote server told us the write is done, send the
 		// response to the client.
-		if done {
+		if remote == nil && localDone {
+			resp, err := local.CloseAndRecv()
+			if err != nil {
+				return nil, err
+			}
+			err = stream.SendAndClose(resp)
+			return resp, err
+		}
+
+		if remote != nil && remoteDone {
 			if local != nil {
 				if !localDone {
 					log.CtxInfo(ctx, "remote write done but local write is not")
