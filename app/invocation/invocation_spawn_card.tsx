@@ -234,14 +234,14 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                 <span className="invocation-filter-title">Mnemonic</span>
                 <Select onChange={this.handleMnemonicFilterChange.bind(this)} value={this.state.mnemonicFilter}>
                   <Option value="">All</Option>
-                  {[...mnemonics].map((m) => (
+                  {sorted(mnemonics).map((m) => (
                     <Option value={m}>{m}</Option>
                   ))}
                 </Select>
                 <span className="invocation-sort-title">Runner</span>
                 <Select onChange={this.handleRunnerFilterChange.bind(this)} value={this.state.runnerFilter}>
                   <Option value="">All</Option>
-                  {[...runners].map((m) => (
+                  {sorted(runners).map((m) => (
                     <Option value={m}>{m}</Option>
                   ))}
                 </Select>
@@ -319,4 +319,9 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
       </div>
     );
   }
+}
+
+// TODO(bduffany): figure out ES2023 polyfills and use toSorted() instead.
+function sorted<T>(items: Iterable<T>): T[] {
+  return [...items].sort();
 }
