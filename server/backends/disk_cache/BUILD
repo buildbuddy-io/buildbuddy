@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "disk_cache",
     srcs = ["disk_cache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/backends/disk_cache",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",

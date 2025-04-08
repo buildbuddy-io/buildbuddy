@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/redact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	bespb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	clpb "github.com/buildbuddy-io/buildbuddy/v2/proto/command_line"
 )
 
 func fileWithURI(uri string) *bespb.File {

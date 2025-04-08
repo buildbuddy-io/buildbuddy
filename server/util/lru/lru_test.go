@@ -3,7 +3,7 @@ package lru_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/lru"
 	"github.com/stretchr/testify/require"
 )
 

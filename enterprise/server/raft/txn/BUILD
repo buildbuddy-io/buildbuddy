@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "txn",
     srcs = ["txn.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/txn",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/client",

@@ -7,18 +7,18 @@ import (
 	"os"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/background"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/procstats"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/rpcutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/tracing"
 	"golang.org/x/sync/errgroup"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	vmxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/vmexec"
 	gstatus "google.golang.org/grpc/status"
 )
 

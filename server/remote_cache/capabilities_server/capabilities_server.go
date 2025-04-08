@@ -4,15 +4,15 @@ import (
 	"context"
 	"math"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/bazel_request"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
-	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
+	akpb "github.com/buildbuddy-io/buildbuddy/v2/proto/api_key"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	smpb "github.com/buildbuddy-io/buildbuddy/v2/proto/semver"
+	remote_cache_config "github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/config"
 )
 
 var (

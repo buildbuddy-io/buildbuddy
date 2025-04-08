@@ -6,14 +6,14 @@ import (
 	"os"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/vfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/vsock"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"google.golang.org/grpc"
 
-	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
-	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
+	vfspb "github.com/buildbuddy-io/buildbuddy/v2/proto/vfs"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/v2/proto/vmvfs"
 	libVsock "github.com/mdlayher/vsock"
 )
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/rangemap"
 	"github.com/stretchr/testify/require"
 )
 

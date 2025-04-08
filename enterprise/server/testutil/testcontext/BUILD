@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "testcontext",
     srcs = ["test_context.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontext",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/testcontext",
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/util/bazel_request",

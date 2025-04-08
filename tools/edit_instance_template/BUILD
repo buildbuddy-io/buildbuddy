@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "edit_instance_template_lib",
     srcs = ["edit_instance_template.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/tools/edit_instance_template",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/tools/edit_instance_template",
     visibility = ["//visibility:private"],
     deps = [
         "//server/util/log",

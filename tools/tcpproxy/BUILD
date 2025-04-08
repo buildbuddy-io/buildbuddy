@@ -7,7 +7,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 go_library(
     name = "tcpproxy_lib",
     srcs = ["tcpproxy.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/tools/tcpproxy",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/tools/tcpproxy",
     visibility = ["//visibility:private"],
     deps = ["//server/util/log"],
 )

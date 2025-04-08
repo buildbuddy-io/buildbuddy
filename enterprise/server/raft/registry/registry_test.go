@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/registry"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/stretchr/testify/require"
 )
 

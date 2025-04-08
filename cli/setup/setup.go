@@ -1,13 +1,13 @@
 package setup
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
-	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
-	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
-	"github.com/buildbuddy-io/buildbuddy/cli/storage"
-	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/plugin"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/sidecar"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/tooltag"
 )
 
 // Setup prepares us to run a bazel command. It loads plugins, handles auth,

@@ -4,8 +4,8 @@ import (
 	"context"
 	"flag"
 
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/bazel_request"
 	"google.golang.org/grpc/metadata"
 )
 

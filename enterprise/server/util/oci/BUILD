@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "oci",
     srcs = ["oci.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/oci",
     deps = [
         "//enterprise/server/remote_execution/platform",
         "//proto:registry_go_proto",

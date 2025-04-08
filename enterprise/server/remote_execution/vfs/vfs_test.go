@@ -10,16 +10,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/vfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 )
 
 func setupVFS(t *testing.T) string {

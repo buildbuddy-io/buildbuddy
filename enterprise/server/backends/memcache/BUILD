@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "memcache",
     srcs = ["memcache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/memcache",
     deps = [
         "//enterprise/server/composable_cache",
         "//proto:remote_execution_go_proto",

@@ -1,10 +1,10 @@
 package role
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	akpb "github.com/buildbuddy-io/buildbuddy/v2/proto/api_key"
+	grpb "github.com/buildbuddy-io/buildbuddy/v2/proto/group"
 )
 
 // Constants for UserGroup.Role. These are powers of 2 so that we can allow

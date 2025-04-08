@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "configsecrets",
     srcs = ["configsecrets.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/configsecrets",
     visibility = ["//visibility:public"],
     deps = [
         "//server/config",

@@ -3,7 +3,7 @@ package bytebufferpool_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/bytebufferpool"
 	"github.com/stretchr/testify/assert"
 )
 

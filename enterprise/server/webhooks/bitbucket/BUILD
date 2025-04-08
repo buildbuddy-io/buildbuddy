@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "bitbucket",
     srcs = ["bitbucket.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/bitbucket",
     deps = [
         "//enterprise/server/util/fieldgetter",
         "//enterprise/server/webhooks/webhook_data",

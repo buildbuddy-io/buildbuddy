@@ -4,16 +4,16 @@ import (
 	"context"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/openai"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/vertexai"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/openai"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/vertexai"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
-	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
+	elpb "github.com/buildbuddy-io/buildbuddy/v2/proto/eventlog"
+	supb "github.com/buildbuddy-io/buildbuddy/v2/proto/suggestion"
 )
 
 const (

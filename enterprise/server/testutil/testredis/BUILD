@@ -7,7 +7,7 @@ go_library(
     testonly = 1,
     srcs = ["testredis.go"],
     data = [":redis-server_crossplatform"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/testredis",
     x_defs = {
         "redisBinRunfilePath": "$(rlocationpath :redis-server_crossplatform)",
     },

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "grpc_server",
     srcs = ["grpc_server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_server",
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",

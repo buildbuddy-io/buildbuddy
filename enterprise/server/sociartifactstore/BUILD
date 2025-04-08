@@ -8,7 +8,7 @@ go_library(
         "sociartifactstore.go",
         "sociartifactstore_darwin.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/sociartifactstore",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/sociartifactstore",
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "//proto:remote_execution_go_proto",

@@ -1,6 +1,6 @@
 package features
 
-import "github.com/buildbuddy-io/buildbuddy/server/util/flag"
+import "github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
 
 var (
 	CodeEditorEnabled   = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")

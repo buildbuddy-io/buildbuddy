@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "persistentworker",
     srcs = ["persistentworker.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/persistentworker",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/commandutil",

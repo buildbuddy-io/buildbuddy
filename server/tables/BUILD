@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "tables",
     srcs = ["tables.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/tables",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/tables",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:group_go_proto",

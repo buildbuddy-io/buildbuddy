@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "selfauth",
     srcs = ["selfauth.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/selfauth",
     deps = [
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",

@@ -18,10 +18,10 @@ import (
 	"flag"
 	"os"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/vsock"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 
-	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	vmxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/vmexec"
 )
 
 var (

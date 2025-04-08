@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/translate/builtins"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/translate/builtins"
 	"github.com/dop251/goja"
 )
 

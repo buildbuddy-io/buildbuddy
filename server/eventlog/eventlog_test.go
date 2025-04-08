@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
-	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockinvocationdb"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockstore"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/backends/chunkstore"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/mockinvocationdb"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/mockstore"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	elpb "github.com/buildbuddy-io/buildbuddy/v2/proto/eventlog"
 )
 
 // This test ensures that we stop continuing to accrue chunks in the response

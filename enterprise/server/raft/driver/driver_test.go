@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/storemap"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	rfpb "github.com/buildbuddy-io/buildbuddy/v2/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/v2/proto/raft_service"
 )
 
 type testStoreMap struct {

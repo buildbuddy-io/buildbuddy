@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/redis_metrics_collector"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/redisutil"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 )

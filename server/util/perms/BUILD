@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "perms",
     srcs = ["perms.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/perms",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/perms",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:acl_go_proto",

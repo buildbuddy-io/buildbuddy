@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "translate",
     srcs = ["translate.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/translate",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/translate",
     visibility = ["//visibility:public"],
     deps = [
         "//cli/translate/js",

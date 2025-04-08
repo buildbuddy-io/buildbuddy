@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "execution_server",
     srcs = ["execution_server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/execution_server",
     deps = [
         "//enterprise/server/backends/pubsub",
         "//enterprise/server/gcplink",

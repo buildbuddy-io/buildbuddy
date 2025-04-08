@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "codesearch",
     srcs = ["codesearch.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/codesearch",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/codesearch",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:codesearch_service_go_proto",

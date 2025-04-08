@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "filter",
     srcs = ["filter.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/filter",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/filter",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:invocation_status_go_proto",

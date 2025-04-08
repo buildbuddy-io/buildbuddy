@@ -6,7 +6,7 @@ go_library(
         "regexp.go",
         "regexp_query.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/query",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/codesearch/query",
     visibility = ["//visibility:public"],
     deps = [
         "//codesearch/dfa",

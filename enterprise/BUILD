@@ -16,7 +16,7 @@ go_library(
     name = "bundle",
     srcs = ["bundle.go"],
     embedsrcs = [":licenses"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise",
     deps = [
         "//server/util/fileresolver",
     ],

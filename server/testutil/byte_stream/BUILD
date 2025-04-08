@@ -6,7 +6,7 @@ go_library(
     name = "byte_stream",
     testonly = 1,
     srcs = ["byte_stream.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/byte_stream",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",

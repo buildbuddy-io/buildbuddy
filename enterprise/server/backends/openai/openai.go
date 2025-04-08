@@ -6,9 +6,9 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 var endpoint = flag.String("openai.endpoint", "https://api.openai.com/v1/chat/completions", "OpenAI endpoint")

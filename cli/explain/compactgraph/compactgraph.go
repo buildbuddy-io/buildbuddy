@@ -13,13 +13,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/spawn_diff"
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protodelim"
 
-	spawnproto "github.com/buildbuddy-io/buildbuddy/proto/spawn"
+	spawnproto "github.com/buildbuddy-io/buildbuddy/v2/proto/spawn"
 )
 
 // CompactGraph represents the compact execution log as a directed acyclic graph of spawns.

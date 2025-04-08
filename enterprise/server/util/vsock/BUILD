@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "vsock",
     srcs = ["vsock.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/vsock",
     deps = [
         "//server/util/log",
         "//server/util/status",

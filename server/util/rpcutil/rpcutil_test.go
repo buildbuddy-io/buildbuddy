@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/rpcutil"
 	"github.com/stretchr/testify/require"
 
 	tspb "google.golang.org/protobuf/types/known/timestamppb"

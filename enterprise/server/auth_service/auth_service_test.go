@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/metadata"
 
-	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
+	authpb "github.com/buildbuddy-io/buildbuddy/v2/proto/auth"
 )
 
 func contextWithApiKey(t *testing.T, key string) context.Context {

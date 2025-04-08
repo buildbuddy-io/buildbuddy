@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "ext4",
     srcs = ["ext4.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/ext4",
     target_compatible_with = ["@platforms//os:linux"],
     deps = select({
         "@io_bazel_rules_go//go/platform:linux": [

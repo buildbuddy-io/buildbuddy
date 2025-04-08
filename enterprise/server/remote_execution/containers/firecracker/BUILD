@@ -13,7 +13,7 @@ go_library(
         "//enterprise/vmsupport/bin:vmlinux",
     ],
     embedsrcs = ["guest_api_hash.sha256"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/containers/firecracker",
     target_compatible_with = [
         "@platforms//os:linux",
     ],

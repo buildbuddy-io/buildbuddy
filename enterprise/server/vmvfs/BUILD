@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "vmvfs_lib",
     srcs = ["vmvfs.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/vmvfs",
     deps = [
         "//enterprise/server/remote_execution/vfs",
         "//enterprise/server/util/vsock",

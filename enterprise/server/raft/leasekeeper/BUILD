@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "leasekeeper",
     srcs = ["leasekeeper.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/leasekeeper",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/client",

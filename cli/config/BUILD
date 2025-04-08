@@ -5,7 +5,7 @@ package(default_visibility = ["//cli:__subpackages__"])
 go_library(
     name = "config",
     srcs = ["config.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/config",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/config",
     deps = [
         "//cli/log",
         "@com_github_docker_go_units//:go-units",

@@ -8,7 +8,7 @@ go_library(
         "//config:buildbuddy.local.yaml",
         "//server/cmd/buildbuddy",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/buildbuddy",
     visibility = ["//visibility:public"],
     x_defs = {
         "buildbuddyRunfilePath": "$(rlocationpath //server/cmd/buildbuddy)",

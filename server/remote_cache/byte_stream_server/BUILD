@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "byte_stream_server",
     srcs = ["byte_stream_server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/byte_stream_server",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:api_key_go_proto",

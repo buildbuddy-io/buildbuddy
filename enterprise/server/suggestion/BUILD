@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "suggestion",
     srcs = ["suggestion.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/suggestion",
     deps = [
         "//enterprise/server/backends/openai",
         "//enterprise/server/backends/vertexai",

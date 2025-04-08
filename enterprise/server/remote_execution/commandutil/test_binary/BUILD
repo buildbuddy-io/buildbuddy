@@ -8,7 +8,7 @@ package(
 go_library(
     name = "lib",
     srcs = ["test_binary.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil/test_binary",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/commandutil/test_binary",
 )
 
 go_binary(

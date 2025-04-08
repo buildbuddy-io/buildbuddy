@@ -4,8 +4,8 @@ import (
 	"flag"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/prometheus/client_golang/prometheus"
 )

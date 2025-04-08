@@ -3,16 +3,16 @@ package testcache
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/capabilities_server"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 

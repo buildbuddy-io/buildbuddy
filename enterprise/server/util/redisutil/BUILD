@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "redisutil",
     srcs = ["redisutil.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/redisutil",
     deps = [
         "//server/interfaces",
         "//server/util/log",

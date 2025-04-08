@@ -3,9 +3,9 @@ package devnull
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
 
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	pepb "github.com/buildbuddy-io/buildbuddy/v2/proto/publish_build_event"
 )
 
 type nullEventChannel struct {

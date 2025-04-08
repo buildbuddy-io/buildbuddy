@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "aws",
     srcs = ["aws.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/aws",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/backends/blobstore/aws",
     visibility = ["//visibility:public"],
     deps = [
         "//server/backends/blobstore/util",

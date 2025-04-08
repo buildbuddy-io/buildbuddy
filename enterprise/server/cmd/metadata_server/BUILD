@@ -8,7 +8,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "metadata_server_lib",
     srcs = ["main.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/metadata_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/cmd/metadata_server",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/backends/configsecrets",

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "bazel_request",
     srcs = ["bazel_request.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/bazel_request",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/bazel_request",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",

@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket/test_data"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/bitbucket"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/bitbucket/test_data"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
 	"github.com/stretchr/testify/assert"
 )
 

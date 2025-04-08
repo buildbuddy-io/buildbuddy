@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/prom"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )

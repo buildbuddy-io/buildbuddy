@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/testutil/testcli"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

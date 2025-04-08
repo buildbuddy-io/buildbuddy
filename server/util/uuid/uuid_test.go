@@ -3,7 +3,7 @@ package uuid_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/uuid"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "hostedrunner",
     srcs = ["hostedrunner.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/hostedrunner",
     deps = [
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",

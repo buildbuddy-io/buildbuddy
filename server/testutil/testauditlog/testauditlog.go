@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	alpb "github.com/buildbuddy-io/buildbuddy/v2/proto/auditlog"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )

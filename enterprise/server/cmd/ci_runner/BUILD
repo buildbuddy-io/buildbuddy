@@ -12,7 +12,7 @@ package(
 go_library(
     name = "main",
     srcs = ["main.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/cmd/ci_runner",
     deps = [
         "//enterprise/server/bes_artifacts",
         "//enterprise/server/build_event_publisher",

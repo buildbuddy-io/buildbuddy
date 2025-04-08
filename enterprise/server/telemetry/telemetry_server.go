@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"gorm.io/gorm/clause"
 
-	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	telpb "github.com/buildbuddy-io/buildbuddy/v2/proto/telemetry"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 

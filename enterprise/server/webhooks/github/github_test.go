@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github/test_data"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/github"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/github/test_data"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
 )
 

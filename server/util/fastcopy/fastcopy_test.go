@@ -9,10 +9,10 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
-	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/fastcopy"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 )
 

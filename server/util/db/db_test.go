@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/db"
 	"github.com/stretchr/testify/require"
 )
 

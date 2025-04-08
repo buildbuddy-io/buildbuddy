@@ -3,7 +3,7 @@ package hash_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/hash"
 	"github.com/stretchr/testify/assert"
 )
 

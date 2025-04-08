@@ -3,7 +3,7 @@ package procstats
 import (
 	"time"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 	ps "github.com/mitchellh/go-ps"
 	procutil "github.com/shirou/gopsutil/v3/process"
 )

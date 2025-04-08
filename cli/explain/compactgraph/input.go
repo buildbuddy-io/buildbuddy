@@ -12,8 +12,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/spawn"
 )
 
 type Hash = []byte

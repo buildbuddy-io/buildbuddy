@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 )
 

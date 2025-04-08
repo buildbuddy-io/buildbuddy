@@ -10,23 +10,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/containers/firecracker"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/tracing"
 	"github.com/stretchr/testify/require"
 
-	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	fcpb "github.com/buildbuddy-io/buildbuddy/v2/proto/firecracker"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 )
 
 var testManualBenchmark = flag.Bool("test_manual_benchmark", false, "Whether to run manual benchmarking tests.")
@@ -144,7 +144,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 				 if [ -d buildbuddy ]; then
 					echo "Directory exists."
 				 else
-					git clone https://github.com/buildbuddy-io/buildbuddy --filter=blob:none
+					git clone https://github.com/buildbuddy-io/buildbuddy/v2 --filter=blob:none
 				 fi
 				 cd buildbuddy
 				 # See https://github.com/bazelbuild/bazelisk/issues/220

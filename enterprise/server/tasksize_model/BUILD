@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "tasksize_model",
     srcs = ["tasksize_model.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize_model",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/tasksize_model",
     deps = [
         "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",

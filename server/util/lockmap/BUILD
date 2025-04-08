@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "lockmap",
     srcs = ["lockmap.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/lockmap",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/lockmap",
     visibility = ["//visibility:public"],
 )
 

@@ -11,11 +11,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/ociregistry"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testcache"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testregistry"
 	"github.com/stretchr/testify/require"
 )
 

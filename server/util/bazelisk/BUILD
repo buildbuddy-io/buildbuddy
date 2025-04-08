@@ -17,6 +17,6 @@ go_library(
     name = "bazelisk",
     srcs = ["bazelisk.go"],
     embedsrcs = [":bazelisk-bin"],  # keep
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/bazelisk",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/bazelisk",
     visibility = ["//visibility:public"],
 )

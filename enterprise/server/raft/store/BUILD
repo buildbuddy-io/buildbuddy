@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "store",
     srcs = ["store.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/store",
     deps = [
         "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",

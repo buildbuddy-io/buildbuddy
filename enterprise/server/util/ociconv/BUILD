@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "ociconv",
     srcs = ["ociconv.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/ociconv",
     deps = [
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",

@@ -3,11 +3,11 @@ package push_server
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
+	rapb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_asset"
 )
 
 type PushServer struct {

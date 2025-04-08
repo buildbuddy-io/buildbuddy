@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "yaml",
     srcs = ["yaml.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/yaml",
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/alert",

@@ -13,7 +13,7 @@ go_library(
         ],
         "//conditions:default": [],
     }),
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/xcode",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/xcode",
     visibility = ["//visibility:public"],
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [

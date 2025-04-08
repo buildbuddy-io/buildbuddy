@@ -4,7 +4,7 @@ go_library(
     name = "testauth",
     testonly = 1,
     srcs = ["testauth.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testauth",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testauth",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:context_go_proto",

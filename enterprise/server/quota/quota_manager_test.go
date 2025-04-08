@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/pubsub"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/authdb"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/pubsub"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/query_builder"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/assert"
@@ -20,7 +20,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
+	qpb "github.com/buildbuddy-io/buildbuddy/v2/proto/quota"
 )
 
 type testBucket struct {

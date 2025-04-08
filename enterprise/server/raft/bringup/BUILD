@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "bringup",
     srcs = ["bringup.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/bringup",
     deps = [
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",

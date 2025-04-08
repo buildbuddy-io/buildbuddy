@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/accumulator"
 	"gopkg.in/yaml.v2"
 
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	rnpb "github.com/buildbuddy-io/buildbuddy/v2/proto/runner"
 )
 
 // === IMPORTANT ===

@@ -3,8 +3,8 @@ package setup_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/buildbuddy"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/webtester"
 	"github.com/stretchr/testify/assert"
 )
 

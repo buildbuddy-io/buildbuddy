@@ -6,7 +6,7 @@ go_library(
     name = "enterprise_testenv",
     testonly = 1,
     srcs = ["enterprise_testenv.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/enterprise_testenv",
     deps = [
         "//enterprise/server/backends/authdb",
         "//enterprise/server/backends/redis_cache",

@@ -6,19 +6,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	bespb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	bepb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_events"
+	pepb "github.com/buildbuddy-io/buildbuddy/v2/proto/publish_build_event"
 )
 
 const (

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "bazelrbe_lib",
     srcs = ["bazelrbe.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/tools/probers/bazelrbe",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/tools/probers/bazelrbe",
     visibility = ["//visibility:private"],
     deps = [
         "//server/util/log",

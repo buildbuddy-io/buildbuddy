@@ -9,7 +9,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "rbeperf_lib",
     srcs = ["rbeperf.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/rbeperf",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/tools/rbeperf",
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/test/integration/remote_execution/rbeclient",

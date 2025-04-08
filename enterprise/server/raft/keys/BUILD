@@ -5,5 +5,5 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "keys",
     srcs = ["keys.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/keys",
 )

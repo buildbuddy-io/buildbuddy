@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "github",
     srcs = ["github.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/github",
     deps = [
         "//enterprise/server/util/fieldgetter",
         "//enterprise/server/webhooks/webhook_data",

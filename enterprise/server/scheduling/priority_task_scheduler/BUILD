@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "priority_task_scheduler",
     srcs = ["priority_task_scheduler.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/scheduling/priority_task_scheduler",
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/remote_execution/operation",

@@ -18,5 +18,5 @@ go_library(
     name = "bundle",
     srcs = ["bundle.go"],
     embedsrcs = ["buildbuddy_ci_runner"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/cmd/ci_runner/bundle",
 )

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "events",
     srcs = ["events.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/events",
     visibility = ["//visibility:public"],
     deps = ["//proto:raft_go_proto"],
 )

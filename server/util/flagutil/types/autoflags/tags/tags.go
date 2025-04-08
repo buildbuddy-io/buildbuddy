@@ -6,10 +6,10 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/yaml"
 )
 
 // Tagged exists as an interface to provide an abstraction of

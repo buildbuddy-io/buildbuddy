@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "metrics",
     srcs = ["metrics.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/metrics",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/metrics",
     deps = [
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promauto",

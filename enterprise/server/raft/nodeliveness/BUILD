@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "nodeliveness",
     srcs = ["nodeliveness.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/nodeliveness",
     deps = [
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",

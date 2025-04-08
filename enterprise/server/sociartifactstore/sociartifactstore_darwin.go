@@ -6,11 +6,11 @@ package sociartifactstore
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	socipb "github.com/buildbuddy-io/buildbuddy/v2/proto/soci"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 

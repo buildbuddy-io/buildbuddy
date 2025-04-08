@@ -6,7 +6,7 @@ go_library(
         "check_metrics.go",
         "config.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/check_metrics",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/tools/check_metrics",
     visibility = ["//visibility:private"],
     deps = [
         "//server/config",

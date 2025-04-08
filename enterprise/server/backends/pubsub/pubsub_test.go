@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

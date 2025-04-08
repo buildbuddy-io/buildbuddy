@@ -7,7 +7,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 go_library(
     name = "mdload_lib",
     srcs = ["mdload.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/mdload",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/tools/mdload",
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/filestore",

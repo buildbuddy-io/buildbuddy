@@ -3,11 +3,11 @@ package pbwireutil_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/pbwireutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/pbwireutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 	"github.com/stretchr/testify/require"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 

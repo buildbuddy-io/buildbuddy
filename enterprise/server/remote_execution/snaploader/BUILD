@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "snaploader",
     srcs = ["snaploader.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/snaploader",
     deps = [
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",

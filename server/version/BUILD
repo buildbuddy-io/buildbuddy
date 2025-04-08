@@ -33,7 +33,7 @@ go_library(
         "version.txt",
         "commit.txt",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/version",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/version",
     visibility = ["//visibility:public"],
     deps = [
         "//server/metrics",

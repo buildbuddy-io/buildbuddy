@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "hit_tracker_service",
     srcs = ["hit_tracker_service.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_service",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/hit_tracker_service",
     deps = [
         "//proto:hit_tracker_go_proto",
         "//server/interfaces",

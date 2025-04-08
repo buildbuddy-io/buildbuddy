@@ -12,7 +12,7 @@ go_library(
         "vfs_server.go",
         "vfs_server_unsupported.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/vfs_server",
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "//enterprise/server/remote_execution/container",

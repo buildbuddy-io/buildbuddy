@@ -5,5 +5,5 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "config",
     srcs = ["config.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/remote_execution/config",
 )

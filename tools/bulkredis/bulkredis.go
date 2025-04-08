@@ -13,7 +13,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"github.com/go-redis/redis/v8"
 )
 

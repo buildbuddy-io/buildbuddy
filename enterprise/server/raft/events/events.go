@@ -3,7 +3,7 @@ package events
 import (
 	"fmt"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfpb "github.com/buildbuddy-io/buildbuddy/v2/proto/raft"
 )
 
 type EventType int

@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "pubsub",
     srcs = ["pubsub.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/pubsub",
     deps = [
         "//server/interfaces",
         "//server/util/alert",

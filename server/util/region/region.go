@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	cfgpb "github.com/buildbuddy-io/buildbuddy/v2/proto/config"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
 )
 
 var (

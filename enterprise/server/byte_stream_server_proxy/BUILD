@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "byte_stream_server_proxy",
     srcs = ["byte_stream_server_proxy.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/byte_stream_server_proxy",
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",

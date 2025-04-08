@@ -5,13 +5,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
-	"github.com/buildbuddy-io/buildbuddy/server/util/git"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/invocation_format"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/timeutil"
 
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
 )
 
 const (

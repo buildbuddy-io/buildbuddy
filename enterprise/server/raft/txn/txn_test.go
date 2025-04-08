@@ -5,18 +5,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/testutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/txn"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	_ "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/logger"
+	rfpb "github.com/buildbuddy-io/buildbuddy/v2/proto/raft"
 )
 
 func prepareTransaction(t *testing.T, ts *testutil.TestingStore, txnID []byte, statement *rfpb.TxnRequest_Statement) {

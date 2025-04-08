@@ -100,7 +100,7 @@ const (
 
 	// Executed action stage. Action execution is split into stages corresponding to
 	// the timestamps defined in
-	// [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797):
+	// [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/v2/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797):
 	// `queued`, `input_fetch`, `execution`, and `output_upload`. An additional stage,
 	// `worker`, includes all stages during which a worker is handling the action,
 	// which is all stages except the `queued` stage.
@@ -1648,7 +1648,7 @@ var (
 	// for BuildBuddy.
 	//
 	// If you'd like to see an up-to-date catalog of what BuildBuddy stores in
-	// its SQL database, see the table definitions [here](https://github.com/buildbuddy-io/buildbuddy/blob/master/server/tables/tables.go).
+	// its SQL database, see the table definitions [here](https://github.com/buildbuddy-io/buildbuddy/v2/blob/master/server/tables/tables.go).
 	//
 	// ## Query / error rate metrics
 

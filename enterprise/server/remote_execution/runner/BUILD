@@ -10,7 +10,7 @@ go_library(
         "runner_linux.go",
         "runner_windows.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/runner",
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/remote_execution/block_io",

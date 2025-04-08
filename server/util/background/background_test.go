@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/background"
 	"github.com/stretchr/testify/require"
 )
 

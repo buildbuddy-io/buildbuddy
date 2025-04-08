@@ -3,9 +3,9 @@ package quota
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 func getGroupID(ctx context.Context, env environment.Env) string {

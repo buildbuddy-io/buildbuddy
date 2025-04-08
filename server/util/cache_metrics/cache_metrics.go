@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 
 	gstatus "google.golang.org/grpc/status"

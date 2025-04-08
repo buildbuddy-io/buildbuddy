@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "mocksaml_lib",
     srcs = ["mocksaml.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/mocksaml",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/tools/mocksaml",
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/util/mocksaml",

@@ -3,7 +3,7 @@ package shlex_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/shlex"
 	"github.com/stretchr/testify/require"
 )
 

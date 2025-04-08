@@ -5,13 +5,13 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/types/autoflags/tags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/yaml"
 )
 
 type testStruct struct {

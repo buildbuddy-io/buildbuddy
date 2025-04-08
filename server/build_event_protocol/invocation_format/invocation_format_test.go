@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/invocation_format"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/stretchr/testify/assert"
 )
 

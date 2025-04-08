@@ -5,7 +5,7 @@ go_library(
     testonly = 1,
     srcs = ["testbazelisk.go"],
     data = ["@com_github_bazelbuild_bazelisk//:bazelisk"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testbazelisk",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testbazelisk",
     visibility = ["//visibility:public"],
     x_defs = {
         "bazeliskRunfilePath": "$(rlocationpaths @com_github_bazelbuild_bazelisk//:bazelisk)",

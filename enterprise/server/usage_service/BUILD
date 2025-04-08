@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "usage_service",
     srcs = ["usage_service.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/usage_service",
     deps = [
         "//enterprise/server/usage/config",
         "//proto:usage_go_proto",

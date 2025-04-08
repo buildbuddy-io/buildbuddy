@@ -3,10 +3,10 @@ package fileresolver_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/fileresolver"
 	"github.com/stretchr/testify/require"
 
-	bundle "github.com/buildbuddy-io/buildbuddy/server/util/fileresolver/test_data"
+	bundle "github.com/buildbuddy-io/buildbuddy/v2/server/util/fileresolver/test_data"
 )
 
 func TestFileResolver(t *testing.T) {

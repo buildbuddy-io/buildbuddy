@@ -3,7 +3,7 @@ package peerset_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/peerset"
 	"github.com/stretchr/testify/assert"
 )
 

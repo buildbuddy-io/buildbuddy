@@ -5,19 +5,19 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/invocation_search_service"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/context"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
+	sfpb "github.com/buildbuddy-io/buildbuddy/v2/proto/stat_filter"
 )
 
 func getUUIDBytes(id byte) []byte {

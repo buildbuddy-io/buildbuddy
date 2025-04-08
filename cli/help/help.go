@@ -8,11 +8,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
-	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
-	"github.com/buildbuddy-io/buildbuddy/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/cli_command"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/version"
 )
 
 const (

@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "rbesxs_lib",
     srcs = ["rbesxs.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/rbesxs",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/tools/rbesxs",
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/remote_execution/commandutil",

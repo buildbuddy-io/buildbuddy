@@ -3,7 +3,7 @@ package filters_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/filters"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/filters"
 	"github.com/stretchr/testify/assert"
 )
 

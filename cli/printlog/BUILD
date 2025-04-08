@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "printlog",
     srcs = ["printlog.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/printlog",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/printlog",
     deps = [
         "//cli/arg",
         "//cli/log",

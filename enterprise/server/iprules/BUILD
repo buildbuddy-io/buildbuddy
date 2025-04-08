@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "iprules",
     srcs = ["iprules.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/iprules",
     deps = [
         "//proto:iprules_go_proto",
         "//proto:server_notification_go_proto",

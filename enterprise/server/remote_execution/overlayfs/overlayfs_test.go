@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmount"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/overlayfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testmount"
 	"github.com/docker/go-units"
 	"github.com/stretchr/testify/require"
 )

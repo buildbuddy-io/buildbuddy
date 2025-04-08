@@ -6,15 +6,15 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testauth"
 	"github.com/stretchr/testify/require"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/claims"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/v2/server/util/request_context"
 )
 
 // Configure sets up an Authenticator in the env that authenticates similarly to

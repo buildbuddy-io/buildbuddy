@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/performance"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"golang.org/x/sync/errgroup"
 )
 

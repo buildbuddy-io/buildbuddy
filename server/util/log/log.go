@@ -15,13 +15,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log/gcp"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log/gcp"
 	"google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )

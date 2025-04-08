@@ -10,15 +10,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/fieldgetter"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"golang.org/x/oauth2"
 
-	gh_backend "github.com/buildbuddy-io/buildbuddy/server/backends/github"
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	gh_backend "github.com/buildbuddy-io/buildbuddy/v2/server/backends/github"
+	gitutil "github.com/buildbuddy-io/buildbuddy/v2/server/util/git"
 	gh "github.com/google/go-github/v59/github"
 )
 

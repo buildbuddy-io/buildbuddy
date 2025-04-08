@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"gopkg.in/yaml.v3"
 )
 

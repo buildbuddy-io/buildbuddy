@@ -10,8 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/mocksaml"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/mocksaml"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 )
 
 var (

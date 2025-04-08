@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "repo_downloader",
     srcs = ["repo_downloader.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/backends/repo_downloader",
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/git",

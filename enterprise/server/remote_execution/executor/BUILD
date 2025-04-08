@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "executor",
     srcs = ["executor.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/executor",
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/remote_execution/commandutil",

@@ -10,17 +10,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/testutil/testcli"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/buildbuddy_enterprise"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/webtester"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	bbspb "github.com/buildbuddy-io/buildbuddy/v2/proto/buildbuddy_service"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/v2/proto/group"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
 )
 
 func TestCLILoginWebFlow_SingleOrg_PersonalKeysEnabled(t *testing.T) {

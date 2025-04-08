@@ -8,7 +8,7 @@ package(default_visibility = [
 go_library(
     name = "scheduler_server",
     srcs = ["scheduler_server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/scheduling/scheduler_server",
     deps = [
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/action_merger",

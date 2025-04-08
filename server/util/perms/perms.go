@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
-	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	aclpb "github.com/buildbuddy-io/buildbuddy/v2/proto/acl"
+	uidpb "github.com/buildbuddy-io/buildbuddy/v2/proto/user_id"
 )
 
 const (

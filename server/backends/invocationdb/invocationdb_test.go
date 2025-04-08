@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	inspb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation_status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/backends/invocationdb"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/prefix"
 	"github.com/stretchr/testify/require"
 )
 

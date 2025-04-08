@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "chunker",
     srcs = ["chunker.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/chunker",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/chunker",
     deps = [
         "//server/util/status",
         "@com_github_jotfs_fastcdc_go//:fastcdc-go",

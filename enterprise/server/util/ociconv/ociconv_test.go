@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/ociconv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
 )
 

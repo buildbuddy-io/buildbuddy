@@ -3,12 +3,12 @@ package hit_tracker_service
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
+	hitpb "github.com/buildbuddy-io/buildbuddy/v2/proto/hit_tracker"
 )
 
 type HitTrackerService struct {

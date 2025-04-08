@@ -42,7 +42,7 @@ go_library(
 go_library(
     name = "langs",
     srcs = ["langs.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/fix/langs",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/fix/langs",
     visibility = ["//visibility:public"],
     deps = [
         "//cli/fix/golang",

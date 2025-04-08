@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "api",
     srcs = ["api_server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/api",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/api",
     deps = [
         "//enterprise/server/backends/prom",
         "//enterprise/server/hostedrunner",

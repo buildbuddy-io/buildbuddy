@@ -12,13 +12,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/procstats"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	espb "github.com/buildbuddy-io/buildbuddy/v2/proto/execution_stats"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 	ps "github.com/mitchellh/go-ps"
 )
 

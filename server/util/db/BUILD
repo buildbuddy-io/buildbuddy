@@ -7,7 +7,7 @@ go_library(
         "db_cgo.go",
         "db_nocgo.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/db",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/db",
     visibility = ["//visibility:public"],
     deps = [
         "//aws_rds_certs:bundle",

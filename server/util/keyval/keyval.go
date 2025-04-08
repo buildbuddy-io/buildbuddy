@@ -3,8 +3,8 @@ package keyval
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 )
 
 func GetProto(ctx context.Context, store interfaces.KeyValStore, key string, msg proto.Message) error {

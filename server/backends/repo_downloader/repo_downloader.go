@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-git/go-git/v5/config"
 
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	gitutil "github.com/buildbuddy-io/buildbuddy/v2/server/util/git"
 	git "github.com/go-git/go-git/v5"
 	memory "github.com/go-git/go-git/v5/storage/memory"
 )

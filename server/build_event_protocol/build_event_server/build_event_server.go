@@ -6,18 +6,18 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	bepb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_events"
+	pepb "github.com/buildbuddy-io/buildbuddy/v2/proto/publish_build_event"
 )
 
 type BuildEventProtocolServer struct {

@@ -5,8 +5,8 @@ import (
 	"log"
 	"os"
 
-	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/server"
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	_ "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/cmd/server"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/yaml"
 )
 
 const flagName = "yaml_documented_defaults_out_file"

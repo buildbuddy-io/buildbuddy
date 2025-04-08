@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/testutil"
 	"github.com/jonboulle/clockwork"
 )
 

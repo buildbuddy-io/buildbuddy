@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "cas_lib",
     srcs = ["cas.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/tools/cas",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/tools/cas",
     visibility = ["//visibility:private"],
     deps = [
         "//proto:buildbuddy_service_go_proto",

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "healthcheck",
     srcs = ["healthcheck.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/healthcheck",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/healthcheck",
     visibility = ["//visibility:public"],
     deps = [
         "//server/interfaces",

@@ -3,12 +3,12 @@ package rbuilder
 import (
 	"fmt"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/prototext"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfpb "github.com/buildbuddy-io/buildbuddy/v2/proto/raft"
 	gstatus "google.golang.org/grpc/status"
 )
 

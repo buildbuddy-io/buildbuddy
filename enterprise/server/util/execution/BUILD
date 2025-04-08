@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "execution",
     srcs = ["execution.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/execution",
     visibility = ["//enterprise:__subpackages__"],
     deps = [
         "//proto:execution_stats_go_proto",

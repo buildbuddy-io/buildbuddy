@@ -6,6 +6,6 @@ go_library(
     name = "testcontainer",
     testonly = 1,
     srcs = ["testcontainer.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/testcontainer",
     deps = ["//server/interfaces"],
 )

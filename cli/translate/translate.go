@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/translate/js"
-	"github.com/buildbuddy-io/buildbuddy/cli/translate/yaml"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/translate/js"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/translate/yaml"
 )
 
 type Translator interface {

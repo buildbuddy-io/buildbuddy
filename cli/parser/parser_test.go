@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/parser/test_data"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

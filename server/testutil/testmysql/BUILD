@@ -4,7 +4,7 @@ go_library(
     name = "testmysql",
     testonly = 1,
     srcs = ["testmysql.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testmysql",
     visibility = ["//visibility:public"],
     deps = [
         "//server/testutil/dockerutil",

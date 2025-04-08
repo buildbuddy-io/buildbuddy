@@ -3,7 +3,7 @@ package buildbuddy
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/app"
 )
 
 var (

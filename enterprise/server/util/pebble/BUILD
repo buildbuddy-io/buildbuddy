@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "pebble",
     srcs = ["pebble.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/pebble",
     visibility = ["//visibility:public"],
     deps = [
         "//server/metrics",

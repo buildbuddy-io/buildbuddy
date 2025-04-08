@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "status",
     srcs = ["status.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/status",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/status",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_pkg_errors//:errors",

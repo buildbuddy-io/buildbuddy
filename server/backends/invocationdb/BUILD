@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "invocationdb",
     srcs = ["invocationdb.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/backends/invocationdb",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:acl_go_proto",

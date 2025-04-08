@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "atime_updater",
     srcs = ["atime_updater.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/atime_updater",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",

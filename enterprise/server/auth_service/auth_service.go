@@ -3,12 +3,12 @@ package auth_service
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
+	authpb "github.com/buildbuddy-io/buildbuddy/v2/proto/auth"
 )
 
 type AuthService struct {

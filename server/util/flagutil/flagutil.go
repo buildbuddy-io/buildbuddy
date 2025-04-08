@@ -1,8 +1,8 @@
 package flagutil
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/common"
 )
 
 // SetValueForFlagName sets the value for a flag by name. setFlags is the set of

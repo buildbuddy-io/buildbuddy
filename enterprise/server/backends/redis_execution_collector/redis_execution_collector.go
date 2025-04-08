@@ -5,12 +5,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 	"github.com/go-redis/redis/v8"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	sipb "github.com/buildbuddy-io/buildbuddy/v2/proto/stored_invocation"
 )
 
 const (

@@ -13,14 +13,14 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
-	"github.com/buildbuddy-io/buildbuddy/server/util/git"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/performance"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/query"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/schema"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/searcher"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"github.com/cockroachdb/pebble"
 )
 

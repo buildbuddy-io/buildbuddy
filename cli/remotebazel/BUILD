@@ -9,7 +9,7 @@ package(default_visibility = [
 go_library(
     name = "remotebazel",
     srcs = ["remotebazel.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/remotebazel",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/remotebazel",
     deps = [
         "//cli/arg",
         "//cli/log",

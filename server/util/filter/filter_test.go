@@ -4,10 +4,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
-	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/invocation_status"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/stat_filter"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/filter"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 )
@@ -36,12 +36,12 @@ func TestValidGenericFilters(t *testing.T) {
 				Type:    stat_filter.FilterType_REPO_URL_FILTER_TYPE,
 				Operand: stat_filter.FilterOperand_IN_OPERAND,
 				Value: &stat_filter.FilterValue{
-					StringValue: []string{"http://github.com/buildbuddy-io/buildbuddy"},
+					StringValue: []string{"http://github.com/buildbuddy-io/buildbuddy/v2"},
 				},
 			},
 			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
 			expectedQStr:  "repo_url IN ?",
-			expectedQArgs: []interface{}{[]string{"http://github.com/buildbuddy-io/buildbuddy"}},
+			expectedQArgs: []interface{}{[]string{"http://github.com/buildbuddy-io/buildbuddy/v2"}},
 		},
 		{
 			filter: &stat_filter.GenericFilter{

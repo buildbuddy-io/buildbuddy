@@ -6,16 +6,16 @@ import (
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testserver"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testserver"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	bbspb "github.com/buildbuddy-io/buildbuddy/v2/proto/buildbuddy_service"
+	pepb "github.com/buildbuddy-io/buildbuddy/v2/proto/publish_build_event"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 

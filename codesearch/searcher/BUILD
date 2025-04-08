@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "searcher",
     srcs = ["searcher.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/searcher",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/codesearch/searcher",
     visibility = ["//visibility:public"],
     deps = [
         "//codesearch/performance",

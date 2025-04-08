@@ -5,5 +5,5 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "config",
     srcs = ["config.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/scheduling/scheduler_server/config",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/scheduling/scheduler_server/config",
 )

@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/server_notification"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/server_notification"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/testredis"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
 
-	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
+	snpb "github.com/buildbuddy-io/buildbuddy/v2/proto/server_notification"
 )
 
 func TestPubSub(t *testing.T) {

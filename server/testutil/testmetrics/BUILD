@@ -4,7 +4,7 @@ go_library(
     name = "testmetrics",
     testonly = 1,
     srcs = ["testmetrics.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testmetrics",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:prometheus_client_go_proto",

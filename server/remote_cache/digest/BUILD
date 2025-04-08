@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "digest",
     srcs = ["digest.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",

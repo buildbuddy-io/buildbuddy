@@ -4,7 +4,7 @@ go_library(
     name = "testmount",
     testonly = 1,
     srcs = ["testmount.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testmount",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testmount",
     target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
 )

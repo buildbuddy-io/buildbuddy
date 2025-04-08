@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/posting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

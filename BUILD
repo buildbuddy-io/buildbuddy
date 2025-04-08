@@ -174,7 +174,7 @@ gazelle_binary(
 # gazelle:exclude enterprise/bundle.go
 # Prefer generated BUILD files to be called BUILD over BUILD.bazel
 # gazelle:build_file_name BUILD,BUILD.bazel
-# gazelle:prefix github.com/buildbuddy-io/buildbuddy
+# gazelle:prefix github.com/buildbuddy-io/buildbuddy/v2
 # gazelle:proto disable
 # gazelle:map_kind ts_project ts_library //rules/typescript:index.bzl
 # gazelle:exclude **/node_modules/**

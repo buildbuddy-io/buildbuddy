@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "interceptors",
     srcs = ["interceptors.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/http/interceptors",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/http/interceptors",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:context_go_proto",

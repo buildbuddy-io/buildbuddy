@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "hit_tracker",
     srcs = ["hit_tracker.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/hit_tracker",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:cache_go_proto",

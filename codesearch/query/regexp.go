@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/token"
 )
 
 // A Query is a matching machine, like a regular expression,

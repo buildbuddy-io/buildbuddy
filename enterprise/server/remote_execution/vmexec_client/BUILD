@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "vmexec_client",
     srcs = ["vmexec_client.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/vmexec_client",
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/util/procstats",

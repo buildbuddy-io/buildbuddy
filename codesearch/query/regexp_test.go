@@ -8,7 +8,7 @@ import (
 	"regexp/syntax"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/token"
 )
 
 var queryTests = []struct {

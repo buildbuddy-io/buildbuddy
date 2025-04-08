@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "real_environment",
     srcs = ["real_environment.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/real_environment",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/real_environment",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:hit_tracker_go_proto",

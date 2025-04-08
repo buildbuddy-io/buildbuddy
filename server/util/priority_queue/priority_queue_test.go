@@ -4,7 +4,7 @@ import (
 	"container/heap"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/priority_queue"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

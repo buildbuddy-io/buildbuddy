@@ -20,28 +20,28 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/workflow/config"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/buildbuddy"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testbazel"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testshell"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"gopkg.in/yaml.v2"
 
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rlpb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	bespb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	clpb "github.com/buildbuddy-io/buildbuddy/v2/proto/command_line"
+	elpb "github.com/buildbuddy-io/buildbuddy/v2/proto/eventlog"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation_status"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	rlpb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution_log"
+	rnpb "github.com/buildbuddy-io/buildbuddy/v2/proto/runner"
 )
 
 const (
@@ -513,7 +513,7 @@ actions:
 			expectModifiedIID: false,
 		},
 		{
-			// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3688):
+			// TODO(https://github.com/buildbuddy-io/buildbuddy/v2-internal/issues/3688):
 			// don't require bazel_workspace_dir to be set in order for
 			// recycling to work properly.
 			name: "Workspace is in a subdir",

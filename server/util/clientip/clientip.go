@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
 )
 
 const ContextKey = "clientIP"

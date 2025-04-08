@@ -5,6 +5,6 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "config",
     srcs = ["config.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/config",
     deps = ["@com_github_lni_dragonboat_v4//config"],
 )

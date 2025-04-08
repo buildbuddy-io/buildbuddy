@@ -1,20 +1,20 @@
 package cli_command
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/cli/add"
-	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
-	"github.com/buildbuddy-io/buildbuddy/cli/ask"
-	"github.com/buildbuddy-io/buildbuddy/cli/download"
-	"github.com/buildbuddy-io/buildbuddy/cli/execute"
-	"github.com/buildbuddy-io/buildbuddy/cli/explain"
-	"github.com/buildbuddy-io/buildbuddy/cli/fix"
-	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
-	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
-	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
-	"github.com/buildbuddy-io/buildbuddy/cli/update"
-	"github.com/buildbuddy-io/buildbuddy/cli/upload"
-	"github.com/buildbuddy-io/buildbuddy/cli/versioncmd"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/add"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/analyze"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/ask"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/download"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/execute"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/explain"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/fix"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/plugin"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/printlog"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/remotebazel"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/update"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/upload"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/versioncmd"
 )
 
 type Command struct {

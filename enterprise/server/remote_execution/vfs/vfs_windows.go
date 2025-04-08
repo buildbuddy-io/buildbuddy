@@ -5,7 +5,7 @@ package vfs
 import (
 	"context"
 
-	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+	vfspb "github.com/buildbuddy-io/buildbuddy/v2/proto/vfs"
 )
 
 type VFS struct {

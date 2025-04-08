@@ -4,7 +4,7 @@ go_library(
     name = "testcache",
     testonly = 1,
     srcs = ["testcache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testcache",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testcache",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",

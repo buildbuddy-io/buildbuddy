@@ -6,19 +6,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/buildbuddy_enterprise"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testbazel"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/retry"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/prototext"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	akpb "github.com/buildbuddy-io/buildbuddy/v2/proto/api_key"
+	bbspb "github.com/buildbuddy-io/buildbuddy/v2/proto/buildbuddy_service"
+	capb "github.com/buildbuddy-io/buildbuddy/v2/proto/cache"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
 )
 
 var (

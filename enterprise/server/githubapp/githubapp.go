@@ -21,20 +21,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/scratchspace"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -45,20 +45,20 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 
-	gh_webhooks "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
-	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
-	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
-	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
-	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
-	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
-	gh_oauth "github.com/buildbuddy-io/buildbuddy/server/backends/github"
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	gh_webhooks "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/github"
+	gitpb "github.com/buildbuddy-io/buildbuddy/v2/proto/git"
+	ghpb "github.com/buildbuddy-io/buildbuddy/v2/proto/github"
+	csinpb "github.com/buildbuddy-io/buildbuddy/v2/proto/index"
+	rppb "github.com/buildbuddy-io/buildbuddy/v2/proto/repo"
+	wfpb "github.com/buildbuddy-io/buildbuddy/v2/proto/workflow"
+	gh_oauth "github.com/buildbuddy-io/buildbuddy/v2/server/backends/github"
+	gitutil "github.com/buildbuddy-io/buildbuddy/v2/server/util/git"
 	gitobject "github.com/go-git/go-git/v5/plumbing/object"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
 var (
-	// TODO(Maggie): Once https://github.com/buildbuddy-io/buildbuddy-internal/issues/4672 is fixed,
+	// TODO(Maggie): Once https://github.com/buildbuddy-io/buildbuddy/v2-internal/issues/4672 is fixed,
 	// use `flag.Struct` to avoid having to duplicate all the config flags and share validation logic.
 	readWriteAppEnabled       = flag.Bool("github.app.enabled", false, "Whether to enable the read-write BuildBuddy GitHub app server.")
 	readWriteAppClientID      = flag.String("github.app.client_id", "", "GitHub app OAuth client ID.")
@@ -180,7 +180,7 @@ func (s *GitHubAppService) GetGitHubAppForAuthenticatedUser(ctx context.Context)
 // for the GitHub owner.
 //
 // A GitHub owner is either a username or an org name. For example, for the repo URL
-// `github.com/buildbuddy-io/buildbuddy`, the owner is `buildbuddy-io`.
+// `github.com/buildbuddy-io/buildbuddy/v2`, the owner is `buildbuddy-io`.
 // Each owner can only install one of the BB apps (enforced in `createInstallation`).
 //
 // The installation must be both installed on GitHub and imported
@@ -286,7 +286,7 @@ func (s *GitHubAppService) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetL
 // GitHub owner, if it exists.
 //
 // A GitHub owner is either a username or an org name. For example, for the repo URL
-// `github.com/buildbuddy-io/buildbuddy`, the owner is `buildbuddy-io`.
+// `github.com/buildbuddy-io/buildbuddy/v2`, the owner is `buildbuddy-io`.
 //
 // Each owner can have at most 1 app installation. GitHub does not allow multiple
 // installations for the same owner and app ID. And we do not allow each groupID

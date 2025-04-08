@@ -10,12 +10,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/dfa"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/filters"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/dfa"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/filters"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/token"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 const (

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "common",
     srcs = ["common.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/api/common",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/api/common",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:build_event_stream_go_proto",

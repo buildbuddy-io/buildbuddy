@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "sidecar",
     srcs = ["sidecar.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/sidecar",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/sidecar",
     deps = [
         "//cli/arg",
         "//cli/config",

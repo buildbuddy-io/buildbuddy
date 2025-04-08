@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "gcs_cache",
     srcs = ["gcs_cache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/gcs_cache",
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

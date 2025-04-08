@@ -7,7 +7,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 go_library(
     name = "cacheload_lib",
     srcs = ["cacheload.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/tools/cacheload",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/tools/cacheload",
     visibility = ["//visibility:private"],
     deps = [
         "//proto:remote_execution_go_proto",

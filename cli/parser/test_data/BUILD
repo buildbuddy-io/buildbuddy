@@ -5,7 +5,7 @@ go_library(
     testonly = 1,
     srcs = ["test_data.go"],
     embedsrcs = ["bazel7.4.0_help_flags-as-proto.b64"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser/test_data",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/parser/test_data",
 )
 
 package(default_visibility = ["//cli:__subpackages__"])

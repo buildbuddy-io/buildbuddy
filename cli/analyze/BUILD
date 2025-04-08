@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "analyze",
     srcs = ["analyze.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/analyze",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/analyze",
     deps = [
         "//cli/arg",
         "//cli/bazelisk",

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "dsingleflight",
     srcs = ["dsingleflight.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/dsingleflight",
     deps = [
         "//server/real_environment",
         "//server/util/log",

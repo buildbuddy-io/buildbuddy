@@ -19,8 +19,8 @@ import (
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/language/bazel/visibility"
 	"github.com/bazelbuild/bazel-gazelle/language/proto"
-	"github.com/buildbuddy-io/buildbuddy/cli/fix/golang"
-	"github.com/buildbuddy-io/buildbuddy/cli/fix/typescript"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/fix/golang"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/fix/typescript"
 )
 
 var languages = []language.Language{

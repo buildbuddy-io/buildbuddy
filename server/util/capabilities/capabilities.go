@@ -3,11 +3,11 @@ package capabilities
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	akpb "github.com/buildbuddy-io/buildbuddy/v2/proto/api_key"
 )
 
 var (

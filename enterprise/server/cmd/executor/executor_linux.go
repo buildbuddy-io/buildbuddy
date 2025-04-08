@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/cgroup"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/vbd"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/networking"
 )
 
 var (

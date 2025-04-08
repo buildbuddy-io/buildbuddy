@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "pebble_cache",
     srcs = ["pebble_cache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/pebble_cache",
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/keys",

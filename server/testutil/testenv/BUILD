@@ -4,7 +4,7 @@ go_library(
     name = "testenv",
     testonly = 1,
     srcs = ["testenv.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testenv",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv",
     visibility = ["//visibility:public"],
     deps = [
         "//server/backends/blobstore",

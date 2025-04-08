@@ -6,7 +6,7 @@ import (
 	"context"
 	"runtime"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 func Convert(ctx context.Context, path string, opts Opts) (*Overlay, error) {

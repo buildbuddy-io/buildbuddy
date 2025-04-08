@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "httpclient",
     srcs = ["httpclient.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/http/httpclient",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/http/httpclient",
     visibility = ["//visibility:public"],
     deps = [
         "//server/metrics",

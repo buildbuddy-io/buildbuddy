@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "grpc_forward",
     srcs = ["grpc_forward.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/grpc_forward",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_forward",
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/flag",

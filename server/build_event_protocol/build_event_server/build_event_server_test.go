@@ -6,21 +6,21 @@ import (
 	"net"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/build_event_server"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	bepb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_events"
+	pepb "github.com/buildbuddy-io/buildbuddy/v2/proto/publish_build_event"
 )
 
 func TestPublishBuildToolEventStream_NoEvents(t *testing.T) {

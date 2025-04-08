@@ -10,10 +10,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"google.golang.org/grpc"
 
-	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
+	retpb "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/test/integration/remote_execution/proto"
 	"google.golang.org/protobuf/encoding/prototext"
 )
 

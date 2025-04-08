@@ -22,7 +22,7 @@ go_library(
             ":empty",  # embed fails with no embedsrcs
         ],
     }),
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/vmsupport",
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/fileresolver",

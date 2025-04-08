@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "metadata",
     srcs = ["metadata.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/metadata",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/metadata",
     deps = [
         "//cli/arg",
         "//cli/log",

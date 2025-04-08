@@ -15,17 +15,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/elastic/gosigar"
 	"github.com/tklauser/go-sysconf"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	vmxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/vmexec"
 	gstatus "google.golang.org/grpc/status"
 )
 

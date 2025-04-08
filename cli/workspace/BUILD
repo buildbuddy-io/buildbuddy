@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "workspace",
     srcs = ["workspace.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/workspace",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/workspace",
     deps = [
         "//cli/log",
         "//server/util/disk",

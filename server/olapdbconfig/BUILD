@@ -3,6 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "olapdbconfig",
     srcs = ["olapdbconfig.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/olapdbconfig",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/olapdbconfig",
     visibility = ["//visibility:public"],
 )

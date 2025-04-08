@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "ociregistry",
     srcs = ["ociregistry.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/ociregistry",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:ociregistry_go_proto",

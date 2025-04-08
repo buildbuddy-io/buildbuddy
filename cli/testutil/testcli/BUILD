@@ -5,7 +5,7 @@ go_library(
     testonly = 1,
     srcs = ["testcli.go"],
     data = ["//cli/cmd/bb"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/testutil/testcli",
     visibility = ["//visibility:public"],
     x_defs = {
         "bbRunfilePath": "$(rlocationpath //cli/cmd/bb)",

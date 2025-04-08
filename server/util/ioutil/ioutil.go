@@ -3,7 +3,7 @@ package ioutil
 import (
 	"io"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
 )
 
 // A writer that drops anything written to it.

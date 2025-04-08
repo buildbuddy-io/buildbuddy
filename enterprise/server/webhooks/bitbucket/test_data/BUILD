@@ -12,5 +12,5 @@ go_library(
         "pull_request_event.json",
         "push_event.json",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket/test_data",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/bitbucket/test_data",
 )

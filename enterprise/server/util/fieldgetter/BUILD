@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "fieldgetter",
     srcs = ["fieldgetter.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/fieldgetter",
 )
 
 go_test(

@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "saml",
     srcs = ["saml.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/saml",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/saml",
     deps = [
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",

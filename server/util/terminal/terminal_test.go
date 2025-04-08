@@ -3,8 +3,8 @@ package terminal_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/terminal"
 )
 
 func randomBytes(t *testing.T, n int) []byte {

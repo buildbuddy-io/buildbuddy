@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "authdb",
     srcs = ["authdb.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/authdb",
     deps = [
         "//proto:api_key_go_proto",
         "//proto:group_go_proto",

@@ -4,7 +4,7 @@ go_library(
     name = "testutil",
     testonly = 1,
     srcs = ["testutil.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/testutil",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/bringup",

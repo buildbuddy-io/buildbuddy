@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "cpio_lib",
     srcs = ["cpio.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/cpio",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/tools/cpio",
     deps = [
         "//server/util/log",
         "@com_github_cavaliergopher_cpio//:cpio",

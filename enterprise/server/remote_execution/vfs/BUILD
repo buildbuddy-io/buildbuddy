@@ -15,7 +15,7 @@ go_library(
         "vfs_unix.go",
         "vfs_windows.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/vfs",
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin_amd64": [
             "//proto:vfs_go_proto",

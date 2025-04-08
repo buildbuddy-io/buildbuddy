@@ -16,7 +16,7 @@ go_library(
     name = "bundle",
     srcs = ["bundle.go"],
     embedsrcs = [":config_files"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/config",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/config",
     deps = [
         "//server/util/fileresolver",
     ],

@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "registry",
     srcs = ["registry.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/registry",
     deps = [
         "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",

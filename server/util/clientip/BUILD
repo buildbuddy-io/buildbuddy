@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "clientip",
     srcs = ["clientip.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/clientip",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/clientip",
     visibility = ["//visibility:public"],
     deps = ["//server/util/flag"],
 )

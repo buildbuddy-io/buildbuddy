@@ -12,22 +12,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/kythestorage"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/background"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/git"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/kythestorage"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/performance"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/query"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/schema"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/searcher"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/sstable"
 	"golang.org/x/sync/errgroup"
@@ -39,9 +39,9 @@ import (
 	"kythe.io/kythe/go/storage/keyvalue"
 	"kythe.io/kythe/go/storage/table"
 
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
-	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/index"
+	srpb "github.com/buildbuddy-io/buildbuddy/v2/proto/search"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/yaml"
 	ftsrv "kythe.io/kythe/go/serving/filetree"
 	gsrv "kythe.io/kythe/go/serving/graph"
 	xsrv "kythe.io/kythe/go/serving/xrefs"
@@ -109,7 +109,7 @@ type codesearchServer struct {
 	ft  filetree.Service
 }
 
-// apiArchiveURL takes a url like https://github.com/buildbuddy-io/buildbuddy
+// apiArchiveURL takes a url like https://github.com/buildbuddy-io/buildbuddy/v2
 // and a commit SHA, username, and access token, and generates a github API zip
 // archive download URL like:
 // https://api.github.com/repos/buildbuddy-io/buildbuddy-internal/zipball/sha12312312313

@@ -6,16 +6,16 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/capabilities_filter"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	apipb "github.com/buildbuddy-io/buildbuddy/v2/proto/api/v1"
+	akpb "github.com/buildbuddy-io/buildbuddy/v2/proto/api_key"
+	bbspb "github.com/buildbuddy-io/buildbuddy/v2/proto/buildbuddy_service"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/context"
 )
 
 func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {

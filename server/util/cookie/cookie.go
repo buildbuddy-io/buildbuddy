@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/endpoint_urls/build_buddy_url"
 )
 
 const (

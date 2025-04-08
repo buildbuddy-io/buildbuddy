@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "eventlog",
     srcs = ["eventlog.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/eventlog",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/eventlog",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:eventlog_go_proto",

@@ -8,7 +8,7 @@ go_library(
         "regexp.go",
         "utf.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/dfa",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/codesearch/dfa",
     visibility = ["//visibility:public"],
     deps = ["//codesearch/sparse"],
 )

@@ -7,7 +7,7 @@ go_library(
         "overlayfs_linux.go",
         "overlayfs_notlinux.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/overlayfs",
     visibility = ["//visibility:public"],
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [

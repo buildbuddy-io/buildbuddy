@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "rangecache",
     srcs = ["rangecache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/rangecache",
     deps = [
         "//proto:raft_go_proto",
         "//server/metrics",

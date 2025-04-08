@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "rbeclient",
     srcs = ["rbeclient.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbeclient",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/test/integration/remote_execution/rbeclient",
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/cache/dirtools",

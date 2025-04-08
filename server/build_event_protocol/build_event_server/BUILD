@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "build_event_server",
     srcs = ["build_event_server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/build_event_server",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:build_events_go_proto",

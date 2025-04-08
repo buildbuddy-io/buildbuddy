@@ -3,7 +3,7 @@ package webhook_data
 import (
 	"fmt"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
 )
 
 var (

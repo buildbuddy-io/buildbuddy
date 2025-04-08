@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "resources",
     srcs = ["resources.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/resources",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/resources",
     visibility = [
         "//enterprise:__subpackages__",
     ],

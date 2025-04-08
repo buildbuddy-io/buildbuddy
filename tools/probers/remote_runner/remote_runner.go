@@ -8,14 +8,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"google.golang.org/grpc/metadata"
 
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	bbspb "github.com/buildbuddy-io/buildbuddy/v2/proto/buildbuddy_service"
+	gitpb "github.com/buildbuddy-io/buildbuddy/v2/proto/git"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
+	rnpb "github.com/buildbuddy-io/buildbuddy/v2/proto/runner"
 )
 
 var (

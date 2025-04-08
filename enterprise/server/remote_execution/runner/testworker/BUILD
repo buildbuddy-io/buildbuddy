@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "testworker_lib",
     srcs = ["testworker.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner/testworker",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/runner/testworker",
     visibility = ["//visibility:private"],
     deps = ["//server/util/log"],
 )

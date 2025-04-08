@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "cgroup",
     srcs = ["cgroup.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/cgroup",
     target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
     deps = select({
