@@ -404,7 +404,7 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCache
 	}
 
 	digest := digestOrTagRef.Context().Digest(desc.Digest.String())
-	casDigest, _, _, _, err := FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, digest, ocipb.OCIResourceType_MANIFEST)
+	casDigest, _, _, err := FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, digest, ocipb.OCIResourceType_MANIFEST)
 	if err == nil {
 		raw := &bytes.Buffer{}
 		err := FetchBlobOrManifestFromCache(ctx, bsc, casDigest, raw)
@@ -426,10 +426,10 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCache
 	return &digest, remoteDesc.Manifest, false, nil
 }
 
-func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Reference, ociResourceType ocipb.OCIResourceType) (*repb.Digest, *v1.Hash, string, int64, error) {
+func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Reference, ociResourceType ocipb.OCIResourceType) (*repb.Digest, string, int64, error) {
 	hash, err := v1.NewHash(ref.Identifier())
 	if err != nil {
-		return nil, nil, "", 0, err
+		return nil, "", 0, err
 	}
 	arKey := &ocipb.OCIActionResultKey{
 		Registry:      ref.Context().RegistryStr(),
@@ -440,11 +440,11 @@ func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCa
 	}
 	arKeyBytes, err := proto.Marshal(arKey)
 	if err != nil {
-		return nil, nil, "", 0, err
+		return nil, "", 0, err
 	}
 	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
 	if err != nil {
-		return nil, nil, "", 0, err
+		return nil, "", 0, err
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
@@ -453,7 +453,7 @@ func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCa
 	)
 	ar, err := cachetools.GetActionResult(ctx, acc, arRN)
 	if err != nil {
-		return nil, nil, "", 0, err
+		return nil, "", 0, err
 	}
 
 	var blobMetadataCASDigest *repb.Digest
@@ -469,7 +469,7 @@ func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCa
 		}
 	}
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
-		return nil, nil, "", 0, fmt.Errorf("missing blob metadata digest or blob digest for %s", ref)
+		return nil, "", 0, fmt.Errorf("missing blob metadata digest or blob digest for %s", ref)
 	}
 	blobMetadataRN := digest.NewCASResourceName(
 		blobMetadataCASDigest,
@@ -479,9 +479,9 @@ func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCa
 	blobMetadata := &ocipb.OCIBlobMetadata{}
 	err = cachetools.GetBlobAsProto(ctx, bsc, blobMetadataRN, blobMetadata)
 	if err != nil {
-		return nil, nil, "", 0, err
+		return nil, "", 0, err
 	}
-	return blobCASDigest, &hash, blobMetadata.GetContentType(), blobMetadata.GetContentLength(), nil
+	return blobCASDigest, blobMetadata.GetContentType(), blobMetadata.GetContentLength(), nil
 }
 
 func FetchBlobOrManifestFromCache(ctx context.Context, bsc bspb.ByteStreamClient, casDigest *repb.Digest, w io.Writer) error {
@@ -753,7 +753,7 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 	}
 
 	ctx := context.Background()
-	casDigest, _, _, _, err := FetchBlobOrManifestMetadataFromCache(
+	casDigest, _, _, err := FetchBlobOrManifestMetadataFromCache(
 		ctx,
 		i.acc,
 		i.bsc,
@@ -881,7 +881,7 @@ func (t *teeReadCloser) Close() error {
 
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	ctx := context.Background()
-	casDigest, _, _, _, err := FetchBlobOrManifestMetadataFromCache(
+	casDigest, _, _, err := FetchBlobOrManifestMetadataFromCache(
 		ctx,
 		l.acc,
 		l.bsc,
