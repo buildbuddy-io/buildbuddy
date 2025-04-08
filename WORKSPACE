@@ -422,12 +422,13 @@ googletest_deps()
 
 http_archive(
     name = "io_bazel_rules_docker",
+    integrity = "sha256-ZIUZu2mLsls7gXUqLObaGizFZlNDa0jGkdzpuNahgGE=",
     patch_args = ["-p1"],
     patches = [
         "//buildpatches:rules_docker.patch",
     ],
-    sha256 = "b1e80761a8a8243d03ebca8845e9cc1ba6c82ce7c5179ce2b295cd36f7e394bf",
-    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.25.0/rules_docker-v0.25.0.tar.gz"],
+    strip_prefix = "rules_docker-b44cc958e61c3192c57fed7aef78c8567d757a70",
+    urls = ["https://github.com/bazelbuild/rules_docker/archive/b44cc958e61c3192c57fed7aef78c8567d757a70.tar.gz"],
 )
 
 load(
