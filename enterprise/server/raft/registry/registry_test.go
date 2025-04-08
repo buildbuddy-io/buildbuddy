@@ -32,25 +32,23 @@ func newGossipManager(t testing.TB, nodeAddr string, seeds []string) *gossip.Gos
 	return node
 }
 
-func requireResolves(t testing.TB, dnr registry.NodeRegistry, rangeID, replicaID uint64, raftAddr, grpcAddr string) {
+func requireResolves(t testing.TB, dnr registry.NodeRegistry, rangeID, replicaID uint64, nhid, raftAddr, grpcAddr string) {
 	addr, key, err := dnr.Resolve(rangeID, replicaID)
 	require.NoError(t, err)
 	require.Equal(t, raftAddr, addr, dnr.String())
 	require.NotNil(t, key)
 
 	ctx := context.Background()
-
-	addr, key, err = dnr.ResolveGRPC(ctx, rangeID, replicaID)
+	addr, err = dnr.ResolveGRPC(ctx, nhid)
 	require.NoError(t, err)
 	require.Equal(t, grpcAddr, addr, dnr.String())
-	require.NotNil(t, key)
 }
 
 func TestStaticRegistryAdd(t *testing.T) {
 	nr := registry.NewStaticNodeRegistry(1, nil, log.Logger{})
 	nr.Add(1, 1, "nhid-1")
 	nr.AddNode("nhid-1", "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, nr, 1, 1, "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, nr, 1, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
 }
 
 func TestStaticRegistryRemove(t *testing.T) {
@@ -60,13 +58,13 @@ func TestStaticRegistryRemove(t *testing.T) {
 	nr.Add(1, 2, "nhid-2")
 	nr.AddNode("nhid-1", "raftaddress:1", "grpcaddress:1")
 	nr.AddNode("nhid-2", "raftaddress:2", "grpcaddress:2")
-	requireResolves(t, nr, 1, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, nr, 2, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, nr, 1, 2, "raftaddress:2", "grpcaddress:2")
+	requireResolves(t, nr, 1, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, nr, 2, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, nr, 1, 2, "nhid-2", "raftaddress:2", "grpcaddress:2")
 
 	nr.Remove(1, 1)
-	requireResolves(t, nr, 2, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, nr, 1, 2, "raftaddress:2", "grpcaddress:2")
+	requireResolves(t, nr, 2, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, nr, 1, 2, "nhid-2", "raftaddress:2", "grpcaddress:2")
 	_, _, err := nr.Resolve(1, 1)
 	require.True(t, status.IsNotFoundError(err))
 }
@@ -78,12 +76,12 @@ func TestStaticRegistryRemoveShard(t *testing.T) {
 	nr.Add(1, 2, "nhid-2")
 	nr.AddNode("nhid-1", "raftaddress:1", "grpcaddress:1")
 	nr.AddNode("nhid-2", "raftaddress:2", "grpcaddress:2")
-	requireResolves(t, nr, 1, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, nr, 2, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, nr, 1, 2, "raftaddress:2", "grpcaddress:2")
+	requireResolves(t, nr, 1, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, nr, 2, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, nr, 1, 2, "nhid-2", "raftaddress:2", "grpcaddress:2")
 
 	nr.RemoveShard(1)
-	requireResolves(t, nr, 2, 1, "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, nr, 2, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
 	_, _, err := nr.Resolve(1, 1)
 	require.True(t, status.IsNotFoundError(err))
 	_, _, err = nr.Resolve(1, 2)
@@ -96,12 +94,12 @@ func TestDynamicRegistryAdd(t *testing.T) {
 	dnr := registry.NewDynamicNodeRegistry(gm, 1, nil, log.Logger{})
 	dnr.Add(1, 1, "nhid-1")
 	dnr.AddNode("nhid-1", "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, dnr, 1, 1, "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, dnr, 1, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
 
 	// When the target changes addresses, the registry should resolve the target
 	// to the new address.
 	dnr.AddNode("nhid-1", "raftaddress:2", "grpcaddress:2")
-	requireResolves(t, dnr, 1, 1, "raftaddress:2", "grpcaddress:2")
+	requireResolves(t, dnr, 1, 1, "nhid-1", "raftaddress:2", "grpcaddress:2")
 }
 
 func TestDynamicRegistryRemove(t *testing.T) {
@@ -113,13 +111,13 @@ func TestDynamicRegistryRemove(t *testing.T) {
 	dnr.Add(1, 2, "nhid-2")
 	dnr.AddNode("nhid-1", "raftaddress:1", "grpcaddress:1")
 	dnr.AddNode("nhid-2", "raftaddress:2", "grpcaddress:2")
-	requireResolves(t, dnr, 1, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, dnr, 2, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, dnr, 1, 2, "raftaddress:2", "grpcaddress:2")
+	requireResolves(t, dnr, 1, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, dnr, 2, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, dnr, 1, 2, "nhid-2", "raftaddress:2", "grpcaddress:2")
 
 	dnr.Remove(1, 1)
-	requireResolves(t, dnr, 2, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, dnr, 1, 2, "raftaddress:2", "grpcaddress:2")
+	requireResolves(t, dnr, 2, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, dnr, 1, 2, "nhid-2", "raftaddress:2", "grpcaddress:2")
 	_, _, err := dnr.Resolve(1, 1)
 	require.True(t, status.IsNotFoundError(err))
 }
@@ -133,12 +131,12 @@ func TestDynamicRegistryRemoveShard(t *testing.T) {
 	dnr.Add(1, 2, "nhid-2")
 	dnr.AddNode("nhid-1", "raftaddress:1", "grpcaddress:1")
 	dnr.AddNode("nhid-2", "raftaddress:2", "grpcaddress:2")
-	requireResolves(t, dnr, 1, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, dnr, 2, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, dnr, 1, 2, "raftaddress:2", "grpcaddress:2")
+	requireResolves(t, dnr, 1, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, dnr, 2, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, dnr, 1, 2, "nhid-2", "raftaddress:2", "grpcaddress:2")
 
 	dnr.RemoveShard(1)
-	requireResolves(t, dnr, 2, 1, "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, dnr, 2, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
 	_, _, err := dnr.Resolve(1, 1)
 	require.True(t, status.IsNotFoundError(err))
 	_, _, err = dnr.Resolve(1, 2)
@@ -161,19 +159,19 @@ func TestDynamicRegistryResolution(t *testing.T) {
 
 	dnr1.Add(1, 1, "nhid-1")
 	dnr1.AddNode("nhid-1", "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, dnr1, 1, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, dnr2, 1, 1, "raftaddress:1", "grpcaddress:1")
-	requireResolves(t, dnr3, 1, 1, "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, dnr1, 1, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, dnr2, 1, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
+	requireResolves(t, dnr3, 1, 1, "nhid-1", "raftaddress:1", "grpcaddress:1")
 
 	dnr2.Add(1, 2, "nhid-2")
 	dnr2.AddNode("nhid-2", "raftaddress:2", "grpcaddress:2")
-	requireResolves(t, dnr1, 1, 2, "raftaddress:2", "grpcaddress:2")
-	requireResolves(t, dnr2, 1, 2, "raftaddress:2", "grpcaddress:2")
-	requireResolves(t, dnr3, 1, 2, "raftaddress:2", "grpcaddress:2")
+	requireResolves(t, dnr1, 1, 2, "nhid-2", "raftaddress:2", "grpcaddress:2")
+	requireResolves(t, dnr2, 1, 2, "nhid-2", "raftaddress:2", "grpcaddress:2")
+	requireResolves(t, dnr3, 1, 2, "nhid-2", "raftaddress:2", "grpcaddress:2")
 
 	dnr3.Add(1, 3, "nhid-3")
 	dnr3.AddNode("nhid-3", "raftaddress:3", "grpcaddress:3")
-	requireResolves(t, dnr1, 1, 3, "raftaddress:3", "grpcaddress:3")
-	requireResolves(t, dnr2, 1, 3, "raftaddress:3", "grpcaddress:3")
-	requireResolves(t, dnr3, 1, 3, "raftaddress:3", "grpcaddress:3")
+	requireResolves(t, dnr1, 1, 3, "nhid-3", "raftaddress:3", "grpcaddress:3")
+	requireResolves(t, dnr2, 1, 3, "nhid-3", "raftaddress:3", "grpcaddress:3")
+	requireResolves(t, dnr3, 1, 3, "nhid-3", "raftaddress:3", "grpcaddress:3")
 }

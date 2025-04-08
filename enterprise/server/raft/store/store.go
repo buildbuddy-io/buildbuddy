@@ -2392,7 +2392,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		if r.GetNhid() == "" {
 			return nil, status.InternalErrorf("empty nhid in ReplicaDescriptor %+v", r)
 		}
-		grpcAddr, _, err := s.registry.ResolveGRPC(ctx, r.GetRangeId(), r.GetReplicaId())
+		grpcAddr, err := s.registry.ResolveGRPC(ctx, r.GetNhid())
 		if err != nil {
 			return nil, err
 		}
