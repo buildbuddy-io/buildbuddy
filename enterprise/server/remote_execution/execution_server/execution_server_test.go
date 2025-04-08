@@ -638,6 +638,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		InvocationUuid:         strings.ReplaceAll(invocationID, "-", ""),
 		Stage:                  4,
 		StatusCode:             int32(gstatus.Code(test.status)),
+		StatusMessage:          gstatus.Convert(test.status).Proto().GetMessage(),
 		ExitCode:               test.exitCode,
 		DoNotCache:             test.doNotCache,
 		CachedResult:           test.cachedResult,
