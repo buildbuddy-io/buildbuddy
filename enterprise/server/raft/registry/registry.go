@@ -167,14 +167,16 @@ func (n *StaticRegistry) Lookup(rangeID uint64, replicaID uint64) (*rfpb.Connect
 	n.mu.Unlock()
 
 	if ok {
+		ci := &rfpb.ConnectionInfo{
+			Nhid: target,
+		}
 		if a, ok := n.targetAddresses.Load(target); ok {
 			addr := a.(addresses)
-			return &rfpb.ConnectionInfo{
-				Nhid:        target,
-				RaftAddress: addr.raft,
-				GrpcAddress: addr.grpc,
-			}, nil
+			ci.RaftAddress = addr.raft
+			ci.GrpcAddress = addr.grpc
+			return ci, nil
 		}
+		return ci, targetAddressUnknownError(rangeID, replicaID)
 	}
 	return nil, targetAddressUnknownError(rangeID, replicaID)
 }
@@ -305,13 +307,15 @@ func (d *DynamicNodeRegistry) handleEvent(event *serf.UserEvent) {
 	}
 	req := &rfpb.RegistryPushRequest{}
 	if err := proto.Unmarshal(event.Payload, req); err != nil {
+		d.sReg.log.Warningf("failed to unmarshal payload: %s", err)
 		return
 	}
-	if req.GetNhid() == "" {
+	if req.GetNhid() == "" || req.GetGrpcAddress() == "" || req.GetRaftAddress() == "" {
 		d.sReg.log.Warningf("Ignoring malformed registry push request: %+v", req)
 		return
 	}
 	if req.GetGrpcAddress() != "" && req.GetRaftAddress() != "" {
+		d.sReg.log.Infof("handle registry update event, add %+v", req)
 		d.sReg.AddNode(req.GetNhid(), req.GetRaftAddress(), req.GetGrpcAddress())
 	}
 }
@@ -465,12 +469,19 @@ func (d *DynamicNodeRegistry) Resolve(rangeID uint64, replicaID uint64) (string,
 func (d *DynamicNodeRegistry) Lookup(ctx context.Context, rangeID uint64, replicaID uint64) (*rfpb.ConnectionInfo, error) {
 	ci, err := d.sReg.Lookup(rangeID, replicaID)
 	if err == nil {
-		return ci, err
+		return ci, nil
 	}
 	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
-		req := &rfpb.RegistryQueryRequest{
-			RangeId:   rangeID,
-			ReplicaId: replicaID,
+		var req *rfpb.RegistryQueryRequest
+		if ci == nil {
+			req = &rfpb.RegistryQueryRequest{
+				RangeId:   rangeID,
+				ReplicaId: replicaID,
+			}
+		} else if ci.GetNhid() != "" {
+			req = &rfpb.RegistryQueryRequest{
+				Nhid: ci.GetNhid(),
+			}
 		}
 		d.queryPeers(ctx, req)
 		return d.sReg.Lookup(rangeID, replicaID)
