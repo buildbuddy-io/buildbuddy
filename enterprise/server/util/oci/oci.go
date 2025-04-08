@@ -413,11 +413,10 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCache
 		}
 		if !status.IsNotFoundError(err) {
 			log.CtxErrorf(ctx, "error fetching manifest %s from the CAS: %s", digest.Context(), err)
-			return nil, nil, false, err
 		}
 	}
 
-	remoteDesc, err := remote.Get(digestOrTagRef, remoteOpts...)
+	remoteDesc, err := remote.Get(digest, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, nil, false, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
@@ -769,7 +768,6 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 		}
 		if !status.IsNotFoundError(err) {
 			log.CtxErrorf(ctx, "error fetching config in %s from the CAS: %s", i.digest.Context(), err)
-			return nil, err
 		}
 	}
 
@@ -847,29 +845,29 @@ func (l *cacheAwareLayer) Digest() (v1.Hash, error) {
 }
 
 func newTeeReadCloser(rc io.ReadCloser, wc io.WriteCloser) io.ReadCloser {
-	return &teeReadCloser{rc, wc}
+	return &teeReadCloser{rc, wc, true}
 }
 
 type teeReadCloser struct {
-	rc io.ReadCloser
-	wc io.WriteCloser
+	rc            io.ReadCloser
+	wc            io.WriteCloser
+	attemptWrites bool
 }
 
 func (t *teeReadCloser) Read(p []byte) (int, error) {
 	n, err := t.rc.Read(p)
 	if n > 0 {
 		_, werr := t.wc.Write(p[:n])
-		if werr != nil && werr == io.EOF {
-			return n, io.EOF
-		}
 		if werr != nil {
-			return n, err
+			log.Warningf("teeReadCloser write error, swallowing: %s", werr)
+			t.attemptWrites = false
 		}
 	}
 	return n, err
 }
 
 func (t *teeReadCloser) Close() error {
+	t.attemptWrites = false
 	werr := t.wc.Close()
 	rerr := t.rc.Close()
 	if rerr != nil {
@@ -904,7 +902,7 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 				w,
 			)
 			if err != nil {
-				log.Errorf("error fetching layer from CAS in %s: %s", l.digest.Context(), err)
+				log.Warningf("error fetching layer from CAS in %s: %s", l.digest.Context(), err)
 				w.CloseWithError(err)
 			}
 		}()
@@ -933,7 +931,7 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	)
 	if err != nil {
 		// cannot cache, but we can still fetch the remote layer
-		log.CtxErrorf(ctx, "cannot cache OCI image layer in %s: %s", l.digest, err)
+		log.CtxErrorf(ctx, "cannot cache OCI image layer in %s: %s", l.digest.Context(), err)
 		return uprc, nil
 	}
 	return newTeeReadCloser(uprc, caswc), nil
