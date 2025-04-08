@@ -437,6 +437,9 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
     if (!model.isBazelInvocation()) return null;
 
+    const version = getBazelVersion(model);
+    if (version === null || version.major >= 8) return null;
+
     if (model.optionsMap.get("legacy_important_outputs")) return null;
 
     return {
