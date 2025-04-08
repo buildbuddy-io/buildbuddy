@@ -64,7 +64,7 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imgname)
 	}
-	digest, raw, fromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, imgref, opts)
+	imgdigest, raw, fromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, imgref, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -77,19 +77,19 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 			ctx,
 			acc,
 			bsc,
-			*digest,
+			*imgdigest,
 			string(m.MediaType),
 			int64(len(raw)),
 			raw,
 		)
 		if err != nil {
-			log.CtxErrorf(ctx, "error writing image %s to the CAS: %s", imgref, err)
+			log.CtxErrorf(ctx, "error writing image manifest %s to the CAS: %s", imgref.Context(), err)
 		}
 	}
 
 	if m.MediaType != types.OCIImageIndex && m.MediaType != types.DockerManifestList {
 		img := &cacheAwareImage{
-			digest:   *digest,
+			digest:   *imgdigest,
 			acc:      acc,
 			bsc:      bsc,
 			raw:      raw,
@@ -495,7 +495,11 @@ func FetchBlobOrManifestFromCache(ctx context.Context, bsc bspb.ByteStreamClient
 	return cachetools.GetBlob(ctx, bsc, blobRN, w)
 }
 
-func UploadBlobOrManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Reference, ociResourceType ocipb.OCIResourceType, hash v1.Hash, contentType string, contentLength int64, r io.Reader) error {
+func UploadBlobOrManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Digest, ociResourceType ocipb.OCIResourceType, contentType string, contentLength int64, r io.Reader) error {
+	hash, err := v1.NewHash(ref.DigestStr())
+	if err != nil {
+		return fmt.Errorf("could not parse hash from %s: %s", ref.Context(), err)
+	}
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -506,7 +510,7 @@ func UploadBlobOrManifestToCache(ctx context.Context, acc repb.ActionCacheClient
 		repb.DigestFunction_SHA256,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	_, _, err := cachetools.UploadFromReader(ctx, bsc, blobRN, r)
+	_, _, err = cachetools.UploadFromReader(ctx, bsc, blobRN, r)
 	if err != nil {
 		return err
 	}
@@ -560,21 +564,15 @@ func UploadBlobOrManifestToCache(ctx context.Context, acc repb.ActionCacheClient
 }
 
 func writeManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, digest ctrname.Digest, contentType string, contentLength int64, raw []byte) error {
-	hash, err := v1.NewHash(digest.DigestStr())
-	if err != nil {
-		return fmt.Errorf("could not parse hash from %s: %s", digest.Context(), err)
-	}
-	r := bytes.NewReader(raw)
 	return UploadBlobOrManifestToCache(
 		ctx,
 		acc,
 		bsc,
 		digest,
 		ocipb.OCIResourceType_MANIFEST,
-		hash,
 		contentType,
 		contentLength,
-		r,
+		bytes.NewReader(raw),
 	)
 }
 
@@ -795,7 +793,6 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 		i.bsc,
 		digest,
 		ocipb.OCIResourceType_BLOB,
-		i.manifest.Config.Digest,
 		string(i.manifest.Config.MediaType),
 		int64(len(remoteraw)),
 		bytes.NewReader(remoteraw),

@@ -195,27 +195,21 @@ func (r *registry) makeUpstreamRequest(ctx context.Context, method, acceptHeader
 	return r.client.Do(upreq.WithContext(ctx))
 }
 
-func parseContentLengthHeader(value string) (int64, bool, error) {
-	if value == "" {
-		return 0, false, nil
-	}
+func parseContentLengthHeader(value string) (int64, error) {
 	contentLength, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		return 0, false, fmt.Errorf("could not parse %s header (value '%s'): %s", headerContentLength, value, err)
+		return 0, fmt.Errorf("could not parse %s header (value '%s'): %s", headerContentLength, value, err)
 	}
 	if contentLength < 0 {
-		return 0, false, fmt.Errorf("%s header must be 0 or greater, received value '%s'", headerContentLength, value)
+		return 0, fmt.Errorf("%s header must be 0 or greater, received value '%s'", headerContentLength, value)
 	}
-	return contentLength, true, nil
+	return contentLength, nil
 }
 
 func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
-	if value == "" {
-		return nil, nil
-	}
 	hash, err := gcr.NewHash(value)
 	if err != nil {
-		return nil, fmt.Errorf("could not parse %s header (value '%s'): %s", headerDockerContentDigest, value, err)
+		return nil, fmt.Errorf("could not parse hash from value '%s': %s", value, err)
 	}
 	return &hash, nil
 }
@@ -259,65 +253,95 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
-	resolvedRef := ref
-	resolvedRefIsDigest := identifierIsDigest
-	if ociResourceType == ocipb.OCIResourceType_MANIFEST && !identifierIsDigest && inreq.Method == http.MethodGet {
+	var digest gcrname.Digest
+	if identifierIsDigest {
+		digest = ref.Context().Digest(identifier)
+	}
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST && !identifierIsDigest {
 		// Fetching a manifest by tag.
 		// Since the mapping from tag to digest can change, we only look up manifests and blobs in the CAS by digest.
 		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
 		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
 		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
-		hash, exists, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
+		headresp, err := r.makeUpstreamRequest(
+			ctx,
+			http.MethodHead,
+			inreq.Header.Get(headerAccept),
+			inreq.Header.Get(headerAuthorization),
+			ociResourceType,
+			ref,
+		)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("could not resolve digest for manifest %s: %s", ref, err), http.StatusServiceUnavailable)
+			http.Error(w, fmt.Sprintf("error fetching manifest for %s from upstream registry: %s", ref, err), http.StatusServiceUnavailable)
 			return
 		}
-		if !exists {
-			http.Error(w, fmt.Sprintf("could not find manifest %s", ref), http.StatusNotFound)
+		defer headresp.Body.Close()
+
+		if inreq.Method == http.MethodHead {
+			for _, header := range []string{headerContentLength, headerContentType, headerDockerContentDigest, headerWWWAuthenticate} {
+				if headresp.Header.Get(header) != "" {
+					w.Header().Add(header, headresp.Header.Get(header))
+				}
+			}
+			w.WriteHeader(headresp.StatusCode)
 			return
 		}
-		if hash == nil {
-			http.Error(w, fmt.Sprintf("could not parse digest from manifest for %s", ref), http.StatusNotFound)
+		if headresp.StatusCode == http.StatusNotFound {
+			http.Error(w, fmt.Sprintf("manifest for %s not found in upstream registry", ref), http.StatusNotFound)
 			return
 		}
-		manifestRef, err := parseReference(repository, hash.String())
+		if headresp.StatusCode != http.StatusOK {
+			for _, header := range []string{headerContentLength, headerContentType, headerDockerContentDigest, headerWWWAuthenticate} {
+				if headresp.Header.Get(header) != "" {
+					w.Header().Add(header, headresp.Header.Get(header))
+				}
+			}
+			http.Error(w, fmt.Sprintf("could not fetch manifest for %s in upstream registry", ref), headresp.StatusCode)
+			return
+		}
+
+		hash, _, _, err := metadataFromResponse(headresp)
 		if err != nil {
-			log.CtxErrorf(ctx, "could not parse reference for manifest (repository %s, resolved hash %s): %s", repository, hash, err)
-		} else {
-			resolvedRef = manifestRef
-			resolvedRefIsDigest = true
+			http.Error(w, fmt.Sprintf("could not parse metadata for %s from upstream registry: %s", ref, err), http.StatusNotFound)
+			return
 		}
+		digest = ref.Context().Digest(hash.String())
 	}
 
 	bsc := r.env.GetByteStreamClient()
 	acc := r.env.GetActionCacheClient()
-	if resolvedRefIsDigest {
-		casDigest, hash, contentType, contentLength, err := oci.FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, resolvedRef, ociResourceType)
-		if err == nil {
-			w.Header().Add(headerDockerContentDigest, hash.String())
-			w.Header().Add(headerContentLength, strconv.FormatInt(contentLength, 10))
-			w.Header().Add(headerContentType, contentType)
-			w.WriteHeader(http.StatusOK)
+	casDigest, hash, contentType, contentLength, err := oci.FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, digest, ociResourceType)
+	if err == nil {
+		w.Header().Add(headerDockerContentDigest, hash.String())
+		w.Header().Add(headerContentLength, strconv.FormatInt(contentLength, 10))
+		w.Header().Add(headerContentType, contentType)
+		w.WriteHeader(http.StatusOK)
 
-			if inreq.Method == http.MethodGet {
-				err := oci.FetchBlobOrManifestFromCache(ctx, bsc, casDigest, w)
-				if err != nil {
-					message := fmt.Sprintf("error fetching image %s from the CAS: %s", ref, err)
-					log.CtxError(ctx, message)
-					http.Error(w, message, http.StatusNotFound)
-				}
+		if inreq.Method == http.MethodGet {
+			err := oci.FetchBlobOrManifestFromCache(ctx, bsc, casDigest, w)
+			if err != nil {
+				message := fmt.Sprintf("error fetching image %s from the CAS: %s", digest, err)
+				log.CtxError(ctx, message)
+				http.Error(w, message, http.StatusNotFound)
 			}
-			return
 		}
-		if !status.IsNotFoundError(err) {
-			message := fmt.Sprintf("error fetching image %s from the CAS: %s", ref, err)
-			log.CtxError(ctx, message)
-			http.Error(w, message, http.StatusNotFound)
-			return
-		}
+		return
+	}
+	if !status.IsNotFoundError(err) {
+		message := fmt.Sprintf("error fetching image %s from the CAS: %s", digest, err)
+		log.CtxError(ctx, message)
+		http.Error(w, message, http.StatusNotFound)
+		return
 	}
 
-	upresp, err := r.makeUpstreamRequest(ctx, inreq.Method, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef)
+	upresp, err := r.makeUpstreamRequest(
+		ctx,
+		inreq.Method,
+		inreq.Header.Get(headerAccept),
+		inreq.Header.Get(headerAuthorization),
+		ociResourceType,
+		digest,
+	)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error making %s request to upstream registry: %s", inreq.Method, err), http.StatusServiceUnavailable)
 		return
@@ -330,35 +354,55 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		}
 	}
 	w.WriteHeader(upresp.StatusCode)
-
-	contentLength, hasLength, err := parseContentLengthHeader(upresp.Header.Get(headerContentLength))
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerContentLength, upresp.Header.Get(headerContentLength), err), http.StatusNotFound)
+	if inreq.Method == http.MethodHead {
 		return
 	}
-
-	hasContentType := upresp.Header.Get(headerContentType) != ""
-	contentType := upresp.Header.Get(headerContentType)
-
-	// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
-	hash, err := parseDockerContentDigestHeader(upresp.Header.Get(headerDockerContentDigest))
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerDockerContentDigest, upresp.Header.Get(headerDockerContentDigest), err), http.StatusNotFound)
-		return
-	}
-
-	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasLength && hash != nil && hasContentType {
-		tr := io.TeeReader(upresp.Body, w)
-		err := oci.UploadBlobOrManifestToCache(ctx, acc, bsc, resolvedRef, ociResourceType, *hash, contentType, contentLength, tr)
-		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
-		}
-	} else {
+	if upresp.StatusCode != http.StatusOK {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL, err)
 		}
+		return
 	}
+
+	_, uptype, uplength, err := metadataFromResponse(upresp)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not parse metadata from response: %s", err), http.StatusNotFound)
+		return
+	}
+
+	tr := io.TeeReader(upresp.Body, w)
+	err = oci.UploadBlobOrManifestToCache(
+		ctx,
+		acc,
+		bsc,
+		digest,
+		ociResourceType,
+		uptype,
+		uplength,
+		tr,
+	)
+	if err != nil && err != context.Canceled {
+		log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
+	}
+}
+
+func metadataFromResponse(resp *http.Response) (*gcr.Hash, string, int64, error) {
+	for _, header := range []string{headerDockerContentDigest, headerContentType, headerContentLength} {
+		if resp.Header.Get(header) == "" {
+			return nil, "", 0, fmt.Errorf("no %s header in response from upstream", header)
+		}
+	}
+	hash, err := parseDockerContentDigestHeader(resp.Header.Get(headerDockerContentDigest))
+	if err != nil {
+		return nil, "", 0, err
+	}
+	contentLength, err := parseContentLengthHeader(resp.Header.Get(headerContentLength))
+	if err != nil {
+		return nil, "", 0, err
+	}
+	contentType := resp.Header.Get(headerContentType)
+	return hash, contentType, contentLength, nil
 }
 
 func isDigest(identifier string) bool {
