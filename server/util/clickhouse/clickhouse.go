@@ -243,6 +243,7 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		OutputUploadStartTimestampUsec:     in.GetOutputUploadStartTimestampUsec(),
 		OutputUploadCompletedTimestampUsec: in.GetOutputUploadCompletedTimestampUsec(),
 		StatusCode:                         in.GetStatusCode(),
+		StatusMessage:                      in.GetStatusMessage(),
 		ExitCode:                           in.GetExitCode(),
 		CachedResult:                       in.GetCachedResult(),
 		DoNotCache:                         in.GetDoNotCache(),
