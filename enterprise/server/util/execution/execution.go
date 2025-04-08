@@ -67,6 +67,7 @@ func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
 		return nil, status.WrapError(err, "compute execute response digest")
 	}
 
+	// NOTE: keep in sync with ExecutionListingColumns
 	out := &espb.Execution{
 		ExecutionId:           in.ExecutionID,
 		ActionDigest:          r.GetDigest(),
@@ -106,6 +107,40 @@ func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
 	}
 
 	return out, nil
+}
+
+// ExecutionListingColumns returns the set of OLAP columns that are included in
+// the Execution proto returned to the client when listing executions (e.g.
+// Executions tab, Drilldown tab.)
+func ExecutionListingColumns() []string {
+	// NOTE: keep in sync with ClientProtoColumns
+	return []string{
+		"execution_id",
+		"status_code",
+		"status_message",
+		"exit_code",
+		"stage",
+		"worker",
+		"queued_timestamp_usec",
+		"worker_start_timestamp_usec",
+		"worker_completed_timestamp_usec",
+		"input_fetch_start_timestamp_usec",
+		"input_fetch_completed_timestamp_usec",
+		"execution_start_timestamp_usec",
+		"execution_completed_timestamp_usec",
+		"output_upload_start_timestamp_usec",
+		"output_upload_completed_timestamp_usec",
+		"file_download_count",
+		"file_download_size_bytes",
+		"file_download_duration_usec",
+		"file_upload_count",
+		"file_upload_size_bytes",
+		"file_upload_duration_usec",
+		"cpu_nanos",
+		"peak_memory_bytes",
+		"do_not_cache",
+		"command_snippet",
+	}
 }
 
 func GetCachedExecuteResponse(ctx context.Context, ac repb.ActionCacheClient, taskID string) (*repb.ExecuteResponse, error) {
