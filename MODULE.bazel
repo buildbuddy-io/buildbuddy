@@ -88,6 +88,26 @@ single_version_override(
     version = "0.53.0",
 )
 
+bazel_dep(name = "rules_docker", repo_name = "io_bazel_rules_docker")
+archive_override(
+    module_name = "rules_docker",
+    integrity = "sha256-gkhS3fjnyrsv3IKgUea/9IMJKcUdtJjYu96P3uqXdU8=",
+    strip_prefix = "rules_docker-5f9338ad695a205bb98d3348e61079441852c92a",
+    # This is BuildBuddy fork of rules_docker with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_docker/compare/master...buildbuddy-io:rules_docker:sluongng/bzlmod-enable
+    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/5f9338ad695a205bb98d3348e61079441852c92a.tar.gz"],
+)
+
+bazel_dep(name = "rules_k8s", repo_name = "io_bazel_rules_k8s")
+archive_override(
+    module_name = "rules_k8s",
+    integrity = "sha256-+1ABfkrF/d9yT0nWnds+Yx3g246FsgTur45yYVu8UkM=",
+    strip_prefix = "rules_k8s-5fd4eda0161dc4967e515015cbe84256b5785b80",
+    # This is our own fork of rules_k8s with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_k8s/compare/master...buildbuddy-io:rules_k8s:buildbuddy-fork
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/5fd4eda0161dc4967e515015cbe84256b5785b80.tar.gz"],
+)
+
 ## Regular bazel_deps
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.14.0")
@@ -103,7 +123,6 @@ bazel_dep(name = "rules_cc", version = "0.0.17")
 bazel_dep(name = "rules_oci", version = "2.0.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
-bazel_dep(name = "rules_python", version = "1.3.0")
 bazel_dep(name = "toolchains_musl", version = "0.1.15")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
 
@@ -116,6 +135,75 @@ include("//:oci.MODULE.bazel")
 include("//:static_deps.MODULE.bazel")
 
 ## Other extensions
+
+container_pull = use_repo_rule("@io_bazel_rules_docker//container:pull.bzl", "container_pull")
+
+container_pull(
+    name = "buildbuddy_go_image_base",
+    digest = "sha256:dc7acdb6300eaa99ae93621b0f033237ae1284fdd5ab323b4d90ba8359c55854",
+    registry = "gcr.io",
+    repository = "distroless/cc-debian12",
+)
+
+container_pull(
+    name = "bazel_image_base",
+    digest = "sha256:ab0c5fbe16bc01c03eb081a5724ba618110cbd24940ab123a8dbee0382a4c175",
+    registry = "gcr.io",
+    repository = "distroless/java11-debian11",
+)
+
+dockerfile_image = use_repo_rule("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
+
+dockerfile_image(
+    name = "default_execution_image",
+    dockerfile = "//dockerfiles/default_execution_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "executor_image",
+    dockerfile = "//dockerfiles/executor_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "nonroot_user_image",
+    dockerfile = "//dockerfiles/test_images/nonroot_user_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu20-04_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu20-04:Dockerfile",
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu20-04-webtest_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu20-04-webtest:Dockerfile",
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu22-04_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu22-04:Dockerfile",
+)
+
+dockerfile_image(
+    name = "ci_runner_image",
+    dockerfile = "//enterprise/dockerfiles/ci_runner_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu20-04-workflows_image",
+    dockerfile = "//enterprise/dockerfiles/rbe-ubuntu20-04-workflows:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "run_script_image",
+    dockerfile = "//dockerfiles/run_script:Dockerfile",
+    visibility = ["//visibility:public"],
+)
 
 browser_repositories = use_extension("@rules_webtesting//web:extension.bzl", "browser_repositories_extension")
 browser_repositories.install(version = "0.3.4")
@@ -198,14 +286,6 @@ npm.npm_translate_lock(
     verify_node_modules_ignored = "//:.bazelignore",
 )
 use_repo(npm, "npm")
-
-python = use_extension("@rules_python//python/extensions:python.bzl", "python")
-python.toolchain(
-    configure_coverage_tool = False,
-    # Do not error if root user is detected
-    ignore_root_user_error = True,
-    python_version = "3.11",
-)
 
 rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
 rules_ts_ext.deps(
