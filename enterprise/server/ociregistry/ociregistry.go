@@ -301,7 +301,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		log.CtxError(ctx, fmt.Sprintf("error fetching image %s from the CAS: %s", digest, err))
 	}
 	if !status.IsNotFoundError(err) {
-		log.CtxError(ctx, fmt.Sprintf("error fetching image %s from the CAS: %s", digest, err))
+		log.CtxError(ctx, fmt.Sprintf("error fetching image metadata for %s from the CAS: %s", digest, err))
 	}
 
 	upresp, err := r.makeUpstreamRequest(
@@ -313,7 +313,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		digest,
 	)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error making %s request to upstream registry: %s", inreq.Method, err), http.StatusServiceUnavailable)
+		http.Error(w, fmt.Sprintf("error making %s request to upstream registry %s: %s", inreq.Method, digest.Context().RegistryStr(), err), http.StatusServiceUnavailable)
 		return
 	}
 	defer upresp.Body.Close()
@@ -330,14 +330,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	if upresp.StatusCode != http.StatusOK {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL, err)
+			log.CtxWarningf(ctx, "error writing response body for %s: %s", digest, err)
 		}
 		return
 	}
 
 	_, uptype, uplength, err := metadataFromResponse(upresp)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not parse metadata from response: %s", err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("could not parse metadata for %s from response: %s", digest, err), http.StatusNotFound)
 		return
 	}
 
@@ -353,7 +353,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		tr,
 	)
 	if err != nil && err != context.Canceled {
-		log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
+		log.CtxWarningf(ctx, "error writing response body to cache for %s: %s", digest, err)
 	}
 }
 
