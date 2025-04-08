@@ -214,27 +214,6 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 	return &hash, nil
 }
 
-func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, bool, error) {
-	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
-	if err != nil {
-		return nil, false, fmt.Errorf("error making %s request to upstream registry: %s", http.MethodHead, err)
-	}
-	defer headresp.Body.Close()
-
-	if headresp.StatusCode == http.StatusNotFound {
-		return nil, false, nil
-	}
-	if headresp.StatusCode != http.StatusOK {
-		return nil, false, fmt.Errorf("could not fetch manifest for %s", ref)
-	}
-	value := headresp.Header.Get(headerDockerContentDigest)
-	hash, err := parseDockerContentDigestHeader(value)
-	if err != nil {
-		return nil, true, fmt.Errorf("error parsing %s header (value %s): %s", headerDockerContentDigest, value, err)
-	}
-	return hash, true, nil
-}
-
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, ociResourceType ocipb.OCIResourceType, repository, identifier string) {
 	if inreq.Header.Get(headerRange) != "" {
 		http.Error(w, "Range headers not supported", http.StatusNotImplemented)
@@ -278,30 +257,24 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		defer headresp.Body.Close()
 
 		if inreq.Method == http.MethodHead {
-			for _, header := range []string{headerContentLength, headerContentType, headerDockerContentDigest, headerWWWAuthenticate} {
-				if headresp.Header.Get(header) != "" {
-					w.Header().Add(header, headresp.Header.Get(header))
-				}
-			}
+			writeUpstreamHeaders(headresp, w)
 			w.WriteHeader(headresp.StatusCode)
 			return
 		}
 		if headresp.StatusCode == http.StatusNotFound {
+			writeUpstreamHeaders(headresp, w)
 			http.Error(w, fmt.Sprintf("manifest for %s not found in upstream registry", ref), http.StatusNotFound)
 			return
 		}
 		if headresp.StatusCode != http.StatusOK {
-			for _, header := range []string{headerContentLength, headerContentType, headerDockerContentDigest, headerWWWAuthenticate} {
-				if headresp.Header.Get(header) != "" {
-					w.Header().Add(header, headresp.Header.Get(header))
-				}
-			}
+			writeUpstreamHeaders(headresp, w)
 			http.Error(w, fmt.Sprintf("could not fetch manifest for %s in upstream registry", ref), headresp.StatusCode)
 			return
 		}
 
 		hash, _, _, err := metadataFromResponse(headresp)
 		if err != nil {
+			writeUpstreamHeaders(headresp, w)
 			http.Error(w, fmt.Sprintf("could not parse metadata for %s from upstream registry: %s", ref, err), http.StatusNotFound)
 			return
 		}
@@ -310,28 +283,25 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 
 	bsc := r.env.GetByteStreamClient()
 	acc := r.env.GetActionCacheClient()
-	casDigest, hash, contentType, contentLength, err := oci.FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, digest, ociResourceType)
+	casDigest, _, contentType, contentLength, err := oci.FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, digest, ociResourceType)
 	if err == nil {
-		w.Header().Add(headerDockerContentDigest, hash.String())
+		w.Header().Add(headerDockerContentDigest, digest.DigestStr())
 		w.Header().Add(headerContentLength, strconv.FormatInt(contentLength, 10))
 		w.Header().Add(headerContentType, contentType)
 		w.WriteHeader(http.StatusOK)
 
-		if inreq.Method == http.MethodGet {
-			err := oci.FetchBlobOrManifestFromCache(ctx, bsc, casDigest, w)
-			if err != nil {
-				message := fmt.Sprintf("error fetching image %s from the CAS: %s", digest, err)
-				log.CtxError(ctx, message)
-				http.Error(w, message, http.StatusNotFound)
-			}
+		if inreq.Method == http.MethodHead {
+			return
 		}
-		return
+
+		err := oci.FetchBlobOrManifestFromCache(ctx, bsc, casDigest, w)
+		if err == nil {
+			return
+		}
+		log.CtxError(ctx, fmt.Sprintf("error fetching image %s from the CAS: %s", digest, err))
 	}
 	if !status.IsNotFoundError(err) {
-		message := fmt.Sprintf("error fetching image %s from the CAS: %s", digest, err)
-		log.CtxError(ctx, message)
-		http.Error(w, message, http.StatusNotFound)
-		return
+		log.CtxError(ctx, fmt.Sprintf("error fetching image %s from the CAS: %s", digest, err))
 	}
 
 	upresp, err := r.makeUpstreamRequest(
@@ -384,6 +354,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	)
 	if err != nil && err != context.Canceled {
 		log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
+	}
+}
+
+func writeUpstreamHeaders(resp *http.Response, w http.ResponseWriter) {
+	for _, header := range []string{headerContentLength, headerContentType, headerDockerContentDigest, headerWWWAuthenticate} {
+		if resp.Header.Get(header) != "" {
+			w.Header().Add(header, resp.Header.Get(header))
+		}
 	}
 }
 
