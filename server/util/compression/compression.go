@@ -174,7 +174,10 @@ func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf 
 }
 
 // NewZstdDecompressingReader reads zstd-compressed data from the input
-// reader and makes the decompressed data available on the output reader
+// reader and makes the decompressed data available on the output reader. The
+// output reader is also an io.WriterTo, which can often prevent allocations
+// when used with io.Copy to write into a bytes.Buffer. If you wrap the output
+// reader, you probably want to maintain that property.
 func NewZstdDecompressingReader(reader io.ReadCloser) (io.ReadCloser, error) {
 	// Stream data from reader to decoder
 	decoder, err := zstdDecoderPool.Get(reader)
