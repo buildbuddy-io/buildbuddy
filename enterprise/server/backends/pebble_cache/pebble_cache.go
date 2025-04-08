@@ -1448,10 +1448,14 @@ func (p *PebbleCache) userGroupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
-func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string) {
+func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string, partitionOverride string) (string, string) {
 	groupID := p.userGroupID(ctx)
 	for _, pm := range p.partitionMappings {
-		if pm.GroupID == groupID && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
+		matchesPartitionOverride := partitionOverride != "" &&
+			pm.PartitionID == partitionOverride &&
+			(pm.GroupID == groupID || pm.GroupID == "")
+		matchesPartition := pm.GroupID == groupID && strings.HasPrefix(remoteInstanceName, pm.Prefix)
+		if matchesPartitionOverride || matchesPartition {
 			return groupID, pm.PartitionID
 		}
 	}
@@ -1475,7 +1479,7 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 		return nil, err
 	}
 
-	groupID, partID := p.lookupGroupAndPartitionID(ctx, rn.GetInstanceName())
+	groupID, partID := p.lookupGroupAndPartitionID(ctx, rn.GetInstanceName(), r.GetPartitionOverride())
 
 	encryptionEnabled, err := p.encryptionEnabled(ctx)
 	if err != nil {
