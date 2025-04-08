@@ -1,16 +1,21 @@
 package oci
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/distribution/reference"
@@ -20,8 +25,18 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+)
+
+const (
+	blobOutputFilePath         = "_bb_ociregistry_blob_"
+	blobMetadataOutputFilePath = "_bb_ociregistry_blob_metadata_"
+
+	actionResultInstanceNameSalt = "_bb_oci_salt_" // STOPSHIP(dan): make this a secret
 )
 
 var (
@@ -304,4 +319,151 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 		}
 	}
 	return t.inner.RoundTrip(in)
+}
+
+func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest ctrname.Digest, ociResourceType ocipb.OCIResourceType) (string, int64, error) {
+	arRN, err := ocidigestToACResourceName(ocidigest, ociResourceType)
+	if err != nil {
+		return "", 0, err
+	}
+	ar, err := cachetools.GetActionResult(ctx, acc, arRN)
+	if err != nil {
+		return "", 0, err
+	}
+
+	var blobMetadataCASDigest *repb.Digest
+	var blobCASDigest *repb.Digest
+	for _, outputFile := range ar.GetOutputFiles() {
+		switch outputFile.GetPath() {
+		case blobMetadataOutputFilePath:
+			blobMetadataCASDigest = outputFile.GetDigest()
+		case blobOutputFilePath:
+			blobCASDigest = outputFile.GetDigest()
+		default:
+			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s", outputFile.GetPath(), ocidigest)
+		}
+	}
+	if blobMetadataCASDigest == nil || blobCASDigest == nil {
+		return "", 0, fmt.Errorf("missing blob metadata digest or blob digest for %s", ocidigest)
+	}
+	blobMetadataRN := digest.NewCASResourceName(
+		blobMetadataCASDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+	blobMetadata := &ocipb.OCIBlobMetadata{}
+	err = cachetools.GetBlobAsProto(ctx, bsc, blobMetadataRN, blobMetadata)
+	if err != nil {
+		return "", 0, err
+	}
+	return blobMetadata.GetContentType(), blobMetadata.GetContentLength(), nil
+}
+
+func ocidigestToACResourceName(ocidigest ctrname.Digest, ociResourceType ocipb.OCIResourceType) (*digest.ACResourceName, error) {
+	hash, err := v1.NewHash(ocidigest.DigestStr())
+	if err != nil {
+		return nil, fmt.Errorf("could not parse hash in %s: %s", ocidigest.Context(), err)
+	}
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      ocidigest.Context().RegistryStr(),
+		Repository:    ocidigest.Context().RepositoryStr(),
+		ResourceType:  ociResourceType,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return nil, err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		arInstanceName(ocidigest.Context().RegistryStr(), ocidigest.Context().RepositoryStr()),
+		repb.DigestFunction_SHA256,
+	)
+	return arRN, nil
+}
+
+func arInstanceName(registry, repository string) string {
+	return registry + "|" + repository + "|" + actionResultInstanceNameSalt
+}
+
+func FetchBlobOrManifestFromCache(ctx context.Context, bsc bspb.ByteStreamClient, ocidigest ctrname.Digest, contentLength int64, w io.Writer) error {
+	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
+	if err != nil {
+		return err
+	}
+	return cachetools.GetBlob(ctx, bsc, blobRN, w)
+}
+
+func ocidigestToCASResourceName(ocidigest ctrname.Digest, contentLength int64) (*digest.CASResourceName, error) {
+	hash, err := v1.NewHash(ocidigest.DigestStr())
+	if err != nil {
+		return nil, fmt.Errorf("could not parse hash for layer in %s: %s", ocidigest.Context(), err)
+	}
+	var df repb.DigestFunction_Value
+	switch hash.Algorithm {
+	case "sha256":
+		df = repb.DigestFunction_SHA256
+	case "sha512":
+		df = repb.DigestFunction_SHA512
+	default:
+		return nil, fmt.Errorf("unsupported hashing algorithm %s in %s", hash.Algorithm, ocidigest.Context())
+	}
+	casdigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
+	}
+	rn := digest.NewCASResourceName(
+		casdigest,
+		"",
+		df,
+	)
+	rn.SetCompressor(repb.Compressor_ZSTD)
+	return rn, nil
+}
+
+func UploadBlobOrManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest ctrname.Digest, ociResourceType ocipb.OCIResourceType, contentType string, contentLength int64, r io.Reader) error {
+	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
+	if err != nil {
+		return err
+	}
+	_, _, err = cachetools.UploadFromReader(ctx, bsc, blobRN, r)
+	if err != nil {
+		return err
+	}
+
+	blobMetadata := &ocipb.OCIBlobMetadata{
+		ContentLength: contentLength,
+		ContentType:   contentType,
+	}
+	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsc, "", repb.DigestFunction_SHA256, blobMetadata)
+	if err != nil {
+		return err
+	}
+
+	arRN, err := ocidigestToACResourceName(ocidigest, ociResourceType)
+	if err != nil {
+		return err
+	}
+	ar := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{
+				Path:   blobOutputFilePath,
+				Digest: blobRN.GetDigest(),
+			},
+			{
+				Path:   blobMetadataOutputFilePath,
+				Digest: blobMetadataCASDigest,
+			},
+		},
+	}
+	err = cachetools.UploadActionResult(ctx, acc, arRN, ar)
+	if err != nil {
+		return err
+	}
+	return nil
 }
