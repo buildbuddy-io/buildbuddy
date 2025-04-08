@@ -227,8 +227,9 @@ type Execution struct {
 	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
 
 	// Long string fields
-	OutputPath    string
-	StatusMessage string
+	OutputPath     string
+	StatusMessage  string
+	CommandSnippet string
 
 	// Fields from Invocations
 	User             string
@@ -258,7 +259,6 @@ func (e *Execution) ExcludedFields() []string {
 		"Perms",
 		"SerializedOperation",
 		"SerializedStatusDetails",
-		"CommandSnippet",
 	}
 }
 
