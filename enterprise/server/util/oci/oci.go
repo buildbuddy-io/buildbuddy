@@ -404,10 +404,10 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCache
 	}
 
 	ocidigest := digestOrTagRef.Context().Digest(desc.Digest.String())
-	casdigest, _, _, err := FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, ocidigest, ocipb.OCIResourceType_MANIFEST)
+	_, _, contentLength, err := FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, ocidigest, ocipb.OCIResourceType_MANIFEST)
 	if err == nil {
 		raw := &bytes.Buffer{}
-		err := FetchBlobOrManifestFromCache(ctx, bsc, casdigest, raw)
+		err := FetchBlobOrManifestFromCache(ctx, bsc, ocidigest, contentLength, raw)
 		if err == nil {
 			return &ocidigest, raw.Bytes(), true, nil
 		}
@@ -464,13 +464,11 @@ func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCa
 	return blobCASDigest, blobMetadata.GetContentType(), blobMetadata.GetContentLength(), nil
 }
 
-func FetchBlobOrManifestFromCache(ctx context.Context, bsc bspb.ByteStreamClient, casdigest *repb.Digest, w io.Writer) error {
-	blobRN := digest.NewCASResourceName(
-		casdigest,
-		"",
-		repb.DigestFunction_SHA256,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
+func FetchBlobOrManifestFromCache(ctx context.Context, bsc bspb.ByteStreamClient, ocidigest ctrname.Digest, contentLength int64, w io.Writer) error {
+	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
+	if err != nil {
+		return err
+	}
 	return cachetools.GetBlob(ctx, bsc, blobRN, w)
 }
 
@@ -730,7 +728,7 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 	}
 
 	ctx := context.Background()
-	casdigest, _, _, err := FetchBlobOrManifestMetadataFromCache(
+	_, _, contentLength, err := FetchBlobOrManifestMetadataFromCache(
 		ctx,
 		i.acc,
 		i.bsc,
@@ -739,7 +737,7 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 	)
 	if err == nil {
 		raw := &bytes.Buffer{}
-		err := FetchBlobOrManifestFromCache(ctx, i.bsc, casdigest, raw)
+		err := FetchBlobOrManifestFromCache(ctx, i.bsc, i.digest, contentLength, raw)
 		if err == nil {
 			return raw.Bytes(), nil
 		}
@@ -791,7 +789,7 @@ func (i *cacheAwareImage) LayerByDigest(hash v1.Hash) (partial.CompressedLayer, 
 				return nil, fmt.Errorf("could not create remote layer in %s", rlref.Context())
 			}
 			l := &cacheAwareLayer{
-				digest:      i.digest.Context().Digest(hash.String()),
+				ocidigest:   i.digest.Context().Digest(hash.String()),
 				acc:         i.acc,
 				bsc:         i.bsc,
 				descriptor:  &d,
@@ -809,7 +807,7 @@ type cacheAwareLayer struct {
 	acc repb.ActionCacheClient
 	bsc bspb.ByteStreamClient
 
-	digest      ctrname.Digest
+	ocidigest   ctrname.Digest
 	descriptor  *v1.Descriptor
 	remoteLayer v1.Layer
 }
@@ -858,28 +856,29 @@ func (t *teeReadCloser) Close() error {
 
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	ctx := context.Background()
-	casdigest, _, _, err := FetchBlobOrManifestMetadataFromCache(
+	_, _, contentLength, err := FetchBlobOrManifestMetadataFromCache(
 		ctx,
 		l.acc,
 		l.bsc,
-		l.digest,
+		l.ocidigest,
 		ocipb.OCIResourceType_BLOB,
 	)
 	if err != nil && !status.IsNotFoundError(err) {
-		log.CtxErrorf(ctx, "error fetching CAS digest for layer in %s: %s", l.digest.Context(), err)
+		log.CtxErrorf(ctx, "error fetching CAS digest for layer in %s: %s", l.ocidigest.Context(), err)
 	}
-	if err == nil && casdigest != nil {
+	if err == nil {
 		r, w := io.Pipe()
 		go func() {
 			defer w.Close()
 			err := FetchBlobOrManifestFromCache(
 				ctx,
 				l.bsc,
-				casdigest,
+				l.ocidigest,
+				contentLength,
 				w,
 			)
 			if err != nil {
-				log.Warningf("error fetching layer from CAS in %s: %s", l.digest.Context(), err)
+				log.Warningf("error fetching layer from CAS in %s: %s", l.ocidigest.Context(), err)
 				w.CloseWithError(err)
 			}
 		}()
@@ -902,13 +901,13 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 		ctx,
 		l.acc,
 		l.bsc,
-		l.digest,
+		l.ocidigest,
 		string(mediaType),
 		size,
 	)
 	if err != nil {
 		// cannot cache, but we can still fetch the remote layer
-		log.CtxErrorf(ctx, "cannot cache OCI image layer in %s: %s", l.digest.Context(), err)
+		log.CtxErrorf(ctx, "cannot cache OCI image layer in %s: %s", l.ocidigest.Context(), err)
 		return uprc, nil
 	}
 	return newTeeReadCloser(uprc, caswc), nil
