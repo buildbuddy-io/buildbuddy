@@ -403,37 +403,37 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCache
 		return nil, nil, false, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	digest := digestOrTagRef.Context().Digest(desc.Digest.String())
-	casDigest, _, _, err := FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, digest, ocipb.OCIResourceType_MANIFEST)
+	ocidigest := digestOrTagRef.Context().Digest(desc.Digest.String())
+	casdigest, _, _, err := FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, ocidigest, ocipb.OCIResourceType_MANIFEST)
 	if err == nil {
 		raw := &bytes.Buffer{}
-		err := FetchBlobOrManifestFromCache(ctx, bsc, casDigest, raw)
+		err := FetchBlobOrManifestFromCache(ctx, bsc, casdigest, raw)
 		if err == nil {
-			return &digest, raw.Bytes(), true, nil
+			return &ocidigest, raw.Bytes(), true, nil
 		}
 		if !status.IsNotFoundError(err) {
-			log.CtxErrorf(ctx, "error fetching manifest %s from the CAS: %s", digest.Context(), err)
+			log.CtxErrorf(ctx, "error fetching manifest %s from the CAS: %s", ocidigest.Context(), err)
 		}
 	}
 
-	remoteDesc, err := remote.Get(digest, remoteOpts...)
+	remoteDesc, err := remote.Get(ocidigest, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, nil, false, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
 		}
 		return nil, nil, false, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
-	return &digest, remoteDesc.Manifest, false, nil
+	return &ocidigest, remoteDesc.Manifest, false, nil
 }
 
-func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Digest, ociResourceType ocipb.OCIResourceType) (*repb.Digest, string, int64, error) {
-	hash, err := v1.NewHash(ref.Identifier())
+func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest ctrname.Digest, ociResourceType ocipb.OCIResourceType) (*repb.Digest, string, int64, error) {
+	hash, err := v1.NewHash(ocidigest.Identifier())
 	if err != nil {
 		return nil, "", 0, err
 	}
 	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
+		Registry:      ocidigest.Context().RegistryStr(),
+		Repository:    ocidigest.Context().RepositoryStr(),
 		ResourceType:  ociResourceType,
 		HashAlgorithm: hash.Algorithm,
 		HashHex:       hash.Hex,
@@ -448,7 +448,7 @@ func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCa
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		arInstanceName(ref.Context().RegistryStr(), ref.Context().RepositoryStr()),
+		arInstanceName(ocidigest.Context().RegistryStr(), ocidigest.Context().RepositoryStr()),
 		repb.DigestFunction_SHA256,
 	)
 	ar, err := cachetools.GetActionResult(ctx, acc, arRN)
@@ -465,11 +465,11 @@ func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCa
 		case blobOutputFilePath:
 			blobCASDigest = outputFile.GetDigest()
 		default:
-			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s", outputFile.GetPath(), ref)
+			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s", outputFile.GetPath(), ocidigest)
 		}
 	}
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
-		return nil, "", 0, fmt.Errorf("missing blob metadata digest or blob digest for %s", ref)
+		return nil, "", 0, fmt.Errorf("missing blob metadata digest or blob digest for %s", ocidigest)
 	}
 	blobMetadataRN := digest.NewCASResourceName(
 		blobMetadataCASDigest,
@@ -484,9 +484,9 @@ func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCa
 	return blobCASDigest, blobMetadata.GetContentType(), blobMetadata.GetContentLength(), nil
 }
 
-func FetchBlobOrManifestFromCache(ctx context.Context, bsc bspb.ByteStreamClient, casDigest *repb.Digest, w io.Writer) error {
+func FetchBlobOrManifestFromCache(ctx context.Context, bsc bspb.ByteStreamClient, casdigest *repb.Digest, w io.Writer) error {
 	blobRN := digest.NewCASResourceName(
-		casDigest,
+		casdigest,
 		"",
 		repb.DigestFunction_SHA256,
 	)
@@ -494,10 +494,10 @@ func FetchBlobOrManifestFromCache(ctx context.Context, bsc bspb.ByteStreamClient
 	return cachetools.GetBlob(ctx, bsc, blobRN, w)
 }
 
-func UploadBlobOrManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Digest, ociResourceType ocipb.OCIResourceType, contentType string, contentLength int64, r io.Reader) error {
-	hash, err := v1.NewHash(ref.DigestStr())
+func UploadBlobOrManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest ctrname.Digest, ociResourceType ocipb.OCIResourceType, contentType string, contentLength int64, r io.Reader) error {
+	hash, err := v1.NewHash(ocidigest.DigestStr())
 	if err != nil {
-		return fmt.Errorf("could not parse hash from %s: %s", ref.Context(), err)
+		return fmt.Errorf("could not parse hash from %s: %s", ocidigest.Context(), err)
 	}
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
@@ -524,8 +524,8 @@ func UploadBlobOrManifestToCache(ctx context.Context, acc repb.ActionCacheClient
 	}
 
 	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
+		Registry:      ocidigest.Context().RegistryStr(),
+		Repository:    ocidigest.Context().RepositoryStr(),
 		ResourceType:  ociResourceType,
 		HashAlgorithm: hash.Algorithm,
 		HashHex:       hash.Hex,
@@ -552,7 +552,7 @@ func UploadBlobOrManifestToCache(ctx context.Context, acc repb.ActionCacheClient
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		arInstanceName(ref.Context().RegistryStr(), ref.Context().RepositoryStr()),
+		arInstanceName(ocidigest.Context().RegistryStr(), ocidigest.Context().RepositoryStr()),
 		repb.DigestFunction_SHA256,
 	)
 	err = cachetools.UploadActionResult(ctx, acc, arRN, ar)
@@ -629,9 +629,9 @@ type cachingLayerWriteCloser struct {
 	ctx       context.Context
 	acc       repb.ActionCacheClient
 	bsc       bspb.ByteStreamClient
-	casDigest *repb.Digest
+	casdigest *repb.Digest
 
-	digest        ctrname.Digest
+	ocidigest     ctrname.Digest
 	contentType   string
 	contentLength int64
 
@@ -658,14 +658,14 @@ func (clwc *cachingLayerWriteCloser) Close() error {
 		return err
 	}
 
-	hash, err := v1.NewHash(clwc.digest.DigestStr())
+	hash, err := v1.NewHash(clwc.ocidigest.DigestStr())
 	if err != nil {
-		return fmt.Errorf("could not parse hash for layer in %s: %s", clwc.digest.Context(), err)
+		return fmt.Errorf("could not parse hash for layer in %s: %s", clwc.ocidigest.Context(), err)
 	}
 
 	arKey := &ocipb.OCIActionResultKey{
-		Registry:      clwc.digest.Context().RegistryStr(),
-		Repository:    clwc.digest.Context().RepositoryStr(),
+		Registry:      clwc.ocidigest.Context().RegistryStr(),
+		Repository:    clwc.ocidigest.Context().RepositoryStr(),
 		ResourceType:  ocipb.OCIResourceType_BLOB,
 		HashAlgorithm: hash.Algorithm,
 		HashHex:       hash.Hex,
@@ -674,7 +674,7 @@ func (clwc *cachingLayerWriteCloser) Close() error {
 		OutputFiles: []*repb.OutputFile{
 			{
 				Path:   blobOutputFilePath,
-				Digest: clwc.casDigest,
+				Digest: clwc.casdigest,
 			},
 			{
 				Path:   blobMetadataOutputFilePath,
@@ -692,7 +692,7 @@ func (clwc *cachingLayerWriteCloser) Close() error {
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		arInstanceName(clwc.digest.Context().RegistryStr(), clwc.digest.Context().RepositoryStr()),
+		arInstanceName(clwc.ocidigest.Context().RegistryStr(), clwc.ocidigest.Context().RepositoryStr()),
 		repb.DigestFunction_SHA256,
 	)
 	err = cachetools.UploadActionResult(clwc.ctx, clwc.acc, arRN, ar)
@@ -725,8 +725,8 @@ func newCachingLayerWriteCloser(ctx context.Context, acc repb.ActionCacheClient,
 		ctx:           ctx,
 		acc:           acc,
 		bsc:           bsc,
-		casDigest:     blobCASDigest,
-		digest:        ocidigest,
+		casdigest:     blobCASDigest,
+		ocidigest:     ocidigest,
 		contentType:   contentType,
 		contentLength: contentLength,
 		wc:            wc,
@@ -753,7 +753,7 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 	}
 
 	ctx := context.Background()
-	casDigest, _, _, err := FetchBlobOrManifestMetadataFromCache(
+	casdigest, _, _, err := FetchBlobOrManifestMetadataFromCache(
 		ctx,
 		i.acc,
 		i.bsc,
@@ -762,7 +762,7 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 	)
 	if err == nil {
 		raw := &bytes.Buffer{}
-		err := FetchBlobOrManifestFromCache(ctx, i.bsc, casDigest, raw)
+		err := FetchBlobOrManifestFromCache(ctx, i.bsc, casdigest, raw)
 		if err == nil {
 			return raw.Bytes(), nil
 		}
@@ -771,8 +771,8 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 		}
 	}
 
-	digest := i.digest.Digest(i.manifest.Config.Digest.String())
-	rl, err := remote.Layer(digest, i.options...)
+	ocidigest := i.digest.Digest(i.manifest.Config.Digest.String())
+	rl, err := remote.Layer(ocidigest, i.options...)
 	if err != nil {
 		return nil, err
 	}
@@ -789,14 +789,14 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 		ctx,
 		i.acc,
 		i.bsc,
-		digest,
+		ocidigest,
 		ocipb.OCIResourceType_BLOB,
 		string(i.manifest.Config.MediaType),
 		int64(len(remoteraw)),
 		bytes.NewReader(remoteraw),
 	)
 	if err != nil {
-		log.CtxErrorf(ctx, "could not write config %s to cache", digest)
+		log.CtxErrorf(ctx, "could not write config %s to cache", ocidigest)
 	}
 	return remoteraw, nil
 }
@@ -881,7 +881,7 @@ func (t *teeReadCloser) Close() error {
 
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	ctx := context.Background()
-	casDigest, _, _, err := FetchBlobOrManifestMetadataFromCache(
+	casdigest, _, _, err := FetchBlobOrManifestMetadataFromCache(
 		ctx,
 		l.acc,
 		l.bsc,
@@ -891,14 +891,14 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	if err != nil && !status.IsNotFoundError(err) {
 		log.CtxErrorf(ctx, "error fetching CAS digest for layer in %s: %s", l.digest.Context(), err)
 	}
-	if err == nil && casDigest != nil {
+	if err == nil && casdigest != nil {
 		r, w := io.Pipe()
 		go func() {
 			defer w.Close()
 			err := FetchBlobOrManifestFromCache(
 				ctx,
 				l.bsc,
-				casDigest,
+				casdigest,
 				w,
 			)
 			if err != nil {
