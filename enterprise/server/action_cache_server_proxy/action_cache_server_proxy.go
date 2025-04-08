@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -18,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
-	proxy_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
@@ -34,7 +34,6 @@ type ActionCacheServerProxy struct {
 	authenticator  interfaces.Authenticator
 	localCache     interfaces.Cache
 	remoteACClient repb.ActionCacheClient
-	localACClient  repb.ActionCacheClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -56,7 +55,6 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 		authenticator:  env.GetAuthenticator(),
 		localCache:     env.GetCache(),
 		remoteACClient: remoteCache,
-		localACClient:  env.GetLocalActionCacheClient(),
 	}, nil
 }
 
@@ -149,7 +147,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	}
 
 	if proxy_util.SkipRemote(ctx) {
-		return s.localACClient.GetActionResult(ctx, req)
+		return s.env.GetInternalActionCacheServer().GetActionResult(ctx, req)
 	}
 
 	// If using the remote cache as the source of truth, we must validate that
@@ -205,7 +203,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	// Only if it's explicitly requested do we cache AC results locally.
 	if proxy_util.SkipRemote(ctx) {
-		return s.localACClient.UpdateActionResult(ctx, req)
+		return s.env.GetInternalActionCacheServer().UpdateActionResult(ctx, req)
 	}
 
 	// By default, we use the remote cache as the source of truth for AC results.

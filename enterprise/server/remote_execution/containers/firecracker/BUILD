@@ -155,6 +155,7 @@ go_test(
         "//server/remote_cache/digest",
         "//server/resources",
         "//server/testutil/testauth",
+        "//server/testutil/testcacheproxy",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testfs",

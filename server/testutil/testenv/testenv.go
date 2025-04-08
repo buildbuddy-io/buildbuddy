@@ -32,8 +32,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
-
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -207,12 +205,4 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	hit_tracker.Register(te)
 
 	return te
-}
-
-type NoOpAtimeUpdater struct{}
-
-func (a *NoOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) {
-}
-func (a *NoOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ string) {}
-func (a *NoOpAtimeUpdater) EnqueueByFindMissingRequest(_ context.Context, _ *repb.FindMissingBlobsRequest) {
 }

@@ -10,7 +10,7 @@ const (
 	// If set to "true" in the context metadata, use the proxy's local cache as
 	// the source of truth and skip remote reads and writes.
 	// By default, the remote app cache is the source of truth.
-	SkipRemoteKey = "proxy_skip_remote"
+	SkipRemoteKey = "x-buildbuddy-proxy-skip-remote"
 )
 
 func SkipRemote(ctx context.Context) bool {

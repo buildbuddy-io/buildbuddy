@@ -187,7 +187,6 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		return status.InternalErrorf("CacheProxy: error starting local bytestream gRPC server: %s", err.Error())
 	}
 	env.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
-	env.SetLocalActionCacheClient(repb.NewActionCacheClient(conn))
 	env.SetLocalCASClient(repb.NewContentAddressableStorageClient(conn))
 
 	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)
@@ -267,5 +266,6 @@ func registerInternalGRPCServices(grpcServer *grpc.Server, env *real_environment
 		return status.InternalErrorf("CacheProxy: error starting local actioncache server: %s", err.Error())
 	}
 	repb.RegisterActionCacheServer(grpcServer, localAC)
+	env.SetInternalActionCacheServer(localAC)
 	return nil
 }

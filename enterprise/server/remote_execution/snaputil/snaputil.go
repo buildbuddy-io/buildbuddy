@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -20,7 +21,6 @@ import (
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/metadata"
 
-	proxy_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
