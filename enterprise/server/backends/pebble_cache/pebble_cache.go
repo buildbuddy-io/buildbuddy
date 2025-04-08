@@ -1631,9 +1631,9 @@ func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 		return nil, err
 	}
 	defer rc.Close()
-	var buffer bytes.Buffer
-	_, err = io.Copy(&buffer, rc)
-	return buffer.Bytes(), err
+	buf := make([]byte, r.GetDigest().GetSizeBytes())
+	_, err = io.ReadFull(rc, buf)
+	return buf, err
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -1645,7 +1645,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 
-	buf := &bytes.Buffer{}
 	for _, r := range resources {
 		rc, err := p.reader(ctx, db, r, 0, 0)
 		if err != nil {
@@ -1655,18 +1654,18 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 			return nil, err
 		}
 
-		_, copyErr := io.Copy(buf, rc)
+		buf := make([]byte, r.GetDigest().GetSizeBytes())
+		_, readErr := io.ReadFull(rc, buf)
 		closeErr := rc.Close()
-		if copyErr != nil {
-			log.Warningf("[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
+		if readErr != nil {
+			log.Warningf("[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), readErr)
 			continue
 		}
 		if closeErr != nil {
 			log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
 			continue
 		}
-		foundMap[r.GetDigest()] = append([]byte{}, buf.Bytes()...)
-		buf.Reset()
+		foundMap[r.GetDigest()] = buf
 	}
 	return foundMap, nil
 }

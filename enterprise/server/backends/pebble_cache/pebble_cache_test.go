@@ -744,7 +744,7 @@ func TestMultiGetSet(t *testing.T) {
 				require.True(t, ok, "Multi-get failed to return expected digest: %q", d.GetHash())
 				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
 				require.NoError(t, err)
-				require.Equal(t, d.GetHash(), d2.GetHash())
+				require.Equal(t, d.GetHash(), d2.GetHash(), "d=%v; d2=%v", d, d2)
 			}
 		})
 	}
@@ -2634,6 +2634,7 @@ func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.C
 
 	b.ReportAllocs()
 	b.StopTimer()
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		keys := randomDigests(100)
 
