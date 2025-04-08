@@ -2698,6 +2698,7 @@ func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx contex
 
 	b.ReportAllocs()
 	b.StopTimer()
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		keys := randomDigests(100)
 
@@ -2752,6 +2753,7 @@ func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.
 
 	b.ReportAllocs()
 	b.StopTimer()
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		d := digestKeys[randIntN(b, len(digestKeys))]
 		b.StartTimer()
@@ -2795,6 +2797,7 @@ func BenchmarkContains1(b *testing.B) {
 func benchmarkSet(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	b.ReportAllocs()
 	b.StopTimer()
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		b.StartTimer()
