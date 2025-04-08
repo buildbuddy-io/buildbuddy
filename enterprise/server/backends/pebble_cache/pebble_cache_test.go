@@ -2742,7 +2742,7 @@ func BenchmarkFindMissing(b *testing.B) {
 }
 
 func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
-	digestKeys := make([]*rspb.ResourceName, 0, 100000)
+	digestKeys := make([]*rspb.ResourceName, 0, 100)
 	for i := 0; i < 100; i++ {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
