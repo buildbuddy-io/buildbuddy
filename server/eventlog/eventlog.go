@@ -433,9 +433,9 @@ func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, erro
 	if _, err := w.terminalWriter.Write(p); err != nil {
 		return 0, err
 	}
-	if w.terminalWriter.ScrollOutFunc == nil {
-		// There's no window giving us scrollOut, this isn't using curses.
-		// Just render it and write it.
+	if !w.terminalWriter.AccumulatingOutput() {
+		// We aren't accumulating scrolled-out output, which means this isn't using
+		// curses. Just render the terminal and write the rendered output.
 		n, err := w.WriteWithTailCloser.WriteWithTail(ctx, []byte(w.terminalWriter.Render()), []byte{})
 		if err != nil {
 			return 0, err
@@ -443,11 +443,11 @@ func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, erro
 		w.terminalWriter.Reset(0)
 		return n, err
 	}
-	if w.terminalWriter.ScrollOutWriteErr != nil {
-		return 0, w.terminalWriter.ScrollOutWriteErr
+	if w.terminalWriter.WriteErr != nil {
+		return 0, w.terminalWriter.WriteErr
 	}
-	popped := w.terminalWriter.ScrollOut.String()
-	w.terminalWriter.ScrollOut.Reset()
+	popped := w.terminalWriter.OutputAccumulator.String()
+	w.terminalWriter.OutputAccumulator.Reset()
 	return w.WriteWithTailCloser.WriteWithTail(ctx, []byte(popped), []byte(w.terminalWriter.Render()))
 }
 

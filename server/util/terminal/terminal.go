@@ -8,8 +8,8 @@ import (
 
 type ScreenWriter struct {
 	*bkterminal.Screen
-	ScrollOut         strings.Builder
-	ScrollOutWriteErr error
+	OutputAccumulator strings.Builder
+	WriteErr          error
 }
 
 // NewScreenWriter returns a ScreenWriter backed by an ANSI state machine with a
@@ -24,7 +24,7 @@ func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
 	}
 	w := &ScreenWriter{Screen: s}
 	if windowHeight > 0 {
-		s.ScrollOutFunc = func(line string) { _, w.ScrollOutWriteErr = w.ScrollOut.WriteString(line) }
+		s.ScrollOutFunc = func(line string) { _, w.WriteErr = w.OutputAccumulator.WriteString(line) }
 	}
 	return w, nil
 }
@@ -35,8 +35,13 @@ func (w *ScreenWriter) Render() string {
 }
 
 func (w *ScreenWriter) Reset(windowHeight int) error {
-	w.ScrollOut.Reset()
+	w.OutputAccumulator.Reset()
 	var err error
 	w.Screen, err = bkterminal.NewScreen(bkterminal.WithMaxSize(0, windowHeight), bkterminal.WithANSIRenderer())
 	return err
+}
+
+func (w *ScreenWriter) AccumulatingOutput() bool {
+	// If there's no ScrollOutFunc, then there's no window giving us scrollOut.
+	return w.ScrollOutFunc != nil
 }
