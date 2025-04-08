@@ -232,9 +232,9 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
-	var digest gcrname.Digest
+	var ocidigest gcrname.Digest
 	if identifierIsDigest {
-		digest = ref.Context().Digest(identifier)
+		ocidigest = ref.Context().Digest(identifier)
 	}
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST && !identifierIsDigest {
 		// Fetching a manifest by tag.
@@ -278,14 +278,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 			http.Error(w, fmt.Sprintf("could not parse metadata for %s from upstream registry: %s", ref, err), http.StatusNotFound)
 			return
 		}
-		digest = ref.Context().Digest(hash.String())
+		ocidigest = ref.Context().Digest(hash.String())
 	}
 
 	bsc := r.env.GetByteStreamClient()
 	acc := r.env.GetActionCacheClient()
-	casDigest, contentType, contentLength, err := oci.FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, digest, ociResourceType)
+	casdigest, contentType, contentLength, err := oci.FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, ocidigest, ociResourceType)
 	if err == nil {
-		w.Header().Add(headerDockerContentDigest, digest.DigestStr())
+		w.Header().Add(headerDockerContentDigest, ocidigest.DigestStr())
 		w.Header().Add(headerContentLength, strconv.FormatInt(contentLength, 10))
 		w.Header().Add(headerContentType, contentType)
 		w.WriteHeader(http.StatusOK)
@@ -294,14 +294,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 			return
 		}
 
-		err := oci.FetchBlobOrManifestFromCache(ctx, bsc, casDigest, w)
+		err := oci.FetchBlobOrManifestFromCache(ctx, bsc, casdigest, w)
 		if err == nil {
 			return
 		}
-		log.CtxError(ctx, fmt.Sprintf("error fetching image %s from the CAS: %s", digest, err))
+		log.CtxError(ctx, fmt.Sprintf("error fetching image %s from the CAS: %s", ocidigest, err))
 	}
 	if !status.IsNotFoundError(err) {
-		log.CtxError(ctx, fmt.Sprintf("error fetching image metadata for %s from the CAS: %s", digest, err))
+		log.CtxError(ctx, fmt.Sprintf("error fetching image metadata for %s from the CAS: %s", ocidigest, err))
 	}
 
 	upresp, err := r.makeUpstreamRequest(
@@ -310,10 +310,10 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		inreq.Header.Get(headerAccept),
 		inreq.Header.Get(headerAuthorization),
 		ociResourceType,
-		digest,
+		ocidigest,
 	)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error making %s request to upstream registry %s: %s", inreq.Method, digest.Context().RegistryStr(), err), http.StatusServiceUnavailable)
+		http.Error(w, fmt.Sprintf("error making %s request to upstream registry %s: %s", inreq.Method, ocidigest.Context().RegistryStr(), err), http.StatusServiceUnavailable)
 		return
 	}
 	defer upresp.Body.Close()
@@ -330,14 +330,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	if upresp.StatusCode != http.StatusOK {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body for %s: %s", digest, err)
+			log.CtxWarningf(ctx, "error writing response body for %s: %s", ocidigest, err)
 		}
 		return
 	}
 
 	_, uptype, uplength, err := metadataFromResponse(upresp)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not parse metadata for %s from response: %s", digest, err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("could not parse metadata for %s from response: %s", ocidigest, err), http.StatusNotFound)
 		return
 	}
 
@@ -346,14 +346,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		ctx,
 		acc,
 		bsc,
-		digest,
+		ocidigest,
 		ociResourceType,
 		uptype,
 		uplength,
 		tr,
 	)
 	if err != nil && err != context.Canceled {
-		log.CtxWarningf(ctx, "error writing response body to cache for %s: %s", digest, err)
+		log.CtxWarningf(ctx, "error writing response body to cache for %s: %s", ocidigest, err)
 	}
 }
 
