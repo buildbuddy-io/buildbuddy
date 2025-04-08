@@ -521,6 +521,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		executorGroupID = selfHostedPoolGroupID
 	}
 
+	usageStats := &repb.UsageStats{}
 	if test.publishMoreMetadata {
 		aux.IsolationType = "firecracker"
 		aux.Timeout = &durationpb.Duration{Seconds: 11}
@@ -542,6 +543,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			},
 			ExecutorGroupId: executorGroupID,
 		}
+		usageStats.Timeline = &repb.UsageTimeline{
+			StartTime: tspb.New(workerStartTime),
+		}
 	} else {
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
 			ExecutorGroupId: executorGroupID,
@@ -558,6 +562,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			WorkerCompletedTimestamp: tspb.New(workerEndTime),
 			AuxiliaryMetadata:        []*anypb.Any{auxAny},
 			DoNotCache:               test.doNotCache,
+			UsageStats:               usageStats,
 		},
 	}
 	expectedExecuteResponse := &repb.ExecuteResponse{
@@ -578,6 +583,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 
 	trimmedExecuteResponse := expectedExecuteResponse.CloneVT()
 	trimmedExecuteResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
+	trimmedExecuteResponse.GetResult().GetExecutionMetadata().GetUsageStats().Timeline = nil
 
 	// Wait for the execute response to be streamed back on our initial
 	// /Execute stream.
