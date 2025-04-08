@@ -51,37 +51,20 @@ var (
 	}
 )
 
-func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
+func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, imgname string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	imageRef, err := ctrname.ParseReference(imageName)
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
-	}
 	gcrPlatform := v1.Platform{
 		Architecture: platform.GetArch(),
 		OS:           platform.GetOs(),
 		Variant:      platform.GetVariant(),
 	}
-	remoteOpts := []remote.Option{
-		remote.WithContext(ctx),
-		remote.WithPlatform(gcrPlatform),
+	opts := makeRemoteOptions(ctx, gcrPlatform, credentials)
+	imgref, err := ctrname.ParseReference(imgname)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid image %q", imgname)
 	}
-	if !credentials.IsEmpty() {
-		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
-			Username: credentials.Username,
-			Password: credentials.Password,
-		}))
-	}
-
-	tr := httpclient.New().Transport
-	if len(*mirrors) > 0 {
-		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
-	} else {
-		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
-	}
-
-	digest, raw, fromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, imageRef, remoteOpts)
+	digest, raw, fromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, imgref, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +83,7 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 			raw,
 		)
 		if err != nil {
-			log.CtxErrorf(ctx, "error writing image %s to the CAS: %s", imageRef, err)
+			log.CtxErrorf(ctx, "error writing image %s to the CAS: %s", imgref, err)
 		}
 	}
 
@@ -111,7 +94,7 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 			bsc:      bsc,
 			raw:      raw,
 			manifest: m,
-			options:  remoteOpts,
+			options:  opts,
 		}
 		return partial.CompressedToImage(img)
 	}
@@ -132,10 +115,10 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 		}
 	}
 	if child == nil {
-		return nil, fmt.Errorf("no child with platform %+v for %s", platform, imageRef.Context())
+		return nil, fmt.Errorf("no child with platform %+v for %s", platform, imgref.Context())
 	}
-	childRef := imageRef.Context().Digest(child.Digest.String())
-	childDigest, childraw, childFromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, childRef, remoteOpts)
+	childRef := imgref.Context().Digest(child.Digest.String())
+	childDigest, childraw, childFromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, childRef, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -166,9 +149,72 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 		bsc:      bsc,
 		raw:      childraw,
 		manifest: childm,
-		options:  remoteOpts,
+		options:  opts,
 	}
 	return partial.CompressedToImage(childimg)
+}
+
+func makeRemoteOptions(ctx context.Context, platform v1.Platform, credentials Credentials) []remote.Option {
+	remoteOpts := []remote.Option{
+		remote.WithContext(ctx),
+		remote.WithPlatform(platform),
+	}
+	if !credentials.IsEmpty() {
+		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
+			Username: credentials.Username,
+			Password: credentials.Password,
+		}))
+	}
+
+	tr := httpclient.New().Transport
+	if len(*mirrors) > 0 {
+		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
+	} else {
+		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
+	}
+	return remoteOpts
+}
+
+// verify that mirrorTransport implements the RoundTripper interface.
+var _ http.RoundTripper = (*mirrorTransport)(nil)
+
+type mirrorTransport struct {
+	inner   http.RoundTripper
+	mirrors []MirrorConfig
+}
+
+func newMirrorTransport(inner http.RoundTripper, mirrors []MirrorConfig) http.RoundTripper {
+	return &mirrorTransport{
+		inner:   inner,
+		mirrors: mirrors,
+	}
+}
+
+func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
+	for _, mirror := range t.mirrors {
+		if match, err := mirror.matches(in.URL); err == nil && match {
+			mirroredRequest, err := mirror.rewriteRequest(in)
+			if err != nil {
+				log.Errorf("error mirroring request: %s", err)
+				continue
+			}
+			out, err := t.inner.RoundTrip(mirroredRequest)
+			if err != nil {
+				log.Errorf("mirror err: %s", err)
+				continue
+			}
+			if out.StatusCode < http.StatusOK || out.StatusCode >= 300 {
+				fallbackRequest, err := mirror.rewriteFallbackRequest(in)
+				if err != nil {
+					log.Errorf("error rewriting fallback request: %s", err)
+					continue
+				}
+				return t.inner.RoundTrip(fallbackRequest)
+			}
+			return out, nil // Return successful mirror response
+		}
+	}
+	return t.inner.RoundTrip(in)
 }
 
 type MirrorConfig struct {
@@ -346,48 +392,6 @@ func RuntimePlatform() *rgpb.Platform {
 		Arch: runtime.GOARCH,
 		Os:   runtime.GOOS,
 	}
-}
-
-// verify that mirrorTransport implements the RoundTripper interface.
-var _ http.RoundTripper = (*mirrorTransport)(nil)
-
-type mirrorTransport struct {
-	inner   http.RoundTripper
-	mirrors []MirrorConfig
-}
-
-func newMirrorTransport(inner http.RoundTripper, mirrors []MirrorConfig) http.RoundTripper {
-	return &mirrorTransport{
-		inner:   inner,
-		mirrors: mirrors,
-	}
-}
-
-func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
-	for _, mirror := range t.mirrors {
-		if match, err := mirror.matches(in.URL); err == nil && match {
-			mirroredRequest, err := mirror.rewriteRequest(in)
-			if err != nil {
-				log.Errorf("error mirroring request: %s", err)
-				continue
-			}
-			out, err := t.inner.RoundTrip(mirroredRequest)
-			if err != nil {
-				log.Errorf("mirror err: %s", err)
-				continue
-			}
-			if out.StatusCode < http.StatusOK || out.StatusCode >= 300 {
-				fallbackRequest, err := mirror.rewriteFallbackRequest(in)
-				if err != nil {
-					log.Errorf("error rewriting fallback request: %s", err)
-					continue
-				}
-				return t.inner.RoundTrip(fallbackRequest)
-			}
-			return out, nil // Return successful mirror response
-		}
-	}
-	return t.inner.RoundTrip(in)
 }
 
 func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, digestOrTagRef ctrname.Reference, remoteOpts []remote.Option) (*ctrname.Digest, []byte, bool, error) {
@@ -625,16 +629,16 @@ func arInstanceName(registry, repository string) string {
 }
 
 type cachingLayerWriteCloser struct {
-	ctx           context.Context
-	acClient      repb.ActionCacheClient
-	bsClient      bspb.ByteStreamClient
-	blobCASDigest *repb.Digest
-	registry      string
-	repository    string
-	hash          v1.Hash
+	ctx       context.Context
+	acc       repb.ActionCacheClient
+	bsc       bspb.ByteStreamClient
+	casDigest *repb.Digest
+
+	digest        ctrname.Digest
 	contentType   string
 	contentLength int64
-	wc            io.WriteCloser
+
+	wc io.WriteCloser
 }
 
 func (clwc *cachingLayerWriteCloser) Write(p []byte) (int, error) {
@@ -652,23 +656,28 @@ func (clwc *cachingLayerWriteCloser) Close() error {
 		ContentLength: clwc.contentLength,
 		ContentType:   clwc.contentType,
 	}
-	blobMetadataCASDigest, err := cachetools.UploadProto(clwc.ctx, clwc.bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
+	blobMetadataCASDigest, err := cachetools.UploadProto(clwc.ctx, clwc.bsc, "", repb.DigestFunction_SHA256, blobMetadata)
 	if err != nil {
 		return err
 	}
 
+	hash, err := v1.NewHash(clwc.digest.DigestStr())
+	if err != nil {
+		return fmt.Errorf("could not parse hash for layer in %s: %s", clwc.digest.Context(), err)
+	}
+
 	arKey := &ocipb.OCIActionResultKey{
-		Registry:      clwc.registry,
-		Repository:    clwc.repository,
+		Registry:      clwc.digest.Context().RegistryStr(),
+		Repository:    clwc.digest.Context().RepositoryStr(),
 		ResourceType:  ocipb.OCIResourceType_BLOB,
-		HashAlgorithm: clwc.hash.Algorithm,
-		HashHex:       clwc.hash.Hex,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
 	}
 	ar := &repb.ActionResult{
 		OutputFiles: []*repb.OutputFile{
 			{
 				Path:   blobOutputFilePath,
-				Digest: clwc.blobCASDigest,
+				Digest: clwc.casDigest,
 			},
 			{
 				Path:   blobMetadataOutputFilePath,
@@ -686,17 +695,21 @@ func (clwc *cachingLayerWriteCloser) Close() error {
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
-		arInstanceName(clwc.registry, clwc.repository),
+		arInstanceName(clwc.digest.Context().RegistryStr(), clwc.digest.Context().RepositoryStr()),
 		repb.DigestFunction_SHA256,
 	)
-	err = cachetools.UploadActionResult(clwc.ctx, clwc.acClient, arRN, ar)
+	err = cachetools.UploadActionResult(clwc.ctx, clwc.acc, arRN, ar)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func newCachingLayerWriteCloser(ctx context.Context, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, registry, repository string, hash v1.Hash, contentType string, contentLength int64) (io.WriteCloser, error) {
+func newCachingLayerWriteCloser(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest ctrname.Digest, contentType string, contentLength int64) (io.WriteCloser, error) {
+	hash, err := v1.NewHash(ocidigest.DigestStr())
+	if err != nil {
+		return nil, fmt.Errorf("could not parse hash for layer in %s: %s", ocidigest.Context(), err)
+	}
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -707,18 +720,16 @@ func newCachingLayerWriteCloser(ctx context.Context, acClient repb.ActionCacheCl
 		repb.DigestFunction_SHA256,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	wc, err := cachetools.NewUploadWriteCloser(ctx, bsClient, blobRN)
+	wc, err := cachetools.NewUploadWriteCloser(ctx, bsc, blobRN)
 	if err != nil {
 		return nil, err
 	}
 	return &cachingLayerWriteCloser{
 		ctx:           ctx,
-		acClient:      acClient,
-		bsClient:      bsClient,
-		blobCASDigest: blobCASDigest,
-		registry:      registry,
-		repository:    repository,
-		hash:          hash,
+		acc:           acc,
+		bsc:           bsc,
+		casDigest:     blobCASDigest,
+		digest:        ocidigest,
 		contentType:   contentType,
 		contentLength: contentLength,
 		wc:            wc,
@@ -736,7 +747,6 @@ type cacheAwareImage struct {
 }
 
 func (i *cacheAwareImage) RawManifest() ([]byte, error) {
-	log.Infof("RawManifest() on %s", i.digest)
 	return i.raw, nil
 }
 
@@ -863,8 +873,15 @@ func (t *teeReadCloser) Read(p []byte) (int, error) {
 }
 
 func (t *teeReadCloser) Close() error {
-	t.wc.Close()
-	return t.rc.Close()
+	werr := t.wc.Close()
+	rerr := t.rc.Close()
+	if rerr != nil {
+		return rerr
+	}
+	if werr != nil {
+		return werr
+	}
+	return nil
 }
 
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
@@ -909,17 +926,11 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	hash, err := v1.NewHash(l.digest.DigestStr())
-	if err != nil {
-		return nil, err
-	}
 	caswc, err := newCachingLayerWriteCloser(
 		ctx,
 		l.acc,
 		l.bsc,
-		l.digest.Context().RegistryStr(),
-		l.digest.Context().RepositoryStr(),
-		hash,
+		l.digest,
 		string(mediaType),
 		size,
 	)
