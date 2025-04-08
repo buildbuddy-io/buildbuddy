@@ -388,8 +388,9 @@ func (d *DynamicNodeRegistry) pushUpdate(req *rfpb.RegistryPushRequest) {
 	}
 }
 
-// queryPeers queries the gossip network for node that hold the specified range
-// id and replcia id.
+// queryPeers queries the gossip network to get the (nhid, raft address, grpc
+// address) of the node that holds the specified rangeID and replicaID or the
+// node with the specified NHID.
 // If any nodes are found, they are added to the static registry.
 func (d *DynamicNodeRegistry) queryPeers(ctx context.Context, req *rfpb.RegistryQueryRequest) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
