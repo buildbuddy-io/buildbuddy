@@ -10,9 +10,11 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcacheproxy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -27,7 +29,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
-	proxy_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -111,7 +112,7 @@ func runLocalBSS(ctx context.Context, env *testenv.TestEnv, t *testing.T) bspb.B
 
 func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.TestEnv, t *testing.T) bspb.ByteStreamClient {
 	if env.GetAtimeUpdater() == nil {
-		env.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
+		env.SetAtimeUpdater(&testcacheproxy.NoOpAtimeUpdater{})
 	}
 	env.SetByteStreamClient(client)
 	env.SetLocalByteStreamClient(runLocalBSS(ctx, env, t))
