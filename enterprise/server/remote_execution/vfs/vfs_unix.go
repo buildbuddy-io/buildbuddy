@@ -14,13 +14,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/docker/go-units"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
-	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+	vfspb "github.com/buildbuddy-io/buildbuddy/v2/proto/vfs"
 	gstatus "google.golang.org/grpc/status"
 )
 

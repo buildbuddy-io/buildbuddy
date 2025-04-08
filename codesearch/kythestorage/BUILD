@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "kythestorage",
     srcs = ["kythestorage.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/kythestorage",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/codesearch/kythestorage",
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",

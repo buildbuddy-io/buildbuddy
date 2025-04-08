@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
 	fusefs "github.com/hanwen/go-fuse/v2/fs"

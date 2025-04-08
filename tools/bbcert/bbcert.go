@@ -8,12 +8,12 @@ import (
 	"os/exec"
 	"path"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	cgpb "github.com/buildbuddy-io/buildbuddy/proto/certgenerator"
+	cgpb "github.com/buildbuddy-io/buildbuddy/v2/proto/certgenerator"
 )
 
 var (

@@ -13,7 +13,7 @@ go_binary(
 go_library(
     name = "vmexec_lib",
     srcs = ["vmexec.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/vmexec",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/tools/vmexec",
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/util/vsock",

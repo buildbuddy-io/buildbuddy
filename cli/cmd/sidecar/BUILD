@@ -5,7 +5,7 @@ package(default_visibility = ["//cli:__subpackages__"])
 go_library(
     name = "sidecar",
     srcs = ["sidecar.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/cmd/sidecar",
     deps = [
         "//cli/arg",
         "//cli/devnull",

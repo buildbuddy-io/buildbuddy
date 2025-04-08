@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "storemap",
     srcs = ["storemap.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/storemap",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/constants",

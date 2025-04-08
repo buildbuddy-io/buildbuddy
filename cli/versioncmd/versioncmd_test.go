@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/versioncmd"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/versioncmd"
 	"github.com/stretchr/testify/require"
 )
 

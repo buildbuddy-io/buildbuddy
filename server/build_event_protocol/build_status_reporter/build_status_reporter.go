@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/backends/github"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/accumulator"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/timeutil"
 
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	gitutil "github.com/buildbuddy-io/buildbuddy/v2/server/util/git"
 )
 
 var (

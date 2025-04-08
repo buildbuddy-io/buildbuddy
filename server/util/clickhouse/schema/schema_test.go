@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

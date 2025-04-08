@@ -12,5 +12,5 @@ go_library(
         "basic.yaml",
         "yaml_with_run_block.yaml",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config/test_data",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/workflow/config/test_data",
 )

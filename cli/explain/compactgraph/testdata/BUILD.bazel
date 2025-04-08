@@ -18,7 +18,7 @@ go_binary(
 go_library(
     name = "testdata_lib",
     srcs = ["generate.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph/testdata",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/explain/compactgraph/testdata",
     visibility = ["//visibility:private"],
     deps = [
         "//server/util/log",

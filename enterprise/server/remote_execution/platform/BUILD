@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "platform",
     srcs = ["platform.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/platform",
     deps = [
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",

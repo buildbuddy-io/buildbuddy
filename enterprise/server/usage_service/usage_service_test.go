@@ -5,18 +5,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/usage_service"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
 
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/context"
+	usagepb "github.com/buildbuddy-io/buildbuddy/v2/proto/usage"
 )
 
 func TestGetUsage(t *testing.T) {

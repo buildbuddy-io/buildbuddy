@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/backends/blobstore/util"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/ioutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/tracing"
 )
 
 var (

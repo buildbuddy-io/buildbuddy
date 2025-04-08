@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "timeutil",
     srcs = ["timeutil.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/timeutil",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/timeutil",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_jonboulle_clockwork//:clockwork",

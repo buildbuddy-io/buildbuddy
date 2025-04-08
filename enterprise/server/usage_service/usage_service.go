@@ -8,16 +8,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/jonboulle/clockwork"
 
-	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
-	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+	usage_config "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/usage/config"
+	usagepb "github.com/buildbuddy-io/buildbuddy/v2/proto/usage"
 )
 
 var usageStartDate = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")

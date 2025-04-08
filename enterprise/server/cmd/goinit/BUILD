@@ -7,7 +7,7 @@ exports_files(srcs = ["main.go"])
 go_library(
     name = "goinit_lib",
     srcs = ["main.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/goinit",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/cmd/goinit",
     deps = [
         "//enterprise/server/util/vsock",
         "//enterprise/server/vmexec",

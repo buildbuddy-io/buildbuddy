@@ -5,5 +5,5 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "config",
     srcs = ["config.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/usage/config",
 )

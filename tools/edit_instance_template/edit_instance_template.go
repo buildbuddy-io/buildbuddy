@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"cloud.google.com/go/compute/apiv1/computepb"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"google.golang.org/api/iterator"
 
 	compute "cloud.google.com/go/compute/apiv1"

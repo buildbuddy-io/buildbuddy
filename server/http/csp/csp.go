@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 )
 
 // Nonce is the context key type for the per-request CSP nonce.

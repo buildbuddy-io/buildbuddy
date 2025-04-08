@@ -8,17 +8,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/build_event_publisher"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/buildbuddy_enterprise"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	bespb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	bbspb "github.com/buildbuddy-io/buildbuddy/v2/proto/buildbuddy_service"
+	elpb "github.com/buildbuddy-io/buildbuddy/v2/proto/eventlog"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
 )
 
 // invocationLog fetches and buffers logs for an invocation.

@@ -3,7 +3,7 @@ package metricsutil
 import (
 	"slices"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
 )
 
 var (

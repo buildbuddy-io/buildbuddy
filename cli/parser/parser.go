@@ -16,18 +16,18 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/storage"
-	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/workspace"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 	"github.com/google/shlex"
 
-	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bfpb "github.com/buildbuddy-io/buildbuddy/v2/proto/bazel_flags"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 )
 
 const (

@@ -13,16 +13,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/config"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/storage"
-	"github.com/buildbuddy-io/buildbuddy/cli/version"
-	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/config"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/workspace"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
 	"github.com/google/shlex"
 
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/sidecar"
+	scpb "github.com/buildbuddy-io/buildbuddy/v2/proto/sidecar"
 )
 
 const (

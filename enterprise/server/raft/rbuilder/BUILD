@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "rbuilder",
     srcs = ["rbuilder.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/rbuilder",
     deps = [
         "//proto:raft_go_proto",
         "//server/util/proto",

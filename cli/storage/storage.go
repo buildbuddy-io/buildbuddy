@@ -9,11 +9,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
-	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/workspace"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/uuid"
 )
 
 const (

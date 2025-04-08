@@ -8,7 +8,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "cache_proxy_lib",
     srcs = ["cache_proxy.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/cache_proxy",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/cmd/cache_proxy",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/action_cache_server_proxy",

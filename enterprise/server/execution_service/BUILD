@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "execution_service",
     srcs = ["execution_service.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/execution_service",
     deps = [
         "//enterprise/server/util/execution",
         "//proto:buildbuddy_service_go_proto",

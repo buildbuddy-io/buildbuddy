@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "rpcutil",
     srcs = ["rpcutil.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/rpcutil",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/rpcutil",
     visibility = ["//visibility:public"],
     deps = ["//server/util/proto"],
 )

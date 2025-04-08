@@ -7,7 +7,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 go_library(
     name = "server_lib",
     srcs = ["server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/cmd/server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/codesearch/cmd/server",
     visibility = ["//visibility:private"],
     deps = [
         "//codesearch/server",

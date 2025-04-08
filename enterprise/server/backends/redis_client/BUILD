@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "redis_client",
     srcs = ["redis_client.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/redis_client",
     deps = [
         "//enterprise/server/util/redisutil",
         "//server/real_environment",

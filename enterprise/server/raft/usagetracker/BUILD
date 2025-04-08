@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "usagetracker",
     srcs = ["usagetracker.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/usagetracker",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/filestore",

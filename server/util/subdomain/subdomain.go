@@ -5,12 +5,12 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/urlutil"
 )
 
 const subdomainKey = "subdomain"

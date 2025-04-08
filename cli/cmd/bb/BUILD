@@ -6,7 +6,7 @@ go_library(
     data = [
         "//cli/cmd/sidecar",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/bb",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/cmd/bb",
     visibility = ["//visibility:private"],
     deps = [
         "//cli/arg",

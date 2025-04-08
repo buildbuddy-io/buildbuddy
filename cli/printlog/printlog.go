@@ -7,14 +7,14 @@ import (
 	"io"
 	"os"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/printlog/compact"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/printlog/compact"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	rlpb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log"
+	rlpb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution_log"
 )
 
 const (

@@ -13,30 +13,30 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
 	sspb "github.com/awslabs/soci-snapshotter/proto"
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+	rgpb "github.com/buildbuddy-io/buildbuddy/v2/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	socipb "github.com/buildbuddy-io/buildbuddy/v2/proto/soci"
 	godigest "github.com/opencontainers/go-digest"
 )
 
 var (
 	imageStreamingEnabled = flag.Bool("executor.podman.enable_image_streaming", false, "If set, all public (non-authenticated) podman images are streamed using soci artifacts generated and stored in the apps.")
 
-	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/2570): remove this flag
+	// TODO(https://github.com/buildbuddy-io/buildbuddy/v2-internal/issues/2570): remove this flag
 	binary   = flag.String("executor.podman.soci_store_binary", "soci-store", "The name of the soci-store binary to run. If empty, soci-store is not started even if it's needed (for local development).")
 	logLevel = flag.String("executor.podman.soci_store_log_level", "", "The level at which the soci-store should log. Should be one of the standard log levels, all lowercase.")
 
@@ -235,7 +235,7 @@ func Init(env environment.Env) (Store, error) {
 			store = sociStore
 		}
 
-		// TODO(github.com/buildbuddy-io/buildbuddy-internal/issues/2282):
+		// TODO(github.com/buildbuddy-io/buildbuddy/v2-internal/issues/2282):
 		// there's a bug in soci-store that causes it to panic occasionally.
 		// Report the executor as unhealthy if the soci-store directory doesn'
 		// exist for any reason.

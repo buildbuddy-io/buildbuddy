@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 )
 
 type TestSubscriber struct {

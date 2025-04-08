@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 // HashFunction is the hash function used to map values to a location on the

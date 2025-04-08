@@ -9,7 +9,7 @@ go_library(
     data = [
         "//enterprise/server/test/integration/remote_execution/command:testcommand",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/test/integration/remote_execution/rbetest",
     x_defs = {
         "testCommandBinaryRunfilePath": "$(rlocationpath //enterprise/server/test/integration/remote_execution/command:testcommand)",
     },

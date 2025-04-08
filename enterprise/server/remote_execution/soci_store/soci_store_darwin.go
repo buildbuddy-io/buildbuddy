@@ -4,7 +4,7 @@
 package soci_store
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
 )
 
 func Init(env environment.Env) (Store, error) {

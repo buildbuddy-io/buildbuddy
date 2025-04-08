@@ -6,16 +6,16 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/event_parser"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/invocation_format"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/timeutil"
 
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation_status"
+	rspb "github.com/buildbuddy-io/buildbuddy/v2/proto/resource"
 )
 
 const (

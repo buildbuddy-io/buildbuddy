@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "execute",
     srcs = ["execute.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/execute",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/execute",
     deps = [
         "//cli/arg",
         "//cli/log",

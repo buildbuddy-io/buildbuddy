@@ -10,7 +10,7 @@ go_binary(
 go_library(
     name = "vmstart_lib",
     srcs = ["vmstart.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/vmstart",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/tools/vmstart",
     deps = [
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/firecracker",

@@ -3,12 +3,12 @@ package rangecache_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/rangecache"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"github.com/stretchr/testify/require"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfpb "github.com/buildbuddy-io/buildbuddy/v2/proto/raft"
 )
 
 // Range flow looks like this:

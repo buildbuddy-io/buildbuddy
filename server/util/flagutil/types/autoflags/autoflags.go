@@ -6,10 +6,10 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 
-	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
-	flagtags "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/types"
+	flagtags "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/types/autoflags/tags"
 )
 
 // New declares a new flag named `name` with the specified value `defaultValue`

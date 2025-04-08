@@ -7,15 +7,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"github.com/prometheus/client_golang/prometheus"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 	gstatus "google.golang.org/grpc/status"
 )
 

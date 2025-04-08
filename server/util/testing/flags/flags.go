@@ -6,10 +6,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil"
 	"github.com/stretchr/testify/require"
 
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/yaml"
 )
 
 var populateFlagsOnce sync.Once

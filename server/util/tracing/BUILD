@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "tracing",
     srcs = ["tracing.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/tracing",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/tracing",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:trace_go_proto",

@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "telemetry",
     srcs = ["telemetry_server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/telemetry",
     deps = [
         "//proto:telemetry_go_proto",
         "//server/environment",

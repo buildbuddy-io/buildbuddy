@@ -9,7 +9,7 @@ go_library(
         "npm_registry.go",
         "registry_server.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/registry",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/registry",
     deps = [
         "//server/interfaces",
         "//server/real_environment",

@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "certgenerator_lib",
     srcs = ["certgenerator.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/certgenerator",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/certgenerator",
     visibility = [
         "@buildbuddy_internal//:__subpackages__",
     ],

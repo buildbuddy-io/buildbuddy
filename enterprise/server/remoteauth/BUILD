@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "remoteauth",
     srcs = ["remoteauth.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remoteauth",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:auth_go_proto",

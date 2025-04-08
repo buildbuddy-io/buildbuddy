@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/networking"
 	"github.com/stretchr/testify/require"
 )
 

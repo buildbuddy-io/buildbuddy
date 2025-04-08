@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "auth_service",
     srcs = ["auth_service.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/auth_service",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/auth_service",
     deps = [
         "//proto:auth_go_proto",
         "//server/interfaces",

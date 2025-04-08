@@ -3,6 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "types",
     srcs = ["types.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/types",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/codesearch/types",
     visibility = ["//visibility:public"],
 )

@@ -3,8 +3,8 @@ package lockmap_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/lockmap"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/random"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )

@@ -4,7 +4,7 @@ import (
 	"container/list"
 	"errors"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 // EvictionReason describes the reason for an entry being evicted from LRU.

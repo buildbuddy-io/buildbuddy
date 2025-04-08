@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "oidc",
     srcs = ["oidc.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/oidc",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/oidc",
     deps = [
         "//enterprise/server/selfauth",
         "//server/endpoint_urls/build_buddy_url",

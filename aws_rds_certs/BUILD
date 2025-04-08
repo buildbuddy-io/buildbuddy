@@ -14,7 +14,7 @@ go_library(
     name = "bundle",
     srcs = ["bundle.go"],
     embedsrcs = [":embedded_certs"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/aws_rds_certs",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/aws_rds_certs",
     deps = [
         "//server/util/fileresolver",
     ],

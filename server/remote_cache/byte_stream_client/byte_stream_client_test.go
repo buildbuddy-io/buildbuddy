@@ -10,11 +10,11 @@ import (
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
+	zipb "github.com/buildbuddy-io/buildbuddy/v2/proto/zip"
 )
 
 var (

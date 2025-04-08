@@ -13,19 +13,19 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/resources"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/buildbuddy-io/buildbuddy/server/version"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/executor_auth"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/scheduling/priority_task_scheduler"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/statusz"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/version"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
 
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	scpb "github.com/buildbuddy-io/buildbuddy/v2/proto/scheduler"
 )
 
 var (

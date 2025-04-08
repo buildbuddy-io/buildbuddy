@@ -17,17 +17,17 @@ import (
 	"github.com/awslabs/soci-snapshotter/soci"
 	"github.com/awslabs/soci-snapshotter/ztoc"
 	"github.com/awslabs/soci-snapshotter/ztoc/compression"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/containerd/containerd/images"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -35,10 +35,10 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/prometheus/client_golang/prometheus"
 
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+	rgpb "github.com/buildbuddy-io/buildbuddy/v2/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/v2/proto/resource"
+	socipb "github.com/buildbuddy-io/buildbuddy/v2/proto/soci"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	godigest "github.com/opencontainers/go-digest"
@@ -290,7 +290,7 @@ func (s *SociArtifactStore) indexImage(ctx context.Context, image v1.Image, conf
 		return nil, nil, err
 	}
 	// TODO(iain): parallelize layer ztoc generation:
-	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/2267
+	// https://github.com/buildbuddy-io/buildbuddy/v2-internal/issues/2267
 	ztocDigests := []*repb.Digest{}
 	ztocDescriptors := []ocispec.Descriptor{}
 	for _, layer := range layers {

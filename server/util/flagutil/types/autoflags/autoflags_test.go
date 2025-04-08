@@ -5,11 +5,11 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/types"
 )
 
 type unsupportedFlagValue struct{}

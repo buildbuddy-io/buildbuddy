@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "crypter_service",
     srcs = ["crypter_service.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/crypter_service",
     deps = [
         "//proto:encryption_go_proto",
         "//proto:remote_execution_go_proto",

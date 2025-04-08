@@ -3,7 +3,7 @@ package urlutil_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/urlutil"
 	"github.com/stretchr/testify/assert"
 )
 

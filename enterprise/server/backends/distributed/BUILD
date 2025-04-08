@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "distributed",
     srcs = ["distributed.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/distributed",
     deps = [
         "//enterprise/server/backends/pubsub",
         "//enterprise/server/util/distributed_client",

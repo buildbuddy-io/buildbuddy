@@ -5,15 +5,15 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/common"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/types"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/yaml"
 )
 
 type unsupportedFlagValue struct{}

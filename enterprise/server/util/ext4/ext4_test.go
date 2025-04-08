@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/ext4"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/disk"
 	"github.com/stretchr/testify/require"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 )
 
 func randomDir(subDirs []string) string {

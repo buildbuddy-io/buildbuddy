@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

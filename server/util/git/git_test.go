@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	gitutil "github.com/buildbuddy-io/buildbuddy/v2/server/util/git"
 )
 
 func TestAuthRepoURL(t *testing.T) {
@@ -77,23 +77,23 @@ func TestOwnerRepoFromRepoURL(t *testing.T) {
 
 func TestNormalizeRepoURL(t *testing.T) {
 	for _, s := range []string{
-		"ssh://github.com/buildbuddy-io/buildbuddy",
-		"ssh://github.com/buildbuddy-io/buildbuddy.git",
-		"git://github.com/buildbuddy-io/buildbuddy",
-		"   git://github.com/buildbuddy-io/buildbuddy \r\n\t  ",
-		"git://github.com/buildbuddy-io/buildbuddy.git",
+		"ssh://github.com/buildbuddy-io/buildbuddy/v2",
+		"ssh://github.com/buildbuddy-io/buildbuddy/v2.git",
+		"git://github.com/buildbuddy-io/buildbuddy/v2",
+		"   git://github.com/buildbuddy-io/buildbuddy/v2 \r\n\t  ",
+		"git://github.com/buildbuddy-io/buildbuddy/v2.git",
 		"git@github.com:buildbuddy-io/buildbuddy.git",
-		"https://NOTREALTOKEN:@github.com/buildbuddy-io/buildbuddy",
-		"https://buildbuddy:NOTREALTOKEN@github.com/buildbuddy-io/buildbuddy.git",
-		"https://github.com/buildbuddy-io/buildbuddy",
-		"ssh://git@github.com/buildbuddy-io/buildbuddy.git",
+		"https://NOTREALTOKEN:@github.com/buildbuddy-io/buildbuddy/v2",
+		"https://buildbuddy:NOTREALTOKEN@github.com/buildbuddy-io/buildbuddy/v2.git",
+		"https://github.com/buildbuddy-io/buildbuddy/v2",
+		"ssh://git@github.com/buildbuddy-io/buildbuddy/v2.git",
 		"buildbuddy-io/buildbuddy",
 		"file://buildbuddy-io/buildbuddy",
 	} {
 		url, err := gitutil.NormalizeRepoURL(s)
 
 		assert.NoError(t, err)
-		assert.Equal(t, "https://github.com/buildbuddy-io/buildbuddy", url.String())
+		assert.Equal(t, "https://github.com/buildbuddy-io/buildbuddy/v2", url.String())
 	}
 	url, err := gitutil.NormalizeRepoURL("")
 	assert.NoError(t, err)

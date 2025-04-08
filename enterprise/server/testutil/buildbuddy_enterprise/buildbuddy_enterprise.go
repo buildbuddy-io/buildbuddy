@@ -11,14 +11,14 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 	"github.com/stretchr/testify/require"
 
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/context"
+	uspb "github.com/buildbuddy-io/buildbuddy/v2/proto/user"
 )
 
 var (

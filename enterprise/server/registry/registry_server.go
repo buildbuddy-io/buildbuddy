@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 )
 
 var (

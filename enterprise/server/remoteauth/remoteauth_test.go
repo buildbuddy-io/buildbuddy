@@ -8,13 +8,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	authpb "github.com/buildbuddy-io/buildbuddy/v2/proto/auth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags"
 	"google.golang.org/grpc/metadata"
 )
 

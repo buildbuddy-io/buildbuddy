@@ -8,14 +8,14 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/yaml"
 )
 
 const (

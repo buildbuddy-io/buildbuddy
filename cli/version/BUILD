@@ -17,7 +17,7 @@ go_library(
     name = "version",
     srcs = ["version.go"],
     embedsrcs = [":version_flag"],  # keep
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/version",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/version",
 )
 
 package(default_visibility = ["//cli:__subpackages__"])

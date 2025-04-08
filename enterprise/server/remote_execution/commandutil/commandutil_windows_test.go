@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/commandutil"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 )
 

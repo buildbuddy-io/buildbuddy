@@ -1,11 +1,11 @@
 package firecracker
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
-	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/block_io"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/networking"
 
-	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	fcpb "github.com/buildbuddy-io/buildbuddy/v2/proto/firecracker"
+	scpb "github.com/buildbuddy-io/buildbuddy/v2/proto/scheduler"
 )
 
 type ContainerOpts struct {

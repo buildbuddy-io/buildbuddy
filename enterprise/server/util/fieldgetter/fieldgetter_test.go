@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/fieldgetter"
 	"github.com/stretchr/testify/assert"
 )
 

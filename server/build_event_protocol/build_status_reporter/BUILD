@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "build_status_reporter",
     srcs = ["build_status_reporter.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/build_status_reporter",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:build_event_stream_go_proto",

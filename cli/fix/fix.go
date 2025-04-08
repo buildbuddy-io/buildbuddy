@@ -7,15 +7,15 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/add"
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/fix/language"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/translate"
-	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/add"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/fix/language"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/translate"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/workspace"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
 
-	langs "github.com/buildbuddy-io/buildbuddy/cli/fix/langs"
+	langs "github.com/buildbuddy-io/buildbuddy/v2/cli/fix/langs"
 
 	gazelle "github.com/bazelbuild/bazel-gazelle/cmd/gazelle"
 	buildifier "github.com/bazelbuild/buildtools/buildifier"

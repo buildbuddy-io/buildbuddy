@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "region",
     srcs = ["region.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/region",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/region",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:config_go_proto",

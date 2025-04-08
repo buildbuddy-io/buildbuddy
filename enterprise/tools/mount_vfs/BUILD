@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "mount_vfs_lib",
     srcs = ["mount_vfs.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/mount_vfs",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/tools/mount_vfs",
     deps = [
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/vfs",

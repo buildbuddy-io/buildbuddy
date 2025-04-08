@@ -13,7 +13,7 @@ package(default_visibility = [
 go_library(
     name = "server_lib",
     srcs = ["main.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/cmd/server",
     deps = [
         "//enterprise/app:bundle",
         "//enterprise/server/api",

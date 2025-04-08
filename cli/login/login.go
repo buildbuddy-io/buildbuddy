@@ -17,16 +17,16 @@ import (
 
 	_ "embed"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
-	"github.com/buildbuddy-io/buildbuddy/cli/storage"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"google.golang.org/grpc/metadata"
 
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
+	bbspb "github.com/buildbuddy-io/buildbuddy/v2/proto/buildbuddy_service"
+	uspb "github.com/buildbuddy-io/buildbuddy/v2/proto/user"
 )
 
 const (

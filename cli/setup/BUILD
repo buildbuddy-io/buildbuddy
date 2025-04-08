@@ -5,7 +5,7 @@ package(default_visibility = ["//cli:__subpackages__"])
 go_library(
     name = "setup",
     srcs = ["setup.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/setup",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/setup",
     deps = [
         "//cli/arg",
         "//cli/login",

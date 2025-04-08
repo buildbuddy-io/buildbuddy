@@ -8,9 +8,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/add"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/translate/builtins"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/add"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/translate/builtins"
 	"gopkg.in/yaml.v2"
 )
 

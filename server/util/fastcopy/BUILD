@@ -8,7 +8,7 @@ go_library(
         "fastcopy_linux.go",
         "fastcopy_windows.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/fastcopy",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/fastcopy",
     visibility = ["//visibility:public"],
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [

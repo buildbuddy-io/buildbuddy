@@ -7,15 +7,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/paging"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"google.golang.org/grpc/codes"
 
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
+	bespb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	capb "github.com/buildbuddy-io/buildbuddy/v2/proto/cache"
+	pgpb "github.com/buildbuddy-io/buildbuddy/v2/proto/pagination"
 )
 
 const (
@@ -339,7 +339,7 @@ func Read(ctx context.Context, env environment.Env, invocationID string, invocat
 // Write writes the invocation cache scorecard to the configured blobstore.
 func Write(ctx context.Context, env environment.Env, invocationID string, invocationAttempt uint64, scoreCard *capb.ScoreCard) error {
 	// Use MarshalOld b/c ScoreCard.MarshalVT is 50% slower than standard Marshal()
-	// See https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
+	// See https://github.com/buildbuddy-io/buildbuddy/v2-internal/issues/3018
 	scoreCardBuf, err := proto.MarshalOld(scoreCard)
 	if err != nil {
 		return err

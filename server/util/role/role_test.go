@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/role"
 	"github.com/stretchr/testify/require"
 
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	grpb "github.com/buildbuddy-io/buildbuddy/v2/proto/group"
 )
 
 func TestRoleProtoAndStringConversions(t *testing.T) {

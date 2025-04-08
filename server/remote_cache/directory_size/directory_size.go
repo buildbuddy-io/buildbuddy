@@ -5,13 +5,13 @@ import (
 	"flag"
 	"io"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	capb "github.com/buildbuddy-io/buildbuddy/v2/proto/cache"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 )
 
 var (

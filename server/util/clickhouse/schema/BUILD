@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "schema",
     srcs = ["schema.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/clickhouse/schema",
     visibility = ["//visibility:public"],
     deps = [
         "//server/build_event_protocol/invocation_format",

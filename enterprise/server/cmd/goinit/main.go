@@ -20,21 +20,21 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/vsock"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/vmexec"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/vmvfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/rlimit"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/jsimonetti/rtnetlink/rtnl"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
-	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	vmxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/vmexec"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -203,7 +203,7 @@ func startDockerd(ctx context.Context) error {
 	}
 
 	cmd := exec.CommandContext(ctx, "dockerd", args...)
-	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3306):
+	// TODO(https://github.com/buildbuddy-io/buildbuddy/v2-internal/issues/3306):
 	// enable logging by default
 	if *enableLogging {
 		cmd.Stdout = os.Stdout
@@ -247,7 +247,7 @@ func main() {
 	// setup logging
 
 	// Temporarily disable non-fatal logs unless explicitly enabled.
-	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3306):
+	// TODO(https://github.com/buildbuddy-io/buildbuddy/v2-internal/issues/3306):
 	// figure out why logging causes the VM to hang and re-enable logging.
 	*log.LogLevel = "fatal"
 	if *enableLogging {

@@ -13,17 +13,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/third_party/singleflight"
 	"github.com/jonboulle/clockwork"
 	"go.uber.org/atomic"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -33,9 +33,9 @@ import (
 
 	mrand "math/rand"
 
-	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
+	enpb "github.com/buildbuddy-io/buildbuddy/v2/proto/encryption"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	sgpb "github.com/buildbuddy-io/buildbuddy/v2/proto/storage"
 )
 
 var (

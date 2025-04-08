@@ -9,15 +9,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/build_event_publisher"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"golang.org/x/sync/errgroup"
 
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bespb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 

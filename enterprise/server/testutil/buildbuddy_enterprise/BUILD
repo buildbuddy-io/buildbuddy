@@ -11,7 +11,7 @@ go_library(
         "//enterprise/config/test:buildbuddy.selfauth.yaml",
         "//enterprise/server/cmd/server:buildbuddy",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/buildbuddy_enterprise",
     x_defs = {
         "DefaultConfig": "$(rlocationpaths //enterprise/config/test:buildbuddy.selfauth.yaml)",
         "NoAuthConfig": "$(rlocationpaths //enterprise/config/test:buildbuddy.noauth.yaml)",

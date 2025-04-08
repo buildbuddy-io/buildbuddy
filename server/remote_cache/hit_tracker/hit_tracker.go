@@ -8,23 +8,23 @@ import (
 	"sort"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/usageutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	capb "github.com/buildbuddy-io/buildbuddy/v2/proto/cache"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/v2/proto/resource"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
@@ -297,7 +297,7 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		result.ExecutionCompletedTimestamp = md.GetExecutionCompletedTimestamp()
 	}
 	// ScoreCard_Result.MarshalVT is slower, so we use MarshalOld for now.
-	// https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
+	// https://github.com/buildbuddy-io/buildbuddy/v2-internal/issues/3018
 	b, err := proto.MarshalOld(result)
 	if err != nil {
 		return err

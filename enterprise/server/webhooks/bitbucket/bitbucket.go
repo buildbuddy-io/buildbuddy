@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/fieldgetter"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 const (

@@ -3,7 +3,7 @@ package migration_cache
 import (
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/disk"
 )
 
 type MigrationConfig struct {

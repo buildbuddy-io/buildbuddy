@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "copy_on_write",
     srcs = ["copy_on_write.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/copy_on_write",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/snaputil",

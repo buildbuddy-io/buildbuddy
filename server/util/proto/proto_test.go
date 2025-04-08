@@ -5,13 +5,13 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 	"github.com/go-faker/faker/v4"
 	"github.com/stretchr/testify/require"
 
-	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	dspb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
-	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
+	capb "github.com/buildbuddy-io/buildbuddy/v2/proto/cache"
+	dspb "github.com/buildbuddy-io/buildbuddy/v2/proto/distributed_cache"
+	sgpb "github.com/buildbuddy-io/buildbuddy/v2/proto/storage"
 	gproto "google.golang.org/protobuf/proto"
 )
 

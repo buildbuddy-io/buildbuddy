@@ -105,7 +105,7 @@ go_library(
             ":sha",
         ],
     }),
-    importpath = "github.com/buildbuddy-io/buildbuddy/app",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/app",
     deps = [
         "//server/util/fileresolver",
     ],

@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
 
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
 )
 
 var (

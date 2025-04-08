@@ -5,7 +5,7 @@ go_library(
     testonly = 1,
     srcs = ["cow_cgo_testutil.go"],
     cgo = True,
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil",
     visibility = ["//visibility:public"],
 )
 

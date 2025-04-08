@@ -5,16 +5,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 )
 
 func runACServer(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticator) repb.ActionCacheClient {

@@ -9,7 +9,7 @@ package(default_visibility = [
 go_library(
     name = "tasksize",
     srcs = ["tasksize.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/tasksize",
     deps = [
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize_model",

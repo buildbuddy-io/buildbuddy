@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "fix",
     srcs = ["fix.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/fix",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/fix",
     # keep
     deps = [
         "//cli/add",

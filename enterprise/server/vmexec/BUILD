@@ -7,7 +7,7 @@ exports_files(srcs = ["vmexec.go"])
 go_library(
     name = "vmexec",
     srcs = ["vmexec.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/vmexec",
     target_compatible_with = [
         "@platforms//os:linux",
     ],

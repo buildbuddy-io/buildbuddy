@@ -8,7 +8,7 @@ go_library(
     data = [
         "//enterprise/server/cmd/executor",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/testexecutor",
     x_defs = {
         "executorRlocationpath": "$(rlocationpath //enterprise/server/cmd/executor)",
     },

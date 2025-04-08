@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
-	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
-	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
-	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/explain/compactgraph"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/spawn"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/spawn_diff"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

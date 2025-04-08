@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil"
 
-	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/types"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/yaml"
 )
 
 // ServeHTTP takes an http.Request, sets flags based on the query parameters,

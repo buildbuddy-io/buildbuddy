@@ -13,20 +13,20 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	rgpb "github.com/buildbuddy-io/buildbuddy/v2/proto/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 

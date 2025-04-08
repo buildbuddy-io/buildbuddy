@@ -3,15 +3,15 @@ package main
 import (
 	"flag"
 
-	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/janitor"
-	"github.com/buildbuddy-io/buildbuddy/server/libmain"
-	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/version"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/config"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/janitor"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/libmain"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/telemetry"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/version"
 
-	app_bundle "github.com/buildbuddy-io/buildbuddy/app"
+	app_bundle "github.com/buildbuddy-io/buildbuddy/v2/app"
 )
 
 var (

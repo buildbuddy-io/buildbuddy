@@ -3,13 +3,13 @@ package rangecache
 import (
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/rangemap"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfpb "github.com/buildbuddy-io/buildbuddy/v2/proto/raft"
 )
 
 // RangeCache is a synchronous map from ranges to their descriptors.

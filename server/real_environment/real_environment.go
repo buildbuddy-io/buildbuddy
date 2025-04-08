@@ -6,17 +6,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 
-	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+	hitpb "github.com/buildbuddy-io/buildbuddy/v2/proto/hit_tracker"
+	pepb "github.com/buildbuddy-io/buildbuddy/v2/proto/publish_build_event"
+	rapb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_asset"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/v2/proto/scheduler"
+	socipb "github.com/buildbuddy-io/buildbuddy/v2/proto/soci"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 

@@ -3,7 +3,7 @@ package events_api_url
 import (
 	"net/url"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
 )
 
 var eventsAPIURL = flag.URL("app.events_api_url", "", "Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen.")

@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config/test_data"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/workflow/config"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/workflow/config/test_data"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	rnpb "github.com/buildbuddy-io/buildbuddy/v2/proto/runner"
 )
 
 func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {

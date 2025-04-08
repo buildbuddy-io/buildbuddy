@@ -8,7 +8,7 @@ go_library(
         "//server/util/bazel:bazel-5.3.2_crossplatform",
         "//server/util/bazel:bazel-5.3.2_extract_installation",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testbazel",
     visibility = ["//visibility:public"],
     x_defs = {
         "Version": "5.3.2",

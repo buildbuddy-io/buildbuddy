@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "hash",
     srcs = ["hash.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/hash",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/hash",
     visibility = ["//visibility:public"],
 )
 

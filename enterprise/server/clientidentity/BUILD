@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "clientidentity",
     srcs = ["clientidentity.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/clientidentity",
     deps = [
         "//server/interfaces",
         "//server/real_environment",

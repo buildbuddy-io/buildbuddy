@@ -22,7 +22,7 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/jaeger",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/proto/jaeger",
     proto = ":jaeger_proto",
     deps = [
         "@org_golang_google_genproto_googleapis_api//annotations",

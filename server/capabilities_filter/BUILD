@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "capabilities_filter",
     srcs = ["capabilities_filter.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/capabilities_filter",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/capabilities_filter",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:api_key_go_proto",

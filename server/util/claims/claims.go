@@ -6,21 +6,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/lru"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/subdomain"
 	"github.com/golang-jwt/jwt"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	akpb "github.com/buildbuddy-io/buildbuddy/v2/proto/api_key"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/v2/server/util/request_context"
 )
 
 const (
@@ -180,7 +180,7 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	}
 
 	requestContext := requestcontext.ProtoRequestContextFromContext(ctx)
-	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4191):
+	// TODO(https://github.com/buildbuddy-io/buildbuddy/v2-internal/issues/4191):
 	// return an error here once we have a better understanding of why the
 	// request context can be missing.
 	if requestContext == nil {

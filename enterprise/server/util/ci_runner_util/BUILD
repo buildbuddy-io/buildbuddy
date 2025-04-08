@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "ci_runner_util",
     srcs = ["ci_runner_util.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/ci_runner_util",
     deps = [
         "//enterprise/server/cmd/ci_runner/bundle",
         "//enterprise/server/remote_execution/platform",

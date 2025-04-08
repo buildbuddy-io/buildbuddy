@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/bazel"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"

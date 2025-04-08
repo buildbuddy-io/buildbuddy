@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "cli_lib",
     srcs = ["cli.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/cmd/cli",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/codesearch/cmd/cli",
     visibility = ["//visibility:private"],
     deps = [
         "//codesearch/index",

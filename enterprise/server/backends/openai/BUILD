@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "openai",
     srcs = ["openai.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/openai",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/openai",
     deps = [
         "//server/util/flag",
         "//server/util/log",

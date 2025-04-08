@@ -4,7 +4,7 @@ go_library(
     name = "testpostgres",
     testonly = 1,
     srcs = ["testpostgres.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testpostgres",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testpostgres",
     visibility = ["//visibility:public"],
     deps = [
         "//server/testutil/dockerutil",

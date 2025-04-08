@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
 	"github.com/go-redis/redis/v8"
 
-	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
+	cache_config "github.com/buildbuddy-io/buildbuddy/v2/server/cache/config"
 )
 
 type collector struct {

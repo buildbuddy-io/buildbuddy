@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "bes_artifacts",
     srcs = ["bes_artifacts.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/bes_artifacts",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/build_event_publisher",

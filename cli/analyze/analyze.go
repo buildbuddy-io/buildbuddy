@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/workspace"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 	"golang.org/x/sync/errgroup"
 
-	bqpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_query"
+	bqpb "github.com/buildbuddy-io/buildbuddy/v2/proto/bazel_query"
 )
 
 const (

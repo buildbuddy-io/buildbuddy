@@ -6,7 +6,7 @@ go_library(
     name = "testgit",
     testonly = 1,
     srcs = ["testgit.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testgit",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testgit",
     deps = [
         "//server/interfaces",
         "//server/tables",

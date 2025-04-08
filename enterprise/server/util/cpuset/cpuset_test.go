@@ -3,9 +3,9 @@ package cpuset_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/cpuset"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

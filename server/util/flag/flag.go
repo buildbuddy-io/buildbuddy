@@ -6,10 +6,10 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/types/autoflags"
 
-	flagtags "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags/tags"
+	flagtags "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/types/autoflags/tags"
 )
 
 var Secret = flagtags.SecretTag

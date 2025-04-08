@@ -10,15 +10,15 @@ import (
 	"encoding/base64"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/pubsub"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
+	snpb "github.com/buildbuddy-io/buildbuddy/v2/proto/server_notification"
 )
 
 const (

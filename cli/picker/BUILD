@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "picker",
     srcs = ["picker.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/picker",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/picker",
     deps = [
         "//cli/arg",
         "//cli/bazelisk",

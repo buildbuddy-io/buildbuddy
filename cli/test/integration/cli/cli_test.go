@@ -8,20 +8,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
-	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/parser/test_data"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/testutil/testcli"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/buildbuddy"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testbazel"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/retry"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	capb "github.com/buildbuddy-io/buildbuddy/v2/proto/cache"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
 )
 
 func init() {

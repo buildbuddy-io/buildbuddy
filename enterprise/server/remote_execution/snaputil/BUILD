@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "snaputil",
     srcs = ["snaputil.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/snaputil",
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/interfaces",

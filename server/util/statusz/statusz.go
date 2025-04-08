@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/version"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/version"
 )
 
 const (

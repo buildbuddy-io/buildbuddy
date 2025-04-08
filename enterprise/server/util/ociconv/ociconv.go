@@ -13,14 +13,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/ext4"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/v2/third_party/singleflight"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 )
 

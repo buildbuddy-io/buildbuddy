@@ -4,12 +4,12 @@ import (
 	"context"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
-	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	aclpb "github.com/buildbuddy-io/buildbuddy/v2/proto/acl"
+	telpb "github.com/buildbuddy-io/buildbuddy/v2/proto/telemetry"
 )
 
 type MockInvocationDB struct {

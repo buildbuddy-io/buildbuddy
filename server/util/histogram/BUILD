@@ -3,6 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "histogram",
     srcs = ["histogram.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/histogram",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/histogram",
     visibility = ["//visibility:public"],
 )

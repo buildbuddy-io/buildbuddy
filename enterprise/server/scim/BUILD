@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "scim",
     srcs = ["scim.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scim",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/scim",
     deps = [
         "//enterprise/server/saml",
         "//proto:api_key_go_proto",

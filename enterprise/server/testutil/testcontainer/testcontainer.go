@@ -1,6 +1,6 @@
 package testcontainer
 
-import "github.com/buildbuddy-io/buildbuddy/server/interfaces"
+import "github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
 
 type testImageCacheAuthenticator struct{}
 

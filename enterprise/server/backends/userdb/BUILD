@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "userdb",
     srcs = ["userdb.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/userdb",
     deps = [
         "//enterprise/server/util/keystore",
         "//proto:api_key_go_proto",

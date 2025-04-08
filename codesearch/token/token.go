@@ -11,9 +11,9 @@ import (
 	"unsafe"
 
 	"github.com/bits-and-blooms/bloom/v3"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/sparse"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 // validUTF8 reports whether the byte pair can appear in a

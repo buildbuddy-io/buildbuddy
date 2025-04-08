@@ -4,7 +4,7 @@ go_library(
     name = "testgrpc",
     testonly = 1,
     srcs = ["testgrpc.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testgrpc",
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/grpc_client",

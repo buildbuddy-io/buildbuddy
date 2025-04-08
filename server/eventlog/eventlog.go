@@ -10,16 +10,16 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/keyval"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/backends/chunkstore"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/keyval"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/terminal"
 
-	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
-	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	elpb "github.com/buildbuddy-io/buildbuddy/v2/proto/eventlog"
+	inspb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation_status"
 )
 
 const (

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "buildbuddy_server",
     srcs = ["buildbuddy_server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/buildbuddy_server",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:api_key_go_proto",

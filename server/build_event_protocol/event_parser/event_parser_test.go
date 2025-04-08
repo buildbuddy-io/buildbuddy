@@ -4,16 +4,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/v2/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/event_parser"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	options "github.com/buildbuddy-io/buildbuddy/proto/options"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation_status"
+	options "github.com/buildbuddy-io/buildbuddy/v2/proto/options"
 )
 
 func singleFile() *build_event_stream.File {

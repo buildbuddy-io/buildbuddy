@@ -37,8 +37,8 @@ import (
 	"encoding/binary"
 	"io"
 
-	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	zipb "github.com/buildbuddy-io/buildbuddy/v2/proto/zip"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 const (

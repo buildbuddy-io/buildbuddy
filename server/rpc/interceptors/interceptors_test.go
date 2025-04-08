@@ -6,15 +6,15 @@ import (
 	"net"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/random"
 	"google.golang.org/grpc"
 
-	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
+	pspb "github.com/buildbuddy-io/buildbuddy/v2/proto/ping_service"
 )
 
 type pingServer struct{}

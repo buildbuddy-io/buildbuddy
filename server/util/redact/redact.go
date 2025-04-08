@@ -10,15 +10,15 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/google/shlex"
 	"google.golang.org/protobuf/encoding/prototext"
 
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	bespb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	clpb "github.com/buildbuddy-io/buildbuddy/v2/proto/command_line"
+	gitutil "github.com/buildbuddy-io/buildbuddy/v2/server/util/git"
 )
 
 var (

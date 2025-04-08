@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "quota",
     srcs = ["quota_manager.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/quota",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/quota",
     deps = [
         "//enterprise/server/backends/pubsub",
         "//proto:quota_go_proto",

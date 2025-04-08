@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeseries"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/timeseries"
 	"github.com/stretchr/testify/require"
 )
 

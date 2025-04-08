@@ -9,25 +9,25 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/nullauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	fcpb "github.com/buildbuddy-io/buildbuddy/v2/proto/firecracker"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -48,7 +48,7 @@ import (
 //			-  kubectl --namespace=executor-prod exec -it executor-XXX /bin/bash
 //
 // 2. Clone the buildbuddy repo on the executor so you can use this tool
-//		a. git clone https://github.com/buildbuddy-io/buildbuddy.git
+//		a. git clone https://github.com/buildbuddy-io/buildbuddy/v2.git
 //
 // 3. Download bazel to run this tool
 //		a. curl -Lo /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/releases/download/v1.15.0/bazelisk-linux-amd64

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "replay_invocation_lib",
     srcs = ["replay_invocation.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/tools/replay_invocation",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/tools/replay_invocation",
     visibility = ["//visibility:private"],
     deps = [
         "//proto:build_event_stream_go_proto",

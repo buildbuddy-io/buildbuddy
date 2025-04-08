@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
-	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/git"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"

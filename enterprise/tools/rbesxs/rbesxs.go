@@ -8,7 +8,7 @@
 // Example usage:
 //
 // mkdir /tmp/sxs
-// git clone http://github.com/buildbuddy-io/buildbuddy /tmp/sxs/test
+// git clone http://github.com/buildbuddy-io/buildbuddy/v2 /tmp/sxs/test
 // cp -R /tmp/sxs/test /tmp/sxs/control
 // bazel run //enterprise/tools/rbesxs -- \
 // --iterations=10 \
@@ -27,11 +27,11 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/random"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 )
 
 var (

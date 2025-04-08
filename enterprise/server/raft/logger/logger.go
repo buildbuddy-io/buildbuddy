@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"github.com/lni/dragonboat/v4/logger"
 	"github.com/rs/zerolog"
 )

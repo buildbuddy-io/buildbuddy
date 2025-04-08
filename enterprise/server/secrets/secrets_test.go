@@ -8,19 +8,19 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/kms"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/secrets"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/enterprise_testauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/keystore"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
+	skpb "github.com/buildbuddy-io/buildbuddy/v2/proto/secrets"
 )
 
 func TestUpdateSecret(t *testing.T) {

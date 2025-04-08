@@ -7,7 +7,7 @@ go_library(
         "disk_unix.go",
         "disk_windows.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/disk",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/disk",
     visibility = ["//visibility:public"],
     deps = [
         "//server/interfaces",

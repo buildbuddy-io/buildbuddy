@@ -4,7 +4,7 @@ go_library(
     name = "testcompression",
     testonly = 1,
     srcs = ["testcompression.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testcompression",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",

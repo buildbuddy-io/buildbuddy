@@ -10,19 +10,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/vmexec_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/vmexec"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	vmxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/vmexec"
 )
 
 func TestExecStreamed_Simple(t *testing.T) {

@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/nullauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/capabilities"
 	"github.com/stretchr/testify/assert"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	akpb "github.com/buildbuddy-io/buildbuddy/v2/proto/api_key"
 )
 
 var (

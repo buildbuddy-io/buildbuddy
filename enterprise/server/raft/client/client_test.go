@@ -6,16 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/client"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/testutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/random"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	_ "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/logger"
+	rfpb "github.com/buildbuddy-io/buildbuddy/v2/proto/raft"
 )
 
 func newTestingProposal(t testing.TB, rangeID uint64) *testutil.TestingProposer {

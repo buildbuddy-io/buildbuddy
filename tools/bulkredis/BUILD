@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "bulkredis_lib",
     srcs = ["bulkredis.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/tools/bulkredis",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/tools/bulkredis",
     visibility = ["//visibility:private"],
     deps = [
         "//server/util/log",

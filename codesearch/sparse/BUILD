@@ -3,6 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "sparse",
     srcs = ["set.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/sparse",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/codesearch/sparse",
     visibility = ["//visibility:public"],
 )

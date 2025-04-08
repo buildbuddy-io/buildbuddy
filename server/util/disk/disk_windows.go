@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"golang.org/x/sys/windows"
 )
 

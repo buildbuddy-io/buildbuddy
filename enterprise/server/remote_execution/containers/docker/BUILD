@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "docker",
     srcs = ["docker.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/containers/docker",
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
@@ -34,7 +34,7 @@ go_test(
     name = "docker_test",
     srcs = ["docker_test.go"],
     exec_properties = {
-        # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/1094): Require less manual configuration here.
+        # TODO(https://github.com/buildbuddy-io/buildbuddy/v2-internal/issues/1094): Require less manual configuration here.
         "test.workload-isolation-type": "firecracker",
         "test.init-dockerd": "true",
     },

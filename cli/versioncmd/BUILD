@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "versioncmd",
     srcs = ["versioncmd.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/versioncmd",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/versioncmd",
     deps = [
         "//cli/arg",
         "//cli/plugin",

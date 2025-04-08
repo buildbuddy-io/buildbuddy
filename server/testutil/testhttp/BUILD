@@ -4,7 +4,7 @@ go_library(
     name = "testhttp",
     testonly = 1,
     srcs = ["testhttp.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testhttp",
     visibility = ["//visibility:public"],
     deps = [
         "//server/testutil/testport",

@@ -6,7 +6,7 @@ go_library(
     name = "webtester",
     testonly = 1,
     srcs = ["webtester.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/webtester",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/webtester",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_stretchr_testify//assert",

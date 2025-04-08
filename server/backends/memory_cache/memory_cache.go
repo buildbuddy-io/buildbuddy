@@ -8,18 +8,18 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/ioutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/lru"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/v2/proto/resource"
+	cache_config "github.com/buildbuddy-io/buildbuddy/v2/server/cache/config"
 )
 
 var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use the in_memory cache.")

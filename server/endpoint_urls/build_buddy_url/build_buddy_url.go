@@ -4,9 +4,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/urlutil"
 )
 
 var buildBuddyURL = flag.URL("app.build_buddy_url", "http://localhost:8080", "The external URL where your BuildBuddy instance can be found.")

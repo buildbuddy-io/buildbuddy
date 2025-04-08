@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "authutil",
     srcs = ["authutil.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/authutil",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/authutil",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:api_key_go_proto",

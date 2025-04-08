@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "redact",
     srcs = ["redact.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/redact",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/redact",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:build_event_stream_go_proto",

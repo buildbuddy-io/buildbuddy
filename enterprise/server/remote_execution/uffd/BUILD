@@ -4,7 +4,7 @@ go_library(
     name = "uffd",
     srcs = ["uffd.go"],
     cgo = True,
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/uffd",
     target_compatible_with = [
         "@platforms//os:linux",
     ],

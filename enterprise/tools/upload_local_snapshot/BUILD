@@ -13,7 +13,7 @@ go_binary(
 go_library(
     name = "upload_local_snapshot_lib",
     srcs = ["upload_local_snapshot.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/upload_local_snapshot",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/tools/upload_local_snapshot",
     deps = [
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",

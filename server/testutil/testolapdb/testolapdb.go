@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/clickhouse/schema"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	sipb "github.com/buildbuddy-io/buildbuddy/v2/proto/stored_invocation"
 )
 
 type Handle struct {

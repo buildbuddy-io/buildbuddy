@@ -7,15 +7,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/uuid"
 	"gorm.io/gorm"
 
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	grpb "github.com/buildbuddy-io/buildbuddy/v2/proto/group"
+	uspb "github.com/buildbuddy-io/buildbuddy/v2/proto/user_id"
 )
 
 var (

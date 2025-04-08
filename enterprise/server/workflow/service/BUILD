@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "service",
     srcs = ["service.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/workflow/service",
     deps = [
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",

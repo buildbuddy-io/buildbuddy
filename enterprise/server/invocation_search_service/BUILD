@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "invocation_search_service",
     srcs = ["invocation_search_service.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/invocation_search_service",
     deps = [
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",

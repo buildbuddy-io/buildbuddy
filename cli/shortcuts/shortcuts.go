@@ -1,6 +1,6 @@
 package shortcuts
 
-import "github.com/buildbuddy-io/buildbuddy/cli/arg"
+import "github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
 
 var (
 	shortcuts = map[string]string{

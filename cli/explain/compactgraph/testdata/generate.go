@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"github.com/otiai10/copy"
 	"golang.org/x/tools/txtar"
 )

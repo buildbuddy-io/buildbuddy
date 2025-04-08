@@ -3,7 +3,7 @@ package status_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )

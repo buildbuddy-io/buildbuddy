@@ -20,11 +20,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 
-	jaegerpb "github.com/buildbuddy-io/buildbuddy/proto/jaeger"
+	jaegerpb "github.com/buildbuddy-io/buildbuddy/v2/proto/jaeger"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 

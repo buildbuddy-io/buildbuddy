@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/query_builder"
 	"github.com/stretchr/testify/assert"
 )
 

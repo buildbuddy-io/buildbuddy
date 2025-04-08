@@ -6,14 +6,14 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_server"
 	"github.com/stretchr/testify/require"
 
-	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
+	pspb "github.com/buildbuddy-io/buildbuddy/v2/proto/ping_service"
 
 	"fmt"
 )

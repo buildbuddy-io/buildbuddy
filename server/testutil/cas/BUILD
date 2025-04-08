@@ -6,7 +6,7 @@ go_library(
     name = "cas",
     testonly = 1,
     srcs = ["cas.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/cas",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/cas",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",

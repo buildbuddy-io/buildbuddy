@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 const (
@@ -131,7 +131,7 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 			repoURL.Host = components[0]
 			repoURL.Path = repoURL.Path[len(components[0]):]
 		} else if len(components) == 2 {
-			// convert e.g buildbuddy-io/buildbuddy -> //github.com/buildbuddy-io/buildbuddy
+			// convert e.g buildbuddy-io/buildbuddy -> //github.com/buildbuddy-io/buildbuddy/v2
 			repoURL.Host = "github.com"
 			repoURL.Path = "/" + repoURL.Path
 		}

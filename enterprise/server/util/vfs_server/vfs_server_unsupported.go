@@ -6,11 +6,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	vfspb "github.com/buildbuddy-io/buildbuddy/v2/proto/vfs"
 )
 
 type Server struct {

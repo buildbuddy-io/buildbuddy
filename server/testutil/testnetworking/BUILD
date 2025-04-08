@@ -4,7 +4,7 @@ go_library(
     name = "testnetworking",
     testonly = 1,
     srcs = ["testnetworking.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testnetworking",
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/networking",

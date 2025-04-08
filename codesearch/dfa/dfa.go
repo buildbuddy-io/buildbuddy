@@ -9,7 +9,7 @@ import (
 	"regexp/syntax"
 	"sort"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/sparse"
 )
 
 // A matcher holds the state for running regular expression search.

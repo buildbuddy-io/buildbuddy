@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "listener",
     srcs = ["listener.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/listener",
     deps = [
         "//server/metrics",
         "//server/util/log",

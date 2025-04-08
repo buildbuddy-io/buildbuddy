@@ -9,19 +9,19 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/git"
-	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
+	ghpb "github.com/buildbuddy-io/buildbuddy/v2/proto/github"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/v2/proto/resource"
+	wspb "github.com/buildbuddy-io/buildbuddy/v2/proto/workspace"
 )
 
 var (

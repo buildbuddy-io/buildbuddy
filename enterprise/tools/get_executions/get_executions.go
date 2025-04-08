@@ -15,16 +15,16 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	bbspb "github.com/buildbuddy-io/buildbuddy/v2/proto/buildbuddy_service"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/context"
+	espb "github.com/buildbuddy-io/buildbuddy/v2/proto/execution_stats"
+	scpb "github.com/buildbuddy-io/buildbuddy/v2/proto/scheduler"
 )
 
 var (

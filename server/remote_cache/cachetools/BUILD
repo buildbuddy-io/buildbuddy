@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "cachetools",
     srcs = ["cachetools.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/cachetools",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:cache_go_proto",

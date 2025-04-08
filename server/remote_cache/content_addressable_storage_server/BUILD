@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "content_addressable_storage_server",
     srcs = ["content_addressable_storage_server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/content_addressable_storage_server",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:api_key_go_proto",

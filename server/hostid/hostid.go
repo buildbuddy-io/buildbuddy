@@ -7,7 +7,7 @@ import (
 	"path"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/disk"
 	guuid "github.com/google/uuid"
 )
 

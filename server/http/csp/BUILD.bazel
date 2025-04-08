@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "csp",
     srcs = ["csp.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/http/csp",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/http/csp",
     visibility = ["//visibility:public"],
     deps = ["//server/util/log"],
 )

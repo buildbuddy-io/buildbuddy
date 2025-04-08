@@ -4,7 +4,7 @@ go_library(
     name = "js",
     srcs = ["js.go"],
     embedsrcs = ["translate.js"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/translate/js",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/translate/js",
     visibility = ["//visibility:public"],
     deps = [
         "//cli/translate/builtins",

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/parser/test_data"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testshell"
 	"github.com/stretchr/testify/require"
 )
 

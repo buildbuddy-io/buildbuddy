@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 // BoundedStack is a concurrency-safe stack with bounded size: when the capacity

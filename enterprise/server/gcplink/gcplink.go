@@ -10,21 +10,21 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/keystore"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/cookie"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/context"
+	gcpb "github.com/buildbuddy-io/buildbuddy/v2/proto/gcp"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	skpb "github.com/buildbuddy-io/buildbuddy/v2/proto/secrets"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/v2/server/util/request_context"
 )
 
 const (

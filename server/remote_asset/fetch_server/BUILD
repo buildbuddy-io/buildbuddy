@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "fetch_server",
     srcs = ["fetch_server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/remote_asset/fetch_server",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_asset_go_proto",

@@ -4,12 +4,12 @@ import (
 	"flag"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/v2/server/util/flagutil/yaml"
 )
 
 func replaceFlagsForTesting(t *testing.T) *flag.FlagSet {

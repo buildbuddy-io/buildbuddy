@@ -4,7 +4,7 @@ go_library(
     name = "testtar",
     testonly = 1,
     srcs = ["testtar.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testtar",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testtar",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_stretchr_testify//require",

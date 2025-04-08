@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "kms",
     srcs = ["kms.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/kms",
     deps = [
         "//server/interfaces",
         "//server/real_environment",

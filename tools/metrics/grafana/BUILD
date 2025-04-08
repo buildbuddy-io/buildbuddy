@@ -7,7 +7,7 @@ exports_files(glob(["**/*"]))
 go_library(
     name = "grafana_lib",
     srcs = ["grafana.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/tools/metrics/grafana",
     deps = ["@org_golang_x_sync//errgroup"],
 )
 

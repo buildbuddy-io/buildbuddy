@@ -3,8 +3,8 @@ package soci_store
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
 )
 
 // An abstraction of the soci-store that enables podman image streaming.

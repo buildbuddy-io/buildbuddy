@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "smash_lib",
     srcs = ["smash.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/smash",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/cmd/smash",
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",

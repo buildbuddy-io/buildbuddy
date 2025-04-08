@@ -9,7 +9,7 @@ go_binary(
 go_library(
     name = "yaml_doc_lib",
     srcs = ["main.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/cmd/buildbuddy/yaml_doc",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/cmd/buildbuddy/yaml_doc",
     visibility = ["//visibility:private"],
     deps = [
         "//server/cmd/buildbuddy:buildbuddy_lib",

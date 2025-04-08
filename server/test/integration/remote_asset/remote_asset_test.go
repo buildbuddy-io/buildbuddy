@@ -13,17 +13,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/buildbuddy"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testbazel"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/bazel"
 	"github.com/stretchr/testify/require"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
 )
 
 var (

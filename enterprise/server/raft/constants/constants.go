@@ -1,7 +1,7 @@
 package constants
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/keys"
 )
 
 // Gossip (broadcast) constants

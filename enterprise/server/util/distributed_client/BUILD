@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "distributed_client",
     srcs = ["distributed_client.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/distributed_client",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/distributed_client",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:distributed_cache_go_proto",

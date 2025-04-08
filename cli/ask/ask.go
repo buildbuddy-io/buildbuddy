@@ -4,13 +4,13 @@ import (
 	"context"
 	"flag"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	"github.com/buildbuddy-io/buildbuddy/cli/storage"
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/storage"
+	bbspb "github.com/buildbuddy-io/buildbuddy/v2/proto/buildbuddy_service"
+	supb "github.com/buildbuddy-io/buildbuddy/v2/proto/suggestion"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
 	"google.golang.org/grpc/metadata"
 )
 

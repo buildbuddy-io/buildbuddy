@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/printlog/compact"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/printlog/compact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	spb "github.com/buildbuddy-io/buildbuddy/proto/spawn"
+	spb "github.com/buildbuddy-io/buildbuddy/v2/proto/spawn"
 )
 
 func makeSpawnExec(inputs, outputs []string) *spb.SpawnExec {

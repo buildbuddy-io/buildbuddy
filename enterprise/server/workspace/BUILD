@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "workspace",
     srcs = ["workspace_service.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workspace",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/workspace",
     deps = [
         "//proto:github_go_proto",
         "//proto:remote_execution_go_proto",

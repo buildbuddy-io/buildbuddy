@@ -8,21 +8,21 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/buildbuddy"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testbazel"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	bespb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	bepb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_events"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation_status"
+	pepb "github.com/buildbuddy-io/buildbuddy/v2/proto/publish_build_event"
 )
 
 var (

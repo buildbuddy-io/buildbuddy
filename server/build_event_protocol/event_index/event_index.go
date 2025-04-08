@@ -3,14 +3,14 @@ package event_index
 import (
 	"sort"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/accumulator"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
-	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+	cmnpb "github.com/buildbuddy-io/buildbuddy/v2/proto/api/v1/common"
+	bespb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
+	trpb "github.com/buildbuddy-io/buildbuddy/v2/proto/target"
+	api_common "github.com/buildbuddy-io/buildbuddy/v2/server/api/common"
 )
 
 const (

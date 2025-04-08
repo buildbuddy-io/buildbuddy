@@ -4,20 +4,20 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/redis_cache"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/composable_cache"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/v2/proto/resource"
 )
 
 func testEnvAndContext(t *testing.T) (environment.Env, context.Context) {

@@ -17,6 +17,6 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/test/integration/remote_execution/proto",
     proto = ":remoteexecutiontest_proto",
 )

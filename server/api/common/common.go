@@ -6,15 +6,15 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/timeutil"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	apipb "github.com/buildbuddy-io/buildbuddy/v2/proto/api/v1"
+	cmnpb "github.com/buildbuddy-io/buildbuddy/v2/proto/api/v1/common"
+	bespb "github.com/buildbuddy-io/buildbuddy/v2/proto/build_event_stream"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/invocation"
 )
 
 // N.B. This file contains common functions used to format and extract API

@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/aws"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/azure"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/backends/blobstore/aws"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/backends/blobstore/azure"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/backends/blobstore/disk"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/backends/blobstore/gcs"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/backends/blobstore/util"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
 )
 
 func Register(env *real_environment.RealEnv) error {

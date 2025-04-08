@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "task_router",
     srcs = ["task_router.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/scheduling/task_router",
     deps = [
         "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",

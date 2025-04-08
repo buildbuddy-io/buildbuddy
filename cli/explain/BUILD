@@ -5,7 +5,7 @@ package(default_visibility = ["//cli:__subpackages__"])
 go_library(
     name = "explain",
     srcs = ["explain.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/explain",
     deps = [
         "//cli/arg",
         "//cli/explain/compactgraph",

@@ -14,7 +14,7 @@ bazel_pkg_tar(
 go_library(
     name = "bazel",
     srcs = ["bazel.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/bazel",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/bazel",
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/log",

@@ -6,11 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
-	"github.com/buildbuddy-io/buildbuddy/cli/setup"
-	"github.com/buildbuddy-io/buildbuddy/cli/version"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/plugin"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/setup"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 )
 
 func HandleVersion(args []string) (exitCode int, err error) {

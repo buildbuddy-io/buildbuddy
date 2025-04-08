@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/lockingbuffer"
 	"github.com/stretchr/testify/assert"
 )
 

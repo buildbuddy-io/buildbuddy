@@ -3,15 +3,15 @@ package codesearch
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	csspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
-	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
+	csspb "github.com/buildbuddy-io/buildbuddy/v2/proto/codesearch_service"
+	inpb "github.com/buildbuddy-io/buildbuddy/v2/proto/index"
+	srpb "github.com/buildbuddy-io/buildbuddy/v2/proto/search"
 )
 
 var (

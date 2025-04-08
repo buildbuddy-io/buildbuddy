@@ -3,9 +3,9 @@ package requestcontext
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/v2/proto/context"
 )
 
 const (

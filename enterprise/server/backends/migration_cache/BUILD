@@ -8,7 +8,7 @@ go_library(
         "config.go",
         "migration_cache.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/migration_cache",
     deps = [
         "//enterprise/server/backends/pebble_cache",
         "//proto:remote_execution_go_proto",

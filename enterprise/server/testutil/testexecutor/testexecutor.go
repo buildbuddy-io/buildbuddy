@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testserver"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testserver"
 )
 
 // Executor is a handle on a BuildBuddy executor scoped to a test case.

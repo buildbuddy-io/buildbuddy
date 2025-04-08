@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "memory_metrics_collector",
     srcs = ["memory_metrics_collector.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/backends/memory_metrics_collector",
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/status",

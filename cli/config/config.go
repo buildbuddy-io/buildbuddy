@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
 	"github.com/docker/go-units"
 
 	yaml "gopkg.in/yaml.v2"

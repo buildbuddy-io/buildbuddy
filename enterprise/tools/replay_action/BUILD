@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "replay_action_lib",
     srcs = ["replay_action.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/replay_action",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/tools/replay_action",
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/remote_execution/operation",

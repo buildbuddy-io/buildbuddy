@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )

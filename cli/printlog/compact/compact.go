@@ -10,13 +10,13 @@ import (
 	"os"
 	"path"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	spb "github.com/buildbuddy-io/buildbuddy/proto/spawn"
+	spb "github.com/buildbuddy-io/buildbuddy/v2/proto/spawn"
 )
 
 func printProtoMsg[M proto.Message](m M) error {

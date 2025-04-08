@@ -29,6 +29,6 @@ go_library(
         "embedded_file.txt",
         "runfile.txt",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/fileresolver/test_data",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/fileresolver/test_data",
     visibility = ["//visibility:public"],
 )

@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "task_leaser",
     srcs = ["task_leaser.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/scheduling/task_leaser",
     deps = [
         "//enterprise/server/remote_execution/executor_auth",
         "//proto:remote_execution_go_proto",

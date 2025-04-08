@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/buildbuddy"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testbazel"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/webtester"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

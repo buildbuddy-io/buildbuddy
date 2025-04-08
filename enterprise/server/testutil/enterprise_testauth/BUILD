@@ -6,7 +6,7 @@ go_library(
     name = "enterprise_testauth",
     testonly = 1,
     srcs = ["enterprise_testauth.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/testutil/enterprise_testauth",
     deps = [
         "//server/environment",
         "//server/interfaces",

@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 

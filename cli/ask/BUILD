@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "ask",
     srcs = ["ask.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/ask",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/ask",
     deps = [
         "//cli/arg",
         "//cli/log",

@@ -11,7 +11,7 @@ go_library(
     name = "update",
     srcs = ["update.go"],
     embedsrcs = ["install.sh"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/update",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/update",
     deps = [
         "//cli/arg",
         "//cli/bazelisk",

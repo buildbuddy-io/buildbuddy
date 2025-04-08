@@ -5,7 +5,7 @@ package(default_visibility = ["//cli:__subpackages__"])
 go_library(
     name = "compact",
     srcs = ["compact.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/printlog/compact",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/printlog/compact",
     visibility = ["//visibility:public"],
     deps = [
         "//cli/log",

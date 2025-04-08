@@ -5,7 +5,7 @@ package vfs
 import (
 	"syscall"
 
-	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+	vfspb "github.com/buildbuddy-io/buildbuddy/v2/proto/vfs"
 )
 
 func attrsToStat(attr *vfspb.Attrs) *syscall.Stat_t {

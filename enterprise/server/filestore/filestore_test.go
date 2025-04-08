@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testdigest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/v2/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/v2/proto/storage"
 )
 
 // These constants are presisted, so care must be taken to not change them.

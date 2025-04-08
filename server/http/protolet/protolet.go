@@ -11,14 +11,14 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/prototext"
 
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/v2/server/util/request_context"
 )
 
 const (

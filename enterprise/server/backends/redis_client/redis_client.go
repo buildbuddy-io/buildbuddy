@@ -3,12 +3,12 @@ package redis_client
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/v2/server/remote_execution/config"
 )
 
 var (

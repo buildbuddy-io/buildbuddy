@@ -3,10 +3,10 @@ package paging
 import (
 	"encoding/base64"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 
-	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
+	pgpb "github.com/buildbuddy-io/buildbuddy/v2/proto/pagination"
 )
 
 // EncodeOffsetLimit returns an opaque token representing the given OffsetLimit

@@ -8,7 +8,7 @@ go_library(
         "numcpu_linux.go",
         "numcpu_windows.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/util/cpuset",
     visibility = ["//visibility:public"],
     deps = [
         "//server/interfaces",

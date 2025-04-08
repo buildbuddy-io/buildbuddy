@@ -1,7 +1,7 @@
 package vtprotocodec
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"

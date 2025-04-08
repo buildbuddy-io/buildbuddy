@@ -6,7 +6,7 @@ go_library(
         "block_io_unix.go",
         "block_io_windows.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/block_io",
     visibility = ["//visibility:public"],
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [

@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/invocation_format"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"gorm.io/gorm"
 )
 

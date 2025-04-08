@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
-	"github.com/buildbuddy-io/buildbuddy/server/util/basicauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/basicauth"
 	"github.com/stretchr/testify/require"
 )
 

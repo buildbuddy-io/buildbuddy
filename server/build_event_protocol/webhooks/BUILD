@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "webhooks",
     srcs = ["webhooks.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/webhooks",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:invocation_go_proto",

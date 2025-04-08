@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
 )
 
 const GRPCMaxSizeBytes = int64(4 * 1000 * 1000)

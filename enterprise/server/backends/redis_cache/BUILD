@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "redis_cache",
     srcs = ["redis_cache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/redis_cache",
     deps = [
         "//enterprise/server/backends/redis_client",
         "//enterprise/server/composable_cache",

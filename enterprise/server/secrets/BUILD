@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "secrets",
     srcs = ["secrets.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/secrets",
     deps = [
         "//enterprise/server/util/keystore",
         "//proto:remote_execution_go_proto",

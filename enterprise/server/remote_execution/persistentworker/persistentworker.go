@@ -13,21 +13,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/background"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/lockingbuffer"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/protowire"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
+	repb "github.com/buildbuddy-io/buildbuddy/v2/proto/remote_execution"
+	wkpb "github.com/buildbuddy-io/buildbuddy/v2/proto/worker"
 )
 
 const (

@@ -3,7 +3,7 @@ package terminal
 import (
 	"os"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/v2/cli/parser"
 	"github.com/mattn/go-isatty"
 )
 

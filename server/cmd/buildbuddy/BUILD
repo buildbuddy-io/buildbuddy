@@ -61,7 +61,7 @@ container_image(
 go_library(
     name = "buildbuddy_lib",
     srcs = ["main.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/cmd/buildbuddy",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/cmd/buildbuddy",
     visibility = [":__subpackages__"],
     deps = [
         "//app:bundle",

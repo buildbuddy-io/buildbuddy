@@ -5,16 +5,16 @@ import (
 	"os"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/version"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/nullauth"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/version"
 	"github.com/google/uuid"
 
-	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
-	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
+	telpb "github.com/buildbuddy-io/buildbuddy/v2/proto/telemetry"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/v2/server/remote_execution/config"
 )
 
 const (

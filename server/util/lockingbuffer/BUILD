@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "lockingbuffer",
     srcs = ["lockingbuffer.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/lockingbuffer",
     visibility = ["//visibility:public"],
 )
 

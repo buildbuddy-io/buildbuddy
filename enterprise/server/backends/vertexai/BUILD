@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "vertexai",
     srcs = ["vertexai.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/vertexai",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/backends/vertexai",
     deps = [
         "//server/util/flag",
         "//server/util/log",

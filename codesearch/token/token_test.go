@@ -9,7 +9,7 @@ import (
 	"unicode"
 
 	"github.com/RoaringBitmap/roaring"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/v2/codesearch/types"
 	"github.com/stretchr/testify/assert"
 )
 

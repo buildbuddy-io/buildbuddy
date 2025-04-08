@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "target_tracker",
     srcs = ["target_tracker.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/build_event_protocol/target_tracker",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:build_event_stream_go_proto",

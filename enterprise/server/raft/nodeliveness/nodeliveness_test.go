@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/nodeliveness"
+	"github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/status"
 	"github.com/stretchr/testify/require"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfpb "github.com/buildbuddy-io/buildbuddy/v2/proto/raft"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
 )

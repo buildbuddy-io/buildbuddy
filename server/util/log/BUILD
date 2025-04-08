@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "log",
     srcs = ["log.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/log",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/log",
     visibility = ["//visibility:public"],
     deps = [
         "//server/metrics",

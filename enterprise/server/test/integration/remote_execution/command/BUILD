@@ -10,7 +10,7 @@ go_binary(
 go_library(
     name = "command_lib",
     srcs = ["testcommand.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/command",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/test/integration/remote_execution/command",
     deps = [
         "//enterprise/server/test/integration/remote_execution/proto:remoteexecutiontest_go_proto",
         "//server/util/log",

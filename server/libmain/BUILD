@@ -4,7 +4,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "libmain",
     srcs = ["libmain.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/libmain",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/libmain",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:auth_go_proto",

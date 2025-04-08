@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "parser",
     srcs = ["parser.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/cli/parser",
     deps = [
         "//cli/arg",
         "//cli/bazelisk",

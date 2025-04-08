@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "scorecard",
     srcs = ["scorecard.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/remote_cache/scorecard",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:build_event_stream_go_proto",

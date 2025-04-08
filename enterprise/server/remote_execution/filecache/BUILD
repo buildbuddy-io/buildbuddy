@@ -9,7 +9,7 @@ package(default_visibility = [
 go_library(
     name = "filecache",
     srcs = ["filecache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/enterprise/server/remote_execution/filecache",
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/interfaces",

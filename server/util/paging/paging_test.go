@@ -3,11 +3,11 @@ package paging_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
+	"github.com/buildbuddy-io/buildbuddy/v2/server/util/paging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
+	pgpb "github.com/buildbuddy-io/buildbuddy/v2/proto/pagination"
 )
 
 func TestDecodeAndEncodeOffsetLimit(t *testing.T) {

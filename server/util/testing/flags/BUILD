@@ -4,7 +4,7 @@ go_library(
     name = "flags",
     testonly = 1,
     srcs = ["flags.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/testing/flags",
+    importpath = "github.com/buildbuddy-io/buildbuddy/v2/server/util/testing/flags",
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/flagutil",
