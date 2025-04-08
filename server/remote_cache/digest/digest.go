@@ -153,14 +153,14 @@ func NewACResourceName(d *repb.Digest, instanceName string, digestFunction repb.
 
 func (r *ResourceName) CheckCAS() (*CASResourceName, error) {
 	if r.rn.GetCacheType() != rspb.CacheType_CAS {
-		return nil, status.FailedPreconditionErrorf("ResourceName is not a CAS resource name: %s", r.rn)
+		return nil, fmt.Errorf("ResourceName (%s/%s) should have CAS cache_type but has: %s", r.GetInstanceName(), r.GetDigest().GetHash(), r.GetCacheType())
 	}
 	return &CASResourceName{*r}, nil
 }
 
 func (r *ResourceName) CheckAC() (*ACResourceName, error) {
 	if r.rn.GetCacheType() != rspb.CacheType_AC {
-		return nil, status.FailedPreconditionErrorf("ResourceName is not an AC resource name: %s", r.rn)
+		return nil, fmt.Errorf("ResourceName (%s/%s) should have AC cache_type but has: %s", r.GetInstanceName(), r.GetDigest().GetHash(), r.GetCacheType())
 	}
 	return &ACResourceName{*r}, nil
 }
@@ -209,7 +209,7 @@ func (r *ResourceName) Validate() error {
 		if r.IsEmpty() {
 			return nil
 		}
-		return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
+		return status.InvalidArgumentError("Invalid (zero-length) hash")
 	}
 	if !hashKeyRegex.MatchString(d.Hash) {
 		return status.InvalidArgumentError("Malformed hash")

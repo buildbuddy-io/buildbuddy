@@ -382,14 +382,14 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 	c.log.Debugf("Set %q in lookaside cache", k)
 }
 
-func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, error) {
+func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 	if !c.lookasideCacheEnabled() {
-		return nil, status.NotFoundError("lookaside cache disabled")
+		return nil, false
 	}
 	k, err := lookasideKey(r)
 	if err != nil {
 		c.log.Debugf("Not getting lookaside entry: %s", err)
-		return nil, err
+		return nil, false
 	}
 
 	c.lookasideMu.Lock()
@@ -415,9 +415,9 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, error) {
 
 	if found {
 		c.log.Debugf("Got %q from lookaside cache", k)
-		return entry.data, nil
+		return entry.data, true
 	}
-	return nil, status.NotFoundError("no valid lookaside entry")
+	return nil, false
 }
 
 func (c *Cache) lookasideWriter(r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
@@ -662,7 +662,7 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
 	for _, r := range rns {
-		if _, err := c.getLookasideEntry(r); err == nil {
+		if _, found := c.getLookasideEntry(r); found {
 			continue
 		} else {
 			stillMissing = append(stillMissing, r)
@@ -682,7 +682,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
 
 	for _, r := range rns {
-		if buf, err := c.getLookasideEntry(r); err == nil {
+		if buf, found := c.getLookasideEntry(r); found {
 			results[r.GetDigest()] = buf
 		} else {
 			stillMissing = append(stillMissing, r)
@@ -720,7 +720,7 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	}
 	lookasideCacheable := offset == 0 && limit == 0
 	if lookasideCacheable {
-		if buf, err := c.getLookasideEntry(r); err == nil {
+		if buf, found := c.getLookasideEntry(r); found {
 			return io.NopCloser(bytes.NewReader(buf)), nil
 		}
 	}
