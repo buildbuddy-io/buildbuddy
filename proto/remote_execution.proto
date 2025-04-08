@@ -2539,6 +2539,7 @@ message StoredExecution {
 
   string output_path = 31;
   string status_message = 32;
+  string command_snippet = 62;
 
   // TODO(sluongng): add configuration.
   string target_label = 33;

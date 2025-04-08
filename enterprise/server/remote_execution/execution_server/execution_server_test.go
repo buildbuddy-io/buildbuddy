@@ -652,6 +652,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		ActionMnemonic:         "TestRunner",
 		SelfHosted:             test.expectedSelfHosted,
 		Region:                 "test-region",
+		CommandSnippet:         "test",
 	}
 	if test.publishMoreMetadata {
 		expectedExecution.ExecutionPriority = 999
