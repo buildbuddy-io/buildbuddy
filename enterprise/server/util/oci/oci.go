@@ -426,7 +426,7 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCache
 	return &digest, remoteDesc.Manifest, false, nil
 }
 
-func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Reference, ociResourceType ocipb.OCIResourceType) (*repb.Digest, string, int64, error) {
+func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ref ctrname.Digest, ociResourceType ocipb.OCIResourceType) (*repb.Digest, string, int64, error) {
 	hash, err := v1.NewHash(ref.Identifier())
 	if err != nil {
 		return nil, "", 0, err
