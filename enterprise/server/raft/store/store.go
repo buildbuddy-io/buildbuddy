@@ -1751,6 +1751,10 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		return zombieCleanupWait, nil
 	}
 
+	if err := j.rateLimiter.Wait(ctx); err != nil {
+		return task.action, err
+	}
+
 	log.Debugf("removing zombie c%dn%d, action=%d", task.rangeID, task.replicaID, task.action)
 	removeDataReq := &rfpb.RemoveDataRequest{
 		ReplicaId: task.replicaID,
