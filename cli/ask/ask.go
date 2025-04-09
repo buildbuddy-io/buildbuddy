@@ -5,7 +5,7 @@ import (
 	"flag"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/flagstack"
+	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -37,7 +37,7 @@ func HandleAsk(args []string) (int, error) {
 		return 1, err
 	}
 
-	lastIID, err := flagstack.GetPreviousFlag(flagstack.InvocationIDFlagName)
+	lastIID, err := flaghistory.GetPreviousFlag(flaghistory.InvocationIDFlagName)
 	if lastIID == "" || err != nil {
 		log.Printf("Couldn't find the previous invocation.")
 		return 1, err
@@ -58,7 +58,7 @@ func HandleAsk(args []string) (int, error) {
 	}
 	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
 
-	backend, err := flagstack.GetLastBackend()
+	backend, err := flaghistory.GetLastBackend()
 	if err != nil {
 		return 1, err
 	}

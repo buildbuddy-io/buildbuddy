@@ -2,7 +2,7 @@ package setup
 
 import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/flagstack"
+	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
@@ -35,7 +35,7 @@ func Setup(args []string, tempDir string) (_ []*plugin.Plugin, bazelArgs []strin
 	// as `bb ask`.
 	// Args are saved before the sidecar rewrites them as API requests require
 	// the original --bes_backend value.
-	bazelArgs = flagstack.SaveFlags(bazelArgs)
+	bazelArgs = flaghistory.SaveFlags(bazelArgs)
 
 	// Fiddle with Bazel args
 	// TODO(bduffany): model these as "built-in" plugins

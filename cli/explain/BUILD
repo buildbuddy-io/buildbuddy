@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/explain/compactgraph",
-        "//cli/flagstack",
+        "//cli/flaghistory",
         "//cli/log",
         "//cli/login",
         "//proto:buildbuddy_service_go_proto",

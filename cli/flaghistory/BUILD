@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "flagstack",
-    srcs = ["flagstack.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/flagstack",
+    name = "flaghistory",
+    srcs = ["flaghistory.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/cli/flaghistory",
     deps = [
         "//cli/arg",
         "//cli/log",
@@ -17,8 +17,8 @@ go_library(
 package(default_visibility = ["//cli:__subpackages__"])
 
 go_test(
-    name = "flagstack_test",
-    srcs = ["flagstack_test.go"],
-    embed = [":flagstack"],
+    name = "flaghistory_test",
+    srcs = ["flaghistory_test.go"],
+    embed = [":flaghistory"],
     deps = ["@com_github_stretchr_testify//require"],
 )

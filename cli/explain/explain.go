@@ -17,7 +17,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
-	"github.com/buildbuddy-io/buildbuddy/cli/flagstack"
+	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -103,7 +103,7 @@ func HandleExplain(args []string) (int, error) {
 		defer pprof.StopCPUProfile()
 	}
 	if *newLog == "" {
-		newId, err := flagstack.GetPreviousFlag(flagstack.InvocationIDFlagName)
+		newId, err := flaghistory.GetPreviousFlag(flaghistory.InvocationIDFlagName)
 		if err != nil {
 			log.Fatal("Could not get invocation ID of the last build, please specify --new: ", err)
 		}
@@ -112,7 +112,7 @@ func HandleExplain(args []string) (int, error) {
 		}
 		*newLog = newId
 		if *oldLog == "" {
-			oldId, err := flagstack.GetNthPreviousFlag(flagstack.InvocationIDFlagName, 2)
+			oldId, err := flaghistory.GetNthPreviousFlag(flaghistory.InvocationIDFlagName, 2)
 			if err != nil {
 				log.Fatal("Could not get invocation ID of the build before the last, please specify --old: ", err)
 			}
@@ -204,7 +204,7 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
 	backend := *apiTarget
 	if backend == "" {
-		backend, err = flagstack.GetLastBackend()
+		backend, err = flaghistory.GetLastBackend()
 		if err != nil {
 			log.Debugf("Failed to get last backend: %v", err)
 			backend = login.DefaultApiTarget
@@ -274,7 +274,7 @@ outer:
 }
 
 func writeHeader(w io.Writer, oldInvocationId, newInvocationId string) {
-	besResultsUrl, err := flagstack.GetPreviousFlag(flagstack.BesResultsUrlFlagName)
+	besResultsUrl, err := flaghistory.GetPreviousFlag(flaghistory.BesResultsUrlFlagName)
 	if err != nil {
 		besResultsUrl = ""
 	}

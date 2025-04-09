@@ -1,4 +1,4 @@
-package flagstack
+package flaghistory
 
 import (
 	"fmt"
