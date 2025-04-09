@@ -2,7 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -21,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -424,7 +428,19 @@ func TestDeleteFile_InvalidURI(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, status.IsInvalidArgumentError(err))
 	require.Nil(t, resp)
+}
 
+func TestGetActionWithRealData(t *testing.T) {
+	env, ctx := getEnvAndCtx(t, "user1")
+	iid := streamBuildFromTestData(t, env, "bes.json")
+
+	s := NewAPIServer(env)
+	actionResp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: iid}})
+	require.NoError(t, err)
+	require.NotNil(t, actionResp)
+	require.Equal(t, 1, len(actionResp.GetAction()))
+	require.Equal(t, 1, len(actionResp.GetAction()[0].GetFile()))
+	require.Equal(t, "stderr", actionResp.GetAction()[0].GetFile()[0].GetName())
 }
 
 func getEnvAndCtx(t *testing.T, user string) (*testenv.TestEnv, context.Context) {
@@ -439,6 +455,53 @@ func getEnvAndCtx(t *testing.T, user string) (*testenv.TestEnv, context.Context)
 		t.Fatal(err)
 	}
 	return te, ctx
+}
+
+func streamBuildFromTestData(t *testing.T, te *testenv.TestEnv, testDataFile string) string {
+	handler := build_event_handler.NewBuildEventHandler(te)
+	var channel interfaces.BuildEventChannel
+
+	b, err := os.Open(path.Join("testdata", testDataFile))
+	require.NoError(t, err)
+	defer b.Close()
+
+	// Assume the test data follows the --build_event_json_file format
+	decoder := json.NewDecoder(b)
+	// skip the first token, which is the square bracket `[` of the json array
+	_, err = decoder.Token()
+	require.NoError(t, err)
+
+	var iid string
+	eventId := int64(1)
+	for decoder.More() {
+		var raw json.RawMessage
+		err := decoder.Decode(&raw)
+		require.NoError(t, err)
+
+		var event build_event_stream.BuildEvent
+		err = protojson.Unmarshal(raw, &event)
+		require.NoError(t, err)
+
+		if eventId == 1 {
+			iid = event.GetStarted().GetUuid()
+			require.NotEmpty(t, iid, event.String())
+
+			channel = handler.OpenChannel(context.Background(), iid)
+		}
+
+		anyEvent := &anypb.Any{}
+		anyEvent.MarshalFrom(&event)
+
+		err = channel.HandleEvent(streamRequest(anyEvent, iid, int64(eventId)))
+		require.NoError(t, err)
+
+		eventId++
+	}
+
+	err = channel.FinalizeInvocation(iid)
+	assert.NoError(t, err)
+
+	return iid
 }
 
 func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
@@ -500,20 +563,20 @@ func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.P
 }
 
 func startedEvent(options string) *anypb.Any {
-	progressAny := &anypb.Any{}
-	progressAny.MarshalFrom(&build_event_stream.BuildEvent{
+	startedAny := &anypb.Any{}
+	startedAny.MarshalFrom(&build_event_stream.BuildEvent{
 		Payload: &build_event_stream.BuildEvent_Started{
 			Started: &build_event_stream.BuildStarted{
 				OptionsDescription: options,
 			},
 		},
 	})
-	return progressAny
+	return startedAny
 }
 
 func targetConfiguredEvent(label, kind, tag string) *anypb.Any {
-	progressAny := &anypb.Any{}
-	progressAny.MarshalFrom(&build_event_stream.BuildEvent{
+	targetConfiguredAny := &anypb.Any{}
+	targetConfiguredAny.MarshalFrom(&build_event_stream.BuildEvent{
 		Id: &build_event_stream.BuildEventId{
 			Id: &build_event_stream.BuildEventId_TargetConfigured{
 				TargetConfigured: &build_event_stream.BuildEventId_TargetConfiguredId{
@@ -528,12 +591,12 @@ func targetConfiguredEvent(label, kind, tag string) *anypb.Any {
 			},
 		},
 	})
-	return progressAny
+	return targetConfiguredAny
 }
 
 func targetCompletedEvent(label string) *anypb.Any {
-	progressAny := &anypb.Any{}
-	progressAny.MarshalFrom(&build_event_stream.BuildEvent{
+	targetCompletedAny := &anypb.Any{}
+	targetCompletedAny.MarshalFrom(&build_event_stream.BuildEvent{
 		Id: &build_event_stream.BuildEventId{
 			Id: &build_event_stream.BuildEventId_TargetCompleted{
 				TargetCompleted: &build_event_stream.BuildEventId_TargetCompletedId{
@@ -558,7 +621,7 @@ func targetCompletedEvent(label string) *anypb.Any {
 			},
 		},
 	})
-	return progressAny
+	return targetCompletedAny
 }
 
 func actionCompleteEvent(label string) *anypb.Any {
