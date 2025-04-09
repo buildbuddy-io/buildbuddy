@@ -87,10 +87,10 @@ var (
 	// Here we match 20 alphanumeric characters preceded by the api key header flag
 	apiKeyHeaderPattern = regexp.MustCompile("x-buildbuddy-api-key=[[:alnum:]]{20}")
 
-	// Here we match 20 alphanum chars at the start of a line or anywhere in the
-	// line, preceded by a non-alphanum char (to ensure the match is exactly 20
-	// alphanum chars long), followed by an @ symbol.
-	apiKeyAtPattern = regexp.MustCompile("(^|[^[:alnum:]])[[:alnum:]]{20}@")
+	// Match sequences that look like API keys immediately followed '@',
+	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
+	// or "bes_backend=$API_KEY@domain.com".
+	apiKeyAtPattern = regexp.MustCompile("(^|[/=]])[[:alnum:]]{20}@")
 
 	// Option names which may contain gRPC headers that should be redacted.
 	headerOptionNames = []string{
