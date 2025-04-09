@@ -601,6 +601,7 @@ func (s *Store) handleEvents(ctx context.Context) {
 			}
 			s.eventsMu.Unlock()
 		case <-ctx.Done():
+			s.log.Debug("handleEvents done")
 			return
 		}
 	}
@@ -652,21 +653,25 @@ func (s *Store) Start() error {
 	if *enableTxnCleanup {
 		s.eg.Go(func() error {
 			s.txnCoordinator.Start(s.egCtx)
+			s.log.Debug("txCoordinator stopped")
 			return nil
 		})
 	}
 	if scanInterval := *replicaScanInterval; scanInterval != 0 {
 		s.eg.Go(func() error {
 			s.scanReplicas(s.egCtx, scanInterval)
+			s.log.Debug("scan replicas stopped")
 			return nil
 		})
 	}
 	s.eg.Go(func() error {
 		s.deleteSessionWorker.Start(s.egCtx)
+		s.log.Debug("delete sessions stopped")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.nonVoterZombieJanitor.Start(s.egCtx)
+		s.log.Debug("nonvoter janitor stopped")
 		return nil
 	})
 	return nil
@@ -681,6 +686,7 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.driverQueue.Stop()
 	}
 	s.dropLeadershipForShutdown(ctx)
+	s.log.Info("Store: dropped leadership for shutdown")
 	now := time.Now()
 	defer func() {
 		s.log.Infof("Store: shutdown finished in %s", time.Since(now))
@@ -745,11 +751,11 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 		// another node in the cluster and requesting they take the lead.
 		targetReplicaID := uint64(0)
 		backupReplicaID := uint64(0)
-		for replicaID := range clusterInfo.Replicas {
-			if replicaID == clusterInfo.ReplicaID {
+		rd := s.GetRange(clusterInfo.ShardID)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() == clusterInfo.ReplicaID {
 				continue
 			}
-			repl := &rfpb.ReplicaDescriptor{RangeId: clusterInfo.ShardID, ReplicaId: clusterInfo.ReplicaID}
 			if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
 				// During rollout, after a machine restarted, it takes some time
 				// for the connections to that machine to be re-established. If
@@ -1398,6 +1404,7 @@ func (s *Store) acquireNodeLiveness(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			s.log.Debug("acquireNodeLiveness done")
 			return
 		case <-ticker.Chan():
 			s.metaRangeMu.Lock()
@@ -1612,6 +1619,7 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				j.store.log.Debug("replicaJanitor loop stopped")
 				return nil
 			case task := <-j.tasks:
 				action, err := j.removeZombie(ctx, task)
@@ -1639,6 +1647,7 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 	for len(j.tasks) > 0 {
 		<-j.tasks
 	}
+	j.store.log.Debug("replicaJanitor stopped")
 }
 
 func (j *replicaJanitor) scan(ctx context.Context) {
@@ -1827,6 +1836,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, maxRangeSizeBy
 	for {
 		select {
 		case <-ctx.Done():
+			s.log.Debug("check if replicas need splitting done")
 			return
 		case e := <-eventsCh:
 			switch e.EventType() {
@@ -1864,6 +1874,7 @@ func (s *Store) updateStoreUsageTag(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			s.log.Debug("update store usage done")
 			return
 		case e := <-eventsCh:
 			switch e.EventType() {
@@ -2104,13 +2115,13 @@ func (w *updateTagsWorker) processUpdateTags() error {
 func (w *updateTagsWorker) Stop() {
 	close(w.quitChan)
 
-	log.Info("updateTagsWorker shutdown started")
+	w.store.log.Info("updateTagsWorker shutdown started")
 	now := time.Now()
 	defer func() {
-		log.Infof("updateTagsWorker shutdown finished in %s", time.Since(now))
+		w.store.log.Infof("updateTagsWorker shutdown finished in %s", time.Since(now))
 	}()
 	if err := w.eg.Wait(); err != nil {
-		log.Error(err.Error())
+		w.store.log.Error(err.Error())
 	}
 }
 
@@ -3140,6 +3151,7 @@ func (s *Store) refreshMetrics(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			s.log.Debug("refresh metrics done")
 			return
 		case <-ticker.Chan():
 			if err := s.updatePebbleMetrics(); err != nil {
