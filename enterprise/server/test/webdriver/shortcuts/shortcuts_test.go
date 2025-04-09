@@ -13,7 +13,7 @@ import (
 
 func TestShortcutsDisabled(t *testing.T) {
 	wt, _ := newWebTester(t)
-	wt.FindBody().SendKeys("?")
+	sendShortcutKeys(wt, "?")
 	wt.AssertNotFound(".keyboard-shortcut-title")
 }
 
@@ -21,11 +21,11 @@ func TestHelpMenu(t *testing.T) {
 	wt, _ := newWebTester(t)
 	enableShortcuts(t, wt)
 
-	wt.FindBody().SendKeys("?")
+	sendShortcutKeys(wt, "?")
 	shortcutHelp := wt.Find(".keyboard-shortcut-title")
 	require.Contains(t, "BuildBuddy Keyboard Shortcuts", shortcutHelp.Text())
 
-	wt.FindBody().SendKeys(selenium.EscapeKey)
+	sendShortcutKeys(wt, selenium.EscapeKey)
 	wt.AssertNotFound(".keyboard-shortcut-title")
 }
 
@@ -33,17 +33,17 @@ func TestNavShortcuts(t *testing.T) {
 	wt, target := newWebTester(t)
 	enableShortcuts(t, wt)
 
-	wt.FindBody().SendKeys("ga")
+	sendShortcutKeys(wt, "ga")
 	require.Equal(t, target.HTTPURL()+"/", wt.CurrentURL())
-	wt.FindBody().SendKeys("gr")
+	sendShortcutKeys(wt, "gr")
 	require.Equal(t, target.HTTPURL()+"/trends/", wt.CurrentURL())
-	wt.FindBody().SendKeys("gt")
+	sendShortcutKeys(wt, "gt")
 	require.Equal(t, target.HTTPURL()+"/tests/", wt.CurrentURL())
-	wt.FindBody().SendKeys("gx")
+	sendShortcutKeys(wt, "gx")
 	require.Equal(t, target.HTTPURL()+"/executors/", wt.CurrentURL())
-	wt.FindBody().SendKeys("gq")
+	sendShortcutKeys(wt, "gq")
 	require.Equal(t, target.HTTPURL()+"/docs/setup/", wt.CurrentURL())
-	wt.FindBody().SendKeys("gg")
+	sendShortcutKeys(wt, "gg")
 	require.Equal(t, target.HTTPURL()+"/settings/", wt.CurrentURL())
 }
 
@@ -53,28 +53,28 @@ func TestInvocationNavShortcuts(t *testing.T) {
 
 	enableShortcuts(t, wt)
 
-	wt.FindBody().SendKeys("ga")
+	sendShortcutKeys(wt, "ga")
 	require.Equal(t, 3, len(wt.FindAll(".invocation-card")))
 
-	wt.FindBody().SendKeys("j")
+	sendShortcutKeys(wt, "j")
 	wt.Find(".selected-keyboard-shortcuts").SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[2], wt.CurrentURL())
 
-	wt.FindBody().SendKeys("u")
+	sendShortcutKeys(wt, "u")
 	for i := 1; i < 5; i++ {
-		wt.FindBody().SendKeys("j")
+		sendShortcutKeys(wt, "j")
 	}
 	wt.Find(".selected-keyboard-shortcuts").SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[0], wt.CurrentURL())
 
-	wt.FindBody().SendKeys("u")
-	wt.FindBody().SendKeys("k")
+	sendShortcutKeys(wt, "u")
+	sendShortcutKeys(wt, "k")
 	wt.Find(".selected-keyboard-shortcuts").SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[1], wt.CurrentURL())
 
-	wt.FindBody().SendKeys("u")
+	sendShortcutKeys(wt, "u")
 	for i := 1; i < 5; i++ {
-		wt.FindBody().SendKeys("k")
+		sendShortcutKeys(wt, "k")
 	}
 	wt.Find(".selected-keyboard-shortcuts").SendKeys(selenium.EnterKey)
 	require.Equal(t, target.HTTPURL()+"/invocation/"+invocationIDs[2], wt.CurrentURL())
@@ -114,4 +114,8 @@ func addBuild(t *testing.T, wt *webtester.WebTester, target buildbuddy_enterpris
 	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
 	require.NotEmpty(t, result.InvocationID)
 	return result.InvocationID
+}
+
+func sendShortcutKeys(wt *webtester.WebTester, shortcut string) {
+	wt.Find("body").SendKeys(shortcut)
 }
