@@ -1631,6 +1631,7 @@ func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 		return nil, err
 	}
 	defer rc.Close()
+	// The median and average AC results are less than 4KiB: go/action-result-size
 	bufSize := 4 * 1024
 	if r.GetCacheType() == rspb.CacheType_CAS {
 		bufSize = int(r.GetDigest().GetSizeBytes())
