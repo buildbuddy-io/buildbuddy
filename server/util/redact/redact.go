@@ -87,10 +87,10 @@ var (
 	// Here we match 20 alphanumeric characters preceded by the api key header flag
 	apiKeyHeaderPattern = regexp.MustCompile("x-buildbuddy-api-key=[[:alnum:]]{20}")
 
-	// Here we match 20 alphanum chars at the start of a line or anywhere in the
-	// line, preceded by a non-alphanum char (to ensure the match is exactly 20
-	// alphanum chars long), followed by an @ symbol.
-	apiKeyAtPattern = regexp.MustCompile("(^|[^[:alnum:]])[[:alnum:]]{20}@")
+	// Match sequences that look like API keys immediately followed '@',
+	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
+	// or "bes_backend=$API_KEY@domain.com".
+	apiKeyAtPattern = regexp.MustCompile("(^|[/=])[[:alnum:]]{20}@")
 
 	// Option names which may contain gRPC headers that should be redacted.
 	headerOptionNames = []string{
@@ -221,13 +221,14 @@ func redactCmdLine(tokens []string) {
 func RedactText(txt string) string {
 	txt = stripURLSecrets(txt)
 	txt = redactRemoteHeaders(txt)
-	txt = redactAPIKeys(txt)
+	txt = redactBuildBuddyAPIKeys(txt)
 	return txt
 }
 
-// NB: this implementation depends on the way we generate API keys
-// (20 alphanumeric characters).
-func redactAPIKeys(txt string) string {
+// redactBuildBuddyAPIKeys redacts BuildBuddy API keys in the input string.
+// It looks for HTTP headers, URL secrets, environment variables, and the configured API key.
+// This implementation depends on BuildBuddy API keys being exactly 20 alphanumeric characters.
+func redactBuildBuddyAPIKeys(txt string) string {
 	// Replace x-buildbuddy-api-key header.
 	txt = apiKeyHeaderPattern.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
 
@@ -738,8 +739,7 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 		return err
 	}
 	txt := string(eventBytes)
-
-	txt = redactAPIKeys(txt)
+	txt = redactBuildBuddyAPIKeys(txt)
 	if contextKey, ok := ctx.Value("x-buildbuddy-api-key").(string); ok {
 		txt = strings.ReplaceAll(txt, contextKey, "<REDACTED>")
 	}

@@ -524,10 +524,61 @@ func TestRedactTxt(t *testing.T) {
 			txt:      "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
 			expected: "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
 		},
+		{
+			name:     "api key start of line",
+			txt:      "apikeyexactly20chars@mydomain.com",
+			expected: "<REDACTED>@mydomain.com",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			redacted := redact.RedactText(tc.txt)
 			require.Equal(t, tc.expected, redacted)
+		})
+	}
+}
+
+func TestRedactAPIKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		txt      string
+		expected string
+	}{
+		{
+			name:     "api key after equals",
+			txt:      "MY_SECRET_API_KEY=apikeyexactly20chars@mydomain.com",
+			expected: "MY_SECRET_API_KEY=<REDACTED>@mydomain.com",
+		},
+		{
+			name:     "api key in grpc call",
+			txt:      "grpc://apikeyexactly20chars@mydomain.com",
+			expected: "grpc://<REDACTED>@mydomain.com",
+		},
+		{
+			name:     "api key in http call",
+			txt:      "https://apikeyexactly20chars@mydomain.com",
+			expected: "https://<REDACTED>@mydomain.com",
+		},
+		{
+			name:     "do not redact text before bazel repository name",
+			txt:      "FAILED:exactly20alphanumber@@apple_support++apple_cc_configure_extension+local_config_apple_cc; starting",
+			expected: "FAILED:exactly20alphanumber@@apple_support++apple_cc_configure_extension+local_config_apple_cc; starting",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redacted := redact.RedactText(tc.txt)
+			require.Equal(t, tc.expected, redacted)
+
+			event := &bespb.BuildEvent{
+				Payload: &bespb.BuildEvent_Progress{
+					Progress: &bespb.Progress{
+						Stdout: tc.txt,
+					},
+				},
+			}
+			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+			err := redactor.RedactAPIKeysWithSlowRegexp(context.TODO(), event)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, event.GetProgress().GetStdout())
 		})
 	}
 }
