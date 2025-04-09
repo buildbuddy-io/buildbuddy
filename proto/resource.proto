@@ -33,10 +33,6 @@ message ResourceName {
   // that this is only correct for the following digest types:
   // MD5, MURMUR3, SHA1, SHA256, SHA384, SHA512, VSO.
   build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 5;
-
-  // If partition_override is set and the user is authorized to do so, the
-  // resource should be cached to the partition with this partition_id.
-  string partition_override = 6;
 }
 
 // CacheType represents the type of cache being written to.
