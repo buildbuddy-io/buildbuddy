@@ -17,7 +17,7 @@ import (
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 )
 
-func TestRedactURLSecrets(t *testing.T) {
+func TestRedactPasswordsInURLs(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
