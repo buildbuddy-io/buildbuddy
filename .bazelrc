@@ -19,7 +19,7 @@ import %workspace%/shared.bazelrc
 #
 # Note: Use remote.buildbuddy.io and NOT buildbuddy.buildbuddy.io
 # so OSS / anonymous users can still send events to our server.
-common --bes_results_url=https://remote.buildbuddy.io/invocation/
+common --bes_results_url=https://app.buildbuddy.io/invocation/
 common --bes_backend=grpcs://remote.buildbuddy.io
 
 # Build with --config=local to send build logs to your local server
