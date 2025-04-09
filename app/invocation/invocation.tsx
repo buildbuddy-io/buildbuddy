@@ -426,7 +426,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   render() {
     if (this.state.loading) {
-      return <div className="loading"></div>;
+      return <div className="loading" debug-id="invocation-loading"></div>;
     }
 
     // If we don't have an invocation but we have an execution error, show just

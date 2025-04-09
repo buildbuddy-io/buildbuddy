@@ -945,7 +945,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   <div className="details">
                     <div className="action-section">
                       <div className="action-property-title">Execution ID</div>
-                      <div>{executionId}</div>
+                      <div debug-id="execution-id">{executionId}</div>
                     </div>
                     <div className="action-section">
                       <div className="action-property-title">Stage</div>

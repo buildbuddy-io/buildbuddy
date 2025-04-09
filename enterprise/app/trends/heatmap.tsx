@@ -559,20 +559,22 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
               ref={this.svgRef}>
               <g transform={`translate(${CHART_MARGINS.left}, ${CHART_MARGINS.top})`} ref={this.chartGroupRef}>
                 <rect fill="#f3f3f3" x="0" y="0" width={width} height={height}></rect>
-                {this.props.heatmapData.column.map((column, xIndex) => (
-                  <>
-                    {column.value.map((value, yIndex) =>
-                      +value <= 0 ? null : (
-                        <rect
-                          x={this.xScaleBand(+column.timestampUsec) || 0}
-                          y={this.yScaleBand(+this.props.heatmapData.bucketBracket[yIndex]) || 0}
-                          width={this.xScaleBand.bandwidth() || 0}
-                          height={this.yScaleBand.bandwidth() || 0}
-                          fill={this.getCellColor(xIndex, yIndex, +value, interpolator, selection)}></rect>
-                      )
-                    )}
-                  </>
-                ))}
+                <g debug-id="heatmap-cells">
+                  {this.props.heatmapData.column.map((column, xIndex) => (
+                    <>
+                      {column.value.map((value, yIndex) =>
+                        +value <= 0 ? null : (
+                          <rect
+                            x={this.xScaleBand(+column.timestampUsec) || 0}
+                            y={this.yScaleBand(+this.props.heatmapData.bucketBracket[yIndex]) || 0}
+                            width={this.xScaleBand.bandwidth() || 0}
+                            height={this.yScaleBand.bandwidth() || 0}
+                            fill={this.getCellColor(xIndex, yIndex, +value, interpolator, selection)}></rect>
+                        )
+                      )}
+                    </>
+                  ))}
+                </g>
               </g>
               {this.renderXAxis(width)}
               {this.renderYAxis(height)}

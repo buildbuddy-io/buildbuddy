@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -1423,6 +1424,9 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid string, cb invocationEventCB) (*inpb.Invocation, error) {
 	ti, err := env.GetInvocationDB().LookupInvocation(ctx, iid)
 	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundError("invocation not found")
+		}
 		return nil, err
 	}
 
