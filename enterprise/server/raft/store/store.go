@@ -1773,7 +1773,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			// created without any range descriptors created.
 			rd, err = j.store.newRangeDescriptorFromRaftMembership(ctx, task.rangeID)
 			if err != nil {
-				if err == dragonboat.ErrShardNotReady {
+				if err == dragonboat.ErrShardNotReady || err == dragonboat.ErrShardNotFound {
 					// This can happen when SplitRange failed to initialize all initial members.
 					// move on to stop replica
 					log.Warningf("getMembership for c%dn%d failed: %s", task.rangeID, task.replicaID, err)
