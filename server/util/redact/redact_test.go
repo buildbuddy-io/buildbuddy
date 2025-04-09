@@ -161,6 +161,55 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 	}
 }
 
+func TestRedactEntireSections(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	for _, tc := range []struct {
+		name     string
+		event    *bespb.BuildEvent
+		expected *bespb.BuildEvent
+	}{
+		{
+			name: "redact options description in build started event",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
+				OptionsDescription: `--some_flag --another_flag`,
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
+				OptionsDescription: `<REDACTED>`,
+			}}},
+		},
+		{
+			name: "remove args from unstructured commanbd line",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_UnstructuredCommandLine{UnstructuredCommandLine: &bespb.UnstructuredCommandLine{
+				Args: []string{"foo"},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_UnstructuredCommandLine{UnstructuredCommandLine: &bespb.UnstructuredCommandLine{}}},
+		},
+		{
+			name: "remove --default_override and EXPLICIT_COMMAND_LINE options from structured command line",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "default_override",
+					OptionValue:  "1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
+					CombinedForm: "--default_override=1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  `EXPLICIT_COMMAND_LINE=["secrets"]`,
+					CombinedForm: `--build_metadata=EXPLICIT_COMMAND_LINE=["secrets"]`,
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{}}}}}}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor(te)
+			err := redactor.RedactMetadata(tc.event)
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
+		})
+	}
+}
+
 func fileWithURI(uri string) *bespb.File {
 	return &bespb.File{
 		Name: "foo.txt",
@@ -184,52 +233,6 @@ func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
 			},
 		},
 	}
-}
-
-func getCommandLineOptions(event *bespb.BuildEvent) []*clpb.Option {
-	p, ok := event.Payload.(*bespb.BuildEvent_StructuredCommandLine)
-	if !ok {
-		return nil
-	}
-	sections := p.StructuredCommandLine.Sections
-	if len(sections) == 0 {
-		return nil
-	}
-	s, ok := sections[0].SectionType.(*clpb.CommandLineSection_OptionList)
-	if !ok {
-		return nil
-	}
-	return s.OptionList.Option
-}
-
-func TestRedactMetadata_BuildStarted_RedactsOptionsDescription(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	buildStarted := &bespb.BuildStarted{
-		OptionsDescription: `--some_flag --another_flag`,
-	}
-
-	err := redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_Started{Started: buildStarted},
-	})
-	require.NoError(t, err)
-
-	assert.Equal(t, "<REDACTED>", buildStarted.OptionsDescription)
-}
-
-func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	unstructuredCommandLine := &bespb.UnstructuredCommandLine{
-		Args: []string{"foo"},
-	}
-
-	err := redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_UnstructuredCommandLine{
-			UnstructuredCommandLine: unstructuredCommandLine,
-		},
-	})
-	require.NoError(t, err)
-
-	assert.Equal(t, []string{}, unstructuredCommandLine.Args)
 }
 
 func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
@@ -281,36 +284,6 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		assert.Equal(t, expectedCombinedForm, option.CombinedForm)
 		assert.Equal(t, testCase.expectedValue, option.OptionValue)
 	}
-
-	// default_override flags should be dropped altogether.
-
-	option := &clpb.Option{
-		OptionName:   "default_override",
-		OptionValue:  "1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
-		CombinedForm: "--default_override=1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
-	}
-	event := structuredCommandLineEvent(option)
-	assert.NotEmpty(t, getCommandLineOptions(event), "sanity check: --default_override should be an option before redacting")
-
-	err = redactor.RedactMetadata(event)
-	require.NoError(t, err)
-
-	assert.Empty(t, getCommandLineOptions(event), "--default_override options should be removed")
-
-	// EXPLICIT_COMMAND_LINE flags should be dropped altogether.
-
-	option = &clpb.Option{
-		OptionName:   "build_metadata",
-		OptionValue:  `EXPLICIT_COMMAND_LINE=["secrets"]`,
-		CombinedForm: `--build_metadata=EXPLICIT_COMMAND_LINE=["secrets"]`,
-	}
-	event = structuredCommandLineEvent(option)
-	assert.NotEmpty(t, getCommandLineOptions(event), "sanity check: EXPLICIT_COMMAND_LINE should be an option before redacting")
-
-	err = redactor.RedactMetadata(event)
-	require.NoError(t, err)
-
-	assert.Empty(t, getCommandLineOptions(event), "EXPLICIT_COMMAND_LINE should be removed")
 }
 
 func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testing.T) {
