@@ -23,15 +23,8 @@ func TestRedactURLSecrets(t *testing.T) {
 		event    *bespb.BuildEvent
 		expected *bespb.BuildEvent
 	}{
-		// actionExecuted := &bespb.ActionExecuted{
-		// 	Stdout:             fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
-		// 	Stderr:             fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
-		// 	PrimaryOutput:      fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
-		// 	ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
-		// }
-
 		{
-			name: "strip url secrets from action stdout",
+			name: "redact passwords in urls in action stdout",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
 				Stdout: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
 			}}},
@@ -40,7 +33,7 @@ func TestRedactURLSecrets(t *testing.T) {
 			}}},
 		},
 		{
-			name: "strip url secrets from action stderr",
+			name: "redact passwords in urls in action stderr",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
 				Stderr: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
 			}}},
@@ -49,7 +42,7 @@ func TestRedactURLSecrets(t *testing.T) {
 			}}},
 		},
 		{
-			name: "strip url secrets from action primary output",
+			name: "redact passwords in urls in action primary output",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
 				PrimaryOutput: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
 			}}},
@@ -58,12 +51,57 @@ func TestRedactURLSecrets(t *testing.T) {
 			}}},
 		},
 		{
-			name: "strip url secrets from action metadata logs",
+			name: "redact passwords in urls in action metadata logs",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
 				ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
 			}}},
 			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
 				ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in named set of files",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_NamedSetOfFiles{NamedSetOfFiles: &bespb.NamedSetOfFiles{
+				Files: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_NamedSetOfFiles{NamedSetOfFiles: &bespb.NamedSetOfFiles{
+				Files: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in target complete",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				DirectoryOutput: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				DirectoryOutput: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in test result",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestResult{TestResult: &bespb.TestResult{
+				TestActionOutput: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestResult{TestResult: &bespb.TestResult{
+				TestActionOutput: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in test summary files passed",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
+				Passed: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
+				Passed: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in test summary files failed",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
+				Failed: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
+				Failed: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
 			}}},
 		},
 	} {
@@ -294,66 +332,6 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"",
 		},
 		optionsParsed.ExplicitCmdLine)
-}
-
-func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	namedSetOfFiles := &bespb.NamedSetOfFiles{
-		Files: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
-	}
-
-	err := redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_NamedSetOfFiles{NamedSetOfFiles: namedSetOfFiles},
-	})
-	require.NoError(t, err)
-
-	assert.Equal(t, "url://username:<REDACTED>@uri", namedSetOfFiles.Files[0].GetUri())
-}
-
-func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	targetComplete := &bespb.TargetComplete{
-		Success:         true,
-		DirectoryOutput: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
-	}
-
-	err := redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_Completed{Completed: targetComplete},
-	})
-	require.NoError(t, err)
-
-	assert.Equal(t, "url://username:<REDACTED>@uri", targetComplete.DirectoryOutput[0].GetUri())
-}
-
-func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	testResult := &bespb.TestResult{
-		Status:           bespb.TestStatus_PASSED,
-		TestActionOutput: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
-	}
-
-	err := redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_TestResult{TestResult: testResult},
-	})
-	require.NoError(t, err)
-
-	assert.Equal(t, "url://username:<REDACTED>@uri", testResult.TestActionOutput[0].GetUri())
-}
-
-func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	testSummary := &bespb.TestSummary{
-		Passed: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
-		Failed: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
-	}
-
-	err := redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_TestSummary{TestSummary: testSummary},
-	})
-	require.NoError(t, err)
-
-	assert.Equal(t, "url://username:<REDACTED>@uri", testSummary.Passed[0].GetUri())
-	assert.Equal(t, "url://username:<REDACTED>@uri", testSummary.Failed[0].GetUri())
 }
 
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
