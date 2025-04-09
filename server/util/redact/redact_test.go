@@ -18,44 +18,24 @@ import (
 )
 
 func TestRedactPasswordsInURLs(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
 		expected *bespb.BuildEvent
 	}{
 		{
-			name: "redact passwords in urls in action stdout",
+			name: "redact passwords in urls in action stdout, stderr, primary output, metadata logs",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				Stdout: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
-			}}},
-			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				Stdout: fileWithURI("url://username:<REDACTED>@uri"),
-			}}},
-		},
-		{
-			name: "redact passwords in urls in action stderr",
-			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				Stderr: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
-			}}},
-			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				Stderr: fileWithURI("url://username:<REDACTED>@uri"),
-			}}},
-		},
-		{
-			name: "redact passwords in urls in action primary output",
-			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				PrimaryOutput: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
-			}}},
-			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				PrimaryOutput: fileWithURI("url://username:<REDACTED>@uri"),
-			}}},
-		},
-		{
-			name: "redact passwords in urls in action metadata logs",
-			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stdout:             fileWithURI("url://username:passwordthatshouldberedacted@uri"),
+				Stderr:             fileWithURI("url://username:passwordthatshouldberedacted@uri"),
+				PrimaryOutput:      fileWithURI("url://username:passwordthatshouldberedacted@uri"),
 				ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
 			}}},
 			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stdout:             fileWithURI("url://username:<REDACTED>@uri"),
+				Stderr:             fileWithURI("url://username:<REDACTED>@uri"),
+				PrimaryOutput:      fileWithURI("url://username:<REDACTED>@uri"),
 				ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
 			}}},
 		},
@@ -87,26 +67,93 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 			}}},
 		},
 		{
-			name: "redact passwords in urls in test summary files passed",
+			name: "redact passwords in urls in test summary files passed, failed",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
 				Passed: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
-			}}},
-			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
-				Passed: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
-			}}},
-		},
-		{
-			name: "redact passwords in urls in test summary files failed",
-			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
 				Failed: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
 			}}},
 			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
+				Passed: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
 				Failed: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in structured command line options",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "some_url",
+					OptionValue:  "https://username:passwordthatshouldberedacted@foo.com",
+					CombinedForm: "--some_url=https://username:passwordthatshouldberedacted@foo.com",
+				},
+				&clpb.Option{
+					OptionName:   "some_other_flag",
+					OptionValue:  "url://username:passwordthatshouldberedacted=@//foo",
+					CombinedForm: "--some_other_flag=url://username:passwordthatshouldberedacted=@//foo",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:passwordthatshouldberedacted@bar,BAZ=",
+					CombinedForm: "--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:passwordthatshouldberedacted@bar,BAZ=",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "FOO=A=1,BAR=SECRET=url://username:passwordthatshouldberedacted@buildbuddy.io",
+					CombinedForm: "--build_metadata=FOO=A=1,BAR=SECRET=url://username:passwordthatshouldberedacted@buildbuddy.io",
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "some_url",
+					OptionValue:  "https://username:<REDACTED>@foo.com",
+					CombinedForm: "--some_url=https://username:<REDACTED>@foo.com",
+				},
+				&clpb.Option{
+					OptionName:   "some_other_flag",
+					OptionValue:  "url://username:<REDACTED>@//foo",
+					CombinedForm: "--some_other_flag=url://username:<REDACTED>@//foo",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@bar,BAZ=",
+					CombinedForm: "--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@bar,BAZ=",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "FOO=A=1,BAR=SECRET=url://username:<REDACTED>@buildbuddy.io",
+					CombinedForm: "--build_metadata=FOO=A=1,BAR=SECRET=url://username:<REDACTED>@buildbuddy.io",
+				},
+			}}}}}}}},
+		},
+		{
+			name: "redact passwords in urls in options parsed",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"url://username:passwordthatshouldberedacted@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:passwordthatshouldberedacted@domain",
+					"--some_other_flag=url://username:SUBFLAGTHATSHOULDBEREDACTED=@//foo",
+				},
+				ExplicitCmdLine: []string{
+					"url://username:passwordthatshouldberedacted@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:passwordthatshouldberedacted@domain",
+					"--some_other_flag=url://username:SUBFLAGTHATSHOULDBEREDACTED=@//foo",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"url://username:<REDACTED>@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
+					"--some_other_flag=url://username:<REDACTED>@//foo",
+				},
+				ExplicitCmdLine: []string{
+					"url://username:<REDACTED>@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
+					"--some_other_flag=url://username:<REDACTED>@//foo",
+				},
 			}}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+			redactor := redact.NewStreamingRedactor(te)
 			err := redactor.RedactMetadata(tc.event)
 			require.NoError(t, err)
 			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
@@ -122,21 +169,19 @@ func fileWithURI(uri string) *bespb.File {
 }
 
 func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
-	section := &clpb.CommandLineSection{
-		SectionLabel: "command",
-		SectionType: &clpb.CommandLineSection_OptionList{
-			OptionList: &clpb.OptionList{
-				Option: []*clpb.Option{option},
-			},
-		},
-	}
-	commandLine := &clpb.CommandLine{
-		CommandLineLabel: "label",
-		Sections:         []*clpb.CommandLineSection{section},
-	}
 	return &bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_StructuredCommandLine{
-			StructuredCommandLine: commandLine,
+			StructuredCommandLine: &clpb.CommandLine{
+				Sections: []*clpb.CommandLineSection{
+					&clpb.CommandLineSection{
+						SectionType: &clpb.CommandLineSection_OptionList{
+							OptionList: &clpb.OptionList{
+								Option: []*clpb.Option{option},
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 }
@@ -219,13 +264,9 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		{"repo_env", "AWS_ACCESS_KEY_ID=super_secret_aws_access_key_id", "AWS_ACCESS_KEY_ID=<REDACTED>"},
 		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
-		{"some_url", "https://username:token@foo.com", "https://username:<REDACTED>@foo.com"},
 		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
 		{"host_platform", "@buildbuddy_toolchain//:platform", "@buildbuddy_toolchain//:platform"},
-		{"build_metadata", "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:SECRET@bar,BAZ=", "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@bar,BAZ="},
-		{"build_metadata", "FOO=A=1,BAR=SECRET=url://username:SECRET@buildbuddy.io", "FOO=A=1,BAR=SECRET=url://username:<REDACTED>@buildbuddy.io"},
-		{"some_other_flag", "url://username:PATTERN=@//foo", "url://username:<REDACTED>@//foo"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,
@@ -276,24 +317,18 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	optionsParsed := &bespb.OptionsParsed{
 		CmdLine: []string{
-			"url://username:213wZJyTUyhXkj381312@foo",
 			"--flag=@repo//package",
 			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET",
 			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2",
 			"--bes_header=foo=TOPSECRET",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:TOPSECRET@domain",
-			"--some_other_flag=url://username:SUBFLAG=@//foo",
 			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 		ExplicitCmdLine: []string{
-			"url://username:213wZJyTUyhXkj381312@explicit",
 			"--flag=@repo//package",
 			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET_EXPLICIT",
 			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2_EXPLICIT",
 			"--bes_header=foo=TOPSECRET",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:TOPSECRET_EXPLICIT@domain",
-			"--some_other_flag=url://username:SUBFLAG=@//foo",
 			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
@@ -307,13 +342,10 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	assert.Equal(
 		t,
 		[]string{
-			"url://username:<REDACTED>@foo",
 			"--flag=@repo//package",
 			"--remote_header=<REDACTED>",
 			"--remote_exec_header=<REDACTED>",
 			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
-			"--some_other_flag=url://username:<REDACTED>@//foo",
 			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
@@ -321,13 +353,10 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	assert.Equal(
 		t,
 		[]string{
-			"url://username:<REDACTED>@explicit",
 			"--flag=@repo//package",
 			"--remote_header=<REDACTED>",
 			"--remote_exec_header=<REDACTED>",
 			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
-			"--some_other_flag=url://username:<REDACTED>@//foo",
 			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
