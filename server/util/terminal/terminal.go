@@ -6,6 +6,18 @@ import (
 	bkterminal "github.com/buildkite/terminal-to-html/v3"
 )
 
+const (
+	// The number of columns to use for the terminal-to-html ANSI state machine.
+	// All lines that fit in this number of columns (characters) will not wrap to
+	// the next line.
+	// We cannot make this number arbitrarily large because the state machine uses
+	// it as the `cap` parameter when making slices to represent lines, which
+	// means we are actually allocating space for slices of this length.
+	// TODO: patch the library to make the cap for slices and the max columns two
+	// different numbers, ideally as a PR.
+	columns = 256
+)
+
 type ScreenWriter struct {
 	*bkterminal.Screen
 	OutputAccumulator strings.Builder
@@ -25,6 +37,14 @@ func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
 	w := &ScreenWriter{Screen: s}
 	if windowHeight > 0 {
 		s.ScrollOutFunc = func(line string) { _, w.WriteErr = w.OutputAccumulator.WriteString(line) }
+		if err := s.SetSize(columns, windowHeight); err != nil {
+			return nil, err
+		}
+	} else {
+		// 100 is the default number of lines.
+		if err := s.SetSize(columns, 100); err != nil {
+			return nil, err
+		}
 	}
 	return w, nil
 }
