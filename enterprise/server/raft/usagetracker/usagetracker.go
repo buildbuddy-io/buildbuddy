@@ -84,8 +84,9 @@ type Tracker struct {
 	byPartition   map[string]*partitionUsage
 	lastBroadcast map[string]*sgpb.PartitionMetadata
 
-	eg       *errgroup.Group
-	egCancel context.CancelFunc
+	eg                                 *errgroup.Group
+	egCancel                           context.CancelFunc
+	partitionUsageDeltaGossipThreshold int
 }
 
 type nodePartitionUsage struct {
@@ -125,6 +126,12 @@ type partitionUsage struct {
 	egCancel context.CancelFunc
 
 	sizeBytes int64
+
+	samplesPerBatch          int
+	samplerIterRefreshPeriod time.Duration
+	minEvictionAge           time.Duration
+	localSizeUpdatePeriod    time.Duration
+	evictionBatchSize        int
 }
 
 func (pu *partitionUsage) LocalSizeBytes() int64 {
@@ -144,7 +151,7 @@ func (pu *partitionUsage) LocalSizeBytes() int64 {
 }
 
 func (pu *partitionUsage) updateLocalSizeBytes(ctx context.Context) {
-	ticker := pu.clock.NewTicker(*localSizeUpdatePeriod)
+	ticker := pu.clock.NewTicker(pu.localSizeUpdatePeriod)
 	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: constants.CacheName}
 	for {
 		select {
@@ -260,7 +267,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 				Key:  sampleToDelete.Key.bytes,
 				Meta: sampleToDelete,
 			})
-			if len(keys) >= *evictionBatchSize {
+			if len(keys) >= pu.evictionBatchSize {
 				flush()
 			}
 		case <-timer.C:
@@ -345,7 +352,7 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 			}
 		}
 
-		if totalCount > *samplesPerBatch || time.Since(iterCreatedAt) > *samplerIterRefreshPeriod {
+		if totalCount > pu.samplesPerBatch || time.Since(iterCreatedAt) > pu.samplerIterRefreshPeriod {
 			// Going to refresh the iterator in the next iteration.
 			shouldCreateNewIter = true
 		}
@@ -398,7 +405,7 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 func (pu *partitionUsage) maybeAddToSampleChan(ctx context.Context, iter pebble.Iterator, fileMetadata *sgpb.FileMetadata, timer clockwork.Timer) {
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 	age := pu.clock.Since(atime)
-	if age < *minEvictionAge {
+	if age < pu.minEvictionAge {
 		return
 	}
 	sizeBytes := int64(proto.Size(fileMetadata)) + int64(len(iter.Key()))
@@ -479,17 +486,24 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 		byPartition:   make(map[string]*partitionUsage),
 		clock:         clock,
 		lastBroadcast: make(map[string]*sgpb.PartitionMetadata),
+
+		partitionUsageDeltaGossipThreshold: *partitionUsageDeltaGossipThreshold,
 	}
 
 	for _, p := range partitions {
 		u := &partitionUsage{
-			part:     p,
-			sender:   sender,
-			clock:    clock,
-			nodes:    make(map[string]*nodePartitionUsage),
-			dbGetter: dbGetter,
-			samples:  make(chan *approxlru.Sample[*evictionKey], *sampleBufferSize),
-			deletes:  make(chan *approxlru.Sample[*evictionKey], *deleteBufferSize),
+			part:                     p,
+			sender:                   sender,
+			clock:                    clock,
+			nodes:                    make(map[string]*nodePartitionUsage),
+			dbGetter:                 dbGetter,
+			samples:                  make(chan *approxlru.Sample[*evictionKey], *sampleBufferSize),
+			deletes:                  make(chan *approxlru.Sample[*evictionKey], *deleteBufferSize),
+			samplesPerBatch:          *samplesPerBatch,
+			samplerIterRefreshPeriod: *samplerIterRefreshPeriod,
+			minEvictionAge:           *minEvictionAge,
+			localSizeUpdatePeriod:    *localSizeUpdatePeriod,
+			evictionBatchSize:        *evictionBatchSize,
 		}
 		ut.byPartition[p.ID] = u
 		metricLbls := prometheus.Labels{
@@ -705,7 +719,7 @@ func (ut *Tracker) broadcast(force bool) (bool, error) {
 		ut.mu.Lock()
 		for _, u := range usage.GetPartitionUsage() {
 			lb, ok := ut.lastBroadcast[u.GetPartitionId()]
-			if !ok || math.Abs(float64(u.GetSizeBytes()-lb.GetSizeBytes())) > float64(*partitionUsageDeltaGossipThreshold) {
+			if !ok || math.Abs(float64(u.GetSizeBytes()-lb.GetSizeBytes())) > float64(ut.partitionUsageDeltaGossipThreshold) {
 				significantChange = true
 				break
 			}

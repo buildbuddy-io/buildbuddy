@@ -252,8 +252,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	rc.eg = eg
 	rc.egCancel = cancelFunc
+	atimeWriteBatchSize := *atimeWriteBatchSize
 	rc.eg.Go(func() error {
-		return rc.processAccessTimeUpdates(gctx, rc.shutdown)
+		return rc.processAccessTimeUpdates(gctx, rc.shutdown, atimeWriteBatchSize)
 	})
 
 	return rc, nil
@@ -692,7 +693,7 @@ func (rc *RaftCache) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
 		}
 	}
 }
-func (rc *RaftCache) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}) error {
+func (rc *RaftCache) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}, atimeWriteBatchSize int) error {
 	var keys []*sender.KeyMeta
 	timer := time.NewTimer(atimeFlushPeriod)
 	defer timer.Stop()
@@ -737,7 +738,7 @@ func (rc *RaftCache) processAccessTimeUpdates(ctx context.Context, quitChan chan
 				Key:  accessTimeUpdate.key,
 				Meta: rc.clock.Now().UnixMicro(),
 			})
-			if len(keys) >= *atimeWriteBatchSize {
+			if len(keys) >= atimeWriteBatchSize {
 				flush()
 			}
 		case <-timer.C:
