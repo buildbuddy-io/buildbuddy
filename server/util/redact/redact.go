@@ -90,7 +90,7 @@ var (
 	// Match sequences that look like API keys immediately followed '@',
 	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
 	// or "bes_backend=$API_KEY@domain.com".
-	apiKeyAtPattern = regexp.MustCompile("(^|[/=]])[[:alnum:]]{20}@")
+	apiKeyAtPattern = regexp.MustCompile("(^|[/=])[[:alnum:]]{20}@")
 
 	// Option names which may contain gRPC headers that should be redacted.
 	headerOptionNames = []string{
