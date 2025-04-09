@@ -2614,7 +2614,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 }
 
 func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
-	digestKeys := make([]*rspb.ResourceName, 0, 100000)
+	digestKeys := make([]*rspb.ResourceName, 0, 100)
 	for i := 0; i < 100; i++ {
 		r, buf := testdigest.NewRandomResourceAndBuf(b, digestSizeBytes, rspb.CacheType_CAS, "" /*instanceName*/)
 		digestKeys = append(digestKeys, r)
@@ -2678,7 +2678,7 @@ func BenchmarkGetMulti(b *testing.B) {
 }
 
 func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
-	digestKeys := make([]*rspb.ResourceName, 0, 100000)
+	digestKeys := make([]*rspb.ResourceName, 0, 100)
 	for i := 0; i < 100; i++ {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
