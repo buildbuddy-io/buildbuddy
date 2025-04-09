@@ -7,13 +7,74 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 )
+
+func TestRedactURLSecrets(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		event    *bespb.BuildEvent
+		expected *bespb.BuildEvent
+	}{
+		// actionExecuted := &bespb.ActionExecuted{
+		// 	Stdout:             fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
+		// 	Stderr:             fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
+		// 	PrimaryOutput:      fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
+		// 	ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
+		// }
+
+		{
+			name: "strip url secrets from action stdout",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stdout: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stdout: fileWithURI("url://username:<REDACTED>@uri"),
+			}}},
+		},
+		{
+			name: "strip url secrets from action stderr",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stderr: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stderr: fileWithURI("url://username:<REDACTED>@uri"),
+			}}},
+		},
+		{
+			name: "strip url secrets from action primary output",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				PrimaryOutput: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				PrimaryOutput: fileWithURI("url://username:<REDACTED>@uri"),
+			}}},
+		},
+		{
+			name: "strip url secrets from action metadata logs",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+			err := redactor.RedactMetadata(tc.event)
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
+		})
+	}
+}
 
 func fileWithURI(uri string) *bespb.File {
 	return &bespb.File{
@@ -233,26 +294,6 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"",
 		},
 		optionsParsed.ExplicitCmdLine)
-}
-
-func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	actionExecuted := &bespb.ActionExecuted{
-		Stdout:             fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
-		Stderr:             fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
-		PrimaryOutput:      fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
-		ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
-	}
-
-	err := redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_Action{Action: actionExecuted},
-	})
-	require.NoError(t, err)
-
-	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.Stdout.GetUri())
-	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.Stderr.GetUri())
-	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.PrimaryOutput.GetUri())
-	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.ActionMetadataLogs[0].GetUri())
 }
 
 func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
