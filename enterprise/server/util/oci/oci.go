@@ -321,6 +321,15 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
+// FetchBlobOrManifestMetadataFromCache looks up an OCI image manifest or blob (config file or layer) in the AC and CAS by digest
+// and returns the blob's or manifest's content type and content length if found.
+// If you can fetch metadata for a manifest or blob, the actual contents should be in the CAS.
+//
+// The digest in this case contains a registry, a repository, and a hash.
+// For example, 'index.docker.io` as the registry, 'alpine` as the repository, and 'sha256:somesha256...' as the hash.
+//
+// Callers must ensure that the user fetching the OCI manifest or blob from the AC or CAS is authorized to access this OCI image.
+// For private OCI registries, this means making a HEAD request to the registry before fetching from the AC or CAS.
 func FetchBlobOrManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest ctrname.Digest, ociResourceType ocipb.OCIResourceType) (string, int64, error) {
 	arRN, err := ocidigestToACResourceName(ocidigest, ociResourceType)
 	if err != nil {
@@ -391,6 +400,15 @@ func arInstanceName(registry, repository string) string {
 	return registry + "|" + repository + "|" + actionResultInstanceNameSalt
 }
 
+// FetchBlobOrManifestFromCache looks up an OCI image manifest or blob (config file or layer) in the AC and CAS by digest
+// and returns the content for the blob or manifest.
+//
+// The digest in this case contains a registry, a repository, and a hash.
+// For example, 'index.docker.io` as the registry, 'alpine` as the repository, and 'sha256:somesha256...' as the hash.
+//
+// As with FetchBlobOrManifestMetadataFromCache, callers must ensure that the user fetching the OCI manifest or blob contents from
+// the CAS is authorized to access this OCI image.
+// For private OCI registries, this means making a HEAD request to the registry before fetching either metadata or contents.
 func FetchBlobOrManifestFromCache(ctx context.Context, bsc bspb.ByteStreamClient, ocidigest ctrname.Digest, contentLength int64, w io.Writer) error {
 	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
 	if err != nil {
@@ -426,6 +444,9 @@ func ocidigestToCASResourceName(ocidigest ctrname.Digest, contentLength int64) (
 	return rn, nil
 }
 
+// UploadBlobOrManifestToCache uploads the OCI manifest or blob contents and a separate metadata proto to the CAS.
+// It also uploads an ActionResult pointing to the contents and metadata in the CAS.
+// This ActionResult is stored under an instance name based on the OCI registry and repository from which the contents came.
 func UploadBlobOrManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest ctrname.Digest, ociResourceType ocipb.OCIResourceType, contentType string, contentLength int64, r io.Reader) error {
 	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
 	if err != nil {
