@@ -5,9 +5,9 @@ import (
 	"flag"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -37,7 +37,7 @@ func HandleAsk(args []string) (int, error) {
 		return 1, err
 	}
 
-	lastIID, err := storage.GetPreviousFlag(storage.InvocationIDFlagName)
+	lastIID, err := flaghistory.GetPreviousFlag(flaghistory.InvocationIDFlagName)
 	if lastIID == "" || err != nil {
 		log.Printf("Couldn't find the previous invocation.")
 		return 1, err
@@ -58,7 +58,7 @@ func HandleAsk(args []string) (int, error) {
 	}
 	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
 
-	backend, err := storage.GetLastBackend()
+	backend, err := flaghistory.GetLastBackend()
 	if err != nil {
 		return 1, err
 	}
