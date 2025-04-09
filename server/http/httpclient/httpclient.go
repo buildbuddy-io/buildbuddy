@@ -15,7 +15,10 @@ import (
 )
 
 // Tests often need to make HTTP requests to localhost -- set this flag to permit those requests.
-var allowLocalhost = flag.Bool("http.client.allow_localhost", false, "Allow HTTP requests to localhost")
+var (
+	allowLocalhost = flag.Bool("http.client.allow_localhost", false, "Allow HTTP requests to localhost")
+	allowPrivate   = flag.Bool("http.client.allow_private", false, "Allow HTTP requests to private IPs")
+)
 
 const maxHTTPTimeout = 60 * time.Minute
 
@@ -65,7 +68,8 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 				return nil
 			}
 		}
-		if (ip.IsLoopback() && !*allowLocalhost) || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+
+		if (ip.IsLoopback() && !*allowLocalhost) || (ip.IsPrivate() && !*allowPrivate) || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 			log.Infof("Blocked Fetch for address %s", address)
 			return errors.New("IP address not allowed")
 		}
