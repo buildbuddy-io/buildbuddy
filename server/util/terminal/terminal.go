@@ -37,10 +37,14 @@ func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
 	w := &ScreenWriter{Screen: s}
 	if windowHeight > 0 {
 		s.ScrollOutFunc = func(line string) { _, w.WriteErr = w.OutputAccumulator.WriteString(line) }
-		s.SetSize(columns, windowHeight)
+		if err := s.SetSize(columns, windowHeight); err != nil {
+			return nil, err
+		}
 	} else {
 		// 100 is the default number of lines.
-		s.SetSize(columns, 100)
+		if err := s.SetSize(columns, 100); err != nil {
+			return nil, err
+		}
 	}
 	return w, nil
 }
