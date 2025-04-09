@@ -761,7 +761,7 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 				backupReplicaID = clusterInfo.ReplicaID
 				continue
 			}
-			targetReplicaID = clusterInfo.ReplicaID
+			targetReplicaID = repl.GetReplicaId()
 			break
 		}
 
