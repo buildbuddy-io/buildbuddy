@@ -681,6 +681,7 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.driverQueue.Stop()
 	}
 	s.dropLeadershipForShutdown(ctx)
+	s.log.Info("Store: dropped leadership for shutdown")
 	now := time.Now()
 	defer func() {
 		s.log.Infof("Store: shutdown finished in %s", time.Since(now))
@@ -745,11 +746,11 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 		// another node in the cluster and requesting they take the lead.
 		targetReplicaID := uint64(0)
 		backupReplicaID := uint64(0)
-		for replicaID := range clusterInfo.Replicas {
-			if replicaID == clusterInfo.ReplicaID {
+		rd := s.GetRange(clusterInfo.ShardID)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() == clusterInfo.ReplicaID {
 				continue
 			}
-			repl := &rfpb.ReplicaDescriptor{RangeId: clusterInfo.ShardID, ReplicaId: clusterInfo.ReplicaID}
 			if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
 				// During rollout, after a machine restarted, it takes some time
 				// for the connections to that machine to be re-established. If
@@ -2104,13 +2105,13 @@ func (w *updateTagsWorker) processUpdateTags() error {
 func (w *updateTagsWorker) Stop() {
 	close(w.quitChan)
 
-	log.Info("updateTagsWorker shutdown started")
+	w.store.log.Info("updateTagsWorker shutdown started")
 	now := time.Now()
 	defer func() {
-		log.Infof("updateTagsWorker shutdown finished in %s", time.Since(now))
+		w.store.log.Infof("updateTagsWorker shutdown finished in %s", time.Since(now))
 	}()
 	if err := w.eg.Wait(); err != nil {
-		log.Error(err.Error())
+		w.store.log.Error(err.Error())
 	}
 }
 
@@ -2392,7 +2393,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		if r.GetNhid() == "" {
 			return nil, status.InternalErrorf("empty nhid in ReplicaDescriptor %+v", r)
 		}
-		grpcAddr, _, err := s.registry.ResolveGRPC(ctx, r.GetRangeId(), r.GetReplicaId())
+		grpcAddr, err := s.registry.ResolveGRPC(ctx, r.GetNhid())
 		if err != nil {
 			return nil, err
 		}

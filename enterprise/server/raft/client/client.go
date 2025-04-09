@@ -57,8 +57,8 @@ type NodeHost interface {
 }
 
 type IRegistry interface {
-	// Lookup the grpc address given a replica's rangeID and replicaID
-	ResolveGRPC(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error)
+	// Lookup the grpc address given a replica's nhid
+	ResolveGRPC(ctx context.Context, nhid string) (string, error)
 }
 
 type APIClient struct {
@@ -112,7 +112,7 @@ func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescripto
 		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
 	}()
-	addr, _, err := c.registry.ResolveGRPC(ctx, rd.GetRangeId(), rd.GetReplicaId())
+	addr, err := c.registry.ResolveGRPC(ctx, rd.GetNhid())
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (c *APIClient) haveReadyConnections(ctx context.Context, peer string) bool 
 }
 
 func (c *APIClient) HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDescriptor) (bool, error) {
-	addr, _, err := c.registry.ResolveGRPC(ctx, rd.GetRangeId(), rd.GetReplicaId())
+	addr, err := c.registry.ResolveGRPC(ctx, rd.GetNhid())
 	if err != nil {
 		return false, status.WrapError(err, "failed to resolve GRPC address")
 	}
