@@ -529,6 +529,20 @@ func TestRedactTxt(t *testing.T) {
 			txt:      "apikeyexactly20chars@mydomain.com",
 			expected: "<REDACTED>@mydomain.com",
 		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redacted := redact.RedactText(tc.txt)
+			require.Equal(t, tc.expected, redacted)
+		})
+	}
+}
+
+func TestRedactAPIKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		txt      string
+		expected string
+	}{
 		{
 			name:     "api key after equals",
 			txt:      "MY_SECRET_API_KEY=apikeyexactly20chars@mydomain.com",
@@ -553,6 +567,18 @@ func TestRedactTxt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			redacted := redact.RedactText(tc.txt)
 			require.Equal(t, tc.expected, redacted)
+
+			event := &bespb.BuildEvent{
+				Payload: &bespb.BuildEvent_Progress{
+					Progress: &bespb.Progress{
+						Stdout: tc.txt,
+					},
+				},
+			}
+			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+			err := redactor.RedactAPIKeysWithSlowRegexp(context.TODO(), event)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, event.GetProgress().GetStdout())
 		})
 	}
 }
