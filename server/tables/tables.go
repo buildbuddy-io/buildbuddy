@@ -617,6 +617,13 @@ type GitRepository struct {
 	// TODO(http://go/b/3286): Remove this field after completing migration.
 	DefaultNonRootRunner bool `gorm:"not null;default:0"`
 
+	// UseDefaultWorkflowConfig determines whether workflows should use the
+	// default workflow config if there isn't a workflow config file (buildbuddy.yaml)
+	// in the workspace root. If enabled, workflows will automatically start
+	// running for a git repo when it is linked.
+	// TODO(MAGGIE): Create this column first, and backfill to true
+	UseDefaultWorkflowConfig bool `gorm:"not null;default:0"`
+
 	// The ID of the BuildBuddy Github app this repository was authorized for.
 	// (i.e. either the read-only or the read-write app)
 	AppID int64

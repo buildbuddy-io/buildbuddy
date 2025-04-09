@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
@@ -138,10 +139,11 @@ func createWorkflow(t *testing.T, env *testenv.TestEnv, repoURL, groupID string)
 	dbh := env.GetDBHandle()
 	require.NotNil(t, dbh)
 	repo := &tables.GitRepository{
-		RepoURL: repoURL,
-		GroupID: groupID,
-		AppID:   mockGithubAppID,
-		Perms:   perms.GROUP_READ | perms.GROUP_WRITE,
+		RepoURL:                  repoURL,
+		GroupID:                  groupID,
+		AppID:                    mockGithubAppID,
+		Perms:                    perms.GROUP_READ | perms.GROUP_WRITE,
+		UseDefaultWorkflowConfig: false,
 	}
 	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(repo)
 	require.NoError(t, err)
@@ -594,6 +596,104 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
 		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
 		"API key should be set via env-overrides")
+}
+
+func TestWebhook_NoWorkflowConfig_NOP(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+
+	// By default, `UseDefaultWorkflowConfig` is false. If there is not a config file
+	// in the repo, we expect webhooks to trigger a no-op.
+	repo := createWorkflow(t, te, repoURL, gid)
+
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           "https://github.com/acme-inc/acme",
+		PushedBranch:            "main",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+	}
+	// Do not return a buildbuddy.yaml config file in the repo contents.
+	provider.FileContents = map[string]string{}
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	// Give the workflow service a moment to asynchronously handle the request.
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify that no execution requests were triggered.
+	require.Zero(t, len(execClient.executeRequests))
+}
+
+func TestWebhook_UseDefaultWorkflowConfig(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	clientConn := runBBServer(ctx, t, te)
+	bbspb.NewBuildBuddyServiceClient(clientConn)
+
+	repo := &tables.GitRepository{
+		RepoURL: repoURL,
+		GroupID: gid,
+		AppID:   mockGithubAppID,
+		Perms:   perms.GROUP_READ | perms.GROUP_WRITE,
+		// Even though the repo doesn't have a buildbuddy.yaml, we should use
+		// the default config and still trigger an execution.
+		UseDefaultWorkflowConfig: true,
+	}
+	err := te.GetDBHandle().NewQuery(context.Background(), "create_git_repo_for_test").Create(repo)
+	require.NoError(t, err)
+	appInstallation := &tables.GitHubAppInstallation{
+		GroupID: gid,
+		AppID:   mockGithubAppID,
+	}
+	err = te.GetDBHandle().NewQuery(context.Background(), "create_app_installation_for_test").Create(appInstallation)
+	require.NoError(t, err)
+
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           "https://github.com/acme-inc/acme",
+		PushedBranch:            "main",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+	}
+	// Do not return a buildbuddy.yaml config file in the repo contents.
+	provider.FileContents = map[string]string{}
+
+	err = te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
+	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 }
 
 func TestAPIDispatch_ActionFiltering(t *testing.T) {

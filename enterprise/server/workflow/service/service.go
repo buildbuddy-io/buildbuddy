@@ -513,6 +513,10 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
 	if err != nil {
 		return nil, status.WrapError(err, "fetch workflow config")
+	} else if cfg == nil {
+		// If there is no error and no config, the user does not have one configured.
+		// Do nothing in this case.
+		return nil, nil
 	}
 
 	var actions []*config.Action
@@ -1265,7 +1269,7 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 }
 
 // fetchWorkflowConfig returns the BuildBuddyConfig from the repo, or the
-// default BuildBuddyConfig if one is not set up.
+// default BuildBuddyConfig if that setting is enabled.
 func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData) (*config.BuildBuddyConfig, error) {
 	workflowRef := webhookData.SHA
 	if workflowRef == "" {
@@ -1281,6 +1285,10 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 		}
 	} else {
 		if status.IsNotFoundError(err) {
+			if workflow.GitRepository != nil && !workflow.GitRepository.UseDefaultWorkflowConfig {
+				return nil, nil
+			}
+
 			c = config.GetDefault(webhookData.TargetRepoDefaultBranch)
 		} else {
 			return nil, err
