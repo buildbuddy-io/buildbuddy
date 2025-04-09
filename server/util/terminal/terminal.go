@@ -14,7 +14,7 @@ const (
 	// it as the `cap` parameter when making slices to represent lines, which
 	// means we are actually allocating space for slices of this length.
 	// TODO: patch the library to make the cap for slices and the max columns two
-  // different numbers, ideally as a PR.
+	// different numbers, ideally as a PR.
 	columns = 256
 )
 
