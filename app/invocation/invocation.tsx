@@ -571,6 +571,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
               mode="failing"
               filter={this.props.search.get("targetFilter") ?? ""}
               pageSize={activeTab === "all" ? smallPageSize : largePageSize}
+              showLoader
             />
           )}
 

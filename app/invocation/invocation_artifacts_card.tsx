@@ -79,7 +79,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
       if (!artifactListingGroup) return null;
 
       if (this.state.searchLoading) {
-        return <div className="loading" />;
+        return <div className="loading loading-slim invocation-tab-loading" />;
       }
 
       const group = this.state.searchResponse?.targetGroups[0] ?? artifactListingGroup;
