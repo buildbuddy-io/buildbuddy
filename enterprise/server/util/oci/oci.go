@@ -3,9 +3,11 @@ package oci
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"runtime"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
@@ -28,6 +30,7 @@ var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
 	mirrors                = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
+	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 )
 
 type MirrorConfig struct {
@@ -198,7 +201,23 @@ func (c Credentials) Equals(o Credentials) bool {
 	return c.Username == o.Username && c.Password == o.Password
 }
 
-func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
+type Resolver struct {
+	allowedPrivateIPs []*net.IPNet
+}
+
+func NewResolver() (*Resolver, error) {
+	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
+	for _, r := range *allowedPrivateIPs {
+		_, ipNet, err := net.ParseCIDR(r)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invald value %q for executor.container_registry_allowed_private_ips flag: %s", r, err)
+		}
+		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
+	}
+	return &Resolver{allowedPrivateIPs: allowedPrivateIPNets}, nil
+}
+
+func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	imageRef, err := ctrname.ParseReference(imageName)
@@ -223,7 +242,7 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 		}))
 	}
 
-	tr := httpclient.New().Transport
+	tr := httpclient.NewWithAllowedPrivateIPs(60*time.Minute, r.allowedPrivateIPs).Transport
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
 	} else {
