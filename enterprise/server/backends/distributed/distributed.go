@@ -338,23 +338,22 @@ func (t *teeReadCloser) Close() error {
 	return err
 }
 
-func lookasideKey(r *rspb.ResourceName) (string, error) {
-	if strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
+// lookasideKey returns the resource's key in the lookaside cache and true,
+// or "" and false if the resource shouldn't be stored in the lookaside cache.
+func lookasideKey(r *rspb.ResourceName) (key string, ok bool) {
+	if r.GetCacheType() == rspb.CacheType_AC && strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
 		// These are OK to put in the lookaside cache because even
 		// though they are technically AC entries, they are based on CAS
 		// content that does not change.
-		rn, err := digest.ACResourceNameFromProto(r)
-		if err != nil {
-			return "", err
+		if rn, err := digest.ACResourceNameFromProto(r); err == nil {
+			return rn.ActionCacheString(), true
 		}
-		return rn.ActionCacheString(), nil
-	} else {
-		rn, err := digest.CASResourceNameFromProto(r)
-		if err != nil {
-			return "", err
+	} else if r.GetCacheType() == rspb.CacheType_CAS {
+		if rn, err := digest.CASResourceNameFromProto(r); err == nil {
+			return rn.DownloadString(), true
 		}
-		return rn.DownloadString(), nil
 	}
+	return "", false
 }
 
 func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
@@ -364,9 +363,9 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 	if r.GetDigest().GetSizeBytes() > *maxLookasideEntryBytes {
 		return
 	}
-	k, err := lookasideKey(r)
-	if err != nil {
-		c.log.Debugf("Not setting lookaside entry: %s", err)
+	k, ok := lookasideKey(r)
+	if !ok {
+		c.log.Debugf("Not setting lookaside entry for resource: %s", r)
 		return
 	}
 	entry := lookasideCacheEntry{
@@ -386,9 +385,9 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 	if !c.lookasideCacheEnabled() {
 		return nil, false
 	}
-	k, err := lookasideKey(r)
-	if err != nil {
-		c.log.Debugf("Not getting lookaside entry: %s", err)
+	k, ok := lookasideKey(r)
+	if !ok {
+		c.log.Debugf("Not getting lookaside entry for resource: %s", r)
 		return nil, false
 	}
 

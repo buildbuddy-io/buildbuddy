@@ -153,14 +153,14 @@ func NewACResourceName(d *repb.Digest, instanceName string, digestFunction repb.
 
 func (r *ResourceName) CheckCAS() (*CASResourceName, error) {
 	if r.rn.GetCacheType() != rspb.CacheType_CAS {
-		return nil, fmt.Errorf("ResourceName (%s/%s) should have CAS cache_type but has: %s", r.GetInstanceName(), r.GetDigest().GetHash(), r.GetCacheType())
+		return nil, status.FailedPreconditionErrorf("ResourceName is not a CAS resource name: %s", r.rn)
 	}
 	return &CASResourceName{*r}, nil
 }
 
 func (r *ResourceName) CheckAC() (*ACResourceName, error) {
 	if r.rn.GetCacheType() != rspb.CacheType_AC {
-		return nil, fmt.Errorf("ResourceName (%s/%s) should have AC cache_type but has: %s", r.GetInstanceName(), r.GetDigest().GetHash(), r.GetCacheType())
+		return nil, status.FailedPreconditionErrorf("ResourceName is not an AC resource name: %s", r.rn)
 	}
 	return &ACResourceName{*r}, nil
 }
