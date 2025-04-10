@@ -82,7 +82,7 @@ const (
 	persistentWorkerKeyPropertyName         = "persistentWorkerKey"
 	persistentWorkerProtocolPropertyName    = "persistentWorkerProtocol"
 	WorkflowIDPropertyName                  = "workflow-id"
-	workloadIsolationPropertyName           = "workload-isolation-type"
+	WorkloadIsolationPropertyName           = "workload-isolation-type"
 	initDockerdPropertyName                 = "init-dockerd"
 	enableDockerdTCPPropertyName            = "enable-dockerd-tcp"
 	enableVFSPropertyName                   = "enable-vfs"
@@ -297,7 +297,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		pool = ""
 	}
 	recycleRunner := boolProp(m, RecycleRunnerPropertyName, false)
-	isolationType := stringProp(m, workloadIsolationPropertyName, "")
+	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	// Only Enable VFS if it is also enabled via flags.
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false) && *enableVFS
