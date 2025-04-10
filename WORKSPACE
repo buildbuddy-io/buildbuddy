@@ -456,13 +456,9 @@ _go_image_repos()
 
 http_archive(
     name = "io_bazel_rules_k8s",
-    integrity = "sha256-51xa8wL5mhoGlsvgTEm4NRXsfCVgX5lR8a1/evO/pBY=",
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:rules_k8s.patch",
-    ],
-    strip_prefix = "rules_k8s-554dc69933461ae2fa4fefcc46d09d5784832e6c",
-    urls = ["https://github.com/bazelbuild/rules_k8s/archive/554dc69933461ae2fa4fefcc46d09d5784832e6c.tar.gz"],
+    integrity = "sha256-ZrljscP1jrQOK0eCf/qbfbtBOWEIw8fbf7RGN1DVerU=",
+    strip_prefix = "rules_k8s-8230c68f62a4886bec4fa6532a80958d42572b69",
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/8230c68f62a4886bec4fa6532a80958d42572b69.tar.gz"],
 )
 
 load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults", "k8s_repositories")
@@ -472,6 +468,10 @@ k8s_repositories()
 load("@io_bazel_rules_k8s//k8s:k8s_go_deps.bzl", k8s_go_deps = "deps")
 
 k8s_go_deps(go_version = "")
+
+load("@io_bazel_rules_k8s//k8s:k8s_py_deps.bzl", "k8s_py_deps")
+
+k8s_py_deps()
 
 k8s_defaults(
     name = "k8s_deploy",

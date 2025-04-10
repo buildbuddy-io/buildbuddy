@@ -82,6 +82,16 @@ archive_override(
     urls = ["https://github.com/buildbuddy-io/rules_docker/archive/d517338f5a4e29a11b6077ec39e533a518424b53.tar.gz"],
 )
 
+bazel_dep(name = "rules_k8s", repo_name = "io_bazel_rules_k8s")
+archive_override(
+    module_name = "rules_k8s",
+    integrity = "sha256-ZrljscP1jrQOK0eCf/qbfbtBOWEIw8fbf7RGN1DVerU=",
+    strip_prefix = "rules_k8s-8230c68f62a4886bec4fa6532a80958d42572b69",
+    # This is our own fork of rules_docker with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_k8s/compare/master...buildbuddy-io:rules_docker:buildbuddy-fork
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/8230c68f62a4886bec4fa6532a80958d42572b69.tar.gz"],
+)
+
 ## Regular bazel_deps
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.14.0")
