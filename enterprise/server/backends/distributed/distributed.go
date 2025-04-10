@@ -338,23 +338,22 @@ func (t *teeReadCloser) Close() error {
 	return err
 }
 
-func lookasideKey(r *rspb.ResourceName) (string, error) {
-	if strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
+// lookasideKey returns the resource's key in the lookaside cache and true,
+// or "" and false if the resource shouldn't be stored in the lookaside cache.
+func lookasideKey(r *rspb.ResourceName) (key string, ok bool) {
+	if r.GetCacheType() == rspb.CacheType_AC && strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
 		// These are OK to put in the lookaside cache because even
 		// though they are technically AC entries, they are based on CAS
 		// content that does not change.
-		rn, err := digest.ACResourceNameFromProto(r)
-		if err != nil {
-			return "", err
+		if rn, err := digest.ACResourceNameFromProto(r); err == nil {
+			return rn.ActionCacheString(), true
 		}
-		return rn.ActionCacheString(), nil
-	} else {
-		rn, err := digest.CASResourceNameFromProto(r)
-		if err != nil {
-			return "", err
+	} else if r.GetCacheType() == rspb.CacheType_CAS {
+		if rn, err := digest.CASResourceNameFromProto(r); err == nil {
+			return rn.DownloadString(), true
 		}
-		return rn.DownloadString(), nil
 	}
+	return "", false
 }
 
 func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
@@ -364,9 +363,9 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 	if r.GetDigest().GetSizeBytes() > *maxLookasideEntryBytes {
 		return
 	}
-	k, err := lookasideKey(r)
-	if err != nil {
-		c.log.Debugf("Not setting lookaside entry: %s", err)
+	k, ok := lookasideKey(r)
+	if !ok {
+		c.log.Debugf("Not setting lookaside entry for resource: %s", r)
 		return
 	}
 	entry := lookasideCacheEntry{
@@ -382,14 +381,16 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 	c.log.Debugf("Set %q in lookaside cache", k)
 }
 
-func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, error) {
+// getLookasideEntry returns the resource and if it was found in the lookaside
+// cache.
+func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 	if !c.lookasideCacheEnabled() {
-		return nil, status.NotFoundError("lookaside cache disabled")
+		return nil, false
 	}
-	k, err := lookasideKey(r)
-	if err != nil {
-		c.log.Debugf("Not getting lookaside entry: %s", err)
-		return nil, err
+	k, ok := lookasideKey(r)
+	if !ok {
+		c.log.Debugf("Not getting lookaside entry for resource: %s", r)
+		return nil, false
 	}
 
 	c.lookasideMu.Lock()
@@ -415,9 +416,9 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, error) {
 
 	if found {
 		c.log.Debugf("Got %q from lookaside cache", k)
-		return entry.data, nil
+		return entry.data, true
 	}
-	return nil, status.NotFoundError("no valid lookaside entry")
+	return nil, false
 }
 
 func (c *Cache) lookasideWriter(r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
@@ -662,7 +663,7 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
 	for _, r := range rns {
-		if _, err := c.getLookasideEntry(r); err == nil {
+		if _, found := c.getLookasideEntry(r); found {
 			continue
 		} else {
 			stillMissing = append(stillMissing, r)
@@ -682,7 +683,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
 
 	for _, r := range rns {
-		if buf, err := c.getLookasideEntry(r); err == nil {
+		if buf, found := c.getLookasideEntry(r); found {
 			results[r.GetDigest()] = buf
 		} else {
 			stillMissing = append(stillMissing, r)
@@ -720,7 +721,7 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	}
 	lookasideCacheable := offset == 0 && limit == 0
 	if lookasideCacheable {
-		if buf, err := c.getLookasideEntry(r); err == nil {
+		if buf, found := c.getLookasideEntry(r); found {
 			return io.NopCloser(bytes.NewReader(buf)), nil
 		}
 	}
