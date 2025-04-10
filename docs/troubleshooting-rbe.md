@@ -11,7 +11,7 @@ This error is often a sign that a cache write is timing out. By default, bazel's
 We recommend using the following flag to increase this remote timeout:
 
 ```bash
---remote_timeout=600
+--remote_timeout=10m
 ```
 
 These expensive writes should only happen once when artifacts are initially written to the cache, and shouldn't happen on subsequent builds.
@@ -23,7 +23,7 @@ This error is a sign that a cache write is timing out. By default, bazel's `remo
 We recommend using the following flag to increase this remote timeout:
 
 ```bash
---remote_timeout=600
+--remote_timeout=10m
 ```
 
 ## exec user process caused "exec format error"
