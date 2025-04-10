@@ -41,6 +41,8 @@ const (
 	BazelCanonicalIDQualifier         = "bazel.canonical_id"
 	BazelHttpHeaderPrefixQualifier    = "http_header:"
 	BazelHttpHeaderUrlPrefixQualifier = "http_header_url:"
+
+	maxHTTPTimeout = 60 * time.Minute
 )
 
 type FetchServer struct {
@@ -94,9 +96,8 @@ func timeoutFromContext(ctx context.Context) (time.Duration, bool) {
 	return time.Until(deadline), true
 }
 
-// newFetchClient returns an HTTP client that respects the given timeout as well
-// as the set of allowed IPs.
-func (s *FetchServer) newFetchClient(ctx context.Context, protoTimeout *durationpb.Duration) *http.Client {
+// computeRequestTimeout determines the overall timeout for the request.
+func (s *FetchServer) computeRequestTimeout(ctx context.Context, protoTimeout *durationpb.Duration) time.Duration {
 	timeout := time.Duration(0)
 	if ctxDuration, ok := timeoutFromContext(ctx); ok {
 		timeout = ctxDuration
@@ -104,7 +105,10 @@ func (s *FetchServer) newFetchClient(ctx context.Context, protoTimeout *duration
 	if protoTimeout != nil {
 		timeout = protoTimeout.AsDuration()
 	}
-	return httpclient.NewWithAllowedPrivateIPs(timeout, s.allowedPrivateIPNets)
+	if timeout == 0 || timeout > maxHTTPTimeout {
+		timeout = maxHTTPTimeout
+	}
+	return timeout
 }
 
 // parseChecksumQualifier returns a digest function and digest hash
@@ -200,7 +204,11 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			}, nil
 		}
 	}
-	httpClient := p.newFetchClient(ctx, req.GetTimeout())
+
+	httpClient := httpclient.NewWithAllowedPrivateIPs(p.allowedPrivateIPNets)
+
+	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))
+	defer cancel()
 
 	// Keep track of the last fetch error so that if we fail to fetch, we at
 	// least have something we can return to the client.
