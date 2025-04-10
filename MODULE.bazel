@@ -220,7 +220,9 @@ buildbuddy.msvc_toolchain(
     msvc_version = "14.43.34808",
 )
 register_toolchains(
-    "@toolchains_buildbuddy//toolchains/cc:all",
+    "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64",
+    "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_arm64",
+    "@toolchains_buildbuddy//toolchains/cc:windows_msvc_x86_64",
 )
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
@@ -304,5 +306,3 @@ http_archive(
     strip_prefix = "cloudprober-v0.11.2-ubuntu-x86_64",
     urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
 )
-
-register_toolchains("@com_google_protobuf//bazel/private/toolchains:all")
