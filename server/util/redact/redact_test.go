@@ -281,6 +281,60 @@ func TestRedactRemoteHeaders(t *testing.T) {
 	}
 }
 
+func TestRemoveRepoURLCredentials(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	for _, tc := range []struct {
+		name     string
+		event    *bespb.BuildEvent
+		expected *bespb.BuildEvent
+	}{
+		{
+			name: "remove credentials from github repository url in structured command line options",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "client_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+					CombinedForm: "--client_env=GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "test_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+					CombinedForm: "--test_env=GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "repo_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+					CombinedForm: "--repo_env=GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "client_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://github.com/foo/bar",
+					CombinedForm: "--client_env=GITHUB_REPOSITORY=https://github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "test_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://github.com/foo/bar",
+					CombinedForm: "--test_env=GITHUB_REPOSITORY=https://github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "repo_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://github.com/foo/bar",
+					CombinedForm: "--repo_env=GITHUB_REPOSITORY=https://github.com/foo/bar",
+				},
+			}}}}}}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor(te)
+			err := redactor.RedactMetadata(tc.event)
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
+		})
+	}
+}
+
 func fileWithURI(uri string) *bespb.File {
 	return &bespb.File{
 		Name: "foo.txt",
@@ -323,15 +377,12 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		expectedValue string
 	}{
 		{"client_env", "SECRET=codez", "SECRET=<REDACTED>"},
-		{"client_env", "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
 		{"client_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
 		{"client_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
 		{"test_env", "SECRET=codez", "SECRET=<REDACTED>"},
-		{"test_env", "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
 		{"test_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
 		{"test_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
 		{"repo_env", "SECRET=codez", "SECRET=<REDACTED>"},
-		{"repo_env", "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
 		{"repo_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
 		{"repo_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
 		{"repo_env", "AWS_SECRET_ACCESS_KEY=super_secret_aws_secret_access_key", "AWS_SECRET_ACCESS_KEY=<REDACTED>"},
