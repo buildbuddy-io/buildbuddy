@@ -411,7 +411,6 @@ func pushAndFetchRandomImage(t *testing.T, registry *testregistry.Registry) erro
 }
 
 func TestAllowPrivateIPs(t *testing.T) {
-	//flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"0.0.0.0/0"})
 	registry := testregistry.Run(t, testregistry.Opts{})
 	err := pushAndFetchRandomImage(t, registry)
 	require.ErrorContains(t, err, "not allowed")
