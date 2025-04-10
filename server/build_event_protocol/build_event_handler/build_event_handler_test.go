@@ -1361,6 +1361,16 @@ func TestBuildStatusReporting(t *testing.T) {
 			ctx := context.Background()
 			handler := build_event_handler.NewBuildEventHandler(te)
 
+			// Initialize a git repo to report statuses for.
+			dbh := te.GetDBHandle()
+			require.NotNil(t, dbh)
+			repo := &tables.GitRepository{
+				RepoURL:                         "https://github.com/testowner/testrepo",
+				ReportCommitStatusesForCIBuilds: true,
+			}
+			err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(repo)
+			require.NoError(t, err)
+
 			// Start an invocation
 			seq := NewBESSequence(t)
 			channel := handler.OpenChannel(ctx, seq.InvocationID)
@@ -1380,7 +1390,7 @@ func TestBuildStatusReporting(t *testing.T) {
 					OptionsDescription: "--some_build_options",
 				}},
 			}
-			err := channel.HandleEvent(seq.NextRequest(started))
+			err = channel.HandleEvent(seq.NextRequest(started))
 			require.NoError(t, err)
 
 			// Should not have reported any statuses yet, since we haven't
@@ -1442,6 +1452,125 @@ func TestBuildStatusReporting(t *testing.T) {
 					},
 				},
 			}, client.ConsumeStatuses())
+		})
+	}
+}
+
+func TestBuildStatusReportingDisabled(t *testing.T) {
+	for _, test := range []struct {
+		name                     string
+		enableReportingForRepo   bool
+		role                     string
+		disableReportingForBuild string
+	}{
+		{
+			name:                     "status reporting disabled for the repo",
+			enableReportingForRepo:   false,
+			role:                     "CI",
+			disableReportingForBuild: "false",
+		},
+		{
+			name:                     "status reporting disabled for the build",
+			enableReportingForRepo:   true,
+			role:                     "CI",
+			disableReportingForBuild: "true",
+		},
+		{
+			name:                     "not CI build",
+			enableReportingForRepo:   true,
+			role:                     "default",
+			disableReportingForBuild: "false",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			fakeGH := &FakeGitHubStatusService{}
+			te.SetGitHubStatusService(fakeGH)
+			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+			te.SetAuthenticator(auth)
+			ctx := context.Background()
+			handler := build_event_handler.NewBuildEventHandler(te)
+
+			// Initialize a git repo to report statuses for.
+			dbh := te.GetDBHandle()
+			require.NotNil(t, dbh)
+			repo := &tables.GitRepository{
+				RepoURL:                         "https://github.com/testowner/testrepo",
+				ReportCommitStatusesForCIBuilds: test.enableReportingForRepo,
+			}
+			err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(repo)
+			require.NoError(t, err)
+
+			buildEvents := []*bspb.BuildEvent{
+				{
+					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Pattern{Pattern: &bspb.BuildEventId_PatternExpandedId{
+						Pattern: []string{"//..."},
+					}}},
+				},
+				{
+					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildMetadata{}},
+					Payload: &bspb.BuildEvent_BuildMetadata{BuildMetadata: &bspb.BuildMetadata{
+						Metadata: map[string]string{
+							"ROLE":                            test.role,
+							"DISABLE_COMMIT_STATUS_REPORTING": test.disableReportingForBuild,
+						},
+					}},
+				},
+				{
+					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_WorkspaceStatus{}},
+					Payload: &bspb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bspb.WorkspaceStatus{
+						Item: []*bspb.WorkspaceStatus_Item{
+							{Key: "REPO_URL", Value: "https://github.com/testowner/testrepo.git"},
+							{Key: "COMMIT_SHA", Value: "0c894fe31c2e91d59cb1a59bb25aaa78089919c2"},
+						},
+					}},
+				},
+			}
+
+			// Start an invocation
+			seq := NewBESSequence(t)
+			channel := handler.OpenChannel(ctx, seq.InvocationID)
+
+			// Handle Started event referencing the metadata events as children.
+			var metadataEventIDs []*bspb.BuildEventId
+			for _, e := range buildEvents {
+				metadataEventIDs = append(metadataEventIDs, e.GetId())
+			}
+			started := &bspb.BuildEvent{
+				Id:       &bspb.BuildEventId{Id: &bspb.BuildEventId_Started{}},
+				Children: metadataEventIDs,
+				Payload: &bspb.BuildEvent_Started{Started: &bspb.BuildStarted{
+					Command: "build",
+					// TODO: the test fails unless OptionsDescription is set,
+					// which seems error-prone.
+					OptionsDescription: "--some_build_options",
+				}},
+			}
+			err = channel.HandleEvent(seq.NextRequest(started))
+			require.NoError(t, err)
+
+			// Handle metadata events.
+			for _, event := range buildEvents {
+				err := channel.HandleEvent(seq.NextRequest(event))
+				require.NoError(t, err)
+				require.Empty(t, fakeGH.Clients)
+			}
+			// No statuses should've been reported.
+			require.Empty(t, fakeGH.Clients)
+
+			// Handle the Finished event - should not report a status.
+			fin := &bspb.BuildEvent{
+				Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildFinished{}},
+				Payload: &bspb.BuildEvent_Finished{Finished: &bspb.BuildFinished{
+					ExitCode: &bspb.BuildFinished_ExitCode{
+						Name: "SUCCESS",
+						Code: 0,
+					},
+				}},
+			}
+			err = channel.HandleEvent(seq.NextRequest(fin))
+			require.NoError(t, err)
+			require.Empty(t, fakeGH.Clients)
 		})
 	}
 }
