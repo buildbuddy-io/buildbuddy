@@ -1807,14 +1807,14 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if isolationType != string(platform.FirecrackerContainerType) {
 		return task
 	}
-	md, found := metadata.FromIncomingContext(ctx)
-	if !found {
-		md = make(metadata.MD)
-	}
 	metaBytes, err := proto.Marshal(taskProto.GetRequestMetadata())
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to marshal request metadata: %s", err)
 		return task
+	}
+	md, found := metadata.FromIncomingContext(ctx)
+	if !found {
+		md = make(metadata.MD)
 	}
 	md.Append(bazel_request.RequestMetadataKey, string(metaBytes))
 	ctx = metadata.NewIncomingContext(ctx, md)

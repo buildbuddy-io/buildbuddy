@@ -36,6 +36,9 @@ func GetRequestMetadataBytes(ctx context.Context) []byte {
 
 func ParseRequestMetadataOnce(ctx context.Context) context.Context {
 	rmd := GetRequestMetadata(ctx)
+	if rmd == nil {
+		return ctx
+	}
 
 	// Set the parsed request metadata on the context. By doing this once
 	// and saving the value on the context, we save a bunch of work when
