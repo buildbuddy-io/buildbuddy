@@ -206,11 +206,17 @@ func TestToProto(t *testing.T) {
 			oci.Credentials{Username: "foo", Password: "bar"}.ToProto()))
 }
 
+func newResolver(t *testing.T) *oci.Resolver {
+	r, err := oci.NewResolver()
+	require.NoError(t, err)
+	return r
+}
+
 func TestResolve(t *testing.T) {
 	flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{})
 	imageName, _ := registry.PushRandomImage(t)
-	_, err := oci.Resolve(
+	_, err := newResolver(t).Resolve(
 		context.Background(),
 		imageName,
 		&rgpb.Platform{
@@ -222,7 +228,7 @@ func TestResolve(t *testing.T) {
 }
 
 func TestResolve_InvalidImage(t *testing.T) {
-	_, err := oci.Resolve(
+	_, err := newResolver(t).Resolve(
 		context.Background(),
 		":invalid",
 		&rgpb.Platform{
@@ -250,7 +256,7 @@ func TestResolve_Unauthorized(t *testing.T) {
 	})
 
 	imageName, _ := registry.PushRandomImage(t)
-	_, err := oci.Resolve(
+	_, err := newResolver(t).Resolve(
 		context.Background(),
 		imageName,
 		&rgpb.Platform{
@@ -291,7 +297,7 @@ func TestResolve_Arm64VariantIsOptional(t *testing.T) {
 
 			ref := registry.PushIndex(t, index, "test-multiplatform-image")
 
-			pulledImg, err := oci.Resolve(ctx, ref, &rgpb.Platform{
+			pulledImg, err := newResolver(t).Resolve(ctx, ref, &rgpb.Platform{
 				Arch: "arm64",
 				Os:   "linux",
 			}, oci.Credentials{})
@@ -370,7 +376,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	})
 
 	// Resolve the image, which should fall back to the original after mirror fails.
-	img, err := oci.Resolve(
+	img, err := newResolver(t).Resolve(
 		context.Background(),
 		imageName,
 		&rgpb.Platform{
@@ -389,4 +395,31 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	// Ensure the mirror was attempted first, then the original.
 	assert.Equal(t, int32(1), mirrorReqCount.Load(), "mirror should have been queried once")
 	assert.Equal(t, int32(1), originalReqCount.Load(), "original registry should have been queried after mirror failed")
+}
+
+func pushAndFetchRandomImage(t *testing.T, registry *testregistry.Registry) error {
+	imageName, _ := registry.PushRandomImage(t)
+	_, err := newResolver(t).Resolve(
+		context.Background(),
+		imageName,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{})
+	return err
+}
+
+func TestAllowPrivateIPs(t *testing.T) {
+	registry := testregistry.Run(t, testregistry.Opts{})
+	err := pushAndFetchRandomImage(t, registry)
+	require.ErrorContains(t, err, "not allowed")
+
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	err = pushAndFetchRandomImage(t, registry)
+	require.NoError(t, err)
+
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"0.0.0.0/0"})
+	err = pushAndFetchRandomImage(t, registry)
+	require.NoError(t, err)
 }

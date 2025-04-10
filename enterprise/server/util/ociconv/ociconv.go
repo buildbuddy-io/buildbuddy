@@ -191,7 +191,11 @@ func createExt4Image(ctx context.Context, cacheRoot, containerImage string, cred
 // convertContainerToExt4FS generates an ext4 filesystem image from an OCI
 // container image reference.
 func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	img, err := oci.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds)
+	resolver, err := oci.NewResolver()
+	if err != nil {
+		return "", err
+	}
+	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return "", err
 	}
