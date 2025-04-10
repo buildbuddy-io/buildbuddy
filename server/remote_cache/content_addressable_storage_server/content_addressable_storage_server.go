@@ -759,17 +759,16 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		defer mu.Unlock()
 
 		dir := dirWithDigest.Directory
-		rn := digest.ResourceNameFromProto(dirWithDigest.ResourceName)
-		d := rn.GetDigest()
+		size := dirWithDigest.GetResourceName().GetDigest().GetSizeBytes()
 
-		if rspSizeBytes+d.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
+		if rspSizeBytes+size > rpcutil.GRPCMaxSizeBytes {
 			if err := stream.Send(rsp); err != nil {
 				return err
 			}
 			rsp = &repb.GetTreeResponse{}
 			rspSizeBytes = 0
 		}
-		rspSizeBytes += d.GetSizeBytes()
+		rspSizeBytes += size
 		rsp.Directories = append(rsp.Directories, dir)
 		dirCount += 1
 		return nil
