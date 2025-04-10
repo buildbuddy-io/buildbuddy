@@ -22,7 +22,9 @@ export default class TargetTestSuiteComponent extends React.Component<Props> {
                     )}
                     {testCase.getAttribute("name")}
                   </div>
-                  <div className="test-case-time">{testCase.getAttribute("time")} s</div>
+                  <div className="test-case-time">
+                    {testCase.getAttribute("time") === null ? null : `${testCase.getAttribute("time")} s`}
+                  </div>
                 </div>
                 {Array.from(testCase.children)
                   .filter((child) => child.tagName != "system-out" && child.tagName != "system-err")
