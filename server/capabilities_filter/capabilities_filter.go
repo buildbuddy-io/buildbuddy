@@ -157,7 +157,6 @@ var (
 		"UpdateSecret",
 		"DeleteSecret",
 		// Workflow management
-		"CreateWorkflow",
 		"DeleteWorkflow",
 		"InvalidateAllSnapshotsForRepo",
 		// RBE deployment view

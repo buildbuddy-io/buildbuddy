@@ -258,100 +258,7 @@ func (ws *workflowService) checkPreconditions(ctx context.Context) error {
 	return nil
 }
 
-// TODO(Maggie): Clean up all references to creating legacy workflows
-func (ws *workflowService) CreateLegacyWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
-	// Validate the request.
-	if err := ws.checkPreconditions(ctx); err != nil {
-		return nil, err
-	}
-	repoReq := req.GetGitRepo()
-	if repoReq.GetRepoUrl() == "" {
-		return nil, status.InvalidArgumentError("A repo URL is required to create a new workflow.")
-	}
-
-	// Ensure the request is authenticated so some group can own this workflow.
-	user, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	groupID := user.GetGroupID()
-	permissions := &perms.UserGroupPerm{
-		UserID:  groupID,
-		GroupID: groupID,
-		Perms:   perms.GROUP_READ | perms.GROUP_WRITE,
-	}
-
-	u, err := gitutil.NormalizeRepoURL(repoReq.GetRepoUrl())
-	if err != nil {
-		return nil, err
-	}
-	repoURL := u.String()
-
-	provider, err := ws.providerForRepo(repoURL)
-	if err != nil {
-		return nil, err
-	}
-	username := repoReq.GetUsername()
-	accessToken := repoReq.GetAccessToken()
-
-	// If no access token is provided explicitly, try getting the token from the
-	// group.
-	if accessToken == "" && isGitHubURL(repoURL) {
-		token, err := ws.legacyGithubTokenForAuthorizedGroup(ctx, req.GetRequestContext())
-		if err != nil {
-			return nil, status.InvalidArgumentError("An access token is required since the current organization does not have a GitHub account linked.")
-		}
-		accessToken = token
-	}
-
-	// Do a quick check to see if this is a valid repo that we can actually access.
-	if err := ws.testRepo(ctx, repoURL, username, accessToken); err != nil {
-		return nil, status.UnavailableErrorf("Repo %q is unavailable: %s", repoURL, err.Error())
-	}
-
-	webhookID, err := generateWebhookID()
-	if err != nil {
-		return nil, status.InternalError(err.Error())
-	}
-	webhookURL, err := ws.getWebhookURL(webhookID)
-	if err != nil {
-		return nil, status.InternalError(err.Error())
-	}
-
-	rsp := &wfpb.CreateWorkflowResponse{}
-
-	providerWebhookID, err := provider.RegisterWebhook(ctx, accessToken, repoURL, webhookURL)
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to register webhook with git provider: %s", err)
-	}
-	rsp.WebhookRegistered = (providerWebhookID != "")
-
-	workflowID, err := tables.PrimaryKeyForTable("Workflows")
-	if err != nil {
-		return nil, status.InternalError(err.Error())
-	}
-	rsp.Id = workflowID
-	rsp.WebhookUrl = webhookURL
-	wf := &tables.Workflow{
-		WorkflowID:           workflowID,
-		UserID:               permissions.UserID,
-		GroupID:              permissions.GroupID,
-		Perms:                permissions.Perms,
-		Name:                 req.GetName(),
-		RepoURL:              repoURL,
-		Username:             username,
-		AccessToken:          accessToken,
-		WebhookID:            webhookID,
-		GitProviderWebhookID: providerWebhookID,
-	}
-	err = ws.env.GetDBHandle().NewQuery(ctx, "workflow_service_insert_workflow").Create(wf)
-	if err != nil {
-		return nil, err
-	}
-	return rsp, nil
-}
-
-func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
+func (ws *workflowService) DeleteLegacyWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
@@ -404,7 +311,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	return &wfpb.DeleteWorkflowResponse{}, nil
 }
 
-func (ws *workflowService) GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error) {
+func (ws *workflowService) GetLinkedLegacyWorkflows(ctx context.Context, accessToken string) ([]string, error) {
 	q, args := query_builder.
 		NewQuery(`SELECT workflow_id FROM "Workflows"`).
 		AddWhereClause("access_token = ?", accessToken).
@@ -435,7 +342,7 @@ func (ws *workflowService) providerForRepo(repoURL string) (interfaces.GitProvid
 	return nil, status.InvalidArgumentErrorf("could not find git provider for %s", u.Hostname())
 }
 
-func (ws *workflowService) GetWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error) {
+func (ws *workflowService) GetLegacyWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error) {
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
@@ -848,7 +755,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	if len(repos) == 0 {
 		// Fall back to legacy workflow registrations.
 		repos = []string{}
-		workflows, err := ws.GetWorkflows(ctx)
+		workflows, err := ws.GetLegacyWorkflows(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1656,6 +1563,9 @@ func workflowHomeDir(user string) string {
 	return "/root"
 }
 
+// ServeHTTP is a deprecated way to handle webhook events for legacy workflows.
+// Modern workflows should use the GitHub app, which should route through
+// `HandleRepositoryEvent` instead.
 func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	workflowMatch := workflowURLMatcher.FindStringSubmatch(r.URL.Path)
 	if len(workflowMatch) != 2 {

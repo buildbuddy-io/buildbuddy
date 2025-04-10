@@ -1386,22 +1386,15 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 	}
 }
 
-// TODO(Maggie): Delete this when all FE references have been deleted
-func (s *BuildBuddyServer) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
-	if wfs := s.env.GetWorkflowService(); wfs != nil {
-		return wfs.CreateLegacyWorkflow(ctx, req)
-	}
-	return nil, status.UnimplementedError("Not implemented")
-}
 func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
-		return wfs.DeleteWorkflow(ctx, req)
+		return wfs.DeleteLegacyWorkflow(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
-		return wfs.GetWorkflows(ctx)
+		return wfs.GetLegacyWorkflows(ctx)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
@@ -1497,12 +1490,12 @@ func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.Un
 	res := &ghpb.UnlinkGitHubAccountResponse{}
 	// Delete workflows linked with this GitHub token
 	if ws := s.env.GetWorkflowService(); ws != nil {
-		wfids, err := ws.GetLinkedWorkflows(ctx, *g.GithubToken)
+		wfids, err := ws.GetLinkedLegacyWorkflows(ctx, *g.GithubToken)
 		if err != nil {
 			return nil, err
 		}
 		for _, id := range wfids {
-			if _, err := ws.DeleteWorkflow(ctx, &wfpb.DeleteWorkflowRequest{Id: id}); err != nil {
+			if _, err := ws.DeleteLegacyWorkflow(ctx, &wfpb.DeleteWorkflowRequest{Id: id}); err != nil {
 				// TODO(bduffany): Treat only webhook unlink errors as warnings;
 				// failing to delete the workflow from the DB should be fatal
 				res.Warning = append(res.Warning, err.Error())
