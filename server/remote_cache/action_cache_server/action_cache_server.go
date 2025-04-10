@@ -205,15 +205,24 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		if err != nil {
 			return nil, err
 		}
+
+		// NOTE: To avoid double-counting AC hits, callers that specify a
+		// cached_action_result_digest don't do hit tracking on their own.  This
+		// means we need to track the full response size here instead.
+		uncompressedResultSizeBytes = int64(proto.Size(rsp))
+		isCacheHit = true
+		// Now that we've tracked size, wipe out the response.
 		if proto.Equal(req.GetCachedActionResultDigest(), d) {
 			rsp = &repb.ActionResult{
 				ActionResultDigest: d,
 			}
 		}
+	} else {
+		// If the client didn't specify a cached value, just track usage the way
+		// you would expect.
+		uncompressedResultSizeBytes = int64(proto.Size(rsp))
+		isCacheHit = true
 	}
-
-	isCacheHit = true
-	uncompressedResultSizeBytes = int64(proto.Size(rsp))
 
 	return rsp, nil
 }
