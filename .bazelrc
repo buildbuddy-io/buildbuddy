@@ -59,10 +59,8 @@ common:target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:pl
 
 common:bzlmod-target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
-# common:bzlmod-target-linux-x86 --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64
 common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
 common:bzlmod-target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
-# common:bzlmod-target-linux-x86 --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_arm64
 
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared

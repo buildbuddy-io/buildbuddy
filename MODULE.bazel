@@ -219,6 +219,7 @@ buildbuddy.msvc_toolchain(
     # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
     msvc_version = "14.43.34808",
 )
+
 register_toolchains(
     "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64",
     "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_arm64",
