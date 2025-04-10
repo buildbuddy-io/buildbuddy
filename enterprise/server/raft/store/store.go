@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"net"
 	"path/filepath"
 	"sort"
@@ -1519,6 +1520,7 @@ const (
 	zombieCleanupRemoveReplica
 	zombieCleanupStopReplica
 	zombieCleanupRemoveData
+	zombieCleanupWait
 )
 
 type zombieCleanupTask struct {
@@ -1527,7 +1529,10 @@ type zombieCleanupTask struct {
 	shardInfo dragonboat.ShardInfo
 	rd        *rfpb.RangeDescriptor
 	opened    bool
-	action    zombieCleanupAction
+
+	action          zombieCleanupAction
+	attempts        int
+	nextAttemptTime time.Time
 }
 
 type replicaJanitor struct {
@@ -1560,6 +1565,11 @@ func newReplicaJanitor(clock clockwork.Clock, store *Store, scanInterval time.Du
 		lastDetectedAt:    make(map[uint64]time.Time),
 		store:             store,
 	}
+}
+
+func (rj *replicaJanitor) nextAttemptTime(attemptNumber int) time.Time {
+	backoff := float64(1*time.Second) * math.Pow(2, float64(attemptNumber))
+	return rj.clock.Now().Add(time.Duration(backoff))
 }
 
 func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescriptor) *zombieCleanupTask {
@@ -1625,9 +1635,16 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 				}).Inc()
 				if err != nil {
 					j.store.log.Errorf("failed to remove zombie c%dn%d: %s", task.rangeID, task.replicaID, err)
+					task.attempts++
+					task.nextAttemptTime = j.nextAttemptTime(task.attempts)
+				} else {
+					task.attempts = 0
+					task.nextAttemptTime = time.Time{}
 				}
 				if action != zombieCleanupNoAction {
-					task.action = action
+					if action != zombieCleanupWait {
+						task.action = action
+					}
 					j.tasks <- task
 				} else {
 					j.store.log.Debugf("removed zombie c%dn%d", task.rangeID, task.replicaID)
@@ -1732,6 +1749,14 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTask) (zombieCleanupAction, error) {
 	if task.action == zombieCleanupNoAction {
 		return zombieCleanupNoAction, nil
+	}
+
+	if err := j.rateLimiter.Wait(ctx); err != nil {
+		return task.action, err
+	}
+
+	if !task.nextAttemptTime.IsZero() && j.clock.Now().Before(task.nextAttemptTime) {
+		return zombieCleanupWait, nil
 	}
 
 	log.Debugf("removing zombie c%dn%d, action=%d", task.rangeID, task.replicaID, task.action)
