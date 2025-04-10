@@ -1577,9 +1577,13 @@ func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescr
 					return ss
 				}
 			}
+			ss.action = zombieCleanupNoAction
+		} else {
+			// This shard is in LogInfo, but not started and it's not found in
+			// meta range; so we should remove the data of this shard so that
+			// it won't be re-created during start-up
+			ss.action = zombieCleanupRemoveData
 		}
-
-		ss.action = zombieCleanupNoAction
 		return ss
 	}
 
