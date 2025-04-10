@@ -1747,12 +1747,12 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		return zombieCleanupNoAction, nil
 	}
 
-	if !task.nextAttemptTime.IsZero() && j.clock.Now().Before(task.nextAttemptTime) {
-		return zombieCleanupWait, nil
-	}
-
 	if err := j.rateLimiter.Wait(ctx); err != nil {
 		return task.action, err
+	}
+
+	if !task.nextAttemptTime.IsZero() && j.clock.Now().Before(task.nextAttemptTime) {
+		return zombieCleanupWait, nil
 	}
 
 	log.Debugf("removing zombie c%dn%d, action=%d", task.rangeID, task.replicaID, task.action)
