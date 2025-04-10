@@ -266,6 +266,6 @@ func registerInternalGRPCServices(grpcServer *grpc.Server, env *real_environment
 		return status.InternalErrorf("CacheProxy: error starting local actioncache server: %s", err.Error())
 	}
 	repb.RegisterActionCacheServer(grpcServer, localAC)
-	env.SetInternalActionCacheServer(localAC)
+	env.SetLocalActionCacheServer(localAC)
 	return nil
 }
