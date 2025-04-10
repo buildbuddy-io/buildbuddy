@@ -383,7 +383,7 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 
 // getLookasideEntry returns the resource and if it was found in the lookaside
 // cache.
-func (c *Cache) getLookasideEntry(r *rspb.ResourceName) (data []byte, found bool) {
+func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 	if !c.lookasideCacheEnabled() {
 		return nil, false
 	}
@@ -394,6 +394,7 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) (data []byte, found bool
 	}
 
 	c.lookasideMu.Lock()
+	found := false
 	entry, ok := c.lookaside.Get(k)
 	if ok {
 		if time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
