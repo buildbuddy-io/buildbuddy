@@ -37,7 +37,6 @@ go_library(
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",
         "@org_golang_google_protobuf//encoding/prototext",
         "@org_golang_google_protobuf//types/known/durationpb",
