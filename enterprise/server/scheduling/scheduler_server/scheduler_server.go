@@ -1793,10 +1793,6 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		return task
 	}
 
-	// We need the bazel RequestMetadata to make experiment decisions. The Lease
-	// RPC doesn't get this metadata, because the executor doesn't get it until
-	// the lease returns. Instead of piping it all the way through, create a new
-	// gRPC incoming context from the serialized task's metadata.
 	taskProto := &repb.ExecutionTask{}
 	if err := proto.Unmarshal(task, taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
@@ -1806,6 +1802,11 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if isolationType != string(platform.FirecrackerContainerType) {
 		return task
 	}
+
+	// We need the bazel RequestMetadata to make experiment decisions. The Lease
+	// RPC doesn't get this metadata, because the executor doesn't get it until
+	// the lease returns. Instead of piping it all the way through, override it
+	// with the value in the task.
 	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
 
 	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", experiments.WithContext("executor_hostname", executorHostname))
