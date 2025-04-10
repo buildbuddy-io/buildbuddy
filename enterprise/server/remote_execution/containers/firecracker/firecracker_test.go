@@ -322,7 +322,7 @@ func runProxyGrpcServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *test
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	proxyEnv.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
-	proxyEnv.SetInternalActionCacheServer(acServer)
+	proxyEnv.SetLocalActionCacheServer(acServer)
 }
 
 func executorRootDir(t *testing.T) string {

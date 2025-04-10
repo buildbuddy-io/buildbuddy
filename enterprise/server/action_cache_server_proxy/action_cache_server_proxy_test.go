@@ -40,7 +40,7 @@ func runACProxy(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticato
 	env.SetActionCacheClient(client)
 	acServer, err := action_cache_server.NewActionCacheServer(env)
 	require.NoError(t, err)
-	env.SetInternalActionCacheServer(acServer)
+	env.SetLocalActionCacheServer(acServer)
 
 	proxyServer, err := NewActionCacheServerProxy(env)
 	require.NoError(t, err)

@@ -99,7 +99,7 @@ type RealEnv struct {
 	localByteStreamClient            bspb.ByteStreamClient
 	byteStreamServer                 bspb.ByteStreamServer
 	actionCacheServer                repb.ActionCacheServer
-	internalActionCacheServer        repb.ActionCacheServer
+	localActionCacheServer           repb.ActionCacheServer
 	pushServer                       rapb.PushServer
 	fetchServer                      rapb.FetchServer
 	capabilitiesServer               repb.CapabilitiesServer
@@ -569,11 +569,11 @@ func (r *RealEnv) SetActionCacheServer(actionCacheServer repb.ActionCacheServer)
 	r.actionCacheServer = actionCacheServer
 }
 
-func (r *RealEnv) GetInternalActionCacheServer() repb.ActionCacheServer {
-	return r.internalActionCacheServer
+func (r *RealEnv) GetLocalActionCacheServer() repb.ActionCacheServer {
+	return r.localActionCacheServer
 }
-func (r *RealEnv) SetInternalActionCacheServer(actionCacheServer repb.ActionCacheServer) {
-	r.internalActionCacheServer = actionCacheServer
+func (r *RealEnv) SetLocalActionCacheServer(actionCacheServer repb.ActionCacheServer) {
+	r.localActionCacheServer = actionCacheServer
 }
 
 func (r *RealEnv) GetPushServer() rapb.PushServer {

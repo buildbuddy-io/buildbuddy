@@ -147,7 +147,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	}
 
 	if proxy_util.SkipRemote(ctx) {
-		return s.env.GetInternalActionCacheServer().GetActionResult(ctx, req)
+		return s.env.GetLocalActionCacheServer().GetActionResult(ctx, req)
 	}
 
 	// If using the remote cache as the source of truth, we must validate that
@@ -203,7 +203,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	// Only if it's explicitly requested do we cache AC results locally.
 	if proxy_util.SkipRemote(ctx) {
-		return s.env.GetInternalActionCacheServer().UpdateActionResult(ctx, req)
+		return s.env.GetLocalActionCacheServer().UpdateActionResult(ctx, req)
 	}
 
 	// By default, we use the remote cache as the source of truth for AC results.
