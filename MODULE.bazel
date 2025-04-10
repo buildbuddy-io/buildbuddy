@@ -28,7 +28,7 @@ single_version_override(
     patches = [
         "@@//buildpatches:bzlmod_googleapis.patch",
     ],
-    version = "0.0.0-20240326-1c8d509c5",
+    version = "0.0.0-20241220-5e258e33",
 )
 
 # Note that this is 'rules_nodejs-core'
@@ -85,11 +85,11 @@ archive_override(
 bazel_dep(name = "rules_k8s", repo_name = "io_bazel_rules_k8s")
 archive_override(
     module_name = "rules_k8s",
-    integrity = "sha256-ZrljscP1jrQOK0eCf/qbfbtBOWEIw8fbf7RGN1DVerU=",
-    strip_prefix = "rules_k8s-8230c68f62a4886bec4fa6532a80958d42572b69",
+    integrity = "sha256-mC/KIhoemKD8w+bjDhvaJhjs2uR5YGhiYzlKV4ZsM/U=",
+    strip_prefix = "rules_k8s-581b899ba486f3dcccd3af9191df8499dc508f84",
     # This is our own fork of rules_docker with bzlmod support.
     # Diff: https://github.com/bazelbuild/rules_k8s/compare/master...buildbuddy-io:rules_docker:buildbuddy-fork
-    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/8230c68f62a4886bec4fa6532a80958d42572b69.tar.gz"],
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/581b899ba486f3dcccd3af9191df8499dc508f84.tar.gz"],
 )
 
 ## Regular bazel_deps
@@ -103,6 +103,7 @@ bazel_dep(name = "aspect_rules_ts", version = "3.5.1")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "protobuf", version = "29.3", repo_name = "com_google_protobuf")
+bazel_dep(name = "rules_cc", version = "0.0.17")
 bazel_dep(name = "rules_go", version = "0.52.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_oci", version = "2.0.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -218,6 +219,9 @@ buildbuddy.msvc_toolchain(
     # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
     msvc_version = "14.43.34808",
 )
+register_toolchains(
+    "@toolchains_buildbuddy//toolchains/cc:all",
+)
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.24.1")
@@ -275,13 +279,6 @@ rules_ts_ext.deps(
 # https://github.com/aspect-build/rules_ts/pull/786
 use_repo(rules_ts_ext, "npm_typescript")
 
-switched_rules = use_extension("@googleapis//:extensions.bzl", "switched_rules")
-switched_rules.use_languages(
-    cc = True,
-    go = True,
-    grpc = True,
-)
-
 toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
 toolchains_musl.config(
     extra_target_compatible_with = ["//toolchains:musl_on"],
@@ -307,3 +304,5 @@ http_archive(
     strip_prefix = "cloudprober-v0.11.2-ubuntu-x86_64",
     urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
 )
+
+register_toolchains("@com_google_protobuf//bazel/private/toolchains:all")

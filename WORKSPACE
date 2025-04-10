@@ -456,9 +456,9 @@ _go_image_repos()
 
 http_archive(
     name = "io_bazel_rules_k8s",
-    integrity = "sha256-ZrljscP1jrQOK0eCf/qbfbtBOWEIw8fbf7RGN1DVerU=",
-    strip_prefix = "rules_k8s-8230c68f62a4886bec4fa6532a80958d42572b69",
-    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/8230c68f62a4886bec4fa6532a80958d42572b69.tar.gz"],
+    integrity = "sha256-mC/KIhoemKD8w+bjDhvaJhjs2uR5YGhiYzlKV4ZsM/U=",
+    strip_prefix = "rules_k8s-581b899ba486f3dcccd3af9191df8499dc508f84",
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/581b899ba486f3dcccd3af9191df8499dc508f84.tar.gz"],
 )
 
 load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults", "k8s_repositories")
