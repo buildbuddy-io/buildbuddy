@@ -156,7 +156,7 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u, err), http.StatusNotFound)
 		return
 	}
-	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
+	upresp, err := r.client.Do(upreq.WithContext(ctx))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("transport error making %s request to upstream registry '%s': %s", inreq.Method, u, err), http.StatusNotFound)
 		return
