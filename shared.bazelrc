@@ -55,9 +55,9 @@ common --noslim_profile
 common --execution_log_compact_file=bazel_compact_exec_log.binpb.zst
 
 
-##################
-# TEST/DEV FLAGS #
-##################
+#############################
+# TESTING/DEVELOPMENT FLAGS #
+#############################
 
 # Use tsconfig.json for skipLibCheck setting.
 common --@aspect_rules_ts//ts:skipLibCheck=honor_tsconfig
