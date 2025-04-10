@@ -209,7 +209,7 @@ func (r *ResourceName) Validate() error {
 		if r.IsEmpty() {
 			return nil
 		}
-		return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
+		return status.InvalidArgumentError("Invalid (zero-length) hash")
 	}
 	if !hashKeyRegex.MatchString(d.Hash) {
 		return status.InvalidArgumentError("Malformed hash")

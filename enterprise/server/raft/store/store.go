@@ -681,6 +681,7 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.driverQueue.Stop()
 	}
 	s.dropLeadershipForShutdown(ctx)
+	s.log.Info("Store: dropped leadership for shutdown")
 	now := time.Now()
 	defer func() {
 		s.log.Infof("Store: shutdown finished in %s", time.Since(now))
@@ -745,11 +746,11 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 		// another node in the cluster and requesting they take the lead.
 		targetReplicaID := uint64(0)
 		backupReplicaID := uint64(0)
-		for replicaID := range clusterInfo.Replicas {
-			if replicaID == clusterInfo.ReplicaID {
+		rd := s.GetRange(clusterInfo.ShardID)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() == clusterInfo.ReplicaID {
 				continue
 			}
-			repl := &rfpb.ReplicaDescriptor{RangeId: clusterInfo.ShardID, ReplicaId: clusterInfo.ReplicaID}
 			if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
 				// During rollout, after a machine restarted, it takes some time
 				// for the connections to that machine to be re-established. If
@@ -760,7 +761,7 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 				backupReplicaID = clusterInfo.ReplicaID
 				continue
 			}
-			targetReplicaID = clusterInfo.ReplicaID
+			targetReplicaID = repl.GetReplicaId()
 			break
 		}
 
@@ -1157,6 +1158,9 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 }
 
 func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) error {
+	if rangeID == 0 || replicaID == 0 {
+		return status.InvalidArgumentErrorf("rangeID or replicaID is not set")
+	}
 	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
 		err := s.nodeHost.StopReplica(rangeID, replicaID)
 		if err == dragonboat.ErrShardClosed {
@@ -1170,7 +1174,7 @@ func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) erro
 		return status.InternalErrorf("failed to stop replica c%dn%d: %s", rangeID, replicaID, err)
 	}
 
-	log.Infof("succesfully stopped replica c%dn%d", rangeID, replicaID)
+	s.log.Infof("succesfully stopped replica c%dn%d", rangeID, replicaID)
 	return nil
 }
 
@@ -1222,6 +1226,9 @@ func (s *Store) syncRemoveData(ctx context.Context, rangeID, replicaID uint64) e
 // Note: after RemoveData is successfully executed, the node info won't be shown
 // up in the result of dragonboat.GetNodeHostInfo even when skipLogInfo is false.
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
+	if req.GetReplicaId() == 0 {
+		return nil, status.InvalidArgumentErrorf("replica_id is not specified")
+	}
 	if req.GetRangeId() != 0 {
 		if err := s.syncRemoveData(ctx, req.GetRangeId(), req.GetReplicaId()); err != nil {
 			return nil, err
@@ -1614,6 +1621,8 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 				}).Inc()
 				if err != nil {
 					j.store.log.Errorf("failed to remove zombie c%dn%d: %s", task.rangeID, task.replicaID, err)
+				}
+				if action != zombieCleanupNoAction {
 					task.action = action
 					j.tasks <- task
 				} else {
@@ -1721,9 +1730,9 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		return zombieCleanupNoAction, nil
 	}
 
-	log.Debugf("removing zombie c%dn%d", task.rangeID, task.replicaID)
+	log.Debugf("removing zombie c%dn%d, action=%d", task.rangeID, task.replicaID, task.action)
 	removeDataReq := &rfpb.RemoveDataRequest{
-		ReplicaId: task.shardInfo.ReplicaID,
+		ReplicaId: task.replicaID,
 	}
 	if task.action == zombieCleanupRemoveData {
 		if task.rd == nil {
@@ -1743,10 +1752,10 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			for replicaID := range task.shardInfo.Replicas {
 				if replicaID != task.shardInfo.ReplicaID {
 					targetReplicaID = replicaID
-					if err := j.store.nodeHost.RequestLeaderTransfer(task.shardInfo.ShardID, targetReplicaID); err != nil {
+					if err := j.store.nodeHost.RequestLeaderTransfer(task.rangeID, targetReplicaID); err != nil {
 						return zombieCleanupRemoveReplica, status.InternalErrorf("failed to transfer leader from c%dn%d to c%dn%d", task.shardInfo.ShardID, task.shardInfo.ReplicaID, task.shardInfo.ShardID, targetReplicaID)
 					}
-					log.Debugf("transferred leadership for c%dn%d", task.shardInfo.ShardID, task.shardInfo.ReplicaID)
+					log.Debugf("transferred leadership for c%dn%d", task.rangeID, task.replicaID)
 					return zombieCleanupRemoveReplica, nil
 				}
 			}
@@ -1756,13 +1765,13 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		var rd *rfpb.RangeDescriptor
 		var err error
 		removeReplicaReq := &rfpb.RemoveReplicaRequest{
-			ReplicaId: task.shardInfo.ReplicaID,
+			ReplicaId: task.replicaID,
 		}
 
 		if task.rd == nil {
 			// When an AddReplica/SplitRange failed in the middle, it can cause the shards to be
 			// created without any range descriptors created.
-			rd, err = j.store.newRangeDescriptorFromRaftMembership(ctx, task.shardInfo.ShardID)
+			rd, err = j.store.newRangeDescriptorFromRaftMembership(ctx, task.rangeID)
 			if err != nil {
 				if err == dragonboat.ErrShardNotReady {
 					// This can happen when SplitRange failed to initialize all initial members.
@@ -1774,8 +1783,8 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			}
 			// Set RangeId instead of Range in RemoveDataRequest and RemoveReplicaRequest to skip range descriptor check because there is
 			// no range descriptor in meta range.
-			removeDataReq.RangeId = task.shardInfo.ShardID
-			removeReplicaReq.RangeId = task.shardInfo.ShardID
+			removeDataReq.RangeId = task.rangeID
+			removeReplicaReq.RangeId = task.rangeID
 		} else {
 			rd, err = j.store.validatedRangeAgainstMetaRange(ctx, task.rd)
 			if err != nil {
@@ -1802,7 +1811,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 	}
 
 	// Always stop replica directly before remove data.
-	err := j.store.stopReplica(ctx, task.shardInfo.ShardID, task.shardInfo.ReplicaID)
+	err := j.store.stopReplica(ctx, task.rangeID, task.replicaID)
 	if err != nil {
 		return zombieCleanupStopReplica, status.InternalErrorf("failed to stop replica: %s", err)
 	}
@@ -2096,13 +2105,13 @@ func (w *updateTagsWorker) processUpdateTags() error {
 func (w *updateTagsWorker) Stop() {
 	close(w.quitChan)
 
-	log.Info("updateTagsWorker shutdown started")
+	w.store.log.Info("updateTagsWorker shutdown started")
 	now := time.Now()
 	defer func() {
-		log.Infof("updateTagsWorker shutdown finished in %s", time.Since(now))
+		w.store.log.Infof("updateTagsWorker shutdown finished in %s", time.Since(now))
 	}()
 	if err := w.eg.Wait(); err != nil {
-		log.Error(err.Error())
+		w.store.log.Error(err.Error())
 	}
 }
 
@@ -2384,7 +2393,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		if r.GetNhid() == "" {
 			return nil, status.InternalErrorf("empty nhid in ReplicaDescriptor %+v", r)
 		}
-		grpcAddr, _, err := s.registry.ResolveGRPC(ctx, r.GetRangeId(), r.GetReplicaId())
+		grpcAddr, err := s.registry.ResolveGRPC(ctx, r.GetNhid())
 		if err != nil {
 			return nil, err
 		}

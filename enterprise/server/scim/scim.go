@@ -418,15 +418,32 @@ func mapRole(ur *UserResource) (role.Role, error) {
 	return role.Parse(roleName)
 }
 
-func roleUpdateRequest(userID string, userRole role.Role) ([]*grpb.UpdateGroupUsersRequest_Update, error) {
+func roleUpdateRequest(userID string, userRole role.Role, addUserToGroup bool) ([]*grpb.UpdateGroupUsersRequest_Update, error) {
 	r, err := role.ToProto(userRole)
 	if err != nil {
 		return nil, err
 	}
-	return []*grpb.UpdateGroupUsersRequest_Update{{
+	update := &grpb.UpdateGroupUsersRequest_Update{
 		UserId: &uidpb.UserId{Id: userID},
 		Role:   r,
-	}}, nil
+	}
+	if addUserToGroup {
+		update.MembershipAction = grpb.UpdateGroupUsersRequest_Update_ADD
+	}
+	return []*grpb.UpdateGroupUsersRequest_Update{update}, nil
+}
+
+func fillUserFromResource(u *tables.User, ur UserResource, g *tables.Group) error {
+	userRole, err := mapRole(&ur)
+	if err != nil {
+		return err
+	}
+	u.SubID = saml.SubIDForUserName(ur.UserName, g)
+	u.FirstName = ur.Name.GivenName
+	u.LastName = ur.Name.FamilyName
+	u.Email = ur.UserName
+	u.Groups = []*tables.GroupRole{{Group: *g, Role: uint32(userRole)}}
+	return nil
 }
 
 func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
@@ -434,41 +451,78 @@ func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.
 	if err != nil {
 		return nil, err
 	}
-	log.CtxDebugf(ctx, "SCIM create user request: %s", string(req))
+	log.CtxInfof(ctx, "SCIM create user request:\n%s", string(req))
 	ur := UserResource{}
 	if err := json.Unmarshal(req, &ur); err != nil {
 		return nil, err
 	}
 
-	pk, err := tables.PrimaryKeyForTable("Users")
-	if err != nil {
-		return nil, err
-	}
 	userRole, err := mapRole(&ur)
 	if err != nil {
 		return nil, err
 	}
-	roleUpdate, err := roleUpdateRequest(pk, userRole)
+
+	// If the user exists in our system, but is not currently part of the group
+	// managed by SCIM then all the SCIM query APIs will not return information
+	// about this user.
+	// From the perspective of the upstream system the user effectively does not
+	// exist in our system. If we get a create request for such a user then
+	// we need to translate it to an update request.
+	updateExistingUser := false
+	user, err := s.env.GetAuthDB().LookupUserFromSubID(ctx, saml.SubIDForUserName(ur.UserName, g))
+	if err != nil && !status.IsNotFoundError(err) {
+		return nil, err
+	}
+	if err == nil {
+		// User already exists in our system.
+
+		// User shouldn't already be part of the SCIM-managed group. If it is,
+		// the upstream system should be sending update requests not create
+		// requests.
+		for _, eg := range user.Groups {
+			if eg.GroupID == g.GroupID {
+				return status.AlreadyExistsErrorf("user %q already exists", ur.UserName), nil
+			}
+		}
+		updateExistingUser = true
+	} else {
+		// User doesn't exist. We can do a normal create.
+
+		pk, err := tables.PrimaryKeyForTable("Users")
+		if err != nil {
+			return nil, err
+		}
+		user = &tables.User{UserID: pk}
+	}
+
+	if err := fillUserFromResource(user, ur, g); err != nil {
+		return nil, err
+	}
+
+	roleUpdate, err := roleUpdateRequest(user.UserID, userRole, updateExistingUser)
 	if err != nil {
 		return nil, err
 	}
-	u := &tables.User{
-		UserID:    pk,
-		SubID:     saml.SubIDForUserName(ur.UserName, g),
-		FirstName: ur.Name.GivenName,
-		LastName:  ur.Name.FamilyName,
-		Email:     ur.UserName,
-		Groups: []*tables.GroupRole{
-			{Group: *g, Role: uint32(userRole)},
-		},
+	if updateExistingUser {
+		// UpdateUser performs a permission check that allows the update only
+		// if the caller is an admin of any groups of which the target user is a
+		// member of. That means we need to add the user to the group first
+		// before performing the update.
+		if err := s.env.GetUserDB().UpdateGroupUsers(ctx, g.GroupID, roleUpdate); err != nil {
+			return nil, err
+		}
+		if err := s.env.GetUserDB().UpdateUser(ctx, user); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.env.GetUserDB().InsertUser(ctx, user); err != nil {
+			return nil, err
+		}
+		if err := s.env.GetUserDB().UpdateGroupUsers(ctx, g.GroupID, roleUpdate); err != nil {
+			return nil, err
+		}
 	}
-	if err := s.env.GetUserDB().InsertUser(ctx, u); err != nil {
-		return nil, err
-	}
-	if err := s.env.GetUserDB().UpdateGroupUsers(ctx, g.GroupID, roleUpdate); err != nil {
-		return nil, err
-	}
-	return newUserResource(u, g)
+	return newUserResource(user, g)
 }
 
 // Azure AD incorrectly sends "active" field as a string instead of a native
@@ -586,7 +640,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 			if err != nil {
 				return nil, err
 			}
-			roleUpdate, err := roleUpdateRequest(id, userRole)
+			roleUpdate, err := roleUpdateRequest(id, userRole, false /*=addUserToGroup*/)
 			if err != nil {
 				return nil, err
 			}
@@ -640,7 +694,7 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 		if err != nil {
 			return nil, err
 		}
-		roleUpdate, err := roleUpdateRequest(id, userRole)
+		roleUpdate, err := roleUpdateRequest(id, userRole, false /*=addUserToGroup*/)
 		if err != nil {
 			return nil, err
 		}

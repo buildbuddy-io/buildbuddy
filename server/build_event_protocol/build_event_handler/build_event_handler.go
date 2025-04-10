@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -1080,7 +1081,8 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				// 0 indicates that curses is not being used.
 				numLinesToRetain += 3
 			}
-			e.logWriter = eventlog.NewEventLogWriter(
+			var err error
+			e.logWriter, err = eventlog.NewEventLogWriter(
 				e.ctx,
 				e.env.GetBlobstore(),
 				e.env.GetKeyValStore(),
@@ -1089,6 +1091,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
 				numLinesToRetain,
 			)
+			if err != nil {
+				return err
+			}
 		}
 		// Since this is the first event with options and we just parsed the API key,
 		// now is a good time to record invocation usage for the group. Check that
@@ -1419,6 +1424,9 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid string, cb invocationEventCB) (*inpb.Invocation, error) {
 	ti, err := env.GetInvocationDB().LookupInvocation(ctx, iid)
 	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundError("invocation not found")
+		}
 		return nil, err
 	}
 
@@ -1470,7 +1478,11 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.Env, inv *inpb.Invocation, invRedactionFlags int32, cb invocationEventCB) error {
 	var screenWriter *terminal.ScreenWriter
 	if !inv.GetHasChunkedEventLogs() {
-		screenWriter = terminal.NewScreenWriter()
+		var err error
+		screenWriter, err = terminal.NewScreenWriter(0)
+		if err != nil {
+			return err
+		}
 	}
 	var redactor *redact.StreamingRedactor
 	if invRedactionFlags&redact.RedactionFlagStandardRedactions != redact.RedactionFlagStandardRedactions {
@@ -1537,7 +1549,7 @@ func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.E
 	// already available in the events list.
 	inv.StructuredCommandLine = structuredCommandLines
 	if screenWriter != nil {
-		inv.ConsoleBuffer = string(screenWriter.Render())
+		inv.ConsoleBuffer = screenWriter.Render()
 	}
 	return nil
 }

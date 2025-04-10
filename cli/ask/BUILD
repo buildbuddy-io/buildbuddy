@@ -6,9 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/ask",
     deps = [
         "//cli/arg",
+        "//cli/flaghistory",
         "//cli/log",
         "//cli/login",
-        "//cli/storage",
         "//proto:buildbuddy_service_go_proto",
         "//proto:suggestion_go_proto",
         "//server/util/grpc_client",

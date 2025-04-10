@@ -243,6 +243,7 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		OutputUploadStartTimestampUsec:     in.GetOutputUploadStartTimestampUsec(),
 		OutputUploadCompletedTimestampUsec: in.GetOutputUploadCompletedTimestampUsec(),
 		StatusCode:                         in.GetStatusCode(),
+		StatusMessage:                      in.GetStatusMessage(),
 		ExitCode:                           in.GetExitCode(),
 		CachedResult:                       in.GetCachedResult(),
 		DoNotCache:                         in.GetDoNotCache(),
@@ -265,7 +266,8 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		Tags:                               invocation_format.ConvertDBTagsToOLAP(inv.GetTags()),
 		TargetLabel:                        in.GetTargetLabel(),
 		ActionMnemonic:                     in.GetActionMnemonic(),
-		Experiments:                        in.Experiments,
+		Experiments:                        in.GetExperiments(),
+		CommandSnippet:                     in.GetCommandSnippet(),
 	}
 }
 

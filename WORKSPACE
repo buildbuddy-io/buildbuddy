@@ -422,12 +422,13 @@ googletest_deps()
 
 http_archive(
     name = "io_bazel_rules_docker",
+    integrity = "sha256-ZIUZu2mLsls7gXUqLObaGizFZlNDa0jGkdzpuNahgGE=",
     patch_args = ["-p1"],
     patches = [
         "//buildpatches:rules_docker.patch",
     ],
-    sha256 = "b1e80761a8a8243d03ebca8845e9cc1ba6c82ce7c5179ce2b295cd36f7e394bf",
-    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.25.0/rules_docker-v0.25.0.tar.gz"],
+    strip_prefix = "rules_docker-b44cc958e61c3192c57fed7aef78c8567d757a70",
+    urls = ["https://github.com/bazelbuild/rules_docker/archive/b44cc958e61c3192c57fed7aef78c8567d757a70.tar.gz"],
 )
 
 load(
@@ -457,13 +458,13 @@ _go_image_repos()
 
 http_archive(
     name = "io_bazel_rules_k8s",
+    integrity = "sha256-51xa8wL5mhoGlsvgTEm4NRXsfCVgX5lR8a1/evO/pBY=",
     patch_args = ["-p1"],
     patches = [
         "//buildpatches:rules_k8s.patch",
     ],
-    sha256 = "ce5b9bc0926681e2e7f2147b49096f143e6cbc783e71bc1d4f36ca76b00e6f4a",
-    strip_prefix = "rules_k8s-0.7",
-    urls = ["https://github.com/bazelbuild/rules_k8s/archive/refs/tags/v0.7.tar.gz"],
+    strip_prefix = "rules_k8s-554dc69933461ae2fa4fefcc46d09d5784832e6c",
+    urls = ["https://github.com/bazelbuild/rules_k8s/archive/554dc69933461ae2fa4fefcc46d09d5784832e6c.tar.gz"],
 )
 
 load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults", "k8s_repositories")

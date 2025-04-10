@@ -1158,17 +1158,23 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 		}
 		rq.log.Infof("RemoveReplicaRequest finished: op: %+v, rd: %+v", change.removeOp, rsp.GetRange())
 
-		replicaDesc := &rfpb.ReplicaDescriptor{RangeId: change.removeOp.GetRange().GetRangeId(), ReplicaId: change.removeOp.GetReplicaId()}
+		var replToRemove *rfpb.ReplicaDescriptor
+		for _, repl := range change.removeOp.GetRange().GetReplicas() {
+			if repl.GetReplicaId() == change.removeOp.GetReplicaId() {
+				replToRemove = repl
+			}
+		}
+
 		// Remove the data from the now stopped node. This is best-effort only,
 		// because we can remove the replica when the node is dead; and in this case,
 		// we won't be able to connect to the node.
-		c, err := rq.apiClient.GetForReplica(ctx, replicaDesc)
+		c, err := rq.apiClient.GetForReplica(ctx, replToRemove)
 		if err != nil {
-			rq.log.Warningf("RemoveReplica unable to remove data on c%dn%d, err getting api client: %s", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), err)
+			rq.log.Warningf("RemoveReplica unable to remove data on c%dn%d, err getting api client: %s", replToRemove.GetRangeId(), replToRemove.GetReplicaId(), err)
 			return nil
 		}
 		removeDataRsp, err := c.RemoveData(ctx, &rfpb.RemoveDataRequest{
-			ReplicaId: replicaDesc.GetReplicaId(),
+			ReplicaId: replToRemove.GetReplicaId(),
 			Range:     rsp.GetRange(),
 		})
 		if err != nil {
@@ -1176,7 +1182,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 			return nil
 		}
 
-		rq.log.Infof("Removed shard: c%dn%d, rd: %+v", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), removeDataRsp.GetRange())
+		rq.log.Infof("Removed shard: c%dn%d, rd: %+v", replToRemove.GetRangeId(), replToRemove.GetReplicaId(), removeDataRsp.GetRange())
 	}
 	if change.transferLeadershipOp != nil {
 		_, err := rq.store.TransferLeadership(ctx, change.transferLeadershipOp)

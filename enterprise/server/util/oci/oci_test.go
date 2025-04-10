@@ -208,16 +208,22 @@ func TestToProto(t *testing.T) {
 			oci.Credentials{Username: "foo", Password: "bar"}.ToProto()))
 }
 
+func newResolver(t *testing.T) *oci.Resolver {
+	r, err := oci.NewResolver()
+	require.NoError(t, err)
+	return r
+}
+
 func TestResolve(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
 
-	flags.Set(t, "http.client.allow_localhost", true)
+	// flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{})
 	imageName, _ := registry.PushRandomImage(t)
-	_, err := oci.Resolve(
+	_, err := newResolver(t).Resolve(
 		context.Background(),
 		te.GetActionCacheClient(),
 		te.GetByteStreamClient(),
@@ -237,7 +243,7 @@ func TestResolve_InvalidImage(t *testing.T) {
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
 
-	_, err := oci.Resolve(
+	_, err := newResolver(t).Resolve(
 		context.Background(),
 		te.GetActionCacheClient(),
 		te.GetByteStreamClient(),
@@ -256,7 +262,6 @@ func TestResolve_Unauthorized(t *testing.T) {
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
 
-	flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
 			if r.Method == "GET" {
@@ -272,7 +277,7 @@ func TestResolve_Unauthorized(t *testing.T) {
 	})
 
 	imageName, _ := registry.PushRandomImage(t)
-	_, err := oci.Resolve(
+	_, err := newResolver(t).Resolve(
 		context.Background(),
 		te.GetActionCacheClient(),
 		te.GetByteStreamClient(),
@@ -293,7 +298,6 @@ func TestResolve_Arm64VariantIsOptional(t *testing.T) {
 
 	require.NotNil(t, te.GetByteStreamClient())
 
-	flags.Set(t, "http.client.allow_localhost", true)
 	for _, test := range []struct {
 		name     string
 		platform v1.Platform
@@ -322,7 +326,7 @@ func TestResolve_Arm64VariantIsOptional(t *testing.T) {
 
 			ref := registry.PushIndex(t, index, "test-multiplatform-image")
 
-			pulledImg, err := oci.Resolve(
+			pulledImg, err := newResolver(t).Resolve(
 				ctx,
 				te.GetActionCacheClient(),
 				te.GetByteStreamClient(),
@@ -372,7 +376,6 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
 
-	flags.Set(t, "http.client.allow_localhost", true)
 	// Track requests to original and mirror registries.
 	var originalReqCount, mirrorReqCount atomic.Int32
 
@@ -414,7 +417,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	})
 
 	// Resolve the image, which should fall back to the original after mirror fails.
-	img, err := oci.Resolve(
+	img, err := newResolver(t).Resolve(
 		context.Background(),
 		te.GetActionCacheClient(),
 		te.GetByteStreamClient(),
@@ -442,7 +445,6 @@ func TestResolve_CachesManifest(t *testing.T) {
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
-	flags.Set(t, "http.client.allow_localhost", true)
 
 	var count atomic.Int32
 	testreg := testregistry.Run(t, testregistry.Opts{
@@ -475,7 +477,7 @@ func TestResolve_CachesManifest(t *testing.T) {
 
 	before := count.Load()
 	for i := 0; i < 2; i++ {
-		img, err := oci.Resolve(
+		img, err := newResolver(t).Resolve(
 			context.Background(),
 			te.GetActionCacheClient(),
 			te.GetByteStreamClient(),
@@ -531,4 +533,40 @@ func readAll(r io.Reader) ([]byte, error) {
 			b = append(b, 0)[:len(b)]
 		}
 	}
+}
+
+func pushAndFetchRandomImage(t *testing.T, te *testenv.TestEnv, registry *testregistry.Registry) error {
+	imageName, _ := registry.PushRandomImage(t)
+	_, err := newResolver(t).Resolve(
+		context.Background(),
+		te.GetActionCacheClient(),
+		te.GetByteStreamClient(),
+		imageName,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{})
+	return err
+}
+
+func TestPrivateIPsNotAllowedByDefault(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "http.client.allow_localhost", false)
+	registry := testregistry.Run(t, testregistry.Opts{})
+	err := pushAndFetchRandomImage(t, te, registry)
+	require.ErrorContains(t, err, "not allowed")
+}
+
+func TestAllowPrivateIPs(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	err := pushAndFetchRandomImage(t, te, registry)
+	require.NoError(t, err)
+
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"0.0.0.0/0"})
+	err = pushAndFetchRandomImage(t, te, registry)
+	require.NoError(t, err)
 }

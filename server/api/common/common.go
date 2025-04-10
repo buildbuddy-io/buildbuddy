@@ -47,13 +47,13 @@ func filesFromOutput(output []*bespb.File) []*apipb.File {
 			continue
 		}
 		uri := ""
-		switch file := output.File.(type) {
+		switch file := output.GetFile().(type) {
 		case *bespb.File_Uri:
 			uri = file.Uri
 			// Contents files are not currently supported - only the file name will be appended without a uri.
 		}
 		f := &apipb.File{
-			Name: output.Name,
+			Name: output.GetName(),
 			Uri:  uri,
 		}
 		if u, err := url.Parse(uri); err == nil {
@@ -76,10 +76,16 @@ func FillActionFromBuildEvent(event *bespb.BuildEvent, action *apipb.Action) *ap
 		action.Id.ActionId = EncodeID("build")
 		return action
 	case *bespb.BuildEventId_TargetCompleted:
-		p := event.GetPayload().(*bespb.BuildEvent_Completed)
-		if !p.Completed.GetSuccess() {
+		switch p := event.GetPayload().(type) {
+		case *bespb.BuildEvent_Completed:
 			// Don't create an action for failed targets as they don't have any interesting output files
 			// We have already captured them via an ActionCompleted events earlier in the stream.
+			if !p.Completed.GetSuccess() {
+				return nil
+			}
+		case *bespb.BuildEvent_Aborted:
+			// Don't create an action for aborted targets as they were never built and
+			// don't have any interesting output files
 			return nil
 		}
 		action.TargetLabel = id.TargetCompleted.GetLabel()
@@ -96,23 +102,25 @@ func FillActionFromBuildEvent(event *bespb.BuildEvent, action *apipb.Action) *ap
 		action.Run = int64(id.TestResult.GetRun())
 		action.Attempt = int64(id.TestResult.GetAttempt())
 		return action
+	default:
+		return nil
 	}
-	return nil
 }
 
 func FillActionOutputFilesFromBuildEvent(event *bespb.BuildEvent, action *apipb.Action) *apipb.Action {
-	switch p := event.Payload.(type) {
+	switch p := event.GetPayload().(type) {
 	case *bespb.BuildEvent_Action:
 		action.File = filesFromOutput([]*bespb.File{p.Action.GetStderr(), p.Action.GetStdout()})
 		return action
 	case *bespb.BuildEvent_Completed:
-		action.File = filesFromOutput(p.Completed.DirectoryOutput)
+		action.File = filesFromOutput(p.Completed.GetDirectoryOutput())
 		return action
 	case *bespb.BuildEvent_TestResult:
-		action.File = filesFromOutput(p.TestResult.TestActionOutput)
+		action.File = filesFromOutput(p.TestResult.GetTestActionOutput())
 		return action
+	default:
+		return nil
 	}
-	return nil
 }
 
 func TestStatusToStatus(testStatus bespb.TestStatus) cmnpb.Status {
@@ -141,12 +149,12 @@ func TestStatusToStatus(testStatus bespb.TestStatus) cmnpb.Status {
 type TargetMap map[string]*apipb.Target
 
 func (tm TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
-	switch p := event.Payload.(type) {
+	switch p := event.GetPayload().(type) {
 	case *bespb.BuildEvent_Configured:
 		{
-			ruleType := strings.Replace(p.Configured.TargetKind, " rule", "", -1)
+			ruleType := strings.Replace(p.Configured.GetTargetKind(), " rule", "", -1)
 			language := ""
-			if components := strings.Split(p.Configured.TargetKind, "_"); len(components) > 1 {
+			if components := strings.Split(p.Configured.GetTargetKind(), "_"); len(components) > 1 {
 				language = components[0]
 			}
 			label := event.GetId().GetTargetConfigured().GetLabel()
@@ -159,26 +167,28 @@ func (tm TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 				Status:   cmnpb.Status_BUILDING,
 				RuleType: ruleType,
 				Language: language,
-				Tag:      p.Configured.Tag,
+				Tag:      p.Configured.GetTag(),
 			}
 		}
 	case *bespb.BuildEvent_Completed:
 		{
-			target := tm[event.GetId().GetTargetCompleted().GetLabel()]
-			target.Status = cmnpb.Status_BUILT
+			if target := tm[event.GetId().GetTargetCompleted().GetLabel()]; target != nil {
+				target.Status = cmnpb.Status_BUILT
+			}
 		}
 	case *bespb.BuildEvent_TestSummary:
 		{
-			target := tm[event.GetId().GetTestSummary().GetLabel()]
-			target.Status = TestStatusToStatus(p.TestSummary.OverallStatus)
-			target.Timing = TestTimingFromSummary(p.TestSummary)
+			if target := tm[event.GetId().GetTestSummary().GetLabel()]; target != nil {
+				target.Status = TestStatusToStatus(p.TestSummary.GetOverallStatus())
+				target.Timing = TestTimingFromSummary(p.TestSummary)
+			}
 		}
 	}
 }
 
 func TestTimingFromSummary(testSummary *bespb.TestSummary) *cmnpb.Timing {
-	startTime := timeutil.GetTimeWithFallback(testSummary.FirstStartTime, testSummary.FirstStartTimeMillis)
-	duration := timeutil.GetDurationWithFallback(testSummary.TotalRunDuration, testSummary.TotalRunDurationMillis)
+	startTime := timeutil.GetTimeWithFallback(testSummary.GetFirstStartTime(), testSummary.GetFirstStartTimeMillis())
+	duration := timeutil.GetDurationWithFallback(testSummary.GetTotalRunDuration(), testSummary.GetTotalRunDurationMillis())
 	return &cmnpb.Timing{
 		StartTime: timestamppb.New(startTime),
 		Duration:  durationpb.New(duration),

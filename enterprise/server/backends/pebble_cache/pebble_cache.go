@@ -193,6 +193,7 @@ type Options struct {
 	Clock clockwork.Clock
 
 	ClearCacheOnStartup bool
+	EnableAutoRatchet   bool
 
 	GCSBucket           string
 	GCSCredentials      string
@@ -349,6 +350,7 @@ func Register(env *real_environment.RealEnv) error {
 		GCSAppName:                  *gcsAppName,
 		GCSTTLDays:                  gcsTTLDays,
 		MinGCSFileSizeBytes:         minGCSFileSizeBytesFlag,
+		EnableAutoRatchet:           *enableAutoRatchet,
 	}
 	c, err := NewPebbleCache(env, opts)
 	if err != nil {
@@ -470,7 +472,7 @@ func ensureDefaultPartitionExists(opts *Options) {
 }
 
 // defaultPebbleOptions returns default pebble config options.
-func defaultPebbleOptions(mc *pebble.MetricsCollector) *pebble.Options {
+func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.Options {
 	// These values Borrowed from CockroachDB.
 	opts := &pebble.Options{
 		// The amount of L0 read-amplification necessary to trigger an L0 compaction.
@@ -493,7 +495,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector) *pebble.Options {
 			},
 		}
 	}
-	if *enableAutoRatchet {
+	if pcOpts.EnableAutoRatchet {
 		opts.FormatMajorVersion = pebble.FormatNewest
 	}
 
@@ -531,7 +533,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	ensureDefaultPartitionExists(opts)
 
 	mc := &pebble.MetricsCollector{}
-	pebbleOptions := defaultPebbleOptions(mc)
+	pebbleOptions := defaultPebbleOptions(mc, opts)
 	if opts.BlockCacheSizeBytes > 0 {
 		c := pebble.NewCache(opts.BlockCacheSizeBytes)
 		defer c.Unref()

@@ -961,7 +961,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 34
+            "y": 50
           },
           "id": 16,
           "options": {
@@ -1059,7 +1059,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 34
+            "y": 50
           },
           "id": 51,
           "options": {
@@ -1153,7 +1153,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 42
+            "y": 58
           },
           "id": 64,
           "options": {
@@ -1262,7 +1262,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 35
+            "y": 51
           },
           "id": 22,
           "options": {
@@ -1357,7 +1357,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 35
+            "y": 51
           },
           "id": 60,
           "options": {
@@ -1452,7 +1452,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 43
+            "y": 59
           },
           "id": 61,
           "options": {
@@ -1545,7 +1545,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 43
+            "y": 59
           },
           "id": 62,
           "options": {
@@ -1638,7 +1638,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 51
+            "y": 67
           },
           "id": 65,
           "options": {
@@ -1746,7 +1746,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 60
+            "y": 76
           },
           "id": 3,
           "options": {
@@ -1840,7 +1840,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 60
+            "y": 76
           },
           "id": 49,
           "options": {
@@ -1935,7 +1935,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 68
+            "y": 84
           },
           "id": 4,
           "options": {
@@ -2043,7 +2043,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 68
+            "y": 84
           },
           "id": 63,
           "options": {
@@ -2152,7 +2152,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 61
+            "y": 77
           },
           "id": 6,
           "options": {
@@ -2273,7 +2273,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 61
+            "y": 77
           },
           "id": 9,
           "options": {
@@ -2397,7 +2397,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 69
+            "y": 85
           },
           "id": 7,
           "options": {
@@ -2441,6 +2441,392 @@
         "w": 24,
         "x": 0,
         "y": 37
+      },
+      "id": 70,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 6
+          },
+          "id": 66,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod_name) (buildbuddy_raft_store_events{region=\"${region}\", namespace=\"${namespace}\", job=\"buildbuddy-app\"})",
+              "instant": false,
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Raft Store Events Chan Size",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 6
+          },
+          "id": 67,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod_name, raft_event, event_broadcast_source) (buildbuddy_raft_store_event_broadcast_dropped{region=\"${region}\", namespace=\"${namespace}\", job=\"buildbuddy-app\"})",
+              "instant": false,
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Raft Store Broadcast Events Dropped ",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 14
+          },
+          "id": 69,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum by (listener_event, listener_id) (buildbuddy_raft_listener_events_dropped{region=\"${region}\", namespace=\"${namespace}\", job=\"buildbuddy-app\"})",
+              "instant": false,
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Raft Listener Events Dropped",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 14
+          },
+          "id": 68,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum by (raft_event, listener_id) (buildbuddy_raft_store_event_listener_dropped{region=\"${region}\", namespace=\"${namespace}\", job=\"buildbuddy-app\"})",
+              "instant": false,
+              "legendFormat": "{{listener_id}}: {{raft_event}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Raft Store Listener Events Dropped ",
+          "type": "timeseries"
+        }
+      ],
+      "title": "Events",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 38
       },
       "id": 54,
       "panels": [
@@ -2505,7 +2891,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 62
+            "y": 78
           },
           "id": 52,
           "options": {
@@ -2598,7 +2984,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 62
+            "y": 78
           },
           "id": 53,
           "options": {
@@ -2640,7 +3026,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 39
       },
       "id": 25,
       "panels": [
@@ -2706,7 +3092,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 63
+            "y": 79
           },
           "id": 24,
           "options": {
@@ -2835,7 +3221,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 63
+            "y": 79
           },
           "id": 26,
           "options": {
@@ -2989,7 +3375,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 71
+            "y": 87
           },
           "id": 27,
           "options": {
@@ -3085,7 +3471,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 71
+            "y": 87
           },
           "id": 28,
           "options": {
@@ -3181,7 +3567,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 79
+            "y": 95
           },
           "id": 29,
           "options": {
@@ -3277,7 +3663,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 79
+            "y": 95
           },
           "id": 30,
           "options": {
@@ -3373,7 +3759,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 87
+            "y": 103
           },
           "id": 31,
           "options": {
@@ -3416,7 +3802,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 40
       },
       "id": 37,
       "panels": [
@@ -3481,7 +3867,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 64
+            "y": 80
           },
           "id": 32,
           "options": {
@@ -3574,7 +3960,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 64
+            "y": 80
           },
           "id": 33,
           "options": {
@@ -3667,7 +4053,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 72
+            "y": 88
           },
           "id": 34,
           "options": {
@@ -3760,7 +4146,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 72
+            "y": 88
           },
           "id": 35,
           "options": {
@@ -3853,7 +4239,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 80
+            "y": 96
           },
           "id": 38,
           "options": {
@@ -3946,7 +4332,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 80
+            "y": 96
           },
           "id": 39,
           "options": {
@@ -4039,7 +4425,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 88
+            "y": 104
           },
           "id": 40,
           "options": {
@@ -4132,7 +4518,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 88
+            "y": 104
           },
           "id": 41,
           "options": {
@@ -4225,7 +4611,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 96
+            "y": 112
           },
           "id": 42,
           "options": {
@@ -4318,7 +4704,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 96
+            "y": 112
           },
           "id": 43,
           "options": {
@@ -4411,7 +4797,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 104
+            "y": 120
           },
           "id": 44,
           "options": {
@@ -4504,7 +4890,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 104
+            "y": 120
           },
           "id": 45,
           "options": {
@@ -4597,7 +4983,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 112
+            "y": 128
           },
           "id": 46,
           "options": {
@@ -4638,7 +5024,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 41
       },
       "id": 20,
       "panels": [
@@ -4707,7 +5093,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 65
+            "y": 81
           },
           "id": 12,
           "options": {
@@ -4827,7 +5213,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 65
+            "y": 81
           },
           "id": 18,
           "options": {
@@ -4938,7 +5324,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 73
+            "y": 89
           },
           "id": 14,
           "options": {
@@ -5034,7 +5420,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 73
+            "y": 89
           },
           "id": 15,
           "options": {
@@ -5084,7 +5470,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 81
+            "y": 97
           },
           "hiddenSeries": false,
           "id": 19,
@@ -5198,7 +5584,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 81
+            "y": 97
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -5346,7 +5732,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 89
+            "y": 105
           },
           "id": 13,
           "options": {
@@ -5440,7 +5826,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 89
+            "y": 105
           },
           "id": 48,
           "options": {

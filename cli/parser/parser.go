@@ -975,6 +975,15 @@ func (p *Parser) expandConfigs(workspaceDir string, args []string) ([]string, er
 	enable, enableIndex, enableLength := arg.FindLast(args, enablePlatformSpecificConfigFlag)
 	_, noEnableIndex, _ := arg.FindLast(args, "no"+enablePlatformSpecificConfigFlag)
 	if enableIndex > noEnableIndex {
+		if strings.HasPrefix(enable, "-") {
+			// It's likely that the "enable" value here is just another Bazel flag, such as `--config` or `-c`.
+			// And our --enable_platform_specific_config flag is a standalone flag that does not come with a value.
+			//
+			// In this case, manually fix arg.FindLast results to avoid confusion.
+			// TODO(sluongng): This is a hack. We should fix arg.FindLast to return the correct index.
+			enable = "true"
+			enableLength = 1
+		}
 		if enable == "true" || enable == "yes" || enable == "1" || enable == "" {
 			args = concat(args[:enableIndex], []string{"--config", getBazelOS()}, args[enableIndex+enableLength:])
 			log.Debugf("Args after inserting artificial platform-specific --config argument: %s", args)

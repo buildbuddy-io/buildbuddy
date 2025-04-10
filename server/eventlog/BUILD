@@ -11,6 +11,7 @@ go_library(
         "//server/backends/chunkstore",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/db",
         "//server/util/keyval",
         "//server/util/proto",
         "//server/util/status",

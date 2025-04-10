@@ -48,9 +48,11 @@ func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) 
 		OutputUploadStartTimestampUsec:     in.OutputUploadStartTimestampUsec,
 		OutputUploadCompletedTimestampUsec: in.OutputUploadCompletedTimestampUsec,
 		StatusCode:                         in.StatusCode,
+		StatusMessage:                      in.StatusMessage,
 		ExitCode:                           in.ExitCode,
 		CachedResult:                       in.CachedResult,
 		DoNotCache:                         in.DoNotCache,
+		CommandSnippet:                     in.CommandSnippet,
 	}
 }
 

@@ -237,11 +237,12 @@ func (vfs *VFS) Unmount() error {
 	return vfs.server.Unmount()
 }
 
-func (vfs *VFS) startOP(path string, op string) {
+func (vfs *VFS) startOP(pathFn func() string, op string) {
 	if !vfs.logFUSEPerFileStats {
 		return
 	}
 
+	path := pathFn()
 	vfs.mu.Lock()
 	defer vfs.mu.Unlock()
 	stats, ok := vfs.perFileStats[path]
@@ -371,16 +372,16 @@ func (d *dirHandle) Fsyncdir(ctx context.Context, flags uint32) syscall.Errno {
 	return 0
 }
 
-func (n *Node) OpendirHandle(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+func (n *Node) OpendirHandle(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
 	n.startOP("OpendirHandle")
 	if n.vfs.verbose {
 		log.CtxDebugf(n.vfs.rpcCtx, "OpendirHandle %q", n.relativePath())
 	}
-	return &dirHandle{vfs: n.vfs, node: n, pos: -1}, 0, 0
+	return &dirHandle{vfs: n.vfs, node: n, pos: -1}, fuse.FOPEN_CACHE_DIR, 0
 }
 
 func (f *remoteFile) startOP(op string) {
-	f.node.vfs.startOP(f.path, op)
+	f.node.vfs.startOP(func() string { return f.path }, op)
 }
 
 func (f *remoteFile) PassthroughFd() (int, bool) {
@@ -545,7 +546,7 @@ func (f *remoteFile) Lseek(ctx context.Context, off uint64, whence uint32) (uint
 }
 
 func (n *Node) startOP(op string) {
-	n.vfs.startOP(n.relativePath(), op)
+	n.vfs.startOP(func() string { return n.relativePath() }, op)
 }
 
 func describeOpenFlags(flags uint32) string {

@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"runtime"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
@@ -44,6 +46,7 @@ var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
 	mirrors                = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
+	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
 	defaultPlatform = v1.Platform{
 		Architecture: "amd64",
@@ -51,7 +54,23 @@ var (
 	}
 )
 
-func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, imgname string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
+type Resolver struct {
+	allowedPrivateIPs []*net.IPNet
+}
+
+func NewResolver() (*Resolver, error) {
+	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
+	for _, r := range *allowedPrivateIPs {
+		_, ipNet, err := net.ParseCIDR(r)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invald value %q for executor.container_registry_allowed_private_ips flag: %s", r, err)
+		}
+		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
+	}
+	return &Resolver{allowedPrivateIPs: allowedPrivateIPNets}, nil
+}
+
+func (r *Resolver) Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, imgname string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	gcrPlatform := v1.Platform{
@@ -59,7 +78,7 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 		OS:           platform.GetOs(),
 		Variant:      platform.GetVariant(),
 	}
-	opts := makeRemoteOptions(ctx, gcrPlatform, credentials)
+	opts := r.makeRemoteOptions(ctx, gcrPlatform, credentials)
 	imgref, err := ctrname.ParseReference(imgname)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imgname)
@@ -154,7 +173,7 @@ func Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStrea
 	return partial.CompressedToImage(childimg)
 }
 
-func makeRemoteOptions(ctx context.Context, platform v1.Platform, credentials Credentials) []remote.Option {
+func (r *Resolver) makeRemoteOptions(ctx context.Context, platform v1.Platform, credentials Credentials) []remote.Option {
 	remoteOpts := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithPlatform(platform),
@@ -166,7 +185,7 @@ func makeRemoteOptions(ctx context.Context, platform v1.Platform, credentials Cr
 		}))
 	}
 
-	tr := httpclient.New().Transport
+	tr := httpclient.NewWithAllowedPrivateIPs(60*time.Minute, r.allowedPrivateIPs).Transport
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
 	} else {
