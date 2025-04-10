@@ -72,6 +72,16 @@ archive_override(
     urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/badf8034b2952ec613970a27f24fb140be7eaf73.tar.gz"],
 )
 
+bazel_dep(name = "rules_docker", repo_name = "io_bazel_rules_docker")
+archive_override(
+    module_name = "rules_docker",
+    integrity = "sha256-A5jYBCeY4s0eJNYKrFYV6pnRSFekMRSilmr+xVF/Q+s=",
+    strip_prefix = "rules_docker-d517338f5a4e29a11b6077ec39e533a518424b53",
+    # This is our own fork of rules_docker with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_docker/compare/master...buildbuddy-io:rules_docker:sluongng/bzlmod-enable
+    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/d517338f5a4e29a11b6077ec39e533a518424b53.tar.gz"],
+)
+
 ## Regular bazel_deps
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.14.0")
@@ -100,6 +110,78 @@ include("//:oci.MODULE.bazel")
 include("//:static_deps.MODULE.bazel")
 
 ## Other extensions
+
+container = use_extension("@io_bazel_rules_docker//:extensions.bzl", "container")
+container.pull(
+    name = "buildbuddy_go_image_base",
+    digest = "sha256:dc7acdb6300eaa99ae93621b0f033237ae1284fdd5ab323b4d90ba8359c55854",
+    registry = "gcr.io",
+    repository = "distroless/cc-debian12",
+)
+container.pull(
+    name = "bazel_image_base",
+    digest = "sha256:ab0c5fbe16bc01c03eb081a5724ba618110cbd24940ab123a8dbee0382a4c175",
+    registry = "gcr.io",
+    repository = "distroless/java11-debian11",
+)
+use_repo(
+    container,
+    "bazel_image_base",
+    "buildbuddy_go_image_base",
+)
+
+dockerfile_image = use_repo_rule("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
+
+dockerfile_image(
+    name = "default_execution_image",
+    dockerfile = "//dockerfiles/default_execution_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "executor_image",
+    dockerfile = "//dockerfiles/executor_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "nonroot_user_image",
+    dockerfile = "//dockerfiles/test_images/nonroot_user_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu20-04_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu20-04:Dockerfile",
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu20-04-webtest_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu20-04-webtest:Dockerfile",
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu22-04_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu22-04:Dockerfile",
+)
+
+dockerfile_image(
+    name = "ci_runner_image",
+    dockerfile = "//enterprise/dockerfiles/ci_runner_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu20-04-workflows_image",
+    dockerfile = "//enterprise/dockerfiles/rbe-ubuntu20-04-workflows:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "run_script_image",
+    dockerfile = "//dockerfiles/run_script:Dockerfile",
+    visibility = ["//visibility:public"],
+)
 
 browser_repositories = use_extension("@rules_webtesting//web:extension.bzl", "browser_repositories_extension")
 browser_repositories.install(version = "0.3.4")

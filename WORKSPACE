@@ -422,13 +422,11 @@ googletest_deps()
 
 http_archive(
     name = "io_bazel_rules_docker",
-    integrity = "sha256-ZIUZu2mLsls7gXUqLObaGizFZlNDa0jGkdzpuNahgGE=",
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:rules_docker.patch",
-    ],
-    strip_prefix = "rules_docker-b44cc958e61c3192c57fed7aef78c8567d757a70",
-    urls = ["https://github.com/bazelbuild/rules_docker/archive/b44cc958e61c3192c57fed7aef78c8567d757a70.tar.gz"],
+    integrity = "sha256-A5jYBCeY4s0eJNYKrFYV6pnRSFekMRSilmr+xVF/Q+s=",
+    strip_prefix = "rules_docker-d517338f5a4e29a11b6077ec39e533a518424b53",
+    # This is our own fork of rules_docker with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_docker/compare/master...buildbuddy-io:rules_docker:sluongng/bzlmod-enable
+    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/d517338f5a4e29a11b6077ec39e533a518424b53.tar.gz"],
 )
 
 load(
