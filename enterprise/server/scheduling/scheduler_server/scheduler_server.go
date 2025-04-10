@@ -1786,10 +1786,14 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until
 	// the lease returns. Instead of piping it all the way through, create a new
-	// gRPC incoming context, from the serialized task's metadata.
+	// gRPC incoming context from the serialized task's metadata.
 	taskProto := &repb.ExecutionTask{}
 	if err := proto.Unmarshal(task, taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
+		return task
+	}
+	isolationType := platform.FindEffectiveValue(taskProto, platform.WorkloadIsolationPropertyName)
+	if isolationType != string(platform.FirecrackerContainerType) {
 		return task
 	}
 	md, found := metadata.FromIncomingContext(ctx)
