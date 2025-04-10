@@ -91,10 +91,10 @@ func (h *Liveness) Lease(ctx context.Context) error {
 }
 
 func (h *Liveness) Stop() error {
-	log.Debugf("Liveness shutdown started")
+	log.Debugf("Liveness (nhid=%s) shutdown started", h.nhid)
 	now := time.Now()
 	defer func() {
-		log.Debugf("Liveness shutdown finished in %s", time.Since(now))
+		log.Debugf("Liveness (nhid=%s) shutdown finished in %s", h.nhid, time.Since(now))
 	}()
 	h.cancelFn()
 	h.egMu.Lock()

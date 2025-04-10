@@ -44,6 +44,7 @@ go_test(
     name = "api_test",
     size = "small",
     srcs = ["api_server_test.go"],
+    data = glob(["testdata/**"]),
     embed = [":api"],
     deps = [
         "//proto:api_key_go_proto",
@@ -66,6 +67,7 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//types/known/anypb",
     ],
 )

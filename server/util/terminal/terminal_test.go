@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
+	"github.com/stretchr/testify/require"
 )
 
 func randomBytes(t *testing.T, n int) []byte {
@@ -16,7 +17,8 @@ func randomBytes(t *testing.T, n int) []byte {
 }
 
 func TestTruncation(t *testing.T) {
-	screenWriter := terminal.NewScreenWriter()
+	screenWriter, err := terminal.NewScreenWriter(0)
+	require.NoError(t, err)
 
 	screenWriter.Write(randomBytes(t, 80))
 	screenWriter.Write(randomBytes(t, 10))

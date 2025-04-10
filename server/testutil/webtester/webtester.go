@@ -161,14 +161,6 @@ func (wt *WebTester) Refresh() {
 	wt.Get(wt.CurrentURL())
 }
 
-// Returns the <body> element of the current page. Exactly one body element
-// must exist, otherwise the test fails.
-func (wt *WebTester) FindBody() *Element {
-	el, err := wt.driver.FindElement(selenium.ByTagName, "body")
-	require.NoError(wt.t, err)
-	return &Element{wt.t, el}
-}
-
 // Find returns the element matching the given CSS selector. Exactly one
 // element must be matched, otherwise the test fails.
 func (wt *WebTester) Find(cssSelector string) *Element {

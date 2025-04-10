@@ -86,9 +86,9 @@ func (f *fakeTaskRouter) MarkFailed(ctx context.Context, action *repb.Action, cm
 }
 
 type schedulerOpts struct {
+	options            Options
 	userOwnedEnabled   bool
 	groupOwnedEnabled  bool
-	clock              clockwork.Clock
 	preferredExecutors []string
 }
 
@@ -104,7 +104,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	err := execution_server.Register(env)
 	require.NoError(t, err)
 	env.SetTaskRouter(&fakeTaskRouter{opts.preferredExecutors})
-	s, err := NewSchedulerServerWithOptions(env, &Options{Clock: opts.clock})
+	s, err := NewSchedulerServerWithOptions(env, &opts.options)
 	require.NoError(t, err)
 	env.SetSchedulerService(s)
 
@@ -639,11 +639,12 @@ func TestExecutorReEnqueue_RetriesDisabled(t *testing.T) {
 }
 
 func TestLeaseExpiration(t *testing.T) {
-	flags.Set(t, "remote_execution.lease_duration", 10*time.Second)
-	flags.Set(t, "remote_execution.lease_grace_period", 10*time.Second)
-
 	fakeClock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{clock: fakeClock}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{
+		Clock:            fakeClock,
+		LeaseDuration:    10 * time.Second,
+		LeaseGracePeriod: 10 * time.Second,
+	}}, "user1")
 
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
@@ -796,7 +797,7 @@ func TestEnqueueTaskReservation_Exists(t *testing.T) {
 
 func TestAskForMoreWorkOnlyEnqueuesTasksThatFitOnNode(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{clock: clock}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
 
 	// Register two nodes with different capacities.
 	largeExecutor := newFakeExecutorWithId(ctx, t, "large", env.GetSchedulerClient())

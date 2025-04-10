@@ -68,7 +68,7 @@ export default class InvocationNotFoundComponent extends React.Component<Props, 
     }
 
     return (
-      <div className="state-page">
+      <div className="state-page" debug-id="invocation-not-found">
         <div className="shelf">
           <div className="container">
             <div className="breadcrumbs">Invocation {this.props.invocationId}</div>

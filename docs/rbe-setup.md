@@ -172,7 +172,7 @@ This determines the number of parallel actions Bazel will remotely execute at on
 This determines the maximum time Bazel will spend on any single remote call, including cache writes. The default value is 60s. We recommend setting this high to avoid timeouts when uploading large cache artifacts.
 
 ```bash
---remote_timeout=600
+--remote_timeout=10m
 ```
 
 [Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--remote_timeout)
@@ -401,7 +401,7 @@ build:remote --remote_executor=grpcs://remote.buildbuddy.io
 build:remote --incompatible_strict_action_env=true
 
 # Set a higher timeout value, just in case.
-build:remote --remote_timeout=3600
+build:remote --remote_timeout=10m
 ```
 
 And then run:

@@ -742,15 +742,22 @@ func TestSplitNonMetaRange(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
+	storemap := map[string]*testutil.TestingStore{
+		s1.NHID(): s1,
+		s2.NHID(): s2,
+		s3.NHID(): s3,
+	}
 	sf.StartShard(t, ctx, stores...)
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
 	// Veirfy that nhid in the range descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
-		nhid, _, err := s.Registry.ResolveNHID(ctx, repl.GetRangeId(), repl.GetReplicaId())
+		raftAddr, _, err := s.Registry.Resolve(repl.GetRangeId(), repl.GetReplicaId())
 		require.NoError(t, err)
-		require.Equal(t, repl.GetNhid(), nhid)
+		replStore := storemap[repl.GetNhid()]
+		require.NotNil(t, replStore)
+		require.Equal(t, replStore.RaftAddress, raftAddr)
 	}
 	header := headerFromRangeDescriptor(rd)
 
@@ -765,11 +772,13 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 3)
 	rd = s.GetRange(3)
-	// Veirfy that nhid in the rangea descriptor matches the registry.
+	// Veirfy that nhid in the range descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
-		nhid, _, err := s.Registry.ResolveNHID(ctx, repl.GetRangeId(), repl.GetReplicaId())
+		raftAddr, _, err := s.Registry.Resolve(repl.GetRangeId(), repl.GetReplicaId())
 		require.NoError(t, err)
-		require.Equal(t, repl.GetNhid(), nhid)
+		replStore := storemap[repl.GetNhid()]
+		require.NotNil(t, replStore)
+		require.Equal(t, replStore.RaftAddress, raftAddr)
 	}
 	header = headerFromRangeDescriptor(rd)
 	require.Equal(t, 3, len(rd.GetReplicas()))

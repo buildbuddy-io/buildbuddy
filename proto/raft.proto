@@ -265,8 +265,10 @@ message BatchCmdResponse {
 // which has knowledge of the queried node may respond with a
 // RegistryQueryResponse.
 message RegistryQueryRequest {
+  // Either (range_id, replica_Id) or nhid needs to be specified
   uint64 range_id = 1;
   uint64 replica_id = 2;
+  string nhid = 3;
 }
 
 message RegistryQueryResponse {

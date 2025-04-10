@@ -603,9 +603,8 @@ type ApiService interface {
 }
 
 type WorkflowService interface {
-	CreateLegacyWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
-	DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
-	GetWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error)
+	DeleteLegacyWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
+	GetLegacyWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error)
 	GetWorkflowHistory(ctx context.Context) (*wfpb.GetWorkflowHistoryResponse, error)
 	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
 	GetReposForLegacyGitHubApp(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
@@ -615,9 +614,9 @@ type WorkflowService interface {
 	// GitRepository by initiating any relevant workflow actions.
 	HandleRepositoryEvent(ctx context.Context, repo *tables.GitRepository, wd *WebhookData, accessToken string) error
 
-	// GetLinkedWorkflows returns any workflows linked with the given repo access
+	// GetLinkedLegacyWorkflows returns any legacy workflows linked with the given repo access
 	// token.
-	GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error)
+	GetLinkedLegacyWorkflows(ctx context.Context, accessToken string) ([]string, error)
 
 	// WorkflowsPoolName returns the name of the executor pool to use for workflow actions.
 	WorkflowsPoolName() string

@@ -9,9 +9,9 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/explain/compactgraph",
+        "//cli/flaghistory",
         "//cli/log",
         "//cli/login",
-        "//cli/storage",
         "//proto:buildbuddy_service_go_proto",
         "//proto:invocation_go_proto",
         "//proto:spawn_diff_go_proto",

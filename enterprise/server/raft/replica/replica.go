@@ -95,6 +95,8 @@ type Replica struct {
 
 	lockedKeys map[string][]byte       // key => txid
 	prepared   map[string]pebble.Batch // string(txid) => prepared batch.
+
+	entriesBetweenUsageChecks uint64
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -1648,7 +1650,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		entries[i] = e
 	}
 
-	if sm.lastAppliedIndex-sm.lastUsageCheckIndex > uint64(*entriesBetweenUsageChecks) {
+	if sm.lastAppliedIndex-sm.lastUsageCheckIndex > sm.entriesBetweenUsageChecks {
 		usage, err := sm.Usage()
 		if err != nil {
 			sm.log.Warningf("Error computing usage: %s", err)
@@ -2080,19 +2082,20 @@ func (sm *Replica) Close() error {
 // New creates a new Replica, an on-disk state machine.
 func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
 	repl := &Replica{
-		rangeID:             rangeID,
-		replicaID:           replicaID,
-		NHID:                store.NHID(),
-		store:               store,
-		leaser:              leaser,
-		partitionMetadata:   make(map[string]*sgpb.PartitionMetadata),
-		lastUsageCheckIndex: 0,
-		fileStorer:          filestore.New(),
-		readQPS:             qps.NewCounter(5*time.Second, clockwork.NewRealClock()),
-		raftProposeQPS:      qps.NewCounter(5*time.Second, clockwork.NewRealClock()),
-		broadcast:           broadcast,
-		lockedKeys:          make(map[string][]byte),
-		prepared:            make(map[string]pebble.Batch),
+		rangeID:                   rangeID,
+		replicaID:                 replicaID,
+		NHID:                      store.NHID(),
+		store:                     store,
+		leaser:                    leaser,
+		partitionMetadata:         make(map[string]*sgpb.PartitionMetadata),
+		lastUsageCheckIndex:       0,
+		fileStorer:                filestore.New(),
+		readQPS:                   qps.NewCounter(5*time.Second, clockwork.NewRealClock()),
+		raftProposeQPS:            qps.NewCounter(5*time.Second, clockwork.NewRealClock()),
+		broadcast:                 broadcast,
+		lockedKeys:                make(map[string][]byte),
+		prepared:                  make(map[string]pebble.Batch),
+		entriesBetweenUsageChecks: uint64(*entriesBetweenUsageChecks),
 	}
 	repl.log = log.NamedSubLogger(repl.name())
 	return repl

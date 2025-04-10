@@ -38,6 +38,7 @@ go_library(
         "//server/util/alert",
         "//server/util/authutil",
         "//server/util/background",
+        "//server/util/db",
         "//server/util/git",
         "//server/util/log",
         "//server/util/paging",
