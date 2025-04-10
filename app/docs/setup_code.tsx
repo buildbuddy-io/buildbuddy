@@ -122,7 +122,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
   }
 
   getRemoteOptions() {
-    return <span>build --remote_timeout=3600</span>;
+    return <span>build --remote_timeout=10m</span>;
   }
 
   getRemoteExecution() {
