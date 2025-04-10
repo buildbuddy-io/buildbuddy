@@ -797,7 +797,7 @@ func TestEnqueueTaskReservation_Exists(t *testing.T) {
 
 func TestAskForMoreWorkOnlyEnqueuesTasksThatFitOnNode(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	env, ctx := getEnv(t, &schedulerOpts{clock: clock}, "user1")
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
 
 	// Register two nodes with different capacities.
 	largeExecutor := newFakeExecutorWithId(ctx, t, "large", env.GetSchedulerClient())
