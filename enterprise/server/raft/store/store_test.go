@@ -208,9 +208,16 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 		},
 	}).ToProto()
 	require.NoError(t, err)
+
+	replicaID := uint64(0)
+	for _, repl := range bootstrapInfo.Replicas {
+		if repl.GetNhid() == s1.NHID() {
+			replicaID = repl.GetReplicaId()
+		}
+	}
 	_, err = c1.StartShard(ctx, &rfpb.StartShardRequest{
 		RangeId:       2,
-		ReplicaId:     1,
+		ReplicaId:     replicaID,
 		InitialMember: bootstrapInfo.InitialMembersForTesting(),
 		Batch:         batchProto,
 	})
