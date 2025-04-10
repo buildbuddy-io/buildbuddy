@@ -210,6 +210,77 @@ func TestRedactEntireSections(t *testing.T) {
 	}
 }
 
+func TestRedactRemoteHeaders(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	for _, tc := range []struct {
+		name     string
+		event    *bespb.BuildEvent
+		expected *bespb.BuildEvent
+	}{
+		{
+			name: "redact remote headers in structured command line",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "remote_header",
+					OptionValue:  "harmless_string_that_should_be_redacted_anyhow",
+					CombinedForm: "--remote_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+				&clpb.Option{
+					OptionName:   "remote_cache_header",
+					OptionValue:  "harmless_string_that_should_be_redacted_anyhow",
+					CombinedForm: "--remote_cache_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "remote_header",
+					OptionValue:  "<REDACTED>",
+					CombinedForm: "--remote_header=<REDACTED>",
+				},
+				&clpb.Option{
+					OptionName:   "remote_cache_header",
+					OptionValue:  "<REDACTED>",
+					CombinedForm: "--remote_cache_header=<REDACTED>",
+				},
+			}}}}}}}},
+		},
+		{
+			name: "redact remote headers in options parsed",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"--remote_header=harmless_string_that_should_be_redacted_anyhow",
+					"--remote_exec_header=harmless_string_that_should_be_redacted_anyhow",
+					"--bes_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+				ExplicitCmdLine: []string{
+					"--remote_header=harmless_string_that_should_be_redacted_anyhow",
+					"--remote_exec_header=harmless_string_that_should_be_redacted_anyhow",
+					"--bes_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"--remote_header=<REDACTED>",
+					"--remote_exec_header=<REDACTED>",
+					"--bes_header=<REDACTED>",
+				},
+				ExplicitCmdLine: []string{
+					"--remote_header=<REDACTED>",
+					"--remote_exec_header=<REDACTED>",
+					"--bes_header=<REDACTED>",
+				},
+			}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor(te)
+			err := redactor.RedactMetadata(tc.event)
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
+		})
+	}
+}
+
 func fileWithURI(uri string) *bespb.File {
 	return &bespb.File{
 		Name: "foo.txt",
@@ -265,8 +336,6 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		{"repo_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
 		{"repo_env", "AWS_SECRET_ACCESS_KEY=super_secret_aws_secret_access_key", "AWS_SECRET_ACCESS_KEY=<REDACTED>"},
 		{"repo_env", "AWS_ACCESS_KEY_ID=super_secret_aws_access_key_id", "AWS_ACCESS_KEY_ID=<REDACTED>"},
-		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
-		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
 		{"host_platform", "@buildbuddy_toolchain//:platform", "@buildbuddy_toolchain//:platform"},
@@ -291,17 +360,11 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	optionsParsed := &bespb.OptionsParsed{
 		CmdLine: []string{
 			"--flag=@repo//package",
-			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET",
-			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2",
-			"--bes_header=foo=TOPSECRET",
 			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 		ExplicitCmdLine: []string{
 			"--flag=@repo//package",
-			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET_EXPLICIT",
-			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2_EXPLICIT",
-			"--bes_header=foo=TOPSECRET",
 			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
@@ -316,9 +379,6 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 		t,
 		[]string{
 			"--flag=@repo//package",
-			"--remote_header=<REDACTED>",
-			"--remote_exec_header=<REDACTED>",
-			"--bes_header=<REDACTED>",
 			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
@@ -327,9 +387,6 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 		t,
 		[]string{
 			"--flag=@repo//package",
-			"--remote_header=<REDACTED>",
-			"--remote_exec_header=<REDACTED>",
-			"--bes_header=<REDACTED>",
 			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
