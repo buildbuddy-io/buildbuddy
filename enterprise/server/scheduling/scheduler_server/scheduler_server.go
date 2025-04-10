@@ -32,7 +32,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -1807,18 +1806,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if isolationType != string(platform.FirecrackerContainerType) {
 		return task
 	}
-	metaBytes, err := proto.Marshal(taskProto.GetRequestMetadata())
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to marshal request metadata: %s", err)
-		return task
-	}
-	md, found := metadata.FromIncomingContext(ctx)
-	if !found {
-		md = make(metadata.MD)
-	}
-	md.Append(bazel_request.RequestMetadataKey, string(metaBytes))
-	ctx = metadata.NewIncomingContext(ctx, md)
-	ctx = bazel_request.ParseRequestMetadataOnce(ctx)
+	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
 
 	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", experiments.WithContext("executor_hostname", executorHostname))
 	if skipResavingGroup == "" {

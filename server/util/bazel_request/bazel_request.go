@@ -26,12 +26,19 @@ const (
 	requestMetadataContextKey = "bazel_request.request_metadata"
 )
 
-func GetRequestMetadataBytes(ctx context.Context) []byte {
+func getRequestMetadataBytes(ctx context.Context) []byte {
 	vals := metadata.ValueFromIncomingContext(ctx, RequestMetadataKey)
 	if len(vals) == 0 {
 		return nil
 	}
 	return []byte(vals[0])
+}
+
+// OverrideRequestMetadata returns a context such that
+// `GetRequestMetadata(OverrideRequestMetadata(md))` will always return `md`
+// regardless of what is in gRPC context.
+func OverrideRequestMetadata(ctx context.Context, md *repb.RequestMetadata) context.Context {
+	return context.WithValue(ctx, requestMetadataContextKey, md)
 }
 
 func ParseRequestMetadataOnce(ctx context.Context) context.Context {
@@ -51,7 +58,7 @@ func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
 		return rmd
 	}
 
-	b := GetRequestMetadataBytes(ctx)
+	b := getRequestMetadataBytes(ctx)
 	if len(b) == 0 {
 		return nil
 	}
