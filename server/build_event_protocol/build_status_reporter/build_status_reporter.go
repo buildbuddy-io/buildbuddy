@@ -78,13 +78,41 @@ func (r *BuildStatusReporter) initGHClient(ctx context.Context) interfaces.GitHu
 func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, repoURL string) bool {
 	r.once.Do(func() {
 		if dbh := r.env.GetDBHandle(); dbh != nil {
+			// TODO: Replace with app installation query
 			repo := &tables.GitRepository{}
-			if err := dbh.NewQuery(ctx, "build_status_reporter_get_git_repo").Raw(
-				`SELECT * from "GitRepositories" WHERE repo_url = ?`, repoURL).Take(repo); err == nil {
+			err := dbh.NewQuery(ctx, "build_status_reporter_get_git_repo").Raw(
+				`SELECT * from "GitRepositories" WHERE repo_url = ?`, repoURL).Take(repo)
+			if err == nil {
 				r.shouldReportCommitStatuses = repo.ReportCommitStatusesForCIBuilds
+				return
+			}
+
+			// If the user hasn't installed our GH app, check legacy methods for
+			// enabling status reporting. Always report statuses for users that
+			// onboarded through a legacy method, because status reporting was
+			// automatically enabled for them.
+			legacyWorkflow := &tables.Workflow{}
+			err = dbh.NewQuery(ctx, "build_status_reporter_get_workflow").Raw(
+				`SELECT * from "Workflows" WHERE repo_url = ?`, repoURL).Take(legacyWorkflow)
+			if err == nil {
+				r.shouldReportCommitStatuses = true
+				return
+			}
+
+			userInfo, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+			if userInfo == nil || err != nil {
+				return
+			}
+			group := &tables.Group{}
+			err = dbh.NewQuery(ctx, "build_status_reporter_get_group").Raw(
+				`SELECT * from "Groups" WHERE group_id = ? AND github_token <> "" AND github_token IS NOT NULL`, userInfo.GetGroupID()).Take(group)
+			if err == nil {
+				r.shouldReportCommitStatuses = true
+				return
 			}
 		}
 	})
+
 	return r.shouldReportCommitStatuses
 }
 
