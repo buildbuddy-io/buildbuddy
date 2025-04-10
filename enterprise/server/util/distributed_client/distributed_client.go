@@ -546,29 +546,29 @@ func newDistributedCacheReader(stream dcpb.DistributedCache_ReadClient, expectEO
 	// we know will error on first read with NotFound -- we want to return
 	// that error now. So read the first message here and return any unexpected
 	// error.
-	r.ensureMoreData()
+	r.moreData()
 	if r.err == nil || (r.err == io.EOF && expectEOF) {
 		return r, nil
 	}
 	return nil, r.err
 }
 
-func (r *distributedCacheReader) ensureMoreData() {
+// moreData fetches the next batch of data if necessary, and returns true if
+// there is more data.
+func (r *distributedCacheReader) moreData() bool {
 	if r.err == nil && len(r.rsp.GetData()) == 0 {
 		r.err = r.stream.RecvMsg(r.rsp)
 	}
+	return r.err == nil || len(r.rsp.GetData()) > 0
 }
 
-func (r *distributedCacheReader) hasMore() bool { return r.err == nil || len(r.rsp.GetData()) > 0 }
-
 func (r *distributedCacheReader) Read(out []byte) (int, error) {
-	if !r.hasMore() {
+	if !r.moreData() {
 		return 0, r.err
 	}
 	n := copy(out, r.rsp.GetData())
 	r.rsp.Data = r.rsp.Data[n:]
-	r.ensureMoreData()
-	if len(r.rsp.GetData()) == 0 {
+	if !r.moreData() {
 		// If there is no more data, allow returning a possible EOF. This lets
 		// the client skip making another Read call just to get EOF.
 		return n, r.err
@@ -578,14 +578,13 @@ func (r *distributedCacheReader) Read(out []byte) (int, error) {
 
 func (r *distributedCacheReader) WriteTo(w io.Writer) (int64, error) {
 	var total int64
-	for r.hasMore() {
+	for r.moreData() {
 		n, err := w.Write(r.rsp.GetData())
 		total += int64(n)
 		if err != nil {
 			return total, err
 		}
 		r.rsp.Data = r.rsp.Data[n:]
-		r.ensureMoreData()
 	}
 	if r.err == io.EOF {
 		return total, nil
