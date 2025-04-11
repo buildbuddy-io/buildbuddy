@@ -47,6 +47,7 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"golang.org/x/time/rate"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -153,6 +154,10 @@ const (
 	SamplerSleepDuration  = 1 * time.Second
 
 	SamplerIterRefreshPeriod = 5 * time.Minute
+
+	// If set in the context metadata, the requested resource should be written to /
+	// read from this partition ID if the user is authorized to do so.
+	PartitionOverrideKey = "x-buildbuddy-partition-override"
 )
 
 type sizeUpdateOp int
@@ -1379,10 +1384,23 @@ func (p *PebbleCache) userGroupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
+func (p *PebbleCache) partitionOverride(ctx context.Context) string {
+	md := metadata.ValueFromIncomingContext(ctx, PartitionOverrideKey)
+	if len(md) > 0 {
+		return md[0]
+	}
+	return ""
+}
+
 func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string) {
 	groupID := p.userGroupID(ctx)
+	requestedPartition := p.partitionOverride(ctx)
 	for _, pm := range p.partitionMappings {
-		if pm.GroupID == groupID && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
+		matchesPartitionOverride := requestedPartition != "" &&
+			pm.PartitionID == requestedPartition &&
+			(pm.GroupID == groupID || pm.GroupID == "")
+		matchesPartition := pm.GroupID == groupID && strings.HasPrefix(remoteInstanceName, pm.Prefix)
+		if matchesPartitionOverride || matchesPartition {
 			return groupID, pm.PartitionID
 		}
 	}
