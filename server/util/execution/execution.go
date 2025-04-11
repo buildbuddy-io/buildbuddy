@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -14,6 +15,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
+	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
@@ -140,6 +142,83 @@ func ExecutionListingColumns() []string {
 		"peak_memory_bytes",
 		"do_not_cache",
 		"command_snippet",
+	}
+}
+
+// ProtoToOLAP converts the proto representation of an OLAP execution to the
+// OLAP table representation.
+func ProtoToOLAP(in *repb.StoredExecution, inv *sipb.StoredInvocation) *olaptables.Execution {
+	return &olaptables.Execution{
+		GroupID:                            in.GetGroupId(),
+		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
+		ExecutionID:                        in.GetExecutionId(),
+		InvocationUUID:                     in.GetInvocationUuid(),
+		CreatedAtUsec:                      in.GetCreatedAtUsec(),
+		UserID:                             in.GetUserId(),
+		Worker:                             in.GetWorker(),
+		ExecutorHostname:                   in.GetExecutorHostname(),
+		SelfHosted:                         in.GetSelfHosted(),
+		Region:                             in.GetRegion(),
+		Stage:                              in.GetStage(),
+		FileDownloadCount:                  in.GetFileDownloadCount(),
+		FileDownloadSizeBytes:              in.GetFileDownloadSizeBytes(),
+		FileDownloadDurationUsec:           in.GetFileDownloadDurationUsec(),
+		FileUploadCount:                    in.GetFileUploadCount(),
+		FileUploadSizeBytes:                in.GetFileUploadSizeBytes(),
+		FileUploadDurationUsec:             in.GetFileUploadDurationUsec(),
+		PeakMemoryBytes:                    in.GetPeakMemoryBytes(),
+		CPUNanos:                           in.GetCpuNanos(),
+		DiskBytesRead:                      in.GetDiskBytesRead(),
+		DiskBytesWritten:                   in.GetDiskBytesWritten(),
+		DiskReadOperations:                 in.GetDiskReadOperations(),
+		DiskWriteOperations:                in.GetDiskWriteOperations(),
+		EstimatedMemoryBytes:               in.GetEstimatedMemoryBytes(),
+		EstimatedMilliCPU:                  in.GetEstimatedMilliCpu(),
+		EstimatedFreeDiskBytes:             in.GetEstimatedFreeDiskBytes(),
+		RequestedComputeUnits:              in.GetRequestedComputeUnits(),
+		RequestedMemoryBytes:               in.GetRequestedMemoryBytes(),
+		RequestedMilliCPU:                  in.GetRequestedMilliCpu(),
+		RequestedFreeDiskBytes:             in.GetRequestedFreeDiskBytes(),
+		PreviousMeasuredMemoryBytes:        in.GetPreviousMeasuredMemoryBytes(),
+		PreviousMeasuredMilliCPU:           in.GetPreviousMeasuredMilliCpu(),
+		PreviousMeasuredFreeDiskBytes:      in.GetPreviousMeasuredFreeDiskBytes(),
+		PredictedMemoryBytes:               in.GetPredictedMemoryBytes(),
+		PredictedMilliCPU:                  in.GetPredictedMilliCpu(),
+		PredictedFreeDiskBytes:             in.GetPredictedFreeDiskBytes(),
+		QueuedTimestampUsec:                in.GetQueuedTimestampUsec(),
+		WorkerStartTimestampUsec:           in.GetWorkerStartTimestampUsec(),
+		WorkerCompletedTimestampUsec:       in.GetWorkerCompletedTimestampUsec(),
+		InputFetchStartTimestampUsec:       in.GetInputFetchStartTimestampUsec(),
+		InputFetchCompletedTimestampUsec:   in.GetInputFetchCompletedTimestampUsec(),
+		ExecutionStartTimestampUsec:        in.GetExecutionStartTimestampUsec(),
+		ExecutionCompletedTimestampUsec:    in.GetExecutionCompletedTimestampUsec(),
+		OutputUploadStartTimestampUsec:     in.GetOutputUploadStartTimestampUsec(),
+		OutputUploadCompletedTimestampUsec: in.GetOutputUploadCompletedTimestampUsec(),
+		StatusCode:                         in.GetStatusCode(),
+		ExitCode:                           in.GetExitCode(),
+		CachedResult:                       in.GetCachedResult(),
+		DoNotCache:                         in.GetDoNotCache(),
+		SkipCacheLookup:                    in.GetSkipCacheLookup(),
+		RequestedIsolationType:             in.GetRequestedIsolationType(),
+		EffectiveIsolationType:             in.GetEffectiveIsolationType(),
+		EffectiveTimeoutUsec:               in.GetRequestedTimeoutUsec(),
+		RequestedTimeoutUsec:               in.GetEffectiveTimeoutUsec(),
+		InvocationLinkType:                 int8(in.GetInvocationLinkType()),
+		User:                               inv.GetUser(),
+		Host:                               inv.GetHost(),
+		Pattern:                            inv.GetPattern(),
+		Role:                               inv.GetRole(),
+		BranchName:                         inv.GetBranchName(),
+		CommitSHA:                          inv.GetCommitSha(),
+		RepoURL:                            inv.GetRepoUrl(),
+		Command:                            inv.GetCommand(),
+		Success:                            inv.GetSuccess(),
+		InvocationStatus:                   inv.GetInvocationStatus(),
+		Tags:                               invocation_format.ConvertDBTagsToOLAP(inv.GetTags()),
+		TargetLabel:                        in.GetTargetLabel(),
+		ActionMnemonic:                     in.GetActionMnemonic(),
+		Experiments:                        in.Experiments,
+		CommandSnippet:                     in.GetCommandSnippet(),
 	}
 }
 

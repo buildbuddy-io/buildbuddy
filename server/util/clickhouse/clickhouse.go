@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -195,86 +195,10 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	return nil
 }
 
-func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schema.Execution {
-	return &schema.Execution{
-		GroupID:                            in.GetGroupId(),
-		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
-		ExecutionID:                        in.GetExecutionId(),
-		InvocationUUID:                     in.GetInvocationUuid(),
-		CreatedAtUsec:                      in.GetCreatedAtUsec(),
-		UserID:                             in.GetUserId(),
-		Worker:                             in.GetWorker(),
-		ExecutorHostname:                   in.GetExecutorHostname(),
-		SelfHosted:                         in.GetSelfHosted(),
-		Region:                             in.GetRegion(),
-		Stage:                              in.GetStage(),
-		FileDownloadCount:                  in.GetFileDownloadCount(),
-		FileDownloadSizeBytes:              in.GetFileDownloadSizeBytes(),
-		FileDownloadDurationUsec:           in.GetFileDownloadDurationUsec(),
-		FileUploadCount:                    in.GetFileUploadCount(),
-		FileUploadSizeBytes:                in.GetFileUploadSizeBytes(),
-		FileUploadDurationUsec:             in.GetFileUploadDurationUsec(),
-		PeakMemoryBytes:                    in.GetPeakMemoryBytes(),
-		CPUNanos:                           in.GetCpuNanos(),
-		DiskBytesRead:                      in.GetDiskBytesRead(),
-		DiskBytesWritten:                   in.GetDiskBytesWritten(),
-		DiskReadOperations:                 in.GetDiskReadOperations(),
-		DiskWriteOperations:                in.GetDiskWriteOperations(),
-		EstimatedMemoryBytes:               in.GetEstimatedMemoryBytes(),
-		EstimatedMilliCPU:                  in.GetEstimatedMilliCpu(),
-		EstimatedFreeDiskBytes:             in.GetEstimatedFreeDiskBytes(),
-		RequestedComputeUnits:              in.GetRequestedComputeUnits(),
-		RequestedMemoryBytes:               in.GetRequestedMemoryBytes(),
-		RequestedMilliCPU:                  in.GetRequestedMilliCpu(),
-		RequestedFreeDiskBytes:             in.GetRequestedFreeDiskBytes(),
-		PreviousMeasuredMemoryBytes:        in.GetPreviousMeasuredMemoryBytes(),
-		PreviousMeasuredMilliCPU:           in.GetPreviousMeasuredMilliCpu(),
-		PreviousMeasuredFreeDiskBytes:      in.GetPreviousMeasuredFreeDiskBytes(),
-		PredictedMemoryBytes:               in.GetPredictedMemoryBytes(),
-		PredictedMilliCPU:                  in.GetPredictedMilliCpu(),
-		PredictedFreeDiskBytes:             in.GetPredictedFreeDiskBytes(),
-		QueuedTimestampUsec:                in.GetQueuedTimestampUsec(),
-		WorkerStartTimestampUsec:           in.GetWorkerStartTimestampUsec(),
-		WorkerCompletedTimestampUsec:       in.GetWorkerCompletedTimestampUsec(),
-		InputFetchStartTimestampUsec:       in.GetInputFetchStartTimestampUsec(),
-		InputFetchCompletedTimestampUsec:   in.GetInputFetchCompletedTimestampUsec(),
-		ExecutionStartTimestampUsec:        in.GetExecutionStartTimestampUsec(),
-		ExecutionCompletedTimestampUsec:    in.GetExecutionCompletedTimestampUsec(),
-		OutputUploadStartTimestampUsec:     in.GetOutputUploadStartTimestampUsec(),
-		OutputUploadCompletedTimestampUsec: in.GetOutputUploadCompletedTimestampUsec(),
-		StatusCode:                         in.GetStatusCode(),
-		StatusMessage:                      in.GetStatusMessage(),
-		ExitCode:                           in.GetExitCode(),
-		CachedResult:                       in.GetCachedResult(),
-		DoNotCache:                         in.GetDoNotCache(),
-		SkipCacheLookup:                    in.GetSkipCacheLookup(),
-		RequestedIsolationType:             in.GetRequestedIsolationType(),
-		EffectiveIsolationType:             in.GetEffectiveIsolationType(),
-		EffectiveTimeoutUsec:               in.GetRequestedTimeoutUsec(),
-		RequestedTimeoutUsec:               in.GetEffectiveTimeoutUsec(),
-		InvocationLinkType:                 int8(in.GetInvocationLinkType()),
-		User:                               inv.GetUser(),
-		Host:                               inv.GetHost(),
-		Pattern:                            inv.GetPattern(),
-		Role:                               inv.GetRole(),
-		BranchName:                         inv.GetBranchName(),
-		CommitSHA:                          inv.GetCommitSha(),
-		RepoURL:                            inv.GetRepoUrl(),
-		Command:                            inv.GetCommand(),
-		Success:                            inv.GetSuccess(),
-		InvocationStatus:                   inv.GetInvocationStatus(),
-		Tags:                               invocation_format.ConvertDBTagsToOLAP(inv.GetTags()),
-		TargetLabel:                        in.GetTargetLabel(),
-		ActionMnemonic:                     in.GetActionMnemonic(),
-		Experiments:                        in.GetExperiments(),
-		CommandSnippet:                     in.GetCommandSnippet(),
-	}
-}
-
 func (h *DBHandle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error {
 	entries := make([]*schema.Execution, 0, len(executions))
 	for _, e := range executions {
-		entries = append(entries, buildExecution(e, inv))
+		entries = append(entries, execution.ProtoToOLAP(e, inv))
 	}
 	num := len(entries)
 	if err := h.insertWithRetrier(ctx, (&schema.Execution{}).TableName(), num, &entries); err != nil {

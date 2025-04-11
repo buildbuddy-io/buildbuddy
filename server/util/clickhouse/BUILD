@@ -8,12 +8,12 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:stored_invocation_go_proto",
-        "//server/build_event_protocol/invocation_format",
         "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
         "//server/tables",
         "//server/util/clickhouse/schema",
+        "//server/util/execution",
         "//server/util/flag",
         "//server/util/gormutil",
         "//server/util/log",

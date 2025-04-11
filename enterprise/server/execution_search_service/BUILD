@@ -7,7 +7,6 @@ go_library(
     srcs = ["execution_search_service.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service",
     deps = [
-        "//enterprise/server/util/execution",
         "//proto:execution_stats_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:stat_filter_go_proto",
@@ -18,6 +17,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/clickhouse/schema",
         "//server/util/db",
+        "//server/util/execution",
         "//server/util/filter",
         "//server/util/perms",
         "//server/util/query_builder",
