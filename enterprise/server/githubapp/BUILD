@@ -35,7 +35,7 @@ go_library(
         "@com_github_go_git_go_git_v5//plumbing/object",
         "@com_github_go_git_go_git_v5//plumbing/transport",
         "@com_github_go_git_go_git_v5//plumbing/transport/http",
-        "@com_github_golang_jwt_jwt//:jwt",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_google_go_github_v59//github",
         "@com_github_shurcool_githubv4//:githubv4",
         "@org_golang_x_oauth2//:oauth2",
