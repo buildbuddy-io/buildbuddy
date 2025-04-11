@@ -40,53 +40,25 @@ const (
 )
 
 var (
-	hashKeyRegex     *regexp.Regexp
 	uploadRegex      *regexp.Regexp
 	downloadRegex    *regexp.Regexp
 	actionCacheRegex *regexp.Regexp
 
-	knownDigestFunctions []repb.DigestFunction_Value
+	knownDigestFunctions = []repb.DigestFunction_Value{
+		repb.DigestFunction_SHA256,
+		repb.DigestFunction_SHA384,
+		repb.DigestFunction_SHA512,
+		repb.DigestFunction_SHA1,
+		repb.DigestFunction_BLAKE3,
+	}
 )
 
 func init() {
-	digestFunctions := []struct {
-		digestType repb.DigestFunction_Value
-		sizeBytes  int
-	}{
-		{
-			digestType: repb.DigestFunction_SHA256,
-			sizeBytes:  sha256.Size,
-		},
-		{
-			digestType: repb.DigestFunction_SHA384,
-			sizeBytes:  sha512.Size384,
-		},
-		{
-			digestType: repb.DigestFunction_SHA512,
-			sizeBytes:  sha512.Size,
-		},
-		{
-			digestType: repb.DigestFunction_SHA1,
-			sizeBytes:  sha1.Size,
-		},
-		{
-			digestType: repb.DigestFunction_BLAKE3,
-			sizeBytes:  32,
-		},
-	}
-
 	hashMatchers := make([]string, 0)
-	for _, df := range digestFunctions {
-		hashMatchers = append(hashMatchers, fmt.Sprintf("[a-f0-9]{%d}", df.sizeBytes*2))
-		knownDigestFunctions = append(knownDigestFunctions, df.digestType)
+	for _, df := range knownDigestFunctions {
+		hashMatchers = append(hashMatchers, fmt.Sprintf("[a-f0-9]{%d}", hashLength(df)))
 	}
 	joinedMatchers := strings.Join(hashMatchers, "|")
-
-	// Cache keys must be:
-	//  - lower case
-	//  - ascii
-	//  - a sha256 sum
-	hashKeyRegex = regexp.MustCompile(fmt.Sprintf("^(%s)$", joinedMatchers))
 
 	// Matches:
 	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
@@ -197,6 +169,15 @@ func (r *ResourceName) IsEmpty() bool {
 	return IsEmptyHash(r.rn.GetDigest(), r.rn.GetDigestFunction())
 }
 
+func isLowerHex(s string) bool {
+	for _, ch := range s {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func (r *ResourceName) Validate() error {
 	d := r.rn.GetDigest()
 	if d == nil {
@@ -209,10 +190,15 @@ func (r *ResourceName) Validate() error {
 		if r.IsEmpty() {
 			return nil
 		}
-		return status.InvalidArgumentError("Invalid (zero-length) hash")
+		return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
 	}
-	if !hashKeyRegex.MatchString(d.Hash) {
-		return status.InvalidArgumentError("Malformed hash")
+	hash := d.GetHash()
+	if expected := hashLength(r.GetDigestFunction()); len(hash) != expected {
+		return status.InvalidArgumentErrorf("Invalid length hash. Expected len %v for %s function. Got %v",
+			expected, r.GetDigestFunction().String(), len(hash))
+	}
+	if !isLowerHex(hash) {
+		return status.InvalidArgumentError("Hash isn't all lower case hex characters.")
 	}
 	return nil
 }
@@ -399,6 +385,25 @@ func IsEmptyHash(d *repb.Digest, digestFunction repb.DigestFunction_Value) bool 
 		return d.GetHash() == "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
 	default:
 		return false
+	}
+}
+
+func hashLength(digestFunction repb.DigestFunction_Value) int {
+	switch digestFunction {
+	case repb.DigestFunction_BLAKE3:
+		return 32 * 2
+	case repb.DigestFunction_SHA256:
+		return sha256.Size * 2
+	case repb.DigestFunction_SHA384:
+		return sha512.Size384 * 2
+	case repb.DigestFunction_SHA512:
+		return sha512.Size * 2
+	case repb.DigestFunction_SHA1:
+		return sha1.Size * 2
+	case repb.DigestFunction_MD5:
+		return md5.Size * 2
+	default:
+		return -1
 	}
 }
 
