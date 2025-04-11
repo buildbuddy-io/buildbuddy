@@ -575,9 +575,21 @@ type fnReadCloser struct {
 	closeFn func() error
 }
 
-func ReadCloserWithFunc(rc io.ReadCloser, closeFn func() error) io.ReadCloser {
-	return &fnReadCloser{rc, closeFn}
+type fnReadCloseWriterTo struct {
+	fnReadCloser
+	io.WriterTo
 }
+
+// ReadCloserWithFunc wraps the input reader so that rc.Close also calls
+// closeFn. If the input is an io.WriterTo, the output will be as well.
+func ReadCloserWithFunc(rc io.ReadCloser, closeFn func() error) io.ReadCloser {
+	r := fnReadCloser{rc, closeFn}
+	if wt, ok := rc.(io.WriterTo); ok {
+		return &fnReadCloseWriterTo{r, wt}
+	}
+	return &r
+}
+
 func (f fnReadCloser) Close() error {
 	err := f.ReadCloser.Close()
 	closeFnErr := f.closeFn()

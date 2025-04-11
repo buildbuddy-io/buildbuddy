@@ -1633,9 +1633,14 @@ func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 		return nil, err
 	}
 	defer rc.Close()
-	var buffer bytes.Buffer
-	_, err = io.Copy(&buffer, rc)
-	return buffer.Bytes(), err
+	// The median and average AC results are less than 4KiB: go/action-result-size
+	bufSize := 4 * 1024
+	if r.GetCacheType() == rspb.CacheType_CAS {
+		bufSize = int(r.GetDigest().GetSizeBytes())
+	}
+	buf := bytes.NewBuffer(make([]byte, 0, bufSize))
+	_, err = io.Copy(buf, rc)
+	return buf.Bytes(), err
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -1647,7 +1652,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 
-	buf := &bytes.Buffer{}
 	for _, r := range resources {
 		rc, err := p.reader(ctx, db, r, 0, 0)
 		if err != nil {
@@ -1657,6 +1661,11 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 			return nil, err
 		}
 
+		bufSize := 4 * 1024
+		if r.GetCacheType() == rspb.CacheType_CAS {
+			bufSize = int(r.GetDigest().GetSizeBytes())
+		}
+		buf := bytes.NewBuffer(make([]byte, 0, bufSize))
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
 		if copyErr != nil {
@@ -1667,8 +1676,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 			log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
 			continue
 		}
-		foundMap[r.GetDigest()] = append([]byte{}, buf.Bytes()...)
-		buf.Reset()
+		foundMap[r.GetDigest()] = buf.Bytes()
 	}
 	return foundMap, nil
 }
@@ -1879,6 +1887,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	if err != nil {
 		return nil, err
 	}
+	// return rc, nil
 
 	// Grab another lease and pass the Close function to the reader
 	// so it will be closed when the reader is.
