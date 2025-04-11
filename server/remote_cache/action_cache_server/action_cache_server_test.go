@@ -285,6 +285,8 @@ func TestHitTracking(t *testing.T) {
 		actionResultProtoPresent bool
 		outputsPresent           bool
 		expectHit                bool
+		clientActionResultDigest *repb.Digest
+		expectCachedDigestMatch  bool
 	}{
 		{
 			name:                     "MissingProto_CacheMiss",
@@ -304,9 +306,34 @@ func TestHitTracking(t *testing.T) {
 			outputsPresent:           true,
 			expectHit:                true,
 		},
+		{
+			name:                     "ProtoAndOutputsPresent_CacheHitWithMatchingDigest",
+			actionResultProtoPresent: true,
+			outputsPresent:           true,
+			expectHit:                true,
+			clientActionResultDigest: &repb.Digest{Hash: "8ffd56793296649f99345bcf689d2a28678ea4745496dd8f4061328ffc0b0fe1", SizeBytes: 142},
+			expectCachedDigestMatch:  true,
+		},
+		{
+			name:                     "ProtoAndOutputsPresent_CacheHitWithNonmatchingDigest",
+			actionResultProtoPresent: true,
+			outputsPresent:           true,
+			expectHit:                true,
+			clientActionResultDigest: &repb.Digest{Hash: "badbadbad", SizeBytes: 222},
+			expectCachedDigestMatch:  false,
+		},
+		{
+			name:                     "ProtoAndOutputsPresent_CacheMissWithClientDigest",
+			actionResultProtoPresent: true,
+			outputsPresent:           false,
+			expectHit:                false,
+			clientActionResultDigest: &repb.Digest{Hash: "badbadbad", SizeBytes: 222},
+			expectCachedDigestMatch:  false,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			flags.Set(t, "cache.detailed_stats_enabled", true)
+			flags.Set(t, "cache.check_client_action_result_digests", true)
 			resetMetrics()
 
 			ctx := context.Background()
@@ -326,19 +353,23 @@ func TestHitTracking(t *testing.T) {
 			digestFn := repb.DigestFunction_SHA256
 			outputDigest, err := digest.Compute(strings.NewReader("hello world"), digestFn)
 			require.NoError(t, err)
+			uploadedActionResult := &repb.ActionResult{
+				OutputFiles: []*repb.OutputFile{
+					{
+						Path:   "hello.txt",
+						Digest: outputDigest,
+					},
+				},
+				ExecutionMetadata: &repb.ExecutedActionMetadata{
+					Worker: "this value doesnt matter, just defining it to be stable",
+				},
+			}
 			if test.actionResultProtoPresent {
 				_, err := acClient.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
 					InstanceName:   instanceName,
 					DigestFunction: digestFn,
 					ActionDigest:   actionDigest,
-					ActionResult: &repb.ActionResult{
-						OutputFiles: []*repb.OutputFile{
-							{
-								Path:   "hello.txt",
-								Digest: outputDigest,
-							},
-						},
-					},
+					ActionResult:   uploadedActionResult,
 				})
 				require.NoError(t, err)
 			}
@@ -354,11 +385,19 @@ func TestHitTracking(t *testing.T) {
 			})
 			require.NoError(t, err)
 			actionResult, err := acClient.GetActionResult(acCtx, &repb.GetActionResultRequest{
-				InstanceName:   instanceName,
-				DigestFunction: digestFn,
-				ActionDigest:   actionDigest,
+				InstanceName:             instanceName,
+				DigestFunction:           digestFn,
+				ActionDigest:             actionDigest,
+				CachedActionResultDigest: test.clientActionResultDigest,
 			})
+			var expectedTransferSize = proto.Size(actionResult)
 			if test.expectHit {
+				if test.expectCachedDigestMatch {
+					expectedTransferSize = proto.Size(uploadedActionResult)
+					require.True(t, proto.Equal(actionResult, &repb.ActionResult{
+						ActionResultDigest: test.clientActionResultDigest,
+					}))
+				}
 				require.NoError(t, err)
 			} else {
 				require.True(t, status.IsNotFoundError(err), "expected NotFound, got %T", err)
@@ -375,7 +414,7 @@ func TestHitTracking(t *testing.T) {
 					Digest:               actionDigest,
 					RequestType:          capb.RequestType_READ,
 					Status:               expectedStatus,
-					TransferredSizeBytes: int64(proto.Size(actionResult)),
+					TransferredSizeBytes: int64(expectedTransferSize),
 				},
 			}
 			assert.Empty(t, cmp.Diff(
