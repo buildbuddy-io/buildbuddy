@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -33,7 +34,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -55,10 +55,11 @@ var (
 )
 
 type Resolver struct {
+	env               environment.Env
 	allowedPrivateIPs []*net.IPNet
 }
 
-func NewResolver() (*Resolver, error) {
+func NewResolver(env environment.Env) (*Resolver, error) {
 	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
 	for _, r := range *allowedPrivateIPs {
 		_, ipNet, err := net.ParseCIDR(r)
@@ -67,10 +68,10 @@ func NewResolver() (*Resolver, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
-	return &Resolver{allowedPrivateIPs: allowedPrivateIPNets}, nil
+	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
 }
 
-func (r *Resolver) Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, imgname string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
+func (r *Resolver) Resolve(ctx context.Context, imgname string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	gcrPlatform := gcr.Platform{
@@ -83,7 +84,7 @@ func (r *Resolver) Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc 
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imgname)
 	}
-	imgdigest, raw, fromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, imgref, opts)
+	imgdigest, raw, fromCache, err := r.fetchRawManifestFromCacheOrRemote(ctx, imgref, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -92,10 +93,8 @@ func (r *Resolver) Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc 
 		return nil, err
 	}
 	if !fromCache {
-		err := writeManifestToCache(
+		err := r.writeManifestToCache(
 			ctx,
-			acc,
-			bsc,
 			*imgdigest,
 			string(m.MediaType),
 			int64(len(raw)),
@@ -109,8 +108,8 @@ func (r *Resolver) Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc 
 	if m.MediaType != types.OCIImageIndex && m.MediaType != types.DockerManifestList {
 		img := &cacheAwareImage{
 			digest:   *imgdigest,
-			acc:      acc,
-			bsc:      bsc,
+			r:        r,
+			ctx:      ctx,
 			raw:      raw,
 			manifest: m,
 			options:  opts,
@@ -137,7 +136,7 @@ func (r *Resolver) Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc 
 		return nil, fmt.Errorf("no child with platform %+v for %s", platform, imgref.Context())
 	}
 	childRef := imgref.Context().Digest(child.Digest.String())
-	childDigest, childraw, childFromCache, err := fetchRawManifestFromCacheOrRemote(ctx, acc, bsc, childRef, opts)
+	childDigest, childraw, childFromCache, err := r.fetchRawManifestFromCacheOrRemote(ctx, childRef, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -146,10 +145,8 @@ func (r *Resolver) Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc 
 		return nil, err
 	}
 	if !childFromCache {
-		err := writeManifestToCache(
+		err := r.writeManifestToCache(
 			ctx,
-			acc,
-			bsc,
 			*childDigest,
 			string(childm.MediaType),
 			int64(len(childraw)),
@@ -164,8 +161,8 @@ func (r *Resolver) Resolve(ctx context.Context, acc repb.ActionCacheClient, bsc 
 	}
 	childimg := &cacheAwareImage{
 		digest:   *childDigest,
-		acc:      acc,
-		bsc:      bsc,
+		r:        r,
+		ctx:      ctx,
 		raw:      childraw,
 		manifest: childm,
 		options:  opts,
@@ -413,7 +410,7 @@ func RuntimePlatform() *rgpb.Platform {
 	}
 }
 
-func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, digestOrTagRef gcrname.Reference, remoteOpts []remote.Option) (*gcrname.Digest, []byte, bool, error) {
+func (r *Resolver) fetchRawManifestFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, remoteOpts []remote.Option) (*gcrname.Digest, []byte, bool, error) {
 	desc, err := remote.Head(digestOrTagRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -423,7 +420,7 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCache
 	}
 
 	ocidigest := digestOrTagRef.Context().Digest(desc.Digest.String())
-	raw, err := FetchManifestFromCache(ctx, acc, bsc, ocidigest)
+	raw, err := r.FetchManifestFromCache(ctx, ocidigest)
 	if err == nil {
 		return &ocidigest, raw, true, nil
 	}
@@ -441,12 +438,12 @@ func fetchRawManifestFromCacheOrRemote(ctx context.Context, acc repb.ActionCache
 	return &ocidigest, remoteDesc.Manifest, false, nil
 }
 
-func FetchManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest gcrname.Digest) (string, int64, error) {
+func (r *Resolver) FetchManifestMetadataFromCache(ctx context.Context, ocidigest gcrname.Digest) (string, int64, error) {
 	arRN, err := ocidigestToACResourceName(ocidigest, ocipb.OCIResourceType_MANIFEST)
 	if err != nil {
 		return "", 0, err
 	}
-	ar, err := cachetools.GetActionResult(ctx, acc, arRN)
+	ar, err := cachetools.GetActionResult(ctx, r.env.GetActionCacheClient(), arRN)
 	if err != nil {
 		return "", 0, err
 	}
@@ -467,12 +464,16 @@ func FetchManifestMetadataFromCache(ctx context.Context, acc repb.ActionCacheCli
 	return mc.GetContentType(), mc.GetContentLength(), nil
 }
 
-func FetchManifestFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest gcrname.Digest) ([]byte, error) {
+func (r *Resolver) FetchManifestFromCache(ctx context.Context, ocidigest gcrname.Digest) ([]byte, error) {
 	arRN, err := ocidigestToACResourceName(ocidigest, ocipb.OCIResourceType_MANIFEST)
 	if err != nil {
 		return nil, err
 	}
-	ar, err := cachetools.GetActionResult(ctx, acc, arRN)
+	ar, err := cachetools.GetActionResult(
+		ctx,
+		r.env.GetActionCacheClient(),
+		arRN,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -494,12 +495,12 @@ func FetchManifestFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc
 	return mc.GetRaw(), nil
 }
 
-func FetchLayerMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest gcrname.Digest) (string, int64, error) {
+func (r *Resolver) FetchLayerMetadataFromCache(ctx context.Context, ocidigest gcrname.Digest) (string, int64, error) {
 	arRN, err := ocidigestToACResourceName(ocidigest, ocipb.OCIResourceType_BLOB)
 	if err != nil {
 		return "", 0, err
 	}
-	ar, err := cachetools.GetActionResult(ctx, acc, arRN)
+	ar, err := cachetools.GetActionResult(ctx, r.env.GetActionCacheClient(), arRN)
 	if err != nil {
 		return "", 0, err
 	}
@@ -525,19 +526,19 @@ func FetchLayerMetadataFromCache(ctx context.Context, acc repb.ActionCacheClient
 		repb.DigestFunction_SHA256,
 	)
 	blobMetadata := &ocipb.OCIBlobMetadata{}
-	err = cachetools.GetBlobAsProto(ctx, bsc, blobMetadataRN, blobMetadata)
+	err = cachetools.GetBlobAsProto(ctx, r.env.GetByteStreamClient(), blobMetadataRN, blobMetadata)
 	if err != nil {
 		return "", 0, err
 	}
 	return blobMetadata.GetContentType(), blobMetadata.GetContentLength(), nil
 }
 
-func FetchLayerFromCache(ctx context.Context, bsc bspb.ByteStreamClient, ocidigest gcrname.Digest, contentLength int64, w io.Writer) error {
+func (r *Resolver) FetchLayerFromCache(ctx context.Context, ocidigest gcrname.Digest, contentLength int64, w io.Writer) error {
 	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
 	if err != nil {
 		return err
 	}
-	return cachetools.GetBlob(ctx, bsc, blobRN, w)
+	return cachetools.GetBlob(ctx, r.env.GetByteStreamClient(), blobRN, w)
 }
 
 func ocidigestToACResourceName(ocidigest gcrname.Digest, ociResourceType ocipb.OCIResourceType) (*digest.ACResourceName, error) {
@@ -568,7 +569,7 @@ func ocidigestToACResourceName(ocidigest gcrname.Digest, ociResourceType ocipb.O
 	return arRN, nil
 }
 
-func UploadManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest gcrname.Digest, contentType string, contentLength int64, raw []byte) error {
+func (r *Resolver) UploadManifestToCache(ctx context.Context, ocidigest gcrname.Digest, contentType string, contentLength int64, raw []byte) error {
 	arRN, err := ocidigestToACResourceName(ocidigest, ocipb.OCIResourceType_MANIFEST)
 	if err != nil {
 		return err
@@ -589,15 +590,25 @@ func UploadManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc 
 			},
 		},
 	}
-	return cachetools.UploadActionResult(ctx, acc, arRN, ar)
+	return cachetools.UploadActionResult(
+		ctx,
+		r.env.GetActionCacheClient(),
+		arRN,
+		ar,
+	)
 }
 
-func UploadLayerToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest gcrname.Digest, ociResourceType ocipb.OCIResourceType, contentType string, contentLength int64, r io.Reader) error {
+func (r *Resolver) UploadLayerToCache(ctx context.Context, ocidigest gcrname.Digest, ociResourceType ocipb.OCIResourceType, contentType string, contentLength int64, ior io.Reader) error {
 	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
 	if err != nil {
 		return err
 	}
-	_, _, err = cachetools.UploadFromReader(ctx, bsc, blobRN, r)
+	_, _, err = cachetools.UploadFromReader(
+		ctx,
+		r.env.GetByteStreamClient(),
+		blobRN,
+		ior,
+	)
 	if err != nil {
 		return err
 	}
@@ -606,7 +617,13 @@ func UploadLayerToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bsp
 		ContentLength: contentLength,
 		ContentType:   contentType,
 	}
-	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsc, "", repb.DigestFunction_SHA256, blobMetadata)
+	blobMetadataCASDigest, err := cachetools.UploadProto(
+		ctx,
+		r.env.GetByteStreamClient(),
+		"",
+		repb.DigestFunction_SHA256,
+		blobMetadata,
+	)
 	if err != nil {
 		return err
 	}
@@ -627,18 +644,17 @@ func UploadLayerToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bsp
 			},
 		},
 	}
-	err = cachetools.UploadActionResult(ctx, acc, arRN, ar)
-	if err != nil {
-		return err
-	}
-	return nil
+	return cachetools.UploadActionResult(
+		ctx,
+		r.env.GetActionCacheClient(),
+		arRN,
+		ar,
+	)
 }
 
-func writeManifestToCache(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, digest gcrname.Digest, contentType string, contentLength int64, raw []byte) error {
-	return UploadManifestToCache(
+func (r *Resolver) writeManifestToCache(ctx context.Context, digest gcrname.Digest, contentType string, contentLength int64, raw []byte) error {
+	return r.UploadManifestToCache(
 		ctx,
-		acc,
-		bsc,
 		digest,
 		contentType,
 		contentLength,
@@ -694,8 +710,7 @@ func isSubset(lst, required []string) bool {
 
 type cachingLayerWriteCloser struct {
 	ctx context.Context
-	acc repb.ActionCacheClient
-	bsc bspb.ByteStreamClient
+	r   *Resolver
 
 	ocidigest     gcrname.Digest
 	contentType   string
@@ -723,7 +738,13 @@ func (clwc *cachingLayerWriteCloser) Close() error {
 		ContentLength: clwc.contentLength,
 		ContentType:   clwc.contentType,
 	}
-	blobMetadataCASDigest, err := cachetools.UploadProto(clwc.ctx, clwc.bsc, "", repb.DigestFunction_SHA256, blobMetadata)
+	blobMetadataCASDigest, err := cachetools.UploadProto(
+		clwc.ctx,
+		clwc.r.env.GetByteStreamClient(),
+		"",
+		repb.DigestFunction_SHA256,
+		blobMetadata,
+	)
 	if err != nil {
 		return err
 	}
@@ -744,7 +765,12 @@ func (clwc *cachingLayerWriteCloser) Close() error {
 			},
 		},
 	}
-	err = cachetools.UploadActionResult(clwc.ctx, clwc.acc, arRN, ar)
+	err = cachetools.UploadActionResult(
+		clwc.ctx,
+		clwc.r.env.GetActionCacheClient(),
+		arRN,
+		ar,
+	)
 	if err != nil {
 		return err
 	}
@@ -778,19 +804,18 @@ func ocidigestToCASResourceName(ocidigest gcrname.Digest, contentLength int64) (
 	return rn, nil
 }
 
-func newCachingLayerWriteCloser(ctx context.Context, acc repb.ActionCacheClient, bsc bspb.ByteStreamClient, ocidigest gcrname.Digest, contentType string, contentLength int64) (io.WriteCloser, error) {
+func newCachingLayerWriteCloser(ctx context.Context, r *Resolver, ocidigest gcrname.Digest, contentType string, contentLength int64) (io.WriteCloser, error) {
 	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
 	if err != nil {
 		return nil, err
 	}
-	wc, err := cachetools.NewUploadWriteCloser(ctx, bsc, blobRN)
+	wc, err := cachetools.NewUploadWriteCloser(ctx, r.env.GetByteStreamClient(), blobRN)
 	if err != nil {
 		return nil, err
 	}
 	return &cachingLayerWriteCloser{
 		ctx:           ctx,
-		acc:           acc,
-		bsc:           bsc,
+		r:             r,
 		ocidigest:     ocidigest,
 		contentType:   contentType,
 		contentLength: contentLength,
@@ -800,8 +825,8 @@ func newCachingLayerWriteCloser(ctx context.Context, acc repb.ActionCacheClient,
 
 type cacheAwareImage struct {
 	digest gcrname.Digest
-	acc    repb.ActionCacheClient
-	bsc    bspb.ByteStreamClient
+	r      *Resolver
+	ctx    context.Context
 
 	raw      []byte
 	manifest *gcr.Manifest
@@ -817,21 +842,18 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 		return i.manifest.Config.Data, nil
 	}
 
-	ctx := context.Background()
-	_, contentLength, err := FetchLayerMetadataFromCache(
-		ctx,
-		i.acc,
-		i.bsc,
+	_, contentLength, err := i.r.FetchLayerMetadataFromCache(
+		i.ctx,
 		i.digest,
 	)
 	if err == nil {
 		raw := &bytes.Buffer{}
-		err := FetchLayerFromCache(ctx, i.bsc, i.digest, contentLength, raw)
+		err := i.r.FetchLayerFromCache(i.ctx, i.digest, contentLength, raw)
 		if err == nil {
 			return raw.Bytes(), nil
 		}
 		if !status.IsNotFoundError(err) {
-			log.CtxErrorf(ctx, "error fetching config in %s from the CAS: %s", i.digest.Context(), err)
+			log.CtxErrorf(i.ctx, "error fetching config in %s from the CAS: %s", i.digest.Context(), err)
 		}
 	}
 
@@ -849,10 +871,8 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = UploadLayerToCache(
-		ctx,
-		i.acc,
-		i.bsc,
+	err = i.r.UploadLayerToCache(
+		i.ctx,
 		ocidigest,
 		ocipb.OCIResourceType_BLOB,
 		string(i.manifest.Config.MediaType),
@@ -860,7 +880,7 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 		bytes.NewReader(remoteraw),
 	)
 	if err != nil {
-		log.CtxErrorf(ctx, "could not write config %s to cache", ocidigest)
+		log.CtxErrorf(i.ctx, "could not write config %s to cache", ocidigest)
 	}
 	return remoteraw, nil
 }
@@ -879,8 +899,8 @@ func (i *cacheAwareImage) LayerByDigest(hash gcr.Hash) (partial.CompressedLayer,
 			}
 			l := &cacheAwareLayer{
 				ocidigest:   i.digest.Context().Digest(hash.String()),
-				acc:         i.acc,
-				bsc:         i.bsc,
+				r:           i.r,
+				ctx:         i.ctx,
 				descriptor:  &d,
 				remoteLayer: rl,
 			}
@@ -893,8 +913,8 @@ func (i *cacheAwareImage) LayerByDigest(hash gcr.Hash) (partial.CompressedLayer,
 var _ partial.CompressedImageCore = (*cacheAwareImage)(nil)
 
 type cacheAwareLayer struct {
-	acc repb.ActionCacheClient
-	bsc bspb.ByteStreamClient
+	r   *Resolver
+	ctx context.Context
 
 	ocidigest   gcrname.Digest
 	descriptor  *gcr.Descriptor
@@ -945,12 +965,7 @@ func (t *teeReadCloser) Close() error {
 
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	ctx := context.Background()
-	_, contentLength, err := FetchLayerMetadataFromCache(
-		ctx,
-		l.acc,
-		l.bsc,
-		l.ocidigest,
-	)
+	_, contentLength, err := l.r.FetchLayerMetadataFromCache(ctx, l.ocidigest)
 	if err != nil && !status.IsNotFoundError(err) {
 		log.CtxErrorf(ctx, "error fetching CAS digest for layer in %s: %s", l.ocidigest.Context(), err)
 	}
@@ -958,9 +973,8 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 		r, w := io.Pipe()
 		go func() {
 			defer w.Close()
-			err := FetchLayerFromCache(
+			err := l.r.FetchLayerFromCache(
 				ctx,
-				l.bsc,
 				l.ocidigest,
 				contentLength,
 				w,
@@ -987,8 +1001,7 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	}
 	caswc, err := newCachingLayerWriteCloser(
 		ctx,
-		l.acc,
-		l.bsc,
+		l.r,
 		l.ocidigest,
 		string(mediaType),
 		size,

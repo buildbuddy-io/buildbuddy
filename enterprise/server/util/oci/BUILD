@@ -11,6 +11,7 @@ go_library(
         "//proto:ociregistry_go_proto",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
+        "//server/environment",
         "//server/http/httpclient",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",

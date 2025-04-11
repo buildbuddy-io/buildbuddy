@@ -208,8 +208,8 @@ func TestToProto(t *testing.T) {
 			oci.Credentials{Username: "foo", Password: "bar"}.ToProto()))
 }
 
-func newResolver(t *testing.T) *oci.Resolver {
-	r, err := oci.NewResolver()
+func newResolver(t *testing.T, te *testenv.TestEnv) *oci.Resolver {
+	r, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	return r
 }
@@ -223,10 +223,8 @@ func TestResolve(t *testing.T) {
 	// flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{})
 	imageName, _ := registry.PushRandomImage(t)
-	_, err := newResolver(t).Resolve(
+	_, err := newResolver(t, te).Resolve(
 		context.Background(),
-		te.GetActionCacheClient(),
-		te.GetByteStreamClient(),
 		imageName,
 		&rgpb.Platform{
 			Arch: runtime.GOARCH,
@@ -243,10 +241,8 @@ func TestResolve_InvalidImage(t *testing.T) {
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
 
-	_, err := newResolver(t).Resolve(
+	_, err := newResolver(t, te).Resolve(
 		context.Background(),
-		te.GetActionCacheClient(),
-		te.GetByteStreamClient(),
 		":invalid",
 		&rgpb.Platform{
 			Arch: runtime.GOARCH,
@@ -277,10 +273,8 @@ func TestResolve_Unauthorized(t *testing.T) {
 	})
 
 	imageName, _ := registry.PushRandomImage(t)
-	_, err := newResolver(t).Resolve(
+	_, err := newResolver(t, te).Resolve(
 		context.Background(),
-		te.GetActionCacheClient(),
-		te.GetByteStreamClient(),
 		imageName,
 		&rgpb.Platform{
 			Arch: runtime.GOARCH,
@@ -326,10 +320,8 @@ func TestResolve_Arm64VariantIsOptional(t *testing.T) {
 
 			ref := registry.PushIndex(t, index, "test-multiplatform-image")
 
-			pulledImg, err := newResolver(t).Resolve(
+			pulledImg, err := newResolver(t, te).Resolve(
 				ctx,
-				te.GetActionCacheClient(),
-				te.GetByteStreamClient(),
 				ref,
 				&rgpb.Platform{
 					Arch: "arm64",
@@ -417,10 +409,8 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	})
 
 	// Resolve the image, which should fall back to the original after mirror fails.
-	img, err := newResolver(t).Resolve(
+	img, err := newResolver(t, te).Resolve(
 		context.Background(),
-		te.GetActionCacheClient(),
-		te.GetByteStreamClient(),
 		imageName,
 		&rgpb.Platform{
 			Arch: runtime.GOARCH,
@@ -477,10 +467,8 @@ func TestResolve_CachesManifest(t *testing.T) {
 
 	before := count.Load()
 	for i := 0; i < 2; i++ {
-		img, err := newResolver(t).Resolve(
+		img, err := newResolver(t, te).Resolve(
 			context.Background(),
-			te.GetActionCacheClient(),
-			te.GetByteStreamClient(),
 			imageName,
 			&rgpb.Platform{
 				Arch: runtime.GOARCH,
@@ -537,10 +525,8 @@ func readAll(r io.Reader) ([]byte, error) {
 
 func pushAndFetchRandomImage(t *testing.T, te *testenv.TestEnv, registry *testregistry.Registry) error {
 	imageName, _ := registry.PushRandomImage(t)
-	_, err := newResolver(t).Resolve(
+	_, err := newResolver(t, te).Resolve(
 		context.Background(),
-		te.GetActionCacheClient(),
-		te.GetByteStreamClient(),
 		imageName,
 		&rgpb.Platform{
 			Arch: runtime.GOARCH,

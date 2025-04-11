@@ -1348,7 +1348,7 @@ type ImageLayer struct {
 }
 
 func NewImageStore(env environment.Env, layersDir string) (*ImageStore, error) {
-	resolver, err := oci.NewResolver()
+	resolver, err := oci.NewResolver(env)
 	if err != nil {
 		return nil, err
 	}
@@ -1401,7 +1401,7 @@ func (s *ImageStore) CachedImage(imageName string) (image *Image, ok bool) {
 }
 
 func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
-	img, err := s.resolver.Resolve(ctx, s.env.GetActionCacheClient(), s.env.GetByteStreamClient(), imageName, oci.RuntimePlatform(), creds)
+	img, err := s.resolver.Resolve(ctx, imageName, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return nil, status.WrapError(err, "resolve image")
 	}

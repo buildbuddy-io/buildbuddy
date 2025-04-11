@@ -40,8 +40,9 @@ var (
 )
 
 type registry struct {
-	env    environment.Env
-	client *http.Client
+	env      environment.Env
+	client   *http.Client
+	resolver *oci.Resolver
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -60,9 +61,14 @@ func Register(env *real_environment.RealEnv) error {
 
 func New(env environment.Env) (*registry, error) {
 	client := httpclient.New()
+	resolver, err := oci.NewResolver(env)
+	if err != nil {
+		return nil, err
+	}
 	r := &registry{
-		env:    env,
-		client: client,
+		env:      env,
+		client:   client,
+		resolver: resolver,
 	}
 	return r, nil
 }
@@ -287,15 +293,13 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		ocidigest = ref.Context().Digest(hash.String())
 	}
 
-	bsc := r.env.GetByteStreamClient()
-	acc := r.env.GetActionCacheClient()
 	var contentType string
 	var contentLength int64
 	switch ociResourceType {
 	case ocipb.OCIResourceType_MANIFEST:
-		contentType, contentLength, err = oci.FetchManifestMetadataFromCache(ctx, acc, bsc, ocidigest)
+		contentType, contentLength, err = r.resolver.FetchManifestMetadataFromCache(ctx, ocidigest)
 	case ocipb.OCIResourceType_BLOB:
-		contentType, contentLength, err = oci.FetchLayerMetadataFromCache(ctx, acc, bsc, ocidigest)
+		contentType, contentLength, err = r.resolver.FetchLayerMetadataFromCache(ctx, ocidigest)
 	case ocipb.OCIResourceType_UNKNOWN:
 		http.Error(w, fmt.Sprintf("expected request for blob or manifest, got unknown type for %s", ref), http.StatusBadRequest)
 		return
@@ -314,7 +318,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		}
 		switch ociResourceType {
 		case ocipb.OCIResourceType_MANIFEST:
-			raw, err := oci.FetchManifestFromCache(ctx, acc, bsc, ocidigest)
+			raw, err := r.resolver.FetchManifestFromCache(ctx, ocidigest)
 			if err == nil {
 				r := bytes.NewReader(raw)
 				_, err := io.Copy(w, r)
@@ -325,7 +329,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 			}
 			log.CtxError(ctx, fmt.Sprintf("error fetching manifest from the cache for %s: %s", ocidigest, err))
 		case ocipb.OCIResourceType_BLOB:
-			err := oci.FetchLayerFromCache(ctx, bsc, ocidigest, contentLength, w)
+			err := r.resolver.FetchLayerFromCache(ctx, ocidigest, contentLength, w)
 			if err == nil {
 				return
 			}
@@ -380,10 +384,8 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		if err != nil {
 			log.CtxWarningf(ctx, "could not read entire manifest for %s: %s", ocidigest, err)
 		}
-		err = oci.UploadManifestToCache(
+		err = r.resolver.UploadManifestToCache(
 			ctx,
-			acc,
-			bsc,
 			ocidigest,
 			uptype,
 			uplength,
@@ -393,10 +395,8 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 			log.CtxWarningf(ctx, "error writing manifest to cache for %s: %s", ocidigest, err)
 		}
 	case ocipb.OCIResourceType_BLOB:
-		err := oci.UploadLayerToCache(
+		err := r.resolver.UploadLayerToCache(
 			ctx,
-			acc,
-			bsc,
 			ocidigest,
 			ociResourceType,
 			uptype,

@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
+        "//server/environment",
         "//server/util/disk",
         "//server/util/hash",
         "//server/util/log",
