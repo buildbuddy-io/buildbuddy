@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
@@ -201,12 +201,10 @@ func initializeDiskCache(env *real_environment.RealEnv) {
 }
 
 func Handle() {
-	sc, args := arg.Pop(os.Args, "sidecar")
-	if sc != "1" {
+	if os.Getenv(config.BbIsSidecar) != "1" {
 		return
 	}
 	defer os.Exit(0)
-	os.Args = args
 
 	flag.Parse()
 	ctx, cancel := context.WithCancel(context.Background())

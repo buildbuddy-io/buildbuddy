@@ -23,6 +23,9 @@ const (
 	// Path where we expect to find the user's plugin configuration, relative
 	// to the user's home directory.
 	HomeRelativeUserConfigPath = "buildbuddy.yaml"
+
+	// Environment variable that is set to "1" if we are a sidecar.
+	BbIsSidecar = "_BB_IS_SIDECAR"
 )
 
 // File represents a decoded config file along with its metadata.

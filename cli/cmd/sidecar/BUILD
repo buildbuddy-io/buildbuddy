@@ -7,7 +7,7 @@ go_library(
     srcs = ["sidecar.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar",
     deps = [
-        "//cli/arg",
+        "//cli/config",
         "//cli/devnull",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
