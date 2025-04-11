@@ -598,21 +598,11 @@ func (r *Resolver) UploadManifestToCache(ctx context.Context, ocidigest gcrname.
 	)
 }
 
-func (r *Resolver) UploadLayerToCache(ctx context.Context, ocidigest gcrname.Digest, ociResourceType ocipb.OCIResourceType, contentType string, contentLength int64, ior io.Reader) error {
+func (r *Resolver) uploadLayerMetadataToCache(ctx context.Context, ocidigest gcrname.Digest, contentType string, contentLength int64) error {
 	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
 	if err != nil {
 		return err
 	}
-	_, _, err = cachetools.UploadFromReader(
-		ctx,
-		r.env.GetByteStreamClient(),
-		blobRN,
-		ior,
-	)
-	if err != nil {
-		return err
-	}
-
 	blobMetadata := &ocipb.OCIBlobMetadata{
 		ContentLength: contentLength,
 		ContentType:   contentType,
@@ -628,7 +618,7 @@ func (r *Resolver) UploadLayerToCache(ctx context.Context, ocidigest gcrname.Dig
 		return err
 	}
 
-	arRN, err := ocidigestToACResourceName(ocidigest, ociResourceType)
+	arRN, err := ocidigestToACResourceName(ocidigest, ocipb.OCIResourceType_BLOB)
 	if err != nil {
 		return err
 	}
@@ -650,6 +640,23 @@ func (r *Resolver) UploadLayerToCache(ctx context.Context, ocidigest gcrname.Dig
 		arRN,
 		ar,
 	)
+}
+
+func (r *Resolver) UploadLayerToCache(ctx context.Context, ocidigest gcrname.Digest, contentType string, contentLength int64, ior io.Reader) error {
+	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
+	if err != nil {
+		return err
+	}
+	_, _, err = cachetools.UploadFromReader(
+		ctx,
+		r.env.GetByteStreamClient(),
+		blobRN,
+		ior,
+	)
+	if err != nil {
+		return err
+	}
+	return r.uploadLayerMetadataToCache(ctx, ocidigest, contentType, contentLength)
 }
 
 func (r *Resolver) writeManifestToCache(ctx context.Context, digest gcrname.Digest, contentType string, contentLength int64, raw []byte) error {
@@ -729,52 +736,12 @@ func (clwc *cachingLayerWriteCloser) Close() error {
 		return err
 	}
 
-	blobRN, err := ocidigestToCASResourceName(clwc.ocidigest, clwc.contentLength)
-	if err != nil {
-		return err
-	}
-
-	blobMetadata := &ocipb.OCIBlobMetadata{
-		ContentLength: clwc.contentLength,
-		ContentType:   clwc.contentType,
-	}
-	blobMetadataCASDigest, err := cachetools.UploadProto(
+	return clwc.r.uploadLayerMetadataToCache(
 		clwc.ctx,
-		clwc.r.env.GetByteStreamClient(),
-		"",
-		repb.DigestFunction_SHA256,
-		blobMetadata,
+		clwc.ocidigest,
+		clwc.contentType,
+		clwc.contentLength,
 	)
-	if err != nil {
-		return err
-	}
-
-	arRN, err := ocidigestToACResourceName(clwc.ocidigest, ocipb.OCIResourceType_BLOB)
-	if err != nil {
-		return err
-	}
-	ar := &repb.ActionResult{
-		OutputFiles: []*repb.OutputFile{
-			{
-				Path:   layerOutputFilePath,
-				Digest: blobRN.GetDigest(),
-			},
-			{
-				Path:   layerMetadataOutputFilePath,
-				Digest: blobMetadataCASDigest,
-			},
-		},
-	}
-	err = cachetools.UploadActionResult(
-		clwc.ctx,
-		clwc.r.env.GetActionCacheClient(),
-		arRN,
-		ar,
-	)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func ocidigestToCASResourceName(ocidigest gcrname.Digest, contentLength int64) (*digest.CASResourceName, error) {
@@ -874,7 +841,6 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 	err = i.r.UploadLayerToCache(
 		i.ctx,
 		ocidigest,
-		ocipb.OCIResourceType_BLOB,
 		string(i.manifest.Config.MediaType),
 		int64(len(remoteraw)),
 		bytes.NewReader(remoteraw),

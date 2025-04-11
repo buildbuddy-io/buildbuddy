@@ -398,7 +398,6 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		err := r.resolver.UploadLayerToCache(
 			ctx,
 			ocidigest,
-			ociResourceType,
 			uptype,
 			uplength,
 			tr,
