@@ -68,6 +68,7 @@ go_test(
         "//proto:workflow_go_proto",
         "//server/backends/repo_downloader",
         "//server/buildbuddy_server",
+        "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/byte_stream_server",
