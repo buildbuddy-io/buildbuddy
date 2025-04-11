@@ -47,6 +47,7 @@ var (
 	mirrors                = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+	cacheSalt              = flag.String("executor.container_registry_cache_salt", "", "Secret salt for caching OCI image manifests")
 
 	defaultPlatform = gcr.Platform{
 		Architecture: "amd64",
@@ -557,7 +558,8 @@ func ocidigestToACResourceName(ocidigest gcrname.Digest, ociResourceType ocipb.O
 	if err != nil {
 		return nil, err
 	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	salted := append([]byte(*cacheSalt), arKeyBytes...)
+	arDigest, err := digest.Compute(bytes.NewReader(salted), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}
