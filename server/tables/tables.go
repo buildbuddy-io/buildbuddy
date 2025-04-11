@@ -591,6 +591,12 @@ type GitHubAppInstallation struct {
 	// There are only 2 possible app IDs - corresponding to either the read-write
 	// or read-only BB GitHub app.
 	AppID int64
+
+	// ReportCommitStatusesForCIBuilds determines whether we should automatically
+	// report commit statuses to GitHub for all builds where role is CI or CI_RUNNER.
+	// Even if enabled, this setting can be overridden by setting
+	// `--build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true` on a build.
+	ReportCommitStatusesForCIBuilds bool `gorm:"not null;default:0"`
 }
 
 func (gh *GitHubAppInstallation) TableName() string {
@@ -616,6 +622,12 @@ type GitRepository struct {
 	// within this repository should run as a non-root user by default.
 	// TODO(http://go/b/3286): Remove this field after completing migration.
 	DefaultNonRootRunner bool `gorm:"not null;default:0"`
+
+	// UseDefaultWorkflowConfig determines whether workflows should use the
+	// default workflow config if there isn't a workflow config file (buildbuddy.yaml)
+	// in the workspace root. If enabled, workflows will automatically start
+	// running for a git repo when it is linked.
+	UseDefaultWorkflowConfig bool `gorm:"not null;default:0"`
 
 	// The ID of the BuildBuddy Github app this repository was authorized for.
 	// (i.e. either the read-only or the read-write app)
