@@ -1,6 +1,7 @@
 package ociregistry
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -215,6 +216,11 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 }
 
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, ociResourceType ocipb.OCIResourceType, repository, identifier string) {
+	if ociResourceType == ocipb.OCIResourceType_UNKNOWN {
+		http.Error(w, fmt.Sprintf("can only serve blobs or manifests, received request for unknown type in %s/%s", repository, identifier), http.StatusBadRequest)
+		return
+	}
+
 	if inreq.Header.Get(headerRange) != "" {
 		http.Error(w, "Range headers not supported", http.StatusNotImplemented)
 		return
@@ -283,7 +289,20 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 
 	bsc := r.env.GetByteStreamClient()
 	acc := r.env.GetActionCacheClient()
-	contentType, contentLength, err := oci.FetchBlobOrManifestMetadataFromCache(ctx, acc, bsc, ocidigest, ociResourceType)
+	var contentType string
+	var contentLength int64
+	switch ociResourceType {
+	case ocipb.OCIResourceType_MANIFEST:
+		contentType, contentLength, err = oci.FetchManifestMetadataFromCache(ctx, acc, bsc, ocidigest)
+	case ocipb.OCIResourceType_BLOB:
+		contentType, contentLength, err = oci.FetchLayerMetadataFromCache(ctx, acc, bsc, ocidigest)
+	case ocipb.OCIResourceType_UNKNOWN:
+		http.Error(w, fmt.Sprintf("expected request for blob or manifest, got unknown type for %s", ref), http.StatusBadRequest)
+		return
+	}
+	if err != nil && !status.IsNotFoundError(err) {
+		log.CtxError(ctx, fmt.Sprintf("error fetching image metadata for %s from the CAS: %s", ocidigest, err))
+	}
 	if err == nil {
 		w.Header().Add(headerDockerContentDigest, ocidigest.DigestStr())
 		w.Header().Add(headerContentLength, strconv.FormatInt(contentLength, 10))
@@ -293,15 +312,28 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		if inreq.Method == http.MethodHead {
 			return
 		}
-
-		err := oci.FetchBlobOrManifestFromCache(ctx, bsc, ocidigest, contentLength, w)
-		if err == nil {
+		switch ociResourceType {
+		case ocipb.OCIResourceType_MANIFEST:
+			raw, err := oci.FetchManifestFromCache(ctx, acc, bsc, ocidigest)
+			if err == nil {
+				r := bytes.NewReader(raw)
+				_, err := io.Copy(w, r)
+				if err != nil && err != context.Canceled {
+					log.CtxWarningf(ctx, "error writing response body for %s: %s", ocidigest, err)
+				}
+				return
+			}
+			log.CtxError(ctx, fmt.Sprintf("error fetching manifest from the cache for %s: %s", ocidigest, err))
+		case ocipb.OCIResourceType_BLOB:
+			err := oci.FetchLayerFromCache(ctx, bsc, ocidigest, contentLength, w)
+			if err == nil {
+				return
+			}
+			log.CtxError(ctx, fmt.Sprintf("error fetching layer from the cache for %s: %s", ocidigest, err))
+		case ocipb.OCIResourceType_UNKNOWN:
+			http.Error(w, fmt.Sprintf("expected request for blob or manifest, got unknown type for %s", ref), http.StatusBadRequest)
 			return
 		}
-		log.CtxError(ctx, fmt.Sprintf("error fetching image %s from the CAS: %s", ocidigest, err))
-	}
-	if !status.IsNotFoundError(err) {
-		log.CtxError(ctx, fmt.Sprintf("error fetching image metadata for %s from the CAS: %s", ocidigest, err))
 	}
 
 	upresp, err := r.makeUpstreamRequest(
@@ -342,18 +374,41 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 
 	tr := io.TeeReader(upresp.Body, w)
-	err = oci.UploadBlobOrManifestToCache(
-		ctx,
-		acc,
-		bsc,
-		ocidigest,
-		ociResourceType,
-		uptype,
-		uplength,
-		tr,
-	)
-	if err != nil && err != context.Canceled {
-		log.CtxWarningf(ctx, "error writing response body to cache for %s: %s", ocidigest, err)
+	switch ociResourceType {
+	case ocipb.OCIResourceType_MANIFEST:
+		raw, err := io.ReadAll(tr)
+		if err != nil {
+			log.CtxWarningf(ctx, "could not read entire manifest for %s: %s", ocidigest, err)
+		}
+		err = oci.UploadManifestToCache(
+			ctx,
+			acc,
+			bsc,
+			ocidigest,
+			uptype,
+			uplength,
+			raw,
+		)
+		if err != nil && err != context.Canceled {
+			log.CtxWarningf(ctx, "error writing manifest to cache for %s: %s", ocidigest, err)
+		}
+	case ocipb.OCIResourceType_BLOB:
+		err := oci.UploadLayerToCache(
+			ctx,
+			acc,
+			bsc,
+			ocidigest,
+			ociResourceType,
+			uptype,
+			uplength,
+			tr,
+		)
+		if err != nil && err != context.Canceled {
+			log.CtxWarningf(ctx, "error writing layer to cache for %s: %s", ocidigest, err)
+		}
+	case ocipb.OCIResourceType_UNKNOWN:
+		http.Error(w, fmt.Sprintf("expected request for blob or manifest, got unknown type for %s", ref), http.StatusBadRequest)
+		return
 	}
 }
 

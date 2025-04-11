@@ -50,3 +50,9 @@ message OCIActionResultKey {
   // Digest as a hex string.
   string hash_hex = 5;
 }
+
+message OCIManifestContent {
+    bytes raw = 1;
+    int64 content_length = 2;
+    string content_type = 3;
+}
