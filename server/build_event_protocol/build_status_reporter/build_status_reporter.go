@@ -34,8 +34,7 @@ type BuildStatusReporter struct {
 	payloads                   []*github.GithubStatusPayload
 	shouldReportStatusPerTest  bool
 	shouldReportCommitStatuses bool
-	// TODO: Test behavior
-	once sync.Once
+	once                       sync.Once
 }
 
 type GroupStatus struct {
@@ -78,12 +77,23 @@ func (r *BuildStatusReporter) initGHClient(ctx context.Context) interfaces.GitHu
 func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, repoURL string) bool {
 	r.once.Do(func() {
 		if dbh := r.env.GetDBHandle(); dbh != nil {
-			// TODO: Replace with app installation query
-			repo := &tables.GitRepository{}
-			err := dbh.NewQuery(ctx, "build_status_reporter_get_git_repo").Raw(
-				`SELECT * from "GitRepositories" WHERE repo_url = ?`, repoURL).Take(repo)
+			userInfo, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to report GitHub status, no authenticated user: %s", err)
+				return
+			}
+
+			parsedRepo, err := gitutil.ParseGitHubRepoURL(repoURL)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to report GitHub status, invalid repo url %s: %s", repoURL, err)
+				return
+			}
+
+			installation := &tables.GitHubAppInstallation{}
+			err = dbh.NewQuery(ctx, "build_status_reporter_get_app_installation").Raw(
+				`SELECT * from "GitHubAppInstallations" WHERE group_id = ? AND owner = ?`, userInfo.GetGroupID(), parsedRepo.Owner).Take(installation)
 			if err == nil {
-				r.shouldReportCommitStatuses = repo.ReportCommitStatusesForCIBuilds
+				r.shouldReportCommitStatuses = installation.ReportCommitStatusesForCIBuilds
 				return
 			}
 
@@ -99,10 +109,6 @@ func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, repo
 				return
 			}
 
-			userInfo, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
-			if userInfo == nil || err != nil {
-				return
-			}
 			group := &tables.Group{}
 			err = dbh.NewQuery(ctx, "build_status_reporter_get_group").Raw(
 				`SELECT * from "Groups" WHERE group_id = ? AND github_token <> "" AND github_token IS NOT NULL`, userInfo.GetGroupID()).Take(group)
@@ -183,7 +189,6 @@ func (r *BuildStatusReporter) flushPayloadsIfMetadataLoaded(ctx context.Context)
 	// disabled in build metadata, or it's not enabled for this repo.
 	if !r.buildEventAccumulator.MetadataIsLoaded() ||
 		r.buildEventAccumulator.DisableCommitStatusReporting() ||
-		// TODO: Should this be a parsed URL?
 		!r.isStatusReportingEnabled(ctx, r.buildEventAccumulator.Invocation().GetRepoUrl()) {
 		return
 	}

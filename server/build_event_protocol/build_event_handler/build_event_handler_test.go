@@ -1358,17 +1358,19 @@ func TestBuildStatusReporting(t *testing.T) {
 			te.SetGitHubStatusService(fakeGH)
 			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 			te.SetAuthenticator(auth)
-			ctx := context.Background()
+			ctx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
+			require.NoError(t, err)
 			handler := build_event_handler.NewBuildEventHandler(te)
 
-			// Initialize a git repo to report statuses for.
+			// Initialize a github app installation to report statuses for.
 			dbh := te.GetDBHandle()
 			require.NotNil(t, dbh)
-			repo := &tables.GitRepository{
-				RepoURL:                         "https://github.com/testowner/testrepo",
+			gh := &tables.GitHubAppInstallation{
+				GroupID:                         "GROUP1",
+				Owner:                           "testowner",
 				ReportCommitStatusesForCIBuilds: true,
 			}
-			err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(repo)
+			err = dbh.NewQuery(context.Background(), "create_github_app_installation_for_test").Create(gh)
 			require.NoError(t, err)
 
 			// Start an invocation
@@ -1488,17 +1490,19 @@ func TestBuildStatusReportingDisabled(t *testing.T) {
 			te.SetGitHubStatusService(fakeGH)
 			auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 			te.SetAuthenticator(auth)
-			ctx := context.Background()
+			ctx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
+			require.NoError(t, err)
 			handler := build_event_handler.NewBuildEventHandler(te)
 
 			// Initialize a git repo to report statuses for.
 			dbh := te.GetDBHandle()
 			require.NotNil(t, dbh)
-			repo := &tables.GitRepository{
-				RepoURL:                         "https://github.com/testowner/testrepo",
+			gh := &tables.GitHubAppInstallation{
+				GroupID:                         "GROUP1",
+				Owner:                           "testowner",
 				ReportCommitStatusesForCIBuilds: test.enableReportingForRepo,
 			}
-			err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(repo)
+			err = dbh.NewQuery(context.Background(), "create_github_app_installation_for_test").Create(gh)
 			require.NoError(t, err)
 
 			buildEvents := []*bspb.BuildEvent{
