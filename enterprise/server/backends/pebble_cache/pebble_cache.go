@@ -1631,14 +1631,19 @@ func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 		return nil, err
 	}
 	defer rc.Close()
-	// The median and average AC results are less than 4KiB: go/action-result-size
-	bufSize := 4 * 1024
-	if r.GetCacheType() == rspb.CacheType_CAS {
-		bufSize = int(r.GetDigest().GetSizeBytes())
-	}
-	buf := bytes.NewBuffer(make([]byte, 0, bufSize))
+	buf := bytes.NewBuffer(make([]byte, 0, bufferSize(r)))
 	_, err = io.Copy(buf, rc)
 	return buf.Bytes(), err
+}
+
+func bufferSize(r *rspb.ResourceName) int {
+	if r.GetCacheType() != rspb.CacheType_CAS {
+		// The median and average AC results are less than 4KiB: go/action-result-size
+		return 4 * 1024
+	}
+	// Clamp the size between 0 and 100MB, to protect from invalid and
+	// malicious requests.
+	return min(100_000_000, max(0, int(r.GetDigest().GetSizeBytes())))
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -1659,11 +1664,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 			return nil, err
 		}
 
-		bufSize := 4 * 1024
-		if r.GetCacheType() == rspb.CacheType_CAS {
-			bufSize = int(r.GetDigest().GetSizeBytes())
-		}
-		buf := bytes.NewBuffer(make([]byte, 0, bufSize))
+		buf := bytes.NewBuffer(make([]byte, 0, bufferSize(r)))
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
 		if copyErr != nil {
