@@ -56,25 +56,29 @@ func TestNodesetOrderIndependence(t *testing.T) {
 }
 
 func TestGetAllReplicas(t *testing.T) {
-	assert := assert.New(t)
 	ch := consistent_hash.NewConsistentHash(consistent_hash.CRC32, numVnodes)
 
-	hosts := make([]string, 0)
-	for i := 0; i < 10; i++ {
-		r, err := random.RandomString(5)
-		assert.Nil(err)
-		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
-	}
+	for _, numHosts := range []int{0, 1, 10} {
+		t.Run(fmt.Sprintf("%vhosts", numHosts), func(t *testing.T) {
+			assert := assert.New(t)
+			hosts := make([]string, 0, numHosts)
+			for i := 0; i < numHosts; i++ {
+				r, err := random.RandomString(5)
+				assert.Nil(err)
+				hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
+			}
 
-	if err := ch.Set(hosts...); err != nil {
-		t.Fatal(err)
-	}
+			if err := ch.Set(hosts...); err != nil {
+				t.Fatal(err)
+			}
 
-	for i := 0; i < 100; i++ {
-		k, err := random.RandomString(64)
-		assert.Nil(err)
-		replicas := ch.GetAllReplicas(k)
-		assert.Equal(10, len(replicas))
+			for i := 0; i < 100; i++ {
+				k, err := random.RandomString(64)
+				assert.Nil(err)
+				replicas := ch.GetAllReplicas(k)
+				assert.Equal(numHosts, len(replicas))
+			}
+		})
 	}
 }
 
@@ -123,7 +127,7 @@ func BenchmarkGetAllReplicas(b *testing.B) {
 			ch := consistent_hash.NewConsistentHash(test.HashFunction, test.NumVnodes)
 
 			hosts := make([]string, 0)
-			for i := 0; i < 10; i++ {
+			for i := 0; i < 50; i++ {
 				r, err := random.RandomString(5)
 				assert.Nil(err)
 				hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
