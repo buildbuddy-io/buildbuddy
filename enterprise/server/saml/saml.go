@@ -319,7 +319,7 @@ func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error
 	if sp, err := a.serviceProviderFromRequest(r); err == nil {
 		sp.Session.DeleteSession(w, r)
 	}
-	return status.UnauthenticatedError("Logged out!")
+	return nil
 }
 
 func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
