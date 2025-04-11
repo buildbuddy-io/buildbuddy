@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -36,6 +38,10 @@ func runACProxy(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticato
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(ta)
 	env.SetActionCacheClient(client)
+	acServer, err := action_cache_server.NewActionCacheServer(env)
+	require.NoError(t, err)
+	env.SetLocalActionCacheServer(acServer)
+
 	proxyServer, err := NewActionCacheServerProxy(env)
 	require.NoError(t, err)
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
@@ -265,6 +271,36 @@ func TestActionCacheProxy_CachingEnabled(t *testing.T) {
 	require.Equal(t, int32(998), get(ctx, ac, digestB, t).GetExitCode())
 	require.Equal(t, int32(998), get(ctx, proxy, digestB, t).GetExitCode())
 	require.Equal(t, 2, countingClient.cacheHitCount)
+}
+
+func TestSkipRemote(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(testauth.TestUsers("user", "GR123"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user")
+	require.NoError(t, err)
+	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
+
+	ac := runACServer(ctx, t, ta)
+	proxy := runACProxy(ctx, t, ta, ac)
+
+	d := &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 1024,
+	}
+
+	// Write to the proxy and check that no data was written to the remote cache.
+	exitCode := int32(9)
+	update(ctx, proxy, d, exitCode, t)
+	req := &repb.GetActionResultRequest{
+		ActionDigest:   d,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	_, err = ac.GetActionResult(ctx, req)
+	require.True(t, status.IsNotFoundError(err))
+
+	// Verify we can successfully read the data from the proxy.
+	require.Equal(t, exitCode, get(ctx, proxy, d, t).GetExitCode())
 }
 
 type countingActionCacheClient struct {

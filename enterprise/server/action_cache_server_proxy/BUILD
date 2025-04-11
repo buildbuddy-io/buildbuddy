@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/util/proxy_util",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
@@ -32,6 +33,7 @@ go_test(
     srcs = ["action_cache_server_proxy_test.go"],
     embed = [":action_cache_server_proxy"],
     deps = [
+        "//enterprise/server/util/proxy_util",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/action_cache_server",
@@ -41,5 +43,6 @@ go_test(
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
     ],
 )

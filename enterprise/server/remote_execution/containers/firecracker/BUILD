@@ -129,6 +129,8 @@ go_test(
     ],
     deps = [
         ":firecracker",
+        "//enterprise/server/action_cache_server_proxy",
+        "//enterprise/server/byte_stream_server_proxy",
         "//enterprise/server/ociregistry",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
@@ -153,6 +155,7 @@ go_test(
         "//server/remote_cache/digest",
         "//server/resources",
         "//server/testutil/testauth",
+        "//server/testutil/testcacheproxy",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
