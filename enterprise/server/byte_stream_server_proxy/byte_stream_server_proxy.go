@@ -87,7 +87,9 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		return err
 	}
 
-	s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
+	if !proxy_util.SkipRemote(ctx) {
+		s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
+	}
 
 	responseSent := false
 	bytesRead := 0
