@@ -52,7 +52,7 @@ message OCIActionResultKey {
 }
 
 message OCIManifestContent {
-    bytes raw = 1;
-    int64 content_length = 2;
-    string content_type = 3;
+  bytes raw = 1;
+  int64 content_length = 2;
+  string content_type = 3;
 }

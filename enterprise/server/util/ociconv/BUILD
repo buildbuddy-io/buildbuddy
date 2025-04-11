@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
-        "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/util/disk",
         "//server/util/hash",
@@ -18,7 +17,6 @@ go_library(
         "//server/util/tracing",
         "//third_party/singleflight",
         "@com_github_google_go_containerregistry//pkg/v1/mutate",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 
