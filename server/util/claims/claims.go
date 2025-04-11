@@ -17,7 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"

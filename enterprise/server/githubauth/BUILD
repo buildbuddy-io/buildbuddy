@@ -15,7 +15,7 @@ go_library(
         "//server/util/cookie",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_golang_jwt_jwt//:jwt",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_google_uuid//:uuid",
     ],
 )
