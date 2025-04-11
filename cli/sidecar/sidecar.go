@@ -137,7 +137,7 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 	// This is where we'll listen for bazel traffic
 	args = append(args, fmt.Sprintf("--listen_addr=unix://%s", sockPath))
 	// Re-invoke ourselves in sidecar mode.
-	c := exec.Command(os.Args[0], append(args)...)
+	c := exec.Command(os.Args[0], args...)
 	c.Env = append(os.Environ(), config.BbIsSidecar+"=1")
 	// Start the sidecar in its own process group so that when we send Ctrl+C,
 	// the sidecar can keep running in the background.
