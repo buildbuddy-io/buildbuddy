@@ -26,6 +26,7 @@ go_library(
         "//server/util/git",
         "//server/util/log",
         "//server/util/prefix",
+        "//server/util/rexec",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@in_gopkg_yaml_v2//:yaml_v2",
