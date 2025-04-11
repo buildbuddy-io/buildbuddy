@@ -138,7 +138,7 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 	args = append(args, fmt.Sprintf("--listen_addr=unix://%s", sockPath))
 	// Re-invoke ourselves in sidecar mode.
 	c := exec.Command(os.Args[0], append(args)...)
-	c.Env = append(os.Environ(), config.BbIsSidecar + "=1")
+	c.Env = append(os.Environ(), config.BbIsSidecar+"=1")
 	// Start the sidecar in its own process group so that when we send Ctrl+C,
 	// the sidecar can keep running in the background.
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
