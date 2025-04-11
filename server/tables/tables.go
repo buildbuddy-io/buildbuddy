@@ -617,6 +617,13 @@ type GitRepository struct {
 	// TODO(http://go/b/3286): Remove this field after completing migration.
 	DefaultNonRootRunner bool `gorm:"not null;default:0"`
 
+	// ReportCommitStatusesForCIBuilds determines whether we should automatically
+	// report commit statuses to GitHub for all builds where role is CI or CI_RUNNER.
+	// Even if enabled, this setting can be overridden by setting
+	// `--build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true` on a build.
+	// TODO(MAGGIE): Create this column first, and backfill to true
+	ReportCommitStatusesForCIBuilds bool `gorm:"not null;default:0"`
+
 	// The ID of the BuildBuddy Github app this repository was authorized for.
 	// (i.e. either the read-only or the read-write app)
 	AppID int64
