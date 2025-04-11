@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	mrand "math/rand/v2"
+
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -57,7 +59,8 @@ var (
 	maxRunnerCount         = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
 	// How big a runner's workspace is allowed to get before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
-	maxRunnerDiskSizeBytes = flag.Int64("executor.runner_pool.max_runner_disk_size_bytes", 16e9, "Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB.")
+	maxRunnerDiskSizeBytes    = flag.Int64("executor.runner_pool.max_runner_disk_size_bytes", 16e9, "Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB.")
+	runnerDiskUsageSampleRate = flag.Float64("executor.runner_pool.runner_disk_usage_sample_rate", 1.0, "Sample rate of runner disk usage. Setting this to a lower value can reduce CPU usage due to runner disk space checking, but may increase the risk of running out of disk space.")
 	// How much memory a runner is allowed to use before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
@@ -678,18 +681,23 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 			"max_memory_exceeded",
 		}
 	}
-	du, err := r.Workspace.DiskUsageBytes()
-	if err != nil {
-		return &labeledError{
-			status.WrapError(err, "failed to compute runner disk usage"),
-			"compute_disk_usage_failed",
+
+	var diskUsageBytes int64
+	if *runnerDiskUsageSampleRate >= 1.0 || mrand.Float64() < *runnerDiskUsageSampleRate {
+		du, err := r.Workspace.DiskUsageBytes()
+		if err != nil {
+			return &labeledError{
+				status.WrapError(err, "failed to compute runner disk usage"),
+				"compute_disk_usage_failed",
+			}
 		}
-	}
-	if du > p.maxRunnerDiskUsageBytes {
-		return &labeledError{
-			status.ResourceExhaustedErrorf("runner disk usage of %d bytes exceeds limit of %d bytes", du, p.maxRunnerDiskUsageBytes),
-			"max_disk_usage_exceeded",
+		if du > p.maxRunnerDiskUsageBytes {
+			return &labeledError{
+				status.ResourceExhaustedErrorf("runner disk usage of %d bytes exceeds limit of %d bytes", du, p.maxRunnerDiskUsageBytes),
+				"max_disk_usage_exceeded",
+			}
 		}
+		diskUsageBytes = du
 	}
 
 	p.mu.Lock()
@@ -749,7 +757,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 	// Cache resource usage values so we don't need to recompute them when
 	// updating metrics upon removal.
 	r.memoryUsageBytes = stats.MemoryBytes
-	r.diskUsageBytes = du
+	r.diskUsageBytes = diskUsageBytes
 
 	metrics.RunnerPoolDiskUsageBytes.Add(float64(r.diskUsageBytes))
 	metrics.RunnerPoolMemoryUsageBytes.Add(float64(r.memoryUsageBytes))

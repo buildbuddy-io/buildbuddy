@@ -115,7 +115,10 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		return nil, err
 	}
 
-	q := query_builder.NewQuery(`SELECT * FROM "Executions"`)
+	q := query_builder.NewQuery(`
+		SELECT ` + strings.Join(execution.ExecutionListingColumns(), ", ") + `
+		FROM "Executions"
+	`)
 
 	// Always filter to the currently selected (and authorized) group.
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
@@ -237,6 +240,9 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		execIds[i] = e.ExecutionID
 	}
 
+	// TODO(bduffany): the OLAP Executions table now has a superset of the data
+	// that is stored in the primary DB, so we can remove this primary DB query
+	// once some time has passed.
 	fullExecutions, err := s.fetchExecutionData(ctx, u.GetGroupID(), execIds)
 	if err != nil {
 		return nil, err

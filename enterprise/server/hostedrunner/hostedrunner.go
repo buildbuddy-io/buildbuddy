@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/longrunning"
@@ -243,7 +243,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	cmd.Platform.Properties = append(cmd.Platform.Properties, req.GetExecProperties()...)
-	cmd.Platform.Properties = normalizePlatform(cmd.Platform.Properties)
+
+	// Normalize to adhere to the REAPI spec.
+	rexec.NormalizeCommand(cmd)
 
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, cmd)
 	if err != nil {
@@ -527,26 +529,4 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			}
 		}
 	}
-}
-
-// normalizePlatform sorts platform properties alphabetically by name.
-// If the same name is specified more than once, the last one wins.
-func normalizePlatform(props []*repb.Platform_Property) []*repb.Platform_Property {
-	m := make(map[string]string)
-	for _, p := range props {
-		m[p.Name] = p.Value
-	}
-
-	uniqueProps := make([]*repb.Platform_Property, 0, len(m))
-	for k, v := range m {
-		uniqueProps = append(uniqueProps, &repb.Platform_Property{
-			Name:  k,
-			Value: v,
-		})
-	}
-
-	sort.Slice(uniqueProps, func(i, j int) bool {
-		return uniqueProps[i].Name < uniqueProps[j].Name
-	})
-	return uniqueProps
 }

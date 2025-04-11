@@ -32,7 +32,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -50,7 +49,7 @@ var (
 	defaultPoolName              = flag.String("remote_execution.default_pool_name", "", "The default executor pool to use if one is not specified.")
 	sharedExecutorPoolGroupID    = flag.String("remote_execution.shared_executor_pool_group_id", "", "Group ID that owns the shared executor pool.")
 	requireExecutorAuthorization = flag.Bool("remote_execution.require_executor_authorization", false, "If true, executors connecting to this server must provide a valid executor API key.")
-	leaseInterval                = flag.Duration("remote_execution.lease_duration", 10*time.Second, "How long before a task lease must be renewed by the executor client.")
+	leaseDuration                = flag.Duration("remote_execution.lease_duration", 10*time.Second, "How long before a task lease must be renewed by the executor client.")
 	leaseGracePeriod             = flag.Duration("remote_execution.lease_grace_period", 10*time.Second, "How long to wait for the executor to renew the lease after the TTL duration has elapsed.")
 	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
@@ -981,10 +980,11 @@ func (c *schedulerClientCache) get(hostPort string) (schedulerClient, error) {
 
 // Options for overriding server behavior needed for testing.
 type Options struct {
-	LocalPortOverride             int32
-	RequireExecutorAuthorization  bool
-	Clock                         clockwork.Clock
-	ActionMergingLeaseTTLOverride time.Duration
+	LocalPortOverride               int32
+	RequireExecutorAuthorization    bool
+	Clock                           clockwork.Clock
+	ActionMergingLeaseTTLOverride   time.Duration
+	LeaseDuration, LeaseGracePeriod time.Duration
 }
 
 type SchedulerServer struct {
@@ -1014,6 +1014,8 @@ type SchedulerServer struct {
 
 	mu    sync.RWMutex
 	pools map[nodePoolKey]*nodePool
+
+	leaseDuration, leaseGracePeriod time.Duration
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -1070,6 +1072,12 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		actionMergingLeaseTTL = options.ActionMergingLeaseTTLOverride
 	}
 
+	if options.LeaseGracePeriod == 0 {
+		options.LeaseGracePeriod = *leaseGracePeriod
+	}
+	if options.LeaseDuration == 0 {
+		options.LeaseDuration = *leaseDuration
+	}
 	s := &SchedulerServer{
 		env:                               env,
 		pools:                             make(map[nodePoolKey]*nodePool),
@@ -1084,6 +1092,8 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled(),
 		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
 		actionMergingLeaseTTL:             actionMergingLeaseTTL,
+		leaseDuration:                     options.LeaseDuration,
+		leaseGracePeriod:                  options.LeaseGracePeriod,
 	}
 	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
 	return s, nil
@@ -1615,7 +1625,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 	}()
 
-	livenessTicker := s.clock.NewTicker(*leaseInterval)
+	livenessTicker := s.clock.NewTicker(s.leaseDuration)
 	defer livenessTicker.Stop()
 	for {
 		var req *scpb.LeaseTaskRequest
@@ -1625,7 +1635,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			req = msg.req
 			err = msg.err
 		case <-livenessTicker.Chan():
-			if s.clock.Since(lastCheckin) > (*leaseInterval + *leaseGracePeriod) {
+			if s.clock.Since(lastCheckin) > (s.leaseDuration + s.leaseGracePeriod) {
 				err = status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
 			} else {
 				continue
@@ -1652,7 +1662,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
 		}
 		rsp := &scpb.LeaseTaskResponse{
-			LeaseDurationSeconds: int64(leaseInterval.Seconds()),
+			LeaseDurationSeconds: int64(s.leaseDuration.Seconds()),
 		}
 		if !claimed {
 			log.CtxInfof(ctx, "LeaseTask attempt (reconnect=%t) from executor %q", req.GetReconnectToken() != "", executorID)
@@ -1783,27 +1793,21 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		return task
 	}
 
-	// We need the bazel RequestMetadata to make experiment decisions. The Lease
-	// RPC doesn't get this metadata, because the executor doesn't get it until
-	// the lease returns. Instead of piping it all the way through, create a new
-	// gRPC incoming context, from the serialized task's metadata.
 	taskProto := &repb.ExecutionTask{}
 	if err := proto.Unmarshal(task, taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
 		return task
 	}
-	md, found := metadata.FromIncomingContext(ctx)
-	if !found {
-		md = make(metadata.MD)
-	}
-	metaBytes, err := proto.Marshal(taskProto.GetRequestMetadata())
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to marshal request metadata: %s", err)
+	isolationType := platform.FindEffectiveValue(taskProto, platform.WorkloadIsolationPropertyName)
+	if isolationType != string(platform.FirecrackerContainerType) {
 		return task
 	}
-	md.Append(bazel_request.RequestMetadataKey, string(metaBytes))
-	ctx = metadata.NewIncomingContext(ctx, md)
-	ctx = bazel_request.ParseRequestMetadataOnce(ctx)
+
+	// We need the bazel RequestMetadata to make experiment decisions. The Lease
+	// RPC doesn't get this metadata, because the executor doesn't get it until
+	// the lease returns. Instead of piping it all the way through, override it
+	// with the value in the task.
+	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
 
 	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", experiments.WithContext("executor_hostname", executorHostname))
 	if skipResavingGroup == "" {

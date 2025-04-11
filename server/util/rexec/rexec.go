@@ -6,6 +6,7 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -62,6 +63,60 @@ func MakePlatform(pairs ...string) (*repb.Platform, error) {
 	return p, nil
 }
 
+// NormalizeCommand produces a canonicalized version of the given command
+// that is suitable for caching, without altering the semantics of the command.
+func NormalizeCommand(cmd *repb.Command) {
+	if cmd == nil {
+		return
+	}
+	cmd.EnvironmentVariables = normalizedEnv(cmd.EnvironmentVariables)
+	if cmd.Platform != nil {
+		cmd.Platform.Properties = normalizedPlatform(cmd.Platform.Properties)
+	}
+}
+
+// normalizedEnv returns environment variables sorted alphabetically by name. If
+// the same name is specified more than once in the original list, the last one
+// wins.
+func normalizedEnv(envs []*repb.Command_EnvironmentVariable) []*repb.Command_EnvironmentVariable {
+	m := make(map[string]string, len(envs))
+	for _, e := range envs {
+		m[e.Name] = e.Value
+	}
+	names := slices.Sorted(maps.Keys(m))
+	out := make([]*repb.Command_EnvironmentVariable, 0, len(m))
+	for _, name := range names {
+		out = append(out, &repb.Command_EnvironmentVariable{
+			Name:  name,
+			Value: m[name],
+		})
+	}
+	return out
+}
+
+// normalizedPlatform returns platform properties sorted alphabetically by name.
+// If the same name is specified more than once in the original list, the last
+// one wins.
+func normalizedPlatform(props []*repb.Platform_Property) []*repb.Platform_Property {
+	m := make(map[string]string, len(props))
+	for _, p := range props {
+		m[p.Name] = p.Value
+	}
+
+	uniqueProps := make([]*repb.Platform_Property, 0, len(m))
+	for k, v := range m {
+		uniqueProps = append(uniqueProps, &repb.Platform_Property{
+			Name:  k,
+			Value: v,
+		})
+	}
+
+	sort.Slice(uniqueProps, func(i, j int) bool {
+		return uniqueProps[i].Name < uniqueProps[j].Name
+	})
+	return uniqueProps
+}
+
 // parsePairs parses a list of "NAME=VALUE" pairs into a map. If the same NAME
 // appears more than once, the last one wins.
 func parsePairs(pairs []string) (map[string]string, error) {
@@ -80,6 +135,10 @@ func parsePairs(pairs []string) (map[string]string, error) {
 // and populates the resulting digests into the given Action. An empty string
 // for input root means that an empty directory will be used as the input root.
 // A resource name pointing to the remote Action is returned.
+//
+// TODO: The REAPI spec says platform properties and environment variables
+// "MUST" be sorted alphabetically by name. We should either automatically
+// normalize here, or return an error if input is not normalized.
 func Prepare(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, action *repb.Action, cmd *repb.Command, inputRootDir string) (*rspb.ResourceName, error) {
 	var commandDigest, inputRootDigest *repb.Digest
 	eg, egctx := errgroup.WithContext(ctx)

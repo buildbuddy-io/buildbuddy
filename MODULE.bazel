@@ -28,7 +28,7 @@ single_version_override(
     patches = [
         "@@//buildpatches:bzlmod_googleapis.patch",
     ],
-    version = "0.0.0-20240326-1c8d509c5",
+    version = "0.0.0-20241220-5e258e33",
 )
 
 # Note that this is 'rules_nodejs-core'
@@ -81,13 +81,14 @@ bazel_dep(name = "aspect_rules_js", version = "2.1.3")
 bazel_dep(name = "aspect_rules_swc", version = "2.3.0")
 bazel_dep(name = "aspect_rules_ts", version = "3.5.1")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
-bazel_dep(name = "platforms", version = "0.0.10")
+bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "protobuf", version = "29.3", repo_name = "com_google_protobuf")
+bazel_dep(name = "rules_cc", version = "0.0.17")
 bazel_dep(name = "rules_go", version = "0.52.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_oci", version = "2.0.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
-bazel_dep(name = "rules_python", version = "1.0.0")
+bazel_dep(name = "rules_python", version = "1.3.0")
 bazel_dep(name = "toolchains_musl", version = "0.1.15")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
 
@@ -127,8 +128,27 @@ buildbuddy.msvc_toolchain(
     msvc_version = "14.43.34808",
 )
 
+# Explicitly register the toolchains in the order which we want to use.
+#
+# Note: Both rules_cc and toolschains_buildbuddy modules automatically register
+# their respective toolchains automatically. Bazel will prioritize which ever bazel_dep
+# was declared first. By explicitly registering the toolchains here, we can control
+# the prioritization order.
+#
+# If none of the toolchains listed here matched against
+# the target+exec platform combintation, Bazel will pick one from the toolchains that
+# were automatically registered toolchains by these dependencies modules.
+#
+# Reference: https://bazel.build/external/migration#register-toolchains
+register_toolchains(
+    # CC toolchains
+    "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64",
+    "@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_arm64",
+    "@toolchains_buildbuddy//toolchains/cc:windows_msvc_x86_64",
+)
+
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.24.1")
+go_sdk.download(version = "1.24.2")
 go_sdk.nogo(nogo = "@//:vet")
 use_repo(
     go_sdk,
@@ -182,13 +202,6 @@ rules_ts_ext.deps(
 # TODO: Remove this after the next aspect_rules_ts update.
 # https://github.com/aspect-build/rules_ts/pull/786
 use_repo(rules_ts_ext, "npm_typescript")
-
-switched_rules = use_extension("@googleapis//:extensions.bzl", "switched_rules")
-switched_rules.use_languages(
-    cc = True,
-    go = True,
-    grpc = True,
-)
 
 toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
 toolchains_musl.config(

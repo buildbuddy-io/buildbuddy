@@ -11,10 +11,10 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # Bazel platforms
 http_archive(
     name = "platforms",
-    sha256 = "218efe8ee736d26a3572663b374a253c012b716d8af0c07e842e82f238a0a7ee",
+    integrity = "sha256-KXQuhydYCbXlmNwvBNhpYMx6VbMGfZciHJq7yZJr/w8=",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/0.0.10/platforms-0.0.10.tar.gz",
-        "https://github.com/bazelbuild/platforms/releases/download/0.0.10/platforms-0.0.10.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/0.0.11/platforms-0.0.11.tar.gz",
+        "https://github.com/bazelbuild/platforms/releases/download/0.0.11/platforms-0.0.11.tar.gz",
     ],
 )
 
@@ -51,9 +51,9 @@ http_archive(
 
 http_archive(
     name = "rules_python",
-    sha256 = "4f7e2aa1eb9aa722d96498f5ef514f426c1f55161c3c9ae628c857a7128ceb07",
-    strip_prefix = "rules_python-1.0.0",
-    url = "https://github.com/bazelbuild/rules_python/releases/download/1.0.0/rules_python-1.0.0.tar.gz",
+    integrity = "sha256-LMJrvVOFTOt23UKoNLEALNS6f43zVEDPA0guBFr/wkQ=",
+    strip_prefix = "rules_python-1.3.0",
+    url = "https://github.com/bazelbuild/rules_python/releases/download/1.3.0/rules_python-1.3.0.tar.gz",
 )
 
 http_archive(
@@ -190,7 +190,7 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_nogo", "
 
 go_rules_dependencies()
 
-GO_SDK_VERSION = "1.24.1"
+GO_SDK_VERSION = "1.24.2"
 
 # Register multiple Go SDKs so that we can perform cross-compilation remotely.
 # i.e. We might want to trigger a Linux AMD64 Go build remotely from a MacOS ARM64 laptop.
@@ -251,18 +251,18 @@ gazelle_dependencies(
 )
 
 # Version taken from
-# https://github.com/bazelbuild/bazel-central-registry/blob/main/modules/googleapis/0.0.0-20240326-1c8d509c5/source.json
+# https://github.com/bazelbuild/bazel-central-registry/blob/main/modules/googleapis/0.0.0-20241220-5e258e33/source.json
 # So that we can use the same version of googleapis as the one used in bzlmod.
 http_archive(
     name = "googleapis",
+    integrity = "sha256-ftfNAEA+XKYX5I+kRRNhXnnfyBert9Rgq1WQ6sJ0Pvk=",
     patch_args = ["-p1"],
     patches = [
         "//buildpatches:googleapis.patch",
     ],
-    sha256 = "b854ae17ddb933c249530f743db8d78df80905dfb42681255564a1d1921dfc3c",
-    strip_prefix = "googleapis-1c8d509c574aeab7478be1bfd4f2e8f0931cfead",
+    strip_prefix = "googleapis-5e258e334154da04dcd0a567a61ac21518cac81b",
     urls = [
-        "https://github.com/googleapis/googleapis/archive/1c8d509c574aeab7478be1bfd4f2e8f0931cfead.tar.gz",
+        "https://github.com/googleapis/googleapis/archive/5e258e334154da04dcd0a567a61ac21518cac81b.tar.gz",
     ],
 )
 

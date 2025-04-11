@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"net"
 	"path/filepath"
 	"sort"
@@ -1519,6 +1520,7 @@ const (
 	zombieCleanupRemoveReplica
 	zombieCleanupStopReplica
 	zombieCleanupRemoveData
+	zombieCleanupWait
 )
 
 type zombieCleanupTask struct {
@@ -1527,7 +1529,10 @@ type zombieCleanupTask struct {
 	shardInfo dragonboat.ShardInfo
 	rd        *rfpb.RangeDescriptor
 	opened    bool
-	action    zombieCleanupAction
+
+	action          zombieCleanupAction
+	attempts        int
+	nextAttemptTime time.Time
 }
 
 type replicaJanitor struct {
@@ -1562,6 +1567,11 @@ func newReplicaJanitor(clock clockwork.Clock, store *Store, scanInterval time.Du
 	}
 }
 
+func (rj *replicaJanitor) nextAttemptTime(attemptNumber int) time.Time {
+	backoff := float64(1*time.Second) * math.Pow(2, float64(attemptNumber))
+	return rj.clock.Now().Add(time.Duration(backoff))
+}
+
 func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescriptor) *zombieCleanupTask {
 	rd, foundRange := rangeMap[ss.rangeID]
 	if !ss.opened {
@@ -1577,9 +1587,13 @@ func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescr
 					return ss
 				}
 			}
+			ss.action = zombieCleanupNoAction
+		} else {
+			// This shard is in LogInfo, but not started and it's not found in
+			// meta range; so we should remove the data of this shard so that
+			// it won't be re-created during start-up
+			ss.action = zombieCleanupRemoveData
 		}
-
-		ss.action = zombieCleanupNoAction
 		return ss
 	}
 
@@ -1621,9 +1635,16 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 				}).Inc()
 				if err != nil {
 					j.store.log.Errorf("failed to remove zombie c%dn%d: %s", task.rangeID, task.replicaID, err)
+					task.attempts++
+					task.nextAttemptTime = j.nextAttemptTime(task.attempts)
+				} else {
+					task.attempts = 0
+					task.nextAttemptTime = time.Time{}
 				}
 				if action != zombieCleanupNoAction {
-					task.action = action
+					if action != zombieCleanupWait {
+						task.action = action
+					}
 					j.tasks <- task
 				} else {
 					j.store.log.Debugf("removed zombie c%dn%d", task.rangeID, task.replicaID)
@@ -1730,6 +1751,14 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		return zombieCleanupNoAction, nil
 	}
 
+	if err := j.rateLimiter.Wait(ctx); err != nil {
+		return task.action, err
+	}
+
+	if !task.nextAttemptTime.IsZero() && j.clock.Now().Before(task.nextAttemptTime) {
+		return zombieCleanupWait, nil
+	}
+
 	log.Debugf("removing zombie c%dn%d, action=%d", task.rangeID, task.replicaID, task.action)
 	removeDataReq := &rfpb.RemoveDataRequest{
 		ReplicaId: task.replicaID,
@@ -1773,7 +1802,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			// created without any range descriptors created.
 			rd, err = j.store.newRangeDescriptorFromRaftMembership(ctx, task.rangeID)
 			if err != nil {
-				if err == dragonboat.ErrShardNotReady {
+				if err == dragonboat.ErrShardNotReady || err == dragonboat.ErrShardNotFound {
 					// This can happen when SplitRange failed to initialize all initial members.
 					// move on to stop replica
 					log.Warningf("getMembership for c%dn%d failed: %s", task.rangeID, task.replicaID, err)

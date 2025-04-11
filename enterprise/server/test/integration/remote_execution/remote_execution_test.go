@@ -1786,11 +1786,11 @@ func TestActionMerging_Success(t *testing.T) {
 }
 
 func TestActionMerging_LongTask(t *testing.T) {
-	flags.Set(t, "remote_execution.lease_duration", 100*time.Millisecond)
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		SchedulerServerOptions: scheduler_server.Options{
 			ActionMergingLeaseTTLOverride: 250 * time.Millisecond,
+			LeaseDuration:                 100 * time.Millisecond,
 		},
 	})
 	rbe.AddExecutor(t)
@@ -2027,15 +2027,20 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 }
 
 func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
-	// Set a short lease TTL since we want to test killing an app while an
-	// update stream is in progress, and want to catch the error early.
-	flags.Set(t, "remote_execution.lease_duration", 50*time.Millisecond)
 	initialTasksStartedCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	rbe := rbetest.NewRBETestEnv(t)
 
-	app1 := rbe.AddBuildBuddyServer()
-	app2 := rbe.AddBuildBuddyServer()
+	schedOpts := &rbetest.BuildBuddyServerOptions{
+		SchedulerServerOptions: scheduler_server.Options{
+			// Set a short lease TTL since we want to test killing an app while
+			// an update stream is in progress, and want to catch the error
+			// early.
+			LeaseDuration: 50 * time.Millisecond,
+		},
+	}
+	app1 := rbe.AddBuildBuddyServerWithOptions(schedOpts)
+	app2 := rbe.AddBuildBuddyServerWithOptions(schedOpts)
 
 	// Set up a custom proxy director that makes sure we choose app1 for the
 	// initial LeaseTask request, so that we can test stopping app1 while

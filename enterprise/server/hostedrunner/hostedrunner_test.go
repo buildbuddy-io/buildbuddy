@@ -111,62 +111,6 @@ func (*fakeExecuteStream) Recv() (*longrunning.Operation, error) {
 	return &longrunning.Operation{Name: "fake-operation-name", Metadata: metadata}, nil
 }
 
-func TestNormalizePlatform(t *testing.T) {
-	tests := map[string]struct {
-		input          []*repb.Platform_Property
-		expectedOutput []*repb.Platform_Property
-	}{
-		"empty input": {
-			input:          []*repb.Platform_Property{},
-			expectedOutput: []*repb.Platform_Property{},
-		},
-		"sort and dedupe": {
-			input: []*repb.Platform_Property{
-				{
-					Name:  "B",
-					Value: "should get overwritten",
-				},
-				{
-					Name:  "B",
-					Value: "2",
-				},
-				{
-					Name:  "A",
-					Value: "should get overwritten",
-				},
-				{
-					Name:  "A",
-					Value: "1",
-				},
-				{
-					Name:  "C",
-					Value: "3",
-				},
-			},
-			expectedOutput: []*repb.Platform_Property{
-				{
-					Name:  "A",
-					Value: "1",
-				},
-				{
-					Name:  "B",
-					Value: "2",
-				},
-				{
-					Name:  "C",
-					Value: "3",
-				},
-			},
-		},
-	}
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			o := normalizePlatform(tc.input)
-			require.Equal(t, tc.expectedOutput, o)
-		})
-	}
-}
-
 func TestRemoteHeaders_EnvOverrides(t *testing.T) {
 	te, ctx := getEnv(t)
 
