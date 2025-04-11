@@ -44,7 +44,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcacheproxy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -264,7 +263,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 		proxyEnv := testenv.GetTestEnv(t)
 		proxyEnv.SetActionCacheClient(acClient)
 		proxyEnv.SetByteStreamClient(bsClient)
-		proxyEnv.SetAtimeUpdater(&testcacheproxy.NoOpAtimeUpdater{})
+		proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 		runProxyGrpcServers(ctx, proxyEnv, t)
 
 		acProxy, err := action_cache_server_proxy.NewActionCacheServerProxy(proxyEnv)
@@ -322,7 +321,7 @@ func runProxyGrpcServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *test
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	proxyEnv.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
-	proxyEnv.SetLocalActionCacheServer(acServer)
+	proxyEnv.SetLocalActionCacheClient(repb.NewActionCacheClient(conn))
 }
 
 func executorRootDir(t *testing.T) string {
