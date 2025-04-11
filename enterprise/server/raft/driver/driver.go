@@ -58,6 +58,7 @@ const (
 	_ DriverAction = iota
 	DriverNoop
 	DriverSplitRange
+	DriverFinishReplicaRemoval
 	DriverRemoveReplica
 	DriverRemoveDeadReplica
 	DriverAddReplica
@@ -106,12 +107,14 @@ const (
 func (a DriverAction) Priority() float64 {
 	switch a {
 	case DriverReplaceDeadReplica:
-		return 600
+		return 700
 	case DriverAddReplica:
-		return 500
+		return 600
 	case DriverRemoveDeadReplica:
-		return 400
+		return 500
 	case DriverRemoveReplica:
+		return 400
+	case DriverFinishReplicaRemoval:
 		return 300
 	case DriverSplitRange:
 		return 200
@@ -125,22 +128,24 @@ func (a DriverAction) Priority() float64 {
 
 func (a DriverAction) String() string {
 	switch a {
-	case DriverNoop:
-		return "no-op"
-	case DriverRemoveReplica:
-		return "remove-replica"
 	case DriverRemoveDeadReplica:
 		return "remove-dead-replica"
 	case DriverAddReplica:
 		return "add-replica"
+	case DriverRemoveReplica:
+		return "remove-replica"
 	case DriverReplaceDeadReplica:
 		return "replace-dead-replica"
+	case DriverFinishReplicaRemoval:
+		return "finish-replica-removal"
+	case DriverSplitRange:
+		return "split-range"
 	case DriverRebalanceReplica:
 		return "consider-rebalance-replica"
 	case DriverRebalanceLease:
 		return "consider-rebalance-lease"
-	case DriverSplitRange:
-		return "split-range"
+	case DriverNoop:
+		return "no-op"
 	default:
 		return "unknown"
 	}
@@ -376,9 +381,17 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
 		return action, action.Priority()
 	}
+
+	needsRemoveData := false
+	if len(rd.GetRemoved()) > 0 {
+		needsRemoveData = true
+		action = DriverFinishReplicaRemoval
+	}
+
 	if rq.storeMap == nil {
 		return action, action.Priority()
 	}
+
 	replicas := rd.GetReplicas()
 	curReplicas := len(replicas)
 	if curReplicas == 0 {
@@ -426,12 +439,16 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 		return action, adjustedPriority
 	}
 
+	if needsRemoveData {
+		action = DriverFinishReplicaRemoval
+		return action, action.Priority()
+	}
+
 	// Do not split if there is a replica is dead or suspect or a replica is
 	// in the middle of a removal.
 	allReady := rq.storeMap.AllAvailableStoresReady()
 	isClusterHealthy := len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0 && allReady
-	canSplit := isClusterHealthy && len(rd.GetRemoved()) == 0
-	if canSplit {
+	if isClusterHealthy {
 		if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
 			usage, err := repl.Usage()
 			if err != nil {
@@ -630,11 +647,29 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats
 	return candidates[0].usage.GetNode()
 }
 
+type removeDataOp struct {
+	replDesc *rfpb.ReplicaDescriptor
+	rd       *rfpb.RangeDescriptor
+}
+
 type change struct {
 	addOp                *rfpb.AddReplicaRequest
 	removeOp             *rfpb.RemoveReplicaRequest
+	removeDataOp         *removeDataOp
 	splitOp              *rfpb.SplitRangeRequest
 	transferLeadershipOp *rfpb.TransferLeadershipRequest
+}
+
+func (rq *Queue) finishReplicaRemoval(rd *rfpb.RangeDescriptor) *change {
+	if len(rd.GetRemoved()) == 0 {
+		return nil
+	}
+	return &change{
+		removeDataOp: &removeDataOp{
+			replDesc: rd.GetRemoved()[0],
+			rd:       rd,
+		},
+	}
 }
 
 func (rq *Queue) splitRange(rd *rfpb.RangeDescriptor) *change {
@@ -1157,32 +1192,23 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 			return err
 		}
 		rq.log.Infof("RemoveReplicaRequest finished: op: %+v, rd: %+v", change.removeOp, rsp.GetRange())
-
-		var replToRemove *rfpb.ReplicaDescriptor
-		for _, repl := range change.removeOp.GetRange().GetReplicas() {
-			if repl.GetReplicaId() == change.removeOp.GetReplicaId() {
-				replToRemove = repl
-			}
-		}
-
-		// Remove the data from the now stopped node. This is best-effort only,
-		// because we can remove the replica when the node is dead; and in this case,
-		// we won't be able to connect to the node.
-		c, err := rq.apiClient.GetForReplica(ctx, replToRemove)
+	}
+	if op := change.removeDataOp; op != nil {
+		c, err := rq.apiClient.GetForReplica(ctx, op.replDesc)
 		if err != nil {
-			rq.log.Warningf("RemoveReplica unable to remove data on c%dn%d, err getting api client: %s", replToRemove.GetRangeId(), replToRemove.GetReplicaId(), err)
-			return nil
+			err = status.WrapErrorf(err, "unable to remove data on c%dn%d due to failure to get api client: %s", op.replDesc.GetRangeId(), op.replDesc.GetReplicaId(), err)
+			rq.log.Error(err.Error())
+			return err
 		}
-		removeDataRsp, err := c.RemoveData(ctx, &rfpb.RemoveDataRequest{
-			ReplicaId: replToRemove.GetReplicaId(),
-			Range:     rsp.GetRange(),
+		_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
+			ReplicaId: op.replDesc.GetReplicaId(),
+			Range:     op.rd,
 		})
 		if err != nil {
-			rq.log.Warningf("RemoveReplica unable to remove data err: %s", err)
-			return nil
+			rq.log.Errorf("unable to remove data on c%dn%d: %s", op.replDesc.GetRangeId(), op.replDesc.GetReplicaId(), err)
+			return err
 		}
-
-		rq.log.Infof("Removed shard: c%dn%d, rd: %+v", replToRemove.GetRangeId(), replToRemove.GetReplicaId(), removeDataRsp.GetRange())
+		rq.log.Infof("RemoveData on c%dn%d succeeded", op.replDesc.GetRangeId(), op.replDesc.GetReplicaId())
 	}
 	if change.transferLeadershipOp != nil {
 		_, err := rq.store.TransferLeadership(ctx, change.transferLeadershipOp)
@@ -1202,6 +1228,9 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action Drive
 
 	switch action {
 	case DriverNoop:
+	case DriverFinishReplicaRemoval:
+		rq.log.Debugf("finish replica removal (range_id: %d)", rangeID)
+		change = rq.finishReplicaRemoval(rd)
 	case DriverSplitRange:
 		rq.log.Debugf("split range (range_id: %d)", rangeID)
 		change = rq.splitRange(rd)
