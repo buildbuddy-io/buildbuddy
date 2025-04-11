@@ -214,9 +214,9 @@ func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 	caches := []*namedCache{
 		{getMemoryCache(b), "Memory"},
 		{getDiskCache(b, te), "Disk"},
-		{ddc, "DDisk"},
+		{ddc, "DistDisk"},
 		{getPebbleCache(b, te), "Pebble"},
-		{dpc, "DPebble"},
+		{dpc, "DistPebble"},
 	}
 	return caches
 }

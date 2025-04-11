@@ -509,64 +509,92 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 }
 
 func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
-	isolation := &dcpb.Isolation{
-		CacheType:          r.GetCacheType(),
-		RemoteInstanceName: r.GetInstanceName(),
-	}
-	req := &dcpb.ReadRequest{
-		Isolation: isolation,
-		Key:       digestToKey(r.GetDigest()),
-		Offset:    offset,
-		Limit:     limit,
-		Resource:  r,
-	}
-
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
 	}
-
+	req := &dcpb.ReadRequest{
+		Isolation: &dcpb.Isolation{
+			CacheType:          r.GetCacheType(),
+			RemoteInstanceName: r.GetInstanceName(),
+		},
+		Key:      digestToKey(r.GetDigest()),
+		Offset:   offset,
+		Limit:    limit,
+		Resource: r,
+	}
 	stream, err := client.Read(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	reader, writer := io.Pipe()
+	return newDistributedCacheReader(stream, r.GetDigest().GetSizeBytes() == offset)
+}
 
+type distributedCacheReader struct {
+	stream dcpb.DistributedCache_ReadClient
+	rsp    *dcpb.ReadResponse
+	err    error
+}
+
+func newDistributedCacheReader(stream dcpb.DistributedCache_ReadClient, expectEOF bool) (*distributedCacheReader, error) {
+	r := &distributedCacheReader{
+		stream: stream,
+		rsp:    dcpb.ReadResponseFromVTPool(),
+	}
 	// Bit annoying here -- the gRPC stream won't give us an error until
 	// we've called Recv on it. But we don't want to return a reader that
 	// we know will error on first read with NotFound -- we want to return
-	// that error now. So we'll wait for our goroutine to call Recv once
-	// and return any error it gets in the main thread.
-	firstError := make(chan error)
-	go func() {
-		readOnce := false
-		rsp := dcpb.ReadResponseFromVTPool()
-		defer rsp.ReturnToVTPool()
-		for {
-			err := stream.RecvMsg(rsp)
-			if !readOnce {
-				firstError <- err
-				readOnce = true
-			}
-			if err == io.EOF {
-				writer.Close()
-				break
-			}
-			if err != nil {
-				writer.CloseWithError(err)
-				break
-			}
-			writer.Write(rsp.Data)
-			rsp.ResetVT()
-		}
-	}()
-	err = <-firstError
-
-	// If we get an EOF, and we're expecting one - don't return an error.
-	if err == io.EOF && r.GetDigest().GetSizeBytes() == offset {
-		return reader, nil
+	// that error now. So read the first message here and return any unexpected
+	// error.
+	r.moreData()
+	if r.err == nil || (r.err == io.EOF && expectEOF) {
+		return r, nil
 	}
-	return reader, err
+	return nil, r.err
+}
+
+// moreData fetches the next batch of data if necessary, and returns true if
+// there is more data.
+func (r *distributedCacheReader) moreData() bool {
+	if r.err == nil && len(r.rsp.GetData()) == 0 {
+		r.err = r.stream.RecvMsg(r.rsp)
+	}
+	return r.err == nil || len(r.rsp.GetData()) > 0
+}
+
+func (r *distributedCacheReader) Read(out []byte) (int, error) {
+	if !r.moreData() {
+		return 0, r.err
+	}
+	n := copy(out, r.rsp.GetData())
+	r.rsp.Data = r.rsp.Data[n:]
+	if !r.moreData() {
+		// If there is no more data, allow returning a possible EOF. This lets
+		// the client skip making another Read call just to get EOF.
+		return n, r.err
+	}
+	return n, nil
+}
+
+func (r *distributedCacheReader) WriteTo(w io.Writer) (int64, error) {
+	var total int64
+	for r.moreData() {
+		n, err := w.Write(r.rsp.GetData())
+		total += int64(n)
+		if err != nil {
+			return total, err
+		}
+		r.rsp.Data = r.rsp.Data[n:]
+	}
+	if r.err == io.EOF {
+		return total, nil
+	}
+	return total, r.err
+}
+
+func (r *distributedCacheReader) Close() error {
+	r.rsp.ReturnToVTPool()
+	return r.stream.CloseSend()
 }
 
 type streamWriteCloser struct {
