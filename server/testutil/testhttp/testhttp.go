@@ -35,3 +35,27 @@ func StartServer(t *testing.T, handler http.Handler) *url.URL {
 	go http.Serve(lis, handler)
 	return u
 }
+
+// TestResponseWriter is an http.ResponseWriter that fails the test if an
+// HTTP error code is written, but otherwise discards all data written to it.
+type TestHttpResponseWriter struct {
+	t      *testing.T
+	header map[string][]string
+}
+
+func NewTestHttpResponseWriter(t *testing.T) *TestHttpResponseWriter {
+	return &TestHttpResponseWriter{
+		t:      t,
+		header: make(map[string][]string),
+	}
+}
+
+func (w *TestHttpResponseWriter) WriteHeader(statusCode int) {
+	require.Less(w.t, statusCode, 400, "Wrote HTTP status %d", statusCode)
+}
+func (w *TestHttpResponseWriter) Header() http.Header {
+	return w.header
+}
+func (w *TestHttpResponseWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
