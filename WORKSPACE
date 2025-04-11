@@ -11,10 +11,10 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # Bazel platforms
 http_archive(
     name = "platforms",
-    sha256 = "218efe8ee736d26a3572663b374a253c012b716d8af0c07e842e82f238a0a7ee",
+    integrity = "sha256-KXQuhydYCbXlmNwvBNhpYMx6VbMGfZciHJq7yZJr/w8=",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/0.0.10/platforms-0.0.10.tar.gz",
-        "https://github.com/bazelbuild/platforms/releases/download/0.0.10/platforms-0.0.10.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/0.0.11/platforms-0.0.11.tar.gz",
+        "https://github.com/bazelbuild/platforms/releases/download/0.0.11/platforms-0.0.11.tar.gz",
     ],
 )
 
@@ -51,9 +51,9 @@ http_archive(
 
 http_archive(
     name = "rules_python",
-    sha256 = "4f7e2aa1eb9aa722d96498f5ef514f426c1f55161c3c9ae628c857a7128ceb07",
-    strip_prefix = "rules_python-1.0.0",
-    url = "https://github.com/bazelbuild/rules_python/releases/download/1.0.0/rules_python-1.0.0.tar.gz",
+    integrity = "sha256-LMJrvVOFTOt23UKoNLEALNS6f43zVEDPA0guBFr/wkQ=",
+    strip_prefix = "rules_python-1.3.0",
+    url = "https://github.com/bazelbuild/rules_python/releases/download/1.3.0/rules_python-1.3.0.tar.gz",
 )
 
 http_archive(
@@ -422,13 +422,11 @@ googletest_deps()
 
 http_archive(
     name = "io_bazel_rules_docker",
-    integrity = "sha256-ZIUZu2mLsls7gXUqLObaGizFZlNDa0jGkdzpuNahgGE=",
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:rules_docker.patch",
-    ],
-    strip_prefix = "rules_docker-b44cc958e61c3192c57fed7aef78c8567d757a70",
-    urls = ["https://github.com/bazelbuild/rules_docker/archive/b44cc958e61c3192c57fed7aef78c8567d757a70.tar.gz"],
+    integrity = "sha256-A5jYBCeY4s0eJNYKrFYV6pnRSFekMRSilmr+xVF/Q+s=",
+    strip_prefix = "rules_docker-d517338f5a4e29a11b6077ec39e533a518424b53",
+    # This is our own fork of rules_docker with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_docker/compare/master...buildbuddy-io:rules_docker:sluongng/bzlmod-enable
+    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/d517338f5a4e29a11b6077ec39e533a518424b53.tar.gz"],
 )
 
 load(
@@ -458,13 +456,9 @@ _go_image_repos()
 
 http_archive(
     name = "io_bazel_rules_k8s",
-    integrity = "sha256-51xa8wL5mhoGlsvgTEm4NRXsfCVgX5lR8a1/evO/pBY=",
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:rules_k8s.patch",
-    ],
-    strip_prefix = "rules_k8s-554dc69933461ae2fa4fefcc46d09d5784832e6c",
-    urls = ["https://github.com/bazelbuild/rules_k8s/archive/554dc69933461ae2fa4fefcc46d09d5784832e6c.tar.gz"],
+    integrity = "sha256-mC/KIhoemKD8w+bjDhvaJhjs2uR5YGhiYzlKV4ZsM/U=",
+    strip_prefix = "rules_k8s-581b899ba486f3dcccd3af9191df8499dc508f84",
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/581b899ba486f3dcccd3af9191df8499dc508f84.tar.gz"],
 )
 
 load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults", "k8s_repositories")
@@ -474,6 +468,10 @@ k8s_repositories()
 load("@io_bazel_rules_k8s//k8s:k8s_go_deps.bzl", k8s_go_deps = "deps")
 
 k8s_go_deps(go_version = "")
+
+load("@io_bazel_rules_k8s//k8s:k8s_py_deps.bzl", "k8s_py_deps")
+
+k8s_py_deps()
 
 k8s_defaults(
     name = "k8s_deploy",

@@ -10,6 +10,8 @@
 #
 import %workspace%/shared.bazelrc
 
+common --enable_bzlmod
+common --noenable_workspace
 
 #################################
 # PUBLIC REPO EXCLUSIVE CONFIGS #

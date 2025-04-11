@@ -13,7 +13,7 @@ go_library(
         "//server/testutil/testport",
         "//server/testutil/testserver",
         "@com_github_stretchr_testify//require",
-        "@io_bazel_rules_go//go/runfiles:go_default_library",
+        "@io_bazel_rules_go//go/runfiles",
         "@io_gorm_driver_sqlite//:sqlite",
         "@io_gorm_gorm//:gorm",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
