@@ -72,8 +72,14 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
 }
 
+func (r *Resolver) hasGroupID(ctx context.Context) bool {
+	_, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	return err == nil
+}
+
 func (r *Resolver) Resolve(ctx context.Context, imgname string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
+	canUseCache := credentials.IsEmpty() || r.hasGroupID(ctx)
 	defer span.End()
 	gcrPlatform := gcr.Platform{
 		Architecture: platform.GetArch(),
@@ -93,8 +99,8 @@ func (r *Resolver) Resolve(ctx context.Context, imgname string, platform *rgpb.P
 	if err != nil {
 		return nil, err
 	}
-	if !fromCache {
-		err := r.writeManifestToCache(
+	if !fromCache && canUseCache {
+		err := r.UploadManifestToCache(
 			ctx,
 			*imgdigest,
 			string(m.MediaType),
@@ -145,8 +151,8 @@ func (r *Resolver) Resolve(ctx context.Context, imgname string, platform *rgpb.P
 	if err != nil {
 		return nil, err
 	}
-	if !childFromCache {
-		err := r.writeManifestToCache(
+	if !childFromCache && canUseCache {
+		err := r.UploadManifestToCache(
 			ctx,
 			*childDigest,
 			string(childm.MediaType),
@@ -661,16 +667,6 @@ func (r *Resolver) UploadLayerToCache(ctx context.Context, ocidigest gcrname.Dig
 	return r.uploadLayerMetadataToCache(ctx, ocidigest, contentType, contentLength)
 }
 
-func (r *Resolver) writeManifestToCache(ctx context.Context, digest gcrname.Digest, contentType string, contentLength int64, raw []byte) error {
-	return r.UploadManifestToCache(
-		ctx,
-		digest,
-		contentType,
-		contentLength,
-		raw,
-	)
-}
-
 // matchesPlatform checks if the given platform matches the required platforms.
 // The given platform matches the required platform if
 // - architecture and OS are identical.
@@ -793,9 +789,10 @@ func newCachingLayerWriteCloser(ctx context.Context, r *Resolver, ocidigest gcrn
 }
 
 type cacheAwareImage struct {
-	digest gcrname.Digest
-	r      *Resolver
-	ctx    context.Context
+	digest      gcrname.Digest
+	r           *Resolver
+	ctx         context.Context
+	canUseCache bool
 
 	raw      []byte
 	manifest *gcr.Manifest
@@ -840,6 +837,9 @@ func (i *cacheAwareImage) RawConfigFile() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !i.canUseCache {
+		return remoteraw, nil
+	}
 	err = i.r.UploadLayerToCache(
 		i.ctx,
 		ocidigest,
@@ -881,8 +881,9 @@ func (i *cacheAwareImage) LayerByDigest(hash gcr.Hash) (partial.CompressedLayer,
 var _ partial.CompressedImageCore = (*cacheAwareImage)(nil)
 
 type cacheAwareLayer struct {
-	r   *Resolver
-	ctx context.Context
+	r           *Resolver
+	ctx         context.Context
+	canUseCache bool
 
 	ocidigest   gcrname.Digest
 	descriptor  *gcr.Descriptor
@@ -966,6 +967,9 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	uprc, err := l.remoteLayer.Compressed()
 	if err != nil {
 		return nil, err
+	}
+	if !l.canUseCache {
+		return uprc, nil
 	}
 	caswc, err := newCachingLayerWriteCloser(
 		ctx,
