@@ -13,6 +13,15 @@ interface Props {
   pageSize: number;
   filter: string;
   mode: "passing" | "failing";
+
+  /**
+   * Whether to show a loading indicator when the targets are loading. Should
+   * only be set for the first card.
+   *
+   * TODO: Restructure these components to avoid this - maybe show the loader in
+   * the filter component instead.
+   */
+  showLoader?: boolean;
 }
 
 interface State {
@@ -93,7 +102,7 @@ export default class TargetsComponent extends React.Component<Props, State> {
 
   render() {
     if (this.state.searchLoading) {
-      return <div className="loading" />;
+      return this.props.showLoader ? <div className="loading loading-slim invocation-tab-loading" /> : null;
     }
 
     if (this.props.model.invocation.targetGroups.length) {

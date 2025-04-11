@@ -1251,6 +1251,10 @@ svg.invocation-query-graph .nodes rect {
   background: transparent;
 }
 
+.invocation .invocation-tab-loading {
+  margin-top: 32px;
+}
+
 .invocation .more-buttons button {
   margin-top: 16px;
   margin-right: 16px;
