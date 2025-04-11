@@ -1641,9 +1641,9 @@ func bufferSize(r *rspb.ResourceName) int {
 		// The median and average AC results are less than 4KiB: go/action-result-size
 		return 4 * 1024
 	}
-	// Clamp the size between 0 and 100MB, to protect from invalid and
+	// Clamp the size between 0 and 10MB, to protect from invalid and
 	// malicious requests.
-	return min(100_000_000, max(0, int(r.GetDigest().GetSizeBytes())))
+	return min(10_000_000, max(0, int(r.GetDigest().GetSizeBytes())))
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
