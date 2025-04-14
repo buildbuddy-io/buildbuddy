@@ -32,6 +32,11 @@ var (
 	}
 )
 
+// The maximum number of items that can be passed to Set(). This is before they
+// are multiplied by vnodes. Using 256 allows us to use uint8 values in a few
+// places and an array of size 256 instead of a slice for deduplication.
+// Increasing this would require changing all fields with uint8 values, and
+// rethinking the deduplication strategy.
 const maxSize = 256
 
 type ConsistentHash struct {
