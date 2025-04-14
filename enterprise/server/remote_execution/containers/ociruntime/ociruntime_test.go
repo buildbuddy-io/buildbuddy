@@ -1359,6 +1359,7 @@ func TestFileOwnership(t *testing.T) {
 }
 
 func TestPathSanitization(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	setupNetworking(t)
 	for _, test := range []struct {
 		Name          string
@@ -1390,7 +1391,7 @@ func TestPathSanitization(t *testing.T) {
 			testfs.WriteAllFileContents(t, cacheRoot, map[string]string{
 				"test-link-target": "Hello",
 			})
-			imageStore, err := ociruntime.NewImageStore(cacheRoot)
+			imageStore, err := ociruntime.NewImageStore(te, cacheRoot)
 			require.NoError(t, err)
 			// Load busybox oci image
 			busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
@@ -1631,6 +1632,7 @@ func hasMountPermissions(t *testing.T) bool {
 //	     --test_env=TEST_PULLIMAGE=1 \
 //	     enterprise/server/remote_execution/containers/ociruntime:ociruntime_test
 func TestPullImage(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	if os.Getenv("TEST_PULLIMAGE") == "" {
 		t.Skip("Skipping integration test..")
 	}
@@ -1666,7 +1668,7 @@ func TestPullImage(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			layerDir := t.TempDir()
-			imgStore, err := ociruntime.NewImageStore(layerDir)
+			imgStore, err := ociruntime.NewImageStore(te, layerDir)
 			require.NoError(t, err)
 
 			ctx := context.Background()
