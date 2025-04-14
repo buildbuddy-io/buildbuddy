@@ -447,42 +447,12 @@ func (r *Resolver) fetchRawManifestFromCacheOrRemote(ctx context.Context, digest
 	return &ocidigest, remoteDesc.Manifest, false, nil
 }
 
-func (r *Resolver) FetchManifestMetadataFromCache(ctx context.Context, ocidigest gcrname.Digest) (string, int64, error) {
-	arRN, err := ocidigestToACResourceName(ocidigest, ocipb.OCIResourceType_MANIFEST)
-	if err != nil {
-		return "", 0, err
-	}
-	ar, err := cachetools.GetActionResult(ctx, r.env.GetActionCacheClient(), arRN)
-	if err != nil {
-		return "", 0, err
-	}
-	meta := ar.GetExecutionMetadata()
-	if meta == nil {
-		return "", 0, fmt.Errorf("missing metadata for manifest in %s", ocidigest.Context())
-	}
-	aux := meta.GetAuxiliaryMetadata()
-	if aux == nil || len(aux) != 1 {
-		return "", 0, fmt.Errorf("missing metadata for manifest in %s", ocidigest.Context())
-	}
-	any := aux[0]
-	var mc ocipb.OCIManifestContent
-	err = any.UnmarshalTo(&mc)
-	if err != nil {
-		return "", 0, fmt.Errorf("could not unmarshal metadata for manifest in %s", ocidigest.Context())
-	}
-	return mc.GetContentType(), mc.GetContentLength(), nil
-}
-
-func (r *Resolver) FetchManifestFromCache(ctx context.Context, ocidigest gcrname.Digest) ([]byte, error) {
+func (r *Resolver) fetchManifestContentFromCache(ctx context.Context, ocidigest gcrname.Digest) (*ocipb.OCIManifestContent, error) {
 	arRN, err := ocidigestToACResourceName(ocidigest, ocipb.OCIResourceType_MANIFEST)
 	if err != nil {
 		return nil, err
 	}
-	ar, err := cachetools.GetActionResult(
-		ctx,
-		r.env.GetActionCacheClient(),
-		arRN,
-	)
+	ar, err := cachetools.GetActionResult(ctx, r.env.GetActionCacheClient(), arRN)
 	if err != nil {
 		return nil, err
 	}
@@ -499,6 +469,22 @@ func (r *Resolver) FetchManifestFromCache(ctx context.Context, ocidigest gcrname
 	err = any.UnmarshalTo(&mc)
 	if err != nil {
 		return nil, fmt.Errorf("could not unmarshal metadata for manifest in %s", ocidigest.Context())
+	}
+	return &mc, nil
+}
+
+func (r *Resolver) FetchManifestMetadataFromCache(ctx context.Context, ocidigest gcrname.Digest) (string, int64, error) {
+	mc, err := r.fetchManifestContentFromCache(ctx, ocidigest)
+	if err != nil {
+		return "", 0, err
+	}
+	return mc.GetContentType(), mc.GetContentLength(), nil
+}
+
+func (r *Resolver) FetchManifestFromCache(ctx context.Context, ocidigest gcrname.Digest) ([]byte, error) {
+	mc, err := r.fetchManifestContentFromCache(ctx, ocidigest)
+	if err != nil {
+		return nil, err
 	}
 	return mc.GetRaw(), nil
 }
