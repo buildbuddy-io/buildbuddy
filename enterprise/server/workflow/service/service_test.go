@@ -161,7 +161,7 @@ func createWorkflow(t *testing.T, env *testenv.TestEnv, repoURL, groupID string,
 func pingLegacyWorkflowWebhook(t *testing.T, env *testenv.TestEnv, url string) {
 	req, err := http.NewRequest("POST", url, nil /*=body*/)
 	require.NoError(t, err)
-	env.GetWorkflowService().ServeHTTP(testhttp.NewTestHttpResponseWriter(t), req)
+	env.GetWorkflowService().ServeHTTP(testhttp.NewResponseWriter(t), req)
 }
 
 type execution struct {

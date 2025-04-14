@@ -201,7 +201,7 @@ func triggerLegacyWebhook(t *testing.T, gitProvider *testgit.FakeProvider, workf
 	// should trigger the action to be executed on an executor spun up by the test
 	req, err := http.NewRequest("POST", webhookURL, nil /*=body*/)
 	require.NoError(t, err)
-	workflowService.ServeHTTP(testhttp.NewTestHttpResponseWriter(t), req)
+	workflowService.ServeHTTP(testhttp.NewResponseWriter(t), req)
 }
 
 func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) string {
