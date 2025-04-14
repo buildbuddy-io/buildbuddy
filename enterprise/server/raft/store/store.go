@@ -193,6 +193,7 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 		},
 		RaftEventListener:   raftListener,
 		SystemEventListener: raftListener,
+		EnableMetrics:       true,
 	}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	if err != nil {
