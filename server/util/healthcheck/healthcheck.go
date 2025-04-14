@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/buildbuddy-io/buildbuddy/server/util/watchdog"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
@@ -26,9 +27,10 @@ import (
 
 var (
 	maxShutdownDuration           = flag.Duration("max_shutdown_duration", 25*time.Second, "Time to wait for shutdown")
-	shutdownLameduckDuration      = flag.Duration("shutdown_lameduck_duration", 0, "If set, the server will be marked unready but not run shutdown functions until this period passes.")
+	shutdownLameduckDuration      = flag.Duration("shutdown_lameduck_duration", 0, "If set, the app will be marked unready but not run shutdown functions until this period passes.")
 	logGoroutineProfileOnShutdown = flag.Bool("log_goroutine_profile_on_shutdown", false, "Whether to log all goroutine stack traces on shutdown.")
 	reportNotReady                = flag.Bool("report_not_ready", false, "If set to true, the app will always report as being unready.")
+	maxUnreadyDuration            = flag.Duration("max_unready_duration", 0, "If > 0, the app will terminate if it does not become ready after this long")
 )
 
 const (
@@ -53,6 +55,7 @@ type HealthChecker struct {
 	shutdownFuncs []interfaces.CheckerFunc
 	readyToServe  bool
 	shuttingDown  bool
+	watchdogTimer *watchdog.Timer
 }
 
 func NewHealthChecker(serverType string) *HealthChecker {
@@ -65,6 +68,7 @@ func NewHealthChecker(serverType string) *HealthChecker {
 		checkersMu:    sync.Mutex{},
 		checkers:      make(map[string]interfaces.Checker, 0),
 		lastStatus:    make([]*serviceStatus, 0),
+		watchdogTimer: watchdog.New(*maxUnreadyDuration),
 	}
 	sigTerm := make(chan os.Signal, 1)
 	go func() {
@@ -85,6 +89,7 @@ func NewHealthChecker(serverType string) *HealthChecker {
 			}
 		}
 	}()
+	statusz.AddSection("watchdog", "Watchdog Timer", hc.watchdogTimer)
 	statusz.AddSection("healthcheck", "Backend service health checks", &hc)
 	return &hc
 }
@@ -224,6 +229,16 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 		previousReadinessState = h.readyToServe
 		h.readyToServe = newReadinessState
 		h.lastStatus = statusData
+	}
+	if h.readyToServe {
+		h.watchdogTimer.Reset()
+	} else {
+		if !h.watchdogTimer.Live() {
+			log.Infof("Watchdog timer expired; triggering shutdown!")
+			go func() {
+				h.Shutdown()
+			}()
+		}
 	}
 	h.mu.Unlock()
 
