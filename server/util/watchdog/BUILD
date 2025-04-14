@@ -5,10 +5,7 @@ go_library(
     srcs = ["watchdog.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/watchdog",
     visibility = ["//visibility:public"],
-    deps = [
-        "//server/util/status",
-        "@com_github_jonboulle_clockwork//:clockwork",
-    ],
+    deps = ["@com_github_jonboulle_clockwork//:clockwork"],
 )
 
 go_test(
@@ -16,7 +13,6 @@ go_test(
     srcs = ["watchdog_test.go"],
     deps = [
         ":watchdog",
-        "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
