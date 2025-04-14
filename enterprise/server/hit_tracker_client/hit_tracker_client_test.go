@@ -137,7 +137,7 @@ func TestCASHitTracker_SplitsUpdates(t *testing.T) {
 
 	// Pause the hit-tracker RPC service and send an RPC that'll block the
 	// hit-tracker-client worker so updates are queued.
-	hitTrackerService.mu.Lock()
+	hitTrackerService.wg.Add(1)
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	hitTracker := hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
 	hitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
@@ -155,7 +155,7 @@ func TestCASHitTracker_SplitsUpdates(t *testing.T) {
 
 	hitTracker = hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
 	hitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
-	hitTrackerService.mu.Unlock()
+	hitTrackerService.wg.Done()
 
 	// Expect 10x [A, B, C, D, E] for ANON.
 	expectToEqual(t, 50, hitTrackerService.downloads[interfaces.AuthAnonymousUser], "Expected 10 updates for group ANON")

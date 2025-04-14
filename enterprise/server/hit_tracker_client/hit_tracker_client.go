@@ -295,6 +295,7 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 	}
 	hitsToSend := h.hitsQueue[0]
 	h.hitsQueue = h.hitsQueue[1:]
+	hitsToSend.mu.Lock()
 	if len(hitsToSend.hits) <= h.maxHitsPerUpdate {
 		delete(h.hitsByGroup, hitsToSend.gid)
 	} else {
@@ -309,7 +310,6 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 	}
 	h.mu.Unlock()
 
-	hitsToSend.mu.Lock()
 	ctx = authutil.AddAuthHeadersToContext(ctx, hitsToSend.authHeaders, h.authenticator)
 	trackRequest := hitpb.TrackRequest{Hits: hitsToSend.hits}
 	groupID := hitsToSend.gid
