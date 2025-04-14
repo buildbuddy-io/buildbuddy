@@ -9,9 +9,9 @@ import (
 )
 
 type Timer struct {
-	start time.Time
+	start    time.Time
 	lifetime time.Duration
-	clock clockwork.Clock
+	clock    clockwork.Clock
 }
 
 func New(lifetime time.Duration) *Timer {
@@ -20,8 +20,8 @@ func New(lifetime time.Duration) *Timer {
 
 func NewWithClock(clock clockwork.Clock, lifetime time.Duration) *Timer {
 	wdt := &Timer{
-		clock: clock,
-		start: clock.Now(),
+		clock:    clock,
+		start:    clock.Now(),
 		lifetime: lifetime,
 	}
 	return wdt
@@ -31,7 +31,7 @@ func (t *Timer) nextReset() time.Time {
 	return t.start.Add(t.lifetime)
 }
 func (t *Timer) Reset() {
-	t.start = t.clock.Now().Add(t.lifetime)	
+	t.start = t.clock.Now().Add(t.lifetime)
 }
 
 func (t *Timer) Statusz(ctx context.Context) string {
