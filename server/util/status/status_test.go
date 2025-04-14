@@ -44,6 +44,7 @@ func TestStatusIs(t *testing.T) {
 }
 
 func TestHasStacktrace(t *testing.T) {
+	*status.LogErrorStackTraces = true
 	err := status.FailedPreconditionError("FailedPrecondition")
 	se, ok := err.(interface {
 		StackTrace() errors.StackTrace
