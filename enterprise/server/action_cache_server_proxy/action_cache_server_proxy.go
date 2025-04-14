@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -18,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
-	proxy_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
@@ -134,9 +134,14 @@ func (s *ActionCacheServerProxy) cacheActionResultToLocalCAS(ctx context.Context
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
 		resp, err := s.remoteACClient.GetActionResult(ctx, req)
+		requestTypeLabel := metrics.DefaultCacheProxyRequestLabel
+		if proxy_util.SkipRemote(ctx) {
+			requestTypeLabel = metrics.LocalOnlyCacheProxyRequestLabel
+		}
 		labels := prometheus.Labels{
-			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
-			metrics.CacheHitMissStatus: metrics.UncacheableStatusLabel,
+			metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+			metrics.CacheHitMissStatus:    metrics.UncacheableStatusLabel,
+			metrics.CacheProxyRequestType: requestTypeLabel,
 		}
 		metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
 		metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(proto.Size(resp)))
@@ -149,7 +154,21 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	}
 
 	if proxy_util.SkipRemote(ctx) {
-		return s.localACClient.GetActionResult(ctx, req)
+		rsp, err := s.localACClient.GetActionResult(ctx, req)
+
+		cacheStatus := metrics.MissStatusLabel
+		if err == nil {
+			cacheStatus = metrics.HitStatusLabel
+		}
+		labels := prometheus.Labels{
+			metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+			metrics.CacheHitMissStatus:    cacheStatus,
+			metrics.CacheProxyRequestType: metrics.LocalOnlyCacheProxyRequestLabel,
+		}
+		metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
+		metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(proto.Size(rsp)))
+
+		return rsp, err
 	}
 
 	// If using the remote cache as the source of truth, we must validate that
@@ -179,7 +198,8 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 
 	resp, err := s.remoteACClient.GetActionResult(ctx, req)
 	labels := prometheus.Labels{
-		metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.CacheProxyRequestType: metrics.DefaultCacheProxyRequestLabel,
 	}
 
 	// If `ActionResultDigest` is set on the response, the contents stored
@@ -204,8 +224,18 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	// Only if it's explicitly requested do we cache AC results locally.
-	if proxy_util.SkipRemote(ctx) {
-		return s.localACClient.UpdateActionResult(ctx, req)
+	if proxy_util.SkipRemote(ctx) && !authutil.EncryptionEnabled(ctx, s.authenticator) {
+		resp, err := s.localACClient.UpdateActionResult(ctx, req)
+
+		labels := prometheus.Labels{
+			metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+			metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
+			metrics.CacheProxyRequestType: metrics.LocalOnlyCacheProxyRequestLabel,
+		}
+		metrics.ActionCacheProxiedWriteRequests.With(labels).Inc()
+		metrics.ActionCacheProxiedWriteBytes.With(labels).Add(float64(proto.Size(req)))
+
+		return resp, err
 	}
 
 	// By default, we use the remote cache as the source of truth for AC results.
@@ -214,9 +244,14 @@ func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *re
 	// different values stored locally, so simplify by always using the remote value.
 	// Thus, don't cache action results locally by default.
 	resp, err := s.remoteACClient.UpdateActionResult(ctx, req)
+	proxyRequestType := metrics.DefaultCacheProxyRequestLabel
+	if proxy_util.SkipRemote(ctx) {
+		proxyRequestType = metrics.LocalOnlyCacheProxyRequestLabel
+	}
 	labels := prometheus.Labels{
-		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
-		metrics.CacheHitMissStatus: metrics.MissStatusLabel,
+		metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
+		metrics.CacheProxyRequestType: proxyRequestType,
 	}
 	metrics.ActionCacheProxiedWriteRequests.With(labels).Inc()
 	metrics.ActionCacheProxiedWriteBytes.With(labels).Add(float64(proto.Size(req)))

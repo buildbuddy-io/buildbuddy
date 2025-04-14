@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -16,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 
-	proxy_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -66,15 +66,22 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
+	skipRemote := proxy_util.SkipRemote(ctx)
+	proxyRequestLabel := metrics.DefaultCacheProxyRequestLabel
+	if skipRemote {
+		proxyRequestLabel = metrics.LocalOnlyCacheProxyRequestLabel
+	}
+
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
 		bytesRead, err := s.readRemote(req, stream)
-		recordReadMetrics(metrics.UncacheableStatusLabel, err, bytesRead)
+		recordReadMetrics(metrics.UncacheableStatusLabel, proxyRequestLabel, err, bytesRead)
 		return err
 	}
 
 	localReadStream, err := s.local.Read(ctx, req)
 	if err != nil {
-		if proxy_util.SkipRemote(ctx) {
+		if skipRemote {
+			recordReadMetrics(metrics.MissStatusLabel, proxyRequestLabel, err, 0)
 			return err
 		}
 
@@ -83,11 +90,11 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 			log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
 		}
 		bytesRead, err := s.readRemote(req, stream)
-		recordReadMetrics(metrics.MissStatusLabel, err, bytesRead)
+		recordReadMetrics(metrics.MissStatusLabel, proxyRequestLabel, err, bytesRead)
 		return err
 	}
 
-	if !proxy_util.SkipRemote(ctx) {
+	if !skipRemote {
 		s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
 	}
 
@@ -108,38 +115,45 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 			// the remote cache, but keep it simple for now.
 			if responseSent {
 				log.CtxInfof(ctx, "error midstream of local read: %s", err)
-				recordReadMetrics(metrics.HitStatusLabel, err, bytesRead)
+				recordReadMetrics(metrics.HitStatusLabel, proxyRequestLabel, err, bytesRead)
 				return err
 			} else {
-				bytesRead, err = s.readRemote(req, stream)
-				recordReadMetrics(metrics.MissStatusLabel, err, bytesRead)
-				return err
+				if skipRemote {
+					recordReadMetrics(metrics.MissStatusLabel, proxyRequestLabel, err, bytesRead)
+					return err
+				} else {
+					bytesRead, err = s.readRemote(req, stream)
+					recordReadMetrics(metrics.MissStatusLabel, proxyRequestLabel, err, bytesRead)
+					return err
+				}
 			}
 		}
 
 		if err := stream.Send(rsp); err != nil {
-			recordReadMetrics(metrics.HitStatusLabel, err, bytesRead)
+			recordReadMetrics(metrics.HitStatusLabel, proxyRequestLabel, err, bytesRead)
 			return err
 		}
 		responseSent = true
 	}
-	recordReadMetrics(metrics.HitStatusLabel, nil, bytesRead)
+	recordReadMetrics(metrics.HitStatusLabel, proxyRequestLabel, nil, bytesRead)
 	return nil
 }
 
-func recordReadMetrics(cacheStatus string, err error, bytesRead int) {
+func recordReadMetrics(cacheStatus string, proxyRequestType string, err error, bytesRead int) {
 	labels := prometheus.Labels{
-		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
-		metrics.CacheHitMissStatus: cacheStatus,
+		metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.CacheHitMissStatus:    cacheStatus,
+		metrics.CacheProxyRequestType: proxyRequestType,
 	}
 	metrics.ByteStreamProxiedReadRequests.With(labels).Inc()
 	metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(bytesRead))
 }
 
-func recordWriteMetrics(resp *bspb.WriteResponse, err error) {
+func recordWriteMetrics(resp *bspb.WriteResponse, err error, proxyRequestType string) {
 	labels := prometheus.Labels{
-		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
-		metrics.CacheHitMissStatus: metrics.MissStatusLabel,
+		metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
+		metrics.CacheProxyRequestType: proxyRequestType,
 	}
 	metrics.ByteStreamProxiedWriteRequests.With(labels).Inc()
 	if resp != nil && resp.GetCommittedSize() > 0 {
@@ -255,7 +269,12 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
 	resp, err := s.write(stream)
-	recordWriteMetrics(resp, err)
+
+	requestType := metrics.DefaultCacheProxyRequestLabel
+	if proxy_util.SkipRemote(stream.Context()) {
+		requestType = metrics.LocalOnlyCacheProxyRequestLabel
+	}
+	recordWriteMetrics(resp, err, requestType)
 	return err
 }
 
@@ -274,6 +293,8 @@ func (s *ByteStreamServerProxy) write(stream bspb.ByteStream_WriteServer) (*bspb
 	}
 
 	var remote bspb.ByteStream_WriteClient
+	// `local` can be nil for encrypted requests. The proxy doesn't support encrpytion,
+	// so always write encrypted requests to the remote cache.
 	if !proxy_util.SkipRemote(ctx) || local == nil {
 		var err error
 		remote, err = s.remote.Write(ctx)

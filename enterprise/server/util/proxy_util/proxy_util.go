@@ -17,3 +17,7 @@ func SkipRemote(ctx context.Context) bool {
 	md := metadata.ValueFromIncomingContext(ctx, SkipRemoteKey)
 	return len(md) > 0 && md[0] == "true"
 }
+
+func SetSkipRemote(ctx context.Context) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, SkipRemoteKey, "true")
+}
