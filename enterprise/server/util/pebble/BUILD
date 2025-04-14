@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "pebble",
     srcs = ["pebble.go"],
@@ -29,5 +31,3 @@ go_test(
         "@org_golang_x_sync//errgroup",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

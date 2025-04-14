@@ -2,6 +2,7 @@ package status
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"runtime"
 
@@ -10,6 +11,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+var LogErrorStackTraces = flag.Bool("app.log_error_stack_traces", false, "If true, stack traces will be printed for errors that have them.")
 
 const stackDepth = 10
 
@@ -46,6 +49,9 @@ func callers() *stack {
 }
 
 func makeStatusError(code codes.Code, msg string) error {
+	if !*LogErrorStackTraces {
+		return status.Error(code, msg)
+	}
 	return &wrappedError{
 		status.Error(code, msg),
 		callers(),
