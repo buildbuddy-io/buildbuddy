@@ -1293,7 +1293,7 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 		rd, err = s.removeReplicaFromRangeDescriptor(ctx, remoteRD.GetRangeId(), req.GetReplicaId(), remoteRD)
 		if err != nil {
 			// TODO: returns a special error so that the caller can retry.
-			return nil, status.InternalErrorf("failed to remove replica from range descriptor: %s", err)
+			return nil, status.InternalErrorf("failed to remove replica c%dn%d from range descriptor: %s", remoteRD.GetRangeId(), req.GetReplicaId(), err)
 		}
 	}
 	return &rfpb.RemoveDataResponse{

@@ -38,9 +38,6 @@ common --experimental_platform_in_output_dir
 # This assumption might not hold in the future, but we can revisit this when that happens.
 common --@io_bazel_rules_docker//transitions:enable=false
 
-# Use tsconfig.json for skipLibCheck setting.
-common --@aspect_rules_ts//ts:skipLibCheck=honor_tsconfig
-
 # Currently only works for go tests
 # Coverage outputs could be viewed with `genhtml`:
 #   $ genhtml -o cover bazel-out/_coverage/_coverage_report.dat
@@ -56,6 +53,60 @@ common --noslim_profile
 # Include compact execution log
 # TODO(sluongng): make Bazel writes this to output_base automatically
 common --execution_log_compact_file=bazel_compact_exec_log.binpb.zst
+
+
+#############################
+# TESTING/DEVELOPMENT FLAGS #
+#############################
+
+# Use tsconfig.json for skipLibCheck setting.
+common --@aspect_rules_ts//ts:skipLibCheck=honor_tsconfig
+
+# Add `-test.v` to all Go tests so that each test func is reported as a separate test case
+# in the XML output.  This allows our webUI to display the run time of each test case
+# separately and let us know which tests is slow.
+test --test_env=GO_TEST_WRAP_TESTV=1
+
+# In rules_go v0.50.0, nogo static analysis was moved from GoCompilePkg to a couple of
+# actions: RunNogo and ValidateNogo. Among these, ValidateNogo is a validation action*.
+# When the validation runs on top of the go_test binary, it will prevent the test 
+# execution (TestRunner) until the validation is success.
+#
+# This flag will run the validation action as an aspect, which will not block the test
+# execution.
+#
+# *: https://bazel.build/extending/rules#validation_actions
+common --experimental_use_validation_aspect=true
+
+# Don't show cached test results in the test summary
+# We have many tests that can fill up the console with cached results.
+# If you prefer to see cached results, set this to 'short' in user.bazelrc file.
+test --test_summary=terse
+
+common:race --@io_bazel_rules_go//go/config:race
+
+common:performance --compilation_mode=opt
+
+# Configuration used to deflake tests
+common:deflake --config=remote-minimal
+test:deflake --runs_per_test=100
+test:deflake --test_output=errors
+test:deflake --notest_keep_going
+
+# Configuration used to deflake Go tests
+common:deflake-go --config=race
+common:deflake-go --config=deflake
+test:deflake-go --test_arg=-test.failfast
+
+# Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
+# See server/testutil/webtester/webtester.go for more details.
+test:webdriver-debug --test_arg=-webdriver_headless=false
+test:webdriver-debug --test_arg=-webdriver_end_of_test_delay=3s
+# Forward X server display for local webdriver tests.
+test:webdriver-debug --test_env=DISPLAY
+# When debugging, only run one webdriver test at a time (it's overwhelming
+# otherwise).
+test:webdriver-debug --local_test_jobs=1
 
 
 ###################################
@@ -92,3 +143,108 @@ common:windows --workspace_status_command="bash workspace_status.sh"
 common:local --bes_results_url=http://localhost:8080/invocation/
 common:local --bes_backend=grpc://localhost:1985
 common:local --remote_cache=grpc://localhost:1985
+
+common:target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+common:target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+common:target-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
+common:target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
+
+common:bzlmod-target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+common:bzlmod-target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
+common:bzlmod-target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
+
+common:download-minimal --remote_download_minimal
+# Work around a Bazel issue that results in all top-level outputs being downloaded
+# after this period has passed for a warm Bazel server even with
+# --remote_download_minimal.
+common:download-minimal --experimental_remote_cache_ttl=10000d
+
+# Flags shared across prober configs
+common:probers-shared --config=remote-shared
+common:probers-shared --config=target-linux-x86
+common:probers-shared --config=download-minimal
+common:probers-shared --config=cache-shared
+
+# Build with --config=probers to use BuildBuddy RBE in the probers org.
+common:probers --config=probers-shared
+common:probers --bes_results_url=https://buildbuddy-probers-us-west1.buildbuddy.io/invocation/
+common:probers --bes_backend=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
+common:probers --remote_cache=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
+common:probers --remote_executor=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
+
+# Build with --config=probers-dev to use BuildBuddy RBE in the probers org.
+common:probers-dev --config=probers-shared
+common:probers-dev --bes_results_url=https://buildbuddy-probers.buildbuddy.dev/invocation/
+common:probers-dev --bes_backend=grpcs://buildbuddy-probers.buildbuddy.dev
+common:probers-dev --remote_cache=grpcs://buildbuddy-probers.buildbuddy.dev
+common:probers-dev --remote_executor=grpcs://buildbuddy-probers.buildbuddy.dev
+
+# Configuration used for Buildbuddy auto-release probers
+common:auto-release --config=probers
+common:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
+common:auto-release --compilation_mode=opt
+common:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/pgo:prod.pprof
+
+# Configuration used for all builds of artifacts released to GitHub
+common:release-shared --compilation_mode=opt
+common:release-shared --stamp
+common:release-shared --define=release=true
+common:release-shared --strip=always
+
+# Configuration used for Linux releases
+common:release --config=release-shared
+common:release --config=remote-prod-shared
+common:release --config=target-linux-x86
+common:release --repository_cache=~/repo-cache/
+common:release --remote_instance_name=buildbuddy-io/buildbuddy/release
+common:release --remote_download_toplevel
+
+# Configuration used for release-mac workflow
+common:release-mac --config=release-shared
+common:release-mac --repository_cache=~/repo-cache/
+
+# Configuration used for release-m1 workflow
+common:release-m1 --config=release-shared
+
+# Configuration used for release-windows workflow
+common:release-windows --config=cache
+common:release-windows --config=release-shared
+common:release-windows --repository_cache=D:/bazel/repo-cache/
+common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows
+
+# Configuration used for untrusted GitHub actions-based CI
+common:untrusted-ci --config=remote-minimal
+common:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
+common:untrusted-ci --repository_cache=~/repo-cache/
+common:untrusted-ci --flaky_test_attempts=2
+common:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
+common:untrusted-ci --bes_results_url=https://app.buildbuddy.io/invocation/
+common:untrusted-ci --bes_backend=grpcs://remote.buildbuddy.io
+common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
+
+# Disabled RBE for Windows
+common:untrusted-ci-windows --config=cache-shared
+common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows
+common:untrusted-ci-windows --repository_cache=D:/bazel/repo-cache/
+common:untrusted-ci-windows --flaky_test_attempts=2
+common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
+common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
+common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
+
+# Configuration used for Linux workflows
+common:linux-workflows --config=remote-shared
+common:linux-workflows --config=target-linux-x86
+common:linux-workflows --config=workflows
+common:linux-workflows --config=buildbuddy_remote_executor
+common:linux-workflows --build_metadata=TAGS=linux-workflow
+
+# Configuration used for Mac workflows
+# TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
+common:mac-workflows --config=cache
+common:mac-workflows --config=workflows
+common:mac-workflows --build_metadata=TAGS=mac-workflow
+
+# Build fully static binaries linked against musl on Linux.
+common:static --platforms=//platforms:linux_x86_64_musl
+common:static-arm64 --platforms=//platforms:linux_arm64_musl

@@ -1121,7 +1121,7 @@ func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) 
 	} else {
 		buf = new(bytes.Buffer)
 	}
-	_, err = buf.ReadFrom(r)
+	_, err = io.Copy(buf, r)
 	return buf.Bytes(), err
 }
 

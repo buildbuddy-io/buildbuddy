@@ -36,6 +36,7 @@ go_test(
         "//server/testutil/testbazel",
         "//server/testutil/testenv",
         "//server/testutil/testgit",
+        "//server/testutil/testhttp",
         "//server/util/perms",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",

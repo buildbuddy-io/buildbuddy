@@ -44,7 +44,7 @@ go_library(
         "//server/util/clickhouse/schema",
         "//server/util/proto",
         "//server/util/role",
-        "@com_github_golang_jwt_jwt//:jwt",
+        "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_google_go_github_v59//github",
         "@com_github_hashicorp_serf//serf",
         "@io_gorm_gorm//:gorm",
