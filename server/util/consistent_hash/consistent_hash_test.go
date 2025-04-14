@@ -136,6 +136,18 @@ func TestAgainstReference(t *testing.T) {
 	}
 }
 
+func TestGoldenSet(t *testing.T) {
+	ch := consistent_hash.NewConsistentHash(consistent_hash.SHA256, 10000)
+	require.NoError(t, ch.Set("a", "b", "c", "d"))
+	// NOTE: These values should never change -- if you have to change them it
+	// means the consistent hash is broken and returning results in a different
+	// order than before.
+	assert.Equal(t, []string{"d", "b", "c", "a"}, ch.GetAllReplicas(""))
+	assert.Equal(t, []string{"b", "c", "d", "a"}, ch.GetAllReplicas("1"))
+	assert.Equal(t, []string{"b", "a", "c", "d"}, ch.GetAllReplicas("2"))
+	assert.Equal(t, []string{"a", "c", "d", "b"}, ch.GetAllReplicas("3"))
+}
+
 func BenchmarkGetAllReplicas(b *testing.B) {
 	for _, test := range []struct {
 		Name         string
