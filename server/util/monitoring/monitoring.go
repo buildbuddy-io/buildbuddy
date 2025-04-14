@@ -25,6 +25,10 @@ var (
 	basicAuthPass = flag.String("monitoring.basic_auth.password", "", "Optional password for basic auth on the monitoring port.", flag.Secret)
 )
 
+const (
+	acceptEncodingKey = "Accept-Encoding"
+)
+
 // Registers monitoring handlers on the provided mux. Note that using
 // StartMonitoringHandler on a monitoring-only port is preferred.
 func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
@@ -103,15 +107,14 @@ func metricsHandler() http.Handler {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Removes the "Accept-Encoding: gzip" to ensure
 		// promhttp.Handler().ServeHTTP() outputs plaintext, so that we can append the plaintext from victoria metrics.
-		encodingKey := "Accept-Encoding"
-		vals := r.Header.Values(encodingKey)
-		r.Header.Del("Accept-Encoding")
+		vals := r.Header.Values(acceptEncodingKey)
+		r.Header.Del(acceptEncodingKey)
 		promhttp.Handler().ServeHTTP(w, r)
 		metrics.WritePrometheus(w, false)
 
 		// Adding the encoding key back
 		for _, v := range vals {
-			r.Header.Add(encodingKey, v)
+			r.Header.Add(acceptEncodingKey, v)
 		}
 	})
 
