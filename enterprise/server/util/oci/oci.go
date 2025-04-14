@@ -48,6 +48,7 @@ var (
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 	cacheSalt              = flag.String("executor.container_registry_cache_salt", "", "Secret salt for caching OCI image manifests")
+	useCachingResolve      = flag.Bool("executor.container_registry_use_cache", false, "Store image manifests and layers during image resolution")
 
 	defaultPlatform = gcr.Platform{
 		Architecture: "amd64",
@@ -78,105 +79,160 @@ func (r *Resolver) hasGroupID(ctx context.Context) bool {
 }
 
 func (r *Resolver) Resolve(ctx context.Context, imgname string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
-	ctx, span := tracing.StartSpan(ctx)
-	canUseCache := credentials.IsEmpty() || r.hasGroupID(ctx)
-	defer span.End()
-	gcrPlatform := gcr.Platform{
-		Architecture: platform.GetArch(),
-		OS:           platform.GetOs(),
-		Variant:      platform.GetVariant(),
-	}
-	opts := r.makeRemoteOptions(ctx, gcrPlatform, credentials)
-	imgref, err := gcrname.ParseReference(imgname)
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid image %q", imgname)
-	}
-	imgdigest, raw, fromCache, err := r.fetchRawManifestFromCacheOrRemote(ctx, imgref, opts)
-	if err != nil {
-		return nil, err
-	}
-	m, err := gcr.ParseManifest(bytes.NewReader(raw))
-	if err != nil {
-		return nil, err
-	}
-	if !fromCache && canUseCache {
-		err := r.UploadManifestToCache(
-			ctx,
-			*imgdigest,
-			string(m.MediaType),
-			int64(len(raw)),
-			raw,
-		)
-		if err != nil {
-			log.CtxErrorf(ctx, "error writing image manifest %s to the CAS: %s", imgref.Context(), err)
+	if *useCachingResolve {
+		ctx, span := tracing.StartSpan(ctx)
+		canUseCache := credentials.IsEmpty() || r.hasGroupID(ctx)
+		defer span.End()
+		gcrPlatform := gcr.Platform{
+			Architecture: platform.GetArch(),
+			OS:           platform.GetOs(),
+			Variant:      platform.GetVariant(),
 		}
-	}
+		opts := r.makeRemoteOptions(ctx, gcrPlatform, credentials)
+		imgref, err := gcrname.ParseReference(imgname)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid image %q", imgname)
+		}
+		imgdigest, raw, fromCache, err := r.fetchRawManifestFromCacheOrRemote(ctx, imgref, opts)
+		if err != nil {
+			return nil, err
+		}
+		m, err := gcr.ParseManifest(bytes.NewReader(raw))
+		if err != nil {
+			return nil, err
+		}
+		if !fromCache && canUseCache {
+			err := r.UploadManifestToCache(
+				ctx,
+				*imgdigest,
+				string(m.MediaType),
+				int64(len(raw)),
+				raw,
+			)
+			if err != nil {
+				log.CtxErrorf(ctx, "error writing image manifest %s to the CAS: %s", imgref.Context(), err)
+			}
+		}
 
-	if m.MediaType != types.OCIImageIndex && m.MediaType != types.DockerManifestList {
-		img := &cacheAwareImage{
-			digest:      *imgdigest,
+		if m.MediaType != types.OCIImageIndex && m.MediaType != types.DockerManifestList {
+			img := &cacheAwareImage{
+				digest:      *imgdigest,
+				canUseCache: canUseCache,
+				r:           r,
+				ctx:         ctx,
+				raw:         raw,
+				manifest:    m,
+				options:     opts,
+			}
+			return partial.CompressedToImage(img)
+		}
+
+		index, err := gcr.ParseIndexManifest(bytes.NewReader(raw))
+		if err != nil {
+			return nil, err
+		}
+		var child *gcr.Descriptor
+		for _, childDesc := range index.Manifests {
+			p := defaultPlatform
+			if childDesc.Platform != nil {
+				p = *childDesc.Platform
+			}
+
+			if matchesPlatform(p, gcrPlatform) {
+				child = &childDesc
+			}
+		}
+		if child == nil {
+			return nil, fmt.Errorf("no child with platform %+v for %s", platform, imgref.Context())
+		}
+		childRef := imgref.Context().Digest(child.Digest.String())
+		childDigest, childraw, childFromCache, err := r.fetchRawManifestFromCacheOrRemote(ctx, childRef, opts)
+		if err != nil {
+			return nil, err
+		}
+		childm, err := gcr.ParseManifest(bytes.NewReader(childraw))
+		if err != nil {
+			return nil, err
+		}
+		if !childFromCache && canUseCache {
+			err := r.UploadManifestToCache(
+				ctx,
+				*childDigest,
+				string(childm.MediaType),
+				int64(len(childraw)),
+				childraw,
+			)
+			if err != nil {
+				log.CtxErrorf(ctx, "error writing image %s to the CAS: %s", childDigest.Context(), err)
+			}
+		}
+		if childm.MediaType == types.OCIImageIndex || childm.MediaType == types.DockerManifestList {
+			return nil, fmt.Errorf("child manifest %s is itself an image index", childDigest.Context())
+		}
+		childimg := &cacheAwareImage{
+			digest:      *childDigest,
 			canUseCache: canUseCache,
 			r:           r,
 			ctx:         ctx,
-			raw:         raw,
-			manifest:    m,
+			raw:         childraw,
+			manifest:    childm,
 			options:     opts,
 		}
-		return partial.CompressedToImage(img)
+		return partial.CompressedToImage(childimg)
 	}
 
-	index, err := gcr.ParseIndexManifest(bytes.NewReader(raw))
+	imageRef, err := gcrname.ParseReference(imgname)
 	if err != nil {
-		return nil, err
+		return nil, status.InvalidArgumentErrorf("invalid image %q", imgname)
 	}
-	var child *gcr.Descriptor
-	for _, childDesc := range index.Manifests {
-		p := defaultPlatform
-		if childDesc.Platform != nil {
-			p = *childDesc.Platform
-		}
 
-		if matchesPlatform(p, gcrPlatform) {
-			child = &childDesc
+	remoteOpts := []remote.Option{
+		remote.WithContext(ctx),
+		remote.WithPlatform(
+			gcr.Platform{
+				Architecture: platform.GetArch(),
+				OS:           platform.GetOs(),
+				Variant:      platform.GetVariant(),
+			},
+		),
+	}
+	if !credentials.IsEmpty() {
+		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
+			Username: credentials.Username,
+			Password: credentials.Password,
+		}))
+	}
+
+	tr := httpclient.NewWithAllowedPrivateIPs(60*time.Minute, r.allowedPrivateIPs).Transport
+	if len(*mirrors) > 0 {
+		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
+	} else {
+		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
+	}
+	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
+
+	// Image() should resolve both images and image indices to an appropriate image
+	img, err := remoteDesc.Image()
+	if err != nil {
+		switch remoteDesc.MediaType {
+		// This is an "image index", a meta-manifest that contains a list of
+		// {platform props, manifest hash} properties to allow client to decide
+		// which manifest they want to use based on platform.
+		case types.OCIImageIndex, types.DockerManifestList:
+			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
+		case types.OCIManifestSchema1, types.DockerManifestSchema2:
+			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
+		default:
+			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
 		}
 	}
-	if child == nil {
-		return nil, fmt.Errorf("no child with platform %+v for %s", platform, imgref.Context())
-	}
-	childRef := imgref.Context().Digest(child.Digest.String())
-	childDigest, childraw, childFromCache, err := r.fetchRawManifestFromCacheOrRemote(ctx, childRef, opts)
-	if err != nil {
-		return nil, err
-	}
-	childm, err := gcr.ParseManifest(bytes.NewReader(childraw))
-	if err != nil {
-		return nil, err
-	}
-	if !childFromCache && canUseCache {
-		err := r.UploadManifestToCache(
-			ctx,
-			*childDigest,
-			string(childm.MediaType),
-			int64(len(childraw)),
-			childraw,
-		)
-		if err != nil {
-			log.CtxErrorf(ctx, "error writing image %s to the CAS: %s", childDigest.Context(), err)
-		}
-	}
-	if childm.MediaType == types.OCIImageIndex || childm.MediaType == types.DockerManifestList {
-		return nil, fmt.Errorf("child manifest %s is itself an image index", childDigest.Context())
-	}
-	childimg := &cacheAwareImage{
-		digest:      *childDigest,
-		canUseCache: canUseCache,
-		r:           r,
-		ctx:         ctx,
-		raw:         childraw,
-		manifest:    childm,
-		options:     opts,
-	}
-	return partial.CompressedToImage(childimg)
+	return img, nil
 }
 
 func (r *Resolver) makeRemoteOptions(ctx context.Context, platform gcr.Platform, credentials Credentials) []remote.Option {
