@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -105,7 +106,7 @@ func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 // registry, but the credentials are still authenticated with the remote
 // registry to ensure that the image can be accessed. The path to the disk image
 // is returned.
-func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func CreateDiskImage(ctx context.Context, env environment.Env, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	existingPath, err := CachedDiskImagePath(ctx, cacheRoot, containerImage)
@@ -136,7 +137,7 @@ func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, cred
 		defer cancel()
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKey above (if applicable).
-		return createExt4Image(ctx, cacheRoot, containerImage, creds)
+		return createExt4Image(ctx, env, cacheRoot, containerImage, creds)
 	})
 	return imageDir, err
 }
@@ -163,12 +164,12 @@ func authenticateWithRegistry(ctx context.Context, containerImage string, creds 
 	return nil
 }
 
-func createExt4Image(ctx context.Context, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func createExt4Image(ctx context.Context, env environment.Env, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
 	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, cacheRoot, containerImage, creds)
+	tmpImagePath, err := convertContainerToExt4FS(ctx, env, cacheRoot, containerImage, creds)
 	if err != nil {
 		return "", err
 	}
@@ -190,8 +191,8 @@ func createExt4Image(ctx context.Context, cacheRoot, containerImage string, cred
 
 // convertContainerToExt4FS generates an ext4 filesystem image from an OCI
 // container image reference.
-func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	resolver, err := oci.NewResolver()
+func convertContainerToExt4FS(ctx context.Context, env environment.Env, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
+	resolver, err := oci.NewResolver(env)
 	if err != nil {
 		return "", err
 	}

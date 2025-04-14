@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
+        "//server/environment",
         "//server/util/disk",
         "//server/util/hash",
         "//server/util/log",
@@ -33,6 +34,7 @@ go_test(
     deps = [
         ":ociconv",
         "//enterprise/server/util/oci",
+        "//server/testutil/testenv",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//require",
     ],
