@@ -125,6 +125,9 @@ type BuildEventHandler struct {
 	statsRecorder    *statsRecorder
 	openChannels     *sync.WaitGroup
 	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
+
+	mu           sync.Mutex
+	shuttingDown bool
 }
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
@@ -151,7 +154,43 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	return h
 }
 
+type nopEventChannel struct {
+	iid string
+}
+
+func (e *nopEventChannel) Context() context.Context {
+	return context.TODO()
+}
+
+func (e *nopEventChannel) Close() {
+}
+
+func (e *nopEventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
+	return nil
+}
+
+func (e *nopEventChannel) FinalizeInvocation(iid string) error {
+	return nil
+}
+
+func (e *nopEventChannel) GetNumDroppedEvents() uint64 {
+	return 0
+}
+
+func (e *nopEventChannel) GetInitialSequenceNumber() int64 {
+	return 0
+}
+
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
+	b.mu.Lock()
+	shuttingDown := b.shuttingDown
+	b.mu.Unlock()
+
+	if shuttingDown {
+		log.Infof("Server shutting down, returning no-op channel for invocation %q", iid)
+		return &nopEventChannel{iid: iid}
+	}
+
 	invocation := &inpb.Invocation{InvocationId: iid}
 	buildEventAccumulator := accumulator.NewBEValues(invocation)
 	val, ok := b.cancelFnsByInvID.Load(iid)
@@ -191,6 +230,10 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 }
 
 func (b *BuildEventHandler) Stop() {
+	b.mu.Lock()
+	b.shuttingDown = true
+	b.mu.Unlock()
+
 	b.cancelFnsByInvID.Range(func(key, val interface{}) bool {
 		iid := key.(string)
 		cancelFn := val.(context.CancelFunc)
