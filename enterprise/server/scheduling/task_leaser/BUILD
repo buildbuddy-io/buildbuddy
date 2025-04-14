@@ -12,6 +12,7 @@ go_library(
         "//proto:scheduler_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/util/authutil",
         "//server/util/flag",
         "//server/util/log",

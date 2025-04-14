@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -99,6 +100,11 @@ func (t *TaskLease) Task() *repb.ExecutionTask {
 }
 
 func (t *TaskLease) sendRequest(req *scpb.LeaseTaskRequest) (*scpb.LeaseTaskResponse, error) {
+	start := time.Now()
+	defer func() {
+		metrics.TaskLeaseRequestDurationUsec.Observe(time.Since(start).Microseconds())
+	}()
+
 	if err := t.stream.Send(req); err != nil {
 		return nil, err
 	}

@@ -1546,6 +1546,14 @@ var (
 		GroupID,
 	})
 
+	TaskLeaseRequestDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "task_lease_request_duration_usec",
+		Help:      "Total duration of task lease requests made from the executor to the scheduler, in **microseconds**.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 5*time.Minute, 1.2),
+	})
+
 	// ## Blobstore metrics
 	//
 	// "Blobstore" refers to the backing storage that BuildBuddy uses to
