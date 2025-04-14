@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/pprof"
 
+	"github.com/VictoriaMetrics/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/basicauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagz"
@@ -23,6 +25,10 @@ var (
 	basicAuthPass = flag.String("monitoring.basic_auth.password", "", "Optional password for basic auth on the monitoring port.", flag.Secret)
 )
 
+const (
+	acceptEncodingKey = "Accept-Encoding"
+)
+
 // Registers monitoring handlers on the provided mux. Note that using
 // StartMonitoringHandler on a monitoring-only port is preferred.
 func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
@@ -35,7 +41,7 @@ func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
 	}
 
 	// Prometheus metrics
-	handle("/metrics", promhttp.Handler())
+	handle("/metrics", metricsHandler())
 
 	// PProf endpoints
 	handle("/debug/pprof/", http.HandlerFunc(pprof.Index))
@@ -95,4 +101,22 @@ func StartSSLMonitoringHandler(env environment.Env, hostPort string) error {
 		s.ListenAndServeTLS("", "")
 	}()
 	return nil
+}
+
+func metricsHandler() http.Handler {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Remove any "Accept-Encoding" headers to ensure
+		// promhttp.Handler().ServeHTTP() outputs plaintext, so that we can append the plaintext from victoria metrics.
+		vals := r.Header.Values(acceptEncodingKey)
+		r.Header.Del(acceptEncodingKey)
+		promhttp.Handler().ServeHTTP(w, r)
+		metrics.WritePrometheus(w, false)
+
+		// Adding the encoding key back
+		for _, v := range vals {
+			r.Header.Add(acceptEncodingKey, v)
+		}
+	})
+
+	return interceptors.Gzip(h)
 }

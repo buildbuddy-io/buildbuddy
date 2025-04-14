@@ -289,6 +289,7 @@ use_repo(
     "com_github_tink_crypto_tink_go_gcpkms_v2",
     "com_github_tink_crypto_tink_go_v2",
     "com_github_tklauser_go_sysconf",
+    "com_github_victoriametrics_metrics",
     "com_github_vishvananda_netlink",
     "com_github_xiam_s_expr",
     "com_github_zeebo_blake3",

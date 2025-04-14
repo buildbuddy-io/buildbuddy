@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",
+        "//server/http/interceptors",
         "//server/util/basicauth",
         "//server/util/flag",
         "//server/util/flagz",
@@ -16,5 +17,6 @@ go_library(
         "//server/util/statusz",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@com_github_rantav_go_grpc_channelz//:go-grpc-channelz",
+        "@com_github_victoriametrics_metrics//:metrics",
     ],
 )
