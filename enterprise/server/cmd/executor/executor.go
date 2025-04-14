@@ -298,7 +298,6 @@ func main() {
 		log.Infof("Executed startup command %d: %q in %s", i, startupCommand, time.Since(start))
 	}
 
-	// Note: cleanupFUSEMounts needs to happen before deleteBuildRootOnStartup.
 	setupNetworking(rootContext)
 
 	cacheRoot := filepath.Join(*localCacheDirectory, getExecutorHostID())
