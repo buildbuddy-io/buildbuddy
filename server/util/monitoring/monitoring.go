@@ -105,7 +105,7 @@ func StartSSLMonitoringHandler(env environment.Env, hostPort string) error {
 
 func metricsHandler() http.Handler {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Removes the "Accept-Encoding: gzip" to ensure
+		// Remove any "Accept-Encoding" headers to ensure
 		// promhttp.Handler().ServeHTTP() outputs plaintext, so that we can append the plaintext from victoria metrics.
 		vals := r.Header.Values(acceptEncodingKey)
 		r.Header.Del(acceptEncodingKey)
