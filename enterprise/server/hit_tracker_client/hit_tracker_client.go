@@ -83,6 +83,7 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 type groupID string
 type cacheHits struct {
 	gid         groupID
+	mu          sync.Mutex
 	authHeaders map[string][]string
 	hits        []*hitpb.CacheHit
 }
@@ -171,6 +172,7 @@ func (h *HitTrackerFactory) groupID(ctx context.Context) groupID {
 }
 
 func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.RequestMetadata, hit *hitpb.CacheHit) {
+	groupID := h.groupID(ctx)
 	requestMetadata = proto.Clone(requestMetadata).(*repb.RequestMetadata)
 
 	h.mu.Lock()
@@ -183,9 +185,7 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 		}
 		return
 	}
-	defer h.mu.Unlock()
 
-	groupID := h.groupID(ctx)
 	if _, ok := h.hitsByGroup[groupID]; !ok {
 		hits := cacheHits{gid: groupID, hits: []*hitpb.CacheHit{}}
 		h.hitsByGroup[groupID] = &hits
@@ -193,7 +193,11 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 	}
 
 	groupHits := h.hitsByGroup[groupID]
+	h.mu.Unlock()
+	authHeaders := authutil.GetAuthHeaders(ctx, h.authenticator)
+	groupHits.mu.Lock()
 	if len(groupHits.hits) >= h.maxPendingHitsPerGroup {
+		groupHits.mu.Unlock()
 		alert.UnexpectedEvent(fmt.Sprintf("Exceeded maximum number of pending cache hits for group %s, dropping some.", string(groupID)))
 		metrics.RemoteHitTrackerUpdates.With(
 			prometheus.Labels{
@@ -202,17 +206,17 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 			}).Add(float64(1))
 		return
 	}
+
+	// Store the latest auth headers for this group for use in the async RPC.
+	groupHits.authHeaders = authHeaders
+	groupHits.hits = append(groupHits.hits, hit)
+	groupHits.mu.Unlock()
+
 	metrics.RemoteHitTrackerUpdates.With(
 		prometheus.Labels{
 			metrics.GroupID:              string(groupID),
 			metrics.EnqueueUpdateOutcome: "enqueued",
 		}).Add(float64(1))
-
-	// Store the latest auth headers for this group for use in the async RPC.
-	authHeaders := authutil.GetAuthHeaders(ctx, h.authenticator)
-	groupHits.authHeaders = authHeaders
-
-	groupHits.hits = append(groupHits.hits, hit)
 }
 
 type TransferTimer struct {
@@ -305,18 +309,23 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 	}
 	h.mu.Unlock()
 
+	hitsToSend.mu.Lock()
 	ctx = authutil.AddAuthHeadersToContext(ctx, hitsToSend.authHeaders, h.authenticator)
 	trackRequest := hitpb.TrackRequest{Hits: hitsToSend.hits}
+	groupID := hitsToSend.gid
+	hitCount := len(hitsToSend.hits)
+	hitsToSend.mu.Unlock()
+
 	_, err := h.client.Track(ctx, &trackRequest)
 	metrics.RemoteHitTrackerRequests.With(
 		prometheus.Labels{
-			metrics.GroupID:     string(hitsToSend.gid),
+			metrics.GroupID:     string(groupID),
 			metrics.StatusLabel: gstatus.Code(err).String(),
-		}).Observe(float64(len(hitsToSend.hits)))
+		}).Observe(float64(hitCount))
 	if err != nil {
-		log.CtxWarningf(ctx, "Error sending Track request to record cache hit-tracking state group %s: %v", hitsToSend.gid, err)
+		log.CtxWarningf(ctx, "Error sending Track request to record cache hit-tracking state group %s: %v", groupID, err)
 	}
-	return len(hitsToSend.hits)
+	return hitCount
 }
 
 func (h *HitTrackerFactory) shutdown(ctx context.Context) error {
