@@ -473,6 +473,7 @@ func warnIfCacheTooLarge(opts *Options) {
 	usage, err := disk.GetDirUsage(opts.RootDirectory)
 	if err != nil {
 		log.Warningf("Error getting usage of pebble root directory %s: %v", opts.RootDirectory, err)
+		return
 	}
 	if opts.MaxSizeBytes > int64(usage.TotalBytes) {
 		alert.UnexpectedEvent(fmt.Sprintf("Pebble cache maximum size (%d) exceeds disk partition size (%d)", opts.MaxSizeBytes, usage.TotalBytes))
