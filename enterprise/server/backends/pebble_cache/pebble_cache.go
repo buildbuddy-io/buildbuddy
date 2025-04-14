@@ -1886,7 +1886,6 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	if err != nil {
 		return nil, err
 	}
-	// return rc, nil
 
 	// Grab another lease and pass the Close function to the reader
 	// so it will be closed when the reader is.
