@@ -54,6 +54,7 @@ go_library(
         "//server/util/log",
         "//server/util/monitoring",
         "//server/util/status",
+        "//server/util/statusz",
         "//server/util/tracing",
         "//server/util/usageutil",
         "//server/util/vtprotocodec",

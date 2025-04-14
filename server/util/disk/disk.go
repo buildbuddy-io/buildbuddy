@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -358,4 +359,43 @@ func CopyViaTmpSibling(src, dest string) error {
 		return err
 	}
 	return nil
+}
+
+type UsageMonitor struct {
+	rootDir     string  // The path to watch
+	maxFullness float64 // .90 means fail health check with 90 % full
+}
+
+func NewUsageMonitor(path string, maxFullness float64) *UsageMonitor {
+	return &UsageMonitor{
+		rootDir:     path,
+		maxFullness: maxFullness,
+	}
+}
+
+func (s *UsageMonitor) Check(ctx context.Context) error {
+	usage, err := GetDirUsage(s.rootDir)
+	if err != nil {
+		log.Warningf("Error getting usage for path %q: %v", s.rootDir, err)
+		return nil
+	}
+	percentUsed := float64(usage.UsedBytes) / float64(usage.TotalBytes)
+	if percentUsed > s.maxFullness {
+		return status.FailedPreconditionErrorf("Insufficent free space on %q, %2.2f%% full", s.rootDir, percentUsed*100)
+	}
+	return nil
+}
+
+func (s *UsageMonitor) Statusz(ctx context.Context) string {
+	usage, err := GetDirUsage(s.rootDir)
+	if err != nil {
+		return fmt.Sprintf("Error getting usage for path %q: %v", s.rootDir, err)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "<div>TotalBytes: %d</div>", usage.TotalBytes)
+	fmt.Fprintf(&b, "<div>UsedBytes: %d</div>", usage.UsedBytes)
+	fmt.Fprintf(&b, "<div>FreeBytes: %d</div>", usage.FreeBytes)
+	fmt.Fprintf(&b, "<div>AvailBytes: %d</div>", usage.AvailBytes)
+	fmt.Fprintf(&b, "<div>Percent Full: %2.2f%%</div>", float64(usage.UsedBytes)*100/float64(usage.TotalBytes))
+	return b.String()
 }
