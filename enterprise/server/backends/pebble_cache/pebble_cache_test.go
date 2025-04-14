@@ -744,7 +744,7 @@ func TestMultiGetSet(t *testing.T) {
 				require.True(t, ok, "Multi-get failed to return expected digest: %q", d.GetHash())
 				d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
 				require.NoError(t, err)
-				require.Equal(t, d.GetHash(), d2.GetHash())
+				require.Equal(t, d.GetHash(), d2.GetHash(), "d=%v; d2=%v", d, d2)
 			}
 		})
 	}
@@ -2614,7 +2614,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 }
 
 func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
-	digestKeys := make([]*rspb.ResourceName, 0, 100000)
+	digestKeys := make([]*rspb.ResourceName, 0, 100)
 	for i := 0; i < 100; i++ {
 		r, buf := testdigest.NewRandomResourceAndBuf(b, digestSizeBytes, rspb.CacheType_CAS, "" /*instanceName*/)
 		digestKeys = append(digestKeys, r)
@@ -2634,6 +2634,7 @@ func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.C
 
 	b.ReportAllocs()
 	b.StopTimer()
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		keys := randomDigests(100)
 
@@ -2677,7 +2678,7 @@ func BenchmarkGetMulti(b *testing.B) {
 }
 
 func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
-	digestKeys := make([]*rspb.ResourceName, 0, 100000)
+	digestKeys := make([]*rspb.ResourceName, 0, 100)
 	for i := 0; i < 100; i++ {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
@@ -2697,6 +2698,7 @@ func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx contex
 
 	b.ReportAllocs()
 	b.StopTimer()
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		keys := randomDigests(100)
 
@@ -2740,7 +2742,7 @@ func BenchmarkFindMissing(b *testing.B) {
 }
 
 func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
-	digestKeys := make([]*rspb.ResourceName, 0, 100000)
+	digestKeys := make([]*rspb.ResourceName, 0, 100)
 	for i := 0; i < 100; i++ {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
@@ -2751,6 +2753,7 @@ func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.
 
 	b.ReportAllocs()
 	b.StopTimer()
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		d := digestKeys[randIntN(b, len(digestKeys))]
 		b.StartTimer()
@@ -2794,6 +2797,7 @@ func BenchmarkContains1(b *testing.B) {
 func benchmarkSet(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	b.ReportAllocs()
 	b.StopTimer()
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		b.StartTimer()
