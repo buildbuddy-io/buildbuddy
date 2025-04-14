@@ -1,8 +1,10 @@
 package oci
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -10,20 +12,27 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"google.golang.org/protobuf/types/known/anypb"
 
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	ctrname "github.com/google/go-containerregistry/pkg/name"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 var (
@@ -31,6 +40,11 @@ var (
 	mirrors                = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+	cacheSalt              = flag.String("executor.container_registry_cache_salt", "", "Secret salt for caching OCI image manifests")
+
+	layerOutputFilePath         = "_bb_oci_layer_"
+	layerMetadataOutputFilePath = "_bb_oci_layer_metadata_"
+	actionResultInstanceName    = "_bb_oci_"
 )
 
 type MirrorConfig struct {
@@ -142,7 +156,7 @@ func CredentialsFromProperties(props *platform.Properties) (Credentials, error) 
 func resolveWithDefaultKeychain(ref reference.Named) (Credentials, error) {
 	// TODO: parse the errors below and if they're 403/401 errors then return
 	// Unauthenticated/PermissionDenied
-	ctrRef, err := ctrname.ParseReference(ref.String())
+	ctrRef, err := gcrname.ParseReference(ref.String())
 	if err != nil {
 		log.Debugf("Failed to parse image ref %q: %s", ref.String(), err)
 		return Credentials{}, nil
@@ -202,10 +216,11 @@ func (c Credentials) Equals(o Credentials) bool {
 }
 
 type Resolver struct {
+	env               environment.Env
 	allowedPrivateIPs []*net.IPNet
 }
 
-func NewResolver() (*Resolver, error) {
+func NewResolver(env environment.Env) (*Resolver, error) {
 	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
 	for _, r := range *allowedPrivateIPs {
 		_, ipNet, err := net.ParseCIDR(r)
@@ -214,13 +229,13 @@ func NewResolver() (*Resolver, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
-	return &Resolver{allowedPrivateIPs: allowedPrivateIPNets}, nil
+	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
 }
 
-func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
+func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	imageRef, err := ctrname.ParseReference(imageName)
+	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
@@ -228,7 +243,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	remoteOpts := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithPlatform(
-			v1.Platform{
+			gcr.Platform{
 				Architecture: platform.GetArch(),
 				OS:           platform.GetOs(),
 				Variant:      platform.GetVariant(),
@@ -323,4 +338,238 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 		}
 	}
 	return t.inner.RoundTrip(in)
+}
+
+func (r *Resolver) fetchManifestContentFromCache(ctx context.Context, ocidigest gcrname.Digest) (*ocipb.OCIManifestContent, error) {
+	arRN, err := ocidigestToACResourceName(ocidigest, ocipb.OCIResourceType_MANIFEST)
+	if err != nil {
+		return nil, err
+	}
+	ar, err := cachetools.GetActionResult(ctx, r.env.GetActionCacheClient(), arRN)
+	if err != nil {
+		return nil, err
+	}
+	meta := ar.GetExecutionMetadata()
+	if meta == nil {
+		return nil, fmt.Errorf("missing metadata for manifest in %s", ocidigest.Context())
+	}
+	aux := meta.GetAuxiliaryMetadata()
+	if aux == nil || len(aux) != 1 {
+		return nil, fmt.Errorf("missing metadata for manifest in %s", ocidigest.Context())
+	}
+	any := aux[0]
+	var mc ocipb.OCIManifestContent
+	err = any.UnmarshalTo(&mc)
+	if err != nil {
+		return nil, fmt.Errorf("could not unmarshal metadata for manifest in %s", ocidigest.Context())
+	}
+	return &mc, nil
+}
+
+func (r *Resolver) FetchManifestMetadataFromCache(ctx context.Context, ocidigest gcrname.Digest) (string, int64, error) {
+	mc, err := r.fetchManifestContentFromCache(ctx, ocidigest)
+	if err != nil {
+		return "", 0, err
+	}
+	return mc.GetContentType(), mc.GetContentLength(), nil
+}
+
+func (r *Resolver) FetchManifestFromCache(ctx context.Context, ocidigest gcrname.Digest) ([]byte, error) {
+	mc, err := r.fetchManifestContentFromCache(ctx, ocidigest)
+	if err != nil {
+		return nil, err
+	}
+	return mc.GetRaw(), nil
+}
+
+func ocidigestToACResourceName(ocidigest gcrname.Digest, ociResourceType ocipb.OCIResourceType) (*digest.ACResourceName, error) {
+	hash, err := gcr.NewHash(ocidigest.DigestStr())
+	if err != nil {
+		return nil, fmt.Errorf("could not parse hash in %s: %s", ocidigest.Context(), err)
+	}
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      ocidigest.Context().RegistryStr(),
+		Repository:    ocidigest.Context().RepositoryStr(),
+		ResourceType:  ociResourceType,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return nil, err
+	}
+	salted := append([]byte(*cacheSalt), arKeyBytes...)
+	arDigest, err := digest.Compute(bytes.NewReader(salted), repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		actionResultInstanceName,
+		repb.DigestFunction_SHA256,
+	)
+	return arRN, nil
+}
+
+func (r *Resolver) FetchLayerMetadataFromCache(ctx context.Context, ocidigest gcrname.Digest) (string, int64, error) {
+	arRN, err := ocidigestToACResourceName(ocidigest, ocipb.OCIResourceType_BLOB)
+	if err != nil {
+		return "", 0, err
+	}
+	ar, err := cachetools.GetActionResult(ctx, r.env.GetActionCacheClient(), arRN)
+	if err != nil {
+		return "", 0, err
+	}
+
+	var blobMetadataCASDigest *repb.Digest
+	var blobCASDigest *repb.Digest
+	for _, outputFile := range ar.GetOutputFiles() {
+		switch outputFile.GetPath() {
+		case layerMetadataOutputFilePath:
+			blobMetadataCASDigest = outputFile.GetDigest()
+		case layerOutputFilePath:
+			blobCASDigest = outputFile.GetDigest()
+		default:
+			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s", outputFile.GetPath(), ocidigest)
+		}
+	}
+	if blobMetadataCASDigest == nil || blobCASDigest == nil {
+		return "", 0, fmt.Errorf("missing blob metadata digest or blob digest for %s", ocidigest)
+	}
+	blobMetadataRN := digest.NewCASResourceName(
+		blobMetadataCASDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+	blobMetadata := &ocipb.OCIBlobMetadata{}
+	err = cachetools.GetBlobAsProto(ctx, r.env.GetByteStreamClient(), blobMetadataRN, blobMetadata)
+	if err != nil {
+		return "", 0, err
+	}
+	return blobMetadata.GetContentType(), blobMetadata.GetContentLength(), nil
+}
+
+func (r *Resolver) FetchLayerFromCache(ctx context.Context, ocidigest gcrname.Digest, contentLength int64, w io.Writer) error {
+	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
+	if err != nil {
+		return err
+	}
+	return cachetools.GetBlob(ctx, r.env.GetByteStreamClient(), blobRN, w)
+}
+
+func ocidigestToCASResourceName(ocidigest gcrname.Digest, contentLength int64) (*digest.CASResourceName, error) {
+	hash, err := gcr.NewHash(ocidigest.DigestStr())
+	if err != nil {
+		return nil, fmt.Errorf("could not parse hash for layer in %s: %s", ocidigest.Context(), err)
+	}
+	var df repb.DigestFunction_Value
+	switch hash.Algorithm {
+	case "sha256":
+		df = repb.DigestFunction_SHA256
+	case "sha512":
+		df = repb.DigestFunction_SHA512
+	default:
+		return nil, fmt.Errorf("unsupported hashing algorithm %s in %s", hash.Algorithm, ocidigest.Context())
+	}
+	casdigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
+	}
+	rn := digest.NewCASResourceName(
+		casdigest,
+		"",
+		df,
+	)
+	rn.SetCompressor(repb.Compressor_ZSTD)
+	return rn, nil
+}
+
+func (r *Resolver) UploadManifestToCache(ctx context.Context, ocidigest gcrname.Digest, contentType string, contentLength int64, raw []byte) error {
+	arRN, err := ocidigestToACResourceName(ocidigest, ocipb.OCIResourceType_MANIFEST)
+	if err != nil {
+		return err
+	}
+	m := &ocipb.OCIManifestContent{
+		Raw:           raw,
+		ContentLength: contentLength,
+		ContentType:   contentType,
+	}
+	any, err := anypb.New(m)
+	if err != nil {
+		return err
+	}
+	ar := &repb.ActionResult{
+		ExecutionMetadata: &repb.ExecutedActionMetadata{
+			AuxiliaryMetadata: []*anypb.Any{
+				any,
+			},
+		},
+	}
+	return cachetools.UploadActionResult(
+		ctx,
+		r.env.GetActionCacheClient(),
+		arRN,
+		ar,
+	)
+}
+
+func (r *Resolver) UploadLayerToCache(ctx context.Context, ocidigest gcrname.Digest, contentType string, contentLength int64, ior io.Reader) error {
+	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
+	if err != nil {
+		return err
+	}
+	_, _, err = cachetools.UploadFromReader(
+		ctx,
+		r.env.GetByteStreamClient(),
+		blobRN,
+		ior,
+	)
+	if err != nil {
+		return err
+	}
+	return r.uploadLayerMetadataToCache(ctx, ocidigest, contentType, contentLength)
+}
+
+func (r *Resolver) uploadLayerMetadataToCache(ctx context.Context, ocidigest gcrname.Digest, contentType string, contentLength int64) error {
+	blobRN, err := ocidigestToCASResourceName(ocidigest, contentLength)
+	if err != nil {
+		return err
+	}
+	blobMetadata := &ocipb.OCIBlobMetadata{
+		ContentLength: contentLength,
+		ContentType:   contentType,
+	}
+	blobMetadataCASDigest, err := cachetools.UploadProto(
+		ctx,
+		r.env.GetByteStreamClient(),
+		"",
+		repb.DigestFunction_SHA256,
+		blobMetadata,
+	)
+	if err != nil {
+		return err
+	}
+
+	arRN, err := ocidigestToACResourceName(ocidigest, ocipb.OCIResourceType_BLOB)
+	if err != nil {
+		return err
+	}
+	ar := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{
+				Path:   layerOutputFilePath,
+				Digest: blobRN.GetDigest(),
+			},
+			{
+				Path:   layerMetadataOutputFilePath,
+				Digest: blobMetadataCASDigest,
+			},
+		},
+	}
+	return cachetools.UploadActionResult(
+		ctx,
+		r.env.GetActionCacheClient(),
+		arRN,
+		ar,
+	)
 }

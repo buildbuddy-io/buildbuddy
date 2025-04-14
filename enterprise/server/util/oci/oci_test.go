@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -206,17 +207,18 @@ func TestToProto(t *testing.T) {
 			oci.Credentials{Username: "foo", Password: "bar"}.ToProto()))
 }
 
-func newResolver(t *testing.T) *oci.Resolver {
-	r, err := oci.NewResolver()
+func newResolver(t *testing.T, te *testenv.TestEnv) *oci.Resolver {
+	r, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	return r
 }
 
 func TestResolve(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{})
 	imageName, _ := registry.PushRandomImage(t)
-	_, err := newResolver(t).Resolve(
+	_, err := newResolver(t, te).Resolve(
 		context.Background(),
 		imageName,
 		&rgpb.Platform{
@@ -228,7 +230,8 @@ func TestResolve(t *testing.T) {
 }
 
 func TestResolve_InvalidImage(t *testing.T) {
-	_, err := newResolver(t).Resolve(
+	te := testenv.GetTestEnv(t)
+	_, err := newResolver(t, te).Resolve(
 		context.Background(),
 		":invalid",
 		&rgpb.Platform{
@@ -240,6 +243,7 @@ func TestResolve_InvalidImage(t *testing.T) {
 }
 
 func TestResolve_Unauthorized(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
@@ -256,7 +260,7 @@ func TestResolve_Unauthorized(t *testing.T) {
 	})
 
 	imageName, _ := registry.PushRandomImage(t)
-	_, err := newResolver(t).Resolve(
+	_, err := newResolver(t, te).Resolve(
 		context.Background(),
 		imageName,
 		&rgpb.Platform{
@@ -268,6 +272,7 @@ func TestResolve_Unauthorized(t *testing.T) {
 }
 
 func TestResolve_Arm64VariantIsOptional(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	for _, test := range []struct {
 		name     string
 		platform v1.Platform
@@ -297,7 +302,7 @@ func TestResolve_Arm64VariantIsOptional(t *testing.T) {
 
 			ref := registry.PushIndex(t, index, "test-multiplatform-image")
 
-			pulledImg, err := newResolver(t).Resolve(ctx, ref, &rgpb.Platform{
+			pulledImg, err := newResolver(t, te).Resolve(ctx, ref, &rgpb.Platform{
 				Arch: "arm64",
 				Os:   "linux",
 			}, oci.Credentials{})
@@ -334,6 +339,7 @@ func layerContents(t *testing.T, layer v1.Layer) map[string]string {
 }
 
 func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	flags.Set(t, "http.client.allow_localhost", true)
 	// Track requests to original and mirror registries.
 	var originalReqCount, mirrorReqCount atomic.Int32
@@ -376,7 +382,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	})
 
 	// Resolve the image, which should fall back to the original after mirror fails.
-	img, err := newResolver(t).Resolve(
+	img, err := newResolver(t, te).Resolve(
 		context.Background(),
 		imageName,
 		&rgpb.Platform{
@@ -397,9 +403,9 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	assert.Equal(t, int32(1), originalReqCount.Load(), "original registry should have been queried after mirror failed")
 }
 
-func pushAndFetchRandomImage(t *testing.T, registry *testregistry.Registry) error {
+func pushAndFetchRandomImage(t *testing.T, te *testenv.TestEnv, registry *testregistry.Registry) error {
 	imageName, _ := registry.PushRandomImage(t)
-	_, err := newResolver(t).Resolve(
+	_, err := newResolver(t, te).Resolve(
 		context.Background(),
 		imageName,
 		&rgpb.Platform{
@@ -411,15 +417,17 @@ func pushAndFetchRandomImage(t *testing.T, registry *testregistry.Registry) erro
 }
 
 func TestAllowPrivateIPs(t *testing.T) {
+	flags.Set(t, "http.client.allow_localhost", false)
+	te := testenv.GetTestEnv(t)
 	registry := testregistry.Run(t, testregistry.Opts{})
-	err := pushAndFetchRandomImage(t, registry)
+	err := pushAndFetchRandomImage(t, te, registry)
 	require.ErrorContains(t, err, "not allowed")
 
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	err = pushAndFetchRandomImage(t, registry)
+	err = pushAndFetchRandomImage(t, te, registry)
 	require.NoError(t, err)
 
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"0.0.0.0/0"})
-	err = pushAndFetchRandomImage(t, registry)
+	err = pushAndFetchRandomImage(t, te, registry)
 	require.NoError(t, err)
 }
