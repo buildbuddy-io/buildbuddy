@@ -53,3 +53,14 @@ func TestHasStacktrace(t *testing.T) {
 	stackTrace := se.StackTrace()
 	assert.NotNil(t, stackTrace)
 }
+
+func TestNoStacktrace(t *testing.T) {
+	*status.LogErrorStackTraces = false
+	err := status.FailedPreconditionError("FailedPrecondition")
+	se, ok := err.(interface {
+		StackTrace() errors.StackTrace
+	})
+	assert.True(t, ok)
+	stackTrace := se.StackTrace()
+	assert.Nil(t, stackTrace)
+}
