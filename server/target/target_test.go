@@ -167,6 +167,53 @@ func TestGetTargetHistory(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "GR1 repo1, feature-1 branch",
+			request: &trpb.GetTargetHistoryRequest{
+				RequestContext:       &ctxpb.RequestContext{GroupId: "GR1"},
+				StartTimeUsec:        0,
+				EndTimeUsec:          10e6,
+				ServerSidePagination: true,
+				Query: &trpb.TargetQuery{
+					RepoUrl:    "https://github.com/gr1/repo1",
+					BranchName: "feature-1",
+				},
+			},
+			expectedResponse: &trpb.GetTargetHistoryResponse{
+				InvocationTargets: []*trpb.TargetHistory{
+					{
+						Target: &trpb.TargetMetadata{
+							Label: "//:flaky_test",
+						},
+						RepoUrl: "https://github.com/gr1/repo1",
+						TargetStatus: []*trpb.TargetStatus{
+							{
+								InvocationId:            iid2,
+								InvocationCreatedAtUsec: 2e6,
+								Timing:                  timingUsec(2e6+1, 0),
+								CommitSha:               "commit2",
+								Status:                  common.Status_PASSED,
+							},
+						},
+					},
+					{
+						Target: &trpb.TargetMetadata{
+							Label: "//:passing_test",
+						},
+						RepoUrl: "https://github.com/gr1/repo1",
+						TargetStatus: []*trpb.TargetStatus{
+							{
+								InvocationId:            iid2,
+								InvocationCreatedAtUsec: 2e6,
+								Timing:                  timingUsec(2e6, 0),
+								CommitSha:               "commit2",
+								Status:                  common.Status_PASSED,
+							},
+						},
+					},
+				},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			gr1Ctx, err := testAuth.WithAuthenticatedUser(ctx, "US1")

@@ -12,6 +12,7 @@ ts_library(
         "//:node_modules/react",
         "//app/auth:auth_service",
         "//app/capabilities",
+        "//app/components/input",
         "//app/components/select",
         "//app/errors:error_service",
         "//app/format",
