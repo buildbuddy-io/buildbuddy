@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -74,6 +76,7 @@ var (
 	localCacheDirectory       = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
 	localCacheSizeBytes       = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
 	startupWarmupMaxWaitSecs  = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
+	startupCommands           = flag.Slice("executor.startup_commands", []string{}, "Commands to run on startup. These are run sequentially and block executor startup.")
 
 	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port              = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
@@ -282,6 +285,20 @@ func main() {
 		deleteBuildRoot(rootContext, runner.GetBuildRoot())
 	}
 
+	// Run any startup commands.
+	for i, startupCommand := range *startupCommands {
+		start := time.Now()
+		args := strings.Fields(startupCommand)
+		cmd := exec.CommandContext(rootContext, args[0], args[1:]...)
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		if err := cmd.Run(); err != nil {
+			log.Errorf("Error running startup command %d: %q: %s", i, startupCommand, err)
+		}
+		log.Infof("Executed startup command %d: %q in %s", i, startupCommand, time.Since(start))
+	}
+
+	// Note: cleanupFUSEMounts needs to happen before deleteBuildRootOnStartup.
 	setupNetworking(rootContext)
 
 	cacheRoot := filepath.Join(*localCacheDirectory, getExecutorHostID())
