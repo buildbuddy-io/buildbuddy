@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -492,7 +493,7 @@ func TestResolve_CachesManifest(t *testing.T) {
 			require.True(t, ok)
 			rc, err := layer.Compressed()
 			require.NoError(t, err)
-			b, err := readAll(rc)
+			b, err := io.ReadAll(rc)
 			require.NoError(t, err)
 			err = rc.Close()
 			require.NoError(t, err)
@@ -502,25 +503,6 @@ func TestResolve_CachesManifest(t *testing.T) {
 	}
 
 	assert.Equal(t, int32(2), count.Load()-before)
-}
-
-func readAll(r io.Reader) ([]byte, error) {
-	b := make([]byte, 0, 512)
-	for {
-		n, err := r.Read(b[len(b):cap(b)])
-		b = b[:len(b)+n]
-		if err != nil {
-			if err == io.EOF {
-				err = nil
-			}
-			return b, err
-		}
-
-		if len(b) == cap(b) {
-			// Add more capacity (let append pick how much).
-			b = append(b, 0)[:len(b)]
-		}
-	}
 }
 
 func pushAndFetchRandomImage(t *testing.T, te *testenv.TestEnv, registry *testregistry.Registry) error {
@@ -555,4 +537,80 @@ func TestAllowPrivateIPs(t *testing.T) {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"0.0.0.0/0"})
 	err = pushAndFetchRandomImage(t, te, registry)
 	require.NoError(t, err)
+}
+
+func TestManifestSalt(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	var count atomic.Int32
+	testreg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == http.MethodGet && r.URL.Path != "/v2/" {
+				count.Add(1)
+			}
+			return true
+		},
+	})
+
+	imageName, ogimage := testreg.PushRandomImage(t)
+	imageDigest, err := ogimage.Digest()
+	require.NoError(t, err)
+
+	hashToLayer := map[v1.Hash][]byte{}
+	oglayers, err := ogimage.Layers()
+	require.NoError(t, err)
+	for _, oglayer := range oglayers {
+		rc, err := oglayer.Compressed()
+		require.NoError(t, err)
+		hash, err := oglayer.Digest()
+		require.NoError(t, err)
+		b, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		err = rc.Close()
+		require.NoError(t, err)
+		hashToLayer[hash] = b
+	}
+
+	before := count.Load()
+	for i := 0; i < 2; i++ {
+		flags.Set(t, "executor.container_registry_cache_salt", fmt.Sprintf("loop%d", i))
+		img, err := newResolver(t, te).Resolve(
+			context.Background(),
+			imageName,
+			&rgpb.Platform{
+				Arch: runtime.GOARCH,
+				Os:   runtime.GOOS,
+			},
+			oci.Credentials{},
+		)
+		require.NoError(t, err)
+
+		digest, err := img.Digest()
+		require.NoError(t, err)
+		assert.Equal(t, imageDigest.String(), digest.String())
+
+		layers, err := img.Layers()
+		require.NoError(t, err)
+		assert.Equal(t, len(hashToLayer), len(layers))
+		for _, layer := range layers {
+			hash, err := layer.Digest()
+			require.NoError(t, err)
+			ogbytes, ok := hashToLayer[hash]
+			require.True(t, ok)
+			rc, err := layer.Compressed()
+			require.NoError(t, err)
+			b, err := io.ReadAll(rc)
+			require.NoError(t, err)
+			err = rc.Close()
+			require.NoError(t, err)
+			assert.Equal(t, len(ogbytes), len(b))
+			assert.True(t, bytes.Equal(ogbytes, b))
+		}
+	}
+
+	// changing the salt causes a cache miss, so there will be upstream requests for manifest and layer
+	assert.Equal(t, int32(4), count.Load()-before)
 }

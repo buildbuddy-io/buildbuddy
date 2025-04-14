@@ -114,12 +114,13 @@ func (r *Resolver) Resolve(ctx context.Context, imgname string, platform *rgpb.P
 
 	if m.MediaType != types.OCIImageIndex && m.MediaType != types.DockerManifestList {
 		img := &cacheAwareImage{
-			digest:   *imgdigest,
-			r:        r,
-			ctx:      ctx,
-			raw:      raw,
-			manifest: m,
-			options:  opts,
+			digest:      *imgdigest,
+			canUseCache: canUseCache,
+			r:           r,
+			ctx:         ctx,
+			raw:         raw,
+			manifest:    m,
+			options:     opts,
 		}
 		return partial.CompressedToImage(img)
 	}
@@ -167,12 +168,13 @@ func (r *Resolver) Resolve(ctx context.Context, imgname string, platform *rgpb.P
 		return nil, fmt.Errorf("child manifest %s is itself an image index", childDigest.Context())
 	}
 	childimg := &cacheAwareImage{
-		digest:   *childDigest,
-		r:        r,
-		ctx:      ctx,
-		raw:      childraw,
-		manifest: childm,
-		options:  opts,
+		digest:      *childDigest,
+		canUseCache: canUseCache,
+		r:           r,
+		ctx:         ctx,
+		raw:         childraw,
+		manifest:    childm,
+		options:     opts,
 	}
 	return partial.CompressedToImage(childimg)
 }
@@ -484,7 +486,6 @@ func (r *Resolver) FetchManifestFromCache(ctx context.Context, ocidigest gcrname
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("FetchManifestFromCache %v", ar)
 	meta := ar.GetExecutionMetadata()
 	if meta == nil {
 		return nil, fmt.Errorf("missing metadata for manifest in %s", ocidigest.Context())
@@ -667,11 +668,7 @@ func (r *Resolver) UploadLayerToCache(ctx context.Context, ocidigest gcrname.Dig
 	return r.uploadLayerMetadataToCache(ctx, ocidigest, contentType, contentLength)
 }
 
-// matchesPlatform checks if the given platform matches the required platforms.
-// The given platform matches the required platform if
-// - architecture and OS are identical.
-// - OS version and variant are identical if provided.
-// - features and OS features of the required platform are subsets of those of the given platform.
+// matchesPlatform is taken from https://github.com/google/go-containerregistry/blob/v0.17.0/pkg/v1/remote/index.go
 func matchesPlatform(given, required gcr.Platform) bool {
 	// Required fields that must be identical.
 	if given.Architecture != required.Architecture || given.OS != required.OS {
@@ -697,7 +694,7 @@ func matchesPlatform(given, required gcr.Platform) bool {
 	return true
 }
 
-// isSubset checks if the required array of strings is a subset of the given lst.
+// isSubset is taken from https://github.com/google/go-containerregistry/blob/v0.17.0/pkg/v1/remote/index.go
 func isSubset(lst, required []string) bool {
 	set := make(map[string]bool)
 	for _, value := range lst {
@@ -868,6 +865,7 @@ func (i *cacheAwareImage) LayerByDigest(hash gcr.Hash) (partial.CompressedLayer,
 			l := &cacheAwareLayer{
 				ocidigest:   i.digest.Context().Digest(hash.String()),
 				r:           i.r,
+				canUseCache: i.canUseCache,
 				ctx:         i.ctx,
 				descriptor:  &d,
 				remoteLayer: rl,
@@ -933,17 +931,16 @@ func (t *teeReadCloser) Close() error {
 }
 
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
-	ctx := context.Background()
-	_, contentLength, err := l.r.FetchLayerMetadataFromCache(ctx, l.ocidigest)
+	_, contentLength, err := l.r.FetchLayerMetadataFromCache(l.ctx, l.ocidigest)
 	if err != nil && !status.IsNotFoundError(err) {
-		log.CtxErrorf(ctx, "error fetching CAS digest for layer in %s: %s", l.ocidigest.Context(), err)
+		log.CtxErrorf(l.ctx, "error fetching CAS digest for layer in %s: %s", l.ocidigest.Context(), err)
 	}
 	if err == nil {
 		r, w := io.Pipe()
 		go func() {
 			defer w.Close()
 			err := l.r.FetchLayerFromCache(
-				ctx,
+				l.ctx,
 				l.ocidigest,
 				contentLength,
 				w,
@@ -972,7 +969,7 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 		return uprc, nil
 	}
 	caswc, err := newCachingLayerWriteCloser(
-		ctx,
+		l.ctx,
 		l.r,
 		l.ocidigest,
 		string(mediaType),
@@ -980,7 +977,7 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	)
 	if err != nil {
 		// cannot cache, but we can still fetch the remote layer
-		log.CtxErrorf(ctx, "cannot cache OCI image layer in %s: %s", l.ocidigest.Context(), err)
+		log.CtxErrorf(l.ctx, "cannot cache OCI image layer in %s: %s", l.ocidigest.Context(), err)
 		return uprc, nil
 	}
 	return newTeeReadCloser(uprc, caswc), nil
