@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -200,7 +201,7 @@ func triggerLegacyWebhook(t *testing.T, gitProvider *testgit.FakeProvider, workf
 	// should trigger the action to be executed on an executor spun up by the test
 	req, err := http.NewRequest("POST", webhookURL, nil /*=body*/)
 	require.NoError(t, err)
-	workflowService.ServeHTTP(NewTestResponseWriter(t), req)
+	workflowService.ServeHTTP(testhttp.NewResponseWriter(t), req)
 }
 
 func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) string {
@@ -266,30 +267,6 @@ func actionCount(t *testing.T, inv *inpb.Invocation) int {
 	n, err := strconv.Atoi(nStr)
 	require.NoError(t, err)
 	return n
-}
-
-// TestResponseWriter is an http.ResponseWriter that fails the test if an
-// HTTP error code is written, but otherwise discards all data written to it.
-type testResponseWriter struct {
-	t      *testing.T
-	header map[string][]string
-}
-
-func NewTestResponseWriter(t *testing.T) *testResponseWriter {
-	return &testResponseWriter{
-		t:      t,
-		header: make(map[string][]string),
-	}
-}
-
-func (w *testResponseWriter) WriteHeader(statusCode int) {
-	require.Less(w.t, statusCode, 400, "Wrote HTTP status %d", statusCode)
-}
-func (w *testResponseWriter) Header() http.Header {
-	return w.header
-}
-func (w *testResponseWriter) Write(p []byte) (int, error) {
-	return len(p), nil
 }
 
 func TestTriggerViaWebhook(t *testing.T) {
