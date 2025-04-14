@@ -132,7 +132,6 @@ func (vfs *VFS) Mount() error {
 			DirectMountStrict: true,
 			FsName:            "bbvfs",
 			MaxWrite:          fuse.MAX_KERNEL_WRITE,
-			EnableLocks:       true,
 		},
 	}
 	nodeFS := fs.NewNodeFS(vfs.root, opts)
