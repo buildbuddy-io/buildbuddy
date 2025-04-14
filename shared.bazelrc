@@ -134,15 +134,49 @@ common:linux --workspace_status_command=$(pwd)/workspace_status.sh
 common:macos --workspace_status_command=$(pwd)/workspace_status.sh
 common:windows --workspace_status_command="bash workspace_status.sh"
 
+# XCode flags
+common:macos --action_env=DEVELOPER_DIR
+common:macos --host_action_env=DEVELOPER_DIR
 
-#######################
-# SPECIALIZED CONFIGS #
-#######################
+# Ensure that we don't use the apple_support cc_toolchain
+common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+
+# Ensure that our executors can run on macOS 11.0+
+common:macos --macos_minimum_os=12.0
+common:macos --host_macos_minimum_os=12.0
+
+
+########################
+# BES + CACHE + REMOTE #
+########################
+
+common:anon-bes --bes_results_url=https://app.buildbuddy.io/invocation/
+common:anon-bes --bes_backend=grpcs://remote.buildbuddy.io
+
+common:authed-bes --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
+common:authed-bes --bes_backend=grpcs://buildbuddy.buildbuddy.io
 
 # Build with --config=local to send build logs to your local server
 common:local --bes_results_url=http://localhost:8080/invocation/
 common:local --bes_backend=grpc://localhost:1985
 common:local --remote_cache=grpc://localhost:1985
+
+# Build with --config=dev to send build logs to the dev server
+common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
+common:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
+
+# Common flags to be used with remote cache
+common:cache-shared --remote_cache_compression
+common:cache-shared --experimental_remote_cache_compression_threshold=100
+common:cache-shared --remote_timeout=10m
+
+common:cache-dev --config=cache-shared
+common:cache-dev --config=dev
+common:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
+
+# Build with --config=cache to use prod cache.
+common:cache --config=cache-shared
+common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
 
 common:target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 common:target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
@@ -159,6 +193,55 @@ common:download-minimal --remote_download_minimal
 # after this period has passed for a warm Bazel server even with
 # --remote_download_minimal.
 common:download-minimal --experimental_remote_cache_ttl=10000d
+
+# Flags shared across remote configs
+common:remote-shared --config=cache-shared
+common:remote-shared --jobs=100
+common:remote-shared --verbose_failures
+
+# Flags shared for prod RBE and cache
+common:remote-prod-shared --config=remote-shared
+common:remote-prod-shared --remote_executor=grpcs://buildbuddy.buildbuddy.io
+# Flags shared for dev BES, RBE and cache
+# Note: Dev BES needed to override the default prod BES urls.
+common:remote-dev-shared --config=dev
+common:remote-dev-shared --config=remote-shared
+common:remote-dev-shared --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+
+# Build with --config=remote to use BuildBuddy RBE, generally as a human from
+# the command line. Other configs shoudn't embed this.
+common:remote --config=remote-prod-shared
+common:remote --config=target-linux-x86
+common:remote --remote_download_toplevel
+# Build with --config=remote-dev to use BuildBuddy RBE.
+common:remote-dev --config=remote-dev-shared
+common:remote-dev --config=target-linux-x86
+common:remote-dev --remote_download_toplevel
+
+# Build with --config=remote-minimal to use BuildBuddy RBE in automated
+# processes, (probers, workflows, ci, etc.) where the outputs shouldn't be
+# downloaded.
+common:remote-minimal --config=remote-prod-shared
+common:remote-minimal --config=target-linux-x86
+common:remote-minimal --config=download-minimal
+common:remote-dev-minimal --config=remote-dev-shared
+common:remote-dev-minimal --config=target-linux-x86
+common:remote-dev-minimal --config=download-minimal
+
+# Specify arch to do cross-platform builds on remote until the go toolchain can
+# accomodate multiple execution platforms
+common:remote-linux-arm64 --config=remote-prod-shared
+common:remote-linux-arm64 --config=target-linux-arm64
+common:remote-linux-arm64 --remote_download_toplevel
+# Specify arch to do cross-platform builds on remote-dev
+common:remote-dev-linux-arm64 --config=remote-dev-shared
+common:remote-dev-linux-arm64 --config=target-linux-arm64
+common:remote-dev-linux-arm64 --remote_download_toplevel
+
+
+#######################
+# SPECIALIZED CONFIGS #
+#######################
 
 # Flags shared across prober configs
 common:probers-shared --config=remote-shared
