@@ -57,10 +57,8 @@ func TestHasStacktrace(t *testing.T) {
 func TestNoStacktrace(t *testing.T) {
 	*status.LogErrorStackTraces = false
 	err := status.FailedPreconditionError("FailedPrecondition")
-	se, ok := err.(interface {
+	_, ok := err.(interface {
 		StackTrace() errors.StackTrace
 	})
-	assert.True(t, ok)
-	stackTrace := se.StackTrace()
-	assert.Nil(t, stackTrace)
+	assert.False(t, ok)
 }
