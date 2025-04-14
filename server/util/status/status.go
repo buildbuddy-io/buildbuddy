@@ -49,13 +49,12 @@ func callers() *stack {
 }
 
 func makeStatusError(code codes.Code, msg string) error {
-	var s *stack
-	if *LogErrorStackTraces {
-		s = callers()
+	if !*LogErrorStackTraces {
+		return status.Error(code, msg)
 	}
 	return &wrappedError{
 		status.Error(code, msg),
-		s,
+		callers(),
 	}
 }
 
