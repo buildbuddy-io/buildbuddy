@@ -342,7 +342,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 	command := r.task.GetCommand()
 
 	defer func() {
-		r.Workspace.UpdateIOStats(ioStats)
+		res.VfsStats = r.Workspace.ComputeVFSStats()
 	}()
 
 	if !r.PlatformProperties.RecycleRunner {
