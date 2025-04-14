@@ -2636,7 +2636,7 @@ func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.C
 	b.StopTimer()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		keys := randomDigests(100)
+		keys := randomDigests(len(digestKeys))
 
 		b.StartTimer()
 		m, err := pc.GetMulti(ctx, keys)
@@ -2677,13 +2677,15 @@ func BenchmarkGetMulti(b *testing.B) {
 	}
 }
 
-func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
+func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64, insert bool) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100)
 	for i := 0; i < 100; i++ {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
-		if err := pc.Set(ctx, r, buf); err != nil {
-			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
+		if insert {
+			if err := pc.Set(ctx, r, buf); err != nil {
+				b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
+			}
 		}
 	}
 
@@ -2700,7 +2702,7 @@ func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx contex
 	b.StopTimer()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		keys := randomDigests(100)
+		keys := randomDigests(len(digestKeys))
 
 		b.StartTimer()
 		missing, err := pc.FindMissing(ctx, keys)
@@ -2708,8 +2710,14 @@ func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx contex
 			b.Fatal(err)
 		}
 		b.StopTimer()
-		if len(missing) != 0 {
-			b.Fatalf("Missing: %+v, but all digests should be present", missing)
+		if insert {
+			if len(missing) != 0 {
+				b.Fatalf("Missing: %+v, but all digests should be present", missing)
+			}
+		} else {
+			if len(missing) != len(keys) {
+				b.Fatalf("Missing: %v, but all %v digests should be missing", len(missing), len(keys))
+			}
 		}
 	}
 }
@@ -2732,11 +2740,13 @@ func BenchmarkFindMissing(b *testing.B) {
 	defer pc.Stop()
 
 	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
-	for _, size := range sizes {
-		name := fmt.Sprintf("size=%s", units.BytesSize(float64(size)))
-		b.Run(name, func(b *testing.B) {
-			benchmarkFindMissing(b, pc, ctx, size)
-		})
+	for _, insert := range []bool{false, true} {
+		for _, size := range sizes {
+			name := fmt.Sprintf("size=%s/insert=%v", units.BytesSize(float64(size)), insert)
+			b.Run(name, func(b *testing.B) {
+				benchmarkFindMissing(b, pc, ctx, size, insert)
+			})
+		}
 	}
 
 }

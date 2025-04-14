@@ -22,6 +22,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/bloom"
+
+	"google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -604,13 +607,13 @@ func GetCopy(b Reader, key []byte) ([]byte, error) {
 	buf, closer, err := b.Get(key)
 	if err != nil {
 		if err == pebble.ErrNotFound {
-			return nil, status.NotFoundErrorf("key %q not found", key)
+			return nil, gstatus.Errorf(codes.NotFound, "key %q not found", key)
 		}
 		return nil, err
 	}
 	defer closer.Close()
 	if len(buf) == 0 {
-		return nil, status.NotFoundErrorf("key %q not found (empty value)", key)
+		return nil, gstatus.Errorf(codes.NotFound, "key %q not found (empty value)", key)
 	}
 
 	// We need to copy the value before closer is closed.
@@ -623,13 +626,13 @@ func GetProto(b Reader, key []byte, pb proto.Message) error {
 	buf, closer, err := b.Get(key)
 	if err != nil {
 		if err == pebble.ErrNotFound {
-			return status.NotFoundErrorf("key %q not found", key)
+			return gstatus.Errorf(codes.NotFound, "key %q not found", key)
 		}
 		return err
 	}
 	defer closer.Close()
 	if len(buf) == 0 {
-		return status.NotFoundErrorf("key %q not found (empty value)", key)
+		return gstatus.Errorf(codes.NotFound, "key %q not found (empty value)", key)
 	}
 	if err := proto.Unmarshal(buf, pb); err != nil {
 		return status.InternalErrorf("error parsing value for %q: %s", key, err)
@@ -639,7 +642,7 @@ func GetProto(b Reader, key []byte, pb proto.Message) error {
 
 func LookupProto(iter Iterator, key []byte, pb proto.Message) error {
 	if !iter.SeekGE(key) || !bytes.Equal(iter.Key(), key) {
-		return status.NotFoundErrorf("key %q not found", key)
+		return gstatus.Errorf(codes.NotFound, "key %q not found", key)
 	}
 	if err := proto.Unmarshal(iter.Value(), pb); err != nil {
 		return status.InternalErrorf("error parsing value for %q: %s", key, err)
