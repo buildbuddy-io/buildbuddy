@@ -7,6 +7,8 @@ import (
 	"maps"
 	"math/rand"
 	"slices"
+	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -113,6 +115,27 @@ func TestEvenLoadDistribution(t *testing.T) {
 	assert.Less(t, skew, 0.1)
 }
 
+func TestAgainstReference(t *testing.T) {
+	var hosts []string
+	for c := 'a'; c <= 'z'; c++ {
+		hosts = append(hosts, string([]rune{c}))
+	}
+	real := consistent_hash.NewConsistentHash(consistent_hash.SHA256, 10000)
+	assert.NoError(t, real.Set(hosts...))
+	reference := newReferereferenceImpl(consistent_hash.SHA256, 10000, hosts...)
+
+	assert.Equal(t, reference.GetAllReplicas(""), real.GetAllReplicas(""))
+	assert.Equal(t, reference.GetAllReplicas("a"), real.GetAllReplicas("a"))
+	for keyPrefix := 'a'; keyPrefix <= 'z'; keyPrefix++ {
+		for keySuffix := 'a'; keySuffix <= 'z'; keySuffix++ {
+			key := string([]rune{keyPrefix, keySuffix})
+			realReplicas := real.GetAllReplicas(key)
+			referenceReplicas := reference.GetAllReplicas(key)
+			assert.Equal(t, referenceReplicas, realReplicas, "Key %q produced different replicas", key)
+		}
+	}
+}
+
 func BenchmarkGetAllReplicas(b *testing.B) {
 	for _, test := range []struct {
 		Name         string
@@ -150,4 +173,56 @@ func BenchmarkGetAllReplicas(b *testing.B) {
 			}
 		})
 	}
+}
+
+// referenceImpl is a reference implementation of
+// consistent_hash.ConsistentHash, so we can make changes against the real
+// implementation and make sure that they still match the reference.
+type referenceImpl struct {
+	ring    map[int]uint8
+	keys    []int
+	items   []string
+	hashKey consistent_hash.HashFunction
+}
+
+func newReferereferenceImpl(hashFunction consistent_hash.HashFunction, vnodes int, items ...string) *referenceImpl {
+	sort.Strings(items)
+	c := &referenceImpl{
+		hashKey: hashFunction,
+		keys:    make([]int, len(items)*vnodes),
+		ring:    make(map[int]uint8, len(items)*vnodes),
+		items:   items,
+	}
+	for itemIndex, key := range c.items {
+		for i := 0; i < vnodes; i++ {
+			h := c.hashKey(strconv.Itoa(i) + key)
+			c.keys = append(c.keys, h)
+			c.ring[h] = uint8(itemIndex)
+		}
+	}
+	sort.Ints(c.keys)
+	return c
+}
+
+func (c *referenceImpl) lookupVnodes(idx int, fn func(vnodeIndex uint8) bool) {
+	done := false
+	for offset := 1; offset < len(c.keys) && !done; offset += 1 {
+		newIdx := (idx + offset) % len(c.keys)
+		done = fn(c.ring[c.keys[newIdx]])
+	}
+}
+
+func (c *referenceImpl) GetAllReplicas(key string) []string {
+	idx := sort.SearchInts(c.keys, c.hashKey(key)) % len(c.keys)
+	firstItemIndex := c.ring[c.keys[idx]]
+	replicas := []string{c.items[firstItemIndex]}
+	c.lookupVnodes(idx, func(vnodeIndex uint8) bool {
+		replica := c.items[vnodeIndex]
+		if slices.Contains(replicas, replica) {
+			return false
+		}
+		replicas = append(replicas, replica)
+		return len(replicas) == len(c.items)
+	})
+	return replicas
 }
