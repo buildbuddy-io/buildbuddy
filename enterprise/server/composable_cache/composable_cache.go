@@ -278,6 +278,6 @@ func (c *ComposableCache) SupportsCompressor(compressor repb.Compressor_Value) b
 	return compressor == repb.Compressor_IDENTITY
 }
 
-func (c *ComposableCache) SupportsEncryption(ctx context.Context) bool {
-	return false
+func (c *ComposableCache) SupportsEncryption(ctx context.Context) (bool, error) {
+	return false, nil
 }

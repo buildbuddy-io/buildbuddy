@@ -659,8 +659,8 @@ func (rc *RaftCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
 
-func (rc *RaftCache) SupportsEncryption(ctx context.Context) bool {
-	return false
+func (rc *RaftCache) SupportsEncryption(ctx context.Context) (bool, error) {
+	return false, nil
 }
 
 func (rc *RaftCache) olderThanThreshold(t time.Time, threshold time.Duration) bool {
