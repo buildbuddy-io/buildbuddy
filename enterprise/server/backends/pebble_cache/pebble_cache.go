@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -49,7 +50,6 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"golang.org/x/time/rate"
-	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -159,10 +159,6 @@ const (
 	SamplerSleepDuration  = 1 * time.Second
 
 	SamplerIterRefreshPeriod = 5 * time.Minute
-
-	// If set in the context metadata, the requested resource should be written to /
-	// read from this partition ID if the user is authorized to do so.
-	PartitionOverrideKey = "x-buildbuddy-partition-override"
 )
 
 type sizeUpdateOp int
@@ -1453,27 +1449,33 @@ func (p *PebbleCache) userGroupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
-func (p *PebbleCache) partitionOverride(ctx context.Context) string {
-	md := metadata.ValueFromIncomingContext(ctx, PartitionOverrideKey)
-	if len(md) > 0 {
-		return md[0]
-	}
-	return ""
-}
-
-func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string) {
+func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
 	groupID := p.userGroupID(ctx)
-	requestedPartition := p.partitionOverride(ctx)
+	requestedPartition := cacheutil.PartitionOverride(ctx)
+
+	if requestedPartition == DefaultPartitionID {
+		return groupID, DefaultPartitionID, nil
+	}
+
 	for _, pm := range p.partitionMappings {
+		// If a partition override was requested, check for a match.
 		matchesPartitionOverride := requestedPartition != "" &&
-			pm.PartitionID == requestedPartition &&
-			(pm.GroupID == groupID || pm.GroupID == "")
+			pm.PartitionID == requestedPartition
+		if matchesPartitionOverride && pm.GroupID != "" && pm.GroupID != groupID {
+			return "", "", status.PermissionDeniedErrorf("group ID %s is not authorized for partition %s", groupID, requestedPartition)
+		}
+		if matchesPartitionOverride {
+			return groupID, pm.PartitionID, nil
+		}
+
+		// If no partition override was requested, check for partitions matching
+		// the user's group ID.
 		matchesPartition := pm.GroupID == groupID && strings.HasPrefix(remoteInstanceName, pm.Prefix)
-		if matchesPartitionOverride || matchesPartition {
-			return groupID, pm.PartitionID
+		if requestedPartition == "" && matchesPartition {
+			return groupID, pm.PartitionID, nil
 		}
 	}
-	return groupID, DefaultPartitionID
+	return groupID, DefaultPartitionID, nil
 }
 
 func (p *PebbleCache) encryptionEnabled(ctx context.Context) (bool, error) {
@@ -1493,7 +1495,10 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 		return nil, err
 	}
 
-	groupID, partID := p.lookupGroupAndPartitionID(ctx, rn.GetInstanceName())
+	groupID, partID, err := p.lookupGroupAndPartitionID(ctx, rn.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
 
 	encryptionEnabled, err := p.encryptionEnabled(ctx)
 	if err != nil {

@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -47,6 +48,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -552,6 +554,168 @@ func TestIsolateAnonUsers(t *testing.T) {
 		_, err = os.Stat(expectedFilename)
 		require.NoError(t, err)
 	}
+}
+
+func TestPartitionOverride(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	testAPIKey := "AK111"
+	testGroup := "GR111"
+	testAPIKey2 := "AK222"
+	testGroup2 := "GR222"
+	testUsers := testauth.TestUsers(testAPIKey, testGroup, testAPIKey2, testGroup2)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDir := testfs.MakeTempDir(t)
+	partitionIDGroup2 := "justfor222"
+	specialPartitionID := "special"
+	instanceName := "cloud"
+	opts := &pebble_cache.Options{
+		RootDirectory:          rootDir,
+		MaxSizeBytes:           maxSizeBytes,
+		MaxInlineFileSizeBytes: 1, // Ensure file is written to disk
+		Partitions: []disk.Partition{
+			{
+				ID:           "default",
+				MaxSizeBytes: maxSizeBytes,
+			},
+			{
+				ID:           partitionIDGroup2,
+				MaxSizeBytes: maxSizeBytes,
+			},
+			{
+				ID:           specialPartitionID,
+				MaxSizeBytes: maxSizeBytes,
+			},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{
+				GroupID:     testGroup2,
+				Prefix:      "",
+				PartitionID: partitionIDGroup2,
+			},
+			{
+				GroupID:     "",
+				Prefix:      "",
+				PartitionID: specialPartitionID,
+			},
+		},
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+	defer pc.Stop()
+
+	// By default, GR222 should use their partition.
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey2)
+		// CAS records should not have group ID or remote instance name in their file path
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
+		err = pc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		rbuf, err := pc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, rbuf))
+		hash := r.GetDigest().GetHash()
+		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, partitionIDGroup2, hash[:4], hash)
+		_, err = os.Stat(expectedFilename)
+		require.NoError(t, err)
+
+		// AC records should have group ID and remote instance hash in their file path
+		r, buf = testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_AC, instanceName)
+		err = pc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		rbuf, err = pc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, rbuf))
+		instanceNameHash := strconv.Itoa(int(crc32.ChecksumIEEE([]byte(instanceName))))
+		hash = r.GetDigest().GetHash()
+		expectedFilename = fmt.Sprintf("%s/blobs/PT%s/%s/ac/%s/%v/%v", rootDir, partitionIDGroup2, testGroup2, instanceNameHash, hash[:4], hash)
+		_, err = os.Stat(expectedFilename)
+		require.NoError(t, err)
+	}
+
+	// Set a cache partition override so GR222 uses a specific partition.
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey2)
+		ctx = setMetadataOnIncomingContext(ctx, cacheutil.PartitionOverrideKey, specialPartitionID)
+
+		// CAS records should not have group ID or remote instance name in their file path
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
+		err = pc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		rbuf, err := pc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, rbuf))
+		hash := r.GetDigest().GetHash()
+		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, specialPartitionID, hash[:4], hash)
+		_, err = os.Stat(expectedFilename)
+		require.NoError(t, err)
+
+		// AC records should have group ID and remote instance hash in their file path
+		r, buf = testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_AC, instanceName)
+		err = pc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		rbuf, err = pc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, rbuf))
+		instanceNameHash := strconv.Itoa(int(crc32.ChecksumIEEE([]byte(instanceName))))
+		hash = r.GetDigest().GetHash()
+		expectedFilename = fmt.Sprintf("%s/blobs/PT%s/%s/ac/%s/%v/%v", rootDir, specialPartitionID, testGroup2, instanceNameHash, hash[:4], hash)
+		_, err = os.Stat(expectedFilename)
+		require.NoError(t, err)
+	}
+
+	// Set a cache partition override so GR222 uses the default partition.
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey2)
+		ctx = setMetadataOnIncomingContext(ctx, cacheutil.PartitionOverrideKey, pebble_cache.DefaultPartitionID)
+
+		// CAS records should not have group ID or remote instance name in their file path
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
+		err = pc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		rbuf, err := pc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, rbuf))
+		hash := r.GetDigest().GetHash()
+		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, pebble_cache.DefaultPartitionID, hash[:4], hash)
+		_, err = os.Stat(expectedFilename)
+		require.NoError(t, err)
+
+		// AC records should have group ID and remote instance hash in their file path
+		r, buf = testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_AC, instanceName)
+		err = pc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		rbuf, err = pc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, rbuf))
+		instanceNameHash := strconv.Itoa(int(crc32.ChecksumIEEE([]byte(instanceName))))
+		hash = r.GetDigest().GetHash()
+		expectedFilename = fmt.Sprintf("%s/blobs/PT%s/%s/ac/%s/%v/%v", rootDir, pebble_cache.DefaultPartitionID, testGroup2, instanceNameHash, hash[:4], hash)
+		_, err = os.Stat(expectedFilename)
+		require.NoError(t, err)
+	}
+
+	// GR111 should not be able to use GR222's partition even with an override.
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+		ctx = setMetadataOnIncomingContext(ctx, cacheutil.PartitionOverrideKey, partitionIDGroup2)
+
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
+		err = pc.Set(ctx, r, buf)
+		require.True(t, status.IsPermissionDeniedError(err))
+		_, err := pc.Get(ctx, r)
+		require.True(t, status.IsPermissionDeniedError(err))
+
+		// AC records should have group ID and remote instance hash in their file path
+		r, buf = testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_AC, instanceName)
+		err = pc.Set(ctx, r, buf)
+		require.True(t, status.IsPermissionDeniedError(err))
+		_, err = pc.Get(ctx, r)
+		require.True(t, status.IsPermissionDeniedError(err))
+	}
+
 }
 
 func TestMetadata(t *testing.T) {
@@ -3357,4 +3521,8 @@ func TestGCSBlobStorageReadAfterTTL(t *testing.T) {
 		_, err := pc.Get(ctx, rn)
 		require.True(t, status.IsNotFoundError(err), err)
 	}
+}
+
+func setMetadataOnIncomingContext(ctx context.Context, key, value string) context.Context {
+	return metadata.NewIncomingContext(ctx, metadata.Pairs(key, value))
 }

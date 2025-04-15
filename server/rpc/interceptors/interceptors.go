@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -301,6 +302,21 @@ func invocationIDLoggerUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return contextReplacingUnaryServerInterceptor(addInvocationIdToLog)
 }
 
+func addCachePartitionOverrideToLog(ctx context.Context) context.Context {
+	if partitionOverride := cacheutil.PartitionOverride(ctx); partitionOverride != "" {
+		return log.EnrichContext(ctx, log.CachePartitionOverrideKey, partitionOverride)
+	}
+	return ctx
+}
+
+func cachePartitionOverrideLoggerStreamServerInterceptor() grpc.StreamServerInterceptor {
+	return contextReplacingStreamServerInterceptor(addCachePartitionOverrideToLog)
+}
+
+func cachePartitionOverrideLoggerUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return contextReplacingUnaryServerInterceptor(addCachePartitionOverrideToLog)
+}
+
 // requestContextProtoUnaryServerInterceptor is a server interceptor that
 // copies the request context from the request message into the context.
 func requestContextProtoUnaryServerInterceptor() grpc.UnaryServerInterceptor {
@@ -495,6 +511,7 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 		subdomainUnaryServerInterceptor(),
 		requestIDUnaryServerInterceptor(),
 		invocationIDLoggerUnaryServerInterceptor(),
+		cachePartitionOverrideLoggerUnaryServerInterceptor(),
 		logRequestUnaryServerInterceptor(),
 		requestContextProtoUnaryServerInterceptor(),
 	}
@@ -521,6 +538,7 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 		subdomainStreamServerInterceptor(),
 		requestIDStreamServerInterceptor(),
 		invocationIDLoggerStreamServerInterceptor(),
+		cachePartitionOverrideLoggerStreamServerInterceptor(),
 		logRequestStreamServerInterceptor(),
 	}
 	// Install extra, caller-specified interceptors prior to auth interceptors
