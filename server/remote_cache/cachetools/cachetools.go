@@ -1072,6 +1072,7 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 }
 
 // NewUploadWriteCloser returns an io.WriteCloser that writes bytes to the CAS.
+// Calling Close()
 // The provided CASResourceName must contain the digest with the correct size.
 // The writer can be used to stream content to CAS without loading everything into memory.
 // If the resource is empty, it returns nil with no error.
@@ -1169,23 +1170,15 @@ func (w *casWriteCloser) Close() error {
 	}
 
 	remoteSize := rsp.GetCommittedSize()
-
-	// Validate size based on compressor, similar to uploadFromReader
-	if w.resource.GetCompressor() == repb.Compressor_IDENTITY {
-		if remoteSize != w.resource.GetDigest().GetSizeBytes() {
-			err := status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)",
-				remoteSize, w.resource.GetDigest().GetSizeBytes())
-			return err
-		}
-	} else {
-		// For compressed uploads, remoteSize should match bytesUploaded unless
-		// the blob already existed (-1)
-		if remoteSize != w.bytesUploaded && remoteSize != -1 {
-			err := status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)",
-				remoteSize, w.bytesUploaded)
-			return err
-		}
+	if w.resource.GetCompressor() == repb.Compressor_IDENTITY && remoteSize != w.resource.GetDigest().GetSizeBytes() {
+		// Either the write succeeded or was short-circuited, but in
+		// either case, the remoteSize for uncompressed uploads should
+		// match the file size.
+		return status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, w.resource.GetDigest().GetSizeBytes())
+	} else if remoteSize != w.bytesUploaded && remoteSize != -1 {
+		// -1 is returned if the blob already exists, otherwise the
+		// remoteSize should agree with what we uploaded.
+		return status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, w.resource.GetDigest().GetSizeBytes())
 	}
-
 	return nil
 }
