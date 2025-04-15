@@ -1100,7 +1100,6 @@ func NewUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r
 		bytesUploaded: 0,
 	}
 
-	// If zstd compression is enabled, wrap the writer with a compressing writer
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		compressingWriter, err := compression.NewZstdCompressingWriteCloser(cwc)
 		if err != nil {
@@ -1112,7 +1111,6 @@ func NewUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r
 	return cwc, nil
 }
 
-// casWriteCloser implements io.WriteCloser for streaming to CAS
 type casWriteCloser struct {
 	ctx           context.Context
 	stream        bspb.ByteStream_WriteClient
@@ -1120,7 +1118,7 @@ type casWriteCloser struct {
 	resource      *digest.CASResourceName
 	uploadString  string
 	bytesUploaded int64
-	mu            sync.Mutex // Protects concurrent Write calls
+	mu            sync.Mutex
 }
 
 func (w *casWriteCloser) Write(p []byte) (n int, err error) {
@@ -1147,11 +1145,12 @@ func (w *casWriteCloser) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+// Close sends a final, empty write request telling the CAS
+// that writes are finished. It also closes the underlying stream.
 func (w *casWriteCloser) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// Send final message with FinishWrite = true and empty data
 	req := &bspb.WriteRequest{
 		ResourceName: w.uploadString,
 		WriteOffset:  w.bytesUploaded,
