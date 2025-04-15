@@ -1070,3 +1070,113 @@ func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient 
 func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.CASResourceName) (*repb.Tree, error) {
 	return GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, casClient, r, nil, nil)
 }
+
+// NewUploadWriteCloser returns an io.WriteCloser that writes bytes to the CAS.
+// The provided CASResourceName must contain the digest with the correct size.
+// The writer can be used to stream content to CAS without loading everything into memory.
+// If the resource is empty, it returns nil with no error.
+func NewUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (io.WriteCloser, error) {
+	if bsClient == nil {
+		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
+	}
+	if r.IsEmpty() {
+		return nil, nil
+	}
+
+	stream, err := bsClient.Write(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+
+	cwc := &casWriteCloser{
+		ctx:           ctx,
+		stream:        stream,
+		sender:        sender,
+		resource:      r,
+		uploadString:  r.NewUploadString(),
+		bytesUploaded: 0,
+	}
+
+	if r.GetCompressor() == repb.Compressor_ZSTD {
+		compressingWriter, err := compression.NewZstdCompressingWriteCloser(cwc)
+		if err != nil {
+			return nil, status.InternalErrorf("Failed to create zstd compressing writer: %s", err)
+		}
+		return compressingWriter, nil
+	}
+
+	return cwc, nil
+}
+
+type casWriteCloser struct {
+	ctx           context.Context
+	stream        bspb.ByteStream_WriteClient
+	sender        rpcutil.Sender[*bspb.WriteRequest]
+	resource      *digest.CASResourceName
+	uploadString  string
+	bytesUploaded int64
+	mu            sync.Mutex
+}
+
+func (w *casWriteCloser) Write(p []byte) (n int, err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if len(p) == 0 {
+		return 0, nil
+	}
+
+	req := &bspb.WriteRequest{
+		ResourceName: w.uploadString,
+		WriteOffset:  w.bytesUploaded,
+		FinishWrite:  false,
+		Data:         p,
+	}
+
+	err = w.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+	if err != nil && err != io.EOF {
+		return 0, err
+	}
+
+	w.bytesUploaded += int64(len(p))
+	return len(p), nil
+}
+
+// Close sends a final, empty write request telling the CAS
+// that writes are finished. It also closes the underlying stream.
+func (w *casWriteCloser) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	req := &bspb.WriteRequest{
+		ResourceName: w.uploadString,
+		WriteOffset:  w.bytesUploaded,
+		FinishWrite:  true,
+		Data:         []byte{},
+	}
+
+	err := w.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending final Write request"))
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	rsp, err := w.stream.CloseAndRecv()
+	if err != nil {
+		return err
+	}
+
+	remoteSize := rsp.GetCommittedSize()
+	if w.resource.GetCompressor() == repb.Compressor_IDENTITY && remoteSize != w.resource.GetDigest().GetSizeBytes() {
+		// Either the write succeeded or was short-circuited, but in
+		// either case, the remoteSize for uncompressed uploads should
+		// match the file size.
+		return status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, w.resource.GetDigest().GetSizeBytes())
+	} else if remoteSize != w.bytesUploaded && remoteSize != -1 {
+		// -1 is returned if the blob already exists, otherwise the
+		// remoteSize should agree with what we uploaded.
+		return status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, w.resource.GetDigest().GetSizeBytes())
+	}
+	return nil
+}
