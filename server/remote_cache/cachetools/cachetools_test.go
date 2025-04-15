@@ -566,6 +566,7 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		input              string
+		useZstd            bool
 		expectUploadError  bool
 		uploadSize         int64
 		expectedUploadSize int64
@@ -576,6 +577,7 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 		{
 			name:               "simple upload and get",
 			input:              "simple upload and get",
+			useZstd:            false,
 			expectUploadError:  false,
 			uploadSize:         int64(len([]byte("simple upload and get"))),
 			expectedUploadSize: int64(len([]byte("simple upload and get"))),
@@ -586,6 +588,7 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 		{
 			name:               "upload with incorrect size fails",
 			input:              "upload with incorrect size fails",
+			useZstd:            false,
 			expectUploadError:  true,
 			uploadSize:         int64(len([]byte("upload with incorrect size fails"))) - 4,
 			expectedUploadSize: int64(len([]byte("upload with incorrect size fails"))),
@@ -596,12 +599,46 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 		{
 			name:               "get with incorrect size still succeeds",
 			input:              "get with incorrect size still succeeds",
+			useZstd:            false,
 			expectUploadError:  false,
 			uploadSize:         int64(len([]byte("get with incorrect size still succeeds"))),
 			expectedUploadSize: int64(len([]byte("get with incorrect size still succeeds"))),
 			expectGetError:     false,
 			getSize:            int64(len([]byte("get with incorrect size still succeeds"))) - 4,
 			expectedGetSize:    int64(len([]byte("get with incorrect size still succeeds"))),
+		},
+		{
+			name:               "zstd simple upload and get",
+			input:              "zstd simple upload and get",
+			useZstd:            false,
+			expectUploadError:  false,
+			uploadSize:         int64(len([]byte("zstd simple upload and get"))),
+			expectedUploadSize: int64(len([]byte("zstd simple upload and get"))),
+			expectGetError:     false,
+			getSize:            int64(len([]byte("zstd simple upload and get"))),
+			expectedGetSize:    int64(len([]byte("zstd simple upload and get"))),
+		},
+		{
+			name:               "zstd upload with incorrect size fails",
+			input:              "zstd upload with incorrect size fails",
+			useZstd:            false,
+			expectUploadError:  true,
+			uploadSize:         int64(len([]byte("zstd upload with incorrect size fails"))) - 4,
+			expectedUploadSize: int64(len([]byte("zstd upload with incorrect size fails"))),
+			expectGetError:     true,
+			getSize:            int64(len([]byte("zstd upload with incorrect size fails"))),
+			expectedGetSize:    int64(len([]byte("zstd upload with incorrect size fails"))),
+		},
+		{
+			name:               "zstd get with incorrect size still succeeds",
+			input:              "zstd get with incorrect size still succeeds",
+			useZstd:            false,
+			expectUploadError:  false,
+			uploadSize:         int64(len([]byte("zstd get with incorrect size still succeeds"))),
+			expectedUploadSize: int64(len([]byte("zstd get with incorrect size still succeeds"))),
+			expectGetError:     false,
+			getSize:            int64(len([]byte("zstd get with incorrect size still succeeds"))) - 4,
+			expectedGetSize:    int64(len([]byte("zstd get with incorrect size still succeeds"))),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -621,6 +658,9 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 					SizeBytes: tc.uploadSize,
 				}
 				uprn := digest.NewCASResourceName(upd, "", repb.DigestFunction_SHA256)
+				if tc.useZstd {
+					uprn.SetCompressor(repb.Compressor_ZSTD)
+				}
 				d, uploaded, err := cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), uprn, buf)
 				if tc.expectUploadError {
 					require.Error(t, err)
@@ -640,6 +680,9 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 					SizeBytes: tc.getSize,
 				}
 				getrn := digest.NewCASResourceName(getd, "", repb.DigestFunction_SHA256)
+				if tc.useZstd {
+					getrn.SetCompressor(repb.Compressor_ZSTD)
+				}
 				out := &bytes.Buffer{}
 				err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), getrn, out)
 				if tc.expectGetError {
@@ -659,6 +702,7 @@ func TestUploadWriteCloser(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		input              string
+		useZstd            bool
 		expectUploadError  bool
 		uploadSize         int64
 		expectedUploadSize int64
@@ -670,6 +714,7 @@ func TestUploadWriteCloser(t *testing.T) {
 		{
 			name:               "simple upload and get",
 			input:              "simple upload and get",
+			useZstd:            false,
 			expectUploadError:  false,
 			uploadSize:         int64(len([]byte("simple upload and get"))),
 			expectedUploadSize: int64(len([]byte("simple upload and get"))),
@@ -681,6 +726,7 @@ func TestUploadWriteCloser(t *testing.T) {
 		{
 			name:               "upload with incorrect size fails",
 			input:              "upload with incorrect size fails",
+			useZstd:            false,
 			expectUploadError:  true,
 			uploadSize:         int64(len([]byte("upload with incorrect size fails"))) - 4,
 			expectedUploadSize: int64(len([]byte("upload with incorrect size fails"))),
@@ -692,6 +738,7 @@ func TestUploadWriteCloser(t *testing.T) {
 		{
 			name:               "get with incorrect size still succeeds",
 			input:              "get with incorrect size still succeeds",
+			useZstd:            false,
 			expectUploadError:  false,
 			uploadSize:         int64(len([]byte("get with incorrect size still succeeds"))),
 			expectedUploadSize: int64(len([]byte("get with incorrect size still succeeds"))),
@@ -703,6 +750,7 @@ func TestUploadWriteCloser(t *testing.T) {
 		{
 			name:               "not closing writer means write does not succeed",
 			input:              "not closing writer means write does not succeed",
+			useZstd:            false,
 			expectUploadError:  false,
 			uploadSize:         int64(len([]byte("not closing writer means write does not succeed"))),
 			expectedUploadSize: int64(len([]byte("not closing writer means write does not succeed"))),
@@ -710,6 +758,54 @@ func TestUploadWriteCloser(t *testing.T) {
 			expectGetError:     true,
 			getSize:            int64(len([]byte("not closing writer means write does not succeed"))),
 			expectedGetSize:    int64(len([]byte("not closing writer means write does not succeed"))),
+		},
+		{
+			name:               "zstd simple upload and get",
+			input:              "zstd simple upload and get",
+			useZstd:            true,
+			expectUploadError:  false,
+			uploadSize:         int64(len([]byte("zstd simple upload and get"))),
+			expectedUploadSize: int64(len([]byte("zstd simple upload and get"))),
+			closeAfterWrite:    true,
+			expectGetError:     false,
+			getSize:            int64(len([]byte("zstd simple upload and get"))),
+			expectedGetSize:    int64(len([]byte("zstd simple upload and get"))),
+		},
+		{
+			name:               "zstd upload with incorrect size fails",
+			input:              "zstd upload with incorrect size fails",
+			useZstd:            true,
+			expectUploadError:  true,
+			uploadSize:         int64(len([]byte("zstd upload with incorrect size fails"))) - 4,
+			expectedUploadSize: int64(len([]byte("zstd upload with incorrect size fails"))),
+			closeAfterWrite:    true,
+			expectGetError:     true,
+			getSize:            int64(len([]byte("zstd upload with incorrect size fails"))),
+			expectedGetSize:    int64(len([]byte("zstd upload with incorrect size fails"))),
+		},
+		{
+			name:               "zstd get with incorrect size still succeeds",
+			input:              "zstd get with incorrect size still succeeds",
+			useZstd:            false,
+			expectUploadError:  false,
+			uploadSize:         int64(len([]byte("zstd get with incorrect size still succeeds"))),
+			expectedUploadSize: int64(len([]byte("zstd get with incorrect size still succeeds"))),
+			closeAfterWrite:    true,
+			expectGetError:     false,
+			getSize:            int64(len([]byte("zstd get with incorrect size still succeeds"))) - 4,
+			expectedGetSize:    int64(len([]byte("zstd get with incorrect size still succeeds"))),
+		},
+		{
+			name:               "zstd not closing writer means write does not succeed",
+			input:              "zstd not closing writer means write does not succeed",
+			useZstd:            false,
+			expectUploadError:  false,
+			uploadSize:         int64(len([]byte("zstd not closing writer means write does not succeed"))),
+			expectedUploadSize: int64(len([]byte("zstd not closing writer means write does not succeed"))),
+			closeAfterWrite:    false,
+			expectGetError:     true,
+			getSize:            int64(len([]byte("zstd not closing writer means write does not succeed"))),
+			expectedGetSize:    int64(len([]byte("zstd not closing writer means write does not succeed"))),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -729,6 +825,9 @@ func TestUploadWriteCloser(t *testing.T) {
 					SizeBytes: tc.uploadSize,
 				}
 				uprn := digest.NewCASResourceName(upd, "", repb.DigestFunction_SHA256)
+				if tc.useZstd {
+					uprn.SetCompressor(repb.Compressor_ZSTD)
+				}
 				wc, err := cachetools.NewUploadWriteCloser(ctx, te.GetByteStreamClient(), uprn)
 				require.NoError(t, err)
 				require.NotNil(t, wc)
@@ -752,6 +851,9 @@ func TestUploadWriteCloser(t *testing.T) {
 					SizeBytes: tc.getSize,
 				}
 				getrn := digest.NewCASResourceName(getd, "", repb.DigestFunction_SHA256)
+				if tc.useZstd {
+					getrn.SetCompressor(repb.Compressor_ZSTD)
+				}
 				out := &bytes.Buffer{}
 				err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), getrn, out)
 				if tc.expectGetError {
