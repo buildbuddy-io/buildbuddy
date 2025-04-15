@@ -480,7 +480,7 @@ message StartShardRequest {
 }
 
 message StartShardResponse {
-	reserved 1;
+  reserved 1;
 }
 
 message RemoveDataRequest {
