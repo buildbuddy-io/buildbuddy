@@ -1,5 +1,5 @@
 // Package watchdog implements a simple watchdog timer which expires if not
-// reset periodically.
+// reset periodically. https://en.wikipedia.org/wiki/Watchdog_timer
 package watchdog
 
 import (
