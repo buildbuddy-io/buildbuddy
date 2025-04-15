@@ -13,6 +13,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
+        "//server/util/db",
         "//server/util/git",
         "//server/util/log",
         "//server/util/timeutil",
