@@ -100,7 +100,7 @@ func main() {
 	server := s.GetServer()
 	csspb.RegisterCodesearchServiceServer(server, css)
 
-	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(server))
+	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(server, env.GetGRPCServerWaitGroup()))
 	go func() {
 		_ = server.Serve(lis)
 	}()
