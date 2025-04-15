@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -24,14 +26,16 @@ var (
 )
 
 type BuildStatusReporter struct {
-	baseBBURL                 string
-	env                       environment.Env
-	githubClient              interfaces.GitHubStatusClient
-	buildEventAccumulator     accumulator.Accumulator
-	groups                    map[string]*GroupStatus
-	inFlight                  map[string]bool
-	payloads                  []*github.GithubStatusPayload
-	shouldReportStatusPerTest bool
+	baseBBURL                  string
+	env                        environment.Env
+	githubClient               interfaces.GitHubStatusClient
+	buildEventAccumulator      accumulator.Accumulator
+	groups                     map[string]*GroupStatus
+	inFlight                   map[string]bool
+	payloads                   []*github.GithubStatusPayload
+	shouldReportStatusPerTest  bool
+	shouldReportCommitStatuses bool
+	once                       sync.Once
 }
 
 type GroupStatus struct {
@@ -69,6 +73,66 @@ func (r *BuildStatusReporter) initGHClient(ctx context.Context) interfaces.GitHu
 		}
 	}
 	return r.env.GetGitHubStatusService().GetStatusClient(accessToken)
+}
+
+func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, repoURL string) bool {
+	r.once.Do(func() {
+		dbh := r.env.GetDBHandle()
+		if dbh == nil {
+			return
+		}
+
+		userInfo, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+		if err != nil {
+			log.CtxInfof(ctx, "Failed to report GitHub status, no authenticated user: %s", err)
+			return
+		}
+
+		parsedRepo, err := gitutil.ParseGitHubRepoURL(repoURL)
+		if err != nil {
+			log.CtxInfof(ctx, "Failed to report GitHub status, invalid repo url %s: %s", repoURL, err)
+			return
+		}
+
+		installation := &tables.GitHubAppInstallation{}
+		err = dbh.NewQuery(ctx, "build_status_reporter_get_app_installation").Raw(
+			`SELECT * from "GitHubAppInstallations" WHERE group_id = ? AND owner = ?`, userInfo.GetGroupID(), parsedRepo.Owner).Take(installation)
+		if err == nil {
+			r.shouldReportCommitStatuses = installation.ReportCommitStatusesForCIBuilds
+			return
+		} else if !db.IsRecordNotFound(err) {
+			log.CtxWarningf(ctx, "Failed to report GitHub status for %s, failed to query GitHubAppInstallations: %s", repoURL, err)
+			return
+		}
+
+		// If the user hasn't installed our GH app, check legacy methods for
+		// enabling status reporting. Always report statuses for users that
+		// onboarded through a legacy method, because status reporting was
+		// automatically enabled for them.
+		legacyWorkflow := &struct{ Count int64 }{}
+		err = dbh.NewQuery(ctx, "build_status_reporter_get_workflow").Raw(
+			`SELECT COUNT(*) as count from "Workflows" WHERE repo_url = ?`, repoURL).Take(legacyWorkflow)
+		if err == nil && legacyWorkflow.Count > 0 {
+			r.shouldReportCommitStatuses = true
+			return
+		} else if err != nil {
+			log.CtxWarningf(ctx, "Failed to report GitHub status for %s, failed to query Workflows: %s", repoURL, err)
+			return
+		}
+
+		groupWithLegacyToken := &struct{ Count int64 }{}
+		err = dbh.NewQuery(ctx, "build_status_reporter_get_group").Raw(
+			`SELECT COUNT(*) as count from "Groups" WHERE group_id = ? AND github_token <> "" AND github_token IS NOT NULL`, userInfo.GetGroupID()).Take(groupWithLegacyToken)
+		if err == nil && groupWithLegacyToken.Count > 0 {
+			r.shouldReportCommitStatuses = true
+			return
+		} else if err != nil {
+			log.CtxWarningf(ctx, "Failed to report GitHub status for %s, failed to query Groups: %s", repoURL, err)
+			return
+		}
+	})
+
+	return r.shouldReportCommitStatuses
 }
 
 // ReportStatusForEvent reports a status to GitHub for the event if applicable.
@@ -133,11 +197,15 @@ func (r *BuildStatusReporter) flushPayloadsIfMetadataLoaded(ctx context.Context)
 	if r.env.GetGitHubStatusService() == nil {
 		return
 	}
-	// Don't flush payloads if explicitly disabled in build metadata, or if we
-	// don't yet have the metadata.
-	if !r.buildEventAccumulator.MetadataIsLoaded() || r.buildEventAccumulator.DisableCommitStatusReporting() {
+
+	// Don't report statuses if we don't yet have the metadata, it's explicitly
+	// disabled in build metadata, or it's not enabled for this repo.
+	if !r.buildEventAccumulator.MetadataIsLoaded() ||
+		r.buildEventAccumulator.DisableCommitStatusReporting() ||
+		!r.isStatusReportingEnabled(ctx, r.buildEventAccumulator.Invocation().GetRepoUrl()) {
 		return
 	}
+
 	if r.githubClient == nil {
 		r.githubClient = r.initGHClient(ctx)
 	}
