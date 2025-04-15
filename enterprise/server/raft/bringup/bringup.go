@@ -333,7 +333,9 @@ func StartShard(ctx context.Context, store IStore, bootstrapInfo *ClusterBootstr
 	if err != nil {
 		return err
 	}
-	//
+	// This range descriptor is only used in sender and is not being stored.
+	// The generation is intentionally not set, so we won't accidentally
+	// overwrite the stored range descriptor.
 	rd := &rfpb.RangeDescriptor{
 		RangeId:  bootstrapInfo.rangeID,
 		Replicas: bootstrapInfo.Replicas,
