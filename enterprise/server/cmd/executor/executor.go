@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"time"
@@ -44,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -76,6 +78,7 @@ var (
 	localCacheSizeBytes       = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
 	startupWarmupMaxWaitSecs  = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
 	maximumDiskFullness       = flag.Float64("executor.maximum_disk_fullness", 1.01, "Fail health check if device containing executor.local_cache_directory is more than this full")
+	startupCommands           = flag.Slice("executor.startup_commands", []string{}, "Commands to run on startup. These are run sequentially and block executor startup.")
 
 	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port              = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
@@ -282,6 +285,23 @@ func main() {
 
 	if *deleteBuildRootOnStartup {
 		deleteBuildRoot(rootContext, runner.GetBuildRoot())
+	}
+
+	// Run any startup commands.
+	for i, startupCommand := range *startupCommands {
+		start := time.Now()
+		args, err := shlex.Split(startupCommand)
+		if err != nil {
+			log.Fatalf("Error parsing startup command %d: %q: %s", i, startupCommand, err)
+		}
+		cmd := exec.CommandContext(rootContext, args[0], args[1:]...)
+		cmd.Stderr = log.Writer(fmt.Sprintf("startup_commands[%d]", i))
+		cmd.Stdout = log.Writer(fmt.Sprintf("startup_commands[%d]", i))
+		log.Infof("Running startup command %d: %q...", i, startupCommand)
+		if err := cmd.Run(); err != nil {
+			log.Fatalf("Error running startup command %d: %q: %s", i, startupCommand, err)
+		}
+		log.Infof("Executed startup command %d: %q in %s", i, startupCommand, time.Since(start))
 	}
 
 	setupNetworking(rootContext)

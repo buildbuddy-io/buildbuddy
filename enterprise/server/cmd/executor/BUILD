@@ -53,6 +53,7 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/monitoring",
+        "//server/util/shlex",
         "//server/util/status",
         "//server/util/statusz",
         "//server/util/tracing",
