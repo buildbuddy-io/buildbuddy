@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -46,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -288,12 +288,15 @@ func main() {
 	// Run any startup commands.
 	for i, startupCommand := range *startupCommands {
 		start := time.Now()
-		args := strings.Fields(startupCommand)
+		args, err := shlex.Split(startupCommand)
+		if err != nil {
+			log.Fatalf("Error parsing startup command %d: %q: %s", i, startupCommand, err)
+		}
 		cmd := exec.CommandContext(rootContext, args[0], args[1:]...)
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stdout
 		if err := cmd.Run(); err != nil {
-			log.Errorf("Error running startup command %d: %q: %s", i, startupCommand, err)
+			log.Fatalf("Error running startup command %d: %q: %s", i, startupCommand, err)
 		}
 		log.Infof("Executed startup command %d: %q in %s", i, startupCommand, time.Since(start))
 	}
