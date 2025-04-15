@@ -63,6 +63,18 @@ func MakePlatform(pairs ...string) (*repb.Platform, error) {
 	return p, nil
 }
 
+// LookupEnv returns the value of the environment variable with the given name,
+// or an empty string if the variable is not present. The second return value
+// indicates whether the variable was found.
+func LookupEnv(envs []*repb.Command_EnvironmentVariable, name string) (string, bool) {
+	for _, e := range envs {
+		if e.Name == name {
+			return e.Value, true
+		}
+	}
+	return "", false
+}
+
 // NormalizeCommand produces a canonicalized version of the given command
 // that is suitable for caching, without altering the semantics of the command.
 func NormalizeCommand(cmd *repb.Command) {
