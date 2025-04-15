@@ -37,6 +37,7 @@ export default class TapComponent extends React.Component<Props, State> {
   };
 
   isV2 = Boolean(capabilities.config.testGridV2Enabled);
+  branchInputRef = React.createRef<HTMLInputElement>();
 
   componentWillMount() {
     document.title = `Tests | BuildBuddy`;
@@ -112,7 +113,6 @@ export default class TapComponent extends React.Component<Props, State> {
     router.replaceParams({ repo });
   }
 
-  branchInputRef = React.createRef<HTMLInputElement>();
   handleBranchInputKeyPress(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
       router.replaceParams({ branch: (event.target as HTMLInputElement).value });

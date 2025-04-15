@@ -624,6 +624,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	if repo == "" {
 		return nil, status.InvalidArgumentError("expected non empty repo_url")
 	}
+	branch := strings.TrimSpace(req.GetQuery().GetBranchName())
 
 	groupID := req.GetRequestContext().GetGroupId()
 	if groupID == "" {
@@ -655,7 +656,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 		FROM "TestTargetStatuses"`)
 	innerCommitQuery.AddWhereClause("group_id = ?", groupID)
 	innerCommitQuery.AddWhereClause("repo_url = ?", repo)
-	if branch := req.GetQuery().GetBranchName(); branch != "" {
+	if branch != "" {
 		innerCommitQuery.AddWhereClause("branch_name = ?", branch)
 	}
 	innerCommitQuery.SetGroupBy("commit_sha")
@@ -681,7 +682,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	q.AddWhereInClause("commit_sha", outerCommitQuery)
 	q.AddWhereClause("group_id = ?", groupID)
 	q.AddWhereClause("repo_url = ?", repo)
-	if branch := req.GetQuery().GetBranchName(); branch != "" {
+	if branch != "" {
 		q.AddWhereClause("branch_name = ?", branch)
 	}
 	q.SetOrderBy("label", true /*=ascending*/)
@@ -787,9 +788,10 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
 	}
-	if req.GetBranchName() != "" {
+	branch := strings.TrimSpace(req.GetBranchName())
+	if branch != "" {
 		innerWhereClause = innerWhereClause + " AND branch_name = ?"
-		qArgs = append(qArgs, req.GetBranchName())
+		qArgs = append(qArgs, branch)
 	}
 	if len(req.GetLabels()) > 0 {
 		innerWhereClause = innerWhereClause + " AND label IN ?"
@@ -878,9 +880,10 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
 	}
-	if req.GetBranchName() != "" {
+	branch := strings.TrimSpace(req.GetBranchName())
+	if branch != "" {
 		innerWhereClause = innerWhereClause + " AND branch_name = ?"
-		qArgs = append(qArgs, req.GetBranchName())
+		qArgs = append(qArgs, branch)
 	}
 	if len(req.GetLabels()) > 0 {
 		innerWhereClause = innerWhereClause + " AND label IN ?"
@@ -973,13 +976,18 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
 	}
+	branch := strings.TrimSpace(req.GetBranchName())
+	if branch != "" {
+		innerWhereClause = innerWhereClause + " AND branch_name = ?"
+		qArgs = append(qArgs, branch)
+	}
 	qArgs = append(qArgs, qArgs...)
 	qArgs = append(qArgs, pg.GetLimit()+1, pg.GetOffset())
 
-	qStr := fmt.Sprintf(`SELECT status, invocation_start_time_usec, invocation_uuid
+	qStr := `SELECT status, invocation_start_time_usec, invocation_uuid
 	FROM (
 		SELECT status, invocation_start_time_usec, invocation_uuid
-		FROM "TestTargetStatuses" WHERE (status = 2 AND %s)
+		FROM "TestTargetStatuses" WHERE (status = 2 AND ` + innerWhereClause + `)
 	UNION ALL (SELECT status, invocation_start_time_usec, invocation_uuid
 		FROM (
 			SELECT
@@ -989,13 +997,13 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 				status,
 				last_value(status) OVER win AS last_status
 			FROM "TestTargetStatuses"
-			WHERE (%s AND (status BETWEEN 1 AND 4))
+			WHERE (` + innerWhereClause + ` AND (status BETWEEN 1 AND 4))
 			WINDOW win AS (
 				PARTITION BY label
 				ORDER BY invocation_start_time_usec ASC
 				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
 		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status IN (3, 4)))
-	ORDER BY invocation_start_time_usec DESC LIMIT ? OFFSET ?`, innerWhereClause, innerWhereClause)
+	ORDER BY invocation_start_time_usec DESC LIMIT ? OFFSET ?`
 
 	type queryOut struct {
 		InvocationUuid          string

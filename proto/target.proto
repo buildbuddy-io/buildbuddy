@@ -325,6 +325,9 @@ message GetTargetFlakeSamplesRequest {
   // If specified, all flaky invocations must match this repo.
   string repo = 3;
 
+  // If specified, all flaky invocations must match this branch.
+  string branch_name = 7;
+
   // A token for fetching another page of flaky runs.
   string page_token = 4;
 

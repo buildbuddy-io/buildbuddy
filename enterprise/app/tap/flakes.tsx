@@ -175,6 +175,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
       const flakeSamplesRequest = rpc_service.service.getTargetFlakeSamples({
         label,
         repo: this.props.repo,
+        branchName: this.props.search.get("branch") || "",
         startedAfter: params.updatedAfter,
         startedBefore: params.updatedBefore,
       });
@@ -271,6 +272,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
     const flakeSamplesRequest = rpc_service.service.getTargetFlakeSamples({
       label,
       repo: this.props.repo,
+      branchName: this.props.search.get("branch") || "",
       pageToken: this.state.flakeSamples.nextPageToken,
     });
 
