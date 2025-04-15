@@ -293,8 +293,8 @@ func main() {
 			log.Fatalf("Error parsing startup command %d: %q: %s", i, startupCommand, err)
 		}
 		cmd := exec.CommandContext(rootContext, args[0], args[1:]...)
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stdout
+		cmd.Stderr = log.Writer(fmt.Sprintf("startup_commands[%d]", i))
+		cmd.Stdout = log.Writer(fmt.Sprintf("startup_commands[%d]", i))
 		if err := cmd.Run(); err != nil {
 			log.Fatalf("Error running startup command %d: %q: %s", i, startupCommand, err)
 		}
