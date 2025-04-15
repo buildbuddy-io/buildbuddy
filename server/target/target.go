@@ -678,6 +678,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	q.AddWhereInClause("commit_sha", outerCommitQuery)
 	q.AddWhereClause("group_id = ?", groupID)
 	q.AddWhereClause("repo_url = ?", repo)
+	q.SetOrderBy("label", true /*=ascending*/)
 	return fetchTargetsFromOLAPDB(ctx, env, q, repo, groupID)
 }
 
