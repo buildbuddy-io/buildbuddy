@@ -234,7 +234,7 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 		h.watchdogTimer.Reset()
 	} else {
 		if !h.watchdogTimer.Live() {
-			log.Infof("Watchdog timer expired; triggering shutdown!")
+			log.Warningf("Watchdog timer expired; triggering shutdown!")
 			go func() {
 				h.Shutdown()
 			}()
