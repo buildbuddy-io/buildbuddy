@@ -11,6 +11,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
+        "//server/util/watchdog",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_x_sync//errgroup",

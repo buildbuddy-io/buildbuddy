@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -203,7 +202,7 @@ func (r *Resolver) Resolve(ctx context.Context, imgname string, platform *rgpb.P
 		}))
 	}
 
-	tr := httpclient.NewWithAllowedPrivateIPs(60*time.Minute, r.allowedPrivateIPs).Transport
+	tr := httpclient.NewWithAllowedPrivateIPs(r.allowedPrivateIPs).Transport
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
 	} else {
@@ -247,7 +246,7 @@ func (r *Resolver) makeRemoteOptions(ctx context.Context, platform gcr.Platform,
 		}))
 	}
 
-	tr := httpclient.NewWithAllowedPrivateIPs(60*time.Minute, r.allowedPrivateIPs).Transport
+	tr := httpclient.NewWithAllowedPrivateIPs(r.allowedPrivateIPs).Transport
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
 	} else {

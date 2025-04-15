@@ -93,6 +93,7 @@ common:remote-linux-arm64 --config=target-linux-arm64
 common:remote-linux-arm64 --remote_download_toplevel
 
 # Flags shared for dev RBE and cache
+common:remote-dev-shared --config=dev
 common:remote-dev-shared --config=remote-shared
 common:remote-dev-shared --config=cache-shared
 common:remote-dev-shared --remote_executor=grpcs://buildbuddy.buildbuddy.dev

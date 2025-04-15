@@ -18,44 +18,24 @@ import (
 )
 
 func TestRedactPasswordsInURLs(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	for _, tc := range []struct {
 		name     string
 		event    *bespb.BuildEvent
 		expected *bespb.BuildEvent
 	}{
 		{
-			name: "redact passwords in urls in action stdout",
+			name: "redact passwords in urls in action stdout, stderr, primary output, metadata logs",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				Stdout: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
-			}}},
-			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				Stdout: fileWithURI("url://username:<REDACTED>@uri"),
-			}}},
-		},
-		{
-			name: "redact passwords in urls in action stderr",
-			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				Stderr: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
-			}}},
-			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				Stderr: fileWithURI("url://username:<REDACTED>@uri"),
-			}}},
-		},
-		{
-			name: "redact passwords in urls in action primary output",
-			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				PrimaryOutput: fileWithURI("url://username:passwordthatshouldberedacted@uri"),
-			}}},
-			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
-				PrimaryOutput: fileWithURI("url://username:<REDACTED>@uri"),
-			}}},
-		},
-		{
-			name: "redact passwords in urls in action metadata logs",
-			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stdout:             fileWithURI("url://username:passwordthatshouldberedacted@uri"),
+				Stderr:             fileWithURI("url://username:passwordthatshouldberedacted@uri"),
+				PrimaryOutput:      fileWithURI("url://username:passwordthatshouldberedacted@uri"),
 				ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
 			}}},
 			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
+				Stdout:             fileWithURI("url://username:<REDACTED>@uri"),
+				Stderr:             fileWithURI("url://username:<REDACTED>@uri"),
+				PrimaryOutput:      fileWithURI("url://username:<REDACTED>@uri"),
 				ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
 			}}},
 		},
@@ -87,26 +67,267 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 			}}},
 		},
 		{
-			name: "redact passwords in urls in test summary files passed",
+			name: "redact passwords in urls in test summary files passed, failed",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
 				Passed: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
-			}}},
-			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
-				Passed: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
-			}}},
-		},
-		{
-			name: "redact passwords in urls in test summary files failed",
-			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
 				Failed: []*bespb.File{fileWithURI("url://username:passwordthatshouldberedacted@uri")},
 			}}},
 			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestSummary{TestSummary: &bespb.TestSummary{
+				Passed: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
 				Failed: []*bespb.File{fileWithURI("url://username:<REDACTED>@uri")},
+			}}},
+		},
+		{
+			name: "redact passwords in urls in structured command line options",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "some_url",
+					OptionValue:  "https://username:passwordthatshouldberedacted@foo.com",
+					CombinedForm: "--some_url=https://username:passwordthatshouldberedacted@foo.com",
+				},
+				&clpb.Option{
+					OptionName:   "some_other_flag",
+					OptionValue:  "url://username:passwordthatshouldberedacted=@//foo",
+					CombinedForm: "--some_other_flag=url://username:passwordthatshouldberedacted=@//foo",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:passwordthatshouldberedacted@bar,BAZ=",
+					CombinedForm: "--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:passwordthatshouldberedacted@bar,BAZ=",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "FOO=A=1,BAR=SECRET=url://username:passwordthatshouldberedacted@buildbuddy.io",
+					CombinedForm: "--build_metadata=FOO=A=1,BAR=SECRET=url://username:passwordthatshouldberedacted@buildbuddy.io",
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "some_url",
+					OptionValue:  "https://username:<REDACTED>@foo.com",
+					CombinedForm: "--some_url=https://username:<REDACTED>@foo.com",
+				},
+				&clpb.Option{
+					OptionName:   "some_other_flag",
+					OptionValue:  "url://username:<REDACTED>@//foo",
+					CombinedForm: "--some_other_flag=url://username:<REDACTED>@//foo",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@bar,BAZ=",
+					CombinedForm: "--build_metadata=PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@bar,BAZ=",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  "FOO=A=1,BAR=SECRET=url://username:<REDACTED>@buildbuddy.io",
+					CombinedForm: "--build_metadata=FOO=A=1,BAR=SECRET=url://username:<REDACTED>@buildbuddy.io",
+				},
+			}}}}}}}},
+		},
+		{
+			name: "redact passwords in urls in options parsed",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"url://username:passwordthatshouldberedacted@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:passwordthatshouldberedacted@domain",
+					"--some_other_flag=url://username:SUBFLAGTHATSHOULDBEREDACTED=@//foo",
+				},
+				ExplicitCmdLine: []string{
+					"url://username:passwordthatshouldberedacted@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:passwordthatshouldberedacted@domain",
+					"--some_other_flag=url://username:SUBFLAGTHATSHOULDBEREDACTED=@//foo",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"url://username:<REDACTED>@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
+					"--some_other_flag=url://username:<REDACTED>@//foo",
+				},
+				ExplicitCmdLine: []string{
+					"url://username:<REDACTED>@foo",
+					"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
+					"--some_other_flag=url://username:<REDACTED>@//foo",
+				},
 			}}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+			redactor := redact.NewStreamingRedactor(te)
+			err := redactor.RedactMetadata(tc.event)
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
+		})
+	}
+}
+
+func TestRedactEntireSections(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	for _, tc := range []struct {
+		name     string
+		event    *bespb.BuildEvent
+		expected *bespb.BuildEvent
+	}{
+		{
+			name: "redact options description in build started event",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
+				OptionsDescription: `--some_flag --another_flag`,
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
+				OptionsDescription: `<REDACTED>`,
+			}}},
+		},
+		{
+			name: "remove args from unstructured commanbd line",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_UnstructuredCommandLine{UnstructuredCommandLine: &bespb.UnstructuredCommandLine{
+				Args: []string{"foo"},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_UnstructuredCommandLine{UnstructuredCommandLine: &bespb.UnstructuredCommandLine{}}},
+		},
+		{
+			name: "remove --default_override and EXPLICIT_COMMAND_LINE options from structured command line",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "default_override",
+					OptionValue:  "1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
+					CombinedForm: "--default_override=1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
+				},
+				&clpb.Option{
+					OptionName:   "build_metadata",
+					OptionValue:  `EXPLICIT_COMMAND_LINE=["secrets"]`,
+					CombinedForm: `--build_metadata=EXPLICIT_COMMAND_LINE=["secrets"]`,
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{}}}}}}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor(te)
+			err := redactor.RedactMetadata(tc.event)
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
+		})
+	}
+}
+
+func TestRedactRemoteHeaders(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	for _, tc := range []struct {
+		name     string
+		event    *bespb.BuildEvent
+		expected *bespb.BuildEvent
+	}{
+		{
+			name: "redact remote headers in structured command line",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "remote_header",
+					OptionValue:  "harmless_string_that_should_be_redacted_anyhow",
+					CombinedForm: "--remote_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+				&clpb.Option{
+					OptionName:   "remote_cache_header",
+					OptionValue:  "harmless_string_that_should_be_redacted_anyhow",
+					CombinedForm: "--remote_cache_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "remote_header",
+					OptionValue:  "<REDACTED>",
+					CombinedForm: "--remote_header=<REDACTED>",
+				},
+				&clpb.Option{
+					OptionName:   "remote_cache_header",
+					OptionValue:  "<REDACTED>",
+					CombinedForm: "--remote_cache_header=<REDACTED>",
+				},
+			}}}}}}}},
+		},
+		{
+			name: "redact remote headers in options parsed",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"--remote_header=harmless_string_that_should_be_redacted_anyhow",
+					"--remote_exec_header=harmless_string_that_should_be_redacted_anyhow",
+					"--bes_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+				ExplicitCmdLine: []string{
+					"--remote_header=harmless_string_that_should_be_redacted_anyhow",
+					"--remote_exec_header=harmless_string_that_should_be_redacted_anyhow",
+					"--bes_header=harmless_string_that_should_be_redacted_anyhow",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: &bespb.OptionsParsed{
+				CmdLine: []string{
+					"--remote_header=<REDACTED>",
+					"--remote_exec_header=<REDACTED>",
+					"--bes_header=<REDACTED>",
+				},
+				ExplicitCmdLine: []string{
+					"--remote_header=<REDACTED>",
+					"--remote_exec_header=<REDACTED>",
+					"--bes_header=<REDACTED>",
+				},
+			}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor(te)
+			err := redactor.RedactMetadata(tc.event)
+			require.NoError(t, err)
+			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
+		})
+	}
+}
+
+func TestRemoveRepoURLCredentials(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	for _, tc := range []struct {
+		name     string
+		event    *bespb.BuildEvent
+		expected *bespb.BuildEvent
+	}{
+		{
+			name: "remove credentials from github repository url in structured command line options",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "client_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+					CombinedForm: "--client_env=GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "test_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+					CombinedForm: "--test_env=GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "repo_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+					CombinedForm: "--repo_env=GITHUB_REPOSITORY=https://username_to_remove:password_to_remove@github.com/foo/bar",
+				},
+			}}}}}}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: &clpb.CommandLine{Sections: []*clpb.CommandLineSection{&clpb.CommandLineSection{SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{Option: []*clpb.Option{
+				&clpb.Option{
+					OptionName:   "client_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://github.com/foo/bar",
+					CombinedForm: "--client_env=GITHUB_REPOSITORY=https://github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "test_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://github.com/foo/bar",
+					CombinedForm: "--test_env=GITHUB_REPOSITORY=https://github.com/foo/bar",
+				},
+				&clpb.Option{
+					OptionName:   "repo_env",
+					OptionValue:  "GITHUB_REPOSITORY=https://github.com/foo/bar",
+					CombinedForm: "--repo_env=GITHUB_REPOSITORY=https://github.com/foo/bar",
+				},
+			}}}}}}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redactor := redact.NewStreamingRedactor(te)
 			err := redactor.RedactMetadata(tc.event)
 			require.NoError(t, err)
 			require.Empty(t, cmp.Diff(tc.expected, tc.event, protocmp.Transform()))
@@ -122,69 +343,21 @@ func fileWithURI(uri string) *bespb.File {
 }
 
 func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
-	section := &clpb.CommandLineSection{
-		SectionLabel: "command",
-		SectionType: &clpb.CommandLineSection_OptionList{
-			OptionList: &clpb.OptionList{
-				Option: []*clpb.Option{option},
+	return &bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_StructuredCommandLine{
+			StructuredCommandLine: &clpb.CommandLine{
+				Sections: []*clpb.CommandLineSection{
+					&clpb.CommandLineSection{
+						SectionType: &clpb.CommandLineSection_OptionList{
+							OptionList: &clpb.OptionList{
+								Option: []*clpb.Option{option},
+							},
+						},
+					},
+				},
 			},
 		},
 	}
-	commandLine := &clpb.CommandLine{
-		CommandLineLabel: "label",
-		Sections:         []*clpb.CommandLineSection{section},
-	}
-	return &bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_StructuredCommandLine{
-			StructuredCommandLine: commandLine,
-		},
-	}
-}
-
-func getCommandLineOptions(event *bespb.BuildEvent) []*clpb.Option {
-	p, ok := event.Payload.(*bespb.BuildEvent_StructuredCommandLine)
-	if !ok {
-		return nil
-	}
-	sections := p.StructuredCommandLine.Sections
-	if len(sections) == 0 {
-		return nil
-	}
-	s, ok := sections[0].SectionType.(*clpb.CommandLineSection_OptionList)
-	if !ok {
-		return nil
-	}
-	return s.OptionList.Option
-}
-
-func TestRedactMetadata_BuildStarted_RedactsOptionsDescription(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	buildStarted := &bespb.BuildStarted{
-		OptionsDescription: `--some_flag --another_flag`,
-	}
-
-	err := redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_Started{Started: buildStarted},
-	})
-	require.NoError(t, err)
-
-	assert.Equal(t, "<REDACTED>", buildStarted.OptionsDescription)
-}
-
-func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	unstructuredCommandLine := &bespb.UnstructuredCommandLine{
-		Args: []string{"foo"},
-	}
-
-	err := redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_UnstructuredCommandLine{
-			UnstructuredCommandLine: unstructuredCommandLine,
-		},
-	})
-	require.NoError(t, err)
-
-	assert.Equal(t, []string{}, unstructuredCommandLine.Args)
 }
 
 func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
@@ -204,28 +377,19 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		expectedValue string
 	}{
 		{"client_env", "SECRET=codez", "SECRET=<REDACTED>"},
-		{"client_env", "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
 		{"client_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
 		{"client_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
 		{"test_env", "SECRET=codez", "SECRET=<REDACTED>"},
-		{"test_env", "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
 		{"test_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
 		{"test_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
 		{"repo_env", "SECRET=codez", "SECRET=<REDACTED>"},
-		{"repo_env", "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
 		{"repo_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
 		{"repo_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
 		{"repo_env", "AWS_SECRET_ACCESS_KEY=super_secret_aws_secret_access_key", "AWS_SECRET_ACCESS_KEY=<REDACTED>"},
 		{"repo_env", "AWS_ACCESS_KEY_ID=super_secret_aws_access_key_id", "AWS_ACCESS_KEY_ID=<REDACTED>"},
-		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
-		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
-		{"some_url", "https://username:token@foo.com", "https://username:<REDACTED>@foo.com"},
 		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
 		{"host_platform", "@buildbuddy_toolchain//:platform", "@buildbuddy_toolchain//:platform"},
-		{"build_metadata", "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:SECRET@bar,BAZ=", "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@bar,BAZ="},
-		{"build_metadata", "FOO=A=1,BAR=SECRET=url://username:SECRET@buildbuddy.io", "FOO=A=1,BAR=SECRET=url://username:<REDACTED>@buildbuddy.io"},
-		{"some_other_flag", "url://username:PATTERN=@//foo", "url://username:<REDACTED>@//foo"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,
@@ -240,60 +404,18 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		assert.Equal(t, expectedCombinedForm, option.CombinedForm)
 		assert.Equal(t, testCase.expectedValue, option.OptionValue)
 	}
-
-	// default_override flags should be dropped altogether.
-
-	option := &clpb.Option{
-		OptionName:   "default_override",
-		OptionValue:  "1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
-		CombinedForm: "--default_override=1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
-	}
-	event := structuredCommandLineEvent(option)
-	assert.NotEmpty(t, getCommandLineOptions(event), "sanity check: --default_override should be an option before redacting")
-
-	err = redactor.RedactMetadata(event)
-	require.NoError(t, err)
-
-	assert.Empty(t, getCommandLineOptions(event), "--default_override options should be removed")
-
-	// EXPLICIT_COMMAND_LINE flags should be dropped altogether.
-
-	option = &clpb.Option{
-		OptionName:   "build_metadata",
-		OptionValue:  `EXPLICIT_COMMAND_LINE=["secrets"]`,
-		CombinedForm: `--build_metadata=EXPLICIT_COMMAND_LINE=["secrets"]`,
-	}
-	event = structuredCommandLineEvent(option)
-	assert.NotEmpty(t, getCommandLineOptions(event), "sanity check: EXPLICIT_COMMAND_LINE should be an option before redacting")
-
-	err = redactor.RedactMetadata(event)
-	require.NoError(t, err)
-
-	assert.Empty(t, getCommandLineOptions(event), "EXPLICIT_COMMAND_LINE should be removed")
 }
 
 func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	optionsParsed := &bespb.OptionsParsed{
 		CmdLine: []string{
-			"url://username:213wZJyTUyhXkj381312@foo",
 			"--flag=@repo//package",
-			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET",
-			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2",
-			"--bes_header=foo=TOPSECRET",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:TOPSECRET@domain",
-			"--some_other_flag=url://username:SUBFLAG=@//foo",
 			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 		ExplicitCmdLine: []string{
-			"url://username:213wZJyTUyhXkj381312@explicit",
 			"--flag=@repo//package",
-			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET_EXPLICIT",
-			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2_EXPLICIT",
-			"--bes_header=foo=TOPSECRET",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:TOPSECRET_EXPLICIT@domain",
-			"--some_other_flag=url://username:SUBFLAG=@//foo",
 			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
@@ -307,13 +429,7 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	assert.Equal(
 		t,
 		[]string{
-			"url://username:<REDACTED>@foo",
 			"--flag=@repo//package",
-			"--remote_header=<REDACTED>",
-			"--remote_exec_header=<REDACTED>",
-			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
-			"--some_other_flag=url://username:<REDACTED>@//foo",
 			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
@@ -321,13 +437,7 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	assert.Equal(
 		t,
 		[]string{
-			"url://username:<REDACTED>@explicit",
 			"--flag=@repo//package",
-			"--remote_header=<REDACTED>",
-			"--remote_exec_header=<REDACTED>",
-			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
-			"--some_other_flag=url://username:<REDACTED>@//foo",
 			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},

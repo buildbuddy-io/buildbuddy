@@ -4,11 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"hash/crc32"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -32,13 +32,20 @@ var (
 	}
 )
 
+// The maximum number of items that can be passed to Set(). This is before they
+// are multiplied by vnodes. Using 256 allows us to use uint8 values in a few
+// places and an array of size 256 instead of a slice for deduplication.
+// Increasing this would require changing all fields with uint8 values, and
+// rethinking the deduplication strategy.
+const maxSize = 256
+
 type ConsistentHash struct {
-	ring      map[int]uint8
-	keys      []int
-	items     []string
-	numVnodes int
-	hashKey   HashFunction
-	mu        sync.RWMutex
+	keys                []int
+	items               []string
+	keyIndexToItemIndex []uint8
+	numVnodes           int
+	hashKey             HashFunction
+	mu                  sync.RWMutex
 }
 
 // NewConsistentHash returns a new consistent hash ring.
@@ -51,11 +58,11 @@ type ConsistentHash struct {
 // See https://en.wikipedia.org/wiki/Consistent_hashing#Variance_reduction
 func NewConsistentHash(hashFunction HashFunction, vnodes int) *ConsistentHash {
 	return &ConsistentHash{
-		numVnodes: vnodes,
-		hashKey:   hashFunction,
-		keys:      make([]int, 0),
-		ring:      make(map[int]uint8, 0),
-		items:     make([]string, 0),
+		numVnodes:           vnodes,
+		hashKey:             hashFunction,
+		keys:                make([]int, 0),
+		items:               make([]string, 0),
+		keyIndexToItemIndex: make([]uint8, 0),
 	}
 }
 
@@ -66,13 +73,13 @@ func (c *ConsistentHash) GetItems() []string {
 }
 
 func (c *ConsistentHash) Set(items ...string) error {
-	if len(items) > 256 {
+	if len(items) > maxSize {
 		return status.InvalidArgumentError("Too many items in consistent hash, max allowed: 256")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.keys = make([]int, 0)
-	c.ring = make(map[int]uint8, 0)
+	c.keys = make([]int, 0, len(items)*c.numVnodes)
+	ring := make(map[int]uint8, len(items)*c.numVnodes)
 
 	c.items = items
 	sort.Strings(c.items)
@@ -81,10 +88,16 @@ func (c *ConsistentHash) Set(items ...string) error {
 		for i := 0; i < c.numVnodes; i++ {
 			h := c.hashKey(strconv.Itoa(i) + key)
 			c.keys = append(c.keys, h)
-			c.ring[h] = uint8(itemIndex)
+			ring[h] = uint8(itemIndex)
 		}
 	}
 	sort.Ints(c.keys)
+	// Precompute the mapping from key to item. This doesn't depened on the
+	// keys that are passed to Get or GetAllReplicas.
+	c.keyIndexToItemIndex = make([]uint8, len(c.keys))
+	for i, key := range c.keys {
+		c.keyIndexToItemIndex[i] = ring[key]
+	}
 	return nil
 }
 
@@ -95,22 +108,31 @@ func (c *ConsistentHash) Get(key string) string {
 	if len(c.keys) == 0 {
 		return ""
 	}
-	h := c.hashKey(key)
-	idx := sort.Search(len(c.keys), func(i int) bool {
-		return c.keys[i] >= h
-	})
-	if idx == len(c.keys) {
-		idx = 0
-	}
-	r := c.items[c.ring[c.keys[idx]]]
+	idx := c.firstKey(key)
+	r := c.items[c.keyIndexToItemIndex[idx]]
 	return r
 }
 
-func (c *ConsistentHash) lookupVnodes(idx int, fn func(vnodeIndex uint8) bool) {
+func (c *ConsistentHash) firstKey(key string) int {
+	h := c.hashKey(key)
+	startKeyIdx, _ := slices.BinarySearch(c.keys, h)
+	if startKeyIdx == len(c.keys) {
+		return 0
+	}
+	return startKeyIdx
+}
+
+func (c *ConsistentHash) lookupVnodes(startKeyIdx int, fn func(vnodeIndex uint8) bool) {
 	done := false
 	for offset := 1; offset < len(c.keys) && !done; offset += 1 {
-		newIdx := (idx + offset) % len(c.keys)
-		done = fn(c.ring[c.keys[newIdx]])
+		keyIdx := (startKeyIdx + offset)
+		if keyIdx >= len(c.keyIndexToItemIndex) {
+			// This is 20% faster than always modding by
+			// len(c.keyIndexToItemIndex) every iteration.
+			startKeyIdx -= len(c.keyIndexToItemIndex)
+			keyIdx -= len(c.keyIndexToItemIndex)
+		}
+		done = fn(c.keyIndexToItemIndex[keyIdx])
 	}
 }
 
@@ -120,40 +142,23 @@ func (c *ConsistentHash) GetAllReplicas(key string) []string {
 	if len(c.keys) == 0 {
 		return nil
 	}
-	h := c.hashKey(key)
-	idx := sort.Search(len(c.keys), func(i int) bool {
-		return c.keys[i] >= h
-	})
-	if idx == len(c.keys) {
-		idx = 0
-	}
-	originalIndex := c.ring[c.keys[idx]]
+	startKeyIdx := c.firstKey(key)
+	originalIndex := c.keyIndexToItemIndex[startKeyIdx]
 
 	replicas := make([]string, 0, len(c.items))
 	replicas = append(replicas, c.items[originalIndex])
+	var replicaSet [maxSize]bool // This doesn't allocate since it's on the stack.
+	replicaSet[originalIndex] = true
 
-	c.lookupVnodes(idx, func(vnodeIndex uint8) bool {
-		replica := c.items[vnodeIndex]
+	c.lookupVnodes(startKeyIdx, func(vnodeIndex uint8) bool {
 		// If we already visited this vnode's corresponding replica, skip.
-		for _, r := range replicas {
-			if r == replica {
-				return false
-			}
+		if replicaSet[vnodeIndex] {
+			return false
 		}
-		replicas = append(replicas, replica)
+		replicaSet[vnodeIndex] = true
+		replicas = append(replicas, c.items[vnodeIndex])
 		return len(replicas) == len(c.items)
 	})
 
 	return replicas
-}
-
-// GetNReplicas returns the N "items" responsible for the specified key, in
-// order. It does this by walking the vnodes in the consistent hash ring, in
-// order, until N unique replicas have been found.
-func (c *ConsistentHash) GetNReplicas(key string, n int) []string {
-	replicas := c.GetAllReplicas(key)
-	if len(replicas) < n {
-		log.Warningf("Warning: client requested %d replicas but only %d were available.", n, len(replicas))
-	}
-	return replicas[:n]
 }

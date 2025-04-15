@@ -961,7 +961,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 58
+            "y": 82
           },
           "id": 16,
           "options": {
@@ -1059,7 +1059,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 58
+            "y": 82
           },
           "id": 51,
           "options": {
@@ -1153,7 +1153,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 66
+            "y": 90
           },
           "id": 64,
           "options": {
@@ -1262,7 +1262,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 59
+            "y": 83
           },
           "id": 22,
           "options": {
@@ -1357,7 +1357,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 59
+            "y": 83
           },
           "id": 60,
           "options": {
@@ -1452,7 +1452,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 67
+            "y": 91
           },
           "id": 61,
           "options": {
@@ -1545,7 +1545,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 67
+            "y": 91
           },
           "id": 62,
           "options": {
@@ -1638,7 +1638,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 75
+            "y": 99
           },
           "id": 65,
           "options": {
@@ -2071,6 +2071,99 @@
             "x": 12,
             "y": 44
           },
+          "id": 79,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum (count_eq_over_time(max by (range_id) (buildbuddy_raft_leases{region=\"${region}\", namespace=\"${namespace}\"}), 0))",
+              "instant": false,
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Number of ranges w/o leases",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 52
+          },
           "id": 63,
           "options": {
             "legend": {
@@ -2178,7 +2271,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 85
+            "y": 109
           },
           "id": 6,
           "options": {
@@ -2299,7 +2392,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 85
+            "y": 109
           },
           "id": 9,
           "options": {
@@ -2423,7 +2516,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 93
+            "y": 117
           },
           "id": 7,
           "options": {
@@ -2531,7 +2624,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 14
+            "y": 38
           },
           "id": 66,
           "options": {
@@ -2624,7 +2717,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 14
+            "y": 38
           },
           "id": 67,
           "options": {
@@ -2717,7 +2810,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 22
+            "y": 46
           },
           "id": 69,
           "options": {
@@ -2810,7 +2903,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 22
+            "y": 46
           },
           "id": 68,
           "options": {
@@ -2917,7 +3010,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 86
+            "y": 110
           },
           "id": 52,
           "options": {
@@ -3010,7 +3103,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 86
+            "y": 110
           },
           "id": 53,
           "options": {
@@ -3053,6 +3146,690 @@
         "w": 24,
         "x": 0,
         "y": 39
+      },
+      "id": 78,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 64
+          },
+          "id": 80,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "count(max by (shardid)(dragonboat_raftnode_has_leader{namespace=\"${namespace}\",region=\"${region}\"}))",
+              "instant": false,
+              "legendFormat": "Total number of shards w/o a leader",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Num of Shards",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 64
+          },
+          "id": 76,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(count_eq_over_time(max by (shardid)(dragonboat_raftnode_has_leader{namespace=\"${namespace}\",region=\"${region}\"}), 0))",
+              "instant": false,
+              "legendFormat": "Total number of shards w/o a leader",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Num of Shards w/o Leader",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 72
+          },
+          "id": 77,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod_name) (increase(dragonboat_raftnode_proposal_dropped_total{namespace=\"${namespace}\", region=\"${region}\"}))",
+              "instant": false,
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Proposal Dropped",
+          "type": "timeseries"
+        }
+      ],
+      "title": "Dragonboat",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "id": 71,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 17
+          },
+          "id": 74,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod_name)(increase(dragonboat_transport_failed_message_connection_attempt_total{namespace=\"${namespace}\", region=\"${region}\"}[${window}]))",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "{{pod_name}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Failed Message Connections",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 17
+          },
+          "id": 72,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod_name)(increase(dragonboat_transport_received_message_dropped_total{namespace=\"${namespace}\", region=\"${region}\"}[${window}]))",
+              "instant": false,
+              "legendFormat": "{{pod_name}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Received Message Dropped",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 25
+          },
+          "id": 75,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod_name)(increase(dragonboat_transport_message_send_failure_total{namespace=\"${namespace}\", region=\"${region}\"}[${window}]) / (increase(dragonboat_transport_message_send_failure_total{namespace=\"${namespace}\", region=\"${region}\"}[${window}]) + increase(dragonboat_transport_message_send_success_total{namespace=\"${namespace}\", region=\"${region}\"}[${window}])))",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "{{pod_name}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Message Send Failure Rate",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 25
+          },
+          "id": 73,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod_name)(increase(dragonboat_transport_received_message_total{namespace=\"${namespace}\", region=\"${region}\"}[${window}]))",
+              "instant": false,
+              "legendFormat": "{{pod_name}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Received Message",
+          "type": "timeseries"
+        }
+      ],
+      "title": "Dragonboat Transport",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 41
       },
       "id": 25,
       "panels": [
@@ -3118,7 +3895,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 87
+            "y": 111
           },
           "id": 24,
           "options": {
@@ -3247,7 +4024,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 87
+            "y": 111
           },
           "id": 26,
           "options": {
@@ -3401,7 +4178,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 95
+            "y": 119
           },
           "id": 27,
           "options": {
@@ -3497,7 +4274,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 95
+            "y": 119
           },
           "id": 28,
           "options": {
@@ -3593,7 +4370,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 103
+            "y": 127
           },
           "id": 29,
           "options": {
@@ -3689,7 +4466,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 103
+            "y": 127
           },
           "id": 30,
           "options": {
@@ -3785,7 +4562,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 111
+            "y": 135
           },
           "id": 31,
           "options": {
@@ -3828,7 +4605,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 42
       },
       "id": 37,
       "panels": [
@@ -3893,7 +4670,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 88
+            "y": 112
           },
           "id": 32,
           "options": {
@@ -3986,7 +4763,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 88
+            "y": 112
           },
           "id": 33,
           "options": {
@@ -4079,7 +4856,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 96
+            "y": 120
           },
           "id": 34,
           "options": {
@@ -4172,7 +4949,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 96
+            "y": 120
           },
           "id": 35,
           "options": {
@@ -4265,7 +5042,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 104
+            "y": 128
           },
           "id": 38,
           "options": {
@@ -4358,7 +5135,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 104
+            "y": 128
           },
           "id": 39,
           "options": {
@@ -4451,7 +5228,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 112
+            "y": 136
           },
           "id": 40,
           "options": {
@@ -4544,7 +5321,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 112
+            "y": 136
           },
           "id": 41,
           "options": {
@@ -4637,7 +5414,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 120
+            "y": 144
           },
           "id": 42,
           "options": {
@@ -4730,7 +5507,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 120
+            "y": 144
           },
           "id": 43,
           "options": {
@@ -4823,7 +5600,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 128
+            "y": 152
           },
           "id": 44,
           "options": {
@@ -4916,7 +5693,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 128
+            "y": 152
           },
           "id": 45,
           "options": {
@@ -5009,7 +5786,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 136
+            "y": 160
           },
           "id": 46,
           "options": {
@@ -5050,7 +5827,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 43
       },
       "id": 20,
       "panels": [
@@ -5119,7 +5896,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 89
+            "y": 113
           },
           "id": 12,
           "options": {
@@ -5239,7 +6016,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 89
+            "y": 113
           },
           "id": 18,
           "options": {
@@ -5350,7 +6127,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 97
+            "y": 121
           },
           "id": 14,
           "options": {
@@ -5446,7 +6223,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 97
+            "y": 121
           },
           "id": 15,
           "options": {
@@ -5496,7 +6273,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 105
+            "y": 129
           },
           "hiddenSeries": false,
           "id": 19,
@@ -5610,7 +6387,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 105
+            "y": 129
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -5758,7 +6535,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 113
+            "y": 137
           },
           "id": 13,
           "options": {
@@ -5852,7 +6629,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 113
+            "y": 137
           },
           "id": 48,
           "options": {

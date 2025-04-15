@@ -13,20 +13,35 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
-	bareEnableStats = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
-	enableLogFiles  = flag.Bool("executor.bare.enable_log_files", false, "Whether to send bare runner output to log files for debugging. These files are stored adjacent to the task directory and are deleted when the task is complete.")
+	enableStats    = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
+	enableLogFiles = flag.Bool("executor.bare.enable_log_files", false, "Whether to send bare runner output to log files for debugging. These files are stored adjacent to the task directory and are deleted when the task is complete.")
+	enableTmpdir   = flag.Bool("executor.bare.enable_tmpdir", false, "If provided, set a default TMPDIR in each command's environment variables to a temporary directory provisioned for each task.")
+)
+
+const (
+	// TMPDIR environment variable used to specify a directory made available
+	// for programs that need a place to create temporary files. This name is
+	// standardized by POSIX and is widely supported:
+	// https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap08.html#tag_08_01
+	posixTmpdirEnvironmentVariableName = "TMPDIR"
 )
 
 type Opts struct {
 	// EnableStats specifies whether to collect stats while the command is
 	// in progress.
 	EnableStats bool
+
+	// EnableTmpdir specifies whether to set TMPDIR in each command's
+	// environment variables to a temporary directory provisioned for each
+	// task. The directory will be removed when the task is complete.
+	EnableTmpdir bool
 }
 
 type Provider struct {
@@ -34,7 +49,8 @@ type Provider struct {
 
 func (p *Provider) New(ctx context.Context, _ *container.Init) (container.CommandContainer, error) {
 	opts := &Opts{
-		EnableStats: *bareEnableStats,
+		EnableStats:  *enableStats,
+		EnableTmpdir: *enableTmpdir,
 	}
 	return NewBareCommandContainer(opts), nil
 }
@@ -44,7 +60,8 @@ func (p *Provider) New(ctx context.Context, _ *container.Init) (container.Comman
 type bareCommandContainer struct {
 	opts    *Opts
 	signal  chan syscall.Signal
-	WorkDir string
+	workDir string
+	tmpDir  string
 }
 
 func NewBareCommandContainer(opts *Opts) container.CommandContainer {
@@ -59,16 +76,26 @@ func (c *bareCommandContainer) IsolationType() string {
 }
 
 func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
+	if err := c.Create(ctx, workDir); err != nil {
+		return commandutil.ErrorResult(err)
+	}
 	return c.exec(ctx, command, workDir, nil /*=stdio*/)
 }
 
 func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error {
-	c.WorkDir = workDir
+	c.workDir = workDir
+	if c.opts.EnableTmpdir {
+		// Create a temp dir as a sibling of the workdir.
+		c.tmpDir = workDir + ".tmp"
+		if err := os.MkdirAll(c.tmpDir, 0755); err != nil {
+			return status.UnavailableErrorf("failed to create tempdir: %s", err)
+		}
+	}
 	return nil
 }
 
 func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	return c.exec(ctx, cmd, c.WorkDir, stdio)
+	return c.exec(ctx, cmd, c.workDir, stdio)
 }
 
 func (c *bareCommandContainer) Signal(ctx context.Context, sig syscall.Signal) error {
@@ -126,6 +153,17 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 		stdio.Stderr = io.MultiWriter(stdio.Stderr, stderrFile)
 	}
 
+	// Set TMPDIR if not already set.
+	if c.tmpDir != "" {
+		if _, ok := rexec.LookupEnv(cmd.EnvironmentVariables, posixTmpdirEnvironmentVariableName); !ok {
+			cmd = cmd.CloneVT()
+			cmd.EnvironmentVariables = append(cmd.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+				Name:  posixTmpdirEnvironmentVariableName,
+				Value: c.tmpDir,
+			})
+		}
+	}
+
 	return commandutil.RunWithOpts(ctx, cmd, &commandutil.RunOpts{
 		Dir:           workDir,
 		StatsListener: statsListener,
@@ -138,8 +176,18 @@ func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) 
 func (c *bareCommandContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	return nil
 }
-func (c *bareCommandContainer) Start(ctx context.Context) error   { return nil }
-func (c *bareCommandContainer) Remove(ctx context.Context) error  { return nil }
+func (c *bareCommandContainer) Start(ctx context.Context) error { return nil }
+
+func (c *bareCommandContainer) Remove(ctx context.Context) error {
+	if c.tmpDir != "" {
+		if err := os.RemoveAll(c.tmpDir); err != nil {
+			return status.UnavailableErrorf("failed to remove tempdir: %s", err)
+		}
+		c.tmpDir = ""
+	}
+	return nil
+}
+
 func (c *bareCommandContainer) Pause(ctx context.Context) error   { return nil }
 func (c *bareCommandContainer) Unpause(ctx context.Context) error { return nil }
 

@@ -471,6 +471,17 @@ func ensureDefaultPartitionExists(opts *Options) {
 	})
 }
 
+func warnIfCacheTooLarge(opts *Options) {
+	usage, err := disk.GetDirUsage(opts.RootDirectory)
+	if err != nil {
+		log.Warningf("Error getting usage of pebble root directory %s: %v", opts.RootDirectory, err)
+		return
+	}
+	if opts.MaxSizeBytes > int64(usage.TotalBytes) {
+		alert.UnexpectedEvent(fmt.Sprintf("Pebble cache maximum size (%d) exceeds disk partition size (%d)", opts.MaxSizeBytes, usage.TotalBytes))
+	}
+}
+
 // defaultPebbleOptions returns default pebble config options.
 func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.Options {
 	// These values Borrowed from CockroachDB.
@@ -531,6 +542,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	ensureDefaultPartitionExists(opts)
+	warnIfCacheTooLarge(opts)
 
 	mc := &pebble.MetricsCollector{}
 	pebbleOptions := defaultPebbleOptions(mc, opts)
@@ -1633,9 +1645,19 @@ func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 		return nil, err
 	}
 	defer rc.Close()
-	var buffer bytes.Buffer
-	_, err = io.Copy(&buffer, rc)
-	return buffer.Bytes(), err
+	buf := bytes.NewBuffer(make([]byte, 0, bufferSize(r)))
+	_, err = io.Copy(buf, rc)
+	return buf.Bytes(), err
+}
+
+func bufferSize(r *rspb.ResourceName) int {
+	if r.GetCacheType() != rspb.CacheType_CAS {
+		// The median and average AC results are less than 4KiB: go/action-result-size
+		return 4 * 1024
+	}
+	// Clamp the size between 0 and 10MB, to protect from invalid and
+	// malicious requests.
+	return min(10_000_000, max(0, int(r.GetDigest().GetSizeBytes())))
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -1647,7 +1669,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 
-	buf := &bytes.Buffer{}
 	for _, r := range resources {
 		rc, err := p.reader(ctx, db, r, 0, 0)
 		if err != nil {
@@ -1657,6 +1678,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 			return nil, err
 		}
 
+		buf := bytes.NewBuffer(make([]byte, 0, bufferSize(r)))
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
 		if copyErr != nil {
@@ -1667,8 +1689,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 			log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
 			continue
 		}
-		foundMap[r.GetDigest()] = append([]byte{}, buf.Bytes()...)
-		buf.Reset()
+		foundMap[r.GetDigest()] = buf.Bytes()
 	}
 	return foundMap, nil
 }

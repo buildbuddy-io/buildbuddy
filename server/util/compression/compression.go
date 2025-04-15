@@ -1,6 +1,7 @@
 package compression
 
 import (
+	"errors"
 	"io"
 	"runtime"
 	"sync"
@@ -173,30 +174,57 @@ func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf 
 }
 
 // NewZstdDecompressingReader reads zstd-compressed data from the input
-// reader and makes the decompressed data available on the output reader
+// reader and makes the decompressed data available on the output reader. The
+// output reader is also an io.WriterTo, which can often prevent allocations
+// when used with io.Copy to write into a bytes.Buffer. If you wrap the output
+// reader, you probably want to maintain that property.
 func NewZstdDecompressingReader(reader io.ReadCloser) (io.ReadCloser, error) {
 	// Stream data from reader to decoder
 	decoder, err := zstdDecoderPool.Get(reader)
 	if err != nil {
 		return nil, err
 	}
-
-	pr, pw := io.Pipe()
-	go func() {
-		// Write decoded bytes to pw and pipe to pr
-		n, err := decoder.WriteTo(pw)
-		pw.CloseWithError(err)
-		metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(n))
-
-		if err := zstdDecoderPool.Put(decoder); err != nil {
-			log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())
-		}
-	}()
-
-	return &wrappedReader{
-		pr:          pr,
+	return &decoderReader{
+		decoder:     decoder,
 		inputReader: reader,
 	}, nil
+}
+
+type decoderReader struct {
+	decoder     *DecoderRef
+	inputReader io.ReadCloser
+	read        int
+	closed      bool
+}
+
+func (r *decoderReader) Read(p []byte) (int, error) {
+	if r.closed {
+		return 0, errors.New("decoderReader.Read used after Close")
+	}
+	n, err := r.decoder.Read(p)
+	r.read += n
+	return n, err
+}
+
+func (r *decoderReader) WriteTo(w io.Writer) (int64, error) {
+	if r.closed {
+		return 0, errors.New("decoderReader.WriteTo used after Close")
+	}
+	n, err := r.decoder.WriteTo(w)
+	r.read += int(n)
+	return n, err
+}
+
+func (r *decoderReader) Close() error {
+	if r.closed {
+		return nil
+	}
+	r.closed = true
+	metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(r.read))
+	if err := zstdDecoderPool.Put(r.decoder); err != nil {
+		log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())
+	}
+	return r.inputReader.Close()
 }
 
 // DecoderRef wraps a *zstd.Decoder. Since it does not directly start any

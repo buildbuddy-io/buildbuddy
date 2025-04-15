@@ -4,14 +4,17 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -94,4 +97,30 @@ func TestLogFiles(t *testing.T) {
 	assert.Equal(t, "test-stderr\n", string(result.Stderr))
 	assert.Equal(t, "test-stdout\n", string(result.Stdout))
 	assert.Equal(t, 0, result.ExitCode)
+}
+
+func TestTempdirEnvVars(t *testing.T) {
+	flags.Set(t, "executor.bare.enable_tmpdir", true)
+	ctx := context.Background()
+	provider := bare.Provider{}
+	ctr, err := provider.New(ctx, &container.Init{})
+	require.NoError(t, err)
+	workDir := testfs.MakeTempDir(t)
+
+	res := ctr.Run(ctx, &repb.Command{
+		Arguments: []string{"bash", "-ec", `echo -n foo > $TMPDIR/foo.txt`},
+	}, workDir, oci.Credentials{})
+	require.NoError(t, res.Error)
+
+	b, err := os.ReadFile(filepath.Join(workDir+".tmp", "foo.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "foo", string(b))
+	_, err = os.Stat(workDir + ".tmp")
+	require.NoError(t, err)
+
+	err = ctr.Remove(ctx)
+	require.NoError(t, err)
+
+	_, err = os.Stat(workDir + ".tmp")
+	require.True(t, os.IsNotExist(err), "unexpected error: %v", err)
 }

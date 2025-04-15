@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/util/procstats",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/util/rexec",
         "//server/util/status",
     ],
 )
@@ -23,10 +24,12 @@ go_test(
     srcs = ["bare_test.go"],
     deps = [
         ":bare",
+        "//enterprise/server/remote_execution/container",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testfs",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

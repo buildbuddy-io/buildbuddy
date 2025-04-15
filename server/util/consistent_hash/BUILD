@@ -5,10 +5,7 @@ go_library(
     srcs = ["consistent_hash.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash",
     visibility = ["//visibility:public"],
-    deps = [
-        "//server/util/log",
-        "//server/util/status",
-    ],
+    deps = ["//server/util/status"],
 )
 
 go_test(
