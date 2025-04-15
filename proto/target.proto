@@ -229,6 +229,9 @@ message GetTargetStatsRequest {
   // If specified, stats will be restricted to invocations in this repo.
   string repo = 3;
 
+  // If specified, stats will be restricted to invocations in this branch.
+  string branch_name = 6;
+
   google.protobuf.Timestamp started_after = 4;
 
   google.protobuf.Timestamp started_before = 5;
@@ -283,6 +286,9 @@ message GetDailyTargetStatsRequest {
 
   // If specified, stats will be restricted to invocations in this repo.
   string repo = 3;
+
+  // If specified, stats will be restricted to invocations in this branch.
+  string branch_name = 7;
 
   // If many/all labels are requested, there may be multiple pages of results.
   string page_token = 4;
