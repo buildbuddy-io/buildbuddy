@@ -297,6 +297,7 @@ func main() {
 		cmd := exec.CommandContext(rootContext, args[0], args[1:]...)
 		cmd.Stderr = log.Writer(fmt.Sprintf("startup_commands[%d]", i))
 		cmd.Stdout = log.Writer(fmt.Sprintf("startup_commands[%d]", i))
+		log.Infof("Running startup command %d: %q...", i, startupCommand)
 		if err := cmd.Run(); err != nil {
 			log.Fatalf("Error running startup command %d: %q: %s", i, startupCommand, err)
 		}
