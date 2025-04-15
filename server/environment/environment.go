@@ -107,6 +107,7 @@ type Env interface {
 	GetCapabilitiesServer() repb.CapabilitiesServer
 	GetGRPCServer() *grpc.Server
 	GetGRPCSServer() *grpc.Server
+	GetGRPCServerWaitGroup() *sync.WaitGroup
 	GetInternalGRPCServer() *grpc.Server
 	GetInternalGRPCSServer() *grpc.Server
 	GetOLAPDBHandle() interfaces.OLAPDBHandle

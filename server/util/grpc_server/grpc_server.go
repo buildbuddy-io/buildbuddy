@@ -137,7 +137,7 @@ func (b *GRPCServer) Start() error {
 	go func() {
 		_ = b.server.Serve(lis)
 	}()
-	b.env.GetHealthChecker().RegisterShutdownFunction(GRPCShutdownFunc(b.server))
+	b.env.GetHealthChecker().RegisterShutdownFunction(GRPCShutdownFunc(b.server, b.env.GetGRPCServerWaitGroup()))
 	return nil
 }
 
@@ -178,8 +178,9 @@ func GRPCShutdown(ctx context.Context, grpcServer *grpc.Server) error {
 	return nil
 }
 
-func GRPCShutdownFunc(grpcServer *grpc.Server) func(ctx context.Context) error {
+func GRPCShutdownFunc(grpcServer *grpc.Server, wg *sync.WaitGroup) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+		defer wg.Done()
 		return GRPCShutdown(ctx, grpcServer)
 	}
 }

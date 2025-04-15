@@ -105,6 +105,7 @@ type RealEnv struct {
 	internalGRPCServer               *grpc.Server
 	internalGRPCSServer              *grpc.Server
 	grpcServer                       *grpc.Server
+	grpcServerWaitGroup              *sync.WaitGroup
 	grpcsServer                      *grpc.Server
 	olapDBHandle                     interfaces.OLAPDBHandle
 	kms                              interfaces.KMS
@@ -146,6 +147,7 @@ func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 		serverContext:       context.Background(),
 		executionClients:    make(map[string]*executionClientConfig, 0),
 		httpServerWaitGroup: &sync.WaitGroup{},
+		grpcServerWaitGroup: &sync.WaitGroup{},
 		clock:               clockwork.NewRealClock(),
 	}
 }
@@ -614,6 +616,10 @@ func (r *RealEnv) GetGRPCServer() *grpc.Server {
 
 func (r *RealEnv) SetGRPCServer(grpcServer *grpc.Server) {
 	r.grpcServer = grpcServer
+}
+
+func (r *RealEnv) GetGRPCServerWaitGroup() *sync.WaitGroup {
+	return r.grpcServerWaitGroup
 }
 
 func (r *RealEnv) GetGRPCSServer() *grpc.Server {
