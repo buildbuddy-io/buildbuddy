@@ -3,6 +3,14 @@ set -euo pipefail
 
 # Populates test history for a local BB org.
 #
+# Be sure to run the BB server with ClickHouse enabled, e.g.:
+#
+#   bazel run //enterprise/server -- `tools/clickhouse`
+#
+# Then, get an API key from your local BB org, and run this script like:
+#
+#   API_KEY=XXXXXX ./tools/populate_tests.sh
+#
 # Environment variables:
 #   API_KEY: local API key (required)
 #   COMMITS: number of commits to create
