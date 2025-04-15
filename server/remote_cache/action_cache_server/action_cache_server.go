@@ -130,24 +130,24 @@ func setWorkerMetadata(ar *repb.ActionResult) error {
 	return nil
 }
 
-func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.ACResourceName, req *repb.GetActionResultRequest) (*repb.ActionResult, bool, int64, error) {
+func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.ACResourceName, req *repb.GetActionResultRequest) (*repb.ActionResult, int64, error) {
 	blob, err := s.cache.Get(ctx, rn.ToProto())
 	if err != nil {
-		return nil, false, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
+		return nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
 	}
 
 	rsp := &repb.ActionResult{}
 	if err := proto.Unmarshal(blob, rsp); err != nil {
-		return nil, false, 0, err
+		return nil, 0, err
 	}
 
 	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
-		return nil, false, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
+		return nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
 	}
 	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
 	// change it.
 	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
-		return nil, false, 0, err
+		return nil, 0, err
 	}
 
 	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
@@ -160,7 +160,7 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 	if *checkClientActionResultDigests && req.GetCachedActionResultDigest().GetHash() != "" {
 		d, err := digest.ComputeForMessage(rsp, req.GetDigestFunction())
 		if err != nil {
-			return nil, false, 0, err
+			return nil, 0, err
 		}
 
 		// NOTE: To avoid double-counting AC hits, callers that specify a
@@ -173,10 +173,10 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 				ActionResultDigest: d,
 			}
 		}
-		return rsp, true, originalResultSize, nil
+		return rsp, originalResultSize, nil
 	}
 
-	return rsp, true, int64(proto.Size(rsp)), nil
+	return rsp, int64(proto.Size(rsp)), nil
 }
 
 // Retrieve a cached execution result.
@@ -209,14 +209,14 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	d := req.GetActionDigest()
 	downloadTracker := ht.TrackDownload(d)
 
-	rsp, isCacheHit, downloadSizeBytes, err := s.fetchActionResult(ctx, rn, req)
+	rsp, downloadSizeBytes, err := s.fetchActionResult(ctx, rn, req)
 	ht.SetExecutedActionMetadata(rsp.GetExecutionMetadata())
-	if isCacheHit {
-		if trackerErr := downloadTracker.CloseWithBytesTransferred(downloadSizeBytes, downloadSizeBytes, repb.Compressor_IDENTITY, "ac_server"); err != nil {
+	if err == nil {
+		if trackerErr := downloadTracker.CloseWithBytesTransferred(downloadSizeBytes, downloadSizeBytes, repb.Compressor_IDENTITY, "ac_server"); trackerErr != nil {
 			log.Debugf("GetActionResult: download tracker error: %s", trackerErr)
 		}
 	} else {
-		if trackerErr := ht.TrackMiss(d); err != nil {
+		if trackerErr := ht.TrackMiss(d); trackerErr != nil {
 			log.Debugf("GetActionResult: hit tracker error: %s", trackerErr)
 		}
 	}
