@@ -47,6 +47,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
@@ -76,6 +77,7 @@ var (
 	localCacheDirectory       = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
 	localCacheSizeBytes       = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
 	startupWarmupMaxWaitSecs  = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
+	maximumDiskFullness       = flag.Float64("executor.maximum_disk_fullness", 1.01, "Fail health check if device containing executor.local_cache_directory is more than this full")
 	startupCommands           = flag.Slice("executor.startup_commands", []string{}, "Commands to run on startup. These are run sequentially and block executor startup.")
 
 	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
@@ -306,6 +308,10 @@ func main() {
 	cacheRoot := filepath.Join(*localCacheDirectory, getExecutorHostID())
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := GetConfiguredEnvironmentOrDie(cacheRoot, healthChecker)
+
+	dshc := disk.NewUsageMonitor(cacheRoot, *maximumDiskFullness)
+	healthChecker.AddHealthCheck("executor_disk_usage", dshc)
+	statusz.AddSection("executor_disk_usage", "Executor disk usage", dshc)
 
 	if err := tracing.Configure(env); err != nil {
 		log.Fatalf("Could not configure tracing: %s", err)
