@@ -1116,12 +1116,12 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 			}
 			return nil, status.InternalErrorf("cannot start c%dn%d because c%dn%d already exists", nu.ShardID(), nu.ReplicaID(), req.GetRangeId(), req.GetReplicaId())
 		}
-		return nil, err
+		return nil, status.WrapErrorf(err, "failed to start node c%dn%d on dragonboat", req.GetRangeId(), req.GetReplicaId())
 	}
 
 	if req.GetLastAppliedIndex() > 0 {
 		if err := s.waitForReplicaToCatchUp(ctx, req.GetRangeId(), req.GetLastAppliedIndex()); err != nil {
-			return nil, err
+			return nil, status.WrapErrorf(err, "failed to wait for c%dn%d to catch up", req.GetRangeId(), req.GetReplicaId())
 		}
 	}
 
@@ -1139,7 +1139,7 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	if req.GetReplicaId() == replicaIDs[len(replicaIDs)-1] {
 		batchResponse, err := s.shardStarterSession.SyncProposeLocal(ctx, s.nodeHost, req.GetRangeId(), req.GetBatch())
 		if err != nil {
-			return nil, err
+			return nil, status.WrapErrorf(err, "faile to sync propose batch request on c%dn%d", req.GetRangeId(), req.GetReplicaId())
 		}
 		rsp.Batch = batchResponse
 	}

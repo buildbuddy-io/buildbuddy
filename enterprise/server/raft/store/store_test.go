@@ -193,21 +193,6 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 	c1, err := s1.APIClient().Get(ctx, s1.GRPCAddress)
 	require.NoError(t, err)
 	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, poolB)
-	rd := &rfpb.RangeDescriptor{
-		Start:      keys.MakeKey([]byte("a")),
-		End:        keys.MakeKey([]byte("z")),
-		RangeId:    2,
-		Generation: 1,
-	}
-	protoBytes, err := proto.Marshal(rd)
-	require.NoError(t, err)
-	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: protoBytes,
-		},
-	}).ToProto()
-	require.NoError(t, err)
 
 	replicaID := uint64(0)
 	for _, repl := range bootstrapInfo.Replicas {
@@ -219,7 +204,6 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 		RangeId:       2,
 		ReplicaId:     replicaID,
 		InitialMember: bootstrapInfo.InitialMembersForTesting(),
-		Batch:         batchProto,
 	})
 	require.NoError(t, err)
 
