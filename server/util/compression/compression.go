@@ -260,10 +260,11 @@ type zstdCompressor struct {
 	enc *zstd.Encoder
 }
 
-// NewZstdCompressingWriter returns a WriteCloser that accepts uncompressed bytes,
+// NewZstdCompressingWriteCloser returns a WriteCloser that accepts uncompressed bytes,
 // compresses them using zstd compression at the default level, and writes the
 // compressed bytes to the given writer.
-func NewZstdCompressingWriter(wc io.WriteCloser) (io.WriteCloser, error) {
+// Calling Close on the returned WriteCloser will close the underlying WriteCloser wc.
+func NewZstdCompressingWriteCloser(wc io.WriteCloser) (io.WriteCloser, error) {
 	enc, err := zstd.NewWriter(wc)
 	if err != nil {
 		return nil, err
@@ -281,6 +282,7 @@ func (c *zstdCompressor) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// Close closes the underlying encoder and wrapped WriteCloser.
 func (c *zstdCompressor) Close() error {
 	err := c.enc.Close()
 	if wcerr := c.wc.Close(); wcerr != nil && err == nil {

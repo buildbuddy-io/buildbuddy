@@ -1102,7 +1102,7 @@ func NewUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r
 
 	// If zstd compression is enabled, wrap the writer with a compressing writer
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		compressingWriter, err := compression.NewZstdCompressingWriter(cwc)
+		compressingWriter, err := compression.NewZstdCompressingWriteCloser(cwc)
 		if err != nil {
 			return nil, status.InternalErrorf("Failed to create zstd compressing writer: %s", err)
 		}
