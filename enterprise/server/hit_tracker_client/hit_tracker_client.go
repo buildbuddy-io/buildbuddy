@@ -82,10 +82,24 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 
 type groupID string
 type cacheHits struct {
-	gid         groupID
-	mu          sync.Mutex
-	authHeaders map[string][]string
-	hits        []*hitpb.CacheHit
+	maxPendingHitsPerGroup int
+	gid                    groupID
+	mu                     sync.Mutex
+	authHeaders            map[string][]string
+	hits                   []*hitpb.CacheHit
+}
+
+func (c *cacheHits) enqueue(hit *hitpb.CacheHit, authHeaders map[string][]string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.hits) >= c.maxPendingHitsPerGroup {
+		return false
+	}
+
+	// Store the latest auth headers for this group for use in the async RPC.
+	c.authHeaders = authHeaders
+	c.hits = append(c.hits, hit)
+	return true
 }
 
 type HitTrackerFactory struct {
@@ -187,7 +201,11 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 	}
 
 	if _, ok := h.hitsByGroup[groupID]; !ok {
-		hits := cacheHits{gid: groupID, hits: []*hitpb.CacheHit{}}
+		hits := cacheHits{
+			maxPendingHitsPerGroup: h.maxPendingHitsPerGroup,
+			gid:                    groupID,
+			hits:                   []*hitpb.CacheHit{},
+		}
 		h.hitsByGroup[groupID] = &hits
 		h.hitsQueue = append(h.hitsQueue, &hits)
 	}
@@ -195,27 +213,20 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 	groupHits := h.hitsByGroup[groupID]
 	h.mu.Unlock()
 	authHeaders := authutil.GetAuthHeaders(ctx, h.authenticator)
-	groupHits.mu.Lock()
-	if len(groupHits.hits) >= h.maxPendingHitsPerGroup {
-		groupHits.mu.Unlock()
-		alert.UnexpectedEvent(fmt.Sprintf("Exceeded maximum number of pending cache hits for group %s, dropping some.", string(groupID)))
+	if groupHits.enqueue(hit, authHeaders) {
 		metrics.RemoteHitTrackerUpdates.With(
 			prometheus.Labels{
 				metrics.GroupID:              string(groupID),
-				metrics.EnqueueUpdateOutcome: "dropped_too_many_updates",
+				metrics.EnqueueUpdateOutcome: "enqueued",
 			}).Add(float64(1))
 		return
 	}
 
-	// Store the latest auth headers for this group for use in the async RPC.
-	groupHits.authHeaders = authHeaders
-	groupHits.hits = append(groupHits.hits, hit)
-	groupHits.mu.Unlock()
-
+	alert.UnexpectedEvent(fmt.Sprintf("Exceeded maximum number of pending cache hits for group %s, dropping some.", string(groupID)))
 	metrics.RemoteHitTrackerUpdates.With(
 		prometheus.Labels{
 			metrics.GroupID:              string(groupID),
-			metrics.EnqueueUpdateOutcome: "enqueued",
+			metrics.EnqueueUpdateOutcome: "dropped_too_many_updates",
 		}).Add(float64(1))
 }
 
