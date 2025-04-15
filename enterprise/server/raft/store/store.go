@@ -1126,23 +1126,6 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	}
 
 	rsp := &rfpb.StartShardResponse{}
-	if req.GetBatch() == nil || len(req.GetInitialMember()) == 0 {
-		return rsp, nil
-	}
-
-	// If we are the last member in the cluster, we'll do the syncPropose.
-	replicaIDs := make([]uint64, 0, len(req.GetInitialMember()))
-	for replicaID := range req.GetInitialMember() {
-		replicaIDs = append(replicaIDs, replicaID)
-	}
-	sort.Slice(replicaIDs, func(i, j int) bool { return replicaIDs[i] < replicaIDs[j] })
-	if req.GetReplicaId() == replicaIDs[len(replicaIDs)-1] {
-		batchResponse, err := s.shardStarterSession.SyncProposeLocal(ctx, s.nodeHost, req.GetRangeId(), req.GetBatch())
-		if err != nil {
-			return nil, status.WrapErrorf(err, "failed to sync propose batch request on c%dn%d", req.GetRangeId(), req.GetReplicaId())
-		}
-		rsp.Batch = batchResponse
-	}
 	return rsp, nil
 }
 
@@ -2425,7 +2408,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	}
 	bootstrapInfo := bringup.MakeBootstrapInfo(newRangeID, 1, servers)
 	log.CtxDebugf(ctx, "StartShard called with bootstrapInfo: %+v", bootstrapInfo)
-	if err := bringup.StartShard(ctx, s.apiClient, bootstrapInfo, stubBatch); err != nil {
+	if err := bringup.StartShard(ctx, s, bootstrapInfo, stubBatch); err != nil {
 		return nil, status.WrapErrorf(err, "failed to split range %d, new range id=%d", rangeID, newRangeID)
 	}
 

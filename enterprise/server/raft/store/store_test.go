@@ -1075,7 +1075,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 	})
 
 	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, poolB)
-	err = bringup.StartShard(ctx, s2.APIClient(), bootstrapInfo, initalRDBatch)
+	err = bringup.StartShard(ctx, s2, bootstrapInfo, initalRDBatch)
 	require.NoError(t, err)
 
 	metaRDBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
