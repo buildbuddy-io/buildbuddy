@@ -106,17 +106,18 @@ export default class TapComponent extends React.Component<Props, State> {
 
   render() {
     const tab = this.getSelectedTab();
-    let tabContent;
     const repo = this.selectedRepo();
+    let title;
+    let tabContent;
     if (tab === "flakes") {
+      title = "Flakes";
       tabContent = <FlakesComponent repo={repo} search={this.props.search} dark={this.props.dark}></FlakesComponent>;
     } else {
+      title = "Tests";
       tabContent = (
         <TestGridComponent repo={repo} search={this.props.search} user={this.props.user}></TestGridComponent>
       );
     }
-
-    const title = capabilities.config.targetFlakesUiEnabled ? "Test history" : "Test grid";
 
     return (
       <div className={`tap ${this.isV2 ? "v2" : ""}`}>
@@ -144,20 +145,6 @@ export default class TapComponent extends React.Component<Props, State> {
                   {tab === "flakes" && <DatePickerButton search={this.props.search}></DatePickerButton>}
                 </div>
               </div>
-              {capabilities.config.targetFlakesUiEnabled && (
-                <div className="tabs">
-                  <div
-                    onClick={() => this.updateSelectedTab("grid")}
-                    className={`tab ${this.getSelectedTab() === "grid" ? "selected" : ""}`}>
-                    Test Grid
-                  </div>
-                  <div
-                    onClick={() => this.updateSelectedTab("flakes")}
-                    className={`tab ${this.getSelectedTab() === "flakes" ? "selected" : ""}`}>
-                    Flakes
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>

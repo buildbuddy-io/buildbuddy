@@ -20,7 +20,7 @@ go_library(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/tracing",
-        "@com_github_docker_distribution//reference",
+        "@com_github_distribution_reference//:reference",
         "@com_github_google_go_containerregistry//pkg/authn",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",

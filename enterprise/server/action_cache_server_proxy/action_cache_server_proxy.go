@@ -71,6 +71,9 @@ func getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*diges
 }
 
 func (s *ActionCacheServerProxy) getLocallyCachedActionResult(ctx context.Context, key *digest.ACResourceName) (*repb.Digest, *repb.ActionResult, error) {
+	// NOTE: To avoid double-counting AC hits, we deliberately don't track
+	// download for these reads.  The remote server will count the full response
+	// size when checking the cached value.
 	ptr := &rspb.ResourceName{}
 	if err := cachetools.ReadProtoFromAC(ctx, s.localCache, key, ptr); err != nil {
 		return nil, nil, err

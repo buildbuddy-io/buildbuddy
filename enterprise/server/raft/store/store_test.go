@@ -448,7 +448,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 func TestAddRangeBack(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
-	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "cache.raft.enable_driver", false)
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -1075,7 +1075,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 	})
 
 	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, poolB)
-	err = bringup.StartShard(ctx, s2.APIClient(), bootstrapInfo, initalRDBatch)
+	err = bringup.StartShard(ctx, s2, bootstrapInfo, initalRDBatch)
 	require.NoError(t, err)
 
 	metaRDBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{

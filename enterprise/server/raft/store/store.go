@@ -1126,23 +1126,6 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	}
 
 	rsp := &rfpb.StartShardResponse{}
-	if req.GetBatch() == nil || len(req.GetInitialMember()) == 0 {
-		return rsp, nil
-	}
-
-	// If we are the last member in the cluster, we'll do the syncPropose.
-	replicaIDs := make([]uint64, 0, len(req.GetInitialMember()))
-	for replicaID := range req.GetInitialMember() {
-		replicaIDs = append(replicaIDs, replicaID)
-	}
-	sort.Slice(replicaIDs, func(i, j int) bool { return replicaIDs[i] < replicaIDs[j] })
-	if req.GetReplicaId() == replicaIDs[len(replicaIDs)-1] {
-		batchResponse, err := s.shardStarterSession.SyncProposeLocal(ctx, s.nodeHost, req.GetRangeId(), req.GetBatch())
-		if err != nil {
-			return nil, status.WrapErrorf(err, "faile to sync propose batch request on c%dn%d", req.GetRangeId(), req.GetReplicaId())
-		}
-		rsp.Batch = batchResponse
-	}
 	return rsp, nil
 }
 
@@ -1204,10 +1187,16 @@ func (s *Store) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req
 }
 
 func (s *Store) syncRemoveData(ctx context.Context, rangeID, replicaID uint64) error {
+	// stop the replica just in case it was not stopped.
+	if err := s.stopReplica(ctx, rangeID, replicaID); err != nil {
+		return status.WrapErrorf(err, "failed to stop replica before removing data of c%dn%d", rangeID, replicaID)
+	}
+
 	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
 		err := s.nodeHost.SyncRemoveData(ctx, rangeID, replicaID)
 		// If the shard is not stopped, we want to retry SyncRemoveData call.
 		if err == dragonboat.ErrShardNotStopped {
+			log.Warning("shard not stopped when remove data")
 			err = dragonboat.ErrTimeout
 		}
 		return err
@@ -1519,7 +1508,6 @@ type zombieCleanupAction int
 const (
 	zombieCleanupNoAction zombieCleanupAction = iota
 	zombieCleanupRemoveReplica
-	zombieCleanupStopReplica
 	zombieCleanupRemoveData
 	zombieCleanupWait
 )
@@ -1770,11 +1758,6 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		} else {
 			removeDataReq.Range = task.rd
 		}
-	} else if task.action == zombieCleanupStopReplica {
-		err := j.store.stopReplica(ctx, task.rangeID, task.replicaID)
-		if err != nil {
-			return zombieCleanupStopReplica, err
-		}
 	} else if task.action == zombieCleanupRemoveReplica {
 		// In the rare case where the zombie holds the leader, we try to transfer the leader away first.
 		if j.store.isLeader(task.rangeID, task.replicaID) {
@@ -1840,13 +1823,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		}
 	}
 
-	// Always stop replica directly before remove data.
-	err := j.store.stopReplica(ctx, task.rangeID, task.replicaID)
-	if err != nil {
-		return zombieCleanupStopReplica, status.InternalErrorf("failed to stop replica: %s", err)
-	}
-
-	_, err = j.store.RemoveData(ctx, removeDataReq)
+	_, err := j.store.RemoveData(ctx, removeDataReq)
 	if err != nil {
 		return zombieCleanupRemoveData, status.InternalErrorf("failed to remove data: %s", err)
 	}
@@ -2431,7 +2408,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	}
 	bootstrapInfo := bringup.MakeBootstrapInfo(newRangeID, 1, servers)
 	log.CtxDebugf(ctx, "StartShard called with bootstrapInfo: %+v", bootstrapInfo)
-	if err := bringup.StartShard(ctx, s.apiClient, bootstrapInfo, stubBatch); err != nil {
+	if err := bringup.StartShard(ctx, s, bootstrapInfo, stubBatch); err != nil {
 		return nil, status.WrapErrorf(err, "failed to split range %d, new range id=%d", rangeID, newRangeID)
 	}
 

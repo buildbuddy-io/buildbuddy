@@ -28,8 +28,10 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gerrdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gcodes "google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -44,6 +46,24 @@ const (
 
 	maxHTTPTimeout = 60 * time.Minute
 )
+
+// makeUnsupportedQualifiersErrStatus creates a gRPC status error that includes a list of unsupported qualifiers.
+func makeUnsupportedQualifiersErrStatus(qualifierNames []string) error {
+	fieldViolations := make([]*gerrdetails.BadRequest_FieldViolation, 0, len(qualifierNames))
+	for _, name := range qualifierNames {
+		fieldViolations = append(fieldViolations, &gerrdetails.BadRequest_FieldViolation{
+			Field:       "qualifiers.name",
+			Description: fmt.Sprintf("%q not supported", name),
+		})
+	}
+	s := gstatus.New(gcodes.InvalidArgument, fmt.Sprintf("Unsupported qualifiers: %s", strings.Join(qualifierNames, ", ")))
+	s, err := s.WithDetails(&gerrdetails.BadRequest{FieldViolations: fieldViolations})
+	// should never happen
+	if err != nil {
+		log.Warningf("Failed to encode qualifier field violation: %v", err)
+	}
+	return s.Err()
+}
 
 type FetchServer struct {
 	env                  environment.Env
@@ -139,6 +159,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if storageFunc == repb.DigestFunction_UNKNOWN {
 		storageFunc = repb.DigestFunction_SHA256
 	}
+	var unsupportedQualifierNames []string
 	sharedHeader := make(http.Header)
 	uriHeaders := make(map[int]http.Header)
 	var checksumFunc repb.DigestFunction_Value
@@ -181,11 +202,16 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				uriHeaders[uriIndex] = make(http.Header)
 			}
 			uriHeaders[uriIndex].Add(halves[1], qualifier.GetValue())
+			continue
 		}
 		if qualifier.GetName() == BazelCanonicalIDQualifier {
 			// TODO: Implement canonical ID handling.
 			continue
 		}
+		unsupportedQualifierNames = append(unsupportedQualifierNames, qualifier.GetName())
+	}
+	if len(unsupportedQualifierNames) > 0 {
+		return nil, makeUnsupportedQualifiersErrStatus(unsupportedQualifierNames)
 	}
 	if len(expectedChecksum) != 0 {
 		blobDigest := p.findBlobInCache(ctx, req.GetInstanceName(), checksumFunc, expectedChecksum)
