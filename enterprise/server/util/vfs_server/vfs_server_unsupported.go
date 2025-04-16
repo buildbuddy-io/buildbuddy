@@ -7,16 +7,18 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 )
 
 type Server struct {
 }
 
-func (s *Server) UpdateIOStats(stats *repb.IOStats) {}
+func (s *Server) ComputeStats() *repb.VfsStats {
+	return nil
+}
 
 func New(env environment.Env, workspacePath string) (*Server, error) {
 	return nil, fmt.Errorf("not implemented")
