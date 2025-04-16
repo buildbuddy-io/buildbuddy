@@ -73,28 +73,6 @@ go_test(
         "docker",
     ],
     deps = select({
-        "@io_bazel_rules_go//go/platform:darwin_amd64": [
-            ":vfs",
-            "//enterprise/server/remote_execution/container",
-            "//enterprise/server/util/vfs_server",
-            "//proto:remote_execution_go_proto",
-            "//server/testutil/testenv",
-            "//server/testutil/testfs",
-            "//server/util/log",
-            "@com_github_stretchr_testify//require",
-            "@org_golang_x_sys//unix",
-        ],
-        "@io_bazel_rules_go//go/platform:darwin_arm64": [
-            ":vfs",
-            "//enterprise/server/remote_execution/container",
-            "//enterprise/server/util/vfs_server",
-            "//proto:remote_execution_go_proto",
-            "//server/testutil/testenv",
-            "//server/testutil/testfs",
-            "//server/util/log",
-            "@com_github_stretchr_testify//require",
-            "@org_golang_x_sys//unix",
-        ],
         "@io_bazel_rules_go//go/platform:linux_amd64": [
             ":vfs",
             "//enterprise/server/remote_execution/container",
