@@ -11,21 +11,6 @@
 import %workspace%/shared.bazelrc
 
 
-###################################
-# PLATFORM-SPECIFIC CONFIGURATION #
-###################################
-
-common:macos --action_env=DEVELOPER_DIR
-common:macos --host_action_env=DEVELOPER_DIR
-
-# Ensure that we don't use the apple_support cc_toolchain
-common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
-
-# Ensure that our executors can run on macOS 11.0+
-common:macos --macos_minimum_os=12.0
-common:macos --host_macos_minimum_os=12.0
-
-
 #################################
 # PUBLIC REPO EXCLUSIVE CONFIGS #
 #################################
@@ -34,8 +19,7 @@ common:macos --host_macos_minimum_os=12.0
 #
 # Note: Use remote.buildbuddy.io and NOT buildbuddy.buildbuddy.io
 # so OSS / anonymous users can still send events to our server.
-common --bes_results_url=https://app.buildbuddy.io/invocation/
-common --bes_backend=grpcs://remote.buildbuddy.io
+common --config=anon-bes
 
 # Don't run Docker and Firecracker tests by default, because they cannot be run on all environments
 # Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
@@ -45,68 +29,6 @@ build --build_tag_filters=-secrets
 
 # Build with --config=local to send build logs to your local server
 common:local --extra_execution_platforms=@buildbuddy_toolchain//:platform
-
-# Build with --config=dev to send build logs to the dev server
-common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
-common:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
-
-# Common flags to be used with remote cache
-common:cache-shared --remote_cache_compression
-common:cache-shared --experimental_remote_cache_compression_threshold=100
-common:cache-shared --remote_timeout=600
-
-# Build with --config=cache-dev to send build logs to the dev server with cache
-common:cache-dev --config=cache-shared
-common:cache-dev --config=dev
-common:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
-
-# Build with --config=cache to send build logs to the production server with cache
-common:cache --config=cache-shared
-common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
-
-# Flags shared across remote configs
-common:remote-shared --jobs=100
-common:remote-shared --verbose_failures
-
-# Flags shared for prod RBE and cache
-common:remote-prod-shared --config=remote-shared
-common:remote-prod-shared --config=cache-shared
-common:remote-prod-shared --remote_executor=grpcs://buildbuddy.buildbuddy.io
-
-# Build with --config=remote to use BuildBuddy RBE, generally as a human from
-# the command line. Other configs shoudn't embed this.
-common:remote --config=remote-prod-shared
-common:remote --config=target-linux-x86
-common:remote --remote_download_toplevel
-
-# Build with --config=remote-minimal to use BuildBuddy RBE in automated
-# processes, (probers, workflows, ci, etc.) where the outputs shouldn't be
-# downloaded.
-common:remote-minimal --config=remote-prod-shared
-common:remote-minimal --config=target-linux-x86
-common:remote-minimal --config=download-minimal
-
-# Specify arch to do cross-platform builds on remote until the go toolchain can
-# accomodate multiple execution platforms
-common:remote-linux-arm64 --config=remote-prod-shared
-common:remote-linux-arm64 --config=target-linux-arm64
-common:remote-linux-arm64 --remote_download_toplevel
-
-# Flags shared for dev RBE and cache
-common:remote-dev-shared --config=dev
-common:remote-dev-shared --config=remote-shared
-common:remote-dev-shared --config=cache-shared
-common:remote-dev-shared --remote_executor=grpcs://buildbuddy.buildbuddy.dev
-
-# Build with --config=remote-dev to use BuildBuddy RBE.
-common:remote-dev --config=remote-dev-shared
-common:remote-dev --config=target-linux-x86
-common:remote-dev --remote_download_toplevel
-
-# Specify arch to do cross-platform builds on remote-dev
-common:remote-dev-linux-arm64 --config=remote-dev-shared
-common:remote-dev-linux-arm64 --config=target-linux-arm64
-common:remote-dev-linux-arm64 --remote_download_toplevel
 
 # Configuration used for GitHub actions-based CI
 common:ci --config=remote-minimal
