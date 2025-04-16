@@ -662,6 +662,13 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 
 	if n.vfs.verbose {
 		log.CtxDebugf(n.vfs.rpcCtx, "Open %q (ino %d) with flags %q", n.relativePath(), n.StableAttr().Ino, describeOpenFlags(flags))
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.rpcCtx, "Open %q: OK", n.relativePath())
+			} else {
+				log.CtxDebugf(n.vfs.rpcCtx, "Open %q: %s", n.relativePath(), errno)
+			}
+		}()
 	}
 
 	req := &vfspb.OpenRequest{
@@ -670,6 +677,9 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 	rsp, err := n.vfs.vfsClient.Open(ctx, req)
 	if err != nil {
+		if n.vfs.verbose {
+			log.CtxInfof(n.vfs.getRPCContext(), "Open %q failed: %s", n.relativePath(), err)
+		}
 		return nil, 0, rpcErrToSyscallErrno(err)
 	}
 	n.vfs.inodeCache.opened(n.StableAttr().Ino)

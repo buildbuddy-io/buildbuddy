@@ -1274,6 +1274,34 @@ var (
 		CommandName,
 	})
 
+	VFSCASFilesCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "vfs_cas_files_count",
+		Help:      "Total number of CAS files in VFS filesystems.",
+	})
+
+	VFSCASFilesAccessedCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "vfs_cas_files_accessed_count",
+		Help:      "Number of CAS files in VFS filesystems that were accessed by the action.",
+	})
+
+	VFSCASFilesSizeBytes = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "vfs_cas_files_size_bytes",
+		Help:      "Total size of CAS files in VFS filesystems.",
+	})
+
+	VFSCASFilesAccessedBytes = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "vfs_cas_files_accessed_bytes",
+		Help:      "Size of CAS files in VFS filesystems that were accessed by the action.",
+	})
+
 	NetworkingCommandCPUUsageUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
