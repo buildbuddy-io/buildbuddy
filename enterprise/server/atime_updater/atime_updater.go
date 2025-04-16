@@ -64,6 +64,8 @@ type atimeUpdates struct {
 	authHeaders map[string][]string
 	updates     []*atimeUpdate
 	numDigests  int
+
+	maxUpdatesPerGroup int
 }
 
 type atimeUpdater struct {
@@ -116,6 +118,25 @@ func (u *atimeUpdater) groupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
+func (u *atimeUpdates) findPendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *atimeUpdate {
+	for _, update := range u.updates {
+		if update.instanceName == instanceName && update.digestFunction == digestFunction {
+			return update
+		}
+	}
+
+	if len(u.updates) >= u.maxUpdatesPerGroup {
+		return nil
+	}
+	pendingUpdate := &atimeUpdate{
+		instanceName:   instanceName,
+		digests:        map[digest.Key]struct{}{},
+		digestFunction: digestFunction,
+	}
+	u.updates = append(u.updates, pendingUpdate)
+	return pendingUpdate
+}
+
 func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) {
 	if len(digests) == 0 {
 		return
@@ -131,7 +152,7 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	u.mu.Lock()
 	updates, ok := u.updates[groupID]
 	if !ok {
-		updates = &atimeUpdates{}
+		updates = &atimeUpdates{maxUpdatesPerGroup: u.maxUpdatesPerGroup}
 		u.updates[groupID] = updates
 	}
 	u.mu.Unlock()
@@ -152,29 +173,15 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 
 	// First, find the update that the new digests can be merged into, or create
 	// a new one if one doesn't exist.
-	var pendingUpdate *atimeUpdate
-	for _, update := range updates.updates {
-		if update.instanceName == instanceName && update.digestFunction == digestFunction {
-			pendingUpdate = update
-			break
-		}
-	}
+	pendingUpdate := updates.findPendingUpdate(instanceName, digestFunction)
 	if pendingUpdate == nil {
-		if len(updates.updates) >= u.maxUpdatesPerGroup {
-			log.CtxInfof(ctx, "Too many pending FindMissingBlobsRequests for updating remote atime for group %s, dropping %d pending atime updates", groupID, len(keys))
-			metrics.RemoteAtimeUpdates.With(
-				prometheus.Labels{
-					metrics.GroupID:              groupID,
-					metrics.EnqueueUpdateOutcome: "dropped_too_many_batches",
-				}).Add(float64(len(digests)))
-			return
-		}
-		pendingUpdate = &atimeUpdate{
-			instanceName:   instanceName,
-			digests:        map[digest.Key]struct{}{},
-			digestFunction: digestFunction,
-		}
-		updates.updates = append(updates.updates, pendingUpdate)
+		log.CtxInfof(ctx, "Too many pending FindMissingBlobsRequests for updating remote atime for group %s, dropping %d pending atime updates", groupID, len(keys))
+		metrics.RemoteAtimeUpdates.With(
+			prometheus.Labels{
+				metrics.GroupID:              groupID,
+				metrics.EnqueueUpdateOutcome: "dropped_too_many_batches",
+			}).Add(float64(len(digests)))
+		return
 	}
 
 	// Now merge the new digests into the update.
