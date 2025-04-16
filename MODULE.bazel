@@ -72,6 +72,18 @@ archive_override(
     urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/badf8034b2952ec613970a27f24fb140be7eaf73.tar.gz"],
 )
 
+bazel_dep(name = "rules_go", version = "0.53.0", repo_name = "io_bazel_rules_go")
+single_version_override(
+    module_name = "rules_go",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazel-contrib/rules_go/pull/4264
+        # TODO(sluongng): remove when v0.54.0 is released
+        "@@//buildpatches:rules_go.patch",
+    ],
+    version = "0.53.0",
+)
+
 ## Regular bazel_deps
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.14.0")
@@ -84,7 +96,6 @@ bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "protobuf", version = "29.3", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.0.17")
-bazel_dep(name = "rules_go", version = "0.52.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_oci", version = "2.0.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
