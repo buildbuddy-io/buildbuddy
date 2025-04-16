@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -26,6 +27,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func setupEnv(t *testing.T) environment.Env {
@@ -35,6 +37,21 @@ func setupEnv(t *testing.T) environment.Env {
 	fc, err := filecache.NewFileCache(fileCachePath, 1_000_000, false /*=deleteContent*/)
 	require.NoError(t, err)
 	env.SetFileCache(fc)
+
+	bsServer, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	bspb.RegisterByteStreamServer(grpcServer, bsServer)
+
+	go runFunc()
+
+	clientConn, err := testenv.LocalGRPCConn(context.Background(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { clientConn.Close() })
+
+	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
+
 	return env
 }
 
@@ -747,7 +764,6 @@ func TestStatfs(t *testing.T) {
 	require.Equal(t, stats.Bavail, stats.Blocks)
 }
 
-
 func TestAttrCaching(t *testing.T) {
 	fsPath := setupVFS(t)
 
@@ -809,8 +825,8 @@ func TestComputeStats(t *testing.T) {
 
 	// Check stats before we do anything. Only CAS input size/count should be
 	// populated.
-	require.EqualValues(t, 3, stats.GetCasFilesCount())
-	require.EqualValues(t, 0, stats.CasFilesAccessedBytes)
+	require.EqualValues(t, 3, stats.CasFilesCount)
+	require.EqualValues(t, 0, stats.CasFilesAccessedCount)
 	require.EqualValues(t, 650, stats.CasFilesSizeBytes)
 	require.EqualValues(t, 0, stats.CasFilesAccessedBytes)
 	require.EqualValues(t, 0, stats.FileDownloadCount)
@@ -819,4 +835,13 @@ func TestComputeStats(t *testing.T) {
 
 	_, err = os.ReadFile(filepath.Join(fsPath, "test1"))
 	require.NoError(t, err)
+
+	stats = server.ComputeStats()
+	require.EqualValues(t, 3, stats.CasFilesCount)
+	require.EqualValues(t, 1, stats.CasFilesAccessedCount)
+	require.EqualValues(t, 650, stats.CasFilesSizeBytes)
+	require.EqualValues(t, 100, stats.CasFilesAccessedBytes)
+	require.EqualValues(t, 1, stats.FileDownloadCount)
+	require.EqualValues(t, 100, stats.FileDownloadSizeBytes)
+	require.Greater(t, stats.FileDownloadDurationUsec, int64(0))
 }

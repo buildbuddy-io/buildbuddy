@@ -664,7 +664,7 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 		log.CtxDebugf(n.vfs.rpcCtx, "Open %q (ino %d) with flags %q", n.relativePath(), n.StableAttr().Ino, describeOpenFlags(flags))
 		defer func() {
 			if errno == 0 {
-				log.CtxDebugf(n.vfs.rpcCtx, "Open %q: OK")
+				log.CtxDebugf(n.vfs.rpcCtx, "Open %q: OK", n.relativePath())
 			} else {
 				log.CtxDebugf(n.vfs.rpcCtx, "Open %q: %s", n.relativePath(), errno)
 			}
