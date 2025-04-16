@@ -284,20 +284,22 @@ func TestCleanupZombieNonVoter(t *testing.T) {
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
 	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*testutil.TestingStore{s1}
+	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
-	s2 := sf.NewStore(t)
-	// add a non-voter c2n2
-	addNonVoting(t, s1, ctx, 2, 2, s2.NHID())
+	s4 := sf.NewStore(t)
+	// add a non-voter c2n4
+	addNonVoting(t, s1, ctx, 2, 4, s4.NHID())
 
 	membership, err := s1.GetMembership(ctx, 2)
 	require.NoError(t, err)
-	// Check that c2n2 is a non-voter on raft.
+	// Check that c2n4 is a non-voter on raft.
 	require.Equal(t, 1, len(membership.NonVotings))
-	require.Contains(t, membership.NonVotings, uint64(2))
+	require.Contains(t, membership.NonVotings, uint64(4))
 
 	for {
 		clock.Advance(1 * time.Hour)
