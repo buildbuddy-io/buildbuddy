@@ -1759,21 +1759,6 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			removeDataReq.Range = task.rd
 		}
 	} else if task.action == zombieCleanupRemoveReplica {
-		// In the rare case where the zombie holds the leader, we try to transfer the leader away first.
-		if j.store.isLeader(task.rangeID, task.replicaID) {
-			targetReplicaID := uint64(0)
-			for replicaID := range task.shardInfo.Replicas {
-				if replicaID != task.shardInfo.ReplicaID {
-					targetReplicaID = replicaID
-					if err := j.store.nodeHost.RequestLeaderTransfer(task.rangeID, targetReplicaID); err != nil {
-						return zombieCleanupRemoveReplica, status.InternalErrorf("failed to transfer leader from c%dn%d to c%dn%d", task.shardInfo.ShardID, task.shardInfo.ReplicaID, task.shardInfo.ShardID, targetReplicaID)
-					}
-					log.Debugf("transferred leadership for c%dn%d", task.rangeID, task.replicaID)
-					return zombieCleanupRemoveReplica, nil
-				}
-			}
-		}
-
 		// fetched the up-to-date range from meta range
 		var rd *rfpb.RangeDescriptor
 		var err error

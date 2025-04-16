@@ -219,17 +219,17 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 
 func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
-	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
-	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "cache.raft.enable_driver", false)
 
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*testutil.TestingStore{s1, s2}
+	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
 	rd2 := s1.GetRange(2)
@@ -239,7 +239,9 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	}).ToProto()
 	require.NoError(t, err)
 
-	writeRsp, err := s1.Sender().SyncPropose(ctx, constants.MetaRangePrefix, deleteRDBatch)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+
+	writeRsp, err := s.Sender().SyncPropose(ctx, constants.MetaRangePrefix, deleteRDBatch)
 	require.NoError(t, err)
 	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	require.NoError(t, err)
@@ -250,24 +252,33 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 		require.NoError(t, err)
 		if len(list1.GetReplicas()) != 1 {
 			time.Sleep(10 * time.Millisecond)
+			log.Infof("s1(%s) has more than 1 replica", s1.NHID())
 			continue
 		}
 		list2, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 		require.NoError(t, err)
 		if len(list2.GetReplicas()) != 1 {
 			time.Sleep(10 * time.Millisecond)
+			log.Infof("s2(%s) has more than 1 replica", s2.NHID())
+			continue
+		}
+		list3, err := s3.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		if len(list3.GetReplicas()) != 1 {
+			time.Sleep(10 * time.Millisecond)
+			log.Infof("s3(%s) has more than 1 replica", s3.NHID())
 			continue
 		}
 		require.Equal(t, uint64(1), list1.GetReplicas()[0].GetRangeId())
 		require.Equal(t, uint64(1), list2.GetReplicas()[0].GetRangeId())
+		require.Equal(t, uint64(1), list3.GetReplicas()[0].GetRangeId())
 		break
 	}
 }
 
 func TestCleanupZombieNonVoter(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
-	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
-	flags.Set(t, "cache.raft.min_meta_range_replicas", 1)
+	flags.Set(t, "cache.raft.enable_driver", false)
 
 	clock := clockwork.NewFakeClock()
 
