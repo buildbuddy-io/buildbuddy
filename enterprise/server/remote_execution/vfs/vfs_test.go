@@ -356,11 +356,11 @@ func toRawStats(fi fs.FileInfo) *rawStats {
 	rs := fi.Sys().(*syscall.Stat_t)
 	return &rawStats{
 		Ino:       rs.Ino,
-		Nlink:     rs.Nlink,
+		Nlink:     uint64(rs.Nlink),
 		Mtime:     time.Unix(rs.Mtim.Sec, rs.Mtim.Nsec),
 		Atime:     time.Unix(rs.Atim.Sec, rs.Atim.Nsec),
 		Blocks:    rs.Blocks,
-		BlockSize: rs.Blksize,
+		BlockSize: int64(rs.Blksize),
 		Size:      rs.Size,
 	}
 }
