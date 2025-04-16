@@ -282,127 +282,137 @@ type Option interface {
 	Normalized() Option
 }
 
-// GeneralOption is the concrete implementation of `Option` which supports all
-// types of options and their associated value, if any. It is a stop-gap measure
-// before we move to more specialized `Option` types, like types that require
-// values, or can use the negative/positive boolean forms, or flags that expand
-// into other flags, or starlark flags.
-type GeneralOption struct {
+// RequiredValueOption is used to represent an option whose definition specifies
+// `RequiresValue` as `true`.
+type RequiredValueOption struct {
 	*Definition
-	Value         *string
+
+	// The string Value of this option
+	Value *string
+
+	// If this is true, the option will be formatted using the short name.
+	// Otherwise, it will use the long name. If the option definition has an empty
+	// `ShortName`, this value is ignored.
 	UsesShortName bool
-	IsNegative    bool
-	Joined        bool
+
+	// If this is true, the option will be formatted Joined to its value by `=`.
+	// Otherwise, it will be formatted with its value as two separate tokens.
+	// If `UsesShortName` is true and a valid short name exists as described above,
+	// this value will be ignored.
+	Joined bool
 }
 
-func (o *GeneralOption) GetDefinition() *Definition {
+func (o *RequiredValueOption) GetDefinition() *Definition {
 	return o.Definition
 }
 
-func (o *GeneralOption) ExpectsValue() bool {
-	return o.Definition.RequiresValue() && o.Value == nil
+func (o *RequiredValueOption) ExpectsValue() bool {
+	return o.Value == nil
 }
 
-func (o *GeneralOption) GetValue() string {
+func (o *RequiredValueOption) GetValue() string {
+	if o.Value == nil {
+		return ""
+	}
+	return *o.Value
+}
+
+func (o *RequiredValueOption) ClearValue() {
+	o.Value = nil
+}
+
+func (o *RequiredValueOption) SetValue(value string) {
+	o.Value = &value
+}
+
+func (o *RequiredValueOption) Format() []string {
+	switch {
+	case o.UsesShortName && o.ShortName() != "":
+		return []string{"-" + o.ShortName(), o.GetValue()}
+	case o.Joined:
+		return []string{"--" + o.Name() + "=" + o.GetValue()}
+	default:
+		return []string{"--" + o.Name(), o.GetValue()}
+	}
+}
+
+func (o *RequiredValueOption) UseShortName(u bool) {
+	o.UsesShortName = u && o.Definition.ShortName() != ""
+}
+
+func (o *RequiredValueOption) Normalized() Option {
+	return &RequiredValueOption{
+		Definition: o.Definition,
+		Value:      o.Value,
+		Joined:     true,
+	}
+}
+
+// BooleanOption is used to represent an option whose definition specifies
+// `HasNegative` as `true`.
+type BooleanOption struct {
+	*Definition
+
+	// The string Value of this option, if any
+	Value *string
+
+	// If IsNegative is true, the flag will be formatted in --noNAME format.
+	// This value is ignored if `Value` is set.
+	IsNegative bool
+
+	// If this is true, the option will be formatted using the short name.
+	// Otherwise, it will use the long name. If the option definition has an empty
+	// `ShortName`, this value is ignored.
+	// If Value is not nil or BoolValue is false, this value is ignored.
+	UsesShortName bool
+}
+
+func (o *BooleanOption) GetDefinition() *Definition {
+	return o.Definition
+}
+
+func (o *BooleanOption) ExpectsValue() bool {
+	return false
+}
+
+func (o *BooleanOption) GetValue() string {
 	if o.Value != nil {
 		return *o.Value
 	}
-	if o.Definition.HasNegative() {
-		if o.IsNegative {
-			return "0"
-		}
-		return "1"
+	if o.IsNegative {
+		return "0"
 	}
-	return ""
+	return "1"
 }
 
-func (o *GeneralOption) ClearValue() {
+func (o *BooleanOption) ClearValue() {
 	o.Value = nil
 	o.IsNegative = false
 }
 
-func (o *GeneralOption) SetValue(value string) {
+func (o *BooleanOption) SetValue(value string) {
 	o.Value = &value
-	o.IsNegative = false
 }
 
-func (o *GeneralOption) Format() []string {
-	if o.Value != nil {
-		switch {
-		case o.Definition.PluginID() == StarlarkBuiltinPluginID && o.IsNegative:
-			// Starlark flags can have both a "no" prefix and a value; account for
-			// that here.
-			return []string{"--no" + o.Definition.Name() + "=" + *o.Value}
-		case o.Joined || o.Definition.HasNegative():
-			return []string{"--" + o.Definition.Name() + "=" + *o.Value}
-		case o.UsesShortName && o.Definition.ShortName() != "":
-			return []string{"-" + o.Definition.ShortName(), *o.Value}
-		default:
-			return []string{"--" + o.Definition.Name(), *o.Value}
-		}
-	}
-	if o.IsNegative {
-		return []string{"--no" + o.Definition.Name()}
-	}
-	if o.UsesShortName && o.Definition.ShortName() != "" {
-		return []string{"-" + o.Definition.ShortName()}
-	}
-	return []string{"--" + o.Definition.Name()}
+func (o *BooleanOption) SetNegative() {
+	o.Value = nil
+	o.IsNegative = true
 }
 
-func (o *GeneralOption) UseShortName(u bool) {
-	o.UsesShortName = u && o.Definition.ShortName() != ""
-}
-
-// Normalized returns a copy of this option after being normalized to a form
-// that will format into the canonical representation of the option.
-func (o *GeneralOption) Normalized() Option {
-	if o.Definition.PluginID() == UnknownBuiltinPluginID {
-		// don't normalize unknown options
-		return &GeneralOption{
-			Definition:    o.Definition,
-			Value:         o.Value,
-			UsesShortName: o.UsesShortName,
-			IsNegative:    o.IsNegative,
-			Joined:        o.Joined,
-		}
-	}
-	if o.Definition.PluginID() == StarlarkBuiltinPluginID {
-		// Starlark flags can have both a "no" prefix and a value; account for
-		// that here.
-		return &GeneralOption{
-			Definition: o.Definition,
-			Value:      o.Value,
-			IsNegative: o.IsNegative,
-		}
-	}
-	if o.Definition.RequiresValue() {
-		// standard required value
-		return &GeneralOption{
-			Definition: o.Definition,
-			Value:      o.Value,
-			Joined:     true,
-		}
-	}
-	if o.Definition.HasNegative() {
-		normalizedValue, err := o.AsBool()
-		if err != nil {
-			return &GeneralOption{
-				Definition: o.Definition,
-				Value:      o.Value,
-			}
-		}
-		return &GeneralOption{
-			Definition: o.Definition,
-			IsNegative: !normalizedValue,
-		}
-	}
-	return &GeneralOption{
-		Definition: o.Definition,
+func (o *BooleanOption) Format() []string {
+	switch {
+	case o.Value != nil:
+		return []string{"--" + o.Name() + "=" + *o.Value}
+	case o.IsNegative:
+		return []string{"--no" + o.Name()}
+	case o.UsesShortName && o.ShortName() != "":
+		return []string{"-" + o.ShortName()}
+	default:
+		return []string{"--" + o.Name()}
 	}
 }
 
-func (o *GeneralOption) AsBool() (bool, error) {
+func (o *BooleanOption) AsBool() (bool, error) {
 	switch o.GetValue() {
 	case "yes", "true", "1", "":
 		return true, nil
@@ -410,6 +420,127 @@ func (o *GeneralOption) AsBool() (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("Error converting to bool: flag '--%s' has non-boolean value '%s'.", o.Name(), o.GetValue())
+}
+
+func (o *BooleanOption) UseShortName(u bool) {
+	o.UsesShortName = u && o.Definition.ShortName() != ""
+}
+
+func (o *BooleanOption) Normalized() Option {
+	if v, err := o.AsBool(); err == nil {
+		return &BooleanOption{
+			Definition:    o.Definition,
+			Value:         nil,
+			IsNegative:    !v,
+			UsesShortName: false,
+		}
+	}
+	return &BooleanOption{
+		Definition:    o.Definition,
+		Value:         o.Value,
+		UsesShortName: false,
+	}
+}
+
+// starlarkOption is used to represent an option that has been identified as
+// having a starlark option prefix.
+type starlarkOption struct {
+	BooleanOption
+}
+
+func (o *starlarkOption) Normalized() Option {
+	// don't normalize starlark flags
+	return &BooleanOption{
+		Definition: o.Definition,
+		Value:      o.Value,
+		IsNegative: o.IsNegative,
+	}
+}
+
+func (o *starlarkOption) Format() []string {
+	if o.Value != nil && o.IsNegative {
+		// Starlark flags can have both a "no" prefix and a value; account for
+		// that here.
+		return []string{"--no" + o.Name() + "=" + *o.Value}
+	}
+	return o.BooleanOption.Format()
+}
+
+func (_ *starlarkOption) HasSupportedCommands() bool {
+	return true
+}
+
+func (_ *starlarkOption) Supports(command string) bool {
+	return command != "startup"
+}
+
+// ExpansionOption is used to represent an option whose definition specifies
+// both `RequiresValue` and `HasNegative` as `false`.
+type ExpansionOption struct {
+	*Definition
+
+	// If this is true, the option will be formatted using the short name.
+	// Otherwise, it will use the long name. If the option definition has an empty
+	// `ShortName`, this value is ignored.
+	UsesShortName bool
+}
+
+func (o *ExpansionOption) GetDefinition() *Definition {
+	return o.Definition
+}
+
+func (_ *ExpansionOption) ExpectsValue() bool {
+	return false
+}
+
+func (_ *ExpansionOption) GetValue() string {
+	// Expansion options do not support values.
+	return ""
+}
+
+func (_ *ExpansionOption) ClearValue() {
+	// Expansion options do not support values.
+}
+
+func (_ *ExpansionOption) SetValue(value string) {
+	// Expansion options do not support values.
+}
+
+func (o *ExpansionOption) Format() []string {
+	if o.UsesShortName && o.ShortName() != "" {
+		return []string{"-" + o.ShortName()}
+	}
+	return []string{"--" + o.Name()}
+}
+
+func (o *ExpansionOption) UseShortName(u bool) {
+	o.UsesShortName = u && o.Definition.ShortName() != ""
+}
+
+func (o *ExpansionOption) Normalized() Option {
+	return &ExpansionOption{
+		Definition:    o.Definition,
+		UsesShortName: false,
+	}
+}
+
+func Canonicalize(opts []Option) []Option {
+	lastOptionIndex := map[string]int{}
+	for i, opt := range opts {
+		lastOptionIndex[opt.Name()] = i
+	}
+	// Accumulate only the last instance of a given option
+	var canonical []Option
+	for i, opt := range opts {
+		if !opt.Multi() && lastOptionIndex[opt.Name()] > i {
+			continue
+		}
+		if opt.PluginID() != UnknownBuiltinPluginID {
+			opt = opt.Normalized()
+		}
+		canonical = append(canonical, opt)
+	}
+	return canonical
 }
 
 func NewStarlarkOptionDefinition(optName string) *Definition {
@@ -443,11 +574,8 @@ func NewOption(optName string, v *string, d *Definition) (Option, error) {
 		return nil, fmt.Errorf("option name '%s' cannot specify an option with definition '%#v'", optName, d)
 	}
 
-	if d.PluginID() == StarlarkBuiltinPluginID {
-		return &GeneralOption{Definition: d, Value: v, IsNegative: form == negativeForm}, nil
-	}
 	if d.requiresValue {
-		return &GeneralOption{Definition: d, Value: v, UsesShortName: form == shortForm, Joined: v != nil}, nil
+		return &RequiredValueOption{Definition: d, Value: v, UsesShortName: form == shortForm, Joined: v != nil}, nil
 	}
 	if v != nil {
 		// A flag that didn't require a value had one anyway; this is normally okay if this
@@ -464,7 +592,6 @@ func NewOption(optName string, v *string, d *Definition) (Option, error) {
 			// ignore values and output a warning. Since we canonicalize the options
 			// and remove the value ourselves, we should output the warning instead.
 			log.Warnf("option '%s' is an expansion option. It does not accept values, and does not change its expansion based on the value provided. Value '%s' will be ignored.", d.name, v)
-			v = nil
 		}
 		if form == negativeForm {
 			// This is a negative boolean value (of the form "--noNAME") with a
@@ -472,6 +599,8 @@ func NewOption(optName string, v *string, d *Definition) (Option, error) {
 			return nil, fmt.Errorf("Unexpected value after boolean option: %s", optName)
 		}
 	}
-	o := &GeneralOption{Definition: d, Value: v, UsesShortName: form == shortForm, IsNegative: form == negativeForm}
-	return o, nil
+	if d.hasNegative {
+		return &BooleanOption{Definition: d, Value: v, UsesShortName: form == shortForm, IsNegative: form == negativeForm}, nil
+	}
+	return &ExpansionOption{Definition: d, UsesShortName: form == shortForm}, nil
 }

@@ -29,10 +29,44 @@ func (a *PositionalArgument) Format() []string {
 	return []string{a.Value}
 }
 
+func AsArguments[T Argument](args []T) []Argument {
+	argSlice := make([]Argument, 0, len(args))
+	for _, a := range args {
+		// Obviously this looks wrong and one would want to just write
+		// `argSlice = append(argSlice, args...)` instead of this verbose loop, but
+		// `append(s, e)` is actually just syntactic sugar for `append(s, []E{e})`
+		// (where `E` is the type of the element in `s`), which means that this
+		// works because a `T` is being used as an `Argument` in a
+		// newly-instantiated Argument slice, whereas `append(argSlice, args)`
+		// would be attempting to satisfy the  second argument of the function
+		// signature `append(s []Argument, els...Argument)` with a value of type
+		// `[]T`, while `els` is of type []Argument. And while a `T` is an
+		// `Argument`, a `[]T` is not a `[]Argument`. Hence, the loop.
+		argSlice = append(argSlice, a)
+	}
+	return argSlice
+}
+
+func AsPositionalArguments(args []string) []Argument {
+	pos := make([]Argument, 0, len(args))
+	for _, arg := range args {
+		pos = append(pos, &PositionalArgument{Value: arg})
+	}
+	return pos
+}
+
 func AsFormatted[T Argument](args []T) []string {
 	s := make([]string, 0, len(args))
 	for _, arg := range args {
 		s = append(s, arg.Format()...)
+	}
+	return s
+}
+
+func AsValues[T Argument](args []T) []string {
+	s := make([]string, 0, len(args))
+	for _, arg := range args {
+		s = append(s, arg.GetValue())
 	}
 	return s
 }

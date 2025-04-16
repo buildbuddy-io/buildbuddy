@@ -166,15 +166,25 @@ func (p *Parser) Next(args []string, start int) (option options.Option, next int
 		// Unknown option, possibly a plugin-specific argument. Apply a rough
 		// heuristic to determine whether or not to have it consume the next
 		// argument.
-		if g, ok := option.(*options.GeneralOption); ok && g.Value == nil {
+		if b, ok := option.(*options.BooleanOption); ok && b.Value == nil && !b.IsNegative {
+			// This could be a required-value-type option; if the next argument
+			// doesn't look like an option, let's assume that it is.
 			nextArgIsNonOption := (start+1 < len(args) && !strings.HasPrefix(args[start+1], "-"))
-			if !strings.HasPrefix(option.Name(), "no") && nextArgIsNonOption {
-				g.Definition = options.NewDefinition(
-					g.Name(),
-					options.WithMulti(),
-					options.WithRequiresValue(),
-					options.WithPluginID(options.UnknownBuiltinPluginID),
+			if nextArgIsNonOption {
+				option, err = options.NewOption(
+					strings.TrimLeft(startToken, "-"),
+					nil,
+					options.NewDefinition(
+						option.Name(),
+						options.WithMulti(),
+						options.WithRequiresValue(),
+						options.WithShortName(option.ShortName()),
+						options.WithPluginID(options.UnknownBuiltinPluginID),
+					),
 				)
+				if err != nil {
+					return nil, -1, err
+				}
 			}
 		}
 	}
@@ -377,7 +387,11 @@ func (p *Parser) canonicalizeArgs(args []string, onlyStartupOptions bool) ([]str
 			fallthrough
 		case option.Supports(command):
 			lastOptionIndex[option.Name()] = len(processedArgs)
-			processedArgs = append(processedArgs, option.Normalized())
+			if option.PluginID() != options.UnknownBuiltinPluginID {
+				// don't normalize unknown options
+				option = option.Normalized()
+			}
+			processedArgs = append(processedArgs, option)
 		default:
 			return nil, fmt.Errorf("option '%s' is not a '%s' option.", option.Name(), command)
 		}
