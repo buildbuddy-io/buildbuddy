@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/watchdog"
+	"github.com/mattn/go-isatty"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
@@ -70,12 +71,14 @@ func NewHealthChecker(serverType string) *HealthChecker {
 		lastStatus:    make([]*serviceStatus, 0),
 		watchdogTimer: watchdog.New(*maxUnreadyDuration),
 	}
-	sigTerm := make(chan os.Signal, 1)
-	go func() {
-		<-sigTerm
-		hc.Shutdown()
-	}()
-	signal.Notify(sigTerm, os.Interrupt, syscall.SIGTERM)
+
+	// TODO: don't do this if we're running under a bazel test. Entering Ctrl+C
+	// in a test should just kill it. Tests are sandboxed so it shouldn't be
+	// problematic to force-kill them.
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+	go hc.handleSignals(signalChan)
+
 	go hc.handleShutdownFuncs()
 	go func() {
 		ticker := time.NewTicker(healthCheckPeriod)
@@ -109,6 +112,41 @@ func (h *HealthChecker) Statusz(ctx context.Context) string {
 	return buf
 }
 
+func (h *HealthChecker) handleSignals(signalChan <-chan os.Signal) {
+	// When running in a terminal, the ^C character echoed back to the user
+	// messes up the log output a bit. So, print a newline every time we get
+	// a signal to make the output a little cleaner.
+	isTTY := isatty.IsTerminal(uintptr(os.Stderr.Fd()))
+	sig := <-signalChan
+	if isTTY {
+		fmt.Println()
+	}
+	log.Infof("Caught %s signal; starting graceful shutdown (hard-stopping in %s)", sig, *maxShutdownDuration)
+	hardStopTime := time.Now().Add(*maxShutdownDuration)
+	h.Shutdown()
+	// If we keep getting SIGINT/SIGTERM, the user is probably mashing
+	// Ctrl+C and really wants to kill the server. After 3 signals, exit
+	// immediately. Before then, report the current status so the user knows
+	// we got their request but are just still shutting down.
+	n := 0
+	const ignoreCount = 3
+	for sig := range signalChan {
+		if isTTY {
+			fmt.Println()
+		}
+		n++
+		if n >= ignoreCount {
+			log.Fatalf("Got %d shutdown requests; exiting immediately", n)
+		}
+		d := time.Until(hardStopTime)
+		if d > 0 {
+			log.Infof("Received %s signal; still shutting down; will hard-stop in %s", sig, d)
+		} else {
+			log.Warningf("Server handlers are still running after hard-stop %s ago. Send %d more signal(s) to exit immediately.", -d, ignoreCount-n)
+		}
+	}
+}
+
 func (h *HealthChecker) handleShutdownFuncs() {
 	<-h.quit
 
@@ -117,9 +155,6 @@ func (h *HealthChecker) handleShutdownFuncs() {
 	h.shuttingDown = true
 	h.mu.Unlock()
 
-	// We use fmt here and below because this code is called from the
-	// signal handler and log.Printf can be a little wonky.
-	fmt.Printf("Caught interrupt signal; shutting down...\n")
 	ctx, cancel := context.WithTimeout(context.Background(), *maxShutdownDuration)
 	defer cancel()
 
@@ -134,17 +169,17 @@ func (h *HealthChecker) handleShutdownFuncs() {
 		f := fn
 		eg.Go(func() error {
 			if err := f(egCtx); err != nil {
-				fmt.Printf("Error gracefully shutting down: %s\n", err)
+				log.CtxErrorf(ctx, "Error gracefully shutting down: %s", err)
 			}
 			return nil
 		})
 	}
 	eg.Wait()
 	if err := ctx.Err(); err != nil {
-		fmt.Printf("MaxShutdownDuration exceeded. Non-graceful exit.\n")
+		log.CtxErrorf(ctx, "MaxShutdownDuration exceeded. Non-graceful exit.")
 	}
 	time.Sleep(10 * time.Millisecond)
-	fmt.Printf("Server %q stopped.\n", h.serverType)
+	log.Infof("Server %q stopped.", h.serverType)
 	close(h.done)
 }
 
