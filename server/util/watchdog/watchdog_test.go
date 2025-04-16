@@ -1,6 +1,7 @@
 package watchdog_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -44,4 +45,28 @@ func TestDisabledWatchdogIsValidForever(t *testing.T) {
 		require.True(t, wdt.Live())
 	}
 	require.True(t, wdt.Live())
+}
+
+func TestCrossThreadUsage(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	wdt := watchdog.NewWithClock(clock, time.Hour)
+	go func() {
+		select {
+		case <-ctx.Done():
+			break
+		default:
+			if !wdt.Live() {
+				panic("watchdog timer expired!")
+			}
+		}
+	}()
+
+	for range 100 {
+		clock.Advance(30 * time.Minute)
+		require.True(t, wdt.Live())
+		wdt.Reset()
+	}
 }
