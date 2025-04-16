@@ -134,14 +134,10 @@ func (s *ActionCacheServerProxy) cacheActionResultToLocalCAS(ctx context.Context
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
 		resp, err := s.remoteACClient.GetActionResult(ctx, req)
-		requestTypeLabel := metrics.DefaultCacheProxyRequestLabel
-		if proxy_util.SkipRemote(ctx) {
-			requestTypeLabel = metrics.LocalOnlyCacheProxyRequestLabel
-		}
 		labels := prometheus.Labels{
 			metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
 			metrics.CacheHitMissStatus:    metrics.UncacheableStatusLabel,
-			metrics.CacheProxyRequestType: requestTypeLabel,
+			metrics.CacheProxyRequestType: proxy_util.RequestTypeLabelFromContext(ctx),
 		}
 		metrics.ActionCacheProxiedReadRequests.With(labels).Inc()
 		metrics.ActionCacheProxiedReadBytes.With(labels).Add(float64(proto.Size(resp)))
@@ -244,14 +240,10 @@ func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *re
 	// different values stored locally, so simplify by always using the remote value.
 	// Thus, don't cache action results locally by default.
 	resp, err := s.remoteACClient.UpdateActionResult(ctx, req)
-	proxyRequestType := metrics.DefaultCacheProxyRequestLabel
-	if proxy_util.SkipRemote(ctx) {
-		proxyRequestType = metrics.LocalOnlyCacheProxyRequestLabel
-	}
 	labels := prometheus.Labels{
 		metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
 		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
-		metrics.CacheProxyRequestType: proxyRequestType,
+		metrics.CacheProxyRequestType: proxy_util.RequestTypeLabelFromContext(ctx),
 	}
 	metrics.ActionCacheProxiedWriteRequests.With(labels).Inc()
 	metrics.ActionCacheProxiedWriteBytes.With(labels).Add(float64(proto.Size(req)))

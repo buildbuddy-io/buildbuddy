@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -92,6 +93,10 @@ func recordMetrics(op, status string, digestsPerStatus, bytesPerStatus map[strin
 }
 
 func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+	if proxy_util.SkipRemote(ctx) {
+		return nil, status.UnimplementedError("Skip remote not implemented")
+	}
+
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.BlobDigests)))
@@ -102,6 +107,10 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 }
 
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
+	if proxy_util.SkipRemote(ctx) {
+		return nil, status.UnimplementedError("Skip remote not implemented")
+	}
+
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
@@ -146,6 +155,10 @@ func bytesInResponse(resp *repb.BatchReadBlobsResponse) int {
 }
 
 func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
+	if proxy_util.SkipRemote(ctx) {
+		return nil, status.UnimplementedError("Skip remote not implemented")
+	}
+
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.Digests)))
@@ -281,6 +294,10 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 
 // TODO(iain): record per-byte metrics here as well as above.
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	if proxy_util.SkipRemote(stream.Context()) {
+		return status.UnimplementedError("Skip remote not implemented")
+	}
+
 	if *enableGetTreeCaching {
 		return s.getTree(req, stream)
 	}
