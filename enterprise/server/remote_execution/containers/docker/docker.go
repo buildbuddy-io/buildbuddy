@@ -34,6 +34,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
+	dti "github.com/docker/docker/api/types/image"
 	dockerclient "github.com/docker/docker/client"
 	units "github.com/docker/go-units"
 	gstatus "google.golang.org/grpc/status"
@@ -494,7 +495,7 @@ func PullImage(ctx context.Context, client *dockerclient.Client, image string, c
 		if err != nil {
 			return err
 		}
-		rc, err := client.ImagePull(ctx, image, dockertypes.ImagePullOptions{
+		rc, err := client.ImagePull(ctx, image, dti.PullOptions{
 			RegistryAuth: auth,
 		})
 		if err != nil {
