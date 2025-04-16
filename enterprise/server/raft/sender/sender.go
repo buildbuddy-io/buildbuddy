@@ -528,6 +528,8 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 	return rsp.GetBatch(), nil
 }
 
+// SyncProposeWithRangeDescriptor calls SyncPropose on different replicas
+// specified in the given range descriptor, until one of the replica succeeds.
 func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest) (*rfpb.SyncProposeResponse, error) {
 	var syncRsp *rfpb.SyncProposeResponse
 	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
