@@ -149,6 +149,7 @@ rules_proto_toolchains()
 # keep in sync with go.mod
 http_archive(
     name = "io_bazel_rules_go",
+    integrity = "sha256-t493RY53Fi9FtFZNayC2+S9WQx7VnqqrCeeBnR2FAxM=",
     patch_args = ["-p1"],
     patches = [
         # https://github.com/bazel-contrib/rules_go/pull/4264
