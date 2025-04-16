@@ -7,7 +7,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -17,7 +16,6 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 )
 
 const (
@@ -51,25 +49,6 @@ func NewCoordinator(store IStore, apiClient *client.APIClient, clock clockwork.C
 
 func (tc *Coordinator) sender() *sender.Sender {
 	return tc.store.Sender()
-}
-
-func (tc *Coordinator) syncPropose(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest) (*rfpb.SyncProposeResponse, error) {
-	var syncRsp *rfpb.SyncProposeResponse
-	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
-		r, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-			Header: h,
-			Batch:  batchCmd,
-		})
-		if err != nil {
-			return err
-		}
-		syncRsp = r
-		return nil
-	}
-	_, err := tc.sender().TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
-		return header.NewWithoutRangeInfo(rd, replicaIdx, rfpb.Header_LINEARIZABLE)
-	})
-	return syncRsp, err
 }
 
 func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) error {
@@ -109,7 +88,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 		rangeID := statement.GetRange().GetRangeId()
 
 		// Prepare each statement.
-		syncRsp, err := tc.syncPropose(ctx, statement.GetRange(), batch)
+		syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, statement.GetRange(), batch)
 		if err != nil {
 			log.Errorf("Error preparing txn statement for %q (range: %d): %s", txnID, rangeID, err)
 			prepareError = err
@@ -204,7 +183,7 @@ func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.Fi
 	}
 
 	// Prepare each statement.
-	syncRsp, err := tc.syncPropose(ctx, rd, batchProto)
+	syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, rd, batchProto)
 	if err != nil {
 		return err
 	}
