@@ -118,7 +118,7 @@ func (u *atimeUpdater) groupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
-func (u *atimeUpdates) findPendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *atimeUpdate {
+func (u *atimeUpdates) findOrCreatePendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *atimeUpdate {
 	for _, update := range u.updates {
 		if update.instanceName == instanceName && update.digestFunction == digestFunction {
 			return update
@@ -173,7 +173,7 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 
 	// First, find the update that the new digests can be merged into, or create
 	// a new one if one doesn't exist.
-	pendingUpdate := updates.findPendingUpdate(instanceName, digestFunction)
+	pendingUpdate := updates.findOrCreatePendingUpdate(instanceName, digestFunction)
 	if pendingUpdate == nil {
 		log.CtxInfof(ctx, "Too many pending FindMissingBlobsRequests for updating remote atime for group %s, dropping %d pending atime updates", groupID, len(keys))
 		metrics.RemoteAtimeUpdates.With(
