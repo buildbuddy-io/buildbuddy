@@ -66,12 +66,12 @@ go_library(
 go_test(
     name = "vfs_test",
     srcs = ["vfs_test.go"],
-    tags = [
-        "docker",
-    ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
     },
+    tags = [
+        "docker",
+    ],
     deps = [
         ":vfs",
         "//enterprise/server/remote_execution/container",
