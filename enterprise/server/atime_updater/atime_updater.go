@@ -35,9 +35,23 @@ var (
 // A pending batch of atime updates (basically a FindMissingBlobsRequest).
 // Stored as a struct so digest keys can be stored in a set for de-duping.
 type atimeUpdate struct {
+	mu             sync.Mutex
 	instanceName   string
 	digests        map[digest.Key]struct{} // stored as a set for de-duping.
 	digestFunction repb.DigestFunction_Value
+}
+
+func (u *atimeUpdate) set(key digest.Key) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.digests[key] = struct{}{}
+}
+
+func (u *atimeUpdate) contains(key digest.Key) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	_, ok := u.digests[key]
+	return ok
 }
 
 func (u *atimeUpdate) toProto() *repb.FindMissingBlobsRequest {
@@ -66,6 +80,25 @@ type atimeUpdates struct {
 	numDigests  int
 
 	maxUpdatesPerGroup int
+}
+
+func (u *atimeUpdates) findOrCreatePendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *atimeUpdate {
+	for _, update := range u.updates {
+		if update.instanceName == instanceName && update.digestFunction == digestFunction {
+			return update
+		}
+	}
+
+	if len(u.updates) >= u.maxUpdatesPerGroup {
+		return nil
+	}
+	pendingUpdate := &atimeUpdate{
+		instanceName:   instanceName,
+		digests:        map[digest.Key]struct{}{},
+		digestFunction: digestFunction,
+	}
+	u.updates = append(u.updates, pendingUpdate)
+	return pendingUpdate
 }
 
 type atimeUpdater struct {
@@ -118,25 +151,6 @@ func (u *atimeUpdater) groupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
-func (u *atimeUpdates) findOrCreatePendingUpdate(instanceName string, digestFunction repb.DigestFunction_Value) *atimeUpdate {
-	for _, update := range u.updates {
-		if update.instanceName == instanceName && update.digestFunction == digestFunction {
-			return update
-		}
-	}
-
-	if len(u.updates) >= u.maxUpdatesPerGroup {
-		return nil
-	}
-	pendingUpdate := &atimeUpdate{
-		instanceName:   instanceName,
-		digests:        map[digest.Key]struct{}{},
-		digestFunction: digestFunction,
-	}
-	u.updates = append(u.updates, pendingUpdate)
-	return pendingUpdate
-}
-
 func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) {
 	if len(digests) == 0 {
 		return
@@ -164,16 +178,14 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 		keys[digest.NewKey(digestProto)]++
 	}
 
-	// TODO(iain): this locking may be a bit overzealous. Hopefully not though.
-	updates.mu.Lock()
-	defer updates.mu.Unlock()
-
 	// Always use the most recent auth headers for a group for remote atime updates.
+	updates.mu.Lock()
 	updates.authHeaders = authHeaders
 
 	// First, find the update that the new digests can be merged into, or create
 	// a new one if one doesn't exist.
 	pendingUpdate := updates.findOrCreatePendingUpdate(instanceName, digestFunction)
+	updates.mu.Unlock()
 	if pendingUpdate == nil {
 		log.CtxInfof(ctx, "Too many pending FindMissingBlobsRequests for updating remote atime for group %s, dropping %d pending atime updates", groupID, len(keys))
 		metrics.RemoteAtimeUpdates.With(
@@ -189,17 +201,20 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	duplicate := 0
 	dropped := 0
 	for key, count := range keys {
-		if _, ok := pendingUpdate.digests[key]; ok {
+		if pendingUpdate.contains(key) {
 			duplicate += count
 			continue
 		}
+		updates.mu.Lock()
 		if updates.numDigests+1 > u.maxDigestsPerGroup {
+			updates.mu.Unlock()
 			dropped = len(digests) - enqueued - duplicate
 			log.CtxWarningf(ctx, "maxDigestsPerGroup exceeded for group %s, dropping %d digests", groupID, dropped)
 			break
 		}
-		pendingUpdate.digests[key] = struct{}{}
 		updates.numDigests++
+		updates.mu.Unlock()
+		pendingUpdate.set(key)
 		enqueued++
 		duplicate += count - 1
 	}
@@ -296,6 +311,8 @@ func (u *atimeUpdater) getUpdate(updates *atimeUpdates) *repb.FindMissingBlobsRe
 	}
 
 	update := updates.updates[0]
+	update.mu.Lock()
+	defer update.mu.Unlock()
 
 	// If this update is small enough to send in its entirety, remove it from
 	// the queue of updates.
