@@ -122,7 +122,7 @@ func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, repo
 
 		groupWithLegacyToken := &struct{ Count int64 }{}
 		err = dbh.NewQuery(ctx, "build_status_reporter_get_group").Raw(
-			`SELECT COUNT(*) as count from "Groups" WHERE group_id = ? AND github_token <> "" AND github_token IS NOT NULL`, userInfo.GetGroupID()).Take(groupWithLegacyToken)
+			`SELECT COUNT(*) as count from "Groups" WHERE group_id = ? AND github_token <> '' AND github_token IS NOT NULL`, userInfo.GetGroupID()).Take(groupWithLegacyToken)
 		if err == nil && groupWithLegacyToken.Count > 0 {
 			r.shouldReportCommitStatuses = true
 			return
