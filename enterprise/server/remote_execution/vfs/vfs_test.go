@@ -1,3 +1,5 @@
+//go:build linux && !android && (amd64 || arm64)
+
 package vfs_test
 
 import (
@@ -356,11 +358,11 @@ func toRawStats(fi fs.FileInfo) *rawStats {
 	rs := fi.Sys().(*syscall.Stat_t)
 	return &rawStats{
 		Ino:       rs.Ino,
-		Nlink:     rs.Nlink,
+		Nlink:     uint64(rs.Nlink),
 		Mtime:     time.Unix(rs.Mtim.Sec, rs.Mtim.Nsec),
 		Atime:     time.Unix(rs.Atim.Sec, rs.Atim.Nsec),
 		Blocks:    rs.Blocks,
-		BlockSize: rs.Blksize,
+		BlockSize: int64(rs.Blksize),
 		Size:      rs.Size,
 	}
 }
@@ -727,4 +729,36 @@ func TestStatfs(t *testing.T) {
 	log.Infof("stats %+v", stats)
 	require.Equal(t, stats.Bfree, stats.Blocks)
 	require.Equal(t, stats.Bavail, stats.Blocks)
+}
+
+func TestAttrCaching(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := filepath.Join(fsPath, "hello.txt")
+	f, err := os.Create(testFile)
+	require.NoError(t, err)
+	defer f.Close()
+
+	// File should be empty.
+	s := rawStat(t, testFile)
+	require.EqualValues(t, 0, s.Size)
+
+	// While a file is opened there shouldn't be any caching happening.
+	// This should be reflected in stat always returning the latest data.
+	_, err = f.Write([]byte("hello"))
+	require.NoError(t, err)
+	s = rawStat(t, testFile)
+	require.EqualValues(t, 5, s.Size)
+
+	// Create a bunch of hardlinks and verify the link count is correctly
+	// visible on all links.
+	linkFiles := []string{testFile + ".link1", testFile + ".link2", testFile + ".link3"}
+	for _, lf := range linkFiles {
+		err = os.Link(testFile, lf)
+		require.NoError(t, err)
+	}
+	for _, lf := range linkFiles {
+		s := rawStat(t, lf)
+		require.EqualValues(t, 4, s.Nlink)
+	}
 }

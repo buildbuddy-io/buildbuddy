@@ -66,18 +66,35 @@ go_library(
 go_test(
     name = "vfs_test",
     srcs = ["vfs_test.go"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+    },
     tags = [
-        "manual",
+        "docker",
     ],
-    deps = [
-        ":vfs",
-        "//enterprise/server/remote_execution/container",
-        "//enterprise/server/util/vfs_server",
-        "//proto:remote_execution_go_proto",
-        "//server/testutil/testenv",
-        "//server/testutil/testfs",
-        "//server/util/log",
-        "@com_github_stretchr_testify//require",
-        "@org_golang_x_sys//unix",
-    ],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:linux_amd64": [
+            ":vfs",
+            "//enterprise/server/remote_execution/container",
+            "//enterprise/server/util/vfs_server",
+            "//proto:remote_execution_go_proto",
+            "//server/testutil/testenv",
+            "//server/testutil/testfs",
+            "//server/util/log",
+            "@com_github_stretchr_testify//require",
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:linux_arm64": [
+            ":vfs",
+            "//enterprise/server/remote_execution/container",
+            "//enterprise/server/util/vfs_server",
+            "//proto:remote_execution_go_proto",
+            "//server/testutil/testenv",
+            "//server/testutil/testfs",
+            "//server/util/log",
+            "@com_github_stretchr_testify//require",
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
 )
