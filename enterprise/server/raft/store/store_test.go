@@ -98,17 +98,17 @@ func TestAddGetRemoveRange(t *testing.T) {
 
 func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
-	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
-	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
-
+	flags.Set(t, "cache.raft.enable_driver", false)
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	s4 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*testutil.TestingStore{s1, s2}
+	stores := []*testutil.TestingStore{s1, s2, s3, s4}
 	sf.StartShard(t, ctx, stores...)
 
 	testutil.WaitForRangeLease(t, ctx, stores, 2)
@@ -117,9 +117,10 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	rd := s.GetRange(2)
 	newRD := rd.CloneVT()
 
-	require.Equal(t, len(newRD.GetReplicas()), 2)
+	require.Equal(t, len(newRD.GetReplicas()), 4)
 
 	// Remove replica of range 2 on nh1 in meta range
+	log.Infof("nh1: %s", s1.NHID())
 	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(rd.GetReplicas())-1)
 	for _, repl := range rd.GetReplicas() {
 		if repl.GetNhid() == s1.NHID() {
@@ -128,7 +129,7 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 		replicas = append(replicas, repl)
 	}
 	newRD.Replicas = replicas
-	require.Equal(t, 1, len(replicas))
+	require.Equal(t, 3, len(replicas))
 	newRD.Generation = rd.GetGeneration() + 1
 
 	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
@@ -156,13 +157,12 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 
 	_, err = s1.GetReplica(2)
 	require.True(t, status.IsOutOfRangeError(err))
-	// verify that the range and replica is not removed from s2
-	list, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-	require.NoError(t, err)
-	require.Equal(t, 2, len(list.GetReplicas()))
-	require.NotNil(t, s2.GetRange(2))
-	_, err = s2.GetReplica(2)
-	require.NoError(t, err)
+	// verify that the shard is not removed from other servers
+	for _, s := range []*testutil.TestingStore{s2, s3, s4} {
+		list, err := s.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err, s.NHID())
+		require.Equal(t, 2, len(list.GetReplicas()), s.NHID())
+	}
 }
 
 func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
