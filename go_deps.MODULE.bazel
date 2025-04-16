@@ -213,7 +213,7 @@ use_repo(
     "com_github_coreos_go_oidc_v3",
     "com_github_creack_pty",
     "com_github_crewjam_saml",
-    "com_github_docker_distribution",
+    "com_github_distribution_reference",
     "com_github_docker_docker",
     "com_github_docker_go_units",
     "com_github_dop251_goja",
