@@ -138,13 +138,13 @@ func NewDefinition(
 	pluginID string,
 ) *Definition {
 	return &Definition{
-		name: name,
-		shortName: shortName,
-		multi: multi,
-		hasNegative: hasNegative,
-		requiresValue: requiresValue,
+		name:              name,
+		shortName:         shortName,
+		multi:             multi,
+		hasNegative:       hasNegative,
+		requiresValue:     requiresValue,
 		supportedCommands: supportedCommands,
-		pluginID: pluginID,
+		pluginID:          pluginID,
 	}
 }
 
@@ -221,7 +221,7 @@ func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 
 type Option struct {
 	*Definition
-	Value            string
+	Value string
 }
 
 func (o *Option) AsBool() (bool, error) {
