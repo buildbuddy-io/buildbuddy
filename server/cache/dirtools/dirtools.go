@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -562,6 +564,22 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 			tree.Root = d.directory
 		} else if parentOutputPath, ok := dirHelper.FindParentOutputPath(d.fullPath); ok {
 			tree = outputDirectoryTrees[parentOutputPath]
+			if tree == nil {
+				// Format outputDirectoryPaths with %q so we can see the exact
+				// string contents.
+				formattedOutputDirectoryPaths := make([]string, 0, len(outputDirectoryPaths))
+				for _, p := range outputDirectoryPaths {
+					formattedOutputDirectoryPaths = append(formattedOutputDirectoryPaths, fmt.Sprintf("%q", p))
+				}
+				alert.UnexpectedEvent(
+					"malformed_parent_output_path",
+					"Tree was not initialized for output at %q "+
+						"with parent output path %q. "+
+						"Output directory trees were only initialized for output paths [%s], "+
+						"which do not contain the parent output path.",
+					d.fullPath, parentOutputPath, strings.Join(formattedOutputDirectoryPaths, ", "))
+				return nil, status.InternalErrorf("malformed parent output path")
+			}
 			tree.Children = append(tree.Children, d.directory)
 		}
 	}
