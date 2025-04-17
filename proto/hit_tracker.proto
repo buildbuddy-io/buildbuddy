@@ -1,6 +1,7 @@
 
 syntax = "proto3";
 
+import "proto/cache.proto";
 import "google/protobuf/duration.proto";
 import "proto/remote_execution.proto";
 import "proto/resource.proto";
@@ -21,13 +22,7 @@ message CacheHit {
   // The time taken for the download.
   google.protobuf.Duration duration = 4;
 
-  CacheRequestType cache_request_type = 5;
-}
-
-enum CacheRequestType {
-  UNKNOWN = 0;
-  UPLOAD = 1;
-  DOWNLOAD = 2;
+  cache.RequestType cache_request_type = 5;
 }
 
 message TrackRequest {

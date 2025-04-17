@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -36,7 +37,7 @@ func (h HitTrackerService) Track(ctx context.Context, req *hitpb.TrackRequest) (
 			hitTracker = h.hitTrackerFactory.NewCASHitTracker(ctx, hit.GetRequestMetadata())
 		}
 		var transferTimer interfaces.TransferTimer
-		if hit.GetCacheRequestType() == hitpb.CacheRequestType_UPLOAD {
+		if hit.GetCacheRequestType() == capb.RequestType_WRITE {
 			transferTimer = hitTracker.TrackUpload(hit.GetResource().GetDigest())
 		} else {
 			transferTimer = hitTracker.TrackDownload(hit.GetResource().GetDigest())
