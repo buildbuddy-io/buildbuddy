@@ -8,11 +8,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -247,18 +249,12 @@ func BazelCommands() (map[string]struct{}, error) {
 func (p *Parser) parseStarlarkOptionDefinition(optName string) *options.Definition {
 	for prefix := range StarlarkSkippedPrefixes {
 		if strings.HasPrefix(optName, prefix) {
-			supportedCommands := make(map[string]struct{}, len(p.BazelCommands))
-			for cmd := range p.BazelCommands {
-				supportedCommands[cmd] = struct{}{}
-			}
 			return options.NewDefinition(
 				optName,
-				"",    // shortName
-				true,  // multi
-				true,  // hasNegative
-				false, // requiredValue
-				supportedCommands,
-				StarlarkBuiltinPluginID,
+				options.WithMulti(),
+				options.WithNegative(),
+				options.WithSupportFor(slices.Collect(maps.Keys(p.BazelCommands))...),
+				options.WithPluginID(StarlarkBuiltinPluginID),
 			)
 		}
 	}

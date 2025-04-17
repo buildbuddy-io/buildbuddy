@@ -128,24 +128,38 @@ func (d *Definition) PluginID() string {
 	return d.pluginID
 }
 
-func NewDefinition(
-	name string,
-	shortName string,
-	multi bool,
-	hasNegative bool,
-	requiresValue bool,
-	supportedCommands map[string]struct{},
-	pluginID string,
-) *Definition {
-	return &Definition{
-		name:              name,
-		shortName:         shortName,
-		multi:             multi,
-		hasNegative:       hasNegative,
-		requiresValue:     requiresValue,
-		supportedCommands: supportedCommands,
-		pluginID:          pluginID,
+type DefinitionOpt func(d *Definition)
+
+func WithShortName(shortName string) DefinitionOpt {
+	return func(d *Definition) { d.shortName = shortName }
+}
+func WithMulti() DefinitionOpt         { return func(d *Definition) { d.multi = true } }
+func WithNegative() DefinitionOpt      { return func(d *Definition) { d.hasNegative = true } }
+func WithRequiresValue() DefinitionOpt { return func(d *Definition) { d.requiresValue = true } }
+func WithPluginID(pluginID string) DefinitionOpt {
+	return func(d *Definition) { d.pluginID = pluginID }
+}
+
+func WithSupportFor(commands ...string) DefinitionOpt {
+	return func(d *Definition) {
+		if len(commands) == 0 {
+			return
+		}
+		if d.supportedCommands == nil {
+			d.supportedCommands = make(map[string]struct{}, len(commands))
+		}
+		for _, command := range commands {
+			d.supportedCommands[command] = struct{}{}
+		}
 	}
+}
+
+func NewDefinition(name string, opts ...DefinitionOpt) *Definition {
+	d := &Definition{name: name}
+	for _, opt := range opts {
+		opt(d)
+	}
+	return d
 }
 
 // DefinitionFrom takes a FlagInfo proto message and converts it into a
