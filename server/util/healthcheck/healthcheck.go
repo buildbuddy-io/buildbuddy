@@ -72,9 +72,6 @@ func NewHealthChecker(serverType string) *HealthChecker {
 		watchdogTimer: watchdog.New(*maxUnreadyDuration),
 	}
 
-	// TODO: don't do this if we're running under a bazel test. Entering Ctrl+C
-	// in a test should just kill it. Tests are sandboxed so it shouldn't be
-	// problematic to force-kill them.
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 	go hc.handleSignals(signalChan)
@@ -124,25 +121,25 @@ func (h *HealthChecker) handleSignals(signalChan <-chan os.Signal) {
 	log.Infof("Caught %s signal; starting graceful shutdown (hard-stopping in %s)", sig, *maxShutdownDuration)
 	hardStopTime := time.Now().Add(*maxShutdownDuration)
 	h.Shutdown()
-	// If we keep getting SIGINT/SIGTERM, the user is probably mashing
-	// Ctrl+C and really wants to kill the server. After 3 signals, exit
-	// immediately. Before then, report the current status so the user knows
-	// we got their request but are just still shutting down.
-	n := 0
-	const ignoreCount = 3
+	numSignalsReceived := 1
 	for sig := range signalChan {
+		numSignalsReceived++
+		// If we're running in a TTY and we keep getting SIGINT/SIGTERM, the
+		// user is probably mashing Ctrl+C and really wants to kill the server.
+		// After 3 signals, exit immediately. Before then, report the current
+		// status so the user knows we got their request but are just still
+		// shutting down.
 		if isTTY {
 			fmt.Println()
-		}
-		n++
-		if n >= ignoreCount {
-			log.Fatalf("Got %d shutdown requests; exiting immediately", n)
+			if numSignalsReceived >= 3 {
+				log.Fatalf("Caught %s signal; third shutdown request; exiting immediately.", sig)
+			}
 		}
 		d := time.Until(hardStopTime)
 		if d > 0 {
-			log.Infof("Received %s signal; still shutting down; will hard-stop in %s", sig, d)
+			log.Infof("Caught %s signal; still shutting down; will hard-stop in %s", sig, d)
 		} else {
-			log.Warningf("Server handlers are still running after hard-stop %s ago. Send %d more signal(s) to exit immediately.", -d, ignoreCount-n)
+			log.Warningf("Caught %s signal; still waiting for server handlers to finish after hard-stop %s ago.", sig, -d)
 		}
 	}
 }
