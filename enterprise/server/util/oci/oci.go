@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -40,6 +41,10 @@ const (
 	layerMetadataOutputFilePath = "_bb_oci_layer_metadata_"
 	actionResultInstanceName    = "_bb_oci_"
 )
+
+func init() {
+	action_cache_server.RegisterPrefix(actionResultInstanceName)
+}
 
 var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
@@ -507,7 +512,14 @@ func (r *Resolver) fetchManifestContentFromCache(ctx context.Context, ocidigest 
 	if err != nil {
 		return nil, err
 	}
-	ar, err := cachetools.GetActionResult(ctx, r.env.GetActionCacheClient(), arRN)
+	if r.env.GetClientIdentityService() == nil {
+		return nil, status.UnavailableError("cannot provide identity on AC request, no client id service available")
+	}
+	idctx, err := r.env.GetClientIdentityService().AddIdentityToContext(ctx)
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not add identity to context: %s", err)
+	}
+	ar, err := cachetools.GetActionResult(idctx, r.env.GetActionCacheClient(), arRN)
 	if err != nil {
 		return nil, err
 	}
@@ -549,7 +561,14 @@ func (r *Resolver) FetchLayerMetadataFromCache(ctx context.Context, ocidigest gc
 	if err != nil {
 		return "", 0, err
 	}
-	ar, err := cachetools.GetActionResult(ctx, r.env.GetActionCacheClient(), arRN)
+	if r.env.GetClientIdentityService() == nil {
+		return "", 0, status.UnavailableError("cannot provide identity on AC request, no client id service available")
+	}
+	idctx, err := r.env.GetClientIdentityService().AddIdentityToContext(ctx)
+	if err != nil {
+		return "", 0, status.UnavailableErrorf("could not add identity to context: %s", err)
+	}
+	ar, err := cachetools.GetActionResult(idctx, r.env.GetActionCacheClient(), arRN)
 	if err != nil {
 		return "", 0, err
 	}

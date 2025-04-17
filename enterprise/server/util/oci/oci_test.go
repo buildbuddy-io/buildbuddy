@@ -14,18 +14,22 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -432,7 +436,16 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 }
 
 func TestResolve_CachesManifest(t *testing.T) {
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityExecutor)
+	idservice, err := clientidentity.New(clockwork.NewFakeClock())
+	require.NoError(t, err)
 	te := testenv.GetTestEnv(t)
+	require.NoError(t, err)
+	te.SetClientIdentityService(idservice)
+	require.NotNil(t, te.GetClientIdentityService())
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()

@@ -118,7 +118,7 @@ type RealEnv struct {
 	promQuerier                      interfaces.PromQuerier
 	auditLog                         interfaces.AuditLogger
 	ipRulesService                   interfaces.IPRulesService
-	serverIdentityService            interfaces.ClientIdentityService
+	clientIdentityService            interfaces.ClientIdentityService
 	imageCacheAuthenticator          interfaces.ImageCacheAuthenticator
 	serverNotificationService        interfaces.ServerNotificationService
 	gcpService                       interfaces.GCPService
@@ -707,11 +707,11 @@ func (r *RealEnv) SetIPRulesService(e interfaces.IPRulesService) {
 }
 
 func (r *RealEnv) GetClientIdentityService() interfaces.ClientIdentityService {
-	return r.serverIdentityService
+	return r.clientIdentityService
 }
 
 func (r *RealEnv) SetClientIdentityService(s interfaces.ClientIdentityService) {
-	r.serverIdentityService = s
+	r.clientIdentityService = s
 }
 
 func (r *RealEnv) GetImageCacheAuthenticator() interfaces.ImageCacheAuthenticator {
