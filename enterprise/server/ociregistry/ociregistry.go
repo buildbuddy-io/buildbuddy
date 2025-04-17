@@ -26,7 +26,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -299,14 +298,12 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		}
 	}
 
-	bsClient := r.env.GetByteStreamClient()
-	acClient := r.env.GetActionCacheClient()
 	if resolvedRefIsDigest {
 		writeBody := inreq.Method == http.MethodGet
-		err := fetchBlobOrManifestFromCache(ctx, w, bsClient, acClient, resolvedRef, ociResourceType, writeBody)
+		err := r.fetchBlobOrManifestFromCache(ctx, w, resolvedRef, ociResourceType, writeBody)
 		if err == nil {
 			return
-		} else if !status.IsNotFoundError(err) {
+		} else if !status.IsNotFoundError(err) && !status.IsUnauthenticatedError(err) {
 			message := fmt.Sprintf("error fetching image %s from the CAS: %s", ref, err)
 			log.CtxError(ctx, message)
 			http.Error(w, message, http.StatusNotFound)
@@ -345,7 +342,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 
 	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasLength && hash != nil && hasContentType {
-		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, *hash, contentType, contentLength)
+		err := r.writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, resolvedRef, ociResourceType, *hash, contentType, contentLength)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
 		}
@@ -357,7 +354,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 }
 
-func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
+func (r *registry) fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
 	hash, err := gcr.NewHash(ref.Identifier())
 	if err != nil {
 		return err
@@ -382,7 +379,16 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
-	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
+	acctx := ctx
+	if r.env.GetClientIdentityService() != nil {
+		idctx, err := r.env.GetClientIdentityService().AddIdentityToContext(ctx)
+		if err == nil {
+			acctx = idctx
+		} else {
+			log.CtxWarningf(ctx, "could not add identity to context: %s", err)
+		}
+	}
+	ar, err := cachetools.GetActionResult(acctx, r.env.GetActionCacheClient(), arRN)
 	if err != nil {
 		return err
 	}
@@ -408,7 +414,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		repb.DigestFunction_SHA256,
 	)
 	blobMetadata := &ocipb.OCIBlobMetadata{}
-	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
+	err = cachetools.GetBlobAsProto(ctx, r.env.GetByteStreamClient(), blobMetadataRN, blobMetadata)
 	if err != nil {
 		return err
 	}
@@ -424,13 +430,13 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 			repb.DigestFunction_SHA256,
 		)
 		blobRN.SetCompressor(repb.Compressor_ZSTD)
-		return cachetools.GetBlob(ctx, bsClient, blobRN, w)
+		return cachetools.GetBlob(ctx, r.env.GetByteStreamClient(), blobRN, w)
 	} else {
 		return nil
 	}
 }
 
-func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
+func (r *registry) writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -442,7 +448,7 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
 	tr := io.TeeReader(upstream, w)
-	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, tr)
+	_, _, err := cachetools.UploadFromReader(ctx, r.env.GetByteStreamClient(), blobRN, tr)
 	if err != nil {
 		return err
 	}
@@ -451,7 +457,7 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		ContentLength: contentLength,
 		ContentType:   contentType,
 	}
-	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
+	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, r.env.GetByteStreamClient(), "", repb.DigestFunction_SHA256, blobMetadata)
 	if err != nil {
 		return err
 	}
@@ -488,7 +494,16 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
-	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
+	acctx := ctx
+	if r.env.GetClientIdentityService() != nil {
+		idctx, err := r.env.GetClientIdentityService().AddIdentityToContext(ctx)
+		if err == nil {
+			acctx = idctx
+		} else {
+			log.CtxWarningf(ctx, "could not add identity to context: %s", err)
+		}
+	}
+	err = cachetools.UploadActionResult(acctx, r.env.GetActionCacheClient(), arRN, ar)
 	if err != nil {
 		return err
 	}
