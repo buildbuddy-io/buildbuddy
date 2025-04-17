@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -323,6 +324,10 @@ func writeActionResult(ctx context.Context, t *testing.T, env *testenv.TestEnv, 
 
 func setup(t *testing.T, blobCounter *atomic.Int32) (*testenv.TestEnv, *SociArtifactStore, *testregistry.Registry, context.Context) {
 	env := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, localGRPClis)
+	go runServer()
+
 	env.SetDefaultRedisClient(testredis.Start(t).Client())
 	env.SetSingleFlightDeduper(&deduper{})
 	action_cache_server.Register(env)

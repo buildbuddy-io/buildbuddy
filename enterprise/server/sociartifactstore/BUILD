@@ -63,6 +63,7 @@ go_test(
         "//proto:soci_go_proto",
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/digest",
+        "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testregistry",
         "//server/util/prefix",

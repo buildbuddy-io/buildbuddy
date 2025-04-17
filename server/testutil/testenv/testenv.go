@@ -66,6 +66,7 @@ executor:
   # If we don't actually have the memory, we'll OOM, which is OK
   # for testing purposes.
   memory_bytes: 10_000_000_000
+  container_registry_use_cache: true
 auth:
   oauth_providers:
     - issuer_url: 'https://auth.test.buildbuddy.io'

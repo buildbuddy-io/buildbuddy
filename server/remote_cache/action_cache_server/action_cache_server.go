@@ -28,11 +28,38 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
-var checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
+var (
+	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
+
+	restrictedPrefixes []string
+	restrictedOnce     sync.Once
+	restrictedMu       sync.Mutex
+)
+
+// RegisterPrefix adds an instance name prefix to a list of prefixes that are "restricted":
+// the Action Cache Server will not return an Action Result stored under a restricted instance name
+// prefix unless the request comes from the app, an executor, or a workflow.
+// RegisterPrefix must be only called in init() functions, so that isRestricted(...) does not
+// have to lock a mutex during Action Cache request serving.
+func RegisterPrefix(prefix string) {
+	restrictedMu.Lock()
+	defer restrictedMu.Unlock()
+	restrictedPrefixes = append(restrictedPrefixes, prefix)
+}
+
+func isRestricted(instanceName string) bool {
+	for _, prefix := range restrictedPrefixes {
+		if strings.HasPrefix(instanceName, prefix) {
+			return true
+		}
+	}
+	return false
+}
 
 type ActionCacheServer struct {
-	env   environment.Env
-	cache interfaces.Cache
+	env       environment.Env
+	cache     interfaces.Cache
+	idservice interfaces.ClientIdentityService
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -202,6 +229,18 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
+	}
+	if isRestricted(req.GetInstanceName()) {
+		if s.env.GetClientIdentityService() == nil {
+			return nil, status.UnauthenticatedError("no client identity service to check restricted instance name prefix")
+		}
+		identity, err := s.env.GetClientIdentityService().IdentityFromContext(ctx)
+		if err != nil {
+			return nil, status.UnauthenticatedErrorf("could not check identity for restricted instance name prefix: %s", err)
+		}
+		if identity.Client != interfaces.ClientIdentityApp && identity.Client != interfaces.ClientIdentityExecutor && identity.Client != interfaces.ClientIdentityWorkflow {
+			return nil, status.UnauthenticatedErrorf("attempting to retrieve action result under restricted instance name prefix from untrusted client %q", identity)
+		}
 	}
 
 	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
