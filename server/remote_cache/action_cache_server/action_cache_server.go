@@ -324,7 +324,7 @@ func (s *ActionCacheServer) validateRestrictedAccess(ctx context.Context, instan
 		if err != nil {
 			return status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
 		}
-		if identity.Client != interfaces.ClientIdentityApp && identity.Client != interfaces.ClientIdentityExecutor && identity.Client != interfaces.ClientIdentityWorkflow {
+		if identity.Client != interfaces.ClientIdentityApp && identity.Client != interfaces.ClientIdentityExecutor {
 			return status.UnauthenticatedError("Cannot write restricted ActionResult from untrusted client")
 		}
 	}
