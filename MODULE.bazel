@@ -58,6 +58,10 @@ bazel_dep(name = "rules_webtesting")
 archive_override(
     module_name = "rules_webtesting",
     integrity = "sha256-wJV/ZIAEYtzoEynx+f6NYA1ilAIrK6ppbUuaeI0+j3Y=",
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:rules_webtesting.patch",
+    ],
     strip_prefix = "rules_webtesting-7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed",
     urls = [
         "https://github.com/bazelbuild/rules_webtesting/archive/7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed.tar.gz",
