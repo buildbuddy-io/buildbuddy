@@ -33,14 +33,18 @@ func (h HitTrackerService) Track(ctx context.Context, req *hitpb.TrackRequest) (
 		var hitTracker interfaces.HitTracker
 		if hit.GetResource().GetCacheType() == rspb.CacheType_AC {
 			hitTracker = h.hitTrackerFactory.NewACHitTracker(ctx, hit.GetRequestMetadata())
-		} else {
+		} else if hit.GetResource().GetCacheType() == rspb.CacheType_CAS {
 			hitTracker = h.hitTrackerFactory.NewCASHitTracker(ctx, hit.GetRequestMetadata())
+		} else {
+			return nil, status.InvalidArgumentErrorf("invalid cache type %s", hit.GetResource().GetCacheType())
 		}
 		var transferTimer interfaces.TransferTimer
 		if hit.GetCacheRequestType() == capb.RequestType_WRITE {
 			transferTimer = hitTracker.TrackUpload(hit.GetResource().GetDigest())
-		} else {
+		} else if hit.GetCacheRequestType() == capb.RequestType_READ {
 			transferTimer = hitTracker.TrackDownload(hit.GetResource().GetDigest())
+		} else {
+			return nil, status.InvalidArgumentErrorf("invalid cache request type %s", hit.GetCacheRequestType())
 		}
 		duration := hit.GetDuration().AsDuration()
 		err := transferTimer.Record(hit.GetSizeBytes(), duration, hit.GetResource().GetCompressor())
