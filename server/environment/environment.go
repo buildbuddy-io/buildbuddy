@@ -101,6 +101,7 @@ type Env interface {
 	GetCASServer() repb.ContentAddressableStorageServer
 	GetLocalByteStreamClient() bspb.ByteStreamClient
 	GetByteStreamServer() bspb.ByteStreamServer
+	GetLocalActionCacheClient() repb.ActionCacheClient
 	GetActionCacheServer() repb.ActionCacheServer
 	GetPushServer() rapb.PushServer
 	GetFetchServer() rapb.FetchServer
