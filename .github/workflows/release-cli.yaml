@@ -11,7 +11,7 @@ on:
 jobs:
   push-tag:
     if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && !contains(github.event.pull_request.body, 'release skip'))
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
@@ -37,7 +37,7 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_OUTPUT"
 
   create-release:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     needs: push-tag
     steps:
       - name: Checkout buildbuddy-io/bazel
@@ -74,7 +74,7 @@ jobs:
             --repo=buildbuddy-io/bazel --title="$TAG" --draft --notes="Release version $TAG"
 
   sync-plugins:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     needs: [push-tag, create-release]
     steps:
       - name: Checkout buildbuddy-io/buildbuddy
@@ -137,7 +137,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04
           - os: ubuntu-22.04-16cpu-arm64-arm-limited # linux arm64
           - os: macos-13 # macOS amd64
           - os: macos-13-xlarge # macOS arm64
@@ -215,7 +215,7 @@ jobs:
           yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}
 
   publish-release:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     needs: [push-tag, sync-plugins, build-artifacts]
     steps:
       - name: Publish release
