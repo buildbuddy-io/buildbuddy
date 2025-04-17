@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -39,7 +40,7 @@ const (
 
 	blobOutputFilePath         = "_bb_ociregistry_blob_"
 	blobMetadataOutputFilePath = "_bb_ociregistry_blob_metadata_"
-	actionResultInstanceName   = "_bb_ociregistry_"
+	actionResultInstanceName   = interfaces.OCIImageInstanceNamePrefix
 )
 
 var (

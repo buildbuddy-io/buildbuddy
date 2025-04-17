@@ -31,21 +31,8 @@ import (
 var (
 	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
 
-	restrictedPrefixes []string
-	restrictedOnce     sync.Once
-	restrictedMu       sync.Mutex
+	restrictedPrefixes = []string{interfaces.OCIImageInstanceNamePrefix}
 )
-
-// RestrictPrefix adds an instance name prefix to a list of prefixes that are "restricted":
-// the Action Cache Server will not return an Action Result stored under a restricted instance name
-// prefix unless the request comes from the app, an executor, or a workflow.
-// RestrictPrefix must be only called in init() functions, so that isRestricted(...) does not
-// have to lock a mutex during Action Cache request serving.
-func RestrictPrefix(prefix string) {
-	restrictedMu.Lock()
-	defer restrictedMu.Unlock()
-	restrictedPrefixes = append(restrictedPrefixes, prefix)
-}
 
 func isRestricted(instanceName string) bool {
 	for _, prefix := range restrictedPrefixes {
@@ -229,17 +216,8 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err != nil {
 		return nil, err
 	}
-	if isRestricted(req.GetInstanceName()) {
-		if s.env.GetClientIdentityService() == nil {
-			return nil, status.UnauthenticatedError("No client ID service available to check restricted instance name prefix")
-		}
-		identity, err := s.env.GetClientIdentityService().IdentityFromContext(ctx)
-		if err != nil {
-			return nil, status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
-		}
-		if identity.Client != interfaces.ClientIdentityApp && identity.Client != interfaces.ClientIdentityExecutor && identity.Client != interfaces.ClientIdentityWorkflow {
-			return nil, status.UnauthenticatedError("Cannot fetch restricted ActionResult from untrusted client")
-		}
+	if err := s.validateRestrictedAccess(ctx, req.GetInstanceName()); err != nil {
+		return nil, err
 	}
 
 	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
@@ -302,17 +280,8 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return req.ActionResult, nil
 	}
 
-	if isRestricted(req.GetInstanceName()) {
-		if s.env.GetClientIdentityService() == nil {
-			return nil, status.UnauthenticatedError("No client ID service available to check restricted instance name prefix")
-		}
-		identity, err := s.env.GetClientIdentityService().IdentityFromContext(ctx)
-		if err != nil {
-			return nil, status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
-		}
-		if identity.Client != interfaces.ClientIdentityApp && identity.Client != interfaces.ClientIdentityExecutor && identity.Client != interfaces.ClientIdentityWorkflow {
-			return nil, status.UnauthenticatedError("Cannot write restricted ActionResult from untrusted client")
-		}
+	if err := s.validateRestrictedAccess(ctx, req.GetInstanceName()); err != nil {
+		return nil, err
 	}
 
 	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
@@ -339,6 +308,27 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		log.Debugf("UpdateActionResult: upload tracker error: %s", err)
 	}
 	return req.ActionResult, nil
+}
+
+// validateRestrictedAccess checks to see if the instance name has a restricted prefix.
+// If it does, validateRestrictedAccess uses the ClientIdentityService to assert that the
+// request comes from a trusted client: the app, an executor, or a workflow.
+// If the client is not trusted, the ClientIdentityService is not available, or there are any other errors,
+// validateRestrictedAccess returns an UnauthenticatedError.
+func (s *ActionCacheServer) validateRestrictedAccess(ctx context.Context, instanceName string) error {
+	if isRestricted(instanceName) {
+		if s.env.GetClientIdentityService() == nil {
+			return status.UnauthenticatedError("No client ID service available to check restricted instance name prefix")
+		}
+		identity, err := s.env.GetClientIdentityService().IdentityFromContext(ctx)
+		if err != nil {
+			return status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
+		}
+		if identity.Client != interfaces.ClientIdentityApp && identity.Client != interfaces.ClientIdentityExecutor && identity.Client != interfaces.ClientIdentityWorkflow {
+			return status.UnauthenticatedError("Cannot write restricted ActionResult from untrusted client")
+		}
+	}
+	return nil
 }
 
 // Inlines the contents of output files requested to be inlined as long as the
