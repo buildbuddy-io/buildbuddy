@@ -817,7 +817,7 @@ func (n *Node) getattr() (*vfspb.Attrs, error) {
 		n.vfs.inodeCache.cacheAttrs(n.StableAttr().Ino, attrs)
 	} else {
 		if n.vfs.verbose {
-			log.CtxInfof(n.vfs.getRPCContext(), "using cached attributes")
+			log.CtxInfof(n.vfs.getRPCContext(), "using cached attributes for inode %d", n.StableAttr().Ino)
 		}
 	}
 
@@ -1135,6 +1135,8 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
+
+	n.vfs.inodeCache.removeCachedAttrs(existingTargetNode.StableAttr().Ino)
 
 	n.mu.Lock()
 	if existingNode.symlinkTarget != "" {

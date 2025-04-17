@@ -782,6 +782,7 @@ func TestAttrCaching(t *testing.T) {
 	require.NoError(t, err)
 	s = rawStat(t, testFile)
 	require.EqualValues(t, 5, s.Size)
+	f.Close()
 
 	// Create a bunch of hardlinks and verify the link count is correctly
 	// visible on all links.
@@ -793,6 +794,13 @@ func TestAttrCaching(t *testing.T) {
 	for _, lf := range linkFiles {
 		s := rawStat(t, lf)
 		require.EqualValues(t, 4, s.Nlink)
+	}
+
+	err = os.Remove(testFile)
+	require.NoError(t, err)
+	for _, lf := range linkFiles {
+		s := rawStat(t, lf)
+		require.EqualValues(t, 3, s.Nlink)
 	}
 }
 
