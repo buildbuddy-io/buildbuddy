@@ -202,11 +202,20 @@ common:remote-shared --verbose_failures
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared
 common:remote-prod-shared --remote_executor=grpcs://buildbuddy.buildbuddy.io
+# Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
+# but performance tests should not be run remotely since the environment
+# is not consistent or stable.
+common:remote-prod-shared --test_tag_filters=-performance
+
 # Flags shared for dev BES, RBE and cache
 # Note: Dev BES needed to override the default prod BES urls.
 common:remote-dev-shared --config=dev
 common:remote-dev-shared --config=remote-shared
 common:remote-dev-shared --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+# Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
+# but performance tests should not be run remotely since the environment
+# is not consistent or stable.
+common:remote-dev-shared --test_tag_filters=-performance
 
 # Build with --config=remote to use BuildBuddy RBE, generally as a human from
 # the command line. Other configs shoudn't embed this.
