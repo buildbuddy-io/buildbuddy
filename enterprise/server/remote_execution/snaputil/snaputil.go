@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -98,6 +99,12 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 		return 0, err
 	}
 	defer f.Close()
+
+	// If the proxy is enabled, snapshots are not saved to the remote cache to minimize
+	// high network transfer. Snapshots can't be shared across different machine
+	// types, so there's no reason to support snapshot sharing across clusters.
+	ctx = proxy_util.SetSkipRemote(ctx)
+
 	r := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
 	if err := cachetools.GetBlob(ctx, bsClient, r, f); err != nil {
@@ -163,6 +170,12 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 		return 0, err
 	}
 	defer file.Close()
+
+	// If the proxy is enabled, skip writing snapshots to the remote cache to minimize
+	// high network transfer. Snapshots can't be shared across different machine
+	// types, so there's no reason to support snapshot sharing across clusters.
+	ctx = proxy_util.SetSkipRemote(ctx)
+
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
 	if err == nil && bytesUploaded > 0 {
 		metrics.SnapshotRemoteCacheUploadSizeBytes.With(prometheus.Labels{
