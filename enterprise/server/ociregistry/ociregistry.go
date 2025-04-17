@@ -379,16 +379,7 @@ func (r *registry) fetchBlobOrManifestFromCache(ctx context.Context, w http.Resp
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
-	acctx := ctx
-	if r.env.GetClientIdentityService() != nil {
-		idctx, err := r.env.GetClientIdentityService().AddIdentityToContext(ctx)
-		if err == nil {
-			acctx = idctx
-		} else {
-			log.CtxWarningf(ctx, "could not add identity to context: %s", err)
-		}
-	}
-	ar, err := cachetools.GetActionResult(acctx, r.env.GetActionCacheClient(), arRN)
+	ar, err := cachetools.GetActionResult(ctx, r.env.GetActionCacheClient(), arRN)
 	if err != nil {
 		return err
 	}
@@ -494,16 +485,7 @@ func (r *registry) writeBlobOrManifestToCacheAndResponse(ctx context.Context, up
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
-	acctx := ctx
-	if r.env.GetClientIdentityService() != nil {
-		idctx, err := r.env.GetClientIdentityService().AddIdentityToContext(ctx)
-		if err == nil {
-			acctx = idctx
-		} else {
-			log.CtxWarningf(ctx, "could not add identity to context: %s", err)
-		}
-	}
-	err = cachetools.UploadActionResult(acctx, r.env.GetActionCacheClient(), arRN, ar)
+	err = cachetools.UploadActionResult(ctx, r.env.GetActionCacheClient(), arRN, ar)
 	if err != nil {
 		return err
 	}
