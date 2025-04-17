@@ -880,8 +880,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_clickhouse_ch_go",
         importpath = "github.com/ClickHouse/ch-go",
-        sum = "h1:X/QmUmFhpUvLgPSQb7fWOSi1wvqGn6tJ7w2a59c4xsg=",
-        version = "v0.57.0",
+        sum = "h1:vZAXfTQliuNNefqkPDewX3kgRxN6Q4vUENnnY+ynTRY=",
+        version = "v0.65.0",
     )
     go_repository(
         name = "com_github_clickhouse_clickhouse_go",
@@ -1404,8 +1404,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_dmarkham_enumer",
         importpath = "github.com/dmarkham/enumer",
-        sum = "h1:fIF11F9l5jyD++YYvxcSH5WgHfeaSGPaN/T4kOQ4qEM=",
-        version = "v1.5.8",
+        sum = "h1:ygL0L6quiTiH1jpp68DyvsWaea6MaZLZrTTkIS++R0M=",
+        version = "v1.5.10",
     )
     go_repository(
         name = "com_github_dnaeon_go_vcr",
@@ -1756,8 +1756,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_faster_errors",
         importpath = "github.com/go-faster/errors",
-        sum = "h1:nNIPOBkprlKzkThvS/0YaX8Zs9KewLCOSFQS5BU06FI=",
-        version = "v0.6.1",
+        sum = "h1:MkJTnDoEdi9pDabt1dpWf7AA8/BaSYZqibYyhZ20AYg=",
+        version = "v0.7.1",
     )
     go_repository(
         name = "com_github_go_git_gcfg",
@@ -2828,8 +2828,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_jackc_puddle_v2",
         importpath = "github.com/jackc/puddle/v2",
-        sum = "h1:RhxXJtFG022u4ibrCSMSiu5aOq1i77R3OHKNJj77OAk=",
-        version = "v2.2.1",
+        sum = "h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo=",
+        version = "v2.2.2",
     )
     go_repository(
         name = "com_github_jbenet_go_context",
@@ -4007,8 +4007,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_pierrec_lz4_v4",
         importpath = "github.com/pierrec/lz4/v4",
-        sum = "h1:yOVMLb6qSIDP67pl/5F7RepeKYu/VmTyEXvuMI5d9mQ=",
-        version = "v4.1.21",
+        sum = "h1:cKFw6uJDK+/gfw5BcDL0JL5aBsAFdsIT18eRtLj7VIU=",
+        version = "v4.1.22",
     )
     go_repository(
         name = "com_github_pingcap_errors",
