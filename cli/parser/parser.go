@@ -731,7 +731,7 @@ func parseRcRule(line string) (*RcRule, error) {
 }
 
 func ParseRCFiles(workspaceDir string, filePaths ...string) ([]*RcRule, error) {
-	options := make([]*RcRule, 0)
+	opts := make([]*RcRule, 0)
 	seen := map[string]bool{}
 	for _, filePath := range filePaths {
 		r, err := realpath(filePath)
@@ -748,12 +748,12 @@ func ParseRCFiles(workspaceDir string, filePaths ...string) ([]*RcRule, error) {
 			continue
 		}
 		defer file.Close()
-		options, err = appendRcRulesFromFile(workspaceDir, file, options, nil /*=importStack*/)
+		opts, err = appendRcRulesFromFile(workspaceDir, file, opts, nil /*=importStack*/)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return options, nil
+	return opts, nil
 }
 
 func ExpandConfigs(args []string) ([]string, error) {
