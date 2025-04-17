@@ -7,6 +7,8 @@ go_library(
     srcs = ["hit_tracker_client.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client",
     deps = [
+        "//enterprise/server/util/proxy_util",
+        "//proto:cache_go_proto",
         "//proto:hit_tracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -32,12 +34,16 @@ go_test(
     srcs = ["hit_tracker_client_test.go"],
     embed = [":hit_tracker_client"],
     deps = [
+        "//enterprise/server/util/proxy_util",
+        "//proto:cache_go_proto",
         "//proto:hit_tracker_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//metadata",
     ],
 )
