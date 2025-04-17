@@ -20,6 +20,14 @@ message CacheHit {
 
   // The time taken for the download.
   google.protobuf.Duration duration = 4;
+
+  CacheRequestType cache_request_type = 5;
+}
+
+enum CacheRequestType {
+  UNKNOWN = 0;
+  UPLOAD = 1;
+  DOWNLOAD = 2;
 }
 
 message TrackRequest {
