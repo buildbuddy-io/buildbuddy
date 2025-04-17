@@ -1,4 +1,5 @@
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+go_deps.config(check_direct_dependencies = "error")
 go_deps.from_file(go_mod = "//:go.mod")
 
 # Non-Go repos referenced by Go repos
