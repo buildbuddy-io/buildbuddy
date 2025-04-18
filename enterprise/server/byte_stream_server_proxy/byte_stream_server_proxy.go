@@ -360,6 +360,10 @@ func (s *ByteStreamServerProxy) write(stream bspb.ByteStream_WriteServer) (*bspb
 }
 
 func (s *ByteStreamServerProxy) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
+	if proxy_util.SkipRemote(ctx) {
+		return nil, status.UnimplementedError("Skip remote not implemented")
+	}
+
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	return s.remote.QueryWriteStatus(ctx, req)
