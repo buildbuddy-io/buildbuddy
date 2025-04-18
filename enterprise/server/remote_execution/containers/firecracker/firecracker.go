@@ -446,16 +446,19 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 }
 
 func getHostKernelVersion() (string, error) {
-	data, err := os.ReadFile("/proc/version")
-	if err != nil {
-		return "", status.WrapError(err, "read /proc/version")
+	var uts unix.Utsname
+	if err := unix.Uname(&uts); err != nil {
+		return "", err
 	}
-	re := regexp.MustCompile(`Linux version (\S+)`)
-	matches := re.FindStringSubmatch(string(data))
-	if len(matches) < 2 {
-		return "", status.InternalErrorf("could not read host kernel version from /proc/version data %s", string(data))
+	// Stop at null termination character
+	n := 0
+	for n = 0; n < len(uts.Release); n++ {
+		if uts.Release[n] == 0 {
+			break
+		}
 	}
-	return matches[1], nil
+	kernelVersion := string(uts.Release[:n])
+	return kernelVersion, nil
 }
 
 type Provider struct {
