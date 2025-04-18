@@ -1655,6 +1655,10 @@ type CPULeaser interface {
 	Acquire(milliCPU int64, taskID string, opts ...any) (int, []int, func())
 }
 
+const (
+	OCIImageInstanceNamePrefix = "_bb_ociregistry_"
+)
+
 type OCIRegistry interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }

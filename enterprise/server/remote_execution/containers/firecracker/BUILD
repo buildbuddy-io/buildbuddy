@@ -129,6 +129,7 @@ go_test(
     ],
     deps = [
         ":firecracker",
+        "//enterprise/server/clientidentity",
         "//enterprise/server/ociregistry",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
@@ -152,6 +153,7 @@ go_test(
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
         "//server/resources",
+        "//server/rpc/interceptors",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
@@ -162,6 +164,7 @@ go_test(
         "//server/util/disk",
         "//server/util/log",
         "//server/util/networking",
+        "//server/util/random",
         "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/tracing",
