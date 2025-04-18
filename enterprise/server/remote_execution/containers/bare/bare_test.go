@@ -99,28 +99,57 @@ func TestLogFiles(t *testing.T) {
 	assert.Equal(t, 0, result.ExitCode)
 }
 
-func TestTempdirEnvVars(t *testing.T) {
-	flags.Set(t, "executor.bare.enable_tmpdir", true)
-	ctx := context.Background()
-	provider := bare.Provider{}
-	ctr, err := provider.New(ctx, &container.Init{})
-	require.NoError(t, err)
-	workDir := testfs.MakeTempDir(t)
+func TestTMPDIR(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		relativeWorkDir bool
+	}{
+		{
+			name:            "absolute work dir",
+			relativeWorkDir: false,
+		},
+		{
+			name:            "relative work dir",
+			relativeWorkDir: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "executor.bare.enable_tmpdir", true)
+			ctx := context.Background()
+			provider := bare.Provider{}
+			ctr, err := provider.New(ctx, &container.Init{})
+			require.NoError(t, err)
 
-	res := ctr.Run(ctx, &repb.Command{
-		Arguments: []string{"bash", "-ec", `echo -n foo > $TMPDIR/foo.txt`},
-	}, workDir, oci.Credentials{})
-	require.NoError(t, res.Error)
+			workDir := testfs.MakeTempDir(t)
+			if test.relativeWorkDir {
+				t.Chdir(filepath.Dir(workDir))
+				workDir = filepath.Base(workDir)
+			}
 
-	b, err := os.ReadFile(filepath.Join(workDir+".tmp", "foo.txt"))
-	require.NoError(t, err)
-	assert.Equal(t, "foo", string(b))
-	_, err = os.Stat(workDir + ".tmp")
-	require.NoError(t, err)
+			res := ctr.Run(ctx, &repb.Command{
+				Arguments: []string{"bash", "-ec", `
+					echo -n foo > $TMPDIR/foo.txt
+					# Make sure TMPDIR is absolute.
+					if ! [[ $TMPDIR == /* ]]; then
+						echo >&2 "TMPDIR is not absolute: $TMPDIR"
+						exit 1
+					fi
+				`},
+			}, workDir, oci.Credentials{})
+			assert.Empty(t, string(res.Stderr))
+			require.NoError(t, res.Error)
 
-	err = ctr.Remove(ctx)
-	require.NoError(t, err)
+			b, err := os.ReadFile(filepath.Join(workDir+".tmp", "foo.txt"))
+			require.NoError(t, err)
+			assert.Equal(t, "foo", string(b))
+			_, err = os.Stat(workDir + ".tmp")
+			require.NoError(t, err)
 
-	_, err = os.Stat(workDir + ".tmp")
-	require.True(t, os.IsNotExist(err), "unexpected error: %v", err)
+			err = ctr.Remove(ctx)
+			require.NoError(t, err)
+
+			_, err = os.Stat(workDir + ".tmp")
+			require.True(t, os.IsNotExist(err), "unexpected error: %v", err)
+		})
+	}
 }
