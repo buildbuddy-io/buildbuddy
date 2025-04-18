@@ -377,7 +377,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 // If the client is not trusted, the ClientIdentityService is not available, or there are any other errors,
 // validateRestrictedAccess returns an UnauthenticatedError.
 func (s *ActionCacheServer) validateRestrictedAccess(ctx context.Context, instanceName string) error {
-	if s.IsRestricted(instanceName) {
+	if isRestricted(instanceName) {
 		if s.env.GetClientIdentityService() == nil {
 			return status.UnauthenticatedError("No client ID service available to check restricted instance name prefix")
 		}
@@ -392,8 +392,8 @@ func (s *ActionCacheServer) validateRestrictedAccess(ctx context.Context, instan
 	return nil
 }
 
-// IsRestricted indicates whether the input instance name has a restricted prefix.
-func (s *ActionCacheServer) IsRestricted(instanceName string) bool {
+// isRestricted indicates whether the input instance name has a restricted prefix.
+func isRestricted(instanceName string) bool {
 	for _, prefix := range restrictedPrefixes {
 		if strings.HasPrefix(instanceName, prefix) {
 			return true
