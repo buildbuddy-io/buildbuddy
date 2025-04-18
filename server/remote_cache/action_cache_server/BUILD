@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "action_cache_server",
-    srcs = ["action_cache_server.go", "action_cache_server_test_only.go"],
+    srcs = ["action_cache_server.go",],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server",
     visibility = ["//visibility:public"],
     deps = [

@@ -7,7 +7,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -21,108 +20,79 @@ import (
 
 func TestRestrictedPrefixes(t *testing.T) {
 	for _, tc := range []struct {
-		name               string
-		initIDService      bool
-		instanceNames      []string
-		restrictedPrefixes []string
-		clientID           string
-		canWrite           bool
-		canRead            bool
+		name          string
+		initIDService bool
+		instanceNames []string
+		clientID      string
+		canWrite      bool
+		canRead       bool
 	}{
 		{
-			name:               "no id service, no restricted prefixes, CAN write and read unrestricted instance names normally",
-			initIDService:      false,
-			restrictedPrefixes: []string{},
-			instanceNames:      []string{"normal instance name", "", "another totally normal name"},
-			clientID:           "",
-			canWrite:           true,
-			canRead:            true,
+			name:          "no id service, CAN write and read unrestricted instance names normally",
+			initIDService: false,
+			instanceNames: []string{"normal instance name", "", "another totally normal name"},
+			clientID:      "",
+			canWrite:      true,
+			canRead:       true,
 		},
 		{
-			name:               "no id service, restricted prefixes, CAN write and read unrestricted instance names normally",
-			initIDService:      false,
-			restrictedPrefixes: []string{"restricted"},
-			instanceNames:      []string{"normal instance name", "", "another totally normal name"},
-			clientID:           "",
-			canWrite:           true,
-			canRead:            true,
+			name:          "id service, CAN write and read unrestricted instance names normally",
+			initIDService: true,
+			instanceNames: []string{"normal instance name", "", "another totally normal name"},
+			clientID:      "",
+			canWrite:      true,
+			canRead:       true,
 		},
 		{
-			name:               "id service, no restricted prefixes, CAN write and read unrestricted instance names normally",
-			initIDService:      true,
-			restrictedPrefixes: []string{},
-			instanceNames:      []string{"normal instance name", "", "another totally normal name"},
-			clientID:           "",
-			canWrite:           true,
-			canRead:            true,
+			name:          "no id service, CANNOT write or read restricted instance names",
+			initIDService: true,
+			instanceNames: []string{interfaces.OCIImageInstanceNamePrefix, interfaces.OCIImageInstanceNamePrefix + "suffix"},
+			clientID:      "",
+			canWrite:      false,
+			canRead:       false,
 		},
 		{
-			name:               "id service, restricted prefixes, CAN write and read unrestricted instance names normally",
-			initIDService:      true,
-			restrictedPrefixes: []string{"restricted"},
-			instanceNames:      []string{"normal instance name", "", "another totally normal name"},
-			clientID:           "",
-			canWrite:           true,
-			canRead:            true,
+			name:          "id service, CAN write or read restricted instance names from app",
+			initIDService: true,
+			instanceNames: []string{interfaces.OCIImageInstanceNamePrefix, interfaces.OCIImageInstanceNamePrefix + "suffix"},
+			clientID:      interfaces.ClientIdentityApp,
+			canWrite:      true,
+			canRead:       true,
 		},
 		{
-			name:               "no id service, CANNOT write or read restricted instance names",
-			initIDService:      true,
-			restrictedPrefixes: []string{"restricted"},
-			instanceNames:      []string{"restricted", "restricted-suffix"},
-			clientID:           "",
-			canWrite:           false,
-			canRead:            false,
+			name:          "id service, CAN write or read restricted instance names from executor",
+			initIDService: true,
+			instanceNames: []string{interfaces.OCIImageInstanceNamePrefix, interfaces.OCIImageInstanceNamePrefix + "suffix"},
+			clientID:      interfaces.ClientIdentityExecutor,
+			canWrite:      true,
+			canRead:       true,
 		},
 		{
-			name:               "id service, CAN write or read restricted instance names from app",
-			initIDService:      true,
-			restrictedPrefixes: []string{"restricted"},
-			instanceNames:      []string{"restricted", "restricted-suffix"},
-			clientID:           interfaces.ClientIdentityApp,
-			canWrite:           true,
-			canRead:            true,
+			name:          "id service, CANNOT write or read restricted instance names from workflow",
+			initIDService: true,
+			instanceNames: []string{interfaces.OCIImageInstanceNamePrefix, interfaces.OCIImageInstanceNamePrefix + "suffix"},
+			clientID:      interfaces.ClientIdentityWorkflow,
+			canWrite:      false,
+			canRead:       false,
 		},
 		{
-			name:               "id service, CAN write or read restricted instance names from executor",
-			initIDService:      true,
-			restrictedPrefixes: []string{"restricted"},
-			instanceNames:      []string{"restricted", "restricted-suffix"},
-			clientID:           interfaces.ClientIdentityExecutor,
-			canWrite:           true,
-			canRead:            true,
+			name:          "id service, CANNOT write or read restricted instance names from untrusted client",
+			initIDService: true,
+			instanceNames: []string{interfaces.OCIImageInstanceNamePrefix, interfaces.OCIImageInstanceNamePrefix + "suffix"},
+			clientID:      "untrusted",
+			canWrite:      false,
+			canRead:       false,
 		},
 		{
-			name:               "id service, CANNOT write or read restricted instance names from workflow",
-			initIDService:      true,
-			restrictedPrefixes: []string{"restricted"},
-			instanceNames:      []string{"restricted", "restricted-suffix"},
-			clientID:           interfaces.ClientIdentityWorkflow,
-			canWrite:           false,
-			canRead:            false,
-		},
-		{
-			name:               "id service, CANNOT write or read restricted instance names from untrusted client",
-			initIDService:      true,
-			restrictedPrefixes: []string{"restricted"},
-			instanceNames:      []string{"restricted", "restricted-suffix"},
-			clientID:           "untrusted",
-			canWrite:           false,
-			canRead:            false,
-		},
-		{
-			name:               "id service, CANNOT write or read restricted instance names from empty client",
-			initIDService:      true,
-			restrictedPrefixes: []string{"restricted"},
-			instanceNames:      []string{"restricted", "restricted-suffix"},
-			clientID:           "",
-			canWrite:           false,
-			canRead:            false,
+			name:          "id service, CANNOT write or read restricted instance names from empty client",
+			initIDService: true,
+			instanceNames: []string{interfaces.OCIImageInstanceNamePrefix, interfaces.OCIImageInstanceNamePrefix + "suffix"},
+			clientID:      "",
+			canWrite:      false,
+			canRead:       false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			action_cache_server.TestOnly_SetRestrictedPrefixes(tc.restrictedPrefixes)
-			t.Cleanup(func() { action_cache_server.TestOnly_SetRestrictedPrefixes([]string{}) })
 			te := testenv.GetTestEnv(t)
 			flags.Set(t, "app.client_identity.client", tc.clientID)
 			if tc.initIDService {

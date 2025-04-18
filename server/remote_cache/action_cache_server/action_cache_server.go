@@ -31,7 +31,7 @@ import (
 var (
 	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
 
-	restrictedPrefixes = []string{}
+	restrictedPrefixes = []string{interfaces.OCIImageInstanceNamePrefix}
 )
 
 type ActionCacheServer struct {
@@ -377,17 +377,18 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 // If the client is not trusted, the ClientIdentityService is not available, or there are any other errors,
 // validateRestrictedAccess returns an UnauthenticatedError.
 func (s *ActionCacheServer) validateRestrictedAccess(ctx context.Context, instanceName string) error {
-	if isRestricted(instanceName) {
-		if s.env.GetClientIdentityService() == nil {
-			return status.UnauthenticatedError("No client ID service available to check restricted instance name prefix")
-		}
-		identity, err := s.env.GetClientIdentityService().IdentityFromContext(ctx)
-		if err != nil {
-			return status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
-		}
-		if identity.Client != interfaces.ClientIdentityApp && identity.Client != interfaces.ClientIdentityExecutor {
-			return status.UnauthenticatedError("Cannot write restricted ActionResult from untrusted client")
-		}
+	if !isRestricted(instanceName) {
+		return nil
+	}
+	if s.env.GetClientIdentityService() == nil {
+		return status.UnauthenticatedError("No client ID service available to check restricted instance name prefix")
+	}
+	identity, err := s.env.GetClientIdentityService().IdentityFromContext(ctx)
+	if err != nil {
+		return status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
+	}
+	if identity.Client != interfaces.ClientIdentityApp && identity.Client != interfaces.ClientIdentityExecutor {
+		return status.UnauthenticatedError("Cannot write restricted ActionResult from untrusted client")
 	}
 	return nil
 }
