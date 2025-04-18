@@ -185,7 +185,7 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
 
   render() {
     if (this.state.loading) {
-      return <div className="loading" />;
+      return <div className="loading loading-slim invocation-tab-loading" />;
     }
 
     let completedCount = 0;
