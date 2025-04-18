@@ -24,9 +24,8 @@ func SetSkipRemote(ctx context.Context) context.Context {
 }
 
 func RequestTypeLabelFromContext(ctx context.Context) string {
-	requestTypeLabel := metrics.DefaultCacheProxyRequestLabel
 	if SkipRemote(ctx) {
-		requestTypeLabel = metrics.LocalOnlyCacheProxyRequestLabel
+		return metrics.LocalOnlyCacheProxyRequestLabel
 	}
-	return requestTypeLabel
+	return metrics.DefaultCacheProxyRequestLabel
 }
