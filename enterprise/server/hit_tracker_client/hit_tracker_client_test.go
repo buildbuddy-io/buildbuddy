@@ -42,14 +42,14 @@ func digestProto(hash string, sizeBytes int64) *repb.Digest {
 }
 
 type testHitTracker struct {
-	t               *testing.T
+	t               testing.TB
 	authenticator   interfaces.Authenticator
 	wg              sync.WaitGroup
 	downloads       map[string]*atomic.Int64
 	bytesDownloaded map[string]*atomic.Int64
 }
 
-func newTestHitTracker(t *testing.T, authenticator interfaces.Authenticator) *testHitTracker {
+func newTestHitTracker(t testing.TB, authenticator interfaces.Authenticator) *testHitTracker {
 	return &testHitTracker{
 		t:             t,
 		authenticator: authenticator,
@@ -80,7 +80,7 @@ func (ht *testHitTracker) Track(ctx context.Context, req *hitpb.TrackRequest) (*
 	return &hitpb.TrackResponse{}, nil
 }
 
-func setup(t *testing.T) (interfaces.Authenticator, *HitTrackerFactory, *testHitTracker) {
+func setup(t testing.TB) (interfaces.Authenticator, *HitTrackerFactory, *testHitTracker) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	te := testenv.GetTestEnv(t)
@@ -116,7 +116,8 @@ func TestCASHitTracker(t *testing.T) {
 	hitTracker.TrackDownload(bDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 	hitTracker.TrackUpload(cDigest).CloseWithBytesTransferred(3000, 4000, repb.Compressor_IDENTITY, "test")
 
-	expectToEqual(t, 1, hitTrackerService.downloads[interfaces.AuthAnonymousUser], "Expected 1 HitTracker.Track download")
+	expectation := func() bool { return hitTrackerService.downloads[interfaces.AuthAnonymousUser].Load() == 1 }
+	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond)
 	require.Equal(t, int64(2000), hitTrackerService.bytesDownloaded[interfaces.AuthAnonymousUser].Load())
 }
 
@@ -127,7 +128,8 @@ func TestCASHitTracker_NoDeduplication(t *testing.T) {
 	hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 	hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 
-	expectToEqual(t, int64(2), hitTrackerService.downloads[interfaces.AuthAnonymousUser], "Expected 2 cache hits")
+	expectation := func() bool { return hitTrackerService.downloads[interfaces.AuthAnonymousUser].Load() == 2 }
+	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond)
 	require.Equal(t, int64(4000), hitTrackerService.bytesDownloaded[interfaces.AuthAnonymousUser].Load())
 }
 
@@ -158,11 +160,13 @@ func TestCASHitTracker_SplitsUpdates(t *testing.T) {
 	hitTrackerService.wg.Done()
 
 	// Expect 10x [A, B, C, D, E] for ANON.
-	expectToEqual(t, 50, hitTrackerService.downloads[interfaces.AuthAnonymousUser], "Expected 10 updates for group ANON")
+	expectation := func() bool { return hitTrackerService.downloads[interfaces.AuthAnonymousUser].Load() == 50 }
+	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 10 updates for group ANON")
 	require.Equal(t, int64(222_220), hitTrackerService.bytesDownloaded[interfaces.AuthAnonymousUser].Load())
 
 	// Group 1's update shouldn't be affected by ANON's batching
-	expectToEqual(t, int64(2), hitTrackerService.downloads[group1], "Expected 1 cache hits for group 1")
+	expectation = func() bool { return hitTrackerService.downloads[group1].Load() == 2 }
+	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 1 cache hits for group 1")
 	require.Equal(t, int64(4_000_000), hitTrackerService.bytesDownloaded[group1].Load())
 }
 
@@ -194,26 +198,36 @@ func TestCASHitTracker_DropsUpdates(t *testing.T) {
 	hitTrackerService.wg.Done()
 
 	// Expect A, B, C, D, E, A, B, C, D, E to be sent for ANON.
-	expectToEqual(t, 10, hitTrackerService.downloads[interfaces.AuthAnonymousUser], "Expected 10 updates for group ANON")
+	expectation := func() bool { return hitTrackerService.downloads[interfaces.AuthAnonymousUser].Load() == 10 }
+	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 10 updates for group ANON")
 	require.Equal(t, int64(44_444), hitTrackerService.bytesDownloaded[interfaces.AuthAnonymousUser].Load())
 
 	// Even though group 1's second update came at the end, it should still be sent.
-	expectToEqual(t, int64(2), hitTrackerService.downloads[group1], "Expected 1 cache hits for group 1")
+	expectation = func() bool { return hitTrackerService.downloads[group1].Load() == 2 }
+	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 2 cache hits for group 1")
 	require.Equal(t, int64(4_000_000), hitTrackerService.bytesDownloaded[group1].Load())
 }
 
-func expectToEqual(t *testing.T, expected int64, actual *atomic.Int64, message string) {
-	backoff := time.Millisecond
-	maxBackoff := time.Second
-	for i := 0; i < 20; i++ {
-		if expected == actual.Load() {
-			return
+func BenchmarkEnqueue(b *testing.B) {
+	numToEnqueue := 1_000_000
+	flags.Set(b, "cache_proxy.remote_hit_tracker.max_hits_per_update", b.N*numToEnqueue)
+	flags.Set(b, "cache_proxy.remote_hit_tracker.max_pending_hits_per_group", b.N*numToEnqueue)
+	_, hitTrackerFactory, _ := setup(b)
+
+	b.ReportAllocs()
+	b.StopTimer()
+	for i := 0; i < b.N; i++ {
+		hitTracker := hitTrackerFactory.NewCASHitTracker(b.Context(), &repb.RequestMetadata{})
+		b.StartTimer()
+		wg := sync.WaitGroup{}
+		for i := 0; i < numToEnqueue; i++ {
+			wg.Add(1)
+			go func() {
+				hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
+				wg.Done()
+			}()
 		}
-		time.Sleep(backoff)
-		backoff = backoff * 2
-		if backoff > maxBackoff {
-			backoff = maxBackoff
-		}
+		wg.Wait()
+		b.StopTimer()
 	}
-	require.Equal(t, expected, actual.Load(), message)
 }

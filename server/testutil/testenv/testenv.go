@@ -90,7 +90,7 @@ func init() {
 //
 // Register services to the server, then call LocalGRPCConn to get a connection
 // to the returned server.
-func RegisterLocalGRPCServer(t *testing.T, te *real_environment.RealEnv) (*grpc.Server, func(), *bufconn.Listener) {
+func RegisterLocalGRPCServer(t testing.TB, te *real_environment.RealEnv) (*grpc.Server, func(), *bufconn.Listener) {
 	if te.GetGRPCServer() != nil {
 		log.Fatal("GRPCServer is already registered")
 	}
