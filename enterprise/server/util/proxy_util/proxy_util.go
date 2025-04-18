@@ -3,6 +3,7 @@ package proxy_util
 import (
 	"context"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -20,4 +21,11 @@ func SkipRemote(ctx context.Context) bool {
 
 func SetSkipRemote(ctx context.Context) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, SkipRemoteKey, "true")
+}
+
+func RequestTypeLabelFromContext(ctx context.Context) string {
+	if SkipRemote(ctx) {
+		return metrics.LocalOnlyCacheProxyRequestLabel
+	}
+	return metrics.DefaultCacheProxyRequestLabel
 }

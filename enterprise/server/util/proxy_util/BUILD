@@ -7,5 +7,8 @@ go_library(
     srcs = ["proxy_util.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util",
     visibility = ["//visibility:public"],
-    deps = ["@org_golang_google_grpc//metadata"],
+    deps = [
+        "//server/metrics",
+        "@org_golang_google_grpc//metadata",
+    ],
 )

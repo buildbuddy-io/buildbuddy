@@ -67,17 +67,18 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	defer spn.End()
 
 	skipRemote := proxy_util.SkipRemote(ctx)
+	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(ctx)
 
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
 		bytesRead, err := s.readRemote(req, stream)
-		recordReadMetrics(metrics.UncacheableStatusLabel, err, bytesRead)
+		recordReadMetrics(metrics.UncacheableStatusLabel, requestTypeLabel, err, bytesRead)
 		return err
 	}
 
 	localReadStream, err := s.local.Read(ctx, req)
 	if err != nil {
 		if skipRemote {
-			// TODO: Add metrics
+			recordReadMetrics(metrics.MissStatusLabel, requestTypeLabel, err, 0)
 			return err
 		}
 
@@ -86,7 +87,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 			log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
 		}
 		bytesRead, err := s.readRemote(req, stream)
-		recordReadMetrics(metrics.MissStatusLabel, err, bytesRead)
+		recordReadMetrics(metrics.MissStatusLabel, requestTypeLabel, err, bytesRead)
 		return err
 	}
 
@@ -111,42 +112,44 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 			// the remote cache, but keep it simple for now.
 			if responseSent {
 				log.CtxInfof(ctx, "error midstream of local read: %s", err)
-				recordReadMetrics(metrics.HitStatusLabel, err, bytesRead)
+				recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, err, bytesRead)
 				return err
 			} else if skipRemote {
-				// TODO: Add metrics
+				recordReadMetrics(metrics.MissStatusLabel, requestTypeLabel, err, bytesRead)
 				return err
 			} else {
 				// Fall back to reading remotely if the local read fails.
 				remoteBytesRead, err := s.readRemote(req, stream)
-				recordReadMetrics(metrics.MissStatusLabel, err, remoteBytesRead)
+				recordReadMetrics(metrics.MissStatusLabel, requestTypeLabel, err, remoteBytesRead)
 				return err
 			}
 		}
 
 		if err := stream.Send(rsp); err != nil {
-			recordReadMetrics(metrics.HitStatusLabel, err, bytesRead)
+			recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, err, bytesRead)
 			return err
 		}
 		responseSent = true
 	}
-	recordReadMetrics(metrics.HitStatusLabel, nil, bytesRead)
+	recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, nil, bytesRead)
 	return nil
 }
 
-func recordReadMetrics(cacheStatus string, err error, bytesRead int) {
+func recordReadMetrics(cacheStatus string, proxyRequestType string, err error, bytesRead int) {
 	labels := prometheus.Labels{
-		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
-		metrics.CacheHitMissStatus: cacheStatus,
+		metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.CacheHitMissStatus:    cacheStatus,
+		metrics.CacheProxyRequestType: proxyRequestType,
 	}
 	metrics.ByteStreamProxiedReadRequests.With(labels).Inc()
 	metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(bytesRead))
 }
 
-func recordWriteMetrics(resp *bspb.WriteResponse, err error) {
+func recordWriteMetrics(resp *bspb.WriteResponse, err error, proxyRequestType string) {
 	labels := prometheus.Labels{
-		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
-		metrics.CacheHitMissStatus: metrics.MissStatusLabel,
+		metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
+		metrics.CacheProxyRequestType: proxyRequestType,
 	}
 	metrics.ByteStreamProxiedWriteRequests.With(labels).Inc()
 	if resp != nil && resp.GetCommittedSize() > 0 {
@@ -262,7 +265,8 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
 	resp, err := s.write(stream)
-	recordWriteMetrics(resp, err)
+	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(stream.Context())
+	recordWriteMetrics(resp, err, requestTypeLabel)
 	return err
 }
 
