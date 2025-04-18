@@ -389,9 +389,17 @@ func rpcErrToSyscallErrno(rpcErr error) syscall.Errno {
 	return syscall.EIO
 }
 
-func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Lookup %q", filepath.Join(n.relativePath(), name))
+		fp := filepath.Join(n.relativePath(), name)
+		log.CtxDebugf(n.vfs.rpcCtx, "Lookup %q", fp)
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Lookup %q: %s", fp, attrDebugString(node, &out.Attr))
+			} else {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Lookup %q: %s", fp, errno)
+			}
+		}()
 	}
 	req := &vfspb.LookupRequest{
 		ParentId: n.StableAttr().Ino,
@@ -587,7 +595,6 @@ func (f *remoteFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.
 
 func (f *remoteFile) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
 	f.startOP("Write")
-	f.node.resetCachedAttrs()
 	writeReq := &vfspb.WriteRequest{
 		HandleId: f.id,
 		Data:     data,
@@ -713,6 +720,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	if err != nil {
 		return nil, nil, 0, rpcErrToSyscallErrno(err)
 	}
+	n.vfs.inodeCache.opened(rsp.GetId())
 
 	inode := n.vfs.root.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG, Ino: rsp.GetId()})
 
@@ -892,6 +900,11 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 }
 
 func (n *Node) Getxattr(ctx context.Context, attr string, dest []byte) (uint32, syscall.Errno) {
+	n.startOP("Getxattr")
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "Getxattr %q", n.relativePath())
+	}
+
 	attrs, err := n.getattr()
 	if err != nil {
 		return 0, rpcErrToSyscallErrno(err)
@@ -940,6 +953,11 @@ func (n *Node) Listxattr(ctx context.Context, dest []byte) (uint32, syscall.Errn
 }
 
 func (n *Node) Setxattr(ctx context.Context, attr string, data []byte, flags uint32) syscall.Errno {
+	n.startOP("Setxattr")
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "Setxattr %q", n.relativePath())
+	}
+
 	req := &vfspb.SetAttrRequest{
 		Id: n.StableAttr().Ino,
 		SetExtended: &vfspb.SetAttrRequest_SetExtendedAttr{
