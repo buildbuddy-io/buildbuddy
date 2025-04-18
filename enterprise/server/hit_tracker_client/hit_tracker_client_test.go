@@ -209,8 +209,9 @@ func TestCASHitTracker_DropsUpdates(t *testing.T) {
 }
 
 func BenchmarkEnqueue(b *testing.B) {
-	flags.Set(b, "cache_proxy.remote_hit_tracker.max_hits_per_update", b.N*1_000_000)
-	flags.Set(b, "cache_proxy.remote_hit_tracker.max_pending_hits_per_group", b.N*1_000_000)
+	numToEnqueue := 1_000_000
+	flags.Set(b, "cache_proxy.remote_hit_tracker.max_hits_per_update", b.N*numToEnqueue)
+	flags.Set(b, "cache_proxy.remote_hit_tracker.max_pending_hits_per_group", b.N*numToEnqueue)
 	_, hitTrackerFactory, _ := setup(b)
 
 	b.ReportAllocs()
@@ -219,7 +220,7 @@ func BenchmarkEnqueue(b *testing.B) {
 		hitTracker := hitTrackerFactory.NewCASHitTracker(b.Context(), &repb.RequestMetadata{})
 		b.StartTimer()
 		wg := sync.WaitGroup{}
-		for i := 0; i < 1_000_000; i++ {
+		for i := 0; i < numToEnqueue; i++ {
 			wg.Add(1)
 			go func() {
 				hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
