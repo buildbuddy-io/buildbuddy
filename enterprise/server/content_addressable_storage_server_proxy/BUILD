@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/util/proxy_util",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",

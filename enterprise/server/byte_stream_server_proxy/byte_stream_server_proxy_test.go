@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
@@ -40,15 +41,6 @@ const (
 	once
 	always
 )
-
-// The real AtimeUpdater makes RPCs which may interfere with tests.
-type noOpAtimeUpdater struct{}
-
-func (a *noOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) {
-}
-func (a *noOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ string) {}
-func (a *noOpAtimeUpdater) EnqueueByFindMissingRequest(_ context.Context, _ *repb.FindMissingBlobsRequest) {
-}
 
 type noOpCAS struct {
 	t *testing.T
@@ -119,7 +111,7 @@ func runLocalBSS(ctx context.Context, env *testenv.TestEnv, t *testing.T) bspb.B
 
 func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.TestEnv, t *testing.T) bspb.ByteStreamClient {
 	if env.GetAtimeUpdater() == nil {
-		env.SetAtimeUpdater(&noOpAtimeUpdater{})
+		env.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	}
 	env.SetByteStreamClient(client)
 	env.SetLocalByteStreamClient(runLocalBSS(ctx, env, t))
@@ -457,4 +449,37 @@ func TestWrite(t *testing.T) {
 		tc.writeToRemote = true
 		t.Run(tc.name+", bazel "+tc.bazelVersion+" remotefirst", run)
 	}
+}
+
+func TestSkipRemote(t *testing.T) {
+	ctx := testContext()
+	ctx = metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
+
+	remoteEnv := testenv.GetTestEnv(t)
+	proxyEnv := testenv.GetTestEnv(t)
+	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
+	proxy := runBSProxy(ctx, bs, proxyEnv, t)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	// Write blob big enough to require multiple chunks to upload.
+	rn, data := testdigest.NewRandomResourceAndBuf(t, 5e6, rspb.CacheType_CAS, "")
+	byte_stream.MustUploadChunked(t, ctx, proxy, "5.0.0", fmt.Sprintf("uploads/%s/blobs/%s/%d", uuid.New(), rn.Digest.Hash, rn.Digest.SizeBytes), data, true)
+	require.NoError(t, waitContains(ctx, proxyEnv, rn))
+
+	// Check that no data was written to the remote cache.
+	require.Equal(t, int32(0), requestCounter.Load())
+
+	// Test read.
+	var buf bytes.Buffer
+	r, err := digest.CASResourceNameFromProto(rn)
+	require.NoError(t, err)
+	err = byte_stream.ReadBlob(ctx, proxy, r, &buf, 0)
+	require.NoError(t, err)
+	require.Equal(t, data, buf.Bytes())
+	require.NoError(t, waitContains(ctx, proxyEnv, rn))
+	requestCounter.Store(0)
 }
