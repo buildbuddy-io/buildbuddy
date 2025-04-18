@@ -68,10 +68,10 @@ go_test(
     srcs = ["vfs_test.go"],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
+        "test.EstimatedComputeUnits": "2",
     },
     tags = [
         "docker",
-        "manual",
     ],
     deps = select({
         "@io_bazel_rules_go//go/platform:linux_amd64": [
