@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
@@ -41,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -51,6 +53,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -243,7 +246,12 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(
+		env.GetServerContext(),
+		lis,
+		interceptors.GetUnaryClientIdentityInterceptor(env),
+		interceptors.GetStreamClientIdentityInterceptor(env),
+	)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1992,11 +2000,20 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 			flags.Set(t, "executor.firecracker_vm_docker_mirrors", []string{registryURL})
 			flags.Set(t, "executor.firecracker_vm_docker_insecure_registries", []string{registryHost})
 
-			env := getTestEnv(ctx, t, envOpts{})
+			te := getTestEnv(ctx, t, envOpts{})
+			flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityExecutor)
+			key, err := random.RandomString(16)
+			require.NoError(t, err)
+			flags.Set(t, "app.client_identity.key", string(key))
+			require.NoError(t, err)
+			err = clientidentity.Register(te)
+			require.NoError(t, err)
+			require.NotNil(t, te.GetClientIdentityService())
+
 			rootDir := testfs.MakeTempDir(t)
 			workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-			ocireg, err := ociregistry.New(env)
+			ocireg, err := ociregistry.New(te)
 			require.NoError(t, err)
 
 			var mirrorCounter atomic.Int32
@@ -2030,7 +2047,7 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 				},
 				ExecutorConfig: getExecutorConfig(t),
 			}
-			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			c, err := firecracker.NewContainer(ctx, te, &repb.ExecutionTask{}, opts)
 			require.NoError(t, err)
 
 			cmd := &repb.Command{
