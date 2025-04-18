@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
@@ -565,6 +566,7 @@ func (r *RealEnv) GetActionCacheServer() repb.ActionCacheServer {
 }
 
 func (r *RealEnv) SetActionCacheServer(actionCacheServer repb.ActionCacheServer) {
+	log.Infof("RealEnv SetACServer %q", actionCacheServer)
 	r.actionCacheServer = actionCacheServer
 }
 

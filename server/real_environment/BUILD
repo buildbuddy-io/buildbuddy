@@ -13,6 +13,7 @@ go_library(
         "//proto:scheduler_go_proto",
         "//proto:soci_go_proto",
         "//server/interfaces",
+        "//server/util/log",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
