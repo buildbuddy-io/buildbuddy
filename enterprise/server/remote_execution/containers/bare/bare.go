@@ -6,6 +6,7 @@ import (
 	"flag"
 	"io"
 	"os"
+	"path/filepath"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -155,11 +156,16 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 
 	// Set TMPDIR if not already set.
 	if c.tmpDir != "" {
+		// Make sure TMPDIR path is absolute.
+		tmpDirAbsPath, err := filepath.Abs(c.tmpDir)
+		if err != nil {
+			return commandutil.ErrorResult(status.UnavailableErrorf("make TMPDIR absolute: %s", err))
+		}
 		if _, ok := rexec.LookupEnv(cmd.EnvironmentVariables, posixTmpdirEnvironmentVariableName); !ok {
 			cmd = cmd.CloneVT()
 			cmd.EnvironmentVariables = append(cmd.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 				Name:  posixTmpdirEnvironmentVariableName,
-				Value: c.tmpDir,
+				Value: tmpDirAbsPath,
 			})
 		}
 	}
