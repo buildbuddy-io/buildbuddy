@@ -30,10 +30,14 @@ go_test(
     srcs = ["ociregistry_test.go"],
     deps = [
         ":ociregistry",
+        "//enterprise/server/clientidentity",
+        "//server/interfaces",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testport",
         "//server/testutil/testregistry",
+        "//server/util/random",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )
