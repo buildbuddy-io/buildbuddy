@@ -624,6 +624,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	if repo == "" {
 		return nil, status.InvalidArgumentError("expected non empty repo_url")
 	}
+	branch := strings.TrimSpace(req.GetQuery().GetBranchName())
 
 	groupID := req.GetRequestContext().GetGroupId()
 	if groupID == "" {
@@ -655,6 +656,9 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 		FROM "TestTargetStatuses"`)
 	innerCommitQuery.AddWhereClause("group_id = ?", groupID)
 	innerCommitQuery.AddWhereClause("repo_url = ?", repo)
+	if branch != "" {
+		innerCommitQuery.AddWhereClause("branch_name = ?", branch)
+	}
 	innerCommitQuery.SetGroupBy("commit_sha")
 	innerCommitQuery.SetOrderBy("latest_created_at_usec DESC, commit_sha", true /*=ascending*/)
 
@@ -678,6 +682,9 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	q.AddWhereInClause("commit_sha", outerCommitQuery)
 	q.AddWhereClause("group_id = ?", groupID)
 	q.AddWhereClause("repo_url = ?", repo)
+	if branch != "" {
+		q.AddWhereClause("branch_name = ?", branch)
+	}
 	q.SetOrderBy("label", true /*=ascending*/)
 	return fetchTargetsFromOLAPDB(ctx, env, q, repo, groupID)
 }
@@ -781,6 +788,11 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
 	}
+	branch := strings.TrimSpace(req.GetBranchName())
+	if branch != "" {
+		innerWhereClause = innerWhereClause + " AND branch_name = ?"
+		qArgs = append(qArgs, branch)
+	}
 	if len(req.GetLabels()) > 0 {
 		innerWhereClause = innerWhereClause + " AND label IN ?"
 		qArgs = append(qArgs, req.GetLabels())
@@ -790,30 +802,30 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 
 	dateSelectorString := env.GetOLAPDBHandle().DateFromUsecTimestamp("invocation_start_time_usec", req.GetRequestContext().GetTimezoneOffsetMinutes())
 
-	qStr := fmt.Sprintf(`SELECT stats.date AS date, total_runs, successful_runs, flaky_runs,
+	qStr := `SELECT stats.date AS date, total_runs, successful_runs, flaky_runs,
 	    failed_runs, likely_flaky_runs, flaky_runs + likely_flaky_runs as total_flakes
 	FROM (SELECT
-		%s AS date,
+		` + dateSelectorString + ` AS date,
 		count(*) AS total_runs,
 		countIf(status = 1) AS successful_runs,
 		countIf(status = 2) AS flaky_runs,
 		countIf(status > 2) AS failed_runs
-		FROM "TestTargetStatuses" WHERE (%s) GROUP BY date) stats
+		FROM "TestTargetStatuses" WHERE (` + innerWhereClause + `) GROUP BY date) stats
 	LEFT JOIN (SELECT date, count(*) AS likely_flaky_runs
 		FROM (
 			SELECT
-			    %s AS date,
+			    ` + dateSelectorString + ` AS date,
 				first_value(status) OVER win AS first_status,
 				status,
 				last_value(status) OVER win AS last_status
 			FROM "TestTargetStatuses"
-			WHERE (%s AND (status BETWEEN 1 AND 4))
+			WHERE (` + innerWhereClause + ` AND (status BETWEEN 1 AND 4))
 			WINDOW win AS (
 				PARTITION BY label
 				ORDER BY invocation_start_time_usec ASC
 				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
 		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status IN (3, 4) GROUP BY date) lf
-	ON lf.date=stats.date ORDER BY date ASC`, dateSelectorString, innerWhereClause, dateSelectorString, innerWhereClause)
+	ON lf.date=stats.date ORDER BY date ASC`
 
 	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
 
@@ -868,13 +880,18 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
 	}
+	branch := strings.TrimSpace(req.GetBranchName())
+	if branch != "" {
+		innerWhereClause = innerWhereClause + " AND branch_name = ?"
+		qArgs = append(qArgs, branch)
+	}
 	if len(req.GetLabels()) > 0 {
 		innerWhereClause = innerWhereClause + " AND label IN ?"
 		qArgs = append(qArgs, req.GetLabels())
 	}
 
 	qArgs = append(qArgs, qArgs...)
-	qStr := fmt.Sprintf(`SELECT stats.label AS label, total_runs, successful_runs, flaky_runs,
+	qStr := `SELECT stats.label AS label, total_runs, successful_runs, flaky_runs,
 	    failed_runs, likely_flaky_runs, (flaky_duration_usec + likely_flaky_duration_usec) AS total_flake_runtime_usec, flaky_runs + likely_flaky_runs as total_flakes
 	FROM (
 		SELECT label,
@@ -883,7 +900,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 		countIf(status = 2) AS flaky_runs,
 		countIf(status > 2) AS failed_runs,
 		sumIf(duration_usec, status = 2) AS flaky_duration_usec
-		FROM "TestTargetStatuses" WHERE (%s) GROUP BY label) stats
+		FROM "TestTargetStatuses" WHERE (` + innerWhereClause + `) GROUP BY label) stats
 	LEFT JOIN (SELECT label, sum(duration_usec) AS likely_flaky_duration_usec, count(*) AS likely_flaky_runs
 		FROM (
 			SELECT
@@ -893,13 +910,13 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 				duration_usec,
 				last_value(status) OVER win AS last_status
 			FROM "TestTargetStatuses"
-			WHERE (%s AND (status BETWEEN 1 AND 4))
+			WHERE (` + innerWhereClause + ` AND (status BETWEEN 1 AND 4))
 			WINDOW win AS (
 				PARTITION BY label
 				ORDER BY invocation_start_time_usec ASC
 				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
 		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status IN (3, 4) GROUP BY label) lf
-	ON lf.label=stats.label ORDER BY total_flakes DESC LIMIT 500`, innerWhereClause, innerWhereClause)
+	ON lf.label=stats.label ORDER BY total_flakes DESC LIMIT 500`
 
 	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
 	type qRow struct {
@@ -959,13 +976,18 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
 	}
+	branch := strings.TrimSpace(req.GetBranchName())
+	if branch != "" {
+		innerWhereClause = innerWhereClause + " AND branch_name = ?"
+		qArgs = append(qArgs, branch)
+	}
 	qArgs = append(qArgs, qArgs...)
 	qArgs = append(qArgs, pg.GetLimit()+1, pg.GetOffset())
 
-	qStr := fmt.Sprintf(`SELECT status, invocation_start_time_usec, invocation_uuid
+	qStr := `SELECT status, invocation_start_time_usec, invocation_uuid
 	FROM (
 		SELECT status, invocation_start_time_usec, invocation_uuid
-		FROM "TestTargetStatuses" WHERE (status = 2 AND %s)
+		FROM "TestTargetStatuses" WHERE (status = 2 AND ` + innerWhereClause + `)
 	UNION ALL (SELECT status, invocation_start_time_usec, invocation_uuid
 		FROM (
 			SELECT
@@ -975,13 +997,13 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 				status,
 				last_value(status) OVER win AS last_status
 			FROM "TestTargetStatuses"
-			WHERE (%s AND (status BETWEEN 1 AND 4))
+			WHERE (` + innerWhereClause + ` AND (status BETWEEN 1 AND 4))
 			WINDOW win AS (
 				PARTITION BY label
 				ORDER BY invocation_start_time_usec ASC
 				ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
 		WHERE (first_status BETWEEN 1 AND 2) AND (last_status BETWEEN 1 AND 2) AND status IN (3, 4)))
-	ORDER BY invocation_start_time_usec DESC LIMIT ? OFFSET ?`, innerWhereClause, innerWhereClause)
+	ORDER BY invocation_start_time_usec DESC LIMIT ? OFFSET ?`
 
 	type queryOut struct {
 		InvocationUuid          string
