@@ -37,7 +37,7 @@ var (
 
 	clientID     = flag.String("github.client_id", "", "The client ID of your GitHub Oauth App. ** Enterprise only **")
 	clientSecret = flag.String("github.client_secret", "", "The client secret of your GitHub Oauth App. ** Enterprise only **", flag.Secret)
-	accessToken  = flag.String("github.access_token", "", "The GitHub access token used to post GitHub commit statuses. ** Enterprise only **", flag.Secret)
+	accessToken  = flag.String("github.access_token", "", "A hard-coded GitHub access token to post GitHub commit statuses. Enterprise customers should use an GitHub app installation instead.", flag.Secret)
 )
 
 const (
@@ -64,6 +64,12 @@ const (
 
 func AuthEnabled(env environment.Env) bool {
 	return *JwtKey != ""
+}
+
+func AlwaysEnableStatusReporting() bool {
+	// If an on-prem customer has hard-coded an access token for GitHub status
+	// reporting, assume they want it enabled.
+	return *accessToken != ""
 }
 
 // State represents a status value that GitHub's statuses API understands.
