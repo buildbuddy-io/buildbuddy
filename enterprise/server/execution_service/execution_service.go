@@ -2,6 +2,7 @@ package execution_service
 
 import (
 	"context"
+	"flag"
 	"io"
 	"slices"
 	"sort"
@@ -11,6 +12,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -22,8 +25,15 @@ import (
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
+)
+
+var (
+	primaryDBReadsEnabled = flag.Bool("remote_execution.primary_db_reads_enabled", true, "Whether to read executions from the primary database.")
+	olapReadsEnabled      = flag.Bool("remote_execution.olap_reads_enabled", false, "Whether to read executions from the OLAP database (and read in-progress execution info from Redis).")
 )
 
 type ExecutionService struct {
@@ -43,7 +53,7 @@ func checkPreconditions(req *espb.GetExecutionRequest) error {
 	return status.FailedPreconditionError("An execution lookup with invocation_id must be provided")
 }
 
-func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocationID, actionDigestHash string) ([]*tables.Execution, error) {
+func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Context, invocationID, actionDigestHash string) ([]*tables.Execution, error) {
 	// Note: the invocation row may not be created yet because workflow
 	// invocations are created by the execution itself.
 	q := query_builder.NewQuery(`
@@ -88,6 +98,118 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 	return executions, nil
 }
 
+func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Context, invocationID, actionDigestHash string) ([]*olaptables.Execution, error) {
+	var eg errgroup.Group
+
+	// If the invocation is still in progress, completed executions will be
+	// buffered, waiting to be flushed to the OLAP database as part of a batch
+	// of writes. So we read both buffered and flushed executions here.
+	var bufferedExecutions []*olaptables.Execution
+	var flushedExecutions []*olaptables.Execution
+	eg.Go(func() error {
+		ex, err := es.env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+		if err != nil {
+			return err
+		}
+		// Respect actionDigestHash filter if provided.
+		if actionDigestHash != "" {
+			ex = slices.DeleteFunc(ex, func(e *repb.StoredExecution) bool {
+				parts := strings.Split(e.ExecutionId, "/")
+				return len(parts) < 2 || parts[len(parts)-2] != actionDigestHash
+			})
+		}
+		// Converted buffered representation to OLAP table representation.
+		bufferedExecutions = make([]*olaptables.Execution, len(ex))
+		for i, e := range ex {
+			// Note: invocation metadata is not needed in this case (since this
+			// RPC only returns the execution metadata).
+			bufferedExecutions[i] = clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		// The Executions table is optimized for trends, so the primary key
+		// doesn't allow efficient querying by invocation ID. To mitigate this,
+		// we filter the timestamp range based on the start/end timestamps of
+		// the invocation, which requires looking up the invocation from the
+		// primary DB.
+		inv, err := es.env.GetInvocationDB().LookupInvocation(ctx, invocationID)
+		if err != nil {
+			return status.WrapError(err, "lookup invocation")
+		}
+		// Execution runtime is capped at 24 hours currently
+		// (execution.max_task_timeout), and because of action merging,
+		// executions for an invocation could have started hours prior to the
+		// invocation being created. So we need to look back prior to when the
+		// invocation was created.
+		//
+		// This might seem like a very large window, but ClickHouse should be
+		// able to handle this with no problem in most cases; we're really just
+		// trying to get a coarse-grained limit here to avoid scanning the full
+		// execution history.
+		rangeStartUsec := inv.Model.CreatedAtUsec - 25*time.Hour.Microseconds()
+		// If the invocation is completed, we can scan up to the invocation end
+		// timestamp, plus a few minutes just to be safe. Otherwise, use the
+		// current time as the end of the range, but limit to 24h since the
+		// invocation was last updated in the primary DB.
+		var rangeEndUsec int64
+		if inv.InvocationStatus == int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS) {
+			rangeEndUsec = inv.Model.UpdatedAtUsec + 10*time.Minute.Microseconds()
+		} else {
+			rangeEndUsec = time.Now().UnixMicro() + 30*time.Minute.Microseconds()
+			// Safeguard against scanning too long of a range.
+			if rangeEndUsec-inv.Model.UpdatedAtUsec > 24*time.Hour.Microseconds() {
+				rangeEndUsec = inv.Model.UpdatedAtUsec + 24*time.Hour.Microseconds()
+			}
+		}
+		// group_id ACL check should have been done in LookupInvocation, but
+		// check it again here just to be explicit.
+		if err := authutil.AuthorizeGroupAccess(ctx, es.env, inv.GroupID); err != nil {
+			return err
+		}
+		// Select only the execution fields that will be shown on the Executions
+		// page.
+		q := query_builder.NewQuery(`
+			SELECT ` + strings.Join(execution.ExecutionListingColumns(), ", ") + `
+			FROM "Executions"
+		`)
+		q.AddWhereClause(`group_id = ?`, inv.GroupID)
+		q.AddWhereClause(`invocation_uuid = ?`, strings.ReplaceAll(invocationID, "-", ""))
+		if actionDigestHash != "" {
+			q.AddWhereClause(`execution_id LIKE ?`, "%/"+actionDigestHash+"/%")
+		}
+		q.AddWhereClause(`updated_at_usec >= ?`, rangeStartUsec)
+		q.AddWhereClause(`updated_at_usec <= ?`, rangeEndUsec)
+		queryStr, args := q.Build()
+		rq := es.env.GetOLAPDBHandle().NewQuery(ctx, "execution_server_get_executions").Raw(queryStr, args...)
+		rows, err := db.ScanAll(rq, &olaptables.Execution{})
+		if err != nil {
+			return err
+		}
+		flushedExecutions = rows
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	// Combine the buffered and flushed executions. Dedupe by execution ID,
+	// since the concurrent reads from Redis and OLAP might occur during an
+	// in-progress flush, in which case the Redis executions might not've been
+	// cleaned up yet.
+	executions := append(flushedExecutions, bufferedExecutions...)
+	executionIDs := make(map[string]bool)
+	dedupedExecutions := make([]*olaptables.Execution, 0, len(executions))
+	for _, e := range executions {
+		if _, ok := executionIDs[e.ExecutionID]; !ok {
+			executionIDs[e.ExecutionID] = true
+			dedupedExecutions = append(dedupedExecutions, e)
+		}
+	}
+
+	return dedupedExecutions, nil
+}
+
 func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {
 	if es.env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
@@ -95,22 +217,69 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	if err := checkPreconditions(req); err != nil {
 		return nil, err
 	}
-	executions, err := es.getInvocationExecutions(ctx, req.GetExecutionLookup().GetInvocationId(), req.GetExecutionLookup().GetActionDigestHash())
-	if err != nil {
+
+	var primaryDBExecutions []*tables.Execution
+	var olapExecutions []*olaptables.Execution
+
+	var eg errgroup.Group
+	if *primaryDBReadsEnabled {
+		eg.Go(func() error {
+			ex, err := es.getInvocationExecutionsFromPrimaryDB(ctx, req.GetExecutionLookup().GetInvocationId(), req.GetExecutionLookup().GetActionDigestHash())
+			if err != nil {
+				return err
+			}
+			primaryDBExecutions = ex
+			return nil
+		})
+	}
+	if *olapReadsEnabled {
+		eg.Go(func() error {
+			ex, err := es.getInvocationExecutionsFromOLAPDB(ctx, req.GetExecutionLookup().GetInvocationId(), req.GetExecutionLookup().GetActionDigestHash())
+			if err != nil {
+				return err
+			}
+			olapExecutions = ex
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	// Sort the executions by start time.
-	sort.Slice(executions, func(i, j int) bool {
-		return executions[i].Model.CreatedAtUsec < executions[j].Model.CreatedAtUsec
-	})
-	rsp := &espb.GetExecutionResponse{}
-	for _, ex := range executions {
-		protoExec, err := execution.TableExecToClientProto(ex)
+
+	// Combine the executions from the primary DB and OLAP.
+	// Prefer OLAP executions if they exist, otherwise fall back to primary DB.
+	executions := make([]*espb.Execution, 0, len(olapExecutions))
+	olapExecutionIDs := make(map[string]bool)
+	for _, e := range olapExecutions {
+		proto, err := execution.OLAPExecToClientProto(e)
 		if err != nil {
-			return nil, err
+			return nil, status.WrapError(err, "convert OLAP execution to client proto")
 		}
-		rsp.Execution = append(rsp.Execution, protoExec)
+		executions = append(executions, proto)
+		olapExecutionIDs[e.ExecutionID] = true
 	}
+	for _, e := range primaryDBExecutions {
+		if olapExecutionIDs[e.ExecutionID] {
+			continue
+		}
+		proto, err := execution.TableExecToClientProto(e)
+		if err != nil {
+			return nil, status.WrapError(err, "convert execution to client proto")
+		}
+		executions = append(executions, proto)
+	}
+
+	// Sort the executions by queued timestamp.
+	sort.Slice(executions, func(i, j int) bool {
+		ti := executions[i].GetExecutedActionMetadata().GetQueuedTimestamp().AsTime()
+		tj := executions[j].GetExecutedActionMetadata().GetQueuedTimestamp().AsTime()
+		return ti.Before(tj)
+	})
+
+	rsp := &espb.GetExecutionResponse{
+		Execution: executions,
+	}
+
 	if req.GetInlineExecuteResponse() {
 		// If inlined responses are requested, fetch them now.
 		var eg errgroup.Group
