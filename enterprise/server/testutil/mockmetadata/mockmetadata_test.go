@@ -4,20 +4,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/mockmetadata"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/stretchr/testify/require"
-	
-	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
+
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
 func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
 	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
 	now := time.Now()
-        return &sgpb.FileMetadata{
-                FileRecord:      &sgpb.FileRecord{
+	return &sgpb.FileMetadata{
+		FileRecord: &sgpb.FileRecord{
 			Isolation: &sgpb.Isolation{
 				CacheType:   r.GetCacheType(),
 				PartitionId: "groupIDgoeshere",
@@ -25,16 +25,16 @@ func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
 			Digest:         r.GetDigest(),
 			DigestFunction: r.GetDigestFunction(),
 		},
-                StorageMetadata: &sgpb.StorageMetadata{
+		StorageMetadata: &sgpb.StorageMetadata{
 			InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{
 				Data:          buf,
 				CreatedAtNsec: now.UnixNano(),
 			},
 		},
-                StoredSizeBytes: int64(len(buf)),
-                LastModifyUsec:  now.UnixMicro(),
-                LastAccessUsec:  now.UnixMicro(),
-        }
+		StoredSizeBytes: int64(len(buf)),
+		LastModifyUsec:  now.UnixMicro(),
+		LastAccessUsec:  now.UnixMicro(),
+	}
 }
 
 func TestBasicOperations(t *testing.T) {
@@ -47,7 +47,7 @@ func TestBasicOperations(t *testing.T) {
 	// The FileMetadata should not be found yet because it hasn't been
 	// written.
 	rsp, err := mm.Find(t.Context(), &mdpb.FindRequest{
-		FileRecords: []*sgpb.FileRecord{fm.GetFileRecord()},			
+		FileRecords: []*sgpb.FileRecord{fm.GetFileRecord()},
 	})
 	require.NoError(t, err)
 	require.Equal(t, len(rsp.GetFindResponses()), 1)
@@ -55,13 +55,13 @@ func TestBasicOperations(t *testing.T) {
 
 	// Write the FileMetadata.
 	_, err = mm.Set(t.Context(), &mdpb.SetRequest{
-		SetOperations: []*mdpb.SetRequest_SetOperation{{FileMetadata:fm}},
+		SetOperations: []*mdpb.SetRequest_SetOperation{{FileMetadata: fm}},
 	})
 	require.NoError(t, err)
-	
+
 	// The FileMetadata should be found now.
 	findRsp, err := mm.Find(t.Context(), &mdpb.FindRequest{
-		FileRecords: []*sgpb.FileRecord{fm.GetFileRecord()},			
+		FileRecords: []*sgpb.FileRecord{fm.GetFileRecord()},
 	})
 	require.NoError(t, err)
 	require.Equal(t, len(findRsp.GetFindResponses()), 1)
@@ -70,7 +70,7 @@ func TestBasicOperations(t *testing.T) {
 	// Reading the FileMetadata should yield a response that is identical
 	// to the FileMetadata that was written.
 	getRsp, err := mm.Get(t.Context(), &mdpb.GetRequest{
-		FileRecords: []*sgpb.FileRecord{fm.GetFileRecord()},			
+		FileRecords: []*sgpb.FileRecord{fm.GetFileRecord()},
 	})
 	require.NoError(t, err)
 	require.Equal(t, len(getRsp.GetFileMetadatas()), 1)
@@ -78,13 +78,13 @@ func TestBasicOperations(t *testing.T) {
 
 	// Deleting the FileMetadata should succeed.
 	_, err = mm.Delete(t.Context(), &mdpb.DeleteRequest{
-		DeleteOperations: []*mdpb.DeleteRequest_DeleteOperation{{FileRecord:fm.GetFileRecord()}},
+		DeleteOperations: []*mdpb.DeleteRequest_DeleteOperation{{FileRecord: fm.GetFileRecord()}},
 	})
 	require.NoError(t, err)
 
 	// The FileMetadata should not be found again, because it was deleted.
 	rsp, err = mm.Find(t.Context(), &mdpb.FindRequest{
-		FileRecords: []*sgpb.FileRecord{fm.GetFileRecord()},			
+		FileRecords: []*sgpb.FileRecord{fm.GetFileRecord()},
 	})
 	require.NoError(t, err)
 	require.Equal(t, len(rsp.GetFindResponses()), 1)
@@ -92,7 +92,7 @@ func TestBasicOperations(t *testing.T) {
 
 	// Reading the FileMetadata should fail.
 	getRsp, err = mm.Get(t.Context(), &mdpb.GetRequest{
-		FileRecords: []*sgpb.FileRecord{fm.GetFileRecord()},			
+		FileRecords: []*sgpb.FileRecord{fm.GetFileRecord()},
 	})
 	require.NoError(t, err)
 	require.Equal(t, len(getRsp.GetFileMetadatas()), 1)

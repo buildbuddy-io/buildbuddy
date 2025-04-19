@@ -9,42 +9,42 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
 type Server struct {
-	fs        filestore.Store
-	lru       *lru.LRU[*sgpb.FileMetadata]
+	fs  filestore.Store
+	lru *lru.LRU[*sgpb.FileMetadata]
 }
 
 func NewServer(maxSizeBytes int64) (*Server, error) {
 	l, err := lru.NewLRU[*sgpb.FileMetadata](&lru.Config[*sgpb.FileMetadata]{
 		MaxSize: maxSizeBytes,
-                OnEvict: func(key string, value *sgpb.FileMetadata, reason lru.EvictionReason) {
+		OnEvict: func(key string, value *sgpb.FileMetadata, reason lru.EvictionReason) {
 			log.Infof("Evicted %+v (REASON: %s)", value, reason)
-                },
-                SizeFn: func(value *sgpb.FileMetadata) int64 { return int64(proto.Size(value)) },
+		},
+		SizeFn: func(value *sgpb.FileMetadata) int64 { return int64(proto.Size(value)) },
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &Server{
-		fs: filestore.New(),
+		fs:  filestore.New(),
 		lru: l,
 	}, nil
 
 }
 func (rc *Server) key(r *sgpb.FileRecord) (string, error) {
 	pmk, err := rc.fs.PebbleKey(r)
-        if err != nil {
-		return "", err
-        }
-        buf, err := pmk.Bytes(filestore.Version5)
 	if err != nil {
 		return "", err
 	}
-	return string(buf), nil	
+	buf, err := pmk.Bytes(filestore.Version5)
+	if err != nil {
+		return "", err
+	}
+	return string(buf), nil
 }
 
 func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetResponse, error) {
@@ -74,8 +74,8 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 		}
 		_, ok := rc.lru.Get(key)
 		rsp.FindResponses[i] = &mdpb.FindResponse_FindOperationResponse{
-		        Present: ok,
-                }
+			Present: ok,
+		}
 	}
 	return rsp, nil
 }
@@ -103,4 +103,3 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 	}
 	return &mdpb.DeleteResponse{}, nil
 }
-
