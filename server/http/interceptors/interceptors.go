@@ -507,3 +507,29 @@ func (f RedirectOnError) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
 	}
 }
+
+// captureStatusWriter is like http.ResponseWriter but captures any status code
+// written with WriteHeader.
+type captureStatusWriter struct {
+	http.ResponseWriter
+	Status int
+}
+
+func (rw *captureStatusWriter) WriteHeader(status int) {
+	rw.ResponseWriter.WriteHeader(status)
+	rw.Status = status
+}
+
+// DefaultRedirect invokes an HTTP handler and redirects to the given URL if the
+// handler function did not call WriteHeader to write a response.
+func DefaultRedirect(h http.Handler, url string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapper := &captureStatusWriter{ResponseWriter: w}
+		h.ServeHTTP(wrapper, r)
+		if wrapper.Status == 0 {
+			// Wrapped handler did not write a status code; perform the redirect
+			// to the provided url.
+			http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		}
+	})
+}
