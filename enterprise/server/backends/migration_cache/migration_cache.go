@@ -188,7 +188,17 @@ func (mc *MigrationCache) checkSafeToMigrate(ctx context.Context) error {
 	if !u.GetCacheEncryptionEnabled() {
 		return nil
 	}
-	if mc.src.SupportsEncryption(ctx) && !mc.dest.SupportsEncryption(ctx) {
+
+	srcSupportsEncryption, err := mc.src.SupportsEncryption(ctx)
+	if err != nil {
+		return err
+	}
+	destSupportsEncryption, err := mc.dest.SupportsEncryption(ctx)
+	if err != nil {
+		return err
+	}
+
+	if srcSupportsEncryption && !destSupportsEncryption {
 		return status.FailedPreconditionError("not safe to copy from encrypted cache to unencrypted cache")
 	}
 	return nil
@@ -1074,6 +1084,14 @@ func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) b
 	return mc.src.SupportsCompressor(compressor) && mc.dest.SupportsCompressor(compressor)
 }
 
-func (mc *MigrationCache) SupportsEncryption(ctx context.Context) bool {
-	return mc.src.SupportsEncryption(ctx) && mc.dest.SupportsEncryption(ctx)
+func (mc *MigrationCache) SupportsEncryption(ctx context.Context) (bool, error) {
+	srcSupportsEncryption, err := mc.src.SupportsEncryption(ctx)
+	if err != nil {
+		return false, err
+	}
+	destSupportsEncryption, err := mc.dest.SupportsEncryption(ctx)
+	if err != nil {
+		return false, err
+	}
+	return srcSupportsEncryption && destSupportsEncryption, nil
 }

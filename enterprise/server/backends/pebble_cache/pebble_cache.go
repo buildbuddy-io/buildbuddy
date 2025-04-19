@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -1391,14 +1392,33 @@ func (p *PebbleCache) userGroupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
-func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string) {
+func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
 	groupID := p.userGroupID(ctx)
+	requestedPartition := cacheutil.PartitionOverride(ctx)
+
+	if requestedPartition == DefaultPartitionID {
+		return groupID, DefaultPartitionID, nil
+	}
+
 	for _, pm := range p.partitionMappings {
-		if pm.GroupID == groupID && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
-			return groupID, pm.PartitionID
+		// If a partition override was requested, check for a match.
+		matchesPartitionOverride := requestedPartition != "" &&
+			pm.PartitionID == requestedPartition
+		if matchesPartitionOverride && pm.GroupID != "" && pm.GroupID != groupID {
+			return "", "", status.PermissionDeniedErrorf("group ID %s is not authorized for partition %s", groupID, requestedPartition)
+		}
+		if matchesPartitionOverride {
+			return groupID, pm.PartitionID, nil
+		}
+
+		// If no partition override was requested, check for partitions matching
+		// the user's group ID.
+		matchesPartition := pm.GroupID == groupID && strings.HasPrefix(remoteInstanceName, pm.Prefix)
+		if requestedPartition == "" && matchesPartition {
+			return groupID, pm.PartitionID, nil
 		}
 	}
-	return groupID, DefaultPartitionID
+	return groupID, DefaultPartitionID, nil
 }
 
 func (p *PebbleCache) encryptionEnabled(ctx context.Context) (bool, error) {
@@ -1418,7 +1438,10 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 		return nil, err
 	}
 
-	groupID, partID := p.lookupGroupAndPartitionID(ctx, rn.GetInstanceName())
+	groupID, partID, err := p.lookupGroupAndPartitionID(ctx, rn.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
 
 	encryptionEnabled, err := p.encryptionEnabled(ctx)
 	if err != nil {
@@ -3431,12 +3454,15 @@ func (p *PebbleCache) Stop() error {
 	return nil
 }
 
-func (p *PebbleCache) SupportsEncryption(ctx context.Context) bool {
-	_, partID := p.lookupGroupAndPartitionID(ctx, "")
+func (p *PebbleCache) SupportsEncryption(ctx context.Context) (bool, error) {
+	_, partID, err := p.lookupGroupAndPartitionID(ctx, "")
+	if err != nil {
+		return false, err
+	}
 	for _, part := range p.partitions {
 		if part.ID == partID {
-			return part.EncryptionSupported
+			return part.EncryptionSupported, nil
 		}
 	}
-	return false
+	return false, nil
 }
