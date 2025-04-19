@@ -1077,10 +1077,17 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		response := operation.ExtractExecuteResponse(op)
 		trimmedResponse := response.CloneVT()
-		if trimmedResponse.GetResult().GetExecutionMetadata() != nil {
+		if trimmedMetadata := trimmedResponse.GetResult().GetExecutionMetadata(); trimmedMetadata != nil {
 			// Auxiliary metadata shouldn't be sent to bazel or saved in
 			// the action cache.
-			trimmedResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
+			trimmedMetadata.AuxiliaryMetadata = nil
+			// Don't send execution timelines to bazel or save them in the
+			// action cache either.
+			// TODO(bduffany): move these timelines to auxiliary metadata
+			// and clean this up.
+			if trimmedUsageStats := trimmedMetadata.GetUsageStats(); trimmedUsageStats != nil {
+				trimmedUsageStats.Timeline = nil
+			}
 			if err := op.GetResponse().MarshalFrom(trimmedResponse); err != nil {
 				return status.InternalErrorf("Failed to marshall trimmed response: %s", err)
 			}
