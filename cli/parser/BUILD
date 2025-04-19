@@ -8,6 +8,7 @@ go_library(
         "//cli/arg",
         "//cli/bazelisk",
         "//cli/log",
+        "//cli/parser/options",
         "//cli/storage",
         "//cli/workspace",
         "//proto:bazel_flags_go_proto",
