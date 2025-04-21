@@ -1,21 +1,12 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_test(
     name = "workflow_test",
     srcs = ["workflow_test.go"],
-    # ci_runner gets invoked directly by this test since the RBE test framework
-    # currently does not support dockerized execution of commands. So for now we
-    # run the whole test using the CI runner image.
-    # TODO(bduffany): Add an ubuntu 20.04-based CI runner image and use that
-    # here.
-    # exec_properties = {
-    #     "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0",
-    # },
-    exec_properties = {
-        # TODO: remove network dependency.
-        "test.dockerNetwork": "bridge",
-    },
-    shard_count = 2,
+    shard_count = 6,
+    tags = ["block-network"],
     deps = [
         "//enterprise/server/githubapp",
         "//enterprise/server/invocation_search_service",
@@ -43,5 +34,3 @@ go_test(
         "@org_golang_google_grpc//codes",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

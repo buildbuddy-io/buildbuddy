@@ -27,15 +27,14 @@ import (
 
 var (
 	workspaceContents = map[string]string{
-		"WORKSPACE": `workspace(name = "integration_test")`,
-		"BUILD":     `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "echo 'Hello world' > $@")`,
+		"BUILD": `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "echo 'Hello world' > $@")`,
 	}
 )
 
 func TestBuildWithBESFlags_Success(t *testing.T) {
 	app := buildbuddy.Run(t)
 	ctx := context.Background()
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 	buildFlags := []string{"//:hello.txt"}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 
@@ -68,7 +67,7 @@ func testInjectFailureAfterBazelEvent(t *testing.T, payloadMsg interface{}) {
 	proxy.FailOnce(AfterForwardBazelEvent(t, payloadMsg))
 
 	ctx := context.Background()
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 	buildFlags := append([]string{"//:hello.txt"}, app.BESBazelFlags()...)
 	buildFlags = append(buildFlags, "--bes_backend="+proxy.GRPCAddress())
 
@@ -93,7 +92,7 @@ func TestBuildWithRetry_InjectFailureWhileServerIsSendingACKs(t *testing.T) {
 	proxy.FailOnce(BeforeServerSendsNthACK(2))
 
 	ctx := context.Background()
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 	buildFlags := append([]string{"//:hello.txt"}, app.BESBazelFlags()...)
 	buildFlags = append(buildFlags, "--bes_backend="+proxy.GRPCAddress())
 

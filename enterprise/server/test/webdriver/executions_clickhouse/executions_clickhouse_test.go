@@ -50,8 +50,7 @@ func TestInvocationWithRemoteExecutionWithClickHouse(t *testing.T) {
 	controllerDir := testfs.MakeTempDir(t)
 	genrule := NewControlledGenrule(t, controllerDir, "target1")
 	workspaceContents := map[string]string{
-		"WORKSPACE": "",
-		"BUILD":     genrule.String(),
+		"BUILD": genrule.String(),
 		".bazelrc": `
 # Execution should not be flaky in this test; disable retries.
 common --remote_retries=0
@@ -60,7 +59,7 @@ common ` + shlex.Quote(buildbuddyBuildFlags...) + `
 common --incompatible_strict_action_env=true
 `,
 	}
-	workspace1Path := testbazel.MakeTempWorkspace(t, workspaceContents)
+	workspace1Path := testbazel.MakeTempModule(t, workspaceContents)
 	iid1 := uuid.New()
 	buildArgs := []string{"//...", "--invocation_id=" + iid1}
 
@@ -81,7 +80,7 @@ common --incompatible_strict_action_env=true
 
 	// Before we complete the action, start an identical action in a new
 	// invocation, which should get merged against the first execution.
-	workspace2Path := testbazel.MakeTempWorkspace(t, workspaceContents)
+	workspace2Path := testbazel.MakeTempModule(t, workspaceContents)
 	iid2 := uuid.New()
 	buildArgs2 := []string{"//...", "--invocation_id=" + iid2}
 	eg.Go(func() error {
