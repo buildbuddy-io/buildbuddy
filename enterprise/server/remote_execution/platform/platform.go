@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"runtime"
 	"slices"
 	"strconv"
@@ -38,7 +39,7 @@ var (
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
 	defaultImage               = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS                  = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
-	extraEnvVars               = flag.Slice("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions. i.e. MY_ENV_VAR=foo")
+	extraEnvVars               = flag.Slice("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions: can be specified either as a `NAME=VALUE` assignment, or just `NAME` to inherit the environment variable from the executor process.")
 )
 
 const (
@@ -589,12 +590,11 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 
 	additionalEnvVars := append(*extraEnvVars, platformProps.EnvOverrides...)
 	for _, e := range additionalEnvVars {
-		parts := strings.Split(e, "=")
-		if len(parts) == 0 {
-			continue
+		name, value, hasValue := strings.Cut(e, "=")
+		if !hasValue {
+			// No '=' found; inherit host environment variable value.
+			value = os.Getenv(name)
 		}
-		name := parts[0]
-		value := strings.Join(parts[1:], "=")
 		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 			Name:  name,
 			Value: value,
