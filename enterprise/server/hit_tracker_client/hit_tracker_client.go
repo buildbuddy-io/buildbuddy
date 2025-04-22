@@ -30,7 +30,7 @@ import (
 var (
 	remoteHitTrackerTarget       = flag.String("cache_proxy.remote_hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracking service.")
 	remoteHitTrackerPollInterval = flag.Duration("cache_proxy.remote_hit_tracker.update_interval", 250*time.Millisecond, "The time interval to wait between sending remote cache-hit-tracking RPCs.")
-	maxPendingHitsPerGroup       = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 500_000, "The maximum number of pending cache-hit updates to store in memory for a given group.")
+	maxPendingHitsPerGroup       = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 2_000_000, "The maximum number of pending cache-hit updates to store in memory for a given group.")
 	maxHitsPerUpdate             = flag.Int("cache_proxy.remote_hit_tracker.max_hits_per_update", 100_000, "The maximum number of cache-hit updates to send in one request to the hit-tracking backend.")
 	remoteHitTrackerWorkers      = flag.Int("cache_proxy.remote_hit_tracker.workers", 1, "The number of workers to use to send asynchronous remote cache-hit-tracking RPCs.")
 )
