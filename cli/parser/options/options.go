@@ -391,17 +391,17 @@ func (o *GeneralOption) Normalized() Option {
 func (o *GeneralOption) AsBool() (bool, error) {
 	switch o.GetValue() {
 	case "yes":
-		return true, nil
+		fallthrough
 	case "true":
-		return true, nil
+		fallthrough
 	case "1":
-		return true, nil
+		fallthrough
 	case "":
 		return true, nil
 	case "no":
-		return false, nil
+		fallthrough
 	case "false":
-		return false, nil
+		fallthrough
 	case "0":
 		return false, nil
 	}
