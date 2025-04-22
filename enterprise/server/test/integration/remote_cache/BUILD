@@ -1,10 +1,13 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_test(
     name = "remote_cache_test",
     size = "small",
     srcs = ["remote_cache_test.go"],
-    shard_count = 7,
+    shard_count = 8,
+    tags = ["block-network"],
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//proto:api_key_go_proto",
@@ -20,5 +23,3 @@ go_test(
         "@org_golang_google_protobuf//encoding/prototext",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

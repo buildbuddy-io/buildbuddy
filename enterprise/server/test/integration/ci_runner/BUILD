@@ -9,11 +9,8 @@ go_test(
     data = [
         "//enterprise/server/cmd/ci_runner",
     ],
-    exec_properties = {
-        # TODO: remove network dependency.
-        "test.dockerNetwork": "bridge",
-    },
-    shard_count = 29,
+    shard_count = 31,
+    tags = ["block-network"],
     x_defs = {
         "ciRunnerRunfilePath": "$(rlocationpath //enterprise/server/cmd/ci_runner)",
     },

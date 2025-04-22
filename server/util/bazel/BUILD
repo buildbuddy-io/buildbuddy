@@ -7,6 +7,7 @@ bazel_pkg_tar(
         "5.3.2",
         "6.5.0",
         "7.1.0",
+        "8.1.1",
     ],
     visibility = ["//visibility:public"],
 )

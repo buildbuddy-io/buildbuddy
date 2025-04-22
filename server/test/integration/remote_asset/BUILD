@@ -3,6 +3,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 go_test(
     name = "remote_asset_test",
     srcs = ["remote_asset_test.go"],
+    shard_count = 4,
+    tags = ["block-network"],
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",

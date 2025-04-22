@@ -54,6 +54,7 @@ actions:
           --
           //...
           -//server/backends/disk_cache:all
+          -//server/test/integration/remote_asset:all
           -//enterprise/server/backends/pebble_cache:all
           -//enterprise/server/raft/txn:all
           -//enterprise/server/raft/store:all
@@ -77,6 +78,7 @@ actions:
           --
           //...
           -//server/backends/disk_cache:all
+          -//server/test/integration/remote_asset:all
           -//enterprise/server/backends/pebble_cache:all
           -//enterprise/server/raft/txn:all
           -//enterprise/server/raft/store:all
