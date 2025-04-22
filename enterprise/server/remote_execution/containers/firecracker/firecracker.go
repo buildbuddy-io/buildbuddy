@@ -450,15 +450,7 @@ func getHostKernelVersion() (string, error) {
 	if err := unix.Uname(&uts); err != nil {
 		return "", err
 	}
-	// Stop at null termination character
-	n := 0
-	for n = 0; n < len(uts.Release); n++ {
-		if uts.Release[n] == 0 {
-			break
-		}
-	}
-	kernelVersion := string(uts.Release[:n])
-	return kernelVersion, nil
+	return unix.ByteSliceToString(uts.Release[:]), nil
 }
 
 type Provider struct {
@@ -674,7 +666,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.cgroupSettings = opts.CgroupSettings
 	}
 
-	c.vmConfig.KernelVersion = c.executorConfig.GuestKernelVersion
+	c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion
 	c.vmConfig.HostKernelVersion = c.executorConfig.HostKernelVersion
 	c.vmConfig.FirecrackerVersion = c.executorConfig.FirecrackerVersion
 	c.vmConfig.GuestApiVersion = c.executorConfig.GuestAPIVersion
