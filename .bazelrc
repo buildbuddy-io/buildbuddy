@@ -24,8 +24,10 @@ common --config=anon-bes
 # Don't run Docker and Firecracker tests by default, because they cannot be run on all environments
 # Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
 # on Docker for development
-test --test_tag_filters=-docker,-bare
-build --build_tag_filters=-secrets
+#
+# Exclude tests which require BuildBuddy Secrets from the default unauthenticated builds
+# These often require "include-secrets: true" exec property in their BUILD file.
+test --test_tag_filters=-docker,-bare,-secrets
 
 # Build with --config=local to send build logs to your local server
 common:local --extra_execution_platforms=@buildbuddy_toolchain//:platform

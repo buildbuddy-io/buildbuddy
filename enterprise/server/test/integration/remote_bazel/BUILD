@@ -7,7 +7,7 @@ go_test(
     size = "enormous",
     srcs = ["remote_bazel_test.go"],
     exec_properties = {
-        "include-secrets": "true",
+        "test.include-secrets": "true",
         "test.workload-isolation-type": "firecracker",
         # Use an image with bazelisk installed
         "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:271e5e3704d861159c75b8dd6713dbe5a12272ec8ee73d17f89ed7be8026553f",
