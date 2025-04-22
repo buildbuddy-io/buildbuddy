@@ -10499,7 +10499,7 @@
           ],
           "thresholds": [],
           "timeRegions": [],
-          "title": "HTTP client outgoing requests per second by method",
+          "title": "HTTP client outgoing requests per second by host",
           "tooltip": {
             "shared": true,
             "sort": 2,
