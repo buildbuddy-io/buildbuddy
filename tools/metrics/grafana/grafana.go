@@ -253,6 +253,7 @@ func exportNormalizedDashboard(md DashboardMetadata) (fileName string, _ error) 
 	if err != nil {
 		return "", err
 	}
+	log.Printf("Processing dashboard %q", fileName)
 	processedJSON, err := processDashboard(dashboardJSON, fileName)
 	if err != nil {
 		return "", err
