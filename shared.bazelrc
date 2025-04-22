@@ -91,12 +91,9 @@ common:performance --compilation_mode=opt
 common:deflake --config=remote-minimal
 test:deflake --runs_per_test=100
 test:deflake --test_output=errors
+test:deflake --test_runner_fail_fast
 test:deflake --notest_keep_going
-
-# Configuration used to deflake Go tests
-common:deflake-go --config=race
-common:deflake-go --config=deflake
-test:deflake-go --test_arg=-test.failfast
+test:deflake --config=race
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
