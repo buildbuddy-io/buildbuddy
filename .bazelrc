@@ -21,6 +21,12 @@ import %workspace%/shared.bazelrc
 # so OSS / anonymous users can still send events to our server.
 common --config=anon-bes
 
+# Target+Exec platform configurations.
+#
+# We maintain separate configuration for each repo so that we can migrate them to bzlmod independently.
+common:target-linux-x86 --config=workspace-target-linux-x86
+common:target-linux-arm64 --config=workspace-target-linux-arm64
+
 # Don't run Docker and Firecracker tests by default, because they cannot be run on all environments
 # Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
 # on Docker for development
