@@ -11,7 +11,7 @@ actions:
           - "*"
     steps:
       - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare"
-  - name: Test with BzlMod
+  - name: Test with WORKSPACE
     container_image: ubuntu-20.04
     resource_requests:
       disk: 27GB
@@ -23,7 +23,7 @@ actions:
         branches:
           - "*"
     steps:
-      - run: "bazel test //... --enable_bzlmod --noenable_workspace --config=linux-workflows --config=bzlmod-target-linux-x86 --config=race --test_tag_filters=-performance,-docker,-bare"
+      - run: "bazel test //... --noenable_bzlmod --enable_workspace --config=linux-workflows --config=workspace-target-linux-x86 --config=race --test_tag_filters=-performance,-docker,-bare"
   - name: Check style
     container_image: ubuntu-20.04
     triggers:
