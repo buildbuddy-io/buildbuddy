@@ -213,12 +213,11 @@ func TestApplyLimitsNonRecyleableLargeDisk(t *testing.T) {
 				},
 			},
 		},
-	},
-		&scpb.TaskSize{
-			EstimatedMemoryBytes:   10,
-			EstimatedMilliCpu:      10,
-			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDiskRecycleFalse * 10,
-		})
+	}, &scpb.TaskSize{
+		EstimatedMemoryBytes:   10,
+		EstimatedMilliCpu:      10,
+		EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDiskRecycleFalse * 10,
+	})
 	assert.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
 	assert.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
 	assert.Equal(t, tasksize.MaxEstimatedFreeDiskRecycleFalse, sz.EstimatedFreeDiskBytes)
@@ -228,6 +227,11 @@ func TestApplyLimits_LargeTest(t *testing.T) {
 	sz := tasksize.ApplyLimits(
 		&repb.ExecutionTask{
 			Command: &repb.Command{
+				Platform: &repb.Platform{
+					Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+					},
+				},
 				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 					{Name: "TEST_SIZE", Value: "large"},
 				},

@@ -85,7 +85,7 @@ const (
 	MaxEstimatedFreeDisk = int64(100 * 1e9) // 100GB
 
 	// The maximum amount of disk a non-recyclable workflow may request.
-	MaxEstimatedFreeDiskRecycleFalse = int64(100 * 1e9) // 200GB
+	MaxEstimatedFreeDiskRecycleFalse = int64(200 * 1e9) // 200GB
 
 	// The fraction of an executor's allocatable resources to make available for task sizing.
 	MaxResourceCapacityRatio = 1
@@ -511,7 +511,7 @@ func ApplyLimits(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
 		request := clone.EstimatedFreeDiskBytes
 		props, err := platform.ParseProperties(task)
 		if err != nil {
-			log.Infof("Failed to parse task properties, using empty : %s", err)
+			log.Infof("Failed to parse task properties: %s", err)
 			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
 		} else if props.RecycleRunner {
 			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
