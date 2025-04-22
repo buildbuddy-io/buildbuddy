@@ -419,27 +419,7 @@ func NewStarlarkOptionDefinition(optName string) *Definition {
 
 func NewOption(optName string, v *string, d *Definition) (Option, error) {
 	if d == nil {
-		for prefix := range StarlarkSkippedPrefixes {
-			if strings.HasPrefix(optName, prefix) {
-				return &GeneralOption{
-					Definition: NewStarlarkOptionDefinition(optName),
-					Value:      v,
-					IsNegative: strings.HasPrefix(optName, "no"),
-				}, nil
-			}
-		}
-		// The option does not exist.
-		return &GeneralOption{
-			Definition: &Definition{
-				name:          optName,
-				multi:         true,
-				hasNegative:   true,
-				requiresValue: false,
-				pluginID:      UnknownBuiltinPluginID,
-			},
-			Value:  v,
-			Joined: v != nil,
-		}, nil
+		return nil, fmt.Errorf("In NewOption: definition was nil for optname %s and value %+v", optName, v)
 	}
 
 	// validate optName

@@ -198,7 +198,7 @@ func BazelCommands() (map[string]struct{}, error) {
 	return once.p.BazelCommands, once.error
 }
 
-func (p *Parser) parseLongNameOption(optName string) (option options.Option, err error) {
+func (p *Parser) parseLongNameOption(optName string) (options.Option, error) {
 	var v *string
 	if eqIndex := strings.Index(optName, "="); eqIndex != -1 {
 		// This option is of the form --NAME=value; split it up into the option
@@ -216,21 +216,32 @@ func (p *Parser) parseLongNameOption(optName string) (option options.Option, err
 		}
 	}
 
-	o, err := options.NewOption(optName, v, nil)
-	if err != nil {
-		return nil, err
+	for prefix := range options.StarlarkSkippedPrefixes {
+		if strings.HasPrefix(optName, prefix) {
+			// This is a new starlark definition; let's hang on to it.
+			d := options.NewStarlarkOptionDefinition(optName)
+			d.AddSupport(slices.Collect(maps.Keys(p.BazelCommands))...)
+			// No need to check if this option already exists since we never reach
+			// this code if it does.
+			p.ForceAddOptionDefinition(d)
+			return options.NewOption(optName, v, d)
+		}
 	}
 
-	if o.PluginID() != options.UnknownBuiltinPluginID {
-		// This is a new (likely starlark) definition; let's hang on to it.
-		if o.PluginID() == options.StarlarkBuiltinPluginID {
-			o.GetDefinition().AddSupport(slices.Collect(maps.Keys(p.BazelCommands))...)
-		}
-		// No need to check if this option already exists since we never reach
-		// this code if it does.
-		p.ForceAddOptionDefinition(o.GetDefinition())
+	opts := []options.DefinitionOpt{
+		options.WithMulti(),
+		options.WithPluginID(options.UnknownBuiltinPluginID),
 	}
-	return o, nil
+	if v != nil {
+		opts = append(opts, options.WithRequiresValue())
+	} else {
+		opts = append(opts, options.WithNegative())
+	}
+	return options.NewOption(
+		optName,
+		v,
+		options.NewDefinition(optName, opts...),
+	)
 }
 
 func (p *Parser) parseShortNameOption(optName string) (options.Option, error) {
@@ -240,7 +251,19 @@ func (p *Parser) parseShortNameOption(optName string) (options.Option, error) {
 	if d, ok := p.ByShortName[optName]; ok {
 		return options.NewOption(optName, nil, d)
 	}
-	o, err := options.NewOption(optName, nil, nil)
+	o, err := options.NewOption(
+		optName,
+		nil,
+		options.NewDefinition(
+			// We don't know the long name for this, so just use the shortname
+			// prefixed by "-", since that is guaranteed not to collide.
+			"-"+optName,
+			options.WithMulti(),
+			options.WithNegative(),
+			options.WithShortName(optName),
+			options.WithPluginID(options.UnknownBuiltinPluginID),
+		),
+	)
 	if err != nil {
 		return nil, err
 	}
