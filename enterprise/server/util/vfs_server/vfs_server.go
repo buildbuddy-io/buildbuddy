@@ -220,6 +220,7 @@ type fsNode struct {
 	target   string
 
 	mu          sync.Mutex
+	accessed    bool
 	attrs       *vfspb.Attrs
 	name        string
 	parent      *fsNode
@@ -368,6 +369,11 @@ type Server struct {
 	casFetcher         *casFetcher
 	remoteInstanceName string
 	fileHandles        map[uint64]*fileHandle
+
+	// total number of CAS files in the tree.
+	casFileCount int64
+	// total size of CAS files in the tree.
+	casFileSizeBytes int64
 }
 
 func New(env environment.Env, workspacePath string) (*Server, error) {
@@ -415,6 +421,10 @@ func (p *Server) addNode(node *fsNode) uint64 {
 	node.id = id
 	p.mu.Lock()
 	p.nodes[id] = node
+	if node.fileNode != nil {
+		p.casFileCount++
+		p.casFileSizeBytes += node.fileNode.GetDigest().GetSizeBytes()
+	}
 	p.mu.Unlock()
 	return id
 }
@@ -481,8 +491,40 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 	return nil
 }
 
+func (p *Server) ComputeStats() *repb.VfsStats {
+	stats := &repb.VfsStats{
+		CasFilesCount:     p.casFileCount,
+		CasFilesSizeBytes: p.casFileSizeBytes,
+	}
+
+	p.mu.Lock()
+	var walkNode func(node *fsNode)
+	walkNode = func(node *fsNode) {
+		node.mu.Lock()
+		if node.fileNode != nil && node.accessed {
+			stats.CasFilesAccessedCount++
+			stats.CasFilesAccessedBytes += node.fileNode.GetDigest().GetSizeBytes()
+		}
+		children := node.children
+		node.mu.Unlock()
+		for _, child := range children {
+			walkNode(child)
+		}
+	}
+	walkNode(p.root)
+	p.mu.Unlock()
+
+	p.casFetcher.UpdateIOStats(stats)
+
+	return stats
+}
+
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
 func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout) error {
+	p.mu.Lock()
+	p.casFileCount = 0
+	p.casFileSizeBytes = 0
+	p.mu.Unlock()
 	// There may already be nodes in the tree prior to `Prepare` to be called,
 	// for example by the workspace code pre-creating the action output
 	// directories. We merge the known CAS inputs with the tree we already have.
@@ -847,7 +889,7 @@ func (cf *casFetcher) Open(ctx context.Context, node *fsNode) (*os.File, error) 
 	return cf.env.GetFileCache().Open(ctx, node.fileNode)
 }
 
-func (cf *casFetcher) UpdateIOStats(stats *repb.IOStats) {
+func (cf *casFetcher) UpdateIOStats(stats *repb.VfsStats) {
 	cf.mu.Lock()
 	defer cf.mu.Unlock()
 	stats.FileDownloadSizeBytes = cf.downloadSizeBytes
@@ -903,6 +945,7 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 			attr.AtimeNanos = uint64(time.Now().UnixNano())
 		})
 	}
+	node.accessed = true
 	node.mu.Unlock()
 	if backingFile != "" {
 		f, err := os.OpenFile(backingFile, int(request.GetFlags()), os.FileMode(request.GetFlags()))
@@ -1494,13 +1537,6 @@ func (p *Server) Stop() {
 	if server != nil {
 		server.Stop()
 	}
-}
-
-func (p *Server) UpdateIOStats(stats *repb.IOStats) {
-	p.mu.Lock()
-	cf := p.casFetcher
-	p.mu.Unlock()
-	cf.UpdateIOStats(stats)
 }
 
 func fileLockFromProto(pb *vfspb.FileLock) *fuse.FileLock {

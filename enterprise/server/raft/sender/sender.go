@@ -528,6 +528,27 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 	return rsp.GetBatch(), nil
 }
 
+// SyncProposeWithRangeDescriptor calls SyncPropose on different replicas
+// specified in the given range descriptor, until one of the replica succeeds.
+func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest) (*rfpb.SyncProposeResponse, error) {
+	var syncRsp *rfpb.SyncProposeResponse
+	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
+		r, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+			Header: h,
+			Batch:  batchCmd,
+		})
+		if err != nil {
+			return err
+		}
+		syncRsp = r
+		return nil
+	}
+	_, err := s.TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
+		return header.NewWithoutRangeInfo(rd, replicaIdx, rfpb.Header_LINEARIZABLE)
+	})
+	return syncRsp, err
+}
+
 func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest, mods ...Option) (*rfpb.BatchCmdResponse, error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()

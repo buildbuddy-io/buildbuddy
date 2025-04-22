@@ -16,7 +16,9 @@ import (
 type Server struct {
 }
 
-func (s *Server) UpdateIOStats(stats *repb.IOStats) {}
+func (s *Server) ComputeStats() *repb.VfsStats {
+	return nil
+}
 
 func New(env environment.Env, workspacePath string) (*Server, error) {
 	return nil, fmt.Errorf("not implemented")

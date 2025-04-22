@@ -1,0 +1,51 @@
+From 860925ba403a11f84d8401e5f71bb8373a3f8945 Mon Sep 17 00:00:00 2001
+From: Fabian Meumertzheim <fabian@meumertzhe.im>
+Date: Wed, 12 Feb 2025 21:12:46 +0100
+Subject: [PATCH] Avoid Gazelle recognizing an internal repo as a Go SDK repo
+ (#4264)
+
+**What type of PR is this?**
+
+> Uncomment one line below and remove others.
+>
+> Bug fix
+> Feature
+> Documentation
+> Other
+
+**What does this PR do? Why is it needed?**
+
+**Which issues(s) does this PR fix?**
+
+Fixes #4263
+
+**Other notes for review**
+---
+ go/private/repositories.bzl | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/go/private/repositories.bzl b/go/private/repositories.bzl
+index 29e5fcd461..9c7626be01 100644
+--- a/go/private/repositories.bzl
++++ b/go/private/repositories.bzl
+@@ -320,7 +320,7 @@ def go_rules_dependencies(force = False):
+     )
+ 
+     _maybe(
+-        _go_host_compatible_sdk_label,
++        _go_host_compatible_s_d_k_label,
+         name = "go_host_compatible_sdk_label",
+     )
+ 
+@@ -336,7 +336,10 @@ def _go_host_compatible_sdk_label_impl(ctx):
+     ctx.file("BUILD.bazel")
+     ctx.file("defs.bzl", """HOST_COMPATIBLE_SDK = Label("@go_sdk//:ROOT")""")
+ 
+-_go_host_compatible_sdk_label = repository_rule(_go_host_compatible_sdk_label_impl)
++# This rule name has to avoid containing both "go_" and "_sdk" as substrings
++# due to this check in Gazelle:
++# https://github.com/bazelbuild/bazel-gazelle/blob/f08119735757370319d4f8c7653c0805fdae4817/deps.bzl#L92
++_go_host_compatible_s_d_k_label = repository_rule(_go_host_compatible_sdk_label_impl)
+ 
+ def _maybe(repo_rule, name, **kwargs):
+     if name not in native.existing_rules():

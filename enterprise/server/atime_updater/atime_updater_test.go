@@ -71,7 +71,7 @@ func (u update) String() string {
 }
 
 type fakeCAS struct {
-	t *testing.T
+	t testing.TB
 
 	authenticator interfaces.Authenticator
 
@@ -126,7 +126,7 @@ func (f *fakeCAS) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressab
 	return status.InternalError("Unexpected call to GetTree")
 }
 
-func runFakeCAS(ctx context.Context, env *testenv.TestEnv, t *testing.T) (*fakeCAS, repb.ContentAddressableStorageClient) {
+func runFakeCAS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*fakeCAS, repb.ContentAddressableStorageClient) {
 	cas := fakeCAS{t: t, authenticator: env.GetAuthenticator(), updates: []update{}}
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterContentAddressableStorageServer(grpcServer, &cas)
@@ -155,28 +155,25 @@ func waitExpectingUpdates(t *testing.T, expected []update, cas *fakeCAS) {
 	require.ElementsMatch(t, expected, cas.getUpdates())
 }
 
-func tickAlot(clock clockwork.FakeClock) {
+func tickAlot(clock clockwork.FakeClock, interval time.Duration) {
 	for i := 0; i < 25; i++ {
-		clock.Advance(time.Second)
+		clock.Advance(interval)
 		time.Sleep(5 * time.Millisecond)
 	}
 }
 
 func expectNoMoreUpdates(t *testing.T, clock clockwork.FakeClock, cas *fakeCAS) {
 	cas.clearUpdates()
-	tickAlot(clock)
+	tickAlot(clock, time.Second)
 	require.Equal(t, 0, len(cas.updates))
 }
 
-func setup(t *testing.T) (interfaces.Authenticator, interfaces.AtimeUpdater, *fakeCAS, clockwork.FakeClock) {
+func setup(t testing.TB) (interfaces.Authenticator, interfaces.AtimeUpdater, *fakeCAS, clockwork.FakeClock) {
 	env := testenv.GetTestEnv(t)
 	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
 	env.SetAuthenticator(authenticator)
 	cas, casClient := runFakeCAS(context.Background(), env, t)
 	env.SetContentAddressableStorageClient(casClient)
-	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 5)
-	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 3)
-	flags.Set(t, "cache_proxy.remote_atime_update_interval", 995*time.Millisecond)
 	fakeClock := clockwork.NewFakeClock()
 	env.SetClock(fakeClock)
 	require.NoError(t, Register(env))
@@ -245,6 +242,7 @@ func TestEnqueue_SimpleBatching(t *testing.T) {
 }
 
 func TestEnqueue_Deduping(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", time.Millisecond)
 	_, updater, cas, clock := setup(t)
 	ctx := ctxWithClientIdentity()
 
@@ -258,6 +256,7 @@ func TestEnqueue_Deduping(t *testing.T) {
 }
 
 func TestEnqueue_InstanceNamesIsolated(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
 	_, updater, cas, clock := setup(t)
 	ctx := ctxWithClientIdentity()
 
@@ -277,6 +276,7 @@ func TestEnqueue_InstanceNamesIsolated(t *testing.T) {
 }
 
 func TestEnqueue_DigestFunctionsIsolated(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
 	_, updater, cas, clock := setup(t)
 	ctx := ctxWithClientIdentity()
 
@@ -292,6 +292,7 @@ func TestEnqueue_DigestFunctionsIsolated(t *testing.T) {
 }
 
 func TestEnqueue_GroupsIsolated(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", time.Millisecond)
 	authenticator, updater, cas, clock := setup(t)
 	anonCtx := ctxWithClientIdentity()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
@@ -311,6 +312,7 @@ func TestEnqueue_GroupsIsolated(t *testing.T) {
 }
 
 func TestEnqueue_DedupesToFrontOfLine(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
 	_, updater, cas, clock := setup(t)
 	ctx := ctxWithClientIdentity()
 
@@ -340,7 +342,7 @@ func TestEnqueue_DigestsDropped(t *testing.T) {
 	// This threshold is set to 7 above, so expect that many to be sent, though
 	// order is not guaranteed so we don't know which 7 will be sent.
 	updater.Enqueue(ctx, "instance-1", digests, repb.DigestFunction_SHA256)
-	tickAlot(clock)
+	tickAlot(clock, time.Second)
 	waitExpectingNUpdates(t, 7, cas)
 	expectNoMoreUpdates(t, clock, cas)
 
@@ -352,7 +354,7 @@ func TestEnqueue_DigestsDropped(t *testing.T) {
 	for _, digest := range digests {
 		updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest}, repb.DigestFunction_SHA256)
 	}
-	tickAlot(clock)
+	tickAlot(clock, time.Second)
 	waitExpectingNUpdates(t, 7, cas)
 	cas.clearUpdates()
 	expectNoMoreUpdates(t, clock, cas)
@@ -361,22 +363,25 @@ func TestEnqueue_DigestsDropped(t *testing.T) {
 	for i, digest := range digests {
 		updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i%3), []*repb.Digest{digest}, repb.DigestFunction_SHA256)
 	}
-	tickAlot(clock)
+	tickAlot(clock, time.Second)
 	waitExpectingNUpdates(t, 7, cas)
 	expectNoMoreUpdates(t, clock, cas)
 }
 
 func TestEnqueue_UpdatesDropped(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 5)
+	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 3)
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
 	_, updater, cas, clock := setup(t)
 	ctx := ctxWithClientIdentity()
 
 	// If the updater accumulates too many updates, it should start to drop
-	// them. setup() sets the value of remote_atime_max_updates_per_group to
+	// them. setupTest() sets the value of remote_atime_max_updates_per_group to
 	// 3, so expect the first 3 to be sent and the others to be dropped.
 	for i := 1; i <= 10; i++ {
 		updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i), []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	}
-	tickAlot(clock)
+	tickAlot(clock, time.Second)
 	waitExpectingUpdates(t,
 		[]update{
 			updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256),
@@ -387,6 +392,9 @@ func TestEnqueue_UpdatesDropped(t *testing.T) {
 }
 
 func TestEnqueue_Fairness(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 5)
+	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 3)
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
 	authenticator, updater, cas, clock := setup(t)
 	anonCtx := ctxWithClientIdentity()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
@@ -453,6 +461,9 @@ func TestEnqueue_Fairness(t *testing.T) {
 // The atimeUpdater code does a lot of stuff with mutexes... This test tries to
 // trip the race detector. Make sure you run with --config=race for debugging.
 func TestEnqueue_Raciness(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 1_000)
+	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 1_000)
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", time.Millisecond)
 	authenticator, updater, _, clock := setup(t)
 	anonCtx := ctxWithClientIdentity()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
@@ -497,6 +508,9 @@ func casResourceName(t *testing.T, d *repb.Digest, instanceName string) string {
 }
 
 func TestEnqueueByResourceName_CAS(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 5)
+	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 3)
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", 999*time.Millisecond)
 	authenticator, updater, cas, clock := setup(t)
 	anonCtx := ctxWithClientIdentity()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
@@ -565,6 +579,7 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 }
 
 func TestEnqueueByFindMissing(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", time.Millisecond)
 	_, updater, cas, clock := setup(t)
 	ctx := ctxWithClientIdentity()
 
@@ -591,4 +606,39 @@ func TestEnqueueByFindMissing(t *testing.T) {
 	}
 	time.Sleep(10 * time.Millisecond)
 	require.Equal(t, 0, len(cas.getUpdates()))
+}
+
+func BenchmarkEnqueue(b *testing.B) {
+	numToEnqueue := 10_000
+	instances := []string{"instance-1", "instance-2", "instance-3"}
+	digests := []*repb.Digest{aDigest, bDigest, cDigest, dDigest, eDigest, fDigest, gDigest, hDigest, iDigest, jDigest}
+
+	flags.Set(b, "cache_proxy.remote_atime_max_digests_per_update", b.N*len(instances)*len(digests)*numToEnqueue)
+	flags.Set(b, "cache_proxy.remote_atime_max_updates_per_group", b.N*len(instances)*len(digests)*numToEnqueue)
+	_, updater, _, _ := setup(b)
+
+	b.ReportAllocs()
+	b.StopTimer()
+	for i := 0; i < b.N; i++ {
+		b.StartTimer()
+		wg := sync.WaitGroup{}
+		for i := 0; i < 10_000; i++ {
+			for _, instance := range instances {
+				for _, digest := range digests {
+					req := repb.FindMissingBlobsRequest{
+						InstanceName:   instance,
+						BlobDigests:    []*repb.Digest{digest},
+						DigestFunction: repb.DigestFunction_SHA256,
+					}
+					wg.Add(1)
+					go func() {
+						updater.EnqueueByFindMissingRequest(ctxWithClientIdentity(), &req)
+						wg.Done()
+					}()
+				}
+			}
+		}
+		wg.Wait()
+		b.StopTimer()
+	}
 }

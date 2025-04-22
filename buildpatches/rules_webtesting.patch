@@ -1,0 +1,12 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index 1775465..d307718 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -1,6 +1,6 @@
+ module(
+     name = "rules_webtesting",
+-    version = "0.4.0",
++    version = "0.2.1-0.20250212231324-7a1c88f61e35",
+ )
+ 
+ bazel_dep(name = "bazel_skylib", version = "1.7.1")

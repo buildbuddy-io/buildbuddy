@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"runtime"
 	"slices"
 	"strconv"
@@ -38,16 +39,22 @@ var (
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
 	defaultImage               = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS                  = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
-	extraEnvVars               = flag.Slice("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions. i.e. MY_ENV_VAR=foo")
+	extraEnvVars               = flag.Slice("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions: can be specified either as a `NAME=VALUE` assignment, or just `NAME` to inherit the environment variable from the executor process.")
 )
 
 const (
+	// BuildBuddy ubuntu images. When adding images here, also update
+	// the image aliases in enterprise/server/workflow/service/service.go
 	Ubuntu16_04Image = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 	Ubuntu20_04Image = "gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622"
+	Ubuntu22_04Image = "gcr.io/flame-public/rbe-ubuntu22-04@sha256:0d84a80bb0fc36ba5381942adcf6493249594dcc9044845c617b78c9b621cae3"
+	Ubuntu24_04Image = "gcr.io/flame-public/rbe-ubuntu24-04@sha256:f7db0d4791247f032fdb4451b7c3ba90e567923a341cc6dc43abfc283436791a"
 
 	Ubuntu18_04WorkflowsImage = "gcr.io/flame-public/buildbuddy-ci-runner@sha256:8cf614fc4695789bea8321446402e7d6f84f6be09b8d39ec93caa508fa3e3cfc"
 	Ubuntu20_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:ba28945426fcdf4310f18e8a8e3c47af670bdcf9ba76bd76b269898c0579089e"
-	Ubuntu22_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu22-04@sha256:0d84a80bb0fc36ba5381942adcf6493249594dcc9044845c617b78c9b621cae3"
+	// Images from 22.04+ do not have separate images for workflows.
+	Ubuntu22_04WorkflowsImage = Ubuntu22_04Image
+	Ubuntu24_04WorkflowsImage = Ubuntu24_04Image
 
 	// OverrideHeaderPrefix is a prefix used to override platform props via
 	// remote headers. The property name immediately follows the prefix in the
@@ -583,12 +590,11 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 
 	additionalEnvVars := append(*extraEnvVars, platformProps.EnvOverrides...)
 	for _, e := range additionalEnvVars {
-		parts := strings.Split(e, "=")
-		if len(parts) == 0 {
-			continue
+		name, value, hasValue := strings.Cut(e, "=")
+		if !hasValue {
+			// No '=' found; inherit host environment variable value.
+			value = os.Getenv(name)
 		}
-		name := parts[0]
-		value := strings.Join(parts[1:], "=")
 		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
 			Name:  name,
 			Value: value,

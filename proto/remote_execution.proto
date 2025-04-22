@@ -2268,6 +2268,29 @@ message IOStats {
   int64 file_upload_duration_usec = 6;
 }
 
+message VfsStats {
+  // The number of inputs that needed to be fetched remotely.
+  int64 file_download_count = 1;
+
+  // The total size of inputs that needed to be fetched remotely.
+  int64 file_download_size_bytes = 2;
+
+  // The total time it took to fetch inputs remotely.
+  int64 file_download_duration_usec = 3;
+
+  // The total number of CAS files in the input tree.
+  int64 cas_files_count = 4;
+
+  // The number of CAS files in the filesystem that were actually accessed.
+  int64 cas_files_accessed_count = 5;
+
+  // The total size of CAS files in the filesystem.
+  int64 cas_files_size_bytes = 6;
+
+  // The total size of CAS files in the filesystem that were actually accessed.
+  int64 cas_files_accessed_bytes = 7;
+}
+
 // Compute usage sampled throughout a task's execution.
 message UsageStats {
   // Maximum amount of memory used throughout the task's execution.

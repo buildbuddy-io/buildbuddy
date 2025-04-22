@@ -121,8 +121,8 @@ export default class TestGridComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.repo !== prevProps.repo) {
-      // Repo-changed; re-fetch targets starting from scratch.
+    if (this.props.repo !== prevProps.repo || this.props.search.get("branch") !== prevProps.search.get("branch")) {
+      // Repo or branch filter changed; re-fetch targets starting from scratch.
       this.fetchTargets(/*initial=*/ true);
     }
   }
@@ -141,6 +141,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
       this.updateState(new target.GetTargetHistoryResponse(), initial);
       return;
     }
+    const branchName = this.props.search.get("branch") || "";
 
     let request = new target.GetTargetHistoryRequest();
 
@@ -149,7 +150,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
     request.serverSidePagination = this.isV2;
     request.pageToken = initial ? "" : this.state.nextPageToken;
     if (this.isV2) {
-      request.query = target.TargetQuery.create({ repoUrl });
+      request.query = target.TargetQuery.create({ repoUrl, branchName });
     }
 
     this.setState({ loading: true });

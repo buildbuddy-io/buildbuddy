@@ -75,11 +75,11 @@ type query struct {
 }
 
 func (q *query) Create(val interface{}) error {
-	return status.UnimplementedError("not supported for clickhouse")
+	return status.UnimplementedError("Create is not supported for clickhouse")
 }
 
 func (q *query) Update(val interface{}) error {
-	return status.UnimplementedError("not supported for clickhouse")
+	return status.UnimplementedError("Update is not supported for clickhouse")
 }
 
 type rawQuery struct {

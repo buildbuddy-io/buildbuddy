@@ -31,6 +31,7 @@ go_library(
         "//server/util/rexec",
         "//server/util/status",
         "//server/util/tracing",
+        "@com_github_docker_go_units//:go-units",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_protobuf//types/known/anypb",

@@ -78,7 +78,12 @@ export default class FlakesComponent extends React.Component<Props, State> {
     const prevEnd = timestampToDateWithFallback(prevProtoParams.updatedBefore, 0).getTime();
 
     const dateChanged = currentStart != prevStart || currentEnd != prevEnd;
-    if (currentTarget !== prevTarget || this.props.repo !== prevProps.repo || dateChanged) {
+    if (
+      currentTarget !== prevTarget ||
+      this.props.repo !== prevProps.repo ||
+      this.props.search.get("branch") !== prevProps.search.get("branch") ||
+      dateChanged
+    ) {
       this.fetch();
     }
   }
@@ -110,12 +115,14 @@ export default class FlakesComponent extends React.Component<Props, State> {
     const chartRequest = rpc_service.service.getDailyTargetStats({
       labels,
       repo: this.props.repo,
+      branchName: this.props.search.get("branch") || "",
       startedAfter: params.updatedAfter,
       startedBefore: params.updatedBefore,
     });
     const tableRequest = rpc_service.service.getTargetStats({
       labels,
       repo: this.props.repo,
+      branchName: this.props.search.get("branch") || "",
       startedAfter: params.updatedAfter,
       startedBefore: params.updatedBefore,
     });
@@ -168,6 +175,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
       const flakeSamplesRequest = rpc_service.service.getTargetFlakeSamples({
         label,
         repo: this.props.repo,
+        branchName: this.props.search.get("branch") || "",
         startedAfter: params.updatedAfter,
         startedBefore: params.updatedBefore,
       });
@@ -264,6 +272,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
     const flakeSamplesRequest = rpc_service.service.getTargetFlakeSamples({
       label,
       repo: this.props.repo,
+      branchName: this.props.search.get("branch") || "",
       pageToken: this.state.flakeSamples.nextPageToken,
     });
 

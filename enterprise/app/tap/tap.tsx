@@ -13,6 +13,7 @@ import FlakesComponent from "./flakes";
 import GridSortControlsComponent from "./grid_sort_controls";
 import DatePickerButton from "../filter/date_picker_button";
 import { getProtoFilterParams } from "../filter/filter_util";
+import TextInput from "../../../app/components/input/input";
 
 interface Props {
   user: User;
@@ -36,14 +37,22 @@ export default class TapComponent extends React.Component<Props, State> {
   };
 
   isV2 = Boolean(capabilities.config.testGridV2Enabled);
+  branchInputRef = React.createRef<HTMLInputElement>();
 
   componentWillMount() {
     document.title = `Tests | BuildBuddy`;
     this.fetchRepos();
   }
 
+  componentDidMount() {
+    if (this.branchInputRef.current) {
+      this.branchInputRef.current.value = this.props.search.get("branch") || "";
+    }
+  }
   componentDidUpdate() {
-    localStorage[LAST_SELECTED_REPO_LOCALSTORAGE_KEY] = this.selectedRepo();
+    if (this.branchInputRef.current) {
+      this.branchInputRef.current.value = this.props.search.get("branch") || "";
+    }
   }
 
   getSelectedTab(): Tab {
@@ -104,19 +113,26 @@ export default class TapComponent extends React.Component<Props, State> {
     router.replaceParams({ repo });
   }
 
+  handleBranchInputKeyPress(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      router.replaceParams({ branch: (event.target as HTMLInputElement).value });
+    }
+  }
+
   render() {
     const tab = this.getSelectedTab();
-    let tabContent;
     const repo = this.selectedRepo();
+    let title;
+    let tabContent;
     if (tab === "flakes") {
+      title = "Flakes";
       tabContent = <FlakesComponent repo={repo} search={this.props.search} dark={this.props.dark}></FlakesComponent>;
     } else {
+      title = "Tests";
       tabContent = (
         <TestGridComponent repo={repo} search={this.props.search} user={this.props.user}></TestGridComponent>
       );
     }
-
-    const title = capabilities.config.targetFlakesUiEnabled ? "Test history" : "Test grid";
 
     return (
       <div className={`tap ${this.isV2 ? "v2" : ""}`}>
@@ -127,16 +143,24 @@ export default class TapComponent extends React.Component<Props, State> {
                 <div className="tap-header-left-section">
                   <div className="tap-title">{title}</div>
                   {this.isV2 && this.state.repos.length > 0 && (
-                    <Select
-                      onChange={this.handleRepoChange.bind(this)}
-                      value={this.selectedRepo()}
-                      className="repo-picker">
-                      {this.state.repos.map((repo) => (
-                        <Option key={repo} value={repo}>
-                          {format.formatGitUrl(repo)}
-                        </Option>
-                      ))}
-                    </Select>
+                    <>
+                      <Select
+                        onChange={this.handleRepoChange.bind(this)}
+                        value={this.selectedRepo()}
+                        className="repo-picker">
+                        {this.state.repos.map((repo) => (
+                          <Option key={repo} value={repo}>
+                            {format.formatGitUrl(repo)}
+                          </Option>
+                        ))}
+                      </Select>
+                      <TextInput
+                        placeholder="Branch"
+                        // Use uncontrolled input to avoid re-rendering.
+                        ref={this.branchInputRef}
+                        onKeyPress={(e) => this.handleBranchInputKeyPress(e)}
+                      />
+                    </>
                   )}
                 </div>
                 <div className="controls">
@@ -144,20 +168,6 @@ export default class TapComponent extends React.Component<Props, State> {
                   {tab === "flakes" && <DatePickerButton search={this.props.search}></DatePickerButton>}
                 </div>
               </div>
-              {capabilities.config.targetFlakesUiEnabled && (
-                <div className="tabs">
-                  <div
-                    onClick={() => this.updateSelectedTab("grid")}
-                    className={`tab ${this.getSelectedTab() === "grid" ? "selected" : ""}`}>
-                    Test Grid
-                  </div>
-                  <div
-                    onClick={() => this.updateSelectedTab("flakes")}
-                    className={`tab ${this.getSelectedTab() === "flakes" ? "selected" : ""}`}>
-                    Flakes
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>

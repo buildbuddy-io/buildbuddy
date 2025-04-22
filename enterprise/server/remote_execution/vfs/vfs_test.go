@@ -1,3 +1,5 @@
+//go:build linux && !android && (amd64 || arm64)
+
 package vfs_test
 
 import (
@@ -11,18 +13,49 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func setupVFS(t *testing.T) string {
+func setupEnv(t *testing.T) environment.Env {
+	tmp := testfs.MakeTempDir(t)
+	env := testenv.GetTestEnv(t)
+	fileCachePath := filepath.Join(tmp, "filecache")
+	fc, err := filecache.NewFileCache(fileCachePath, 1_000_000, false /*=deleteContent*/)
+	require.NoError(t, err)
+	env.SetFileCache(fc)
+
+	bsServer, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	bspb.RegisterByteStreamServer(grpcServer, bsServer)
+
+	go runFunc()
+
+	clientConn, err := testenv.LocalGRPCConn(context.Background(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { clientConn.Close() })
+
+	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
+
+	return env
+}
+
+func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (*vfs_server.Server, string) {
 	tmp := testfs.MakeTempDir(t)
 	mnt := filepath.Join(tmp, "vfs")
 	err := os.MkdirAll(mnt, 0755)
@@ -31,14 +64,10 @@ func setupVFS(t *testing.T) string {
 	err = os.MkdirAll(back, 0755)
 	require.NoError(t, err)
 
-	env := testenv.GetTestEnv(t)
-
 	server, err := vfs_server.New(env, back)
 	require.NoError(t, err)
 	err = server.Prepare(context.Background(), &container.FileSystemLayout{
-		Inputs: &repb.Tree{
-			Root: &repb.Directory{},
-		},
+		Inputs: tree,
 	})
 	require.NoError(t, err)
 
@@ -55,7 +84,13 @@ func setupVFS(t *testing.T) string {
 			log.Warningf("unmount failed: %s", err)
 		}
 	})
-	return mnt
+	return server, mnt
+}
+
+func setupVFS(t *testing.T) string {
+	env := setupEnv(t)
+	_, path := setupVFSWithInputTree(t, env, &repb.Tree{Root: &repb.Directory{}})
+	return path
 }
 
 type dirEntry struct {
@@ -356,11 +391,11 @@ func toRawStats(fi fs.FileInfo) *rawStats {
 	rs := fi.Sys().(*syscall.Stat_t)
 	return &rawStats{
 		Ino:       rs.Ino,
-		Nlink:     rs.Nlink,
+		Nlink:     uint64(rs.Nlink),
 		Mtime:     time.Unix(rs.Mtim.Sec, rs.Mtim.Nsec),
 		Atime:     time.Unix(rs.Atim.Sec, rs.Atim.Nsec),
 		Blocks:    rs.Blocks,
-		BlockSize: rs.Blksize,
+		BlockSize: int64(rs.Blksize),
 		Size:      rs.Size,
 	}
 }
@@ -727,4 +762,94 @@ func TestStatfs(t *testing.T) {
 	log.Infof("stats %+v", stats)
 	require.Equal(t, stats.Bfree, stats.Blocks)
 	require.Equal(t, stats.Bavail, stats.Blocks)
+}
+
+func TestAttrCaching(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := filepath.Join(fsPath, "hello.txt")
+	f, err := os.Create(testFile)
+	require.NoError(t, err)
+	defer f.Close()
+
+	// File should be empty.
+	s := rawStat(t, testFile)
+	require.EqualValues(t, 0, s.Size)
+
+	// While a file is opened there shouldn't be any caching happening.
+	// This should be reflected in stat always returning the latest data.
+	_, err = f.Write([]byte("hello"))
+	require.NoError(t, err)
+	s = rawStat(t, testFile)
+	require.EqualValues(t, 5, s.Size)
+	f.Close()
+
+	// Create a bunch of hardlinks and verify the link count is correctly
+	// visible on all links.
+	linkFiles := []string{testFile + ".link1", testFile + ".link2", testFile + ".link3"}
+	for _, lf := range linkFiles {
+		err = os.Link(testFile, lf)
+		require.NoError(t, err)
+	}
+	for _, lf := range linkFiles {
+		s := rawStat(t, lf)
+		require.EqualValues(t, 4, s.Nlink)
+	}
+
+	err = os.Remove(testFile)
+	require.NoError(t, err)
+	for _, lf := range linkFiles {
+		s := rawStat(t, lf)
+		require.EqualValues(t, 3, s.Nlink)
+	}
+}
+
+func TestComputeStats(t *testing.T) {
+	env := setupEnv(t)
+
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
+	require.NoError(t, err)
+
+	rn1, buf := testdigest.RandomCASResourceBuf(t, 100)
+	err = env.GetCache().Set(ctx, rn1, buf)
+	require.NoError(t, err)
+
+	rn2, buf := testdigest.RandomCASResourceBuf(t, 200)
+	err = env.GetCache().Set(ctx, rn2, buf)
+	require.NoError(t, err)
+
+	rn3, buf := testdigest.RandomCASResourceBuf(t, 350)
+	err = env.GetCache().Set(ctx, rn3, buf)
+	require.NoError(t, err)
+
+	server, fsPath := setupVFSWithInputTree(t, env, &repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "test1", Digest: rn1.GetDigest()},
+			{Name: "test2", Digest: rn2.GetDigest()},
+			{Name: "test3", Digest: rn3.GetDigest()},
+		},
+	}})
+	stats := server.ComputeStats()
+
+	// Check stats before we do anything. Only CAS input size/count should be
+	// populated.
+	require.EqualValues(t, 3, stats.CasFilesCount)
+	require.EqualValues(t, 0, stats.CasFilesAccessedCount)
+	require.EqualValues(t, 650, stats.CasFilesSizeBytes)
+	require.EqualValues(t, 0, stats.CasFilesAccessedBytes)
+	require.EqualValues(t, 0, stats.FileDownloadCount)
+	require.EqualValues(t, 0, stats.FileDownloadSizeBytes)
+	require.EqualValues(t, 0, stats.FileDownloadDurationUsec)
+
+	_, err = os.ReadFile(filepath.Join(fsPath, "test1"))
+	require.NoError(t, err)
+
+	stats = server.ComputeStats()
+	require.EqualValues(t, 3, stats.CasFilesCount)
+	require.EqualValues(t, 1, stats.CasFilesAccessedCount)
+	require.EqualValues(t, 650, stats.CasFilesSizeBytes)
+	require.EqualValues(t, 100, stats.CasFilesAccessedBytes)
+	require.EqualValues(t, 1, stats.FileDownloadCount)
+	require.EqualValues(t, 100, stats.FileDownloadSizeBytes)
+	require.Greater(t, stats.FileDownloadDurationUsec, int64(0))
 }

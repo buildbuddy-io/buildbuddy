@@ -149,10 +149,16 @@ rules_proto_toolchains()
 # keep in sync with go.mod
 http_archive(
     name = "io_bazel_rules_go",
-    integrity = "sha256-kP6PtALe6VejdfPrhRFFW9c4x+1WJpX03RF6x9LYM7E=",
+    integrity = "sha256-t493RY53Fi9FtFZNayC2+S9WQx7VnqqrCeeBnR2FAxM=",
+    patch_args = ["-p1"],
+    patches = [
+        # https://github.com/bazel-contrib/rules_go/pull/4264
+        # TODO(sluongng): remove when v0.54.0 is released
+        "//buildpatches:rules_go.patch",
+    ],
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.52.0/rules_go-v0.52.0.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.52.0/rules_go-v0.52.0.zip",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.53.0/rules_go-v0.53.0.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.53.0/rules_go-v0.53.0.zip",
     ],
 )
 
@@ -422,13 +428,11 @@ googletest_deps()
 
 http_archive(
     name = "io_bazel_rules_docker",
-    integrity = "sha256-ZIUZu2mLsls7gXUqLObaGizFZlNDa0jGkdzpuNahgGE=",
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:rules_docker.patch",
-    ],
-    strip_prefix = "rules_docker-b44cc958e61c3192c57fed7aef78c8567d757a70",
-    urls = ["https://github.com/bazelbuild/rules_docker/archive/b44cc958e61c3192c57fed7aef78c8567d757a70.tar.gz"],
+    integrity = "sha256-gkhS3fjnyrsv3IKgUea/9IMJKcUdtJjYu96P3uqXdU8=",
+    strip_prefix = "rules_docker-5f9338ad695a205bb98d3348e61079441852c92a",
+    # This is BuildBuddy fork of rules_docker with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_docker/compare/master...buildbuddy-io:rules_docker:sluongng/bzlmod-enable
+    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/5f9338ad695a205bb98d3348e61079441852c92a.tar.gz"],
 )
 
 load(
@@ -458,13 +462,11 @@ _go_image_repos()
 
 http_archive(
     name = "io_bazel_rules_k8s",
-    integrity = "sha256-51xa8wL5mhoGlsvgTEm4NRXsfCVgX5lR8a1/evO/pBY=",
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:rules_k8s.patch",
-    ],
-    strip_prefix = "rules_k8s-554dc69933461ae2fa4fefcc46d09d5784832e6c",
-    urls = ["https://github.com/bazelbuild/rules_k8s/archive/554dc69933461ae2fa4fefcc46d09d5784832e6c.tar.gz"],
+    integrity = "sha256-+1ABfkrF/d9yT0nWnds+Yx3g246FsgTur45yYVu8UkM=",
+    strip_prefix = "rules_k8s-5fd4eda0161dc4967e515015cbe84256b5785b80",
+    # This is our own fork of rules_k8s with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_k8s/compare/master...buildbuddy-io:rules_k8s:buildbuddy-fork
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/5fd4eda0161dc4967e515015cbe84256b5785b80.tar.gz"],
 )
 
 load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults", "k8s_repositories")

@@ -17,7 +17,7 @@ If you're running BuildBuddy in a Docker image - you can use Docker's [-v flag](
 Be sure to replace `PATH_TO_YOUR_LOCAL_CONFIG ` with the path to your custom config file:
 
 ```bash
-docker pull gcr.io/flame-public/buildbuddy-app-onprem:latest && docker run -p 1985:1985 -p 8080:8080 -v /PATH_TO_YOUR_LOCAL_CONFIG/config.yaml:/config.yaml gcr.io/flame-public/buildbuddy-app-onprem:latest
+docker pull gcr.io/flame-public/buildbuddy-app-onprem:latest && docker run -p 1985:1985 -p 9090:9090 -p 8080:8080 -v /PATH_TO_YOUR_LOCAL_CONFIG/config.yaml:/config.yaml gcr.io/flame-public/buildbuddy-app-onprem:latest
 ```
 
 Note: If you're using BuildBuddy's Docker image locally and a third party gRPC cache, you'll likely need to add the `--network=host` [flag](https://docs.docker.com/network/host/) to your `docker run` command in order for BuildBuddy to be able to pull test logs and timing information from the external cache.

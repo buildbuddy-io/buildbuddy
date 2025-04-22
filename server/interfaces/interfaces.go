@@ -1160,6 +1160,9 @@ type CommandResult struct {
 	// resource measurement is not implemented by the command's isolation type.
 	UsageStats *repb.UsageStats
 
+	// VfsStats holds VFS-specific stats if VFS workspaces are enabled.
+	VfsStats *repb.VfsStats
+
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata
 }
@@ -1651,6 +1654,10 @@ type CPULeaser interface {
 	// Options can be configured via cpuset.
 	Acquire(milliCPU int64, taskID string, opts ...any) (int, []int, func())
 }
+
+const (
+	OCIImageInstanceNamePrefix = "_bb_ociregistry_"
+)
 
 type OCIRegistry interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)

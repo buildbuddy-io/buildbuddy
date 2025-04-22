@@ -28,7 +28,11 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
-var checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
+var (
+	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
+
+	restrictedPrefixes = []string{interfaces.OCIImageInstanceNamePrefix}
+)
 
 type ActionCacheServer struct {
 	env   environment.Env
@@ -130,6 +134,55 @@ func setWorkerMetadata(ar *repb.ActionResult) error {
 	return nil
 }
 
+func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.ACResourceName, req *repb.GetActionResultRequest) (*repb.ActionResult, int64, error) {
+	blob, err := s.cache.Get(ctx, rn.ToProto())
+	if err != nil {
+		return nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
+	}
+
+	rsp := &repb.ActionResult{}
+	if err := proto.Unmarshal(blob, rsp); err != nil {
+		return nil, 0, err
+	}
+
+	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
+		return nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
+	}
+	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
+	// change it.
+	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
+		return nil, 0, err
+	}
+
+	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
+		rsp.GetExecutionMetadata().GetUsageStats().Timeline = nil
+	}
+
+	// See if the caller specified a cached value.  If they did and it matches
+	// the full response that we just computed, then we won't bother sending the
+	// data, and instead just tell the caller that their cache is correct.
+	if *checkClientActionResultDigests && req.GetCachedActionResultDigest().GetHash() != "" {
+		d, err := digest.ComputeForMessage(rsp, req.GetDigestFunction())
+		if err != nil {
+			return nil, 0, err
+		}
+
+		// NOTE: To avoid double-counting AC hits, callers that specify a
+		// cached_action_result_digest don't do hit tracking on their own.  This
+		// means we need to track the full response size here instead.
+		originalResultSize := int64(proto.Size(rsp))
+		// Now that we've tracked size, wipe out the response.
+		if proto.Equal(req.GetCachedActionResultDigest(), d) {
+			rsp = &repb.ActionResult{
+				ActionResultDigest: d,
+			}
+		}
+		return rsp, originalResultSize, nil
+	}
+
+	return rsp, int64(proto.Size(rsp)), nil
+}
+
 // Retrieve a cached execution result.
 //
 // Implementations SHOULD ensure that any blobs referenced from the
@@ -146,7 +199,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if req.ActionDigest == nil {
 		return nil, status.InvalidArgumentError("ActionDigest is a required field")
 	}
-	rn := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
+	rn := digest.NewACResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
 	if err := rn.Validate(); err != nil {
 		return nil, err
 	}
@@ -154,68 +207,27 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateRestrictedAccess(ctx, req.GetInstanceName()); err != nil {
+		return nil, err
+	}
 
 	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
-
 	downloadTracker := ht.TrackDownload(d)
-	isCacheHit := false
-	var uncompressedResultSizeBytes int64
-	defer func() {
-		if isCacheHit {
-			if err := downloadTracker.CloseWithBytesTransferred(uncompressedResultSizeBytes, uncompressedResultSizeBytes, repb.Compressor_IDENTITY, "ac_server"); err != nil {
-				log.Debugf("GetActionResult: download tracker error: %s", err)
-			}
-		} else {
-			if err := ht.TrackMiss(d); err != nil {
-				log.Debugf("GetActionResult: hit tracker error: %s", err)
-			}
-		}
-	}()
 
-	blob, err := s.cache.Get(ctx, rn.ToProto())
-	if err != nil {
-		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
-	}
-
-	rsp := &repb.ActionResult{}
-	if err := proto.Unmarshal(blob, rsp); err != nil {
-		return nil, err
-	}
+	rsp, downloadSizeBytes, err := s.fetchActionResult(ctx, rn, req)
 	ht.SetExecutedActionMetadata(rsp.GetExecutionMetadata())
-	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
-		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
-	}
-	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
-	// change it.
-	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
-		return nil, err
-	}
-
-	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
-		rsp.GetExecutionMetadata().GetUsageStats().Timeline = nil
-	}
-
-	// See if the caller specified a cached value.  If they did and it matches
-	// the full response that we just computed, then we won't bother sending the
-	// data, and instead just tell the caller that their cache is correct.
-	if *checkClientActionResultDigests && req.GetCachedActionResultDigest().GetHash() != "" {
-		d, err := digest.ComputeForMessage(rsp, req.GetDigestFunction())
-		if err != nil {
-			return nil, err
+	if err == nil {
+		if trackerErr := downloadTracker.CloseWithBytesTransferred(downloadSizeBytes, downloadSizeBytes, repb.Compressor_IDENTITY, "ac_server"); trackerErr != nil {
+			log.Debugf("GetActionResult: download tracker error: %s", trackerErr)
 		}
-		if proto.Equal(req.GetCachedActionResultDigest(), d) {
-			rsp = &repb.ActionResult{
-				ActionResultDigest: d,
-			}
+	} else {
+		if trackerErr := ht.TrackMiss(d); trackerErr != nil {
+			log.Debugf("GetActionResult: hit tracker error: %s", trackerErr)
 		}
 	}
-
-	isCacheHit = true
-	uncompressedResultSizeBytes = int64(proto.Size(rsp))
-
-	return rsp, nil
+	return rsp, err
 }
 
 // Upload a new execution result.
@@ -257,6 +269,10 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	// For read-only API keys, pretend the request succeeded so bazel doesn't error out.
 	if !canWrite {
 		return req.ActionResult, nil
+	}
+
+	if err := s.validateRestrictedAccess(ctx, req.GetInstanceName()); err != nil {
+		return nil, err
 	}
 
 	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
@@ -353,4 +369,36 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 		}
 	}
 	return nil
+}
+
+// validateRestrictedAccess checks to see if the instance name has a restricted prefix.
+// If it does, validateRestrictedAccess uses the ClientIdentityService to assert that the
+// request comes from a trusted client: the app or an executor.
+// If the client is not trusted, the ClientIdentityService is not available, or there are any other errors,
+// validateRestrictedAccess returns an UnauthenticatedError.
+func (s *ActionCacheServer) validateRestrictedAccess(ctx context.Context, instanceName string) error {
+	if !isRestricted(instanceName) {
+		return nil
+	}
+	if s.env.GetClientIdentityService() == nil {
+		return status.UnauthenticatedError("No client ID service available to check restricted instance name prefix")
+	}
+	identity, err := s.env.GetClientIdentityService().IdentityFromContext(ctx)
+	if err != nil {
+		return status.UnauthenticatedErrorf("Could not check identity for restricted instance name prefix: %s", err)
+	}
+	if identity.Client != interfaces.ClientIdentityApp && identity.Client != interfaces.ClientIdentityExecutor {
+		return status.UnauthenticatedError("Cannot access restricted ActionResult from untrusted client")
+	}
+	return nil
+}
+
+// isRestricted indicates whether the input instance name has a restricted prefix.
+func isRestricted(instanceName string) bool {
+	for _, prefix := range restrictedPrefixes {
+		if strings.HasPrefix(instanceName, prefix) {
+			return true
+		}
+	}
+	return false
 }

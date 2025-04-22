@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -29,6 +30,7 @@ type IStore interface {
 	ConfiguredClusters() int
 	APIClient() *client.APIClient
 	NodeHost() *dragonboat.NodeHost
+	Sender() *sender.Sender
 }
 
 type ClusterStarter struct {
@@ -199,9 +201,6 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 	if err != nil {
 		return err
 	}
-	nodeHost := cs.store.NodeHost()
-	apiClient := cs.store.APIClient()
-
 	bootstrapInfo := make(map[string]string, 0)
 	for nodeRsp := range rsp.ResponseCh() {
 		if nodeRsp.Payload == nil {
@@ -217,7 +216,7 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 		bootstrapInfo[br.GetNhid()] = br.GetGrpcAddress()
 		if len(bootstrapInfo) == len(cs.join) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			err = SendStartShardRequests(ctx, cs.session, nodeHost, apiClient, bootstrapInfo)
+			err = SendStartShardRequests(ctx, cs.session, cs.store, bootstrapInfo)
 			cancel()
 			return err
 		}
@@ -292,33 +291,21 @@ func MakeBootstrapInfo(rangeID, firstReplicaID uint64, nodeGrpcAddrs map[string]
 	return bi
 }
 
-func StartShard(ctx context.Context, apiClient *client.APIClient, bootstrapInfo *ClusterBootstrapInfo, batch *rbuilder.BatchBuilder) error {
+func StartShard(ctx context.Context, store IStore, bootstrapInfo *ClusterBootstrapInfo, batch *rbuilder.BatchBuilder) error {
 	log.Debugf("StartShard called with bootstrapInfo: %+v", bootstrapInfo)
-	rangeSetupTime := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeSetupTimeKey,
-			Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
-		},
-	})
-	batch = batch.Merge(rangeSetupTime)
-	batchProto, err := batch.ToProto()
-	if err != nil {
-		return err
-	}
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
 	for _, node := range bootstrapInfo.nodes {
 		node := node
 		eg.Go(func() error {
-			apiClient, err := apiClient.Get(ctx, node.grpcAddress)
+			apiClient, err := store.APIClient().Get(egCtx, node.grpcAddress)
 			if err != nil {
 				return err
 			}
-			_, err = apiClient.StartShard(ctx, &rfpb.StartShardRequest{
+			_, err = apiClient.StartShard(egCtx, &rfpb.StartShardRequest{
 				RangeId:       bootstrapInfo.rangeID,
 				ReplicaId:     node.index,
 				InitialMember: bootstrapInfo.initialMembers,
-				Batch:         batchProto,
 			})
 			if err != nil {
 				if !status.IsAlreadyExistsError(err) {
@@ -331,12 +318,42 @@ func StartShard(ctx context.Context, apiClient *client.APIClient, bootstrapInfo 
 		})
 	}
 
-	return eg.Wait()
+	err := eg.Wait()
+	if err != nil {
+		return err
+	}
+	rangeSetupTime := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeSetupTimeKey,
+			Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
+		},
+	})
+	batch = batch.Merge(rangeSetupTime)
+	batchProto, err := batch.ToProto()
+	if err != nil {
+		return err
+	}
+	// This range descriptor is only used in sender and is not being stored.
+	// The generation is intentionally not set, so we won't accidentally
+	// overwrite the stored range descriptor.
+	rd := &rfpb.RangeDescriptor{
+		RangeId:  bootstrapInfo.rangeID,
+		Replicas: bootstrapInfo.Replicas,
+	}
+	syncRsp, err := store.Sender().SyncProposeWithRangeDescriptor(ctx, rd, batchProto)
+	if err != nil {
+		return err
+	}
+	rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
+	if err := rsp.AnyError(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bring up initial cluster(s).
-func SendStartShardRequests(ctx context.Context, session *client.Session, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string) error {
+func SendStartShardRequests(ctx context.Context, session *client.Session, store IStore, nodeGrpcAddrs map[string]string) error {
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
 			Start:      constants.MetaRangePrefix,
@@ -349,10 +366,10 @@ func SendStartShardRequests(ctx context.Context, session *client.Session, nodeHo
 			Generation: 1,
 		},
 	}
-	return SendStartShardRequestsWithRanges(ctx, session, nodeHost, apiClient, nodeGrpcAddrs, startingRanges)
+	return SendStartShardRequestsWithRanges(ctx, session, store, nodeGrpcAddrs, startingRanges)
 }
 
-func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Session, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string, startingRanges []*rfpb.RangeDescriptor) error {
+func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Session, store IStore, nodeGrpcAddrs map[string]string, startingRanges []*rfpb.RangeDescriptor) error {
 	replicaID := uint64(constants.InitialReplicaID)
 	rangeID := uint64(constants.InitialRangeID)
 
@@ -387,7 +404,7 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 			})
 		}
 		log.Debugf("Attempting to start cluster %d on: %+v", rangeID, bootstrapInfo)
-		if err := StartShard(ctx, apiClient, bootstrapInfo, batch); err != nil {
+		if err := StartShard(ctx, store, bootstrapInfo, batch); err != nil {
 			return err
 		}
 		log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
@@ -413,7 +430,7 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 		if err != nil {
 			return err
 		}
-		batchRsp, err := session.SyncProposeLocal(ctx, nodeHost, constants.InitialRangeID, batchProto)
+		batchRsp, err := session.SyncProposeLocal(ctx, store.NodeHost(), constants.InitialRangeID, batchProto)
 		if err != nil {
 			return err
 		}

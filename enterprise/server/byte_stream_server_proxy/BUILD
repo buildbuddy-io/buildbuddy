@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/util/proxy_util",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
@@ -30,6 +31,7 @@ go_test(
     embed = [":byte_stream_server_proxy"],
     deps = [
         "//enterprise/server/atime_updater",
+        "//enterprise/server/util/proxy_util",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/remote_cache/byte_stream_server",

@@ -626,6 +626,51 @@ func TestForceNetworkIsolationType(t *testing.T) {
 	}
 }
 
+func TestExtraEnvVars(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		extraEnvVars    []string
+		expectedEnvVars []*repb.Command_EnvironmentVariable
+	}{
+		{
+			name:         "set env var to value",
+			extraEnvVars: []string{"FOO=bar"},
+			expectedEnvVars: []*repb.Command_EnvironmentVariable{
+				{Name: "FOO", Value: "bar"},
+			},
+		},
+		{
+			name:         "set env var to value containing =",
+			extraEnvVars: []string{"FOO=bar=baz"},
+			expectedEnvVars: []*repb.Command_EnvironmentVariable{
+				{Name: "FOO", Value: "bar=baz"},
+			},
+		},
+		{
+			name:         "inherit process env var",
+			extraEnvVars: []string{"FOO"},
+			expectedEnvVars: []*repb.Command_EnvironmentVariable{
+				{Name: "FOO", Value: "process-foo-value"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("FOO", "process-foo-value")
+			flags.Set(t, "executor.extra_env_vars", tc.extraEnvVars)
+
+			env := testenv.GetTestEnv(t)
+			cmd := &repb.Command{}
+			platformProps := &Properties{}
+			ApplyOverrides(env, podmanAndFirecracker, platformProps, cmd)
+			require.Empty(t, cmp.Diff(
+				tc.expectedEnvVars,
+				cmd.EnvironmentVariables,
+				protocmp.Transform(),
+			))
+		})
+	}
+}
+
 type xcodeLocator struct {
 	sdks12_2    map[string]string
 	sdks12_4    map[string]string
