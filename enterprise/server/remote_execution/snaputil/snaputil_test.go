@@ -25,6 +25,9 @@ import (
 )
 
 func setupEnv(t *testing.T) *testenv.TestEnv {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+
 	env := testenv.GetTestEnv(t)
 	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 100_000, false)
 	require.NoError(t, err)
@@ -36,8 +39,6 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 }
 
 func TestCacheAndFetchArtifact(t *testing.T) {
-	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
-
 	env := setupEnv(t)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
 	require.NoError(t, err)
@@ -99,8 +100,6 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 }
 
 func TestCacheAndFetchArtifact_LocalOnly(t *testing.T) {
-	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
-
 	env := setupEnv(t)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
 	require.NoError(t, err)
@@ -136,8 +135,6 @@ func TestCacheAndFetchArtifact_LocalOnly(t *testing.T) {
 }
 
 func TestCacheAndFetchBytes(t *testing.T) {
-	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
-
 	env := setupEnv(t)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
 	require.NoError(t, err)
