@@ -1892,6 +1892,18 @@ var (
 		HTTPMethodLabel,
 	})
 
+	HTTPClientResponseSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "client_response_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Response size of response for each HTTP client request in **bytes**.",
+	}, []string{
+		HTTPHostLabel,
+		HTTPMethodLabel,
+		HTTPResponseCodeLabel,
+	})
+
 	// ## Internal metrics
 	//
 	// These metrics are for monitoring lower-level subsystems of BuildBuddy.
