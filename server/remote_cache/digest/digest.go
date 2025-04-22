@@ -90,13 +90,17 @@ func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
 }
 
 func CASResourceNameFromProto(in *rspb.ResourceName) (*CASResourceName, error) {
-	rn := ResourceNameFromProto(in)
-	return rn.CheckCAS()
+	if in.GetCacheType() != rspb.CacheType_CAS {
+		return nil, status.FailedPreconditionErrorf("ResourceName is not a CAS resource name: %s", in)
+	}
+	return &CASResourceName{*ResourceNameFromProto(in)}, nil
 }
 
 func ACResourceNameFromProto(in *rspb.ResourceName) (*ACResourceName, error) {
-	rn := ResourceNameFromProto(in)
-	return rn.CheckAC()
+	if in.GetCacheType() != rspb.CacheType_AC {
+		return nil, status.FailedPreconditionErrorf("ResourceName is not an AC resource name: %s", in)
+	}
+	return &ACResourceName{*ResourceNameFromProto(in)}, nil
 }
 
 // Prefer either NewCASResourceName or NewACResourceName.
