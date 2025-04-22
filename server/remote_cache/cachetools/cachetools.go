@@ -1054,44 +1054,44 @@ type casWriteCloser struct {
 	resource      *digest.CASResourceName
 	uploadString  string
 	bytesUploaded int64
-	mu            sync.Mutex
 }
 
-func (w *casWriteCloser) Write(p []byte) (n int, err error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
+func (w *casWriteCloser) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
 
-	req := &bspb.WriteRequest{
-		ResourceName: w.uploadString,
-		WriteOffset:  w.bytesUploaded,
-		FinishWrite:  false,
-		Data:         p,
+	n := 0
+	for n < len(p) {
+		data := p[n:min(len(p), n+uploadBufSizeBytes)]
+		req := &bspb.WriteRequest{
+			ResourceName: w.uploadString,
+			WriteOffset:  w.bytesUploaded + int64(n),
+			FinishWrite:  false,
+			Data:         data,
+		}
+
+		err := w.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+		n += len(data)
 	}
 
-	err = w.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
-	if err != nil && err != io.EOF {
-		return 0, err
-	}
-
-	w.bytesUploaded += int64(len(p))
-	return len(p), nil
+	w.bytesUploaded += int64(n)
+	return n, nil
 }
 
 // Close sends a final, empty write request telling the CAS
 // that writes are finished. It also closes the underlying stream.
 func (w *casWriteCloser) Close() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	req := &bspb.WriteRequest{
 		ResourceName: w.uploadString,
 		WriteOffset:  w.bytesUploaded,
 		FinishWrite:  true,
-		Data:         []byte{},
 	}
 
 	err := w.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending final Write request"))

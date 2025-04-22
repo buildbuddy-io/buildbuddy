@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -698,6 +699,8 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 }
 
 func TestUploadWriteCloser(t *testing.T) {
+	randomStringLargerThan1MB, err := random.RandomString(2 * 1024 * 1024)
+	require.NoError(t, err)
 	for _, tc := range []struct {
 		name               string
 		input              string
@@ -805,6 +808,30 @@ func TestUploadWriteCloser(t *testing.T) {
 			expectGetError:     true,
 			getSize:            int64(len([]byte("zstd not closing writer means write does not succeed"))),
 			expectedGetSize:    int64(len([]byte("zstd not closing writer means write does not succeed"))),
+		},
+		{
+			name:               "writing large payload succeeds",
+			input:              randomStringLargerThan1MB,
+			useZstd:            false,
+			expectUploadError:  false,
+			uploadSize:         int64(len(randomStringLargerThan1MB)),
+			expectedUploadSize: int64(len(randomStringLargerThan1MB)),
+			closeAfterWrite:    true,
+			expectGetError:     false,
+			getSize:            int64(len(randomStringLargerThan1MB)),
+			expectedGetSize:    int64(len(randomStringLargerThan1MB)),
+		},
+		{
+			name:               "zstd writing large payload succeeds",
+			input:              randomStringLargerThan1MB,
+			useZstd:            true,
+			expectUploadError:  false,
+			uploadSize:         int64(len(randomStringLargerThan1MB)),
+			expectedUploadSize: int64(len(randomStringLargerThan1MB)),
+			closeAfterWrite:    true,
+			expectGetError:     false,
+			getSize:            int64(len(randomStringLargerThan1MB)),
+			expectedGetSize:    int64(len(randomStringLargerThan1MB)),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
