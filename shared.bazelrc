@@ -189,10 +189,6 @@ common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:l
 common:bzlmod-target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
 
 common:download-minimal --remote_download_minimal
-# Work around a Bazel issue that results in all top-level outputs being downloaded
-# after this period has passed for a warm Bazel server even with
-# --remote_download_minimal.
-common:download-minimal --experimental_remote_cache_ttl=10000d
 
 # Flags shared across remote configs
 common:remote-shared --config=cache-shared
