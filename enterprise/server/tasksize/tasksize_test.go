@@ -201,7 +201,7 @@ func TestApplyLimits(t *testing.T) {
 		})
 	assert.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
 	assert.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
-	assert.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
+	assert.Equal(t, tasksize.MaxEstimatedFreeDiskRecycleFalse, sz.EstimatedFreeDiskBytes)
 }
 
 func TestApplyLimitsNonRecyleableLargeDisk(t *testing.T) {
