@@ -593,9 +593,9 @@ func NewOption(optName string, v *string, d *Definition) (Option, error) {
 			// and remove the value ourselves, we should output the warning instead.
 			log.Warnf("option '%s' is an expansion option. It does not accept values, and does not change its expansion based on the value provided. Value '%s' will be ignored.", d.name, v)
 		}
-		if form == negativeForm {
+		if form == negativeForm && d.pluginID != StarlarkBuiltinPluginID {
 			// This is a negative boolean value (of the form "--noNAME") with a
-			// specified value, which is unsupported.
+			// specified value, which is only supported for starlark.
 			return nil, fmt.Errorf("Unexpected value after boolean option: %s", optName)
 		}
 	}
