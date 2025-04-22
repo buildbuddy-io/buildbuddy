@@ -87,19 +87,21 @@ def bazel_pkg_tar(name, versions = [], **kwargs):
             executable = True,
             **kwargs
         )
+
+        # Pre-warm repository cache only for bazel 8+, where we've started
+        # using repository_cache combined with MODULE.bazel.lock to make
+        # bazel work without network access.
+        warm_repository_cache = int(version.split(".")[0]) >= 8
         extract_bazel_installation(
             name = "bazel-{}_extract_installation".format(version),
             bazel = ":bazel-{}_crossplatform".format(version),
             out_dir = "bazel-{}_outdir".format(version),
-            # Pre-warm repository cache only for bazel 8+, where we've started
-            # using repository_cache combined with MODULE.bazel.lock to make
-            # bazel work without network access.
-            warm_repository_cache = int(version.split(".")[0]) >= 8,
+            warm_repository_cache = warm_repository_cache,
             # If we are warming the repository cache then we need network access
             # so that this rule can download the dependencies. Targets that use
             # this rule can then use the cached dependencies without needing the
             # network.
-            exec_properties = {"dockerNetwork": "bridge"},
+            exec_properties = {"dockerNetwork": "bridge"} if warm_repository_cache else {},
             **kwargs
         )
     pkg_tar(
