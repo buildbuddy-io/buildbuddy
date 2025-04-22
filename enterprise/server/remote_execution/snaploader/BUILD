@@ -35,9 +35,6 @@ go_library(
 go_test(
     name = "snaploader_test",
     srcs = ["snaploader_test.go"],
-    args = [
-        "--executor.enable_local_snapshot_sharing=true",
-    ],
     deps = [
         ":snaploader",
         "//enterprise/server/remote_execution/copy_on_write",
