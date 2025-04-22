@@ -250,81 +250,22 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if r.IsEmpty() {
 		return r.GetDigest(), 0, nil
 	}
-	stream, err := bsClient.Write(ctx)
+	w, err := NewUploadWriteCloser(ctx, bsClient, r)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	var rc io.ReadCloser = io.NopCloser(in)
-	if r.GetCompressor() == repb.Compressor_ZSTD {
-		rbuf := make([]byte, 0, uploadBufSizeBytes)
-		cbuf := make([]byte, 0, uploadBufSizeBytes)
-		reader, err := compression.NewZstdCompressingReader(io.NopCloser(in), rbuf[:uploadBufSizeBytes], cbuf[:uploadBufSizeBytes])
-		if err != nil {
-			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
-		}
-		rc = reader
-	}
-	defer rc.Close()
-
-	buf := make([]byte, uploadBufSizeBytes)
-	bytesUploaded := int64(0)
-	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
-	resourceName := r.NewUploadString()
-	for {
-		n, err := rc.Read(buf)
-		if err != nil && err != io.EOF {
-			return nil, 0, err
-		}
-		readDone := err == io.EOF
-
-		req := &bspb.WriteRequest{
-			Data:         buf[:n],
-			ResourceName: resourceName,
-			WriteOffset:  bytesUploaded,
-			FinishWrite:  readDone,
-		}
-
-		err = sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, 0, err
-		}
-		bytesUploaded += int64(len(req.Data))
-		if readDone {
-			break
-		}
-
-	}
-	rsp, err := stream.CloseAndRecv()
+	n, err := io.Copy(w, in)
 	if err != nil {
+		w.Close()
 		return nil, 0, err
 	}
 
-	remoteSize := rsp.GetCommittedSize()
-	if r.GetCompressor() == repb.Compressor_IDENTITY {
-		// Either the write succeeded or was short-circuited, but in
-		// either case, the remoteSize for uncompressed uploads should
-		// match the file size.
-		if remoteSize != r.GetDigest().GetSizeBytes() {
-			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
-		}
-	} else {
-		// -1 is returned if the blob already exists, otherwise the
-		// remoteSize should agree with what we uploaded.
-		if remoteSize != bytesUploaded && remoteSize != -1 {
-			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
-		}
+	if err := w.Close(); err != nil {
+		return nil, 0, err
 	}
 
-	// At this point, a remote size of -1 means nothing new was uploaded.
-	if remoteSize == -1 {
-		bytesUploaded = 0
-	}
-
-	return r.GetDigest(), bytesUploaded, nil
+	return r.GetDigest(), n, nil
 }
 
 type uploadRetryResult = struct {
@@ -1079,10 +1020,6 @@ func NewUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if r.IsEmpty() {
-		return nil, nil
-	}
-
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
 		return nil, err
