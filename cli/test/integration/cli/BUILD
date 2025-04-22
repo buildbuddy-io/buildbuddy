@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_test(
     name = "cli_test",
     srcs = ["cli_test.go"],
@@ -24,5 +26,3 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

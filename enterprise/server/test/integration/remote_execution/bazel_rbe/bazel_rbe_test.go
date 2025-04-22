@@ -404,8 +404,7 @@ func GetNumExecutionsFlushedToOLAPDB(t *testing.T, env *rbetest.Env) int {
 }
 
 func runRemoteShellActionViaBazel(t *testing.T, ctx context.Context, env *rbetest.Env, shCommand string, extraBazelArgs ...string) *bazel.InvocationResult {
-	ws := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": "",
+	ws := testbazel.MakeTempModule(t, map[string]string{
 		// Define a bazel rule that runs exactly one action, which creates a dummy
 		// file (because Bazel requires actions to have outputs) then executes our
 		// test command.

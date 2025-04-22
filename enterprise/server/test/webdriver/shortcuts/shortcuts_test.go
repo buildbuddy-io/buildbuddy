@@ -106,9 +106,8 @@ func addBuild(t *testing.T, wt *webtester.WebTester, target buildbuddy_enterpris
 	setupPageOpts := []webtester.SetupPageOption{webtester.WithEnableCache}
 	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(wt, target.HTTPURL(), setupPageOpts...)
 
-	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": "",
-		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
+	workspacePath := testbazel.MakeTempModule(t, map[string]string{
+		"BUILD": `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
 	})
 	buildArgs := append([]string{"//:a"}, buildbuddyBuildFlags...)
 	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)

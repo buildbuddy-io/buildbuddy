@@ -91,12 +91,9 @@ common:performance --compilation_mode=opt
 common:deflake --config=remote-minimal
 test:deflake --runs_per_test=100
 test:deflake --test_output=errors
+test:deflake --test_runner_fail_fast
 test:deflake --notest_keep_going
-
-# Configuration used to deflake Go tests
-common:deflake-go --config=race
-common:deflake-go --config=deflake
-test:deflake-go --test_arg=-test.failfast
+test:deflake --config=race
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
@@ -282,11 +279,8 @@ common:release-shared --strip=always
 
 # Configuration used for Linux releases
 common:release --config=release-shared
-common:release --config=remote-prod-shared
-common:release --config=target-linux-x86
 common:release --repository_cache=~/repo-cache/
 common:release --remote_instance_name=buildbuddy-io/buildbuddy/release
-common:release --remote_download_toplevel
 
 # Configuration used for release-mac workflow
 common:release-mac --config=release-shared

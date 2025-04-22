@@ -114,7 +114,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 					MemSizeMb:          minMemSizeMB, // small to make snapshotting faster.
 					EnableNetworking:   false,
 					ScratchDiskSizeMb:  100,
-					KernelVersion:      cfg.KernelVersion,
+					GuestKernelVersion: cfg.GuestKernelVersion,
 					FirecrackerVersion: cfg.FirecrackerVersion,
 					GuestApiVersion:    cfg.GuestAPIVersion,
 				},
@@ -166,7 +166,7 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		// The opts are used to generate the snapshot key, so update the same fields
 		// here, so manually constructed snapshot keys in this test match keys constructed
 		// by the container
-		opts.VMConfiguration.KernelVersion = cfg.KernelVersion
+		opts.VMConfiguration.GuestKernelVersion = cfg.GuestKernelVersion
 		opts.VMConfiguration.FirecrackerVersion = cfg.FirecrackerVersion
 		opts.VMConfiguration.GuestApiVersion = cfg.GuestAPIVersion
 

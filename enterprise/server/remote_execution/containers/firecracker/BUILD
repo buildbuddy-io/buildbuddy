@@ -129,6 +129,8 @@ go_test(
     ],
     deps = [
         ":firecracker",
+        "//enterprise/server/action_cache_server_proxy",
+        "//enterprise/server/byte_stream_server_proxy",
         "//enterprise/server/clientidentity",
         "//enterprise/server/ociregistry",
         "//enterprise/server/remote_execution/container",

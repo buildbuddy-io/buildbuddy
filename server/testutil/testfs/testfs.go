@@ -139,6 +139,13 @@ func MakeExecutable(t testing.TB, rootDir string, path string) {
 	require.NoError(t, err)
 }
 
+func WriteFile(t testing.TB, rootDir, path, content string) {
+	err := os.MkdirAll(filepath.Dir(filepath.Join(rootDir, path)), 0755)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(rootDir, path), []byte(content), 0644)
+	require.NoError(t, err)
+}
+
 func WriteAllFileContents(t testing.TB, rootDir string, contents map[string]string) {
 	for relPath, content := range contents {
 		path := filepath.Join(rootDir, relPath)
