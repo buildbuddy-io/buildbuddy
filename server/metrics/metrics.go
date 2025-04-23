@@ -306,6 +306,11 @@ const (
 	// Command being run. Specific arguments to the command are omitted to
 	// reduce metric cardinality.
 	CommandName = "command"
+
+	// Cache proxy request type. If "local_only", indicates the proxy should
+	// only use its local cache to fulfil the request. If "default", the proxy
+	// should fall back to the remote cache as the source of truth.
+	CacheProxyRequestType = "proxy_request_type"
 )
 
 // Label value constants
@@ -314,6 +319,9 @@ const (
 	MissStatusLabel        = "miss"
 	PartialStatusLabel     = "partial"
 	UncacheableStatusLabel = "uncacheable"
+
+	LocalOnlyCacheProxyRequestLabel = "local_only"
+	DefaultCacheProxyRequestLabel   = "default"
 )
 
 // Other constants
@@ -1274,6 +1282,34 @@ var (
 		CommandName,
 	})
 
+	VFSCASFilesCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "vfs_cas_files_count",
+		Help:      "Total number of CAS files in VFS filesystems.",
+	})
+
+	VFSCASFilesAccessedCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "vfs_cas_files_accessed_count",
+		Help:      "Number of CAS files in VFS filesystems that were accessed by the action.",
+	})
+
+	VFSCASFilesSizeBytes = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "vfs_cas_files_size_bytes",
+		Help:      "Total size of CAS files in VFS filesystems.",
+	})
+
+	VFSCASFilesAccessedBytes = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "vfs_cas_files_accessed_bytes",
+		Help:      "Size of CAS files in VFS filesystems that were accessed by the action.",
+	})
+
 	NetworkingCommandCPUUsageUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
@@ -1854,6 +1890,18 @@ var (
 	}, []string{
 		HTTPHostLabel,
 		HTTPMethodLabel,
+	})
+
+	HTTPClientResponseSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "client_response_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Response size of response for each HTTP client request in **bytes**.",
+	}, []string{
+		HTTPHostLabel,
+		HTTPMethodLabel,
+		HTTPResponseCodeLabel,
 	})
 
 	// ## Internal metrics
@@ -3055,6 +3103,7 @@ var (
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
+		CacheProxyRequestType,
 	})
 	ActionCacheProxiedWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3064,6 +3113,7 @@ var (
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
+		CacheProxyRequestType,
 	})
 	ActionCacheProxiedReadBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3073,6 +3123,7 @@ var (
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
+		CacheProxyRequestType,
 	})
 	ActionCacheProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3082,6 +3133,7 @@ var (
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
+		CacheProxyRequestType,
 	})
 
 	ByteStreamProxiedReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3092,6 +3144,7 @@ var (
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
+		CacheProxyRequestType,
 	})
 	ByteStreamProxiedWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3101,6 +3154,7 @@ var (
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
+		CacheProxyRequestType,
 	})
 	ByteStreamProxiedReadBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3110,6 +3164,7 @@ var (
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
+		CacheProxyRequestType,
 	})
 	ByteStreamProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -3119,6 +3174,7 @@ var (
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
+		CacheProxyRequestType,
 	})
 
 	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{

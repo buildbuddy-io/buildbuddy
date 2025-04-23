@@ -98,6 +98,7 @@ type RealEnv struct {
 	casServer                        repb.ContentAddressableStorageServer
 	localByteStreamClient            bspb.ByteStreamClient
 	byteStreamServer                 bspb.ByteStreamServer
+	localActionCacheClient           repb.ActionCacheClient
 	actionCacheServer                repb.ActionCacheServer
 	pushServer                       rapb.PushServer
 	fetchServer                      rapb.FetchServer
@@ -558,6 +559,13 @@ func (r *RealEnv) GetByteStreamServer() bspb.ByteStreamServer {
 }
 func (r *RealEnv) SetByteStreamServer(byteStreamServer bspb.ByteStreamServer) {
 	r.byteStreamServer = byteStreamServer
+}
+
+func (r *RealEnv) GetLocalActionCacheClient() repb.ActionCacheClient {
+	return r.localActionCacheClient
+}
+func (r *RealEnv) SetLocalActionCacheClient(localClient repb.ActionCacheClient) {
+	r.localActionCacheClient = localClient
 }
 
 func (r *RealEnv) GetActionCacheServer() repb.ActionCacheServer {

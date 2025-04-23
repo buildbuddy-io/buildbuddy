@@ -118,9 +118,8 @@ func TestSAMLViewInvocation(t *testing.T) {
 	// Read the bazel flags from the Quickstart page, then run an authenticated
 	// build.
 	bazelFlags := webtester.GetBazelBuildFlags(wt, bb.HTTPURL(), webtester.WithEnableCache)
-	ws := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": "",
-		"BUILD":     `genrule(name = "foo", outs = ["foo.txt"], cmd_bash = "touch $@")`,
+	ws := testbazel.MakeTempModule(t, map[string]string{
+		"BUILD": `genrule(name = "foo", outs = ["foo.txt"], cmd_bash = "touch $@")`,
 	})
 	buildArgs := append([]string{":foo"}, bazelFlags...)
 	buildResult := testbazel.Invoke(ctx, t, ws, "build", buildArgs...)

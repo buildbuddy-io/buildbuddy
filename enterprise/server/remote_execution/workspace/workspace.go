@@ -490,17 +490,16 @@ func (ws *Workspace) DiskUsageBytes() (int64, error) {
 	return disk.DirSize(ws.Path())
 }
 
-// UpdateIOStats updates IO stats for any IO work performed by workspace
-// internals.
+// ComputeVFSStats returns vfs-specific stats, if vfs is enabled.
 //
 // When VFS is enabled in the workspace, the VFS implementation keeps track
 // of its own IO stats and a call is necessary to propagate these stats to the
 // action results.
-func (ws *Workspace) UpdateIOStats(ioStats *repb.IOStats) {
+func (ws *Workspace) ComputeVFSStats() *repb.VfsStats {
 	if ws.vfsServer == nil {
-		return
+		return nil
 	}
-	ws.vfsServer.UpdateIOStats(ioStats)
+	return ws.vfsServer.ComputeStats()
 }
 
 // Clean removes files and directories in the workspace which are not preserved

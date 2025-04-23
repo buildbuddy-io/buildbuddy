@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/docker/go-units"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -367,6 +368,21 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 				return true, status.UnavailableErrorf("could not publish periodic execution update for %q: %s", taskID, err)
 			}
 		}
+	}
+
+	// Include VFS stats, if VFS is enabled.
+	if vs := cmdResult.VfsStats; vs != nil {
+		md.IoStats.FileDownloadCount += vs.FileDownloadCount
+		md.IoStats.FileDownloadSizeBytes += vs.FileDownloadSizeBytes
+		md.IoStats.FileDownloadDurationUsec += vs.FileDownloadDurationUsec
+
+		metrics.VFSCASFilesCount.Add(float64(vs.CasFilesCount))
+		metrics.VFSCASFilesAccessedCount.Add(float64(vs.CasFilesAccessedCount))
+		metrics.VFSCASFilesSizeBytes.Add(float64(vs.CasFilesSizeBytes))
+		metrics.VFSCASFilesAccessedBytes.Add(float64(vs.CasFilesAccessedBytes))
+		log.CtxInfof(ctx, "VFS CAS inputs used count %d/%d (%.2f) used size %s/%s (%.2f)",
+			vs.CasFilesAccessedCount, vs.CasFilesCount, float64(vs.CasFilesAccessedCount)/float64(vs.CasFilesCount),
+			units.HumanSize(float64(vs.CasFilesAccessedBytes)), units.HumanSize(float64(vs.CasFilesSizeBytes)), float64(vs.CasFilesAccessedBytes)/float64(vs.CasFilesSizeBytes))
 	}
 
 	if cmdResult.ExitCode != 0 {

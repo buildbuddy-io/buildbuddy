@@ -3,8 +3,10 @@ package httpclient
 import (
 	"errors"
 	"flag"
+	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -17,36 +19,28 @@ import (
 // Tests often need to make HTTP requests to localhost -- set this flag to permit those requests.
 var allowLocalhost = flag.Bool("http.client.allow_localhost", false, "Allow HTTP requests to localhost")
 
-const maxHTTPTimeout = 60 * time.Minute
-
-// New creates an HTTP client that blocks connections to private IPs, records metrics on any requests made,
-// and has a consistent timeout (see maxHTTPTimeout).
+// New creates an HTTP client that blocks connections to private IPs and records
+// metrics on any requests made,.
 //
 // If you just want to make an HTTP request, this is the client to use.
 func New() *http.Client {
-	return NewWithAllowedPrivateIPs(maxHTTPTimeout, []*net.IPNet{})
+	return NewWithAllowedPrivateIPs([]*net.IPNet{})
 }
 
-// NewWithAllowPrivateIPs creates an HTTP client blocks connections to all but the specified private IPs, records metrics on any requests made,
-// and uses the specified timeout (passing a timeout of 0 will use maxHTTPTimeout),
-func NewWithAllowedPrivateIPs(timeout time.Duration, allowedPrivateIPNets []*net.IPNet) *http.Client {
-	dialerTimeout := timeout
-	if timeout == 0 || timeout > maxHTTPTimeout {
-		dialerTimeout = maxHTTPTimeout
-	}
-
+// NewWithAllowPrivateIPs creates an HTTP client blocks connections to all but
+// the specified private IPs and records metrics on any requests made.
+func NewWithAllowedPrivateIPs(allowedPrivateIPNets []*net.IPNet) *http.Client {
 	inner := &http.Transport{
-		Dial: (&net.Dialer{
-			Timeout: dialerTimeout,
+		DialContext: (&net.Dialer{
+			Timeout: 30 * time.Second,
 			Control: blockingDialerControl(allowedPrivateIPNets),
-		}).Dial,
-		TLSHandshakeTimeout: timeout,
+		}).DialContext,
+		TLSHandshakeTimeout: 10 * time.Second,
 		Proxy:               http.ProxyFromEnvironment,
 	}
 	tp := newMetricsTransport(inner)
 
 	return &http.Client{
-		Timeout:   timeout,
 		Transport: tp,
 	}
 }
@@ -101,5 +95,40 @@ func (t *metricsTransport) RoundTrip(in *http.Request) (out *http.Response, err 
 		metrics.HTTPHostLabel:   hostLabel,
 		metrics.HTTPMethodLabel: in.Method,
 	}).Inc()
-	return t.inner.RoundTrip(in)
+	resp, err := t.inner.RoundTrip(in)
+	if resp == nil || resp.Body == nil {
+		return resp, err
+	}
+	resp.Body = &instrumentedReadCloser{
+		ReadCloser: resp.Body,
+		host:       hostLabel,
+		method:     in.Method,
+		statusCode: resp.StatusCode,
+	}
+	return resp, err
+}
+
+type instrumentedReadCloser struct {
+	io.ReadCloser
+
+	host       string
+	method     string
+	statusCode int
+	bytesRead  int
+}
+
+func (rc *instrumentedReadCloser) Read(p []byte) (int, error) {
+	n, err := rc.ReadCloser.Read(p)
+	rc.bytesRead += n
+	return n, err
+}
+
+func (rc *instrumentedReadCloser) Close() error {
+	err := rc.ReadCloser.Close()
+	metrics.HTTPClientResponseSizeBytes.With(prometheus.Labels{
+		metrics.HTTPHostLabel:         rc.host,
+		metrics.HTTPMethodLabel:       rc.method,
+		metrics.HTTPResponseCodeLabel: strconv.Itoa(rc.statusCode),
+	}).Observe(float64(rc.bytesRead))
+	return err
 }

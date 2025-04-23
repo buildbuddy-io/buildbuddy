@@ -47,7 +47,6 @@ const (
 // simpleRepo simulates a test repo with the config files required to run a workflow
 func simpleRepo() map[string]string {
 	return map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD": `
 sh_binary(
     name = "nop",
@@ -71,7 +70,6 @@ actions:
 // giving tests that need to modify the workflow (Ex. for testing cancellation) time to complete
 func repoWithSlowScript() map[string]string {
 	return map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD": `
 sh_binary(
     name = "sleep_forever_test",
@@ -100,6 +98,12 @@ actions:
       - "test //...
 `,
 	}
+}
+
+func makeRepo(t *testing.T, contents map[string]string) (string, string) {
+	repoPath := testbazel.MakeTempModule(t, contents)
+	commitSHA := testgit.Init(t, repoPath)
+	return repoPath, commitSHA
 }
 
 func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.WorkflowService) {
@@ -275,7 +279,7 @@ func TestTriggerViaWebhook(t *testing.T) {
 	bb := env.GetBuildBuddyServiceClient()
 
 	repoContentsMap := simpleRepo()
-	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContentsMap)
+	repoPath, commitSHA := makeRepo(t, repoContentsMap)
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 
 	ctx := env.WithUserID(context.Background(), env.UserID1)
@@ -302,7 +306,7 @@ func TestTriggerLegacyWorkflowViaWebhook(t *testing.T) {
 	bb := env.GetBuildBuddyServiceClient()
 
 	repoContentsMap := simpleRepo()
-	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContentsMap)
+	repoPath, commitSHA := makeRepo(t, repoContentsMap)
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 
 	ctx := env.WithUserID(context.Background(), env.UserID1)
@@ -341,7 +345,7 @@ func TestExecuteWorkflow(t *testing.T) {
 	env, wfService := setup(t, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
 
-	repoPath, commitSHA := testgit.MakeTempRepo(t, simpleRepo())
+	repoPath, commitSHA := makeRepo(t, simpleRepo())
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 	ctx := env.WithUserID(context.Background(), env.UserID1)
 	reqCtx := &ctxpb.RequestContext{
@@ -403,7 +407,7 @@ func TestExecuteAsync(t *testing.T) {
 	env, wfService := setup(t, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
 
-	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContents)
+	repoPath, commitSHA := makeRepo(t, repoContents)
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 	ctx := env.WithUserID(context.Background(), env.UserID1)
 	reqCtx := &ctxpb.RequestContext{
@@ -451,7 +455,7 @@ func TestCancel(t *testing.T) {
 
 	// Set up slow script to give cancellation time to complete
 	repoContentsMap := repoWithSlowScript()
-	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContentsMap)
+	repoPath, commitSHA := makeRepo(t, repoContentsMap)
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 
 	// Create the workflow
@@ -504,7 +508,7 @@ func TestInvalidYAML(t *testing.T) {
 	env, workflowService := setup(t, fakeGitProvider)
 
 	repoContentsMap := repoWithInvalidConfig()
-	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContentsMap)
+	repoPath, commitSHA := makeRepo(t, repoContentsMap)
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 
 	// Create the workflow

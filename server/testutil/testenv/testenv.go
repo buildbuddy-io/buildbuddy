@@ -32,6 +32,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -88,7 +90,7 @@ func init() {
 //
 // Register services to the server, then call LocalGRPCConn to get a connection
 // to the returned server.
-func RegisterLocalGRPCServer(t *testing.T, te *real_environment.RealEnv) (*grpc.Server, func(), *bufconn.Listener) {
+func RegisterLocalGRPCServer(t testing.TB, te *real_environment.RealEnv) (*grpc.Server, func(), *bufconn.Listener) {
 	if te.GetGRPCServer() != nil {
 		log.Fatal("GRPCServer is already registered")
 	}
@@ -205,4 +207,12 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	hit_tracker.Register(te)
 
 	return te
+}
+
+type NoOpAtimeUpdater struct{}
+
+func (a *NoOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) {
+}
+func (a *NoOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ string) {}
+func (a *NoOpAtimeUpdater) EnqueueByFindMissingRequest(_ context.Context, _ *repb.FindMissingBlobsRequest) {
 }

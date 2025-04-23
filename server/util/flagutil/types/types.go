@@ -248,6 +248,22 @@ func (f *JSONStructFlag[T]) Set(values string) error {
 	return nil
 }
 
+func (f *JSONStructFlag[T]) Expand(mapping func(string) (string, error)) error {
+	var ov any
+	if err := json.Unmarshal([]byte(f.String()), &ov); err != nil {
+		return err
+	}
+	nv, err := expandValue(ov, mapping)
+	if err != nil {
+		return err
+	}
+	exp, err := json.Marshal(nv)
+	if err != nil {
+		return err
+	}
+	return f.Set(string(exp))
+}
+
 func (f *JSONStructFlag[T]) AliasedType() reflect.Type {
 	return reflect.TypeOf((*T)(nil))
 }

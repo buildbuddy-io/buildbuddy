@@ -98,17 +98,17 @@ func TestAddGetRemoveRange(t *testing.T) {
 
 func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
-	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
-	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
-
+	flags.Set(t, "cache.raft.enable_driver", false)
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	s4 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*testutil.TestingStore{s1, s2}
+	stores := []*testutil.TestingStore{s1, s2, s3, s4}
 	sf.StartShard(t, ctx, stores...)
 
 	testutil.WaitForRangeLease(t, ctx, stores, 2)
@@ -117,9 +117,10 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	rd := s.GetRange(2)
 	newRD := rd.CloneVT()
 
-	require.Equal(t, len(newRD.GetReplicas()), 2)
+	require.Equal(t, len(newRD.GetReplicas()), 4)
 
 	// Remove replica of range 2 on nh1 in meta range
+	log.Infof("nh1: %s", s1.NHID())
 	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(rd.GetReplicas())-1)
 	for _, repl := range rd.GetReplicas() {
 		if repl.GetNhid() == s1.NHID() {
@@ -128,7 +129,7 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 		replicas = append(replicas, repl)
 	}
 	newRD.Replicas = replicas
-	require.Equal(t, 1, len(replicas))
+	require.Equal(t, 3, len(replicas))
 	newRD.Generation = rd.GetGeneration() + 1
 
 	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
@@ -156,13 +157,12 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 
 	_, err = s1.GetReplica(2)
 	require.True(t, status.IsOutOfRangeError(err))
-	// verify that the range and replica is not removed from s2
-	list, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-	require.NoError(t, err)
-	require.Equal(t, 2, len(list.GetReplicas()))
-	require.NotNil(t, s2.GetRange(2))
-	_, err = s2.GetReplica(2)
-	require.NoError(t, err)
+	// verify that the shard is not removed from other servers
+	for _, s := range []*testutil.TestingStore{s2, s3, s4} {
+		list, err := s.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err, s.NHID())
+		require.Equal(t, 2, len(list.GetReplicas()), s.NHID())
+	}
 }
 
 func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
@@ -193,21 +193,6 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 	c1, err := s1.APIClient().Get(ctx, s1.GRPCAddress)
 	require.NoError(t, err)
 	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, poolB)
-	rd := &rfpb.RangeDescriptor{
-		Start:      keys.MakeKey([]byte("a")),
-		End:        keys.MakeKey([]byte("z")),
-		RangeId:    2,
-		Generation: 1,
-	}
-	protoBytes, err := proto.Marshal(rd)
-	require.NoError(t, err)
-	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: protoBytes,
-		},
-	}).ToProto()
-	require.NoError(t, err)
 
 	replicaID := uint64(0)
 	for _, repl := range bootstrapInfo.Replicas {
@@ -219,7 +204,6 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 		RangeId:       2,
 		ReplicaId:     replicaID,
 		InitialMember: bootstrapInfo.InitialMembersForTesting(),
-		Batch:         batchProto,
 	})
 	require.NoError(t, err)
 
@@ -235,17 +219,17 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 
 func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
-	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
-	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "cache.raft.enable_driver", false)
 
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*testutil.TestingStore{s1, s2}
+	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
 	rd2 := s1.GetRange(2)
@@ -255,7 +239,9 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	}).ToProto()
 	require.NoError(t, err)
 
-	writeRsp, err := s1.Sender().SyncPropose(ctx, constants.MetaRangePrefix, deleteRDBatch)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+
+	writeRsp, err := s.Sender().SyncPropose(ctx, constants.MetaRangePrefix, deleteRDBatch)
 	require.NoError(t, err)
 	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	require.NoError(t, err)
@@ -266,43 +252,54 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 		require.NoError(t, err)
 		if len(list1.GetReplicas()) != 1 {
 			time.Sleep(10 * time.Millisecond)
+			log.Infof("s1(%s) has more than 1 replica", s1.NHID())
 			continue
 		}
 		list2, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 		require.NoError(t, err)
 		if len(list2.GetReplicas()) != 1 {
 			time.Sleep(10 * time.Millisecond)
+			log.Infof("s2(%s) has more than 1 replica", s2.NHID())
+			continue
+		}
+		list3, err := s3.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		if len(list3.GetReplicas()) != 1 {
+			time.Sleep(10 * time.Millisecond)
+			log.Infof("s3(%s) has more than 1 replica", s3.NHID())
 			continue
 		}
 		require.Equal(t, uint64(1), list1.GetReplicas()[0].GetRangeId())
 		require.Equal(t, uint64(1), list2.GetReplicas()[0].GetRangeId())
+		require.Equal(t, uint64(1), list3.GetReplicas()[0].GetRangeId())
 		break
 	}
 }
 
 func TestCleanupZombieNonVoter(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
-	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
-	flags.Set(t, "cache.raft.min_meta_range_replicas", 1)
+	flags.Set(t, "cache.raft.enable_driver", false)
 
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
 	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*testutil.TestingStore{s1}
+	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
-	s2 := sf.NewStore(t)
-	// add a non-voter c2n2
-	addNonVoting(t, s1, ctx, 2, 2, s2.NHID())
+	s4 := sf.NewStore(t)
+	// add a non-voter c2n4
+	addNonVoting(t, s1, ctx, 2, 4, s4.NHID())
 
 	membership, err := s1.GetMembership(ctx, 2)
 	require.NoError(t, err)
-	// Check that c2n2 is a non-voter on raft.
+	// Check that c2n4 is a non-voter on raft.
 	require.Equal(t, 1, len(membership.NonVotings))
-	require.Contains(t, membership.NonVotings, uint64(2))
+	require.Contains(t, membership.NonVotings, uint64(4))
 
 	for {
 		clock.Advance(1 * time.Hour)
@@ -464,7 +461,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 func TestAddRangeBack(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
-	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "cache.raft.enable_driver", false)
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -1091,7 +1088,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 	})
 
 	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, poolB)
-	err = bringup.StartShard(ctx, s2.APIClient(), bootstrapInfo, initalRDBatch)
+	err = bringup.StartShard(ctx, s2, bootstrapInfo, initalRDBatch)
 	require.NoError(t, err)
 
 	metaRDBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{

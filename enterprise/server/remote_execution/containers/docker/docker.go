@@ -32,8 +32,8 @@ import (
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
+	dti "github.com/docker/docker/api/types/image"
 	dockerclient "github.com/docker/docker/client"
 	units "github.com/docker/go-units"
 	gstatus "google.golang.org/grpc/status"
@@ -470,7 +470,7 @@ func errMsg(err error) string {
 }
 
 func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	_, _, err := r.client.ImageInspectWithRaw(ctx, r.image)
+	_, err := r.client.ImageInspect(ctx, r.image, dockerclient.ImageInspectWithRawResponse(nil))
 	if err == nil {
 		return true, nil
 	}
@@ -494,7 +494,7 @@ func PullImage(ctx context.Context, client *dockerclient.Client, image string, c
 		if err != nil {
 			return err
 		}
-		rc, err := client.ImagePull(ctx, image, dockertypes.ImagePullOptions{
+		rc, err := client.ImagePull(ctx, image, dti.PullOptions{
 			RegistryAuth: auth,
 		})
 		if err != nil {
@@ -605,7 +605,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		result.Error = err
 		return result
 	}
-	cfg := dockertypes.ExecConfig{
+	cfg := dockercontainer.ExecOptions{
 		Cmd:          command.GetArguments(),
 		Env:          commandutil.EnvStringList(command),
 		WorkingDir:   r.workDir,
@@ -619,7 +619,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		result.Error = wrapDockerErr(err, "docker exec create failed")
 		return result
 	}
-	attachResp, err := r.client.ContainerExecAttach(ctx, exec.ID, dockertypes.ExecStartCheck{})
+	attachResp, err := r.client.ContainerExecAttach(ctx, exec.ID, dockercontainer.ExecStartOptions{})
 	if err != nil {
 		result.Error = wrapDockerErr(err, "docker exec attach failed")
 		return result

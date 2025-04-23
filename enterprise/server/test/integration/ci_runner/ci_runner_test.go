@@ -57,7 +57,6 @@ var (
 	ciRunnerRunfilePath string
 
 	workspaceContentsWithBazelVersionAction = map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
 		"buildbuddy.yaml": `
 actions:
   - name: "Show bazel version"
@@ -69,7 +68,6 @@ actions:
 	}
 
 	workspaceContentsWithTestsAndNoBuildBuddyYAML = map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD": `
 sh_test(name = "pass", srcs = ["pass.sh"])
 sh_test(name = "fail", srcs = ["fail.sh"])
@@ -79,7 +77,6 @@ sh_test(name = "fail", srcs = ["fail.sh"])
 	}
 
 	workspaceContentsWithTestsAndBuildBuddyYAML = map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD": `
 sh_test(name = "pass", srcs = ["pass.sh"])
 sh_test(name = "fail", srcs = ["fail.sh"])
@@ -98,7 +95,6 @@ actions:
 	}
 
 	workspaceContentsWithRunScript = map[string]string{
-		"WORKSPACE":     `workspace(name = "test")`,
 		"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 		"print_args.sh": "echo 'args: {{' $@ '}}'",
 		"buildbuddy.yaml": `
@@ -113,8 +109,7 @@ actions:
 	}
 
 	workspaceContentsWithEnvVars = map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
-		"BUILD":     `sh_test(name = "check_env", srcs = ["check_env.sh"])`,
+		"BUILD": `sh_test(name = "check_env", srcs = ["check_env.sh"])`,
 		"check_env.sh": `
 
 		if [[ "$TEST_SECRET_1" != "test_secret_1_value" ]]; then
@@ -140,9 +135,8 @@ actions:
 	}
 
 	workspaceContentsWithLocalEnvironmentalErrorAction = map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
-		"BUILD":     `sh_binary(name = "exit", srcs = ["exit.sh"])`,
-		"exit.sh":   `exit "$1"`,
+		"BUILD":   `sh_binary(name = "exit", srcs = ["exit.sh"])`,
+		"exit.sh": `exit "$1"`,
 		"buildbuddy.yaml": `
 actions:
   - name: "Exit 36"
@@ -155,9 +149,8 @@ actions:
 	}
 
 	workspaceContentsWithExitScriptAndMergeDisabled = map[string]string{
-		"WORKSPACE": "",
-		"BUILD":     `sh_binary(name = "exit", srcs = ["exit.sh"])`,
-		"exit.sh":   `exit "$1"`,
+		"BUILD":   `sh_binary(name = "exit", srcs = ["exit.sh"])`,
+		"exit.sh": `exit "$1"`,
 		"buildbuddy.yaml": `
 actions:
   - name: "Test"
@@ -171,7 +164,6 @@ actions:
 	}
 
 	workspaceContentsWithArtifactUploads = map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD": `
 sh_test(name = "pass", srcs = ["pass.sh"])
 sh_binary(name = "check_artifacts_dir", srcs = ["check_artifacts_dir.sh"])
@@ -199,8 +191,7 @@ actions:
 	}
 
 	workspaceContentsWithGitLog = map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
-		"BUILD":     `sh_binary(name = "log", srcs = ["log.sh"])`,
+		"BUILD": `sh_binary(name = "log", srcs = ["log.sh"])`,
 		"log.sh": `
 			cd "$BUILD_WORKSPACE_DIRECTORY"
 			git log
@@ -241,12 +232,8 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	if err != nil {
 		t.Fatal(err)
 	}
-	bazelPath, err := runfiles.Rlocation(testbazel.BazelBinaryPath)
-	if err != nil {
-		t.Fatal(err)
-	}
 	args = append([]string{
-		"--bazel_command=" + bazelPath,
+		"--bazel_command=" + testbazel.BinaryPath(t),
 		"--bazel_startup_flags=" + bazelStartupFlags,
 	}, args...)
 
@@ -310,7 +297,9 @@ func makeGitRepo(t *testing.T, contents map[string]string) (path, commitSHA stri
 	// called more than once to create unique repos with incompatible commit
 	// history.
 	contents[".repo_id"] = newUUID(t)
-	return testgit.MakeTempRepo(t, contents)
+	path = testbazel.MakeTempModule(t, contents)
+	commitSHA = testgit.Init(t, path)
+	return path, commitSHA
 }
 
 func getRunnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation {
@@ -337,7 +326,8 @@ func getRunnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocati
 func getInnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation {
 	bbService := app.BuildBuddyServiceClient(t)
 
-	pattern := `Streaming build results to: ` + app.HTTPURL() + `/invocation/([a-f0-9-]+)`
+	// Note: The `.*?` part of the pattern is used to skip ANSI color codes.
+	pattern := `Streaming build results to: .*?` + app.HTTPURL() + `/invocation/([a-f0-9-]+)`
 	innerIIDPattern := regexp.MustCompile(pattern)
 	iidMatches := innerIIDPattern.FindAllStringSubmatch(res.Output, -1)
 	invocationIDs := make([]string, 0)
@@ -345,9 +335,7 @@ func getInnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocatio
 		invocationIDs = append(invocationIDs, m[1])
 	}
 
-	if !assert.GreaterOrEqual(t, len(invocationIDs), 1) {
-		require.FailNowf(t, "Runner did not output invocation IDs", "output: %s", res.Output)
-	}
+	require.NotEmpty(t, invocationIDs, "runner did not output any invocation IDs: %s", res.Output)
 
 	invResp, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{
@@ -369,7 +357,6 @@ func TestCIRunner_RunsBashCommands(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
 	workspaceContentsWithBashCommands := map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
 		"buildbuddy.yaml": `
 actions:
   - name: "Show bazel version"
@@ -434,7 +421,6 @@ func TestCIRunner_RunsBashCommands_BazelWithOptions(t *testing.T) {
 
 	for _, tc := range testCases {
 		workspaceContents := map[string]string{
-			"WORKSPACE":     `workspace(name = "test")`,
 			"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 			"print_args.sh": "echo 'args: {{' $@ '}}'",
 			"buildbuddy.yaml": `
@@ -468,13 +454,13 @@ func TestCIRunner_AppliesCustomBazelrc(t *testing.T) {
 	testCases := []struct {
 		name                   string
 		workspaceContents      map[string]string
+		initSubdir             bool
 		expectedStartupOptions []string
 		expectModifiedIID      bool
 	}{
 		{
 			name: "Has a workspace .bazelrc",
 			workspaceContents: map[string]string{
-				"WORKSPACE": `workspace(name = "test")`,
 				".bazelrc": `
 common --invocation_id=00000000-0000-0000-0000-000000000000
 `,
@@ -497,7 +483,6 @@ actions:
 		{
 			name: "Does not have a workspace .bazelrc",
 			workspaceContents: map[string]string{
-				"WORKSPACE":     `workspace(name = "test")`,
 				"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 				"print_args.sh": "echo 'args: {{' $@ '}}'",
 				"buildbuddy.yaml": `
@@ -518,7 +503,6 @@ actions:
 			// recycling to work properly.
 			name: "Workspace is in a subdir",
 			workspaceContents: map[string]string{
-				"subdir/WORKSPACE": `workspace(name = "test")`,
 				"subdir/.bazelrc": `
 common --invocation_id=00000000-0000-0000-0000-000000000000
 `,
@@ -532,6 +516,7 @@ actions:
       - run: bazel build //:print_args
 `,
 			},
+			initSubdir: true,
 			expectedStartupOptions: []string{
 				"buildbuddy.bazelrc",
 				"repo-root/subdir/.bazelrc",
@@ -542,55 +527,61 @@ actions:
 	}
 
 	for _, tc := range testCases {
-		repoPath, _ := makeGitRepo(t, tc.workspaceContents)
-		runnerFlags := []string{
-			"--workflow_id=test-workflow",
-			"--action_name=Test action",
-			"--pushed_repo_url=file://" + repoPath,
-			"--pushed_branch=master",
-		}
-		// Start the app so the runner can use it as the BES backend.
-		app := buildbuddy.Run(t)
-		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+		t.Run(tc.name, func(t *testing.T) {
+			repoPath, _ := makeGitRepo(t, tc.workspaceContents)
+			if tc.initSubdir {
+				testbazel.InitModule(t, filepath.Join(repoPath, "subdir"))
+				testgit.CommitAll(t, repoPath, "Init subdir bazel module")
+			}
+			runnerFlags := []string{
+				"--workflow_id=test-workflow",
+				"--action_name=Test action",
+				"--pushed_repo_url=file://" + repoPath,
+				"--pushed_branch=master",
+			}
+			// Start the app so the runner can use it as the BES backend.
+			app := buildbuddy.Run(t)
+			runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 
-		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
-		checkRunnerResult(t, result)
+			result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+			checkRunnerResult(t, result)
 
-		runnerInvocation := getRunnerInvocation(t, app, result)
-		innerInvocation := getInnerInvocation(t, app, result)
+			runnerInvocation := getRunnerInvocation(t, app, result)
+			innerInvocation := getInnerInvocation(t, app, result)
 
-		missingStartupFlags := make(map[string]struct{}, 0)
-		for _, sf := range tc.expectedStartupOptions {
-			missingStartupFlags[sf] = struct{}{}
-		}
+			missingStartupFlags := make(map[string]struct{}, 0)
+			for _, sf := range tc.expectedStartupOptions {
+				missingStartupFlags[sf] = struct{}{}
+			}
 
-		for _, cl := range innerInvocation.StructuredCommandLine {
-			for _, s := range cl.Sections {
-				if s.SectionLabel == "startup options" {
-					optionList, ok := s.SectionType.(*clpb.CommandLineSection_OptionList)
-					if !ok {
-						continue
-					}
-					for _, o := range optionList.OptionList.Option {
-						for _, so := range tc.expectedStartupOptions {
-							if strings.Contains(o.CombinedForm, so) {
-								delete(missingStartupFlags, so)
+			for _, cl := range innerInvocation.StructuredCommandLine {
+				for _, s := range cl.Sections {
+					if s.SectionLabel == "startup options" {
+						optionList, ok := s.SectionType.(*clpb.CommandLineSection_OptionList)
+						if !ok {
+							continue
+						}
+						for _, o := range optionList.OptionList.Option {
+							for _, so := range tc.expectedStartupOptions {
+								if strings.Contains(o.CombinedForm, so) {
+									delete(missingStartupFlags, so)
+								}
 							}
 						}
 					}
 				}
 			}
-		}
-		require.Empty(t, missingStartupFlags)
+			require.Empty(t, missingStartupFlags)
 
-		// Check logs that BES url from buildbuddy.bazelrc was applied
-		require.Contains(t, runnerInvocation.ConsoleBuffer, app.HTTPURL(), tc.name)
+			// Check logs that BES url from buildbuddy.bazelrc was applied
+			require.Contains(t, runnerInvocation.ConsoleBuffer, app.HTTPURL(), tc.name)
 
-		if tc.expectModifiedIID {
-			require.Contains(t, runnerInvocation.ConsoleBuffer, "00000000-0000-0000-0000-000000000000")
-		} else {
-			require.NotContains(t, runnerInvocation.ConsoleBuffer, "00000000-0000-0000-0000-000000000000")
-		}
+			if tc.expectModifiedIID {
+				require.Contains(t, runnerInvocation.ConsoleBuffer, "00000000-0000-0000-0000-000000000000")
+			} else {
+				require.NotContains(t, runnerInvocation.ConsoleBuffer, "00000000-0000-0000-0000-000000000000")
+			}
+		})
 	}
 }
 
@@ -599,7 +590,6 @@ func TestCIRunner_StartupOptionsDontRestartBazelServer(t *testing.T) {
 
 	// Run a bazel command with a startup option
 	workspaceContents := map[string]string{
-		"WORKSPACE":     `workspace(name = "test")`,
 		"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 		"print_args.sh": "echo 'args: {{' $@ '}}'",
 		"buildbuddy.yaml": `
@@ -1308,8 +1298,7 @@ func TestGitCleanExclude(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
 	targetRepoPath, commitSHA := makeGitRepo(t, map[string]string{
-		"WORKSPACE": "",
-		"BUILD":     `sh_binary(name = "check_repo", srcs = ["check_repo.sh"])`,
+		"BUILD": `sh_binary(name = "check_repo", srcs = ["check_repo.sh"])`,
 		"check_repo.sh": `
 			cd "$BUILD_WORKSPACE_DIRECTORY"
 			echo "not_excluded.txt exists:" $([[ -e not_excluded.txt ]] && echo yes || echo no)
@@ -1358,10 +1347,9 @@ actions:
 func TestBazelWorkspaceDir(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
-	repoPath, commitSHA := makeGitRepo(t, map[string]string{
-		"subdir/WORKSPACE": "",
-		"subdir/BUILD":     `sh_test(name = "pass", srcs = ["pass.sh"])`,
-		"subdir/pass.sh":   "",
+	repoPath, _ := makeGitRepo(t, map[string]string{
+		"subdir/BUILD":   `sh_test(name = "pass", srcs = ["pass.sh"])`,
+		"subdir/pass.sh": "",
 		"subdir/.bazelrc": `
 # This role should take priority over the CI role.
 build --build_metadata=ROLE=TEST
@@ -1373,6 +1361,9 @@ actions:
   bazel_commands: [ 'bazel test :pass' ]
 `,
 	})
+	// Set up MODULE.bazel and MODULE.bazel.lock in the subdir.
+	testbazel.InitModule(t, filepath.Join(repoPath, "subdir"))
+	commitSHA := testgit.CommitAll(t, repoPath, "Init subdir bazel module")
 
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
@@ -1403,9 +1394,8 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
 	targetRepoPath, _ := makeGitRepo(t, map[string]string{
-		"WORKSPACE": "",
-		"BUILD":     `sh_test(name = "pass", srcs = ["pass.sh"])`,
-		"pass.sh":   "exit 0",
+		"BUILD":   `sh_test(name = "pass", srcs = ["pass.sh"])`,
+		"pass.sh": "exit 0",
 	})
 
 	// Start the app so the runner can use it as the BES backend.
@@ -1721,7 +1711,6 @@ func TestArtifactUploads_GRPCLog(t *testing.T) {
 
 func TestArtifactUploads_JVMLog(t *testing.T) {
 	workspaceSimulateOOM := map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD": `
 sh_test(name = "simulate_oom", srcs = ["simulate_oom.sh"])
 `,
@@ -1830,7 +1819,6 @@ func TestTimeout(t *testing.T) {
 func TestBazelLock(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, _ := makeGitRepo(t, map[string]string{
-		"WORKSPACE":     "",
 		"BUILD":         `sh_test(name = "sleep_test", srcs = ["sleep_test.sh"], tags = ["no-sandbox"])`,
 		"sleep_test.sh": `touch "$TEST_STARTED" && sleep 99999999`,
 		"buildbuddy.yaml": `
@@ -1865,7 +1853,6 @@ func TestRedactsLogs(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
 	workspaceContentsWithBashCommands := map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
 		"buildbuddy.yaml": `
 actions:
   - name: "Echo secrets"

@@ -30,7 +30,8 @@ import (
 var (
 	remoteHitTrackerTarget       = flag.String("cache_proxy.remote_hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracking service.")
 	remoteHitTrackerPollInterval = flag.Duration("cache_proxy.remote_hit_tracker.update_interval", 250*time.Millisecond, "The time interval to wait between sending remote cache-hit-tracking RPCs.")
-	maxPendingHitsPerGroup       = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 100_000, "The maximum number of pending cache-hit updates to store in memory for a given group.")
+	maxPendingHitsPerGroup       = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 2_000_000, "The maximum number of pending cache-hit updates to store in memory for a given group.")
+	maxHitsPerUpdate             = flag.Int("cache_proxy.remote_hit_tracker.max_hits_per_update", 100_000, "The maximum number of cache-hit updates to send in one request to the hit-tracking backend.")
 	remoteHitTrackerWorkers      = flag.Int("cache_proxy.remote_hit_tracker.workers", 1, "The number of workers to use to send asynchronous remote cache-hit-tracking RPCs.")
 )
 
@@ -64,6 +65,7 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 		pollInterval:           *remoteHitTrackerPollInterval,
 		quit:                   make(chan struct{}, 1),
 		maxPendingHitsPerGroup: *maxPendingHitsPerGroup,
+		maxHitsPerUpdate:       *maxHitsPerUpdate,
 		hitsByGroup:            map[groupID]*cacheHits{},
 		client:                 hitpb.NewHitTrackerServiceClient(conn),
 	}
@@ -80,9 +82,24 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 
 type groupID string
 type cacheHits struct {
-	gid         groupID
-	authHeaders map[string][]string
-	hits        []*hitpb.CacheHit
+	maxPendingHitsPerGroup int
+	gid                    groupID
+	mu                     sync.Mutex
+	authHeaders            map[string][]string
+	hits                   []*hitpb.CacheHit
+}
+
+func (c *cacheHits) enqueue(hit *hitpb.CacheHit, authHeaders map[string][]string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.hits) >= c.maxPendingHitsPerGroup {
+		return false
+	}
+
+	// Store the latest auth headers for this group for use in the async RPC.
+	c.authHeaders = authHeaders
+	c.hits = append(c.hits, hit)
+	return true
 }
 
 type HitTrackerFactory struct {
@@ -94,6 +111,7 @@ type HitTrackerFactory struct {
 
 	mu                     sync.Mutex
 	maxPendingHitsPerGroup int
+	maxHitsPerUpdate       int
 	hitsByGroup            map[groupID]*cacheHits
 	hitsQueue              []*cacheHits
 
@@ -168,6 +186,7 @@ func (h *HitTrackerFactory) groupID(ctx context.Context) groupID {
 }
 
 func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.RequestMetadata, hit *hitpb.CacheHit) {
+	groupID := h.groupID(ctx)
 	requestMetadata = proto.Clone(requestMetadata).(*repb.RequestMetadata)
 
 	h.mu.Lock()
@@ -180,36 +199,35 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 		}
 		return
 	}
-	defer h.mu.Unlock()
 
-	groupID := h.groupID(ctx)
 	if _, ok := h.hitsByGroup[groupID]; !ok {
-		hits := cacheHits{gid: groupID, hits: []*hitpb.CacheHit{}}
+		hits := cacheHits{
+			maxPendingHitsPerGroup: h.maxPendingHitsPerGroup,
+			gid:                    groupID,
+			hits:                   []*hitpb.CacheHit{},
+		}
 		h.hitsByGroup[groupID] = &hits
 		h.hitsQueue = append(h.hitsQueue, &hits)
 	}
 
 	groupHits := h.hitsByGroup[groupID]
-	if len(groupHits.hits) >= h.maxPendingHitsPerGroup {
-		alert.UnexpectedEvent(fmt.Sprintf("Exceeded maximum number of pending cache hits for group %s, dropping some.", string(groupID)))
+	h.mu.Unlock()
+	authHeaders := authutil.GetAuthHeaders(ctx, h.authenticator)
+	if groupHits.enqueue(hit, authHeaders) {
 		metrics.RemoteHitTrackerUpdates.With(
 			prometheus.Labels{
 				metrics.GroupID:              string(groupID),
-				metrics.EnqueueUpdateOutcome: "dropped_too_many_updates",
+				metrics.EnqueueUpdateOutcome: "enqueued",
 			}).Add(float64(1))
 		return
 	}
+
+	alert.UnexpectedEvent(fmt.Sprintf("Exceeded maximum number of pending cache hits for group %s, dropping some.", string(groupID)))
 	metrics.RemoteHitTrackerUpdates.With(
 		prometheus.Labels{
 			metrics.GroupID:              string(groupID),
-			metrics.EnqueueUpdateOutcome: "enqueued",
+			metrics.EnqueueUpdateOutcome: "dropped_too_many_updates",
 		}).Add(float64(1))
-
-	// Store the latest auth headers for this group for use in the async RPC.
-	authHeaders := authutil.GetAuthHeaders(ctx, h.authenticator)
-	groupHits.authHeaders = authHeaders
-
-	groupHits.hits = append(groupHits.hits, hit)
 }
 
 type TransferTimer struct {
@@ -288,21 +306,37 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 	}
 	hitsToSend := h.hitsQueue[0]
 	h.hitsQueue = h.hitsQueue[1:]
-	delete(h.hitsByGroup, hitsToSend.gid)
+	hitsToSend.mu.Lock()
+	if len(hitsToSend.hits) <= h.maxHitsPerUpdate {
+		delete(h.hitsByGroup, hitsToSend.gid)
+	} else {
+		hitsToEnqueue := cacheHits{
+			gid:         hitsToSend.gid,
+			authHeaders: hitsToSend.authHeaders,
+			hits:        hitsToSend.hits[h.maxHitsPerUpdate:],
+		}
+		hitsToSend.hits = hitsToSend.hits[:h.maxHitsPerUpdate]
+		h.hitsQueue = append(h.hitsQueue, &hitsToEnqueue)
+		h.hitsByGroup[hitsToEnqueue.gid] = &hitsToEnqueue
+	}
 	h.mu.Unlock()
 
 	ctx = authutil.AddAuthHeadersToContext(ctx, hitsToSend.authHeaders, h.authenticator)
 	trackRequest := hitpb.TrackRequest{Hits: hitsToSend.hits}
+	groupID := hitsToSend.gid
+	hitCount := len(hitsToSend.hits)
+	hitsToSend.mu.Unlock()
+
 	_, err := h.client.Track(ctx, &trackRequest)
 	metrics.RemoteHitTrackerRequests.With(
 		prometheus.Labels{
-			metrics.GroupID:     string(hitsToSend.gid),
+			metrics.GroupID:     string(groupID),
 			metrics.StatusLabel: gstatus.Code(err).String(),
-		}).Observe(float64(len(hitsToSend.hits)))
+		}).Observe(float64(hitCount))
 	if err != nil {
-		log.CtxWarningf(ctx, "Error sending Track request to record cache hit-tracking state group %s: %v", hitsToSend.gid, err)
+		log.CtxWarningf(ctx, "Error sending Track request to record cache hit-tracking state group %s: %v", groupID, err)
 	}
-	return len(hitsToSend.hits)
+	return hitCount
 }
 
 func (h *HitTrackerFactory) shutdown(ctx context.Context) error {

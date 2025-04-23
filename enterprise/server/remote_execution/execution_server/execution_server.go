@@ -816,11 +816,17 @@ type InProgressExecution struct {
 	clientStream streamLike
 	lastStage    repb.ExecutionStage_Value
 	opName       string
+	lastLogTime  time.Time
 }
 
 func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunning.Operation) (done bool, err error) {
 	stage := operation.ExtractStage(op)
-	log.CtxInfof(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
+	// Log only on stage transitions or if it's been a while since we last
+	// logged.
+	if stage != e.lastStage || time.Since(e.lastLogTime) > 30*time.Second {
+		log.CtxInfof(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
+		e.lastLogTime = time.Now()
+	}
 	if stage < e.lastStage {
 		return false, nil
 	}

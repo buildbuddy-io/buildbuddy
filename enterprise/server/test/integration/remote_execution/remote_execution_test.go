@@ -1614,7 +1614,6 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 
 func TestRedisRestart(t *testing.T) {
 	workspaceContents := map[string]string{
-		"WORKSPACE": `workspace(name = "integration_test")`,
 		"BUILD": fmt.Sprintf(`genrule(
   name = "hello_txt",
   outs = ["hello.txt"],
@@ -1643,7 +1642,7 @@ func TestRedisRestart(t *testing.T) {
 	_ = testexecutor.Run(t, "--executor.app_target="+app.GRPCAddress())
 
 	ctx := context.Background()
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempModule(t, workspaceContents)
 	buildFlags := []string{"//:hello.txt"}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 	buildFlags = append(buildFlags, app.RemoteExecutorBazelFlags()...)

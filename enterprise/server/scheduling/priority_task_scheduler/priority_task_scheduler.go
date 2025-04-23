@@ -554,7 +554,9 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, st, clientStream); err != nil {
 		log.CtxWarningf(ctx, "ExecuteTaskAndStreamResults error: %s", err)
 		time.Sleep(time.Until(start.Add(closeStreamDelay)))
-		_, _ = clientStream.CloseAndRecv()
+		if _, streamErr := clientStream.CloseAndRecv(); streamErr != nil {
+			log.CtxWarningf(ctx, "Error closing execution status update stream: %s", streamErr)
+		}
 		return retry, err
 	}
 	time.Sleep(time.Until(start.Add(closeStreamDelay)))

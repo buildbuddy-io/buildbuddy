@@ -21,6 +21,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
@@ -41,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -51,6 +55,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -189,6 +194,7 @@ type envOpts struct {
 	cacheRootDir     string
 	cacheSize        int64
 	filecacheRootDir string
+	runProxy         bool
 }
 
 func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEnv {
@@ -243,14 +249,49 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	conn, err := testenv.LocalGRPCConn(
+		env.GetServerContext(),
+		lis,
+		interceptors.GetUnaryClientIdentityInterceptor(env),
+		interceptors.GetStreamClientIdentityInterceptor(env),
+	)
 	if err != nil {
 		t.Error(err)
 	}
+	t.Cleanup(func() { conn.Close() })
 
-	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
-	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
+	bsClient := bspb.NewByteStreamClient(conn)
+	env.SetByteStreamClient(bsClient)
+	acClient := repb.NewActionCacheClient(conn)
+	env.SetActionCacheClient(acClient)
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+
+	if opts.runProxy {
+		// Initialize proxies in their own env.
+		proxyEnv := testenv.GetTestEnv(t)
+		proxyEnv.SetActionCacheClient(acClient)
+		proxyEnv.SetByteStreamClient(bsClient)
+		proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
+		runProxyGrpcServers(ctx, proxyEnv, t)
+
+		acProxy, err := action_cache_server_proxy.NewActionCacheServerProxy(proxyEnv)
+		require.NoError(t, err)
+		bsProxy, err := byte_stream_server_proxy.New(proxyEnv)
+		require.NoError(t, err)
+
+		proxyGrpcServer, proxyRunFunc, proxyLis := testenv.RegisterLocalGRPCServer(t, proxyEnv)
+		repb.RegisterActionCacheServer(proxyGrpcServer, acProxy)
+		bspb.RegisterByteStreamServer(proxyGrpcServer, bsProxy)
+		go proxyRunFunc()
+
+		proxyConn, err := testenv.LocalGRPCConn(ctx, proxyLis)
+		require.NoError(t, err)
+		t.Cleanup(func() { proxyConn.Close() })
+
+		// Point cache clients on primary env towards proxies.
+		env.SetActionCacheClient(repb.NewActionCacheClient(proxyConn))
+		env.SetByteStreamClient(bspb.NewByteStreamClient(proxyConn))
+	}
 
 	fcDir := opts.filecacheRootDir
 	if *filecacheDir != "" {
@@ -273,6 +314,22 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	})
 
 	return env
+}
+
+func runProxyGrpcServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.T) {
+	server, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(t, err)
+	acServer, err := action_cache_server.NewActionCacheServer(proxyEnv)
+	require.NoError(t, err)
+	grpcServer, runFunc, lis := testenv.RegisterLocalInternalGRPCServer(t, proxyEnv)
+	bspb.RegisterByteStreamServer(grpcServer, server)
+	repb.RegisterActionCacheServer(grpcServer, acServer)
+	go runFunc()
+	conn, err := testenv.LocalInternalGRPCConn(ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	proxyEnv.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
+	proxyEnv.SetLocalActionCacheClient(repb.NewActionCacheClient(conn))
 }
 
 func executorRootDir(t *testing.T) string {
@@ -433,7 +490,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 				MemSizeMb:          memorySize,
 				EnableNetworking:   false,
 				ScratchDiskSizeMb:  100,
-				KernelVersion:      cfg.KernelVersion,
+				GuestKernelVersion: cfg.GuestKernelVersion,
 				FirecrackerVersion: cfg.FirecrackerVersion,
 				GuestApiVersion:    cfg.GuestAPIVersion,
 			},
@@ -805,7 +862,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 			MemSizeMb:          minMemSizeMB, // small to make snapshotting faster.
 			EnableNetworking:   false,
 			ScratchDiskSizeMb:  100,
-			KernelVersion:      cfg.KernelVersion,
+			GuestKernelVersion: cfg.GuestKernelVersion,
 			FirecrackerVersion: cfg.FirecrackerVersion,
 			GuestApiVersion:    cfg.GuestAPIVersion,
 		},
@@ -1213,6 +1270,84 @@ func TestFirecrackerSnapshotVersioning(t *testing.T) {
 	require.NotEmpty(t, cmp.Diff(c1.SnapshotKeySet(), c3.SnapshotKeySet(), protocmp.Transform()))
 }
 
+func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
+	// Disable local snapshot sharing with filecache to simplify the setup.
+	flags.Set(t, "executor.enable_local_snapshot_sharing", false)
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{runProxy: true})
+	rootDir := testfs.MakeTempDir(t)
+	cfg := getExecutorConfig(t)
+
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	filecacheRoot := testfs.MakeDirAll(t, cfg.JailerRoot, "filecache")
+	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:            1,
+			MemSizeMb:          minMemSizeMB, // small to make snapshotting faster.
+			EnableNetworking:   false,
+			ScratchDiskSizeMb:  100,
+			GuestKernelVersion: cfg.GuestKernelVersion,
+			FirecrackerVersion: cfg.FirecrackerVersion,
+			GuestApiVersion:    cfg.GuestAPIVersion,
+		},
+		ExecutorConfig: cfg,
+	}
+	instanceName := "test-instance-name"
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			// Note: platform must match in order to share snapshots
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
+		},
+		ExecuteRequest: &repb.ExecuteRequest{
+			InstanceName: instanceName,
+		},
+	}
+
+	vm, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := vm.Remove(ctx)
+		assert.NoError(t, err)
+	})
+	err = container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = vm.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+
+	// Create a snapshot.
+	cmd := appendToLog("Base")
+	res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "Base\n", string(res.Stdout))
+	err = vm.Pause(ctx)
+	require.NoError(t, err)
+
+	// No snapshot data should've been saved to the remote cache. It should only
+	// be cached in the proxy.
+	remoteCacheStats := env.GetCache().(*disk_cache.DiskCache).Statusz(ctx)
+	require.Contains(t, remoteCacheStats, "Items: 0")
+
+	// Make sure we can start from a snapshot fetched from the proxy
+	err = vm.Unpause(ctx)
+	require.NoError(t, err)
+	cmd = appendToLog("Child")
+	res = vm.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "Base\nChild\n", string(res.Stdout))
+}
+
 func TestFirecrackerBalloon(t *testing.T) {
 	flags.Set(t, "executor.firecracker_enable_balloon", true)
 	ctx := context.Background()
@@ -1231,7 +1366,7 @@ func TestFirecrackerBalloon(t *testing.T) {
 			MemSizeMb:          500,
 			EnableNetworking:   true,
 			ScratchDiskSizeMb:  500,
-			KernelVersion:      cfg.KernelVersion,
+			GuestKernelVersion: cfg.GuestKernelVersion,
 			FirecrackerVersion: cfg.FirecrackerVersion,
 			GuestApiVersion:    cfg.GuestAPIVersion,
 		},
@@ -1314,7 +1449,7 @@ func TestFirecrackerBalloon_DecreasesMemorySnapshotSize(t *testing.T) {
 				MemSizeMb:          500,
 				EnableNetworking:   true,
 				ScratchDiskSizeMb:  500,
-				KernelVersion:      cfg.KernelVersion,
+				GuestKernelVersion: cfg.GuestKernelVersion,
 				FirecrackerVersion: cfg.FirecrackerVersion,
 				GuestApiVersion:    cfg.GuestAPIVersion,
 			},
@@ -1992,11 +2127,20 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 			flags.Set(t, "executor.firecracker_vm_docker_mirrors", []string{registryURL})
 			flags.Set(t, "executor.firecracker_vm_docker_insecure_registries", []string{registryHost})
 
-			env := getTestEnv(ctx, t, envOpts{})
+			te := getTestEnv(ctx, t, envOpts{})
+			flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityExecutor)
+			key, err := random.RandomString(16)
+			require.NoError(t, err)
+			flags.Set(t, "app.client_identity.key", string(key))
+			require.NoError(t, err)
+			err = clientidentity.Register(te)
+			require.NoError(t, err)
+			require.NotNil(t, te.GetClientIdentityService())
+
 			rootDir := testfs.MakeTempDir(t)
 			workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-			ocireg, err := ociregistry.New(env)
+			ocireg, err := ociregistry.New(te)
 			require.NoError(t, err)
 
 			var mirrorCounter atomic.Int32
@@ -2030,7 +2174,7 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 				},
 				ExecutorConfig: getExecutorConfig(t),
 			}
-			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			c, err := firecracker.NewContainer(ctx, te, &repb.ExecutionTask{}, opts)
 			require.NoError(t, err)
 
 			cmd := &repb.Command{

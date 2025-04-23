@@ -12,6 +12,7 @@ go_library(
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/capabilities_server",
         "//server/remote_cache/content_addressable_storage_server",
+        "//server/rpc/interceptors",
         "//server/testutil/testenv",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

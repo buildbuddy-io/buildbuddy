@@ -32,6 +32,88 @@ type opStats struct {
 
 type perOpStats map[string]int
 
+type inodeCacheEntry struct {
+	// We track how many open handles there are for each inode and don't cache
+	// any attribute data if there are open handles since we assume that the
+	// inode attributes can change behind the scenes.
+	numHandles int
+	attrs      *vfspb.Attrs
+}
+
+type inodeCache struct {
+	mu   sync.Mutex
+	data map[uint64]*inodeCacheEntry
+}
+
+func newInodeCache() *inodeCache {
+	return &inodeCache{data: make(map[uint64]*inodeCacheEntry)}
+}
+
+func (ic *inodeCache) opened(inode uint64) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	e := ic.data[inode]
+	if e == nil {
+		e = &inodeCacheEntry{}
+		ic.data[inode] = e
+	}
+	if e.numHandles == 0 {
+		e.attrs = nil
+	}
+	e.numHandles++
+}
+
+func (ic *inodeCache) released(inode uint64) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	e := ic.data[inode]
+	if e == nil {
+		log.Warningf("release for unknown inode %d", inode)
+		return
+	}
+	e.numHandles--
+}
+
+func (ic *inodeCache) getCachedAttrs(inode uint64) (*vfspb.Attrs, bool) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	e := ic.data[inode]
+	if e == nil || e.attrs == nil {
+		return nil, false
+	}
+	return e.attrs, true
+}
+
+func (ic *inodeCache) cacheAttrs(inode uint64, attrs *vfspb.Attrs) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	e := ic.data[inode]
+	if e == nil {
+		e = &inodeCacheEntry{}
+		ic.data[inode] = e
+	}
+	// Don't cache attributes if there are open handles.
+	// Because of passthrough, some attributes such as size can change behind
+	// the scenes.
+	if e.numHandles > 0 {
+		return
+	}
+	e.attrs = attrs
+}
+
+func (ic *inodeCache) removeCachedAttrs(inode uint64) {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	e := ic.data[inode]
+	if e == nil {
+		return
+	}
+	e.attrs = nil
+	if e.numHandles == 0 {
+		delete(ic.data, inode)
+	}
+}
+
 type VFS struct {
 	vfsClient           vfspb.FileSystemClient
 	mountDir            string
@@ -47,6 +129,7 @@ type VFS struct {
 	mu             sync.Mutex
 	internalTaskID string
 	rpcCtx         context.Context
+	inodeCache     *inodeCache
 	opStats        map[string]*opStats
 	perFileStats   map[string]perOpStats
 }
@@ -78,6 +161,7 @@ func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *V
 		logFUSELatencyStats: options.LogFUSELatencyStats,
 		logFUSEPerFileStats: options.LogFUSEPerFileStats,
 		rpcCtx:              rpcCtx,
+		inodeCache:          newInodeCache(),
 		opStats:             make(map[string]*opStats),
 		perFileStats:        make(map[string]perOpStats),
 	}
@@ -257,12 +341,9 @@ type Node struct {
 
 	vfs       *VFS
 	immutable bool
-	id        uint64
 
 	mu            sync.Mutex
-	cachedAttrs   *vfspb.Attrs
 	symlinkTarget string
-	numHandles    int
 }
 
 func (n *Node) relativePath() string {
@@ -270,9 +351,7 @@ func (n *Node) relativePath() string {
 }
 
 func (n *Node) resetCachedAttrs() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	n.cachedAttrs = nil
+	n.vfs.inodeCache.removeCachedAttrs(n.StableAttr().Ino)
 }
 
 type remoteFile struct {
@@ -310,9 +389,17 @@ func rpcErrToSyscallErrno(rpcErr error) syscall.Errno {
 	return syscall.EIO
 }
 
-func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Lookup %q", filepath.Join(n.relativePath(), name))
+		fp := filepath.Join(n.relativePath(), name)
+		log.CtxDebugf(n.vfs.rpcCtx, "Lookup %q", fp)
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Lookup %q: %s", fp, attrDebugString(node, &out.Attr))
+			} else {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Lookup %q: %s", fp, errno)
+			}
+		}()
 	}
 	req := &vfspb.LookupRequest{
 		ParentId: n.StableAttr().Ino,
@@ -325,9 +412,9 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs
 
 	child := &Node{
 		vfs:           n.vfs,
-		cachedAttrs:   rsp.Attrs,
 		symlinkTarget: rsp.SymlinkTarget,
 	}
+	n.vfs.inodeCache.cacheAttrs(rsp.Id, rsp.Attrs)
 	fillFuseAttr(&out.Attr, rsp.GetAttrs())
 	return n.NewInode(ctx, child, fs.StableAttr{Mode: rsp.Mode, Ino: rsp.Id}), 0
 }
@@ -420,9 +507,6 @@ func (f *remoteFile) Flush(ctx context.Context) syscall.Errno {
 	if _, err := f.vfsClient.Flush(f.ctx, &vfspb.FlushRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
-	f.node.mu.Lock()
-	f.node.cachedAttrs = nil
-	f.node.mu.Unlock()
 	return fs.OK
 }
 
@@ -451,9 +535,7 @@ func (f *remoteFile) Release(ctx context.Context) syscall.Errno {
 	if _, err := f.vfsClient.Release(f.ctx, &vfspb.ReleaseRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
-	f.node.mu.Lock()
-	f.node.numHandles--
-	f.node.mu.Unlock()
+	f.node.vfs.inodeCache.released(f.node.StableAttr().Ino)
 	return fs.OK
 }
 
@@ -513,7 +595,6 @@ func (f *remoteFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.
 
 func (f *remoteFile) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
 	f.startOP("Write")
-	f.node.resetCachedAttrs()
 	writeReq := &vfspb.WriteRequest{
 		HandleId: f.id,
 		Data:     data,
@@ -588,6 +669,13 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 
 	if n.vfs.verbose {
 		log.CtxDebugf(n.vfs.rpcCtx, "Open %q (ino %d) with flags %q", n.relativePath(), n.StableAttr().Ino, describeOpenFlags(flags))
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.rpcCtx, "Open %q: OK", n.relativePath())
+			} else {
+				log.CtxDebugf(n.vfs.rpcCtx, "Open %q: %s", n.relativePath(), errno)
+			}
+		}()
 	}
 
 	req := &vfspb.OpenRequest{
@@ -596,12 +684,12 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 	rsp, err := n.vfs.vfsClient.Open(ctx, req)
 	if err != nil {
+		if n.vfs.verbose {
+			log.CtxInfof(n.vfs.getRPCContext(), "Open %q failed: %s", n.relativePath(), err)
+		}
 		return nil, 0, rpcErrToSyscallErrno(err)
 	}
-	n.mu.Lock()
-	n.cachedAttrs = nil
-	n.numHandles++
-	n.mu.Unlock()
+	n.vfs.inodeCache.opened(n.StableAttr().Ino)
 	return &remoteFile{
 		ctx:       ctx,
 		vfsClient: n.vfs.vfsClient,
@@ -620,7 +708,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 		log.CtxDebugf(n.vfs.rpcCtx, "Create %q", filepath.Join(n.relativePath(), name))
 	}
 
-	child := &Node{vfs: n.vfs, numHandles: 1}
+	child := &Node{vfs: n.vfs}
 
 	req := &vfspb.CreateRequest{
 		ParentId: n.StableAttr().Ino,
@@ -632,6 +720,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	if err != nil {
 		return nil, nil, 0, rpcErrToSyscallErrno(err)
 	}
+	n.vfs.inodeCache.opened(rsp.GetId())
 
 	inode := n.vfs.root.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG, Ino: rsp.GetId()})
 
@@ -720,32 +809,40 @@ func fillFuseAttr(out *fuse.Attr, attr *vfspb.Attrs) {
 	out.Blksize = uint32(attr.BlockSize)
 }
 
-func (n *Node) getattr() (*vfspb.Attrs, error) {
-	n.mu.Lock()
-	attrs := n.cachedAttrs
-	n.mu.Unlock()
+func attrDebugString(n *fs.Inode, attr *fuse.Attr) string {
+	return fmt.Sprintf("ino %d size %d mode %#o num links %d", n.StableAttr().Ino, attr.Size, attr.Mode, attr.Nlink)
+}
 
-	if attrs == nil {
+func (n *Node) getattr() (*vfspb.Attrs, error) {
+	attrs, ok := n.vfs.inodeCache.getCachedAttrs(n.StableAttr().Ino)
+
+	if !ok {
 		rsp, err := n.vfs.vfsClient.GetAttr(n.vfs.getRPCContext(), &vfspb.GetAttrRequest{Id: n.StableAttr().Ino})
 		if err != nil {
 			return nil, err
 		}
 		attrs = rsp.GetAttrs()
-		n.mu.Lock()
-		if n.numHandles == 0 {
-			// Don't cache attributes while a file is opened.
-			n.cachedAttrs = rsp.GetAttrs()
+		n.vfs.inodeCache.cacheAttrs(n.StableAttr().Ino, attrs)
+	} else {
+		if n.vfs.verbose {
+			log.CtxInfof(n.vfs.getRPCContext(), "using cached attributes for inode %d", n.StableAttr().Ino)
 		}
-		n.mu.Unlock()
 	}
 
 	return attrs, nil
 }
 
-func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) (errno syscall.Errno) {
 	n.startOP("Getattr")
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Getattr %q", n.relativePath())
+		log.CtxDebugf(n.vfs.getRPCContext(), "Getattr %q", n.relativePath())
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Getattr %q: %s", n.relativePath(), attrDebugString(&n.Inode, &out.Attr))
+			} else {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Getattr %q: %s", n.relativePath(), errno)
+			}
+		}()
 	}
 
 	attrs, err := n.getattr()
@@ -762,11 +859,7 @@ func (n *Node) setattr(req *vfspb.SetAttrRequest) (*vfspb.Attrs, error) {
 		return nil, err
 	}
 
-	n.mu.Lock()
-	if n.numHandles == 0 {
-		n.cachedAttrs = rsp.GetAttrs()
-	}
-	n.mu.Unlock()
+	n.vfs.inodeCache.cacheAttrs(n.StableAttr().Ino, rsp.GetAttrs())
 	return rsp.Attrs, nil
 }
 
@@ -807,6 +900,11 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 }
 
 func (n *Node) Getxattr(ctx context.Context, attr string, dest []byte) (uint32, syscall.Errno) {
+	n.startOP("Getxattr")
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "Getxattr %q", n.relativePath())
+	}
+
 	attrs, err := n.getattr()
 	if err != nil {
 		return 0, rpcErrToSyscallErrno(err)
@@ -855,6 +953,11 @@ func (n *Node) Listxattr(ctx context.Context, dest []byte) (uint32, syscall.Errn
 }
 
 func (n *Node) Setxattr(ctx context.Context, attr string, data []byte, flags uint32) syscall.Errno {
+	n.startOP("Setxattr")
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "Setxattr %q", n.relativePath())
+	}
+
 	req := &vfspb.SetAttrRequest{
 		Id: n.StableAttr().Ino,
 		SetExtended: &vfspb.SetAttrRequest_SetExtendedAttr{
@@ -950,7 +1053,15 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 		return nil, syscall.EINVAL
 	}
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Link %q -> %q", targetNode.relativePath(), name)
+		newPath := filepath.Join(n.relativePath(), name)
+		log.CtxDebugf(n.vfs.rpcCtx, "Link %q -> %q", newPath, targetNode.relativePath())
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Link %q -> %q: %s", newPath, targetNode.relativePath(), attrDebugString(node, &out.Attr))
+			} else {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Link %q -> %q: %s", newPath, targetNode.relativePath(), errno)
+			}
+		}()
 	}
 
 	req := &vfspb.LinkRequest{
@@ -962,6 +1073,8 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
+
+	n.vfs.inodeCache.removeCachedAttrs(targetNode.StableAttr().Ino)
 
 	child := &Node{vfs: n.vfs}
 	inode := n.vfs.root.NewInode(ctx, child, fs.StableAttr{
@@ -1040,6 +1153,8 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
+
+	n.vfs.inodeCache.removeCachedAttrs(existingTargetNode.StableAttr().Ino)
 
 	n.mu.Lock()
 	if existingNode.symlinkTarget != "" {

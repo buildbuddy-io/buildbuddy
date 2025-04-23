@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -32,7 +33,12 @@ func Setup(t *testing.T, env *testenv.TestEnv, lis *bufconn.Listener) {
 
 	RegisterServers(t, env)
 
-	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), lis)
+	conn, err := testenv.LocalGRPCConn(
+		env.GetServerContext(),
+		lis,
+		interceptors.GetUnaryClientIdentityInterceptor(env),
+		interceptors.GetStreamClientIdentityInterceptor(env),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 
