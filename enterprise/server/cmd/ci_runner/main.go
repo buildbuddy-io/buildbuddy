@@ -1158,6 +1158,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// completed so that the outer workflow invocation gets disconnected
 		// rather than finishing with an error.
 		if *workflowID != "" && exitCode == bazelLocalEnvironmentalErrorExitCode {
+			ar.reporter.Printf("Retryable error detected; killing ci_runner and retrying run...")
+			// Send logs and wait a little bit to give enough time for the
+			// server to receive them (best-effort). If the invocation is
+			// repeatedly retried and fails after all retry attempts, the log
+			// message should be visible in the invocation logs for the final
+			// attempt.
+			ar.reporter.FlushProgress()
+			time.Sleep(2 * time.Second)
+
 			p, err := os.FindProcess(os.Getpid())
 			if err != nil {
 				return err
