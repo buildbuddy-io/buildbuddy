@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -2240,6 +2241,13 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 	if err != nil {
 		return nil, err
 	}
+	slices.SortFunc(executionNodes, func(a, b *scpb.ExecutionNode) int {
+		// Compare by host, then executor ID.
+		if c := strings.Compare(a.GetHost(), b.GetHost()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.GetExecutorId(), b.GetExecutorId())
+	})
 
 	userOwnedExecutorsEnabled := s.enableUserOwnedExecutors
 	// Don't report user owned executors as being enabled for the shared executor group ID (i.e. the BuildBuddy group)
