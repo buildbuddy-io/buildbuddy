@@ -566,7 +566,6 @@ func (b *bsReadStreamer) Trailer() metadata.MD {
 func TestUploadReaderAndGetBlob(t *testing.T) {
 	randomStringLargerThan1MB, err := random.RandomString(2 * 1024 * 1024)
 	require.NoError(t, err)
-	// randomStringCompressedUploadSize := int64(len(compression.CompressZstd(make([]byte, len(randomStringLargerThan1MB)), []byte(randomStringLargerThan1MB))))
 	for _, tc := range []struct {
 		name              string
 		input             string
