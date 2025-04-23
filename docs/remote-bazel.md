@@ -234,14 +234,14 @@ bb --verbose=1 remote build //...
 
 #### Authorization
 
-To authorize your Remote Bazel run via CLI, you can:
+To authorize your Remote Bazel run via CLI, you can use one of these options:
 
 - Use `bb login`.
   - When you run a Remote Bazel command without authorization, the CLI will automatically bring
     you to our UI and prompt you to log in and select an API key. That API key will
     be cached locally, and all future commands will use it. This API key can be
     edited in `.git/config` on your local machine, or by rerunning `bb login`.
-- Set the `BUILDBUDDY_API_KEY` environment variable locally.
+- Set the `BUILDBUDDY_API_KEY` environment variable.
 - Pass an API key via remote header.
   - Just as you would authorize a typical BuildBuddy invocation, you can
     pass an API key via remote header with `--remote_header=x-buildbuddy-api-key=`.
@@ -293,8 +293,13 @@ https://app.buildbuddy.io/api/v1/Run
 
 #### Checking for invocation completion
 
+If using the CLI, it will automatically stream logs for your remote run and
+exit when the remote run is complete.
+
+If using the `Run` API, you must manually check for invocation completion.
+
 If `async=true` in the API request, the `Run` API will return after the remote run
-has been dispatched to to the scheduler. If `async=false`, the API will return
+has been dispatched to the scheduler. If `async=false`, the API will return
 after the remote run has started executing (i.e. after scheduling and queueing).
 
 You can poll the `GetInvocation` API with the invocation ID returned in the `Run`
@@ -403,15 +408,15 @@ containerization is not supported.
 
 ### Troubleshooting and Common Issues
 
-#### Using an API key with Action Cache write support
+#### Using an API key with Action Cache write permissions
 
 To take advantage of recycled runners, you must use an API key that
-supports writing to the remote Action Cache.
+has permission to write to the remote Action Cache.
 
 Snapshot metadata is stored in the Action Cache. If this metadata is not successfully
 cached, future runs will not be able to use it to restore from a recycled runner.
 
-If your API key does not have AC write support, you may see an error like
+If your API key does not have AC write permissions, you may see an error like
 `WARNING: --remote_upload_local_results is set, but the remote cache does not
 support uploading action results or the current account is not authorized to
 write local results to the remote cache.`
@@ -419,9 +424,9 @@ write local results to the remote cache.`
 #### Why was my remote run unexpectedly slow?
 
 If a remote run was unexpectedly slow, one common culprit is that it didn't
-resume from a recycled snapshot.
+resume from a snapshot.
 
-If your run started from a recycled snapshot, you should expect to see:
+If your run started from a snapshot, you should expect to see:
 
 - `Syncing existing repo...` at the top of the remote runner logs. If it
   started from a clean runner, it would say `git init` instead.
@@ -434,9 +439,9 @@ If your run started from a recycled snapshot, you should expect to see:
 If your remote runs aren't using a recycled runner when you expected them to,
 there are a couple common culprits.
 
-_Not using an API key with Action Cache write support_
+_Not using an API key with Action Cache write permissions_
 
-See [above](#using-an-api-key-with-ac-write-support) for more details.
+See [above](#using-an-api-key-with-action-cache-write-permissions) for more details.
 
 _The snapshot was evicted_
 
@@ -446,35 +451,23 @@ have been evicted and may no longer be accessible.
 
 _Snapshot key mismatch_
 
-Remote runs can only share snapshots with runs that share the same `snapshot key`.
+Remote runs can only share snapshots with runs that share the same snapshot key.
 If any of the following fields differ between runs (other than the git branch, which
 has more complicated logic explained below), you will not get a snapshot match.
 
-The [snapshot key](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/remote_execution/snaploader/snaploader.go#L53) contains:
+The snapshot key contains:
 
 - The remote instance name for the request.
 - A hash of the platform properties (set via `--runner_exec_properties`).
-- A hash of the [VM configuration](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/firecracker.proto#L14)
-  - This contains parameters like the number of CPUs, memory, and disk size.
-- The git branch.
-  - See below for more details.
+- A hash of the VM configuration, which contains parameters like the number of CPUs, memory, and disk size.
+- The git branch (see below for more details).
 
 We try to match snapshots from the same branch to increase the likelihood you will
 hit a runner with git and Bazel state that resembles your requested
 workspace. This should improve performance, as your workspace will already be warmed
-up.
-
-First, we try match snapshots from the same branch. If your remote run is on
-branch `B`, we look for a saved snapshot on `B`.
-
-If a snapshot on your exact branch doesn't exist, we look for snapshots from a
-default branch. These can be set with the env vars GIT_BASE_BRANCH and
-GIT_REPO_DEFAULT_BRANCH in the remote run request (the CLI automatically sets these).
-Let's say your default branch is `master`. If you don't have a snapshot saved
-on branch `B`, but you do have a snapshot saved on `master`, you'll match with the
-`master` snapshot. However after your run has finished, we only save the new
-snapshot to the branch that you were using. In the example, the snapshot would
-get saved to `B` and we would not update the `master` snapshot.
+up. If a snapshot for your exact branch doesn't exist, we will fallback to look
+for snapshots from a default branch. See the [remote runner docs](remote-runner-introduction.md#firecracker-vms-linux-only)
+for more details on our git branch fallback logic.
 
 One common issue is that users are not running any remote runs on their default branch.
 Every time there is a new PR branch, for example, the remote run will start from
