@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/picker"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
+	"github.com/buildbuddy-io/buildbuddy/cli/runscript"
 	"github.com/buildbuddy-io/buildbuddy/cli/setup"
 	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
@@ -158,7 +159,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 
 		// Invoke the run script only if the build succeeded.
 		if exitCode == 0 && scriptPath != "" {
-			exitCode, err = bazelisk.InvokeRunScript(scriptPath)
+			exitCode, err = runscript.Invoke(scriptPath)
 		}
 	}()
 
@@ -181,7 +182,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.
-	bazelArgs, scriptPath, err = bazelisk.ConfigureRunScript(bazelArgs)
+	bazelArgs, scriptPath, err = runscript.Configure(bazelArgs)
 	if err != nil {
 		return 1, err
 	}
