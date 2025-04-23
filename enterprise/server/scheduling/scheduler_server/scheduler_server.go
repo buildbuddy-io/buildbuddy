@@ -2271,9 +2271,10 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		}
 	}
 	slices.SortFunc(executors, func(a, b *scpb.GetExecutionNodesResponse_Executor) int {
-		aHID := a.GetNode().GetExecutorHostId()
-		bHID := b.GetNode().GetExecutorHostId()
-		return strings.Compare(strings.ToLower(aHID), strings.ToLower(bHID))
+		if c := strings.Compare(a.GetNode().GetHost(), b.GetNode().GetHost()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.GetNode().GetExecutorId(), b.GetNode().GetExecutorId())
 	})
 
 	return &scpb.GetExecutionNodesResponse{

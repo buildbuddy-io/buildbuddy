@@ -315,7 +315,6 @@ func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.Sch
 func newFakeExecutorWithId(ctx context.Context, t *testing.T, id string, schedulerClient scpb.SchedulerClient) *fakeExecutor {
 	node := &scpb.ExecutionNode{
 		ExecutorId:            id,
-		ExecutorHostId:        id,
 		Os:                    defaultOS,
 		Arch:                  defaultArch,
 		Host:                  "foo",
@@ -875,7 +874,7 @@ func TestGetExecutionNodes(t *testing.T) {
 	for i, executor := range rsp.GetExecutor() {
 		if i > 0 {
 			last := rsp.GetExecutor()[i-1]
-			require.GreaterOrEqual(t, executor.GetNode().GetExecutorHostId(), last.GetNode().GetExecutorHostId())
+			require.GreaterOrEqual(t, executor.GetNode().GetHost(), last.GetNode().GetHost())
 		}
 	}
 }
