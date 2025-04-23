@@ -400,19 +400,9 @@ func (o *GeneralOption) Normalized() Option {
 
 func (o *GeneralOption) AsBool() (bool, error) {
 	switch o.GetValue() {
-	case "yes":
-		fallthrough
-	case "true":
-		fallthrough
-	case "1":
-		fallthrough
-	case "":
+	case "yes", "true", "1", "":
 		return true, nil
-	case "no":
-		fallthrough
-	case "false":
-		fallthrough
-	case "0":
+	case "no", "false", "0":
 		return false, nil
 	}
 	return false, fmt.Errorf("Error converting to bool: flag '--%s' has non-boolean value '%s'.", o.Name(), o.GetValue())
