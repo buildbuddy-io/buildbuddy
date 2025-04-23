@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
 go_library(
     name = "runscript",
     srcs = ["runscript.go"],
@@ -7,5 +9,3 @@ go_library(
     visibility = ["//visibility:public"],
     deps = ["//cli/arg"],
 )
-
-package(default_visibility = ["//cli:__subpackages__"])

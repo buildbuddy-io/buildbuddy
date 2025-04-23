@@ -7,7 +7,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 )
 
-
 // Configure adds `--script_path` to a bazel run command so that we can
 // invoke the build and the run separately.
 func Configure(args []string) (newArgs []string, scriptPath string, err error) {
