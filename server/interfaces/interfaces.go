@@ -1656,7 +1656,8 @@ type CPULeaser interface {
 }
 
 const (
-	OCIImageInstanceNamePrefix = "_bb_ociregistry_"
+	OCIImageInstanceNamePrefix           = "_bb_ociregistry_"
+	OCIManifestContentInstanceNamePrefix = "_bb_ociregistry_manifest_contents_"
 )
 
 type OCIRegistry interface {

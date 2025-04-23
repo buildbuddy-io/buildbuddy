@@ -27,6 +27,7 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 const (
@@ -38,9 +39,10 @@ const (
 	headerWWWAuthenticate     = "WWW-Authenticate"
 	headerRange               = "Range"
 
-	blobOutputFilePath         = "_bb_ociregistry_blob_"
-	blobMetadataOutputFilePath = "_bb_ociregistry_blob_metadata_"
-	actionResultInstanceName   = interfaces.OCIImageInstanceNamePrefix
+	blobOutputFilePath          = "_bb_ociregistry_blob_"
+	blobMetadataOutputFilePath  = "_bb_ociregistry_blob_metadata_"
+	actionResultInstanceName    = interfaces.OCIImageInstanceNamePrefix
+	manifestContentInstanceName = interfaces.OCIManifestContentInstanceNamePrefix
 )
 
 var (
@@ -328,6 +330,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 	w.WriteHeader(upresp.StatusCode)
 
+	if inreq.Method == http.MethodHead || upresp.StatusCode != http.StatusOK {
+		_, err = io.Copy(w, upresp.Body)
+		if err != nil && err != context.Canceled {
+			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL, err)
+		}
+		return
+	}
+
 	contentLength, hasLength, err := parseContentLengthHeader(upresp.Header.Get(headerContentLength))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerContentLength, upresp.Header.Get(headerContentLength), err), http.StatusNotFound)
@@ -344,16 +354,33 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
-	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasLength && hash != nil && hasContentType {
-		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, *hash, contentType, contentLength)
-		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
-		}
-	} else {
+	if !hasLength || hash == nil || !hasContentType {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL, err)
 		}
+		return
+	}
+
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
+		raw, err := io.ReadAll(upresp.Body)
+		if err != nil {
+			log.CtxWarningf(ctx, "error reading manifest for '%s': %s", inreq.URL, err)
+			return
+		}
+		if err := writeManifestToAC(ctx, raw, acClient, resolvedRef, *hash, contentType, contentLength); err != nil {
+			log.CtxWarningf(ctx, "error writing manifest to the AC for '%s': %s", inreq.URL, err)
+		}
+		rc := bytes.NewReader(raw)
+		err = writeBlobOrManifestToCacheAndResponse(ctx, rc, w, bsClient, acClient, resolvedRef, ociResourceType, *hash, contentType, contentLength)
+		if err != nil && err != context.Canceled {
+			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
+		}
+		return
+	}
+
+	if err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, *hash, contentType, contentLength); err != nil {
+		log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
 	}
 }
 
@@ -493,6 +520,47 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		return err
 	}
 	return nil
+}
+
+func writeManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      ref.Context().RegistryStr(),
+		Repository:    ref.Context().RepositoryStr(),
+		ResourceType:  ocipb.OCIResourceType_MANIFEST,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	if err != nil {
+		return err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		manifestContentInstanceName,
+		repb.DigestFunction_SHA256,
+	)
+
+	m := &ocipb.OCIManifestContent{
+		Raw:           raw,
+		ContentLength: contentLength,
+		ContentType:   contentType,
+	}
+	any, err := anypb.New(m)
+	if err != nil {
+		return err
+	}
+	ar := &repb.ActionResult{
+		ExecutionMetadata: &repb.ExecutedActionMetadata{
+			AuxiliaryMetadata: []*anypb.Any{
+				any,
+			},
+		},
+	}
+	return cachetools.UploadActionResult(ctx, acClient, arRN, ar)
 }
 
 func isDigest(identifier string) bool {
