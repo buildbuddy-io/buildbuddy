@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -70,14 +71,20 @@ func (s ChunkSource) String() string {
 }
 
 func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
-	node := &repb.FileNode{Digest: d}
-	fetchedLocally := localCache.FastLinkFile(ctx, node, outputPath)
-	if fetchedLocally {
-		return ChunkSourceLocalFilecache, nil
+	if !*EnableLocalSnapshotSharing && !*EnableRemoteSnapshotSharing {
+		return 0, status.UnimplementedError("Snapshot sharing not enabled")
 	}
 
-	if !*EnableRemoteSnapshotSharing || !remoteEnabled {
-		return 0, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
+	if *EnableLocalSnapshotSharing {
+		node := &repb.FileNode{Digest: d}
+		fetchedLocally := localCache.FastLinkFile(ctx, node, outputPath)
+		if fetchedLocally {
+			return ChunkSourceLocalFilecache, nil
+		}
+
+		if !*EnableRemoteSnapshotSharing || !remoteEnabled {
+			return 0, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
+		}
 	}
 
 	if *VerboseLogging {
@@ -92,15 +99,23 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 		return 0, err
 	}
 	defer f.Close()
+
+	// If the proxy is enabled, snapshots are not saved to the remote cache to minimize
+	// high network transfer. Snapshots can't be shared across different machine
+	// types, so there's no reason to support snapshot sharing across clusters.
+	ctx = proxy_util.SetSkipRemote(ctx)
+
 	r := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
 	if err := cachetools.GetBlob(ctx, bsClient, r, f); err != nil {
 		return 0, status.WrapError(err, "remote fetch snapshot artifact")
 	}
 
-	// Save to local cache so next time fetching won't require a remote get
-	if err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
-		log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
+	if *EnableLocalSnapshotSharing {
+		// Save to local cache so next time fetching won't require a remote get
+		if err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
+			log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
+		}
 	}
 
 	return ChunkSourceRemoteCache, nil
@@ -131,9 +146,15 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 // Returns the number of compressed bytes written to the remote cache (i.e.
 // if the data already exists in the cache, will be 0).
 func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string) (int64, error) {
-	localCacheErr := cacheLocally(ctx, localCache, d, path)
-	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
-		return 0, localCacheErr
+	if !*EnableLocalSnapshotSharing && !*EnableRemoteSnapshotSharing {
+		return 0, status.UnimplementedError("Snapshot sharing not enabled")
+	}
+
+	if *EnableLocalSnapshotSharing {
+		localCacheErr := cacheLocally(ctx, localCache, d, path)
+		if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
+			return 0, localCacheErr
+		}
 	}
 
 	if *VerboseLogging {
@@ -149,6 +170,12 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 		return 0, err
 	}
 	defer file.Close()
+
+	// If the proxy is enabled, skip writing snapshots to the remote cache to minimize
+	// high network transfer. Snapshots can't be shared across different machine
+	// types, so there's no reason to support snapshot sharing across clusters.
+	ctx = proxy_util.SetSkipRemote(ctx)
+
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
 	if err == nil && bytesUploaded > 0 {
 		metrics.SnapshotRemoteCacheUploadSizeBytes.With(prometheus.Labels{

@@ -3,8 +3,10 @@ package httpclient
 import (
 	"errors"
 	"flag"
+	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -93,5 +95,40 @@ func (t *metricsTransport) RoundTrip(in *http.Request) (out *http.Response, err 
 		metrics.HTTPHostLabel:   hostLabel,
 		metrics.HTTPMethodLabel: in.Method,
 	}).Inc()
-	return t.inner.RoundTrip(in)
+	resp, err := t.inner.RoundTrip(in)
+	if resp == nil || resp.Body == nil {
+		return resp, err
+	}
+	resp.Body = &instrumentedReadCloser{
+		ReadCloser: resp.Body,
+		host:       hostLabel,
+		method:     in.Method,
+		statusCode: resp.StatusCode,
+	}
+	return resp, err
+}
+
+type instrumentedReadCloser struct {
+	io.ReadCloser
+
+	host       string
+	method     string
+	statusCode int
+	bytesRead  int
+}
+
+func (rc *instrumentedReadCloser) Read(p []byte) (int, error) {
+	n, err := rc.ReadCloser.Read(p)
+	rc.bytesRead += n
+	return n, err
+}
+
+func (rc *instrumentedReadCloser) Close() error {
+	err := rc.ReadCloser.Close()
+	metrics.HTTPClientResponseSizeBytes.With(prometheus.Labels{
+		metrics.HTTPHostLabel:         rc.host,
+		metrics.HTTPMethodLabel:       rc.method,
+		metrics.HTTPResponseCodeLabel: strconv.Itoa(rc.statusCode),
+	}).Observe(float64(rc.bytesRead))
+	return err
 }

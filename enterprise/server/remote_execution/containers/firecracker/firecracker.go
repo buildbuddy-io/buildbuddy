@@ -365,11 +365,12 @@ type ExecutorConfig struct {
 	CacheRoot  string
 
 	InitrdImagePath       string
-	KernelImagePath       string
+	GuestKernelImagePath  string
 	FirecrackerBinaryPath string
 	JailerBinaryPath      string
 
-	KernelVersion      string
+	GuestKernelVersion string
+	HostKernelVersion  string
 	FirecrackerVersion string
 	GuestAPIVersion    string
 }
@@ -401,7 +402,7 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	if err != nil {
 		return nil, err
 	}
-	kernelPath, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation, buildRootDir, 0755)
+	guestKernelPath, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation, buildRootDir, 0755)
 	if err != nil {
 		return nil, err
 	}
@@ -416,11 +417,15 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	if err != nil {
 		return nil, err
 	}
-	kernelDigest, err := digest.ComputeForFile(kernelPath, repb.DigestFunction_SHA256)
+	guestKernelDigest, err := digest.ComputeForFile(guestKernelPath, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}
 	firecrackerDigest, err := digest.ComputeForFile(firecrackerPath, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	hostKernelVersion, err := getHostKernelVersion()
 	if err != nil {
 		return nil, err
 	}
@@ -430,13 +435,22 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 		JailerRoot:            buildRootDir,
 		CacheRoot:             cacheRootDir,
 		InitrdImagePath:       initrdPath,
-		KernelImagePath:       kernelPath,
+		GuestKernelImagePath:  guestKernelPath,
 		FirecrackerBinaryPath: firecrackerPath,
 		JailerBinaryPath:      jailerPath,
-		KernelVersion:         kernelDigest.GetHash(),
+		GuestKernelVersion:    guestKernelDigest.GetHash(),
+		HostKernelVersion:     hostKernelVersion,
 		FirecrackerVersion:    firecrackerDigest.GetHash(),
 		GuestAPIVersion:       GuestAPIVersion,
 	}, nil
+}
+
+func getHostKernelVersion() (string, error) {
+	var uts unix.Utsname
+	if err := unix.Uname(&uts); err != nil {
+		return "", err
+	}
+	return unix.ByteSliceToString(uts.Release[:]), nil
 }
 
 type Provider struct {
@@ -652,7 +666,8 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.cgroupSettings = opts.CgroupSettings
 	}
 
-	c.vmConfig.KernelVersion = c.executorConfig.KernelVersion
+	c.vmConfig.GuestKernelVersion = c.executorConfig.GuestKernelVersion
+	c.vmConfig.HostKernelVersion = c.executorConfig.HostKernelVersion
 	c.vmConfig.FirecrackerVersion = c.executorConfig.FirecrackerVersion
 	c.vmConfig.GuestApiVersion = c.executorConfig.GuestAPIVersion
 
@@ -934,7 +949,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		VMMetadata:          vmd,
 		VMConfiguration:     c.vmConfig,
 		VMStateSnapshotPath: filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:     c.executorConfig.KernelImagePath,
+		KernelImagePath:     c.executorConfig.GuestKernelImagePath,
 		InitrdImagePath:     c.executorConfig.InitrdImagePath,
 		ChunkedFiles:        map[string]*copy_on_write.COWStore{},
 		Recycled:            c.recycled,
@@ -1423,14 +1438,14 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		netnsPath = c.network.NamespacePath()
 	}
 	bootArgs := getBootArgs(c.vmConfig)
-	jailerCfg, err := c.getJailerConfig(ctx, c.executorConfig.KernelImagePath)
+	jailerCfg, err := c.getJailerConfig(ctx, c.executorConfig.GuestKernelImagePath)
 	if err != nil {
 		return nil, status.WrapError(err, "get jailer config")
 	}
 	cfg := &fcclient.Config{
 		VMID:            c.id,
 		SocketPath:      firecrackerSocketPath,
-		KernelImagePath: c.executorConfig.KernelImagePath,
+		KernelImagePath: c.executorConfig.GuestKernelImagePath,
 		InitrdPath:      c.executorConfig.InitrdImagePath,
 		KernelArgs:      bootArgs,
 		ForwardSignals:  make([]os.Signal, 0),

@@ -8,7 +8,6 @@ go_library(
     srcs = ["bazelisk.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/bazelisk",
     deps = [
-        "//cli/arg",
         "//cli/log",
         "//cli/workspace",
         "@com_github_bazelbuild_bazelisk//config",

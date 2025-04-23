@@ -120,10 +120,19 @@ func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA str
 // Init takes a directory which does not already contain a .git dir,
 // and initializes the directory with an initial commit of all the existing
 // files.
-func Init(t testing.TB, dir string) {
+func Init(t testing.TB, dir string) string {
 	testshell.Run(t, dir, `git -c init.defaultBranch=master init`)
 	configure(t, dir)
 	testshell.Run(t, dir, `git add . && git commit -m "Initial commit"`)
+	return strings.TrimSpace(testshell.Run(t, dir, `git rev-parse HEAD`))
+}
+
+// CommitAll adds and commits all changes in the given git repo path,
+// returning the SHA of the new commit.
+func CommitAll(t testing.TB, dir, message string) string {
+	testshell.Run(t, dir, fmt.Sprintf(`git add . && git commit -m %q`, message))
+	commitSHA := strings.TrimSpace(testshell.Run(t, dir, "git rev-parse HEAD"))
+	return commitSHA
 }
 
 func ConfigureRemoteOrigin(t testing.TB, dir, url string) {

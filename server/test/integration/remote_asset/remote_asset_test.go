@@ -3,7 +3,6 @@ package remote_asset_test
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,28 +24,6 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
-
-var (
-	testAppTarget     = flag.String("test_app_target", "", "App target to try using as the fetch backend.")
-	testURL           = flag.String("test_url", "", "URL to try fetching manually.")
-	testSHA256        = flag.String("test_sha256", "", "Digest of the contents at --test_url")
-	testPrintContents = flag.Bool("test_print_contents", false, "Whether to print the downloaded contents.")
-)
-
-func TestRemoteAsset_ManualTest(t *testing.T) {
-	if *testAppTarget == "" {
-		t.Skip()
-	}
-
-	fetchedFilePath, res := fetchFileWithBazel(t, *testAppTarget, []string{*testURL}, *testSHA256)
-
-	require.NoError(t, res.Error)
-	if *testPrintContents {
-		b, err := os.ReadFile(fetchedFilePath)
-		require.NoError(t, err)
-		fmt.Println(string(b))
-	}
-}
 
 func TestRemoteAsset_OKResponse_FetchesSuccessfully(t *testing.T) {
 	app := runApp(t)
@@ -126,20 +103,10 @@ func serveArchive(t *testing.T, contents map[string]string) (*repb.Digest, *url.
 	return d, u
 }
 
-func serveFile(t *testing.T, content string) (*repb.Digest, *url.URL) {
-	ws := testfs.MakeTempDir(t)
-	testfs.WriteAllFileContents(t, ws, map[string]string{"file.txt": content})
-	d, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
-	u := testhttp.StartServer(t, http.FileServer(http.Dir(ws)))
-	u.Path = "/file.txt"
-	return d, u
-}
-
 func fetchArchiveWithBazel(t *testing.T, appTarget string, urls []string, sha256 string) (outputDir string, result *bazel.InvocationResult) {
-	ws := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": `
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+	ws := testbazel.MakeTempModule(t, map[string]string{
+		"MODULE.bazel": `
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 http_archive(
     name = "test",
     ` + starlarkOptionalSHA256Kwarg(sha256) + `
@@ -157,9 +124,9 @@ http_archive(
 }
 
 func fetchFileWithBazel(t *testing.T, appTarget string, urls []string, sha256 string) (outputPath string, result *bazel.InvocationResult) {
-	ws := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": `
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+	ws := testbazel.MakeTempModule(t, map[string]string{
+		"MODULE.bazel": `
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 http_file(
     name = "test",
     ` + starlarkOptionalSHA256Kwarg(sha256) + `

@@ -5,15 +5,15 @@ go_library(
     testonly = 1,
     srcs = ["testbazel.go"],
     data = [
-        "//server/util/bazel:bazel-5.3.2_crossplatform",
-        "//server/util/bazel:bazel-5.3.2_extract_installation",
+        "//server/util/bazel:bazel-8.1.1_crossplatform",
+        "//server/util/bazel:bazel-8.1.1_extract_installation",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel",
     visibility = ["//visibility:public"],
     x_defs = {
-        "Version": "5.3.2",
-        "BazelBinaryPath": "$(rlocationpath //server/util/bazel:bazel-5.3.2_crossplatform)",
-        "installBasePath": "$(rlocationpath //server/util/bazel:bazel-5.3.2_extract_installation)",
+        "Version": "8.1.1",
+        "bazelRlocationpath": "$(rlocationpath //server/util/bazel:bazel-8.1.1_crossplatform)",
+        "outdirRlocationpath": "$(rlocationpath //server/util/bazel:bazel-8.1.1_extract_installation)",
     },
     deps = [
         "//server/testutil/testfs",
