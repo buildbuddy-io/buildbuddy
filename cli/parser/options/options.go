@@ -265,6 +265,13 @@ func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 	return d
 }
 
+// Option represents a single parsed command-line option, including any value
+// that option may have, regardless of if said value was provided with an `=`,
+// as a separate argument, or, in the case of boolean arguments, implicitly via
+// the `--[no]option` syntax. The benefit this interface affords us is largely
+// that we can implement types for specific kinds of options and thus handle
+// the behavior of those options more cleanly and with greater readability by
+// reducing the need for large blocks of branching conditionals.
 type Option interface {
 	arguments.Argument
 	Defined
@@ -275,6 +282,9 @@ type Option interface {
 	Normalized() Option
 }
 
+// GeneralOption is the concrete implementation of `Option` which supports all
+// types of options and their associated value, if any. It is a stop-gap measure
+// before we move to more specialized `Option` types.
 type GeneralOption struct {
 	*Definition
 	Value         *string
