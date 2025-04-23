@@ -216,7 +216,7 @@ func Handle() {
 
 	env := initializeEnv()
 	grpcServer, lis := initializeGRPCServer(env)
-	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer, env.GetGRPCServerWaitGroup()))
+	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
 
 	// Shutdown the server gracefully after a period of inactivity configurable
 	// with the --inactivity_timeout flag.
