@@ -123,12 +123,14 @@ type PersistArtifacts struct {
 type BuildEventHandler struct {
 	env              environment.Env
 	statsRecorder    *statsRecorder
+	openChannels     *sync.WaitGroup
 	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
 }
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
+	openChannels := &sync.WaitGroup{}
 	onStatsRecorded := make(chan *invocationInfo, 4096)
-	statsRecorder := newStatsRecorder(env, onStatsRecorded)
+	statsRecorder := newStatsRecorder(env, openChannels, onStatsRecorded)
 	webhookNotifier := newWebhookNotifier(env, onStatsRecorded)
 
 	statsRecorder.Start()
@@ -137,6 +139,7 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	h := &BuildEventHandler{
 		env:              env,
 		statsRecorder:    statsRecorder,
+		openChannels:     openChannels,
 		cancelFnsByInvID: sync.Map{},
 	}
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
@@ -160,7 +163,9 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	ctx, cancel := context.WithCancel(ctx)
 	b.cancelFnsByInvID.Store(iid, cancel)
 
+	b.openChannels.Add(1)
 	onClose := func() {
+		b.openChannels.Done()
 		b.cancelFnsByInvID.Delete(iid)
 	}
 
@@ -193,6 +198,12 @@ func (b *BuildEventHandler) Stop() {
 		cancelFn()
 		return true
 	})
+
+	// Wait for the gRPC server to fully shut down
+	// This ensures all streaming requests have terminated
+	if b.env.GetGRPCServerWaitGroup() != nil {
+		b.env.GetGRPCServerWaitGroup().Wait()
+	}
 }
 
 // invocationInfo represents an invocation ID as well as the JWT granting access
@@ -222,7 +233,8 @@ type recordStatsTask struct {
 // statsRecorder listens for finalized invocations and copies cache stats from
 // the metrics collector to the DB.
 type statsRecorder struct {
-	env environment.Env
+	env          environment.Env
+	openChannels *sync.WaitGroup
 	// onStatsRecorded is a channel for this statsRecorder to notify after
 	// recording stats for each invocation. Invocations sent on this channel are
 	// considered "finalized".
@@ -234,9 +246,10 @@ type statsRecorder struct {
 	stopped bool
 }
 
-func newStatsRecorder(env environment.Env, onStatsRecorded chan<- *invocationInfo) *statsRecorder {
+func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStatsRecorded chan<- *invocationInfo) *statsRecorder {
 	return &statsRecorder{
 		env:             env,
+		openChannels:    openChannels,
 		onStatsRecorded: onStatsRecorded,
 		tasks:           make(chan *recordStatsTask, 4096),
 	}
@@ -496,12 +509,10 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 }
 
 func (r *statsRecorder) Stop() {
-	if r.env.GetGRPCServerWaitGroup() != nil {
-		// Wait for all in-flight requests to finish to ensure there will be no
-		// more calls to Enqueue.
-		log.Info("StatsRecorder: waiting for GRPC server to shut down before before shutting down")
-		r.env.GetGRPCServerWaitGroup().Wait()
-	}
+	// Wait for all EventHandler channels to be closed to ensure there will be no
+	// more calls to Enqueue.
+	log.Info("StatsRecorder: waiting for EventChannels to be closed before shutting down")
+	r.openChannels.Wait()
 
 	log.Info("StatsRecorder: shutting down")
 	r.mu.Lock()
