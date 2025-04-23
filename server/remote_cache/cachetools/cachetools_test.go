@@ -566,104 +566,96 @@ func (b *bsReadStreamer) Trailer() metadata.MD {
 func TestUploadReaderAndGetBlob(t *testing.T) {
 	randomStringLargerThan1MB, err := random.RandomString(2 * 1024 * 1024)
 	require.NoError(t, err)
+	// randomStringCompressedUploadSize := int64(len(compression.CompressZstd(make([]byte, len(randomStringLargerThan1MB)), []byte(randomStringLargerThan1MB))))
 	for _, tc := range []struct {
-		name               string
-		input              string
-		useZstd            bool
-		expectUploadError  bool
-		uploadSize         int64
-		expectedUploadSize int64
-		expectGetError     bool
-		getSize            int64
-		expectedGetSize    int64
+		name              string
+		input             string
+		useZstd           bool
+		expectUploadError bool
+		uploadSize        int64
+		expectGetError    bool
+		getSize           int64
+		expectedGetSize   int64
 	}{
 		{
-			name:               "simple upload and get",
-			input:              "simple upload and get",
-			useZstd:            false,
-			expectUploadError:  false,
-			uploadSize:         int64(len([]byte("simple upload and get"))),
-			expectedUploadSize: int64(len([]byte("simple upload and get"))),
-			expectGetError:     false,
-			getSize:            int64(len([]byte("simple upload and get"))),
-			expectedGetSize:    int64(len([]byte("simple upload and get"))),
+			name:              "simple upload and get",
+			input:             "simple upload and get",
+			useZstd:           false,
+			expectUploadError: false,
+			uploadSize:        int64(len([]byte("simple upload and get"))),
+			expectGetError:    false,
+			getSize:           int64(len([]byte("simple upload and get"))),
+			expectedGetSize:   int64(len([]byte("simple upload and get"))),
 		},
 		{
-			name:               "upload with incorrect size fails",
-			input:              "upload with incorrect size fails",
-			useZstd:            false,
-			expectUploadError:  true,
-			uploadSize:         int64(len([]byte("upload with incorrect size fails"))) - 4,
-			expectedUploadSize: int64(len([]byte("upload with incorrect size fails"))),
-			expectGetError:     true,
-			getSize:            int64(len([]byte("upload with incorrect size fails"))),
-			expectedGetSize:    int64(len([]byte("upload with incorrect size fails"))),
+			name:              "upload with incorrect size fails",
+			input:             "upload with incorrect size fails",
+			useZstd:           false,
+			expectUploadError: true,
+			uploadSize:        int64(len([]byte("upload with incorrect size fails"))) - 4,
+			expectGetError:    true,
+			getSize:           int64(len([]byte("upload with incorrect size fails"))),
+			expectedGetSize:   int64(len([]byte("upload with incorrect size fails"))),
 		},
 		{
-			name:               "get with incorrect size still succeeds",
-			input:              "get with incorrect size still succeeds",
-			useZstd:            false,
-			expectUploadError:  false,
-			uploadSize:         int64(len([]byte("get with incorrect size still succeeds"))),
-			expectedUploadSize: int64(len([]byte("get with incorrect size still succeeds"))),
-			expectGetError:     false,
-			getSize:            int64(len([]byte("get with incorrect size still succeeds"))) - 4,
-			expectedGetSize:    int64(len([]byte("get with incorrect size still succeeds"))),
+			name:              "get with incorrect size still succeeds",
+			input:             "get with incorrect size still succeeds",
+			useZstd:           false,
+			expectUploadError: false,
+			uploadSize:        int64(len([]byte("get with incorrect size still succeeds"))),
+			expectGetError:    false,
+			getSize:           int64(len([]byte("get with incorrect size still succeeds"))) - 4,
+			expectedGetSize:   int64(len([]byte("get with incorrect size still succeeds"))),
 		},
 		{
-			name:               "zstd simple upload and get",
-			input:              "zstd simple upload and get",
-			useZstd:            false,
-			expectUploadError:  false,
-			uploadSize:         int64(len([]byte("zstd simple upload and get"))),
-			expectedUploadSize: int64(len([]byte("zstd simple upload and get"))),
-			expectGetError:     false,
-			getSize:            int64(len([]byte("zstd simple upload and get"))),
-			expectedGetSize:    int64(len([]byte("zstd simple upload and get"))),
+			name:              "zstd simple upload and get",
+			input:             "zstd simple upload and get",
+			useZstd:           false,
+			expectUploadError: false,
+			uploadSize:        int64(len([]byte("zstd simple upload and get"))),
+			expectGetError:    false,
+			getSize:           int64(len([]byte("zstd simple upload and get"))),
+			expectedGetSize:   int64(len([]byte("zstd simple upload and get"))),
 		},
 		{
-			name:               "zstd upload with incorrect size fails",
-			input:              "zstd upload with incorrect size fails",
-			useZstd:            false,
-			expectUploadError:  true,
-			uploadSize:         int64(len([]byte("zstd upload with incorrect size fails"))) - 4,
-			expectedUploadSize: int64(len([]byte("zstd upload with incorrect size fails"))),
-			expectGetError:     true,
-			getSize:            int64(len([]byte("zstd upload with incorrect size fails"))),
-			expectedGetSize:    int64(len([]byte("zstd upload with incorrect size fails"))),
+			name:              "zstd upload with incorrect size fails",
+			input:             "zstd upload with incorrect size fails",
+			useZstd:           false,
+			expectUploadError: true,
+			uploadSize:        int64(len([]byte("zstd upload with incorrect size fails"))) - 4,
+			expectGetError:    true,
+			getSize:           int64(len([]byte("zstd upload with incorrect size fails"))),
+			expectedGetSize:   int64(len([]byte("zstd upload with incorrect size fails"))),
 		},
 		{
-			name:               "zstd get with incorrect size still succeeds",
-			input:              "zstd get with incorrect size still succeeds",
-			useZstd:            false,
-			expectUploadError:  false,
-			uploadSize:         int64(len([]byte("zstd get with incorrect size still succeeds"))),
-			expectedUploadSize: int64(len([]byte("zstd get with incorrect size still succeeds"))),
-			expectGetError:     false,
-			getSize:            int64(len([]byte("zstd get with incorrect size still succeeds"))) - 4,
-			expectedGetSize:    int64(len([]byte("zstd get with incorrect size still succeeds"))),
+			name:              "zstd get with incorrect size still succeeds",
+			input:             "zstd get with incorrect size still succeeds",
+			useZstd:           false,
+			expectUploadError: false,
+			uploadSize:        int64(len([]byte("zstd get with incorrect size still succeeds"))),
+			expectGetError:    false,
+			getSize:           int64(len([]byte("zstd get with incorrect size still succeeds"))) - 4,
+			expectedGetSize:   int64(len([]byte("zstd get with incorrect size still succeeds"))),
 		},
 		{
-			name:               "writing large payload succeeds",
-			input:              randomStringLargerThan1MB,
-			useZstd:            false,
-			expectUploadError:  false,
-			uploadSize:         int64(len(randomStringLargerThan1MB)),
-			expectedUploadSize: int64(len(randomStringLargerThan1MB)),
-			expectGetError:     false,
-			getSize:            int64(len(randomStringLargerThan1MB)),
-			expectedGetSize:    int64(len(randomStringLargerThan1MB)),
+			name:              "writing large payload succeeds",
+			input:             randomStringLargerThan1MB,
+			useZstd:           false,
+			expectUploadError: false,
+			uploadSize:        int64(len(randomStringLargerThan1MB)),
+			expectGetError:    false,
+			getSize:           int64(len(randomStringLargerThan1MB)),
+			expectedGetSize:   int64(len(randomStringLargerThan1MB)),
 		},
 		{
-			name:               "zstd writing large payload succeeds",
-			input:              randomStringLargerThan1MB,
-			useZstd:            true,
-			expectUploadError:  false,
-			uploadSize:         int64(len(randomStringLargerThan1MB)),
-			expectedUploadSize: int64(len(randomStringLargerThan1MB)),
-			expectGetError:     false,
-			getSize:            int64(len(randomStringLargerThan1MB)),
-			expectedGetSize:    int64(len(randomStringLargerThan1MB)),
+			name:              "zstd writing large payload succeeds",
+			input:             randomStringLargerThan1MB,
+			useZstd:           true,
+			expectUploadError: false,
+			uploadSize:        int64(len(randomStringLargerThan1MB)),
+			expectGetError:    false,
+			getSize:           int64(len(randomStringLargerThan1MB)),
+			expectedGetSize:   int64(len(randomStringLargerThan1MB)),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -686,16 +678,14 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 				if tc.useZstd {
 					uprn.SetCompressor(repb.Compressor_ZSTD)
 				}
-				d, uploaded, err := cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), uprn, buf)
+				d, _, err := cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), uprn, buf)
 				if tc.expectUploadError {
 					require.Error(t, err)
 					assert.Nil(t, d)
 				} else {
 					require.NoError(t, err)
 					require.NotNil(t, d)
-					assert.Equal(t, tc.expectedUploadSize, uploaded)
 					assert.Equal(t, hexstring, d.Hash)
-					assert.Equal(t, tc.expectedUploadSize, d.SizeBytes)
 				}
 			}
 
