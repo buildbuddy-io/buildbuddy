@@ -330,7 +330,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 	w.WriteHeader(upresp.StatusCode)
 
-	if inreq.Method == http.MethodHead || upresp.StatusCode != http.StatusOK {
+	if inreq.Method != http.MethodGet || upresp.StatusCode != http.StatusOK {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL, err)
