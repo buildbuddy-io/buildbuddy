@@ -19,6 +19,7 @@ go_library(
         "//cli/parser",
         "//cli/picker",
         "//cli/plugin",
+        "//cli/runscript",
         "//cli/setup",
         "//cli/shortcuts",
         "//cli/watcher",
