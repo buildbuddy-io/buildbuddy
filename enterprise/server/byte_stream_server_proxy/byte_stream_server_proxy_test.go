@@ -522,7 +522,7 @@ func BenchmarkRead(b *testing.B) {
 	requestCounter.Store(0)
 
 	for b.Loop() {
-		downloadBuf := []byte{}
+		downloadBuf := make([]byte, 0, len(dataString))
 		downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: rn.DownloadString()})
 		require.NoError(b, err)
 		for {
