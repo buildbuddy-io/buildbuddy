@@ -217,7 +217,6 @@ func BenchmarkEnqueue(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		hitTracker := hitTrackerFactory.NewCASHitTracker(b.Context(), &repb.RequestMetadata{})
-		b.StartTimer()
 		wg := sync.WaitGroup{}
 		for i := 0; i < numToEnqueue; i++ {
 			wg.Add(1)
