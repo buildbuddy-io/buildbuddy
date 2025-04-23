@@ -98,6 +98,13 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 		if err != nil {
 			return nil, status.InternalErrorf("error making key: %s", err)
 		}
+
+		fm, _ := rc.lru.Get(key)
+		if delOp.GetMatchAtime() != 0 && delOp.GetMatchAtime() != fm.GetLastAccessUsec() {
+			// Skip deletion if atime match was requested but did
+			// not match.
+			continue
+		}
 		// ignore whether or not this is an overwrite; this api doesn't care.
 		_ = rc.lru.Remove(key)
 	}
