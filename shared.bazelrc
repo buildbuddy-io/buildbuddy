@@ -91,12 +91,9 @@ common:performance --compilation_mode=opt
 common:deflake --config=remote-minimal
 test:deflake --runs_per_test=100
 test:deflake --test_output=errors
+test:deflake --test_runner_fail_fast
 test:deflake --notest_keep_going
-
-# Configuration used to deflake Go tests
-common:deflake-go --config=race
-common:deflake-go --config=deflake
-test:deflake-go --test_arg=-test.failfast
+test:deflake --config=race
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
@@ -178,21 +175,17 @@ common:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
 common:cache --config=cache-shared
 common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
 
-common:target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
-common:target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
-common:target-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
-common:target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
-
+# Target+Exec Platforms configuration
+common:workspace-target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+common:workspace-target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+common:workspace-target-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
+common:workspace-target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
 common:bzlmod-target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
 common:bzlmod-target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
 
 common:download-minimal --remote_download_minimal
-# Work around a Bazel issue that results in all top-level outputs being downloaded
-# after this period has passed for a warm Bazel server even with
-# --remote_download_minimal.
-common:download-minimal --experimental_remote_cache_ttl=10000d
 
 # Flags shared across remote configs
 common:remote-shared --config=cache-shared
@@ -286,11 +279,8 @@ common:release-shared --strip=always
 
 # Configuration used for Linux releases
 common:release --config=release-shared
-common:release --config=remote-prod-shared
-common:release --config=target-linux-x86
 common:release --repository_cache=~/repo-cache/
 common:release --remote_instance_name=buildbuddy-io/buildbuddy/release
-common:release --remote_download_toplevel
 
 # Configuration used for release-mac workflow
 common:release-mac --config=release-shared

@@ -23,7 +23,7 @@ actions:
         branches:
           - "*"
     steps:
-      - run: "bazel test //... --enable_bzlmod --noenable_workspace --config=linux-workflows --config=bzlmod-target-linux-x86 --config=race --test_tag_filters=-performance,-docker,-bare"
+      - run: "bazel test //... --enable_bzlmod --config=linux-workflows --config=bzlmod-target-linux-x86 --config=race --test_tag_filters=-performance,-docker,-bare"
   - name: Check style
     container_image: ubuntu-20.04
     triggers:
@@ -54,6 +54,7 @@ actions:
           --
           //...
           -//server/backends/disk_cache:all
+          -//server/test/integration/remote_asset:all
           -//enterprise/server/backends/pebble_cache:all
           -//enterprise/server/raft/txn:all
           -//enterprise/server/raft/store:all
@@ -77,6 +78,7 @@ actions:
           --
           //...
           -//server/backends/disk_cache:all
+          -//server/test/integration/remote_asset:all
           -//enterprise/server/backends/pebble_cache:all
           -//enterprise/server/raft/txn:all
           -//enterprise/server/raft/store:all

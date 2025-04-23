@@ -104,8 +104,7 @@ func CombinedOutput(cmd *exec.Cmd) ([]byte, error) {
 // NewWorkspace creates a new bazel workspace with .bazelversion configured
 // to use the pre-downloaded bazel binary from test runfiles.
 func NewWorkspace(t *testing.T) string {
-	ws := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE":     "",
+	ws := testbazel.MakeTempModule(t, map[string]string{
 		".bazelversion": testbazel.BinaryPath(t),
 	})
 	// Make it a git workspace to test git metadata.
