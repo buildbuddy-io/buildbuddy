@@ -93,8 +93,11 @@ type Replica struct {
 	readQPS        *qps.Counter
 	raftProposeQPS *qps.Counter
 
-	lockedKeys map[string][]byte       // key => txid
-	prepared   map[string]pebble.Batch // string(txid) => prepared batch.
+	// txid that locked the mapped range.
+	// We want to lock the mapped range when we are in the process of splitting.
+	mappedRangeLockingTXID []byte
+	lockedKeys             map[string][]byte       // key => txid
+	prepared               map[string]pebble.Batch // string(txid) => prepared batch.
 
 	entriesBetweenUsageChecks uint64
 }
@@ -463,6 +466,12 @@ func (sm *Replica) checkLocks(wb pebble.Batch, txid []byte) error {
 		if ok && !bytes.Equal(txid, lockingTxid) {
 			return status.UnavailableErrorf("[%s] Conflict on key %q, locked by %q", sm.name(), keyString, string(lockingTxid))
 		}
+		sm.rangeMu.RLock()
+		containsKey := sm.mappedRange != nil && sm.mappedRange.Contains(ukey)
+		sm.rangeMu.RUnlock()
+		if containsKey && len(sm.mappedRangeLockingTXID) > 0 && !bytes.Equal(txid, sm.mappedRangeLockingTXID) {
+			return status.UnavailableErrorf("[%s] Conflict on key %q, locked by %q", sm.name(), keyString, string(sm.mappedRangeLockingTXID))
+		}
 	}
 	return nil
 }
@@ -532,6 +541,10 @@ func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest
 
 	// If not, acquire locks for all changed keys.
 	sm.acquireLocks(txn, txid)
+
+	if batchReq.GetLockMappedRange() {
+		sm.mappedRangeLockingTXID = txid
+	}
 
 	// Save the txn batch in memory.
 	sm.prepared[string(txid)] = txn

@@ -137,6 +137,11 @@ func (bb *BatchBuilder) SetSession(session *rfpb.Session) *BatchBuilder {
 	return bb
 }
 
+func (bb *BatchBuilder) SetLockMappedRange(lock bool) *BatchBuilder {
+	bb.cmd.LockMappedRange = lock
+	return bb
+}
+
 func (bb *BatchBuilder) AddPostCommitHook(m proto.Message) *BatchBuilder {
 	switch value := m.(type) {
 	case *rfpb.SnapshotClusterHook:
