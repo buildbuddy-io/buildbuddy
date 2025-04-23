@@ -551,17 +551,20 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	// TODO(http://go/b/1192): Figure out why CloseAndRecv() hangs if we call
 	// it too soon after establishing the clientStream, and remove this delay.
 	const closeStreamDelay = 10 * time.Millisecond
-	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, st, clientStream); err != nil {
-		log.CtxWarningf(ctx, "ExecuteTaskAndStreamResults error: %s", err)
-		time.Sleep(time.Until(start.Add(closeStreamDelay)))
-		if _, streamErr := clientStream.CloseAndRecv(); streamErr != nil {
-			log.CtxWarningf(ctx, "Error closing execution status update stream: %s", streamErr)
-		}
-		return retry, err
+
+	retry, executionError := q.exec.ExecuteTaskAndStreamResults(ctx, st, clientStream)
+	if executionError != nil {
+		log.CtxWarningf(ctx, "ExecuteTaskAndStreamResults error: %s", executionError)
 	}
+
 	time.Sleep(time.Until(start.Add(closeStreamDelay)))
-	if _, err = clientStream.CloseAndRecv(); err != nil {
-		return true, status.WrapError(err, "failed to finalize execution update stream")
+	if _, streamErr := clientStream.CloseAndRecv(); streamErr != nil {
+		log.CtxWarningf(ctx, "Error closing execution status update stream: %s", streamErr)
+		return true, status.WrapError(streamErr, "finalize execution update stream")
+	}
+
+	if executionError != nil {
+		return retry, executionError
 	}
 	return false, nil
 }
