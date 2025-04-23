@@ -1557,7 +1557,8 @@ func TestBuildStatusReportingDisabled(t *testing.T) {
 
 			// Start an invocation
 			seq := NewBESSequence(t)
-			channel := handler.OpenChannel(ctx, seq.InvocationID)
+			channel, err := handler.OpenChannel(ctx, seq.InvocationID)
+			require.NoError(t, err)
 
 			// Handle Started event referencing the metadata events as children.
 			var metadataEventIDs []*bspb.BuildEventId
@@ -1674,7 +1675,8 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 
 			// Start an invocation
 			seq := NewBESSequence(t)
-			channel := handler.OpenChannel(ctx, seq.InvocationID)
+			channel, err := handler.OpenChannel(ctx, seq.InvocationID)
+			require.NoError(t, err)
 
 			// Handle Started event referencing the metadata events as children.
 			var metadataEventIDs []*bspb.BuildEventId
