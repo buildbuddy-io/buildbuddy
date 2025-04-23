@@ -269,7 +269,6 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 	}
 	env.SetGRPCServer(b.GetServer())
 	grpc_server.EnableGRPCOverHTTP(env, b.GetServer())
-	env.GetGRPCServerWaitGroup().Add(1)
 
 	if env.GetSSLService().IsEnabled() {
 		sb, err := grpc_server.New(env, grpc_server.GRPCSPort(), true /*=ssl*/, grpc_server.GRPCServerConfig{})
@@ -281,7 +280,6 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 			return err
 		}
 		env.SetGRPCSServer(sb.GetServer())
-		env.GetGRPCServerWaitGroup().Add(1)
 	}
 	return nil
 }

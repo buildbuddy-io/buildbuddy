@@ -198,12 +198,6 @@ func (b *BuildEventHandler) Stop() {
 		cancelFn()
 		return true
 	})
-
-	// Wait for the gRPC server to fully shut down
-	// This ensures all streaming requests have terminated
-	if b.env.GetGRPCServerWaitGroup() != nil {
-		b.env.GetGRPCServerWaitGroup().Wait()
-	}
 }
 
 // invocationInfo represents an invocation ID as well as the JWT granting access
