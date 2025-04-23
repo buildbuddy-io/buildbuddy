@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -2197,7 +2198,6 @@ func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupI
 	if err != nil {
 		return nil, err
 	}
-
 	poolSetKey := s.redisKeyForExecutorPools(groupID)
 	poolKeys, err := s.rdb.SMembers(ctx, poolSetKey).Result()
 	if err != nil {
@@ -2270,6 +2270,12 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 						(s.forceUserOwnedWindowsExecutors && isWindowsExecutor))),
 		}
 	}
+	slices.SortFunc(executors, func(a, b *scpb.GetExecutionNodesResponse_Executor) int {
+		if c := strings.Compare(a.GetNode().GetHost(), b.GetNode().GetHost()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.GetNode().GetExecutorId(), b.GetNode().GetExecutorId())
+	})
 
 	return &scpb.GetExecutionNodesResponse{
 		Executor:                    executors,
