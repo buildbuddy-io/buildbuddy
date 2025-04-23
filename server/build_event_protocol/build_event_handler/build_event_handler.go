@@ -151,7 +151,7 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	return h
 }
 
-func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
+func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interfaces.BuildEventChannel, error) {
 	invocation := &inpb.Invocation{InvocationId: iid}
 	buildEventAccumulator := accumulator.NewBEValues(invocation)
 	val, ok := b.cancelFnsByInvID.Load(iid)
@@ -187,7 +187,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		logWriter:                   nil,
 		onClose:                     onClose,
 		attempt:                     1,
-	}
+	}, nil
 }
 
 func (b *BuildEventHandler) Stop() {

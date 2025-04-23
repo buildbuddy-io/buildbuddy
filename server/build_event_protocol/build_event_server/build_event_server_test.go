@@ -160,8 +160,8 @@ func NewTestBuildEventHandler() *TestBuildEventHandler {
 	return &TestBuildEventHandler{}
 }
 
-func (h *TestBuildEventHandler) OpenChannel(ctx context.Context, invocationID string) interfaces.BuildEventChannel {
-	return &TestBuildEventChannel{ctx: ctx}
+func (h *TestBuildEventHandler) OpenChannel(ctx context.Context, invocationID string) (interfaces.BuildEventChannel, error) {
+	return &TestBuildEventChannel{ctx: ctx}, nil
 }
 
 type TestBuildEventChannel struct{ ctx context.Context }

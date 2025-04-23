@@ -486,7 +486,8 @@ func streamBuildFromTestData(t *testing.T, te *testenv.TestEnv, testDataFile str
 			iid = event.GetStarted().GetUuid()
 			require.NotEmpty(t, iid, event.String())
 
-			channel = handler.OpenChannel(context.Background(), iid)
+			channel, err = handler.OpenChannel(context.Background(), iid)
+			require.NoError(t, err)
 		}
 
 		anyEvent := &anypb.Any{}
@@ -506,9 +507,10 @@ func streamBuildFromTestData(t *testing.T, te *testenv.TestEnv, testDataFile str
 
 func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(context.Background(), iid)
+	channel, err := handler.OpenChannel(context.Background(), iid)
+	require.NoError(t, err)
 
-	err := channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=user1'"), iid, 1))
+	err = channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=user1'"), iid, 1))
 	assert.NoError(t, err)
 
 	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/target:foo", "java_binary rule", "tag-a"), iid, 2))

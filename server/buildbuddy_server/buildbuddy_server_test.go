@@ -57,7 +57,10 @@ func createInvocationForTesting(te environment.Env, user string) (string, error)
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	if err != nil {
+		return "", err
+	}
 
 	// Send started event with api key
 	options := ""
