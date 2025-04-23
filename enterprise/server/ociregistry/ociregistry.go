@@ -21,13 +21,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 const (
@@ -42,7 +42,7 @@ const (
 	blobOutputFilePath          = "_bb_ociregistry_blob_"
 	blobMetadataOutputFilePath  = "_bb_ociregistry_blob_metadata_"
 	actionResultInstanceName    = interfaces.OCIImageInstanceNamePrefix
-	manifestContentInstanceName = interfaces.OCIManifestContentInstanceNamePrefix
+	manifestContentInstanceName = interfaces.OCIImageInstanceNamePrefix + "_manifest_content_"
 )
 
 var (
@@ -368,7 +368,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 			log.CtxWarningf(ctx, "error reading manifest for '%s': %s", inreq.URL, err)
 			return
 		}
-		if err := writeManifestToAC(ctx, raw, acClient, resolvedRef, *hash, contentType, contentLength); err != nil {
+		if err := writeManifestToAC(ctx, raw, acClient, resolvedRef, *hash, contentType); err != nil {
 			log.CtxWarningf(ctx, "error writing manifest to the AC for '%s': %s", inreq.URL, err)
 		}
 		rc := bytes.NewReader(raw)
@@ -522,7 +522,7 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 	return nil
 }
 
-func writeManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
+func writeManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string) error {
 	arKey := &ocipb.OCIActionResultKey{
 		Registry:      ref.Context().RegistryStr(),
 		Repository:    ref.Context().RepositoryStr(),
@@ -545,9 +545,8 @@ func writeManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 	)
 
 	m := &ocipb.OCIManifestContent{
-		Raw:           raw,
-		ContentLength: contentLength,
-		ContentType:   contentType,
+		Raw:         raw,
+		ContentType: contentType,
 	}
 	any, err := anypb.New(m)
 	if err != nil {

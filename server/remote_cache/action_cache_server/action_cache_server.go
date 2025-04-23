@@ -31,7 +31,7 @@ import (
 var (
 	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
 
-	restrictedPrefixes = []string{interfaces.OCIImageInstanceNamePrefix, interfaces.OCIManifestContentInstanceNamePrefix}
+	restrictedPrefixes = []string{interfaces.OCIImageInstanceNamePrefix}
 )
 
 type ActionCacheServer struct {
