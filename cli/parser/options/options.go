@@ -147,7 +147,7 @@ func (d *Definition) Supports(command string) bool {
 	return ok
 }
 
-func (d *Definition) AddSupport(commands ...string) {
+func (d *Definition) AddSupportedCommand(commands ...string) {
 	if d.supportedCommands == nil {
 		d.supportedCommands = make(map[string]struct{}, 1)
 	}

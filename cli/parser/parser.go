@@ -220,7 +220,7 @@ func (p *Parser) parseLongNameOption(optName string) (options.Option, error) {
 		if strings.HasPrefix(optName, prefix) {
 			// This is a new starlark definition; let's hang on to it.
 			d := options.NewStarlarkOptionDefinition(optName)
-			d.AddSupport(slices.Collect(maps.Keys(p.BazelCommands))...)
+			d.AddSupportedCommand(slices.Collect(maps.Keys(p.BazelCommands))...)
 			// No need to check if this option already exists since we never reach
 			// this code if it does.
 			p.ForceAddOptionDefinition(d)
