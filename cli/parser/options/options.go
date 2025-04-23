@@ -536,6 +536,7 @@ func Canonicalize(opts []Option) []Option {
 			continue
 		}
 		if opt.PluginID() != UnknownBuiltinPluginID {
+			// don't normalize unknown options
 			opt = opt.Normalized()
 		}
 		canonical = append(canonical, opt)
@@ -574,7 +575,7 @@ func NewOption(optName string, v *string, d *Definition) (Option, error) {
 		return nil, fmt.Errorf("option name '%s' cannot specify an option with definition '%#v'", optName, d)
 	}
 
-	if d.requiresValue {
+	if d.RequiresValue() {
 		return &RequiredValueOption{Definition: d, Value: v, UsesShortName: form == shortForm, Joined: v != nil}, nil
 	}
 	if v != nil {
