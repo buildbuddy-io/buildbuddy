@@ -609,7 +609,7 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 		{
 			name:              "zstd simple upload and get",
 			input:             "zstd simple upload and get",
-			useZstd:           false,
+			useZstd:           true,
 			expectUploadError: false,
 			uploadSize:        int64(len([]byte("zstd simple upload and get"))),
 			expectGetError:    false,
@@ -619,7 +619,7 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 		{
 			name:              "zstd upload with incorrect size fails",
 			input:             "zstd upload with incorrect size fails",
-			useZstd:           false,
+			useZstd:           true,
 			expectUploadError: true,
 			uploadSize:        int64(len([]byte("zstd upload with incorrect size fails"))) - 4,
 			expectGetError:    true,
@@ -629,7 +629,7 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 		{
 			name:              "zstd get with incorrect size still succeeds",
 			input:             "zstd get with incorrect size still succeeds",
-			useZstd:           false,
+			useZstd:           true,
 			expectUploadError: false,
 			uploadSize:        int64(len([]byte("zstd get with incorrect size still succeeds"))),
 			expectGetError:    false,
