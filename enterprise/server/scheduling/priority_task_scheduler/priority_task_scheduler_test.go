@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/require"
@@ -123,10 +124,10 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 
 	scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
 	scheduler.Start()
-	defer func() {
+	t.Cleanup(func() {
 		err := scheduler.Stop()
 		require.NoError(t, err)
-	}()
+	})
 
 	ctx := context.Background()
 
@@ -196,6 +197,72 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 	require.Equal(t, scheduler.q.Len(), 0)
 }
 
+func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
+	for _, test := range []struct {
+		name string
+
+		executionErr          error
+		executionErrRetryable bool
+		streamCloseAndRecvErr error
+
+		expectedLeaseCloseRetry bool
+		expectedLeaseCloseErr   error
+	}{
+		{
+			name:                    "should close lease with non-retryable execution error if operation update succeeds",
+			executionErr:            status.UnavailableError("execution error injected by test"),
+			executionErrRetryable:   false,
+			streamCloseAndRecvErr:   nil,
+			expectedLeaseCloseRetry: false,
+			expectedLeaseCloseErr:   status.UnavailableError("execution error injected by test"),
+		},
+		{
+			name:                    "should retry task even on non-retryable execution error if operation update fails",
+			executionErr:            status.UnavailableError("execution error injected by test"),
+			executionErrRetryable:   false,
+			streamCloseAndRecvErr:   status.UnavailableError("operation update error injected by test"),
+			expectedLeaseCloseRetry: true,
+			expectedLeaseCloseErr:   status.UnavailableError("finalize execution update stream: operation update error injected by test"),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			executionClient := &FakeExecutionClient{}
+			env.SetRemoteExecutionClient(executionClient)
+			executor := NewFakeExecutor()
+			runnerPool := &FakeRunnerPool{}
+			leaser := &FakeTaskLeaser{}
+			scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+			scheduler.Start()
+			t.Cleanup(func() {
+				err := scheduler.Stop()
+				require.NoError(t, err)
+			})
+			ctx := context.Background()
+
+			// Set up the fake execution client to inject a failure into CloseAndRecv.
+			executionClient.CloseAndRecvErr = test.streamCloseAndRecvErr
+
+			// Start a task.
+			reservation := &scpb.EnqueueTaskReservationRequest{TaskId: fakeTaskID("task1")}
+			_, err := scheduler.EnqueueTaskReservation(ctx, reservation)
+			require.NoError(t, err)
+
+			// Fail the task with an error that is normally non-retryable, but because
+			// the operation update failed, we have to retry because otherwise the
+			// client won't be notified of the failure.
+			task := <-executor.StartedExecutions
+			task.CompleteWith(test.executionErrRetryable, test.executionErr)
+
+			// Inspect the lease and make sure it was closed with a retry.
+			lease := <-leaser.GrantedLeases
+			retry, err := lease.WaitClosed()
+			require.Equal(t, test.expectedLeaseCloseErr, err, "unexpected lease close error")
+			require.Equal(t, test.expectedLeaseCloseRetry, retry, "unexpected lease retry value")
+		})
+	}
+}
+
 func fakeTaskID(label string) string {
 	return label + "/uploads/" + uuid.New() + "/blobs/2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae/3"
 }
@@ -212,10 +279,18 @@ func NewFakeExecutor() *FakeExecutor {
 
 type FakeExecution struct {
 	ScheduledTask *repb.ScheduledTask
+	retry         bool
+	err           error
 	completeCh    chan struct{}
 }
 
 func (e *FakeExecution) Complete() {
+	close(e.completeCh)
+}
+
+func (e *FakeExecution) CompleteWith(retry bool, err error) {
+	e.retry = retry
+	e.err = err
 	close(e.completeCh)
 }
 
@@ -235,8 +310,8 @@ func (e *FakeExecutor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb
 	}
 	e.StartedExecutions <- fe
 	<-fe.completeCh
-	log.Debugf("FakeExecutor: completed task %q", st.GetExecutionTask().GetExecutionId())
-	return false, nil
+	log.Debugf("FakeExecutor: completed task %q (retry=%t, err=%v)", st.GetExecutionTask().GetExecutionId(), fe.retry, fe.err)
+	return fe.retry, fe.err
 }
 
 type FakeRunnerPool struct {
@@ -246,18 +321,30 @@ type FakeRunnerPool struct {
 func (*FakeRunnerPool) Wait() {
 }
 
-type FakeTaskLeaser struct{}
+type FakeTaskLeaser struct {
+	GrantedLeases chan *FakeLease
+}
 
 func (f *FakeTaskLeaser) Lease(ctx context.Context, taskID string) (interfaces.TaskLease, error) {
-	return &FakeLease{
+	if f.GrantedLeases == nil {
+		f.GrantedLeases = make(chan *FakeLease, 512)
+	}
+	lease := &FakeLease{
 		ctx:    ctx,
 		taskID: taskID,
-	}, nil
+		closed: make(chan struct{}),
+	}
+	f.GrantedLeases <- lease
+	return lease, nil
 }
 
 type FakeLease struct {
+	err   error
+	retry bool
+
 	ctx    context.Context
 	taskID string
+	closed chan struct{}
 }
 
 func (f *FakeLease) Task() *repb.ExecutionTask {
@@ -271,22 +358,39 @@ func (f *FakeLease) Context() context.Context {
 }
 
 func (f *FakeLease) Close(ctx context.Context, err error, retry bool) {
+	f.err = err
+	f.retry = retry
+	close(f.closed)
+}
+
+func (f *FakeLease) WaitClosed() (retry bool, err error) {
+	<-f.closed
+	return f.retry, f.err
 }
 
 // TODO: fake the operation publisher instead of faking the low-level
 // ExecutionClient.
 type FakeExecutionClient struct {
 	repb.ExecutionClient
+
+	// CloseAndRecvErr is the error to be returned from any CloseAndRecv call on
+	// any PublishOperationClient.
+	CloseAndRecvErr error
 }
 
 func (f *FakeExecutionClient) PublishOperation(ctx context.Context, opts ...grpc.CallOption) (repb.Execution_PublishOperationClient, error) {
-	return &FakePublishOperationClient{}, nil
+	return &FakePublishOperationClient{
+		CloseAndRecvErr: f.CloseAndRecvErr,
+	}, nil
 }
 
 type FakePublishOperationClient struct {
 	repb.Execution_PublishOperationClient
+
+	// CloseAndRecvErr is the error to return from CloseAndRecv.
+	CloseAndRecvErr error
 }
 
 func (f *FakePublishOperationClient) CloseAndRecv() (*repb.PublishOperationResponse, error) {
-	return nil, nil
+	return nil, f.CloseAndRecvErr
 }
