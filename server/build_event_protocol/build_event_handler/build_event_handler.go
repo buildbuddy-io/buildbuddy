@@ -511,6 +511,10 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 func (r *statsRecorder) Stop() {
 	// Wait for all EventHandler channels to be closed to ensure there will be no
 	// more calls to Enqueue.
+	// TODO(bduffany): This has a race condition where the server can be shutdown
+	// just after the stream request is accepted by the server but before calling
+	// openChannels.Add(1). Can fix this by explicitly waiting for the gRPC server
+	// shutdown to finish, which ensures all streaming requests have terminated.
 	log.Info("StatsRecorder: waiting for EventChannels to be closed before shutting down")
 	r.openChannels.Wait()
 
