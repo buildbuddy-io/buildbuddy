@@ -17,7 +17,7 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func MakeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, instanceName string, depth, branchingFactor int) (*repb.Digest, []string) {
+func MakeTree(ctx context.Context, t testing.TB, bsClient bspb.ByteStreamClient, instanceName string, depth, branchingFactor int) (*repb.Digest, []string) {
 	numFiles := int(math.Pow(float64(branchingFactor), float64(depth)))
 	fileNames := make([]string, 0, numFiles)
 	var leafNodes []*repb.DirectoryNode
@@ -63,7 +63,7 @@ func MakeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 	return rootDigest, fileNames
 }
 
-func ReadTree(ctx context.Context, t *testing.T, casClient repb.ContentAddressableStorageClient, instanceName string, rootDigest *repb.Digest) []string {
+func ReadTree(ctx context.Context, t testing.TB, casClient repb.ContentAddressableStorageClient, instanceName string, rootDigest *repb.Digest) []string {
 	// Fetch the tree, and return contents.
 	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
 		InstanceName: instanceName,
