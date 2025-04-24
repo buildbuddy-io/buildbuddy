@@ -51,7 +51,7 @@ func TestParseGlobalFlags(t *testing.T) {
 		"print_args.sh": `echo $@`,
 	})
 	testfs.MakeExecutable(t, ws, "print_args.sh")
-	cmd := testcli.Command(t, ws, "run", ":print_args", "--", "--before", "--verbose", "hello", "--after")
+	cmd := testcli.BazelCommand(t, ws, "run", ":print_args", "--", "--before", "--verbose", "hello", "--after")
 	b, err := testcli.Output(cmd)
 	require.NoError(t, err, "output: %s", string(b))
 	require.Equal(t, "--before --verbose hello --after\n", string(b))
@@ -129,7 +129,7 @@ func TestBazelBuildWithLocalPlugin(t *testing.T) {
 
 	testfs.WriteAllFileContents(t, ws, map[string]string{"BUILD": ``})
 
-	cmd = testcli.Command(t, ws, "build", "//...", "--build_metadata", "FOO=bar")
+	cmd = testcli.BazelCommand(t, ws, "build", "//...", "--build_metadata", "FOO=bar")
 
 	b, err = testcli.CombinedOutput(cmd)
 
@@ -186,7 +186,7 @@ func TestBazelRunWithLocalPlugin(t *testing.T) {
 	args = append(args, "--")
 	args = append(args, "Hello")
 
-	cmd = testcli.Command(t, ws, args...)
+	cmd = testcli.BazelCommand(t, ws, args...)
 
 	b, err = testcli.CombinedOutput(cmd)
 
@@ -211,7 +211,7 @@ func TestBazelRunWithLocalPlugin(t *testing.T) {
 	iid = uid.String()
 	args = append(args, "--invocation_id="+iid)
 
-	cmd = testcli.Command(t, ws, args...)
+	cmd = testcli.BazelCommand(t, ws, args...)
 
 	b, err = testcli.CombinedOutput(cmd)
 
@@ -245,7 +245,7 @@ func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 	iid := uid.String()
 	args = append(args, "--invocation_id="+iid)
 
-	cmd := testcli.Command(t, ws, args...)
+	cmd := testcli.BazelCommand(t, ws, args...)
 
 	b, err := testcli.CombinedOutput(cmd)
 	require.NoErrorf(t, err, "output: %s", string(b))
@@ -307,7 +307,7 @@ func TestTerminalOutput(t *testing.T) {
 	})
 
 	term := testcli.PTY(t)
-	term.Run(testcli.Command(t, ws, "test", "...", "--test_output=streamed"))
+	term.Run(testcli.BazelCommand(t, ws, "test", "...", "--test_output=streamed"))
 
 	// Make sure Bazel's progress output doesn't get interspersed with the test
 	// output.
@@ -332,17 +332,17 @@ sh_test(name = "fail", srcs = ["fail.sh"])
 		"targets.txt": "//:pass",
 	})
 
-	b, err := testcli.CombinedOutput(testcli.Command(t, ws, "build", "--target_pattern_file=targets.txt"))
+	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, "build", "--target_pattern_file=targets.txt"))
 	require.NoErrorf(t, err, "output: %s", string(b))
 
-	b, err = testcli.CombinedOutput(testcli.Command(t, ws, "test", "--target_pattern_file=targets.txt"))
+	b, err = testcli.CombinedOutput(testcli.BazelCommand(t, ws, "test", "--target_pattern_file=targets.txt"))
 	require.NoErrorf(t, err, "output: %s", string(b))
 
-	b, err = testcli.CombinedOutput(testcli.Command(t, ws, "test", "--config=pattern-file"))
+	b, err = testcli.CombinedOutput(testcli.BazelCommand(t, ws, "test", "--config=pattern-file"))
 	require.NoErrorf(t, err, "output: %s", string(b))
 
 	// "test" should expand to "test //..." and the tests should fail.
-	b, err = testcli.CombinedOutput(testcli.Command(t, ws, "test"))
+	b, err = testcli.CombinedOutput(testcli.BazelCommand(t, ws, "test"))
 	require.Errorf(t, err, "output: %s", string(b))
 }
 
@@ -354,7 +354,7 @@ func TestQueryFile(t *testing.T) {
 		"targets.txt": "//:nop",
 	})
 
-	b, err := testcli.CombinedOutput(testcli.Command(t, ws, "query", "--query_file=targets.txt"))
+	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, "query", "--query_file=targets.txt"))
 	require.NoErrorf(t, err, "output: %s", string(b))
 }
 
@@ -376,7 +376,7 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 `,
 	})
 
-	cmd := testcli.Command(t, ws, "query", "//...")
+	cmd := testcli.BazelCommand(t, ws, "query", "//...")
 	b, err := testcli.CombinedOutput(cmd)
 	require.NoErrorf(t, err, "output: %s", string(b))
 	require.NotContains(t, string(b), "Running Bazel server needs to be killed")

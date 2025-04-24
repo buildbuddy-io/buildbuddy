@@ -63,6 +63,12 @@ func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 	return cmd
 }
 
+// BazelCommand returns a bazel-specific command with system and home bazelrc ignored
+// to ensure hermetic testing result.
+func BazelCommand(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
+	return Command(t, workspacePath, append([]string{"--nosystem_rc", "--nohome_rc"}, args...)...)
+}
+
 // BazeliskCommand returns a bazelisk command to invoke the CLI via the
 // .bazelversion trick.
 // It's usually preferable to use Command() except when specifically
