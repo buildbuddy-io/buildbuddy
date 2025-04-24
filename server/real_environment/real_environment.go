@@ -94,11 +94,11 @@ type RealEnv struct {
 	sslService                       interfaces.SSLService
 	quotaManager                     interfaces.QuotaManager
 	buildEventServer                 pepb.PublishBuildEventServer
-	localCASClient                   repb.ContentAddressableStorageClient
+	localCASServer                   repb.ContentAddressableStorageServer
 	casServer                        repb.ContentAddressableStorageServer
 	localByteStreamClient            bspb.ByteStreamClient
 	byteStreamServer                 bspb.ByteStreamServer
-	localActionCacheClient           repb.ActionCacheClient
+	localActionCacheServer           repb.ActionCacheServer
 	actionCacheServer                repb.ActionCacheServer
 	pushServer                       rapb.PushServer
 	fetchServer                      rapb.FetchServer
@@ -532,11 +532,11 @@ func (r *RealEnv) SetBuildEventServer(buildEventServer pepb.PublishBuildEventSer
 	r.buildEventServer = buildEventServer
 }
 
-func (r *RealEnv) GetLocalCASClient() repb.ContentAddressableStorageClient {
-	return r.localCASClient
+func (r *RealEnv) GetLocalCASServer() repb.ContentAddressableStorageServer {
+	return r.localCASServer
 }
-func (r *RealEnv) SetLocalCASClient(localCASClient repb.ContentAddressableStorageClient) {
-	r.localCASClient = localCASClient
+func (r *RealEnv) SetLocalCASServer(localCASServer repb.ContentAddressableStorageServer) {
+	r.localCASServer = localCASServer
 }
 
 func (r *RealEnv) GetCASServer() repb.ContentAddressableStorageServer {
@@ -561,11 +561,11 @@ func (r *RealEnv) SetByteStreamServer(byteStreamServer bspb.ByteStreamServer) {
 	r.byteStreamServer = byteStreamServer
 }
 
-func (r *RealEnv) GetLocalActionCacheClient() repb.ActionCacheClient {
-	return r.localActionCacheClient
+func (r *RealEnv) GetLocalActionCacheServer() repb.ActionCacheServer {
+	return r.localActionCacheServer
 }
-func (r *RealEnv) SetLocalActionCacheClient(localClient repb.ActionCacheClient) {
-	r.localActionCacheClient = localClient
+func (r *RealEnv) SetLocalActionCacheServer(localServer repb.ActionCacheServer) {
+	r.localActionCacheServer = localServer
 }
 
 func (r *RealEnv) GetActionCacheServer() repb.ActionCacheServer {
