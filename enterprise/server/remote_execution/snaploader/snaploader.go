@@ -739,7 +739,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar); err != nil {
 			return err
 		}
-		log.CtxInfof(ctx, "Cached master remote snapshot %s", snapshotDebugString(ctx, l.env, key, true /*remote*/, opts.VMMetadata.GetSnapshotId()))
+		log.CtxInfof(ctx, "Updated remote master snapshot manifest %s", snapshotDebugString(ctx, l.env, key, true /*remote*/, "" /*=snapshotID*/))
 
 		// Cache snapshot manifest for this specific snapshot ID
 		if opts.VMMetadata.GetSnapshotId() != "" {
@@ -776,7 +776,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, b); err != nil {
 		return err
 	}
-	log.CtxInfof(ctx, "Cached master local snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, opts.VMMetadata.GetSnapshotId()))
+	log.CtxInfof(ctx, "Updated local master snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/))
 
 	// Cache snapshot manifest for this specific snapshot ID
 	if opts.VMMetadata.GetSnapshotId() != "" {
