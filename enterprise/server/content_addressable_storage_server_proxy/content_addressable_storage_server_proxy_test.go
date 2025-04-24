@@ -1,7 +1,12 @@
 package content_addressable_storage_server_proxy
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -61,7 +66,7 @@ func requestCountingStreamInterceptor(count *atomic.Int32) grpc.StreamClientInte
 	}
 }
 
-func runRemoteCASS(ctx context.Context, env *testenv.TestEnv, t *testing.T) (*grpc.ClientConn, *atomic.Int32, *atomic.Int32) {
+func runRemoteCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*grpc.ClientConn, *atomic.Int32, *atomic.Int32) {
 	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	require.NoError(t, err)
 	bsServer, err := byte_stream_server.NewByteStreamServer(env)
@@ -80,7 +85,7 @@ func runRemoteCASS(ctx context.Context, env *testenv.TestEnv, t *testing.T) (*gr
 	return conn, &unaryRequestCounter, &streamRequestCounter
 }
 
-func runLocalCASS(ctx context.Context, env *testenv.TestEnv, t *testing.T) (bspb.ByteStreamClient, repb.ContentAddressableStorageClient) {
+func runLocalCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (bspb.ByteStreamClient, repb.ContentAddressableStorageClient) {
 	bs, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
 	cas, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
@@ -95,7 +100,7 @@ func runLocalCASS(ctx context.Context, env *testenv.TestEnv, t *testing.T) (bspb
 	return bspb.NewByteStreamClient(conn), repb.NewContentAddressableStorageClient(conn)
 }
 
-func runCASProxy(ctx context.Context, clientConn *grpc.ClientConn, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
+func runCASProxy(ctx context.Context, clientConn *grpc.ClientConn, env *testenv.TestEnv, t testing.TB) *grpc.ClientConn {
 	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(clientConn))
 	bs, cas := runLocalCASS(ctx, env, t)
@@ -185,7 +190,7 @@ func read(ctx context.Context, client repb.ContentAddressableStorageClient, dige
 	require.Equal(t, expectedCount, actualCount)
 }
 
-func update(ctx context.Context, client repb.ContentAddressableStorageClient, blobs map[*repb.Digest]string, t *testing.T) {
+func update(ctx context.Context, client repb.ContentAddressableStorageClient, blobs map[*repb.Digest]string, t testing.TB) {
 	resp, err := client.BatchUpdateBlobs(ctx, updateBlobsRequest(blobs))
 	require.NoError(t, err)
 	require.Equal(t, len(blobs), len(resp.Responses))
@@ -316,7 +321,7 @@ func TestReadUpdateBlobs(t *testing.T) {
 	expectNoAtimeUpdate(t, clock, requestCount)
 }
 
-func makeTree(ctx context.Context, client bspb.ByteStreamClient, t *testing.T) (*repb.Digest, []string) {
+func makeTree(ctx context.Context, client bspb.ByteStreamClient, t testing.TB) (*repb.Digest, []string) {
 	child1 := uuid.New()
 	digest1, files1 := cas.MakeTree(ctx, t, client, "", 2, 2)
 	child2 := uuid.New()
@@ -470,4 +475,232 @@ func testGetTree(t *testing.T, withCaching bool) {
 		require.Equal(t, int32(0), unaryRequests.Load())
 		require.Equal(t, int32(1), streamRequests.Load())
 	}
+}
+
+func BenchmarkFindMissingBlobs(b *testing.B) {
+	ctx := testContext()
+	conn, _, _ := runRemoteCASS(ctx, testenv.GetTestEnv(b), b)
+	proxyEnv := testenv.GetTestEnv(b)
+	clock := clockwork.NewFakeClock()
+	proxyEnv.SetClock(clock)
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	require.NoError(b, atime_updater.Register(proxyEnv))
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, b)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	fooDigestProto := digestProto(fooDigest, 3)
+	foofDigestProto := digestProto(foofDigest, 4)
+	barDigestProto := digestProto(barDigest, 3)
+	barrDigestProto := digestProto(barrDigest, 4)
+	barrrDigestProto := digestProto(barrrDigest, 5)
+	bazDigestProto := digestProto(bazDigest, 3)
+	quxDigestProto := digestProto(quxDigest, 3)
+	update(ctx, proxy, map[*repb.Digest]string{
+		fooDigestProto: "foo",
+		barDigestProto: "bar",
+		bazDigestProto: "baz",
+		quxDigestProto: "qux",
+	}, b)
+	req := findMissingBlobsRequest([]*repb.Digest{
+		fooDigestProto,
+		foofDigestProto,
+		barDigestProto,
+		barrDigestProto,
+		barrrDigestProto,
+		bazDigestProto,
+		quxDigestProto,
+	})
+
+	expected := []*repb.Digest{
+		foofDigestProto,
+		barrDigestProto,
+		barrrDigestProto,
+	}
+
+	for b.Loop() {
+		resp, err := proxy.FindMissingBlobs(ctx, req)
+		require.NoError(b, err)
+		require.ElementsMatch(b, expected, resp.GetMissingBlobDigests())
+	}
+}
+
+func BenchmarkBatchReadBlobs(b *testing.B) {
+	ctx := testContext()
+	conn, _, _ := runRemoteCASS(ctx, testenv.GetTestEnv(b), b)
+	proxyEnv := testenv.GetTestEnv(b)
+	// The atime update runs background goroutines that can interfere with
+	// calls to atime_updater.Enqueue(). Disable it for benchmarking.
+	proxyEnv.SetAtimeUpdater(&noOpAtimeUpdater{})
+	clock := clockwork.NewFakeClock()
+	proxyEnv.SetClock(clock)
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	require.NoError(b, atime_updater.Register(proxyEnv))
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, b)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	fooDigestProto := digestProto(fooDigest, 3)
+	foofDigestProto := digestProto(foofDigest, 4)
+	barDigestProto := digestProto(barDigest, 3)
+	barrDigestProto := digestProto(barrDigest, 4)
+	barrrDigestProto := digestProto(barrrDigest, 5)
+	bazDigestProto := digestProto(bazDigest, 3)
+	quxDigestProto := digestProto(quxDigest, 3)
+	blobs := map[*repb.Digest]string{
+		fooDigestProto:   "foo",
+		foofDigestProto:  "foof",
+		barDigestProto:   "bar",
+		barrDigestProto:  "barr",
+		barrrDigestProto: "barrr",
+		bazDigestProto:   "baz",
+		quxDigestProto:   "qux",
+	}
+
+	update(ctx, proxy, blobs, b)
+	req := readBlobsRequest(slices.Collect(maps.Keys(blobs)))
+
+	for b.Loop() {
+		resp, err := proxy.BatchReadBlobs(ctx, req)
+		require.NoError(b, err)
+		require.Equal(b, len(blobs), len(resp.GetResponses()))
+	}
+}
+
+func BenchmarkBatchUpdateBlobs(b *testing.B) {
+	ctx := testContext()
+	conn, _, _ := runRemoteCASS(ctx, testenv.GetTestEnv(b), b)
+	proxyEnv := testenv.GetTestEnv(b)
+	clock := clockwork.NewFakeClock()
+	proxyEnv.SetClock(clock)
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	require.NoError(b, atime_updater.Register(proxyEnv))
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, b)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	fooDigestProto := digestProto(fooDigest, 3)
+	foofDigestProto := digestProto(foofDigest, 4)
+	barDigestProto := digestProto(barDigest, 3)
+	barrDigestProto := digestProto(barrDigest, 4)
+	barrrDigestProto := digestProto(barrrDigest, 5)
+	bazDigestProto := digestProto(bazDigest, 3)
+	quxDigestProto := digestProto(quxDigest, 3)
+	blobs := map[*repb.Digest]string{
+		fooDigestProto:   "foo",
+		foofDigestProto:  "foof",
+		barDigestProto:   "bar",
+		barrDigestProto:  "barr",
+		barrrDigestProto: "barrr",
+		bazDigestProto:   "baz",
+		quxDigestProto:   "qux",
+	}
+
+	i := 0
+	req := updateBlobsRequest(blobs)
+	for b.Loop() {
+		req.InstanceName = fmt.Sprintf("%d", i)
+		resp, err := proxy.BatchUpdateBlobs(ctx, req)
+		require.NoError(b, err)
+		require.Equal(b, len(blobs), len(resp.Responses))
+		for i := 0; i < len(blobs); i++ {
+			require.Equal(b, int32(codes.OK), resp.Responses[i].Status.Code)
+		}
+		i++
+	}
+}
+
+func BenchmarkGetTree(b *testing.B) {
+	flags.Set(b, "cache_proxy.enable_get_tree_caching", true)
+
+	ctx := testContext()
+	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(b), b)
+	proxyEnv := testenv.GetTestEnv(b)
+	// The atime update runs background goroutines that can interfere with
+	// calls to atime_updater.Enqueue(). Disable it for benchmarking.
+	proxyEnv.SetAtimeUpdater(&noOpAtimeUpdater{})
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, b)
+	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
+	bsProxy := bspb.NewByteStreamClient(proxyConn)
+
+	// Generate a static tree to reduce benchmark variability.
+	fileDigests := map[string]*repb.Digest{}
+	data := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+	for _, datum := range data {
+		d, err := cachetools.UploadBlob(ctx, bsProxy, "", repb.DigestFunction_SHA256, bytes.NewReader([]byte(strings.Repeat(datum, 100))))
+		require.NoError(b, err)
+		fileDigests[datum] = d
+	}
+
+	subdirAB := &repb.Directory{
+		Files: []*repb.FileNode{
+			&repb.FileNode{Name: "a", Digest: fileDigests["a"]},
+			&repb.FileNode{Name: "b", Digest: fileDigests["b"]},
+		},
+	}
+	subdirCD := &repb.Directory{
+		Files: []*repb.FileNode{
+			&repb.FileNode{Name: "c", Digest: fileDigests["c"]},
+			&repb.FileNode{Name: "d", Digest: fileDigests["d"]},
+		},
+	}
+	subdirEF := &repb.Directory{
+		Files: []*repb.FileNode{
+			&repb.FileNode{Name: "e", Digest: fileDigests["e"]},
+			&repb.FileNode{Name: "f", Digest: fileDigests["f"]},
+		},
+	}
+	subdirGH := &repb.Directory{
+		Files: []*repb.FileNode{
+			&repb.FileNode{Name: "g", Digest: fileDigests["g"]},
+			&repb.FileNode{Name: "h", Digest: fileDigests["h"]},
+		},
+	}
+	abDigest, err := cachetools.UploadProto(ctx, bsProxy, "", repb.DigestFunction_SHA256, subdirAB)
+	require.NoError(b, err)
+	cdDigest, err := cachetools.UploadProto(ctx, bsProxy, "", repb.DigestFunction_SHA256, subdirCD)
+	require.NoError(b, err)
+	efDigest, err := cachetools.UploadProto(ctx, bsProxy, "", repb.DigestFunction_SHA256, subdirEF)
+	require.NoError(b, err)
+	ghDigest, err := cachetools.UploadProto(ctx, bsProxy, "", repb.DigestFunction_SHA256, subdirGH)
+	require.NoError(b, err)
+
+	subdirABCD := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{Name: "ab", Digest: abDigest},
+			&repb.DirectoryNode{Name: "cd", Digest: cdDigest},
+		},
+	}
+	subdirEFGH := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{Name: "ef", Digest: efDigest},
+			&repb.DirectoryNode{Name: "gh", Digest: ghDigest},
+		},
+	}
+	abcdDigest, err := cachetools.UploadProto(ctx, bsProxy, "", repb.DigestFunction_SHA256, subdirABCD)
+	require.NoError(b, err)
+	efghDigest, err := cachetools.UploadProto(ctx, bsProxy, "", repb.DigestFunction_SHA256, subdirEFGH)
+	require.NoError(b, err)
+
+	root := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{Name: "abcd", Digest: abcdDigest},
+			&repb.DirectoryNode{Name: "efgh", Digest: efghDigest},
+		},
+	}
+	rootDigest, err := cachetools.UploadProto(ctx, bsProxy, "", repb.DigestFunction_SHA256, root)
+	require.NoError(b, err)
+
+	files := []string{"a", "b", "c", "d", "e", "f", "g", "h", "ab", "cd", "ef", "gh", "abcd", "efgh"}
+
+	// Warm up tree cache
+	treeFiles := cas.ReadTree(ctx, b, casProxy, "", rootDigest)
+	require.ElementsMatch(b, files, treeFiles)
+	unaryRequests.Store(0)
+	streamRequests.Store(0)
+
+	for b.Loop() {
+		treeFiles := cas.ReadTree(ctx, b, casProxy, "", rootDigest)
+		require.ElementsMatch(b, files, treeFiles)
+		require.Equal(b, int32(0), unaryRequests.Load())
+		require.Equal(b, int32(0), streamRequests.Load())
+	}
+
 }
