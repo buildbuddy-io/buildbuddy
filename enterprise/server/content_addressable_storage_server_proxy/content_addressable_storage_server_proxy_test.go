@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -493,14 +495,12 @@ func BenchmarkFindMissingBlobs(b *testing.B) {
 	barrrDigestProto := digestProto(barrrDigest, 5)
 	bazDigestProto := digestProto(bazDigest, 3)
 	quxDigestProto := digestProto(quxDigest, 3)
-	blobs := map[*repb.Digest]string{
+	update(ctx, proxy, map[*repb.Digest]string{
 		fooDigestProto: "foo",
 		barDigestProto: "bar",
 		bazDigestProto: "baz",
 		quxDigestProto: "qux",
-	}
-
-	update(ctx, proxy, blobs, b)
+	}, b)
 	req := findMissingBlobsRequest([]*repb.Digest{
 		fooDigestProto,
 		foofDigestProto,
@@ -528,6 +528,9 @@ func BenchmarkBatchReadBlobs(b *testing.B) {
 	ctx := testContext()
 	conn, _, _ := runRemoteCASS(ctx, testenv.GetTestEnv(b), b)
 	proxyEnv := testenv.GetTestEnv(b)
+	// The atime update runs background goroutines that can interfere with
+	// calls to atime_updater.Enqueue(). Disable it for benchmarking.
+	proxyEnv.SetAtimeUpdater(&noOpAtimeUpdater{})
 	clock := clockwork.NewFakeClock()
 	proxyEnv.SetClock(clock)
 	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -553,15 +556,7 @@ func BenchmarkBatchReadBlobs(b *testing.B) {
 	}
 
 	update(ctx, proxy, blobs, b)
-	req := readBlobsRequest([]*repb.Digest{
-		fooDigestProto,
-		foofDigestProto,
-		barDigestProto,
-		barrDigestProto,
-		barrrDigestProto,
-		bazDigestProto,
-		quxDigestProto,
-	})
+	req := readBlobsRequest(slices.Collect(maps.Keys(blobs)))
 
 	for b.Loop() {
 		resp, err := proxy.BatchReadBlobs(ctx, req)
@@ -618,6 +613,8 @@ func BenchmarkGetTree(b *testing.B) {
 	ctx := testContext()
 	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(b), b)
 	proxyEnv := testenv.GetTestEnv(b)
+	// The atime update runs background goroutines that can interfere with
+	// calls to atime_updater.Enqueue(). Disable it for benchmarking.
 	proxyEnv.SetAtimeUpdater(&noOpAtimeUpdater{})
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, b)
 	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
