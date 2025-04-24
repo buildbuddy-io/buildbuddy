@@ -428,13 +428,11 @@ googletest_deps()
 
 http_archive(
     name = "io_bazel_rules_docker",
-    integrity = "sha256-ZIUZu2mLsls7gXUqLObaGizFZlNDa0jGkdzpuNahgGE=",
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:rules_docker.patch",
-    ],
-    strip_prefix = "rules_docker-b44cc958e61c3192c57fed7aef78c8567d757a70",
-    urls = ["https://github.com/bazelbuild/rules_docker/archive/b44cc958e61c3192c57fed7aef78c8567d757a70.tar.gz"],
+    integrity = "sha256-IWwvS6cUMRgusMhq2fvBtkrV3wNylTgxp9IlF7KVk2I=",
+    strip_prefix = "rules_docker-fd17b1c56380f4f661a9c4649cd95809a132d9e3",
+    # This is BuildBuddy fork of rules_docker with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_docker/compare/master...buildbuddy-io:rules_docker:master
+    urls = ["https://github.com/buildbuddy-io/rules_docker/archive/fd17b1c56380f4f661a9c4649cd95809a132d9e3.tar.gz"],
 )
 
 load(
@@ -464,13 +462,11 @@ _go_image_repos()
 
 http_archive(
     name = "io_bazel_rules_k8s",
-    integrity = "sha256-51xa8wL5mhoGlsvgTEm4NRXsfCVgX5lR8a1/evO/pBY=",
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:rules_k8s.patch",
-    ],
-    strip_prefix = "rules_k8s-554dc69933461ae2fa4fefcc46d09d5784832e6c",
-    urls = ["https://github.com/bazelbuild/rules_k8s/archive/554dc69933461ae2fa4fefcc46d09d5784832e6c.tar.gz"],
+    integrity = "sha256-3Mlx7XOFKElr7S+RjozqWqb7LPUf1pg48W0RV5XT4cc=",
+    strip_prefix = "rules_k8s-a40e8ad10fe00afd8bd149e558e5572793ca5873",
+    # This is our own fork of rules_k8s with bzlmod support.
+    # Diff: https://github.com/bazelbuild/rules_k8s/compare/master...buildbuddy-io:rules_k8s:master
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/a40e8ad10fe00afd8bd149e558e5572793ca5873.tar.gz"],
 )
 
 load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults", "k8s_repositories")
