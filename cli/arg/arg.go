@@ -231,7 +231,7 @@ func SplitOptionValue(arg string) (flag string, value string) {
 	}
 }
 
-func Append(args []string, arg... string) []string {
+func Append(args []string, arg ...string) []string {
 	bazelArgs, execArgs := SplitExecutableArgs(args)
 	for _, a := range arg {
 		if strings.HasPrefix(a, "-") {
