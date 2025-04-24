@@ -59,7 +59,6 @@ const (
 	escapeSeq                  = "\u001B["
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
-	gitConfigDefaultBranch     = "remote-bazel-default-branch"
 
 	// Name of the dir where the remote runner should write bazel run scripts
 	// (used to facilitate building a target remotely and running it locally).
@@ -242,24 +241,17 @@ func parseRemote(s string) (*gitRemote, error) {
 // `ref: refs/heads/main	HEAD`
 // and this function would return `main`.
 func determineDefaultBranch(remoteData string) (string, error) {
-	// Read cached default branch if set.
-	defaultBranch, _ := storage.ReadRepoConfig(gitConfigDefaultBranch)
+	defaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH")
 	if defaultBranch != "" {
 		return defaultBranch, nil
 	}
 
 	re := regexp.MustCompile(`ref: refs/heads/(\S+)\s+HEAD`)
 	match := re.FindStringSubmatch(remoteData)
-	if len(match) < 1 {
-		return "", status.NotFoundErrorf("Failed to parse default branch from:\n%s", remoteData)
+	if len(match) > 1 {
+		return match[1], nil
 	}
-	defaultBranch = match[1]
-
-	err := storage.WriteRepoConfig(gitConfigDefaultBranch, defaultBranch)
-	if err != nil {
-		log.Warnf("failed to cache default branch in .git/config: %s", err)
-	}
-	return defaultBranch, nil
+	return "", status.NotFoundErrorf("Failed to parse default branch from:\n%s", remoteData)
 }
 
 func runGit(args ...string) (string, error) {
@@ -321,7 +313,9 @@ func Config() (*RepoConfig, error) {
 	fetchURL := remote.url
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
-	shouldFetchRemote := (*runFromBranch == "" && *runFromCommit == "") || !haveCachedDefaultBranch()
+	shouldFetchBaseRef := *runFromBranch == "" && *runFromCommit == ""
+	shouldFetchDefaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH") == ""
+	shouldFetchRemote := shouldFetchBaseRef || shouldFetchDefaultBranch
 	var remoteData string
 	if shouldFetchRemote {
 		remoteData, err = runGit("ls-remote", "--symref", remote.name)
@@ -472,11 +466,6 @@ func getHeadCommitForLocalBranch(branch string) (string, error) {
 	}
 	headCommit = strings.Trim(headCommit, "\n")
 	return headCommit, nil
-}
-
-func haveCachedDefaultBranch() bool {
-	defaultBranch, _ := storage.ReadRepoConfig(gitConfigDefaultBranch)
-	return defaultBranch != ""
 }
 
 // generates diffs between the current state of the repo and `baseCommit`
