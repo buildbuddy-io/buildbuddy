@@ -126,11 +126,7 @@ func handleGlobalCliFlags(args []string) []string {
 			log.Configure(flagVal)
 		}
 	}
-	if len(residual) > 0 {
-		args = append(args, "--")
-		args = append(args, residual...)
-	}
-	return args
+	return arg.JoinExecutableArgs(args, residual)
 }
 
 // handleBazelCommand handles a native bazel command (i.e. commands that are

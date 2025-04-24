@@ -344,7 +344,7 @@ func ConfigureAPIKey(args []string) ([]string, error) {
 		return args, nil
 	}
 
-	return append(args, "--"+apiKeyHeader+"="+strings.TrimSpace(apiKey)), nil
+	return arg.Append(args, "--"+apiKeyHeader+"="+strings.TrimSpace(apiKey)), nil
 }
 
 // Commands that support the `--remote_header` bazel flag

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -157,7 +158,9 @@ func JoinExecutableArgs(args, execArgs []string) []string {
 	if len(execArgs) == 0 {
 		return out
 	}
-	out = append(out, "--")
+	if !slices.Contains(args, "--") {
+		out = append(out, "--")
+	}
 	out = append(out, execArgs...)
 	return out
 }
@@ -226,4 +229,16 @@ func SplitOptionValue(arg string) (flag string, value string) {
 	default:
 		return "", ""
 	}
+}
+
+func Append(args []string, arg... string) []string {
+	bazelArgs, execArgs := SplitExecutableArgs(args)
+	for _, a := range arg {
+		if strings.HasPrefix(a, "-") {
+			bazelArgs = append(bazelArgs, a)
+			continue
+		}
+		execArgs = append(execArgs, a)
+	}
+	return JoinExecutableArgs(bazelArgs, execArgs)
 }

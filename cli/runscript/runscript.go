@@ -25,7 +25,7 @@ func Configure(args []string) (newArgs []string, scriptPath string, err error) {
 	}
 	defer script.Close()
 	scriptPath = script.Name()
-	args = append(args, "--script_path="+scriptPath)
+	args = arg.Append(args, "--script_path="+scriptPath)
 	return args, scriptPath, nil
 }
 
