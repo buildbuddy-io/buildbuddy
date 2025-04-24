@@ -517,6 +517,8 @@ func BenchmarkFindMissingBlobs(b *testing.B) {
 		barrrDigestProto,
 	}
 
+	b.ReportAllocs()
+
 	for b.Loop() {
 		resp, err := proxy.FindMissingBlobs(ctx, req)
 		require.NoError(b, err)
@@ -558,6 +560,8 @@ func BenchmarkBatchReadBlobs(b *testing.B) {
 	update(ctx, proxy, blobs, b)
 	req := readBlobsRequest(slices.Collect(maps.Keys(blobs)))
 
+	b.ReportAllocs()
+
 	for b.Loop() {
 		resp, err := proxy.BatchReadBlobs(ctx, req)
 		require.NoError(b, err)
@@ -595,6 +599,9 @@ func BenchmarkBatchUpdateBlobs(b *testing.B) {
 
 	i := 0
 	req := updateBlobsRequest(blobs)
+
+	b.ReportAllocs()
+
 	for b.Loop() {
 		req.InstanceName = fmt.Sprintf("%d", i)
 		resp, err := proxy.BatchUpdateBlobs(ctx, req)
@@ -695,6 +702,8 @@ func BenchmarkGetTree(b *testing.B) {
 	require.ElementsMatch(b, files, treeFiles)
 	unaryRequests.Store(0)
 	streamRequests.Store(0)
+
+	b.ReportAllocs()
 
 	for b.Loop() {
 		treeFiles := cas.ReadTree(ctx, b, casProxy, "", rootDigest)
