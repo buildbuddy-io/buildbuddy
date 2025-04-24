@@ -148,6 +148,10 @@ func (bb *BatchBuilder) AddPostCommitHook(m proto.Message) *BatchBuilder {
 		bb.cmd.PostCommitHooks = append(bb.cmd.PostCommitHooks, &rfpb.PostCommitHook{
 			SnapshotCluster: value,
 		})
+	case *rfpb.StartShardHook:
+		bb.cmd.PostCommitHooks = append(bb.cmd.PostCommitHooks, &rfpb.PostCommitHook{
+			StartShard: value,
+		})
 	}
 	return bb
 }
@@ -381,6 +385,12 @@ func (sb *TxnStatementBuilder) AddPostCommitHook(phase rfpb.TransactionHook_Phas
 			Phase: phase,
 			Hook: &rfpb.PostCommitHook{
 				SnapshotCluster: value,
+			}})
+	case *rfpb.StartShardHook:
+		sb.hooks = append(sb.hooks, &rfpb.TransactionHook{
+			Phase: phase,
+			Hook: &rfpb.PostCommitHook{
+				StartShard: value,
 			}})
 	}
 	return sb
