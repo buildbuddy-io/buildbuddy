@@ -8,6 +8,7 @@ go_library(
         "//cli/arg",
         "//cli/bazelisk",
         "//cli/log",
+        "//cli/parser/arguments",
         "//cli/parser/options",
         "//cli/storage",
         "//cli/workspace",
