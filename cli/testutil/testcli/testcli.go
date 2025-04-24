@@ -41,6 +41,9 @@ func BinaryPath(t *testing.T) string {
 }
 
 // Command returns an *exec.Cmd for the CLI binary.
+//
+// Prefer using BazelCommand for bazel-specific commands, such as build, test, query
+// as the additional flags will help improve hermeticity of the tests.
 func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 	initEnvOnce.Do(func() {
 		// Need a HOME dir for .cache and .config dirs.
@@ -63,9 +66,15 @@ func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 	return cmd
 }
 
+// BazelCommand returns a bazel-specific command with system and home bazelrc ignored
+// to ensure hermetic testing result.
+func BazelCommand(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
+	return Command(t, workspacePath, append([]string{"--nosystem_rc", "--nohome_rc"}, args...)...)
+}
+
 // BazeliskCommand returns a bazelisk command to invoke the CLI via the
 // .bazelversion trick.
-// It's usually preferable to use Command() except when specifically
+// It's usually preferable to use BazelCommand() except when specifically
 // testing bazelisk integration.
 func BazeliskCommand(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 	cmd := Command(t, workspacePath, args...)
