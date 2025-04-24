@@ -45,6 +45,7 @@ go_test(
         "//server/resources",
         "//server/testutil/testenv",
         "//server/util/log",
+        "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/uuid",
         "@com_github_stretchr_testify//require",

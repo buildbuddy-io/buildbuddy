@@ -164,6 +164,12 @@ snapshot, we only overwrite the snapshot for the `users-ui` branch,
 meaning that the `users-api` and `main` branch snapshots will not be
 affected.
 
+One common issue is not running any remote runs on your default branch.
+Every time there is a new PR branch, for example, the remote run will start from
+scratch because there is not a shared default snapshot for them to start from. One
+solution is to trigger a remote run on every push to the default branch, to make sure
+the default snapshot stays up to date.
+
 For more technical details on our VM implementation, see our BazelCon
 talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.com/watch?v=YycEXBlv7ZA).
 

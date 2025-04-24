@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -27,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -840,4 +842,39 @@ func TestAskForMoreWorkOnlyEnqueuesTasksThatFitOnNode(t *testing.T) {
 	})
 	rsp = <-smallExecutor.schedulerMessages
 	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
+}
+
+func TestGetExecutionNodes(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
+	enterprise_testauth.Configure(t, env)
+
+	// Register several nodes with different IDs
+	for _, hostID := range []string{"z", "m", "a"} {
+		executor := newFakeExecutorWithId(ctx, t, hostID, env.GetSchedulerClient())
+		executor.Register()
+	}
+
+	u := enterprise_testauth.CreateRandomUser(t, env, "org1.invalid")
+	g := u.Groups[0].Group
+	groupID := g.GroupID
+
+	auther := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auther.WithAuthenticatedUser(ctx, u.UserID)
+	require.NoError(t, err)
+
+	rsp, err := env.GetSchedulerService().GetExecutionNodes(authCtx, &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{
+			GroupId: groupID,
+		},
+	})
+	require.NoError(t, err)
+
+	// Ensure that executors are sorted by host id.
+	for i, executor := range rsp.GetExecutor() {
+		if i > 0 {
+			last := rsp.GetExecutor()[i-1]
+			require.GreaterOrEqual(t, executor.GetNode().GetHost(), last.GetNode().GetHost())
+		}
+	}
 }

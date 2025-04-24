@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,7 +44,7 @@ const (
 )
 
 type noOpCAS struct {
-	t *testing.T
+	t testing.TB
 }
 
 func (c *noOpCAS) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
@@ -79,7 +80,7 @@ func requestCountingStreamInterceptor(count *atomic.Int32) grpc.StreamClientInte
 	}
 }
 
-func runRemoteServices(ctx context.Context, env *testenv.TestEnv, t *testing.T) (bspb.ByteStreamClient, repb.ContentAddressableStorageClient, *atomic.Int32, *atomic.Int32) {
+func runRemoteServices(ctx context.Context, env *testenv.TestEnv, t testing.TB) (bspb.ByteStreamClient, repb.ContentAddressableStorageClient, *atomic.Int32, *atomic.Int32) {
 	server, err := byte_stream_server.NewByteStreamServer(env)
 	cas := noOpCAS{t: t}
 	require.NoError(t, err)
@@ -97,7 +98,7 @@ func runRemoteServices(ctx context.Context, env *testenv.TestEnv, t *testing.T) 
 	return bspb.NewByteStreamClient(conn), repb.NewContentAddressableStorageClient(conn), &unaryRequestCounter, &streamRequestCounter
 }
 
-func runLocalBSS(ctx context.Context, env *testenv.TestEnv, t *testing.T) bspb.ByteStreamClient {
+func runLocalBSS(ctx context.Context, env *testenv.TestEnv, t testing.TB) bspb.ByteStreamClient {
 	server, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
 	grpcServer, runFunc, lis := testenv.RegisterLocalInternalGRPCServer(t, env)
@@ -109,7 +110,7 @@ func runLocalBSS(ctx context.Context, env *testenv.TestEnv, t *testing.T) bspb.B
 	return bspb.NewByteStreamClient(conn)
 }
 
-func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.TestEnv, t *testing.T) bspb.ByteStreamClient {
+func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.TestEnv, t testing.TB) bspb.ByteStreamClient {
 	if env.GetAtimeUpdater() == nil {
 		env.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	}
@@ -482,4 +483,94 @@ func TestSkipRemote(t *testing.T) {
 	require.Equal(t, data, buf.Bytes())
 	require.NoError(t, waitContains(ctx, proxyEnv, rn))
 	requestCounter.Store(0)
+}
+
+func BenchmarkRead(b *testing.B) {
+	// Disable the atime updater as it can interfere with the request counter.
+	flags.Set(b, "cache_proxy.remote_atime_max_digests_per_group", 0)
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(b)
+	proxyEnv := testenv.GetTestEnv(b)
+	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, b)
+	proxy := runBSProxy(ctx, bs, proxyEnv, b)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
+	if err != nil {
+		b.Errorf("error attaching user prefix: %v", err)
+	}
+
+	dataString := strings.Repeat("abcdefghijklmnopqrstuvwxyz", 1_000)
+	d := repb.Digest{
+		Hash:      "9bae04df8ee130bb0a94596b84b4ab161a2abf8a94c4e30523249fad5754ae27",
+		SizeBytes: int64(len(dataString)),
+	}
+	rn := digest.NewCASResourceName(&d, "", repb.DigestFunction_SHA256)
+	writeStream, err := proxy.Write(ctx)
+	require.NoError(b, err)
+	require.NoError(b, writeStream.Send(&bspb.WriteRequest{
+		ResourceName: rn.NewUploadString(),
+		WriteOffset:  0,
+		Data:         []byte(dataString),
+		FinishWrite:  true,
+	}))
+	resp, err := writeStream.CloseAndRecv()
+	require.NoError(b, err)
+	require.Equal(b, int64(len(dataString)), resp.GetCommittedSize())
+
+	b.ReportAllocs()
+	requestCounter.Store(0)
+
+	for b.Loop() {
+		downloadBuf := make([]byte, 0, len(dataString))
+		downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: rn.DownloadString()})
+		require.NoError(b, err)
+		for {
+			res, err := downloadStream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(b, err)
+			downloadBuf = append(downloadBuf, res.Data...)
+		}
+		require.Equal(b, dataString, string(downloadBuf))
+		require.Equal(b, int32(0), requestCounter.Load())
+	}
+}
+
+func BenchmarkWrite(b *testing.B) {
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(b)
+	proxyEnv := testenv.GetTestEnv(b)
+	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, b)
+	proxy := runBSProxy(ctx, bs, proxyEnv, b)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
+	if err != nil {
+		b.Errorf("error attaching user prefix: %v", err)
+	}
+
+	i := 1
+	dataString := strings.Repeat("abcdefghijklmnopqrstuvwxyz", 1_000)
+	d := repb.Digest{
+		Hash:      "9bae04df8ee130bb0a94596b84b4ab161a2abf8a94c4e30523249fad5754ae27",
+		SizeBytes: int64(len(dataString)),
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		rn := digest.NewCASResourceName(&d, fmt.Sprintf("%d", i), repb.DigestFunction_SHA256)
+		writeStream, err := proxy.Write(ctx)
+		require.NoError(b, err)
+		require.NoError(b, writeStream.Send(&bspb.WriteRequest{
+			ResourceName: rn.NewUploadString(),
+			WriteOffset:  0,
+			Data:         []byte(dataString),
+			FinishWrite:  true,
+		}))
+		resp, err := writeStream.CloseAndRecv()
+		require.NoError(b, err)
+		require.Equal(b, int64(len(dataString)), resp.GetCommittedSize())
+		require.Equal(b, int32(i), requestCounter.Load())
+		i++
+	}
 }
