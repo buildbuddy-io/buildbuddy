@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -75,7 +76,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		return err
 	}
 
-	localReadStream, err := s.local.Read(ctx, req)
+	localGRPCReadStream, err := s.local.Read(ctx, req)
 	if err != nil {
 		if skipRemote {
 			recordReadMetrics(metrics.MissStatusLabel, requestTypeLabel, err, 0)
@@ -96,12 +97,9 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	}
 
 	responseSent := false
-	bytesRead := 0
+	localReadStream := grpc_stream.NewByteCountingServerStream(localGRPCReadStream)
 	for {
 		rsp, err := localReadStream.Recv()
-		if rsp != nil {
-			bytesRead += len(rsp.Data)
-		}
 		if err == io.EOF {
 			break
 		}
@@ -112,10 +110,10 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 			// the remote cache, but keep it simple for now.
 			if responseSent {
 				log.CtxInfof(ctx, "error midstream of local read: %s", err)
-				recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, err, bytesRead)
+				recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, err, int(localReadStream.GetByteCount()))
 				return err
 			} else if skipRemote {
-				recordReadMetrics(metrics.MissStatusLabel, requestTypeLabel, err, bytesRead)
+				recordReadMetrics(metrics.MissStatusLabel, requestTypeLabel, err, int(localReadStream.GetByteCount()))
 				return err
 			} else {
 				// Fall back to reading remotely if the local read fails.
@@ -126,12 +124,12 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		}
 
 		if err := stream.Send(rsp); err != nil {
-			recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, err, bytesRead)
+			recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, err, int(localReadStream.GetByteCount()))
 			return err
 		}
 		responseSent = true
 	}
-	recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, nil, bytesRead)
+	recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, nil, int(localReadStream.GetByteCount()))
 	return nil
 }
 
@@ -213,11 +211,12 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
-	remoteReadStream, err := s.remote.Read(ctx, req)
+	remoteGRPCReadStream, err := s.remote.Read(ctx, req)
 	if err != nil {
 		log.CtxInfof(ctx, "error reading from remote: %s", err)
 		return 0, err
 	}
+	remoteReadStream := grpc_stream.NewByteCountingServerStream(remoteGRPCReadStream)
 
 	var localWriteStream localWriter = &discardingLocalWriter{}
 	if req.ReadOffset == 0 && !authutil.EncryptionEnabled(ctx, s.authenticator) {
@@ -235,12 +234,8 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 		}
 	}
 
-	bytesRead := 0
 	for {
 		rsp, err := remoteReadStream.Recv()
-		if rsp != nil {
-			bytesRead += len(rsp.Data)
-		}
 		if err != nil {
 			if err == io.EOF {
 				if err := localWriteStream.commit(); err != nil {
@@ -249,7 +244,7 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 				break
 			}
 			log.CtxInfof(ctx, "error streaming from remote for read through: %s", err)
-			return bytesRead, err
+			return int(remoteReadStream.GetByteCount()), err
 		}
 
 		if err := localWriteStream.send(rsp.Data); err != nil {
@@ -257,10 +252,10 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 			localWriteStream = &discardingLocalWriter{}
 		}
 		if err = stream.Send(rsp); err != nil {
-			return bytesRead, err
+			return int(remoteReadStream.GetByteCount()), err
 		}
 	}
-	return bytesRead, nil
+	return int(remoteReadStream.GetByteCount()), nil
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {

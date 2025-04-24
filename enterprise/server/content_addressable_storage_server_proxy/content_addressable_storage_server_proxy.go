@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -292,7 +293,6 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 	return readResp, nil
 }
 
-// TODO(iain): record per-byte metrics here as well as above.
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
 	if proxy_util.SkipRemote(stream.Context()) {
 		return status.UnimplementedError("Skip remote not implemented")
@@ -306,18 +306,18 @@ func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAd
 
 func (s *CASServerProxy) getTreeWithoutCaching(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
 	digests := 0
-	bytes := 0
+	remoteGRPCStream, err := s.remote.GetTree(stream.Context(), req)
+	if err != nil {
+		return err
+	}
+	remoteStream := grpc_stream.NewByteCountingServerStream(remoteGRPCStream)
 	defer func() {
 		recordMetrics(
 			"GetTree",
 			metrics.MissStatusLabel,
 			map[string]int{metrics.MissStatusLabel: digests},
-			map[string]int{metrics.MissStatusLabel: bytes})
+			map[string]int{metrics.MissStatusLabel: int(remoteStream.GetByteCount())})
 	}()
-	remoteStream, err := s.remote.GetTree(stream.Context(), req)
-	if err != nil {
-		return err
-	}
 	for {
 		rsp, err := remoteStream.Recv()
 		if err == io.EOF {
@@ -330,7 +330,6 @@ func (s *CASServerProxy) getTreeWithoutCaching(req *repb.GetTreeRequest, stream 
 			digests += len(dir.GetFiles())
 			digests += len(dir.GetDirectories())
 		}
-		bytes += proto.Size(rsp)
 		if err = stream.Send(rsp); err != nil {
 			return err
 		}
