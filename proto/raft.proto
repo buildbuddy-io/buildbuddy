@@ -244,6 +244,11 @@ message BatchCmdRequest {
 
   // Session is used to guarantee idempotency for writes on the state machine.
   optional Session session = 6;
+
+  // If set, the mapped_range will be locked when we prepare a transaction, no
+  // writes will be allowed; it will be unlocked when the transaction is
+  // committed or rolled back.
+  bool lock_mapped_range = 7;
 }
 
 message BatchCmdResponse {

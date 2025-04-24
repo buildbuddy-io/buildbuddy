@@ -1112,6 +1112,86 @@ func TestTransactionPrepareAndCommit(t *testing.T) {
 	require.Equal(t, []byte("bar"), buf)
 }
 
+func TestTransactionLockingMappedRange(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+
+	rd := &rfpb.RangeDescriptor{
+		Start:      keys.Key("a"),
+		End:        keys.Key("c"),
+		RangeId:    1,
+		Generation: 1,
+	}
+	writeLocalRangeDescriptor(t, em, repl.Replica, rd)
+
+	wb := repl.DB().NewBatch()
+	txid := []byte("TX1")
+	rd.End = keys.Key("b")
+	rd.Generation = 2
+	rdBuf, err := proto.Marshal(rd)
+	require.NoError(t, err)
+	cmd, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: rdBuf,
+		},
+	}).SetLockMappedRange(true).ToProto()
+	require.NoError(t, err)
+	_, err = repl.PrepareTransaction(wb, txid, cmd)
+	require.NoError(t, err)
+
+	require.NoError(t, wb.Commit(pebble.Sync))
+	require.NoError(t, wb.Close())
+
+	// cannot write to [a, c)
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("bzzz"),
+				Value: []byte("just-an-innocent-write"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+
+	// cannot write to [a, c) in a txn
+	{
+		wb = repl.DB().NewBatch()
+		txid2 := []byte("TX2")
+		badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("bzzzz"),
+				Value: []byte("baz"),
+			},
+		}).ToProto()
+		_, err = repl.PrepareTransaction(wb, txid2, badCmd)
+		require.Error(t, err)
+		require.NoError(t, wb.Close())
+	}
+
+	err = repl.CommitTransaction(txid)
+	require.NoError(t, err)
+
+	localRangeKey := keys.MakeKey(constants.LocalPrefix, []byte("c1n1-"), constants.LocalRangeKey)
+	buf, closer, err := repl.DB().Get(localRangeKey)
+	defer closer.Close()
+	require.NotEmpty(t, buf)
+	require.NoError(t, err)
+	gotRD := &rfpb.RangeDescriptor{}
+	err = proto.Unmarshal(buf, gotRD)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(rd, gotRD))
+}
+
 func TestTransactionPrepareAndRollback(t *testing.T) {
 	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
