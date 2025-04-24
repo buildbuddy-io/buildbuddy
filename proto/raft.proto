@@ -246,7 +246,7 @@ message BatchCmdRequest {
   optional Session session = 6;
 
   // If set, the mapped_range will be locked when we prepare a transaction, no
-  // writes will be allowed; it will be unlocked when the transaction is 
+  // writes will be allowed; it will be unlocked when the transaction is
   // committed or rolled back.
   bool lock_mapped_range = 7;
 }
