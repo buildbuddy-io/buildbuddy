@@ -2018,7 +2018,7 @@ func (ws *workspace) config(ctx context.Context) error {
 }
 
 func (ws *workspace) init(ctx context.Context) error {
-	if _, err := git(ctx, ws.log, "init"); err != nil {
+	if _, err := git(ctx, ws.log, "init", "--quiet"); err != nil {
 		return status.UnknownError("git init failed")
 	}
 	return nil
