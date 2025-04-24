@@ -23,7 +23,7 @@ actions:
         branches:
           - "*"
     steps:
-      - run: "bazel test //... --enable_bzlmod --config=linux-workflows --config=bzlmod-target-linux-x86 --config=race --test_tag_filters=-performance,-docker,-bare"
+      - run: "bazel test //... --enable_bzlmod --noenable_workspace --config=linux-workflows --config=bzlmod-target-linux-x86 --config=race --test_tag_filters=-performance,-docker,-bare"
   - name: Check style
     container_image: ubuntu-20.04
     triggers:
