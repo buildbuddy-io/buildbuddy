@@ -893,12 +893,19 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 		if p.gcsObjectIsPastTTL(gcsMetadata) {
 			return nil
 		}
-		if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
-			metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
-			log.Errorf("Error updating GCS custom time (%q): %s", key, err)
-			return err
+		customTimeUsec := gcsMetadata.GetLastCustomTimeUsec()
+
+		// Only update the GCS atime if the object is older than
+		// gcs_ttl / 2. For example, if the gcs_ttl is "30d", only
+		// update the gcs CustomTime when the object is older than 15d.
+		if p.clock.Since(time.UnixMicro(customTimeUsec)) > time.Duration(p.gcsTTLDays*24)*time.Hour/2 {
+			if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
+				metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
+				log.Errorf("Error updating GCS custom time (%q): %s", key, err)
+				return err
+			}
+			md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
 		}
-		md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
 	}
 
 	md.LastAccessUsec = newAtime.UnixMicro()
