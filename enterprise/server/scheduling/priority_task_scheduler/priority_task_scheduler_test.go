@@ -120,7 +120,7 @@ func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t 
 
 	executor := NewFakeExecutor()
 	runnerPool := &FakeRunnerPool{}
-	leaser := &FakeTaskLeaser{}
+	leaser := NewFakeTaskLeaser()
 
 	scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
 	scheduler.Start()
@@ -231,7 +231,7 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 			env.SetRemoteExecutionClient(executionClient)
 			executor := NewFakeExecutor()
 			runnerPool := &FakeRunnerPool{}
-			leaser := &FakeTaskLeaser{}
+			leaser := NewFakeTaskLeaser()
 			scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
 			scheduler.Start()
 			t.Cleanup(func() {
@@ -325,10 +325,13 @@ type FakeTaskLeaser struct {
 	GrantedLeases chan *FakeLease
 }
 
-func (f *FakeTaskLeaser) Lease(ctx context.Context, taskID string) (interfaces.TaskLease, error) {
-	if f.GrantedLeases == nil {
-		f.GrantedLeases = make(chan *FakeLease, 512)
+func NewFakeTaskLeaser() *FakeTaskLeaser {
+	return &FakeTaskLeaser{
+		GrantedLeases: make(chan *FakeLease, 512),
 	}
+}
+
+func (f *FakeTaskLeaser) Lease(ctx context.Context, taskID string) (interfaces.TaskLease, error) {
 	lease := &FakeLease{
 		ctx:    ctx,
 		taskID: taskID,
