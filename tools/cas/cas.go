@@ -45,15 +45,15 @@ var (
 //
 // Show an action result proto:
 //
-//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=HASH/SIZE -type=ActionResult
+//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=/blobs/ac/HASH/SIZE -type=ActionResult
 //
 // Show a command proto:
 //
-//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=HASH/SIZE -type=Command
+//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=/blobs/HASH/SIZE -type=Command
 //
 // Show stderr contents:
 //
-//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=HASH/SIZE -type=stderr
+//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=/blobs/HASH/SIZE -type=stderr
 func main() {
 	flag.Parse()
 	if *target == "" {
@@ -70,22 +70,26 @@ func main() {
 		digestString = "/blobs/" + digestString
 	}
 
-	var ind *digest.ResourceName
+	var ind *rspb.ResourceName
 	if *blobType == "ActionResult" {
-		ind = digest.NewResourceName(ind.GetDigest(), ind.GetInstanceName(), rspb.CacheType_AC, ind.GetDigestFunction())
+		indDownload, err := digest.ParseActionCacheResourceName(digestString)
+		if err != nil {
+			log.Fatal(status.Message(err))
+		}
+		ind = indDownload.ToProto()
 	} else {
 		indDownload, err := digest.ParseDownloadResourceName(digestString)
 		if err != nil {
 			log.Fatal(status.Message(err))
 		}
-		ind = &indDownload.ResourceName
+		ind = indDownload.ToProto()
 	}
 
 	// For backwards compatibility with the existing behavior of this code:
 	// If the parsed remote_instance_name is empty, and the flag instance
 	// name is set; override the instance name of `rn`.
 	if ind.GetInstanceName() == "" && *instanceName != "" {
-		ind = digest.NewResourceName(ind.GetDigest(), *instanceName, ind.GetCacheType(), ind.GetDigestFunction())
+		ind = digest.NewResourceName(ind.GetDigest(), *instanceName, ind.GetCacheType(), ind.GetDigestFunction()).ToProto()
 	}
 
 	conn, err := grpc_client.DialSimple(*target)
@@ -104,7 +108,7 @@ func main() {
 
 	if *showMetadata || *showMetadataOnly {
 		req := &capb.GetCacheMetadataRequest{
-			ResourceName: ind.ToProto(),
+			ResourceName: ind,
 		}
 		md, err := bbClient.GetCacheMetadata(ctx, req)
 		if err != nil {
@@ -130,7 +134,7 @@ func main() {
 	// Handle raw string types
 	if *blobType == "stdout" || *blobType == "stderr" || *blobType == "file" {
 		var out bytes.Buffer
-		r, err := ind.CheckCAS()
+		r, err := digest.CASResourceNameFromProto(ind)
 		if err != nil {
 			log.Fatalf("Failed to convert resource name to CAS: %s", err)
 		}
@@ -143,7 +147,7 @@ func main() {
 
 	// Handle ActionResults (these are stored in the action cache)
 	if *blobType == "ActionResult" {
-		r, err := ind.CheckAC()
+		r, err := digest.ACResourceNameFromProto(ind)
 		if err != nil {
 			log.Fatalf("Failed to convert resource name to AC: %s", err)
 		}
@@ -157,7 +161,7 @@ func main() {
 
 	// Handle Trees (these are stored in the CAS)
 	if *blobType == "Tree" {
-		r, err := ind.CheckCAS()
+		r, err := digest.CASResourceNameFromProto(ind)
 		if err != nil {
 			log.Fatalf("Failed to convert resource name to CAS: %s", err)
 		}
@@ -179,7 +183,7 @@ func main() {
 	default:
 		log.Fatalf(`Invalid --type: %q (allowed values: Action, ActionResult, Command, Tree, file, stderr, stdout)`, *blobType)
 	}
-	r, err := ind.CheckCAS()
+	r, err := digest.CASResourceNameFromProto(ind)
 	if err != nil {
 		log.Fatalf("Failed to convert resource name to CAS: %s", err)
 	}
