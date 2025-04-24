@@ -41,6 +41,28 @@ const (
 )
 
 var (
+	bazelCommands = map[string]struct{}{
+		"analyze-profile":    {},
+		"aquery":             {},
+		"build":              {},
+		"canonicalize-flags": {},
+		"clean":              {},
+		"coverage":           {},
+		"cquery":             {},
+		"dump":               {},
+		"fetch":              {},
+		"help":               {},
+		"info":               {},
+		"license":            {},
+		"mobile-install":     {},
+		"print_action":       {},
+		"query":              {},
+		"run":                {},
+		"shutdown":           {},
+		"sync":               {},
+		"test":               {},
+		"version":            {},
+	}
 	// Inheritance hierarchy: https://bazel.build/run/bazelrc#option-defaults
 	// All commands inherit from "common".
 	parentCommand = map[string]string{
@@ -242,8 +264,9 @@ func formatOption(optionDefinition *options.Definition, value string) string {
 type BazelHelpFunc func() (string, error)
 
 func BazelCommands() (map[string]struct{}, error) {
-	once := generateParserOnce()
-	return once.p.BazelCommands, once.error
+	// TODO(zoey): figure out if we can get bazel help output without starting a
+	// bazel server at any point.
+	return bazelCommands, nil
 }
 
 func (p *Parser) parseStarlarkOptionDefinition(optName string) *options.Definition {
