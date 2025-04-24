@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -126,7 +125,8 @@ type BuildEventHandler struct {
 	statsRecorder    *statsRecorder
 	openChannels     *sync.WaitGroup
 	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
-	shuttingDown     atomic.Bool
+	shuttingDown     bool
+	mu               sync.Mutex
 }
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
@@ -154,9 +154,12 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 }
 
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interfaces.BuildEventChannel, error) {
-	if b.shuttingDown.Load() {
-		return nil, fmt.Errorf("BuildEventHandler shutting down, cannot open channel for %s", iid)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.shuttingDown {
+		return nil, status.UnavailableErrorf("Server shutting down, cannot open channel for %s", iid)
 	}
+
 	invocation := &inpb.Invocation{InvocationId: iid}
 	buildEventAccumulator := accumulator.NewBEValues(invocation)
 	val, ok := b.cancelFnsByInvID.Load(iid)
@@ -196,7 +199,9 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 }
 
 func (b *BuildEventHandler) Stop() {
-	b.shuttingDown.Store(true)
+	b.mu.Lock()
+	b.shuttingDown = true
+	b.mu.Unlock()
 	b.cancelFnsByInvID.Range(func(key, val interface{}) bool {
 		iid := key.(string)
 		cancelFn := val.(context.CancelFunc)
