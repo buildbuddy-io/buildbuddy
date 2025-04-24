@@ -417,6 +417,7 @@ func mirrorToCache(
 	if checksumFunc == storageFunc && expectedChecksum != "" && rsp.ContentLength >= 0 {
 		d := &repb.Digest{Hash: expectedChecksum, SizeBytes: rsp.ContentLength}
 		rn := digest.NewCASResourceName(d, remoteInstanceName, storageFunc)
+		rn.SetCompressor(repb.Compressor_ZSTD)
 		if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
 			return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
 		}
