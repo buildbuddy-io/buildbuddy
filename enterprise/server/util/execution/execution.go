@@ -14,6 +14,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
+	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
@@ -109,11 +110,64 @@ func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
 	return out, nil
 }
 
+func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
+	r, err := digest.ParseUploadResourceName(in.ExecutionID)
+	if err != nil {
+		return nil, err
+	}
+
+	executeResponseDigest, err := digest.Compute(strings.NewReader(in.ExecutionID), r.GetDigestFunction())
+	if err != nil {
+		return nil, status.WrapError(err, "compute execute response digest")
+	}
+
+	// NOTE: keep in sync with ExecutionListingColumns
+	out := &espb.Execution{
+		ExecutionId:           in.ExecutionID,
+		ActionDigest:          r.GetDigest(),
+		ExecuteResponseDigest: executeResponseDigest,
+		Status: &statuspb.Status{
+			Code:    in.StatusCode,
+			Message: in.StatusMessage,
+		},
+		ExitCode: in.ExitCode,
+		Stage:    repb.ExecutionStage_Value(in.Stage),
+		ExecutedActionMetadata: &repb.ExecutedActionMetadata{
+			Worker:                         in.Worker,
+			QueuedTimestamp:                timestamppb.New(time.UnixMicro(in.QueuedTimestampUsec)),
+			WorkerStartTimestamp:           timestamppb.New(time.UnixMicro(in.WorkerStartTimestampUsec)),
+			WorkerCompletedTimestamp:       timestamppb.New(time.UnixMicro(in.WorkerCompletedTimestampUsec)),
+			InputFetchStartTimestamp:       timestamppb.New(time.UnixMicro(in.InputFetchStartTimestampUsec)),
+			InputFetchCompletedTimestamp:   timestamppb.New(time.UnixMicro(in.InputFetchCompletedTimestampUsec)),
+			ExecutionStartTimestamp:        timestamppb.New(time.UnixMicro(in.ExecutionStartTimestampUsec)),
+			ExecutionCompletedTimestamp:    timestamppb.New(time.UnixMicro(in.ExecutionCompletedTimestampUsec)),
+			OutputUploadStartTimestamp:     timestamppb.New(time.UnixMicro(in.OutputUploadStartTimestampUsec)),
+			OutputUploadCompletedTimestamp: timestamppb.New(time.UnixMicro(in.OutputUploadCompletedTimestampUsec)),
+			IoStats: &repb.IOStats{
+				FileDownloadCount:        in.FileDownloadCount,
+				FileDownloadSizeBytes:    in.FileDownloadSizeBytes,
+				FileDownloadDurationUsec: in.FileDownloadDurationUsec,
+				FileUploadCount:          in.FileUploadCount,
+				FileUploadSizeBytes:      in.FileUploadSizeBytes,
+				FileUploadDurationUsec:   in.FileUploadDurationUsec,
+			},
+			UsageStats: &repb.UsageStats{
+				CpuNanos:        in.CPUNanos,
+				PeakMemoryBytes: in.PeakMemoryBytes,
+			},
+			DoNotCache: in.DoNotCache,
+		},
+		CommandSnippet: in.CommandSnippet,
+	}
+
+	return out, nil
+}
+
 // ExecutionListingColumns returns the set of OLAP columns that are included in
 // the Execution proto returned to the client when listing executions (e.g.
 // Executions tab, Drilldown tab.)
 func ExecutionListingColumns() []string {
-	// NOTE: keep in sync with ClientProtoColumns
+	// NOTE: keep in sync with ClientProtoColumns and OLAPExecToClientProto
 	return []string{
 		"execution_id",
 		"status_code",

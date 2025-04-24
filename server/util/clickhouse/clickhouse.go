@@ -195,7 +195,11 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	return nil
 }
 
-func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schema.Execution {
+// ExecutionFromProto converts the proto representation of an OLAP execution to
+// the OLAP table representation.
+// TODO: move to enterprise/server/util/execution, which has similar conversion
+// logic.
+func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schema.Execution {
 	return &schema.Execution{
 		GroupID:                            in.GetGroupId(),
 		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
@@ -274,7 +278,7 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 func (h *DBHandle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error {
 	entries := make([]*schema.Execution, 0, len(executions))
 	for _, e := range executions {
-		entries = append(entries, buildExecution(e, inv))
+		entries = append(entries, ExecutionFromProto(e, inv))
 	}
 	num := len(entries)
 	if err := h.insertWithRetrier(ctx, (&schema.Execution{}).TableName(), num, &entries); err != nil {
