@@ -304,6 +304,7 @@ common:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
 common:untrusted-ci --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
+common:untrusted-ci --remote_header=x-buildbuddy-platform.enable-vfs=true
 
 # Disabled RBE for Windows
 common:untrusted-ci-windows --config=cache-shared
@@ -320,6 +321,7 @@ common:linux-workflows --config=target-linux-x86
 common:linux-workflows --config=workflows
 common:linux-workflows --config=buildbuddy_remote_executor
 common:linux-workflows --build_metadata=TAGS=linux-workflow
+common:linux-workflows --remote_header=x-buildbuddy-platform.enable-vfs=true
 
 # Configuration used for Mac workflows
 # TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
