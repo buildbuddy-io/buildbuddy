@@ -398,14 +398,6 @@ func Logout(wt *WebTester) {
 // Fails the test if the error banner was shown at any point during the test.
 func assertErrorBannerNeverShown(wt *WebTester) {
 	logs := wt.LogString()
-	// TODO(bduffany): fix error banner displayed for these tests and remove
-	// this check.
-	if name := wt.t.Name(); name == "TestAuthenticatedInvocation_CacheEnabled" ||
-		name == "TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled" ||
-		name == "TestSAMLBasicLogin" ||
-		name == "TestSAMLViewInvocation" {
-		return
-	}
 	if strings.Contains(logs, "Displaying error banner") {
 		assert.Fail(wt.t, "Error banner was displayed during test", "%s", logs)
 	}

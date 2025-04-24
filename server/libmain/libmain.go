@@ -443,7 +443,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	auth := env.GetAuthenticator()
 	mux.Handle("/login/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Login)))
 	mux.Handle("/auth/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Auth)))
-	mux.Handle("/logout/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Logout)))
+	mux.Handle("/logout/", interceptors.SetSecurityHeaders(interceptors.DefaultRedirect(interceptors.RedirectOnError(auth.Logout), "/")))
 
 	if err := github.Register(env); err != nil {
 		log.Fatalf("%v", err)
