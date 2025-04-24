@@ -121,15 +121,15 @@ type HitTrackerFactory struct {
 }
 
 func (h *HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	// If not hitting the remote cache, use a hit-tracker that sends information
-	// about local cache hits to the RPC service at the configured backend.
-	if proxy_util.SkipRemote(ctx) {
-		return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_AC}
+	if !proxy_util.SkipRemote(ctx) {
+		// For Action Cache hit-tracking hitting the remote cache, the
+		// authoritative cache should always take care of hit-tracking.
+		alert.UnexpectedEvent("Unexpected call to NewACHitTracker in the proxy")
 	}
-	// For Action Cache hit-tracking hitting the remote cache, explicitly ignore everything. These cache
-	// artifacts should always be served from the authoritative cache which
-	// will take care of hit-tracking.
-	return &NoOpHitTracker{}
+
+	// Use a hit-tracker that sends information
+	// about local cache hits to the RPC service at the configured backend.
+	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_AC}
 }
 
 func (h *HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
@@ -174,6 +174,7 @@ type HitTrackerClient struct {
 	cacheType       rspb.CacheType
 }
 
+// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4875) Implement
 func (h *HitTrackerClient) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) {
 	// This is used to track action durations and is not used for non-RBE executions.
 	// Currently skip-remote behavior is not used for RBE, so do nothing in this case.
@@ -184,6 +185,7 @@ func (h *HitTrackerClient) SetExecutedActionMetadata(md *repb.ExecutedActionMeta
 	alert.UnexpectedEvent("Unexpected call to SetExecutedActionMetadata")
 }
 
+// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4875) Implement
 func (h *HitTrackerClient) TrackMiss(d *repb.Digest) error {
 	// For requests that hit the backing cache: local cache misses hit the backing
 	// cache, which will take care of hit-tracking for this request.
