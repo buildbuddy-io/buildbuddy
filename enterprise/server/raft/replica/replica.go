@@ -87,7 +87,6 @@ type Replica struct {
 
 	fileStorer filestore.Store
 
-	quitChan  chan struct{}
 	broadcast chan<- events.Event
 
 	readQPS        *qps.Counter
@@ -97,6 +96,9 @@ type Replica struct {
 	prepared   map[string]pebble.Batch // string(txid) => prepared batch.
 
 	entriesBetweenUsageChecks uint64
+
+	bgCtx      context.Context
+	bgCancelFn context.CancelFunc
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -784,7 +786,6 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	}
 	defer db.Close()
 
-	sm.quitChan = make(chan struct{})
 	if err := sm.loadReplicaState(db); err != nil {
 		return 0, err
 	}
@@ -1251,7 +1252,7 @@ func statusProto(err error) *statuspb.Status {
 func (sm *Replica) handlePostCommit(hook *rfpb.PostCommitHook) {
 	if snap := hook.GetSnapshotCluster(); snap != nil {
 		go func() {
-			if err := sm.store.SnapshotCluster(context.TODO(), sm.rangeID); err != nil {
+			if err := sm.store.SnapshotCluster(sm.bgCtx, sm.rangeID); err != nil {
 				sm.log.Errorf("Error processing post-commit hook: %s", err)
 			}
 		}()
@@ -2061,9 +2062,7 @@ func (sm *Replica) TestingDB() (pebble.IPebbleDB, error) {
 // IOnDiskStateMachine instance has been closed, the Close method is not
 // allowed to update the state of IOnDiskStateMachine visible to the outside.
 func (sm *Replica) Close() error {
-	if sm.quitChan != nil {
-		close(sm.quitChan)
-	}
+	sm.bgCancelFn()
 
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
@@ -2081,6 +2080,7 @@ func (sm *Replica) Close() error {
 
 // New creates a new Replica, an on-disk state machine.
 func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
+	bgCtx, bgCancelFn := context.WithCancel(context.Background())
 	repl := &Replica{
 		rangeID:                   rangeID,
 		replicaID:                 replicaID,
@@ -2096,6 +2096,8 @@ func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcas
 		lockedKeys:                make(map[string][]byte),
 		prepared:                  make(map[string]pebble.Batch),
 		entriesBetweenUsageChecks: uint64(*entriesBetweenUsageChecks),
+		bgCtx:                     bgCtx,
+		bgCancelFn:                bgCancelFn,
 	}
 	repl.log = log.NamedSubLogger(repl.name())
 	return repl
