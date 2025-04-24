@@ -284,7 +284,9 @@ type Option interface {
 
 // GeneralOption is the concrete implementation of `Option` which supports all
 // types of options and their associated value, if any. It is a stop-gap measure
-// before we move to more specialized `Option` types.
+// before we move to more specialized `Option` types, like types that require
+// values, or can use the negative/positive boolean forms, or flags that expand
+// into other flags, or starlark flags.
 type GeneralOption struct {
 	*Definition
 	Value         *string
@@ -352,6 +354,8 @@ func (o *GeneralOption) UseShortName(u bool) {
 	o.UsesShortName = u && o.Definition.ShortName() != ""
 }
 
+// Normalized returns a copy of this option after being normalized to a form
+// that will format into the canonical representation of the option.
 func (o *GeneralOption) Normalized() Option {
 	if o.Definition.PluginID() == UnknownBuiltinPluginID {
 		// don't normalize unknown options
