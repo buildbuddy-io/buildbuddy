@@ -685,7 +685,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	if branch != "" {
 		q.AddWhereClause("branch_name = ?", branch)
 	}
-	q.SetOrderBy("label", true /*=ascending*/)
+	q.SetOrderBy("label ASC, start_time_usec", false /*=ascending*/)
 	return fetchTargetsFromOLAPDB(ctx, env, q, repo, groupID)
 }
 
