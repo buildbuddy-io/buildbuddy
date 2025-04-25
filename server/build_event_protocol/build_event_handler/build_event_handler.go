@@ -125,8 +125,9 @@ type BuildEventHandler struct {
 	statsRecorder    *statsRecorder
 	openChannels     *sync.WaitGroup
 	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
-	shuttingDown     bool
-	mu               sync.Mutex
+
+	mu           sync.Mutex
+	shuttingDown bool
 }
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
