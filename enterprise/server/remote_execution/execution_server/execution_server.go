@@ -1132,6 +1132,10 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return status.InternalErrorf("Failed to parse platform properties: %s", err)
 			}
+			// Keep this close to, but before the cacheActionResult call: Since any action that can merge into this one
+			// may specify skip_cache_lookup, we need to ensure that the result is not visible in the cache before the
+			// action is merged. At the same time, we don't want the window between the calls to be too large to avoid
+			// reducing the effectiveness of merging.
 			if err := action_merger.DeletePendingExecution(ctx, s.rdb, taskID); err != nil {
 				log.CtxWarningf(ctx, "could not delete pending execution %q: %s", taskID, err)
 			}
