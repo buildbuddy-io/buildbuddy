@@ -3271,10 +3271,12 @@ var (
 	OCIRegistryCASDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "ociregistry",
-		Name:      "cas_download_size_bytes",
+		Name:      "cache_download_size_bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Number of bytes downloaded from the CAS by the OCI registry mirror",
-	}, []string{})
+		Help:      "Number of bytes downloaded from the cache by the OCI registry mirror (only tracking CAS currently)",
+	}, []string{
+		CacheTypeLabel,
+	})
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in

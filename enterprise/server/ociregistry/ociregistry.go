@@ -423,7 +423,9 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
 	err = cachetools.GetBlob(ctx, bsClient, blobRN, w)
 	if err == nil {
-		metrics.OCIRegistryCASDownloadSizeBytes.With(prometheus.Labels{}).Observe(float64(blobMetadata.GetContentLength()))
+		metrics.OCIRegistryCASDownloadSizeBytes.With(prometheus.Labels{
+			metrics.CacheTypeLabel: "cas",
+		}).Observe(float64(blobMetadata.GetContentLength()))
 		return nil
 	}
 	return err
