@@ -7,6 +7,7 @@ import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
 import { getFileDigest } from "../util/cache";
+import { TextLink } from "../components/link/link";
 
 interface Props {
   name: string;
@@ -135,14 +136,15 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
             {this.props.files.map((output) => (
               <>
                 <div className="artifact-line">
-                  <a
+                  <TextLink
+                    plain
                     href={rpcService.getBytestreamUrl(output.uri, this.props.invocationId, {
                       filename: output.name,
                     })}
                     className="artifact-name"
                     onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
                     {output.name}
-                  </a>
+                  </TextLink>
                   {output.uri?.startsWith("bytestream://") && (
                     <a className="artifact-view" href={this.makeArtifactViewUri(output.uri, output.name)}>
                       <FileCode /> View
@@ -154,12 +156,13 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
                   this.state.manifest &&
                   this.state.manifest.entry?.map((entry) => (
                     <div className="artifact-line sub-item">
-                      <a
+                      <TextLink
+                        plain
                         href={this.makeArtifactUri(output.uri, entry)}
                         className="artifact-name"
                         onClick={this.handleZipArtifactClicked.bind(this, output.uri, entry.name, entry)}>
                         {entry.name}
-                      </a>
+                      </TextLink>
                       {output.uri?.startsWith("bytestream://") && (
                         <a
                           className="artifact-view"
