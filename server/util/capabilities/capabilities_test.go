@@ -62,7 +62,7 @@ func TestIsGranted_AnonymousUsageEnabled_AnonymousUser_True(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	anonCtx := context.Background()
 
-	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
 	assert.True(t, canWrite)
 	assert.Nil(t, err)
@@ -73,7 +73,7 @@ func TestIsGranted_NullAuthenticator(t *testing.T) {
 	te.SetAuthenticator(&nullauth.NullAuthenticator{})
 	anonCtx := context.Background()
 
-	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
 	assert.True(t, canWrite)
 	assert.Nil(t, err)
@@ -85,7 +85,7 @@ func TestNotGranted_NullAuthenticator_AnonymousUsage_Disabled(t *testing.T) {
 
 	anonCtx := context.Background()
 
-	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
 	assert.False(t, canWrite)
 	assert.Nil(t, err)
@@ -100,7 +100,7 @@ func TestIsGranted_TestUserWithCapability_True(t *testing.T) {
 	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
 	authCtx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
 
-	canWrite, err := capabilities.IsGranted(authCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(authCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
 	assert.True(t, canWrite)
 	assert.Nil(t, err)
@@ -115,7 +115,7 @@ func TestIsGranted_TestUserWithoutCapability_False(t *testing.T) {
 	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
 	authCtx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
 
-	canWrite, err := capabilities.IsGranted(authCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(authCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
 	assert.False(t, canWrite)
 	assert.Nil(t, err)

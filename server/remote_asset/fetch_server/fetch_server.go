@@ -150,7 +150,7 @@ func parseChecksumQualifier(qualifier *rapb.Qualifier) (repb.DigestFunction_Valu
 }
 
 func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest) (*rapb.FetchBlobResponse, error) {
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, p.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, p.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}

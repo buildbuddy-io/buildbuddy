@@ -3,7 +3,6 @@ package prefix
 import (
 	"context"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -19,12 +18,11 @@ func addPrefix(prefix, key string) string {
 	return r
 }
 
-func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (string, error) {
-	auth := env.GetAuthenticator()
+func userPrefixCacheKey(ctx context.Context, authenticator interfaces.Authenticator, key string) (string, error) {
 	// Note: authenticator can't be nil, even in the OSS version (we use
 	// NullAuthenticator insteadof nil).
-	u, err := auth.AuthenticatedUser(ctx)
-	if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {
+	u, err := authenticator.AuthenticatedUser(ctx)
+	if authutil.IsAnonymousUserError(err) && authenticator.AnonymousUsageEnabled(ctx) {
 		return addPrefix(interfaces.AuthAnonymousUser, key), nil
 	}
 	if err != nil {
@@ -36,16 +34,16 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 	return addPrefix(u.GetGroupID(), key), nil
 }
 
-func UserPrefix(ctx context.Context, env environment.Env) (string, error) {
-	prefix, err := userPrefixCacheKey(ctx, env, "")
+func UserPrefix(ctx context.Context, authenticator interfaces.Authenticator) (string, error) {
+	prefix, err := userPrefixCacheKey(ctx, authenticator, "")
 	if err != nil {
 		return "", err
 	}
 	return prefix, nil
 }
 
-func AttachUserPrefixToContext(ctx context.Context, env environment.Env) (context.Context, error) {
-	prefix, err := userPrefixCacheKey(ctx, env, "")
+func AttachUserPrefixToContext(ctx context.Context, authenticator interfaces.Authenticator) (context.Context, error) {
+	prefix, err := userPrefixCacheKey(ctx, authenticator, "")
 	if err != nil {
 		return nil, err
 	}

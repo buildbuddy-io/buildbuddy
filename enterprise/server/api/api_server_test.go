@@ -250,7 +250,7 @@ func TestDeleteFile_CAS(t *testing.T) {
 	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
-	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -280,7 +280,7 @@ func TestDeleteFile_AC(t *testing.T) {
 	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
-	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -310,7 +310,7 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
-	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -341,7 +341,7 @@ func TestDeleteFile_NonExistentFile(t *testing.T) {
 	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
-	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator()); err != nil {
 		t.Fatal(err)
 	}
 	s := NewAPIServer(env)
@@ -363,7 +363,7 @@ func TestDeleteFile_LeadingSlash(t *testing.T) {
 	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
-	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -417,7 +417,7 @@ func TestDeleteFile_InvalidURI(t *testing.T) {
 	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
-	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator()); err != nil {
 		t.Fatal(err)
 	}
 
