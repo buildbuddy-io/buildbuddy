@@ -849,12 +849,17 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		envVars["BUILD_USER"] = val
 	}
 
-	// If not explicitly set, try to set the default branch env var,
-	// because it will allow us to fallback to snapshots for the default branch
+	// If not explicitly set, try to set the default and base branch env vars,
+	// because it will allow us to fallback to snapshots for those branches
 	// if there is no snapshot for the current branch
-	if !(contains(envVars, "GIT_REPO_DEFAULT_BRANCH") || contains(envVars, "GIT_BASE_BRANCH")) {
+	if !contains(envVars, "GIT_REPO_DEFAULT_BRANCH") {
 		defaultBranch := strings.TrimPrefix(repoConfig.DefaultBranch, "refs/heads/")
 		envVars["GIT_REPO_DEFAULT_BRANCH"] = defaultBranch
+	}
+	if !contains(envVars, "GIT_BASE_BRANCH") {
+		// $GITHUB_BASE_REF is set on GitHub Action runners automatically.
+		// It represents the name of the base ref for a pull request.
+		envVars["GIT_BASE_BRANCH"] = os.Getenv("GITHUB_BASE_REF")
 	}
 
 	if *useSystemGitCredentials {
