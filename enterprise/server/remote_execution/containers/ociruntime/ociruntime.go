@@ -239,6 +239,8 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 
 		// Mount lxcfs fuse fs on lxcfsMountDir.
 		c := exec.CommandContext(env.GetServerContext(), "lxcfs", "-f", "--enable-cfs", lxcfsMountDir)
+		c.Stdout = log.Writer("[LXCFS] ")
+		c.Stderr = log.Writer("[LXCFS] ")
 		if err := c.Start(); err != nil {
 			return nil, err
 		}
@@ -261,6 +263,8 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 				// If LXCFS has exited, attempt to restart it.
 				log.Infof("[LXCFS] process died; attempting to restart...")
 				c = exec.CommandContext(env.GetServerContext(), "lxcfs", "-f", "--enable-cfs", lxcfsMountDir)
+				c.Stdout = log.Writer("[LXCFS] ")
+				c.Stderr = log.Writer("[LXCFS] ")
 				if err := c.Start(); err != nil {
 					log.Errorf("[LXCFS] start err: %s", err)
 				}
