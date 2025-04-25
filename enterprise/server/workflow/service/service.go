@@ -1184,7 +1184,8 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		// that we allow the CI runner to finalize the outer workflow invocation
 		// once the timeout has elapsed, but if the CI runner takes too long to
 		// finalize, we can still kill the action.
-		Timeout: durationpb.New(timeout + timeoutGracePeriod),
+		Timeout:  durationpb.New(timeout + timeoutGracePeriod),
+		Platform: cmd.GetPlatform(),
 	}
 
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, action)
