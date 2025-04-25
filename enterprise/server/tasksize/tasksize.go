@@ -81,7 +81,11 @@ const (
 	// a firecracker VM, multiplied by ~3X.
 	DockerInFirecrackerAdditionalDiskEstimateBytes = int64(12 * 1e9) // 12 GB
 
+	// The maximum amount of disk a workflow may request.
 	MaxEstimatedFreeDisk = int64(100 * 1e9) // 100GB
+
+	// The maximum amount of disk a non-recyclable workflow may request.
+	MaxEstimatedFreeDiskRecycleFalse = int64(200 * 1e9) // 200GB
 
 	// The fraction of an executor's allocatable resources to make available for task sizing.
 	MaxResourceCapacityRatio = 1
@@ -504,8 +508,17 @@ func ApplyLimits(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
 		clone.EstimatedMemoryBytes = minMemoryBytes
 	}
 	if clone.EstimatedFreeDiskBytes > MaxEstimatedFreeDisk {
-		log.Infof("Task %q requested %d free disk which is more than the max %d", task.GetExecutionId(), clone.EstimatedFreeDiskBytes, MaxEstimatedFreeDisk)
-		clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
+		request := clone.EstimatedFreeDiskBytes
+		props, err := platform.ParseProperties(task)
+		if err != nil {
+			log.Infof("Failed to parse task properties: %s", err)
+			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
+		} else if props.RecycleRunner {
+			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
+		} else {
+			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDiskRecycleFalse
+		}
+		log.Infof("Task %q requested %d free disk, capped at %d", task.GetExecutionId(), request, clone.EstimatedFreeDiskBytes)
 	}
 	return clone
 }
