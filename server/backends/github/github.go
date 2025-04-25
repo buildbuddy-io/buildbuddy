@@ -33,11 +33,11 @@ var (
 	JwtKey           = flag.String("github.jwt_key", "", "The key to use when signing JWT tokens for github auth.", flag.Secret)
 	enterpriseHost   = flag.String("github.enterprise_host", "", "The Github enterprise hostname to use if using GitHub enterprise server, not including https:// and no trailing slash.", flag.Secret)
 
-	// TODO: Mark these deprecated once the new GitHub app is implemented.
+	accessToken = flag.String("github.access_token", "", "The GitHub access token used to post GitHub commit statuses. This is intended as a convenience option and can be set to a personal access token (PAT) or a shared machine account PAT.", flag.Secret)
 
+	// TODO: Mark these deprecated once the new GitHub app is implemented.
 	clientID     = flag.String("github.client_id", "", "The client ID of your GitHub Oauth App. ** Enterprise only **")
 	clientSecret = flag.String("github.client_secret", "", "The client secret of your GitHub Oauth App. ** Enterprise only **", flag.Secret)
-	accessToken  = flag.String("github.access_token", "", "The GitHub access token used to post GitHub commit statuses. ** Enterprise only **", flag.Secret)
 )
 
 const (
@@ -64,6 +64,12 @@ const (
 
 func AuthEnabled(env environment.Env) bool {
 	return *JwtKey != ""
+}
+
+func AlwaysEnableStatusReporting() bool {
+	// If a user has hard-coded an access token for GitHub status
+	// reporting, assume they want it enabled.
+	return *accessToken != ""
 }
 
 // State represents a status value that GitHub's statuses API understands.

@@ -14,8 +14,6 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 # COMMON FLAGS #
 ################
 
-common --noenable_bzlmod
-common --enable_workspace
 # Avoid being broken by version requirement changes in transitive deps.
 common --check_direct_dependencies=error
 

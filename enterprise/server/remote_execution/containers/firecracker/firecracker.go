@@ -713,7 +713,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.SnapshotKeySet(), c.supportsRemoteSnapshots), err)
 			} else {
 				label = metrics.HitStatusLabel
-				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, snap.GetKey(), c.supportsRemoteSnapshots))
+				log.CtxInfof(ctx, "Found snapshot %s", snaploader.SnapshotDebugString(ctx, c.env, snap))
 			}
 			metrics.RecycleRunnerRequests.With(prometheus.Labels{
 				metrics.RecycleRunnerRequestStatusLabel: label,
@@ -2944,7 +2944,7 @@ func (c *FirecrackerContainer) SnapshotDebugString(ctx context.Context) string {
 	if c.snapshot == nil {
 		return ""
 	}
-	return snaploader.KeyDebugString(ctx, c.env, c.snapshot.GetKey(), c.supportsRemoteSnapshots)
+	return snaploader.SnapshotDebugString(ctx, c.env, c.snapshot)
 }
 
 func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {

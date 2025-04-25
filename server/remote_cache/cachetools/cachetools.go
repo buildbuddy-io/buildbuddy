@@ -38,6 +38,8 @@ import (
 const (
 	uploadBufSizeBytes    = 1000000 // 1MB
 	maxCompressionBufSize = int64(4000000)
+	// Matches https://github.com/bazelbuild/bazel/blob/9c22032c8dc0eb2ec20d8b5a5c73d1f5f075ae37/src/main/java/com/google/devtools/build/lib/remote/options/RemoteOptions.java#L461-L464
+	minSizeBytesToCompress = 100
 )
 
 var (
@@ -401,6 +403,7 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 	if err != nil {
 		return nil, err
 	}
+	maybeSetCompressor(resourceName)
 	// Go back to the beginning so we can re-read the file contents as we upload.
 	if _, err := reader.Seek(0, io.SeekStart); err != nil {
 		return nil, err
@@ -414,6 +417,7 @@ func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	if err != nil {
 		return nil, err
 	}
+	maybeSetCompressor(resourceName)
 	// Go back to the beginning so we can re-read the file contents as we upload.
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
 		return nil, err
@@ -432,12 +436,10 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	if err != nil {
 		return nil, err
 	}
+	maybeSetCompressor(resourceName)
 	// Go back to the beginning so we can re-read the file contents as we upload.
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return nil, err
-	}
-	if *enableUploadCompression {
-		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
 	result, _, err := UploadFromReader(ctx, bsClient, resourceName, f)
 	return result, err
@@ -511,6 +513,7 @@ func UploadBlobToCAS(ctx context.Context, bsClient bspb.ByteStreamClient, instan
 	if resourceName.IsEmpty() {
 		return d, nil
 	}
+	maybeSetCompressor(resourceName)
 	result, _, err := UploadFromReader(ctx, bsClient, resourceName, reader)
 	return result, err
 }
@@ -617,7 +620,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	r := io.ReadCloser(rsc)
 
 	compressor := repb.Compressor_IDENTITY
-	if ul.supportsCompression() {
+	if ul.supportsCompression() && d.GetSizeBytes() >= minSizeBytesToCompress {
 		compressor = repb.Compressor_ZSTD
 	}
 
@@ -1069,4 +1072,10 @@ func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient 
 
 func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.CASResourceName) (*repb.Tree, error) {
 	return GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, casClient, r, nil, nil)
+}
+
+func maybeSetCompressor(rn *digest.CASResourceName) {
+	if *enableUploadCompression && rn.GetDigest().GetSizeBytes() >= minSizeBytesToCompress {
+		rn.SetCompressor(repb.Compressor_ZSTD)
+	}
 }
