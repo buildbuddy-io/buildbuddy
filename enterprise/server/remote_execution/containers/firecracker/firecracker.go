@@ -967,15 +967,15 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	}
 
 	opts := &snaploader.CacheSnapshotOptions{
-		VMMetadata:                 vmd,
-		VMConfiguration:            c.vmConfig,
-		VMStateSnapshotPath:        filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:            c.executorConfig.GuestKernelImagePath,
-		InitrdImagePath:            c.executorConfig.InitrdImagePath,
-		ChunkedFiles:               map[string]*copy_on_write.COWStore{},
-		Recycled:                   c.recycled,
-		Remote:                     c.supportsRemoteSnapshots,
-		WouldNotHaveCachedRemotely: !shouldCacheRemotely,
+		VMMetadata:           vmd,
+		VMConfiguration:      c.vmConfig,
+		VMStateSnapshotPath:  filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
+		KernelImagePath:      c.executorConfig.GuestKernelImagePath,
+		InitrdImagePath:      c.executorConfig.InitrdImagePath,
+		ChunkedFiles:         map[string]*copy_on_write.COWStore{},
+		Recycled:             c.recycled,
+		Remote:               shouldCacheRemotely,
+		SkippedCacheRemotely: c.supportsRemoteSnapshots && !shouldCacheRemotely,
 	}
 	if snapshotSharingEnabled {
 		if c.rootStore != nil {
