@@ -157,6 +157,13 @@ func (p *StreamPubSub) extractMsgData(channel *Channel, msg *redis.XMessage) (st
 	return str, nil
 }
 
+func deliverError(ctx context.Context, outCh chan *Message, err error) {
+	select {
+	case outCh <- &Message{Err: err}:
+	case <-ctx.Done():
+	}
+}
+
 func (p *StreamPubSub) deliverMsg(ctx context.Context, psChannel *Channel, outCh chan *Message, msg *redis.XMessage) bool {
 	data, err := p.extractMsgData(psChannel, msg)
 	if err != nil {
@@ -220,7 +227,7 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 					// Wrap error with details so the client can differentiate
 					// pubsub channel errors from execution errors.
 					err = status.WithReason(err, pubsubChannelErrorReason)
-					monChan <- &Message{Err: err}
+					deliverError(ctx, monChan, err)
 					return
 				}
 				select {
@@ -247,7 +254,7 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 				if err != context.Canceled {
 					log.CtxErrorf(ctx, "Unable to retrieve last element of stream: %q: %s", psChannel.name, err)
 				}
-				msgChan <- &Message{Err: err}
+				deliverError(ctx, msgChan, err)
 				return
 			}
 			if len(msgs) == 1 {
@@ -267,7 +274,7 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 			if err != nil {
 				if err != context.Canceled {
 					log.CtxErrorf(ctx, "Error reading from stream %q: %s", psChannel.name, err)
-					msgChan <- &Message{Err: err}
+					deliverError(ctx, msgChan, err)
 				}
 				return
 			}
