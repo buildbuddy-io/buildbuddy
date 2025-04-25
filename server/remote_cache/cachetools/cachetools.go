@@ -1079,3 +1079,65 @@ func maybeSetCompressor(rn *digest.CASResourceName) {
 		rn.SetCompressor(repb.Compressor_ZSTD)
 	}
 }
+
+type casWriteCloser struct {
+	ctx          context.Context
+	stream       bspb.ByteStream_WriteClient
+	sender       rpcutil.Sender[*bspb.WriteRequest]
+	resource     *digest.CASResourceName
+	uploadString string
+
+	errored       bool
+	bytesUploaded int64
+}
+
+func (cwc *casWriteCloser) Write(p []byte) (int, error) {
+	n := 0
+	for {
+		bytesRemaining := int64(len(p)) - (cwc.bytesUploaded + int64(n))
+		req := &bspb.WriteRequest{
+			Data:         p[cwc.bytesUploaded+int64(n) : cwc.bytesUploaded+int64(n)+min(bytesRemaining, uploadBufSizeBytes)],
+			ResourceName: cwc.uploadString,
+			WriteOffset:  cwc.bytesUploaded + int64(n),
+			FinishWrite:  false,
+		}
+
+		err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			cwc.bytesUploaded = 0
+			cwc.errored = true
+			return 0, err
+		}
+		n += len(req.Data)
+		if n >= len(p) {
+			break
+		}
+	}
+
+	cwc.bytesUploaded += int64(n)
+	return n, nil
+}
+
+func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (io.WriteCloser, error) {
+	if bsClient == nil {
+		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
+	}
+	if r.GetCompressor() != repb.Compressor_IDENTITY {
+		return nil, status.FailedPreconditionError("casWriteCloser does not support compression")
+	}
+	stream, err := bsClient.Write(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+	return &casWriteCloser{
+		ctx:          ctx,
+		stream:       stream,
+		sender:       sender,
+		resource:     r,
+		uploadString: r.NewUploadString(),
+	}, nil
+}
