@@ -332,6 +332,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL, err)
 		}
+		return
 	}
 
 	hash, err := gcr.NewHash(resolvedRef.Identifier())
