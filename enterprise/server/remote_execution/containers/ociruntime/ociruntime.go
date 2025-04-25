@@ -249,6 +249,25 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 			if err := c.Wait(); err != nil {
 				log.Errorf("[LXCFS] err: %s", err)
 			}
+			// While the server is alive, attempt to keep lxcfs
+			// running if it was configured.
+			for {
+				select {
+				case <-env.GetServerContext().Done():
+					return
+				default:
+				}
+
+				// If LXCFS has exited, attempt to restart it.
+				log.Infof("[LXCFS] process died; attempting to restart...")
+				c = exec.CommandContext(env.GetServerContext(), "lxcfs", "-f", "--enable-cfs", lxcfsMountDir)
+				if err := c.Start(); err != nil {
+					log.Errorf("[LXCFS] start err: %s", err)
+				}
+				if err := c.Wait(); err != nil {
+					log.Errorf("[LXCFS] err: %s", err)
+				}
+			}
 		}()
 		testPath := filepath.Join(lxcfsMountDir, lxcfsFiles[0])
 		if err := disk.WaitUntilExists(env.GetServerContext(), testPath, disk.WaitOpts{}); err != nil {
