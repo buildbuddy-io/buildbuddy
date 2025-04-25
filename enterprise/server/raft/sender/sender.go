@@ -540,6 +540,9 @@ func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.Ra
 		if err != nil {
 			return err
 		}
+		if err := gstatus.FromProto(r.GetBatch().GetStatus()).Err(); err != nil {
+			return err
+		}
 		syncRsp = r
 		return nil
 	}
