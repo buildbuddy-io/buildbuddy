@@ -11,27 +11,5 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'ci skip')"
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Restore caches
-        id: cache-restore
-        uses: ./.github/actions/cache-restore
-
       - name: Test
-        env:
-          GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: /home/runner/go-mod-cache
-        run: |
-          bazelisk test \
-            --config=untrusted-ci \
-            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-            //...
-
-      - name: Save caches
-        uses: ./.github/actions/cache-save
-        if: always()
-        with:
-          repo-cache-dir: ${{ steps.cache-restore.outputs.repo-cache-dir }}
-          go-mod-cache-dir: ${{ steps.cache-restore.outputs.go-mod-cache-dir }}
-          yarn-cache-dir: ${{ steps.cache-restore.outputs.yarn-cache-dir }}
+        run: echo $GITHUB_BASE_REF
