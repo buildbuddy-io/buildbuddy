@@ -155,6 +155,20 @@ common:authed-bes --bes_backend=grpcs://buildbuddy.buildbuddy.io
 common:local --bes_results_url=http://localhost:8080/invocation/
 common:local --bes_backend=grpc://localhost:1985
 common:local --remote_cache=grpc://localhost:1985
+common:local --config=cache-shared
+
+# Build with --config=local-rbe-linux to target a local linux executor, using
+# BuildBuddy's RBE container image (x86_64 only for now). For this to work, the
+# local executor must have an isolation type enabled which supports
+# containerized execution, such as docker (the default), podman, or oci.
+common:local-rbe-linux --remote_executor=grpc://localhost:1985
+common:local-rbe-linux --config=target-linux-x86
+common:local-rbe-linux --config=local
+
+# Build with --config=local-rbe-mac to target a local executor on macOS.
+common:local-rbe-mac --remote_executor=grpc://localhost:1985
+common:local-rbe-mac --config=local-rbe
+common:local-rbe-mac --config=local
 
 # Build with --config=dev to send build logs to the dev server
 common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
