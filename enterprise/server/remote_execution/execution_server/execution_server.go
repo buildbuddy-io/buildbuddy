@@ -313,12 +313,6 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	if stage == repb.ExecutionStage_COMPLETED {
-		if err := action_merger.DeletePendingExecution(ctx, s.rdb, executionID); err != nil {
-			log.CtxWarningf(ctx, "could not delete pending execution %q: %s", executionID, err)
-		}
-	}
-
 	result := s.env.GetDBHandle().GORM(ctx, "execution_server_update_execution").Where(
 		"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution)
 	dbErr := result.Error
@@ -1129,18 +1123,17 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return status.WrapErrorf(err, "Failed to parse taskID")
 			}
-			actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
-			action, err = s.fetchAction(ctx, actionCASRN)
+			var cmd *repb.Command
+			action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
 			if err != nil {
-				return status.UnavailableErrorf("Failed to fetch action: %s", err)
-			}
-			cmd, err := s.fetchCommand(ctx, actionRN, action)
-			if err != nil {
-				return status.UnavailableErrorf("Failed to fetch command: %s", err)
+				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
 			}
 			properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
 			if err != nil {
 				return status.InternalErrorf("Failed to parse platform properties: %s", err)
+			}
+			if err := action_merger.DeletePendingExecution(ctx, s.rdb, taskID); err != nil {
+				log.CtxWarningf(ctx, "could not delete pending execution %q: %s", taskID, err)
 			}
 			actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
 			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
@@ -1309,7 +1302,7 @@ func (s *ExecutionServer) fetchAction(ctx context.Context, actionResourceName *d
 	return action, nil
 }
 
-func (s *ExecutionServer) fetchCommand(ctx context.Context, actionResourceName *digest.ResourceName, action *repb.Action) (*repb.Command, error) {
+func (s *ExecutionServer) fetchCommand(ctx context.Context, actionResourceName *digest.CASResourceName, action *repb.Action) (*repb.Command, error) {
 	cmdDigest := action.GetCommandDigest()
 	cmdInstanceNameDigest := digest.NewCASResourceName(cmdDigest, actionResourceName.GetInstanceName(), actionResourceName.GetDigestFunction())
 	cmd := &repb.Command{}
@@ -1323,7 +1316,7 @@ func (s *ExecutionServer) fetchCommand(ctx context.Context, actionResourceName *
 	return cmd, nil
 }
 
-func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResourceName *digest.ResourceName) (*repb.Action, *repb.Command, error) {
+func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, *repb.Command, error) {
 	action, err := s.fetchAction(ctx, actionResourceName)
 	if err != nil {
 		return nil, nil, err
