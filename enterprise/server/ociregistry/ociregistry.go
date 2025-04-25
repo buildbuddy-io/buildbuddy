@@ -205,20 +205,6 @@ func (r *registry) makeUpstreamRequest(ctx context.Context, method, acceptHeader
 	return r.client.Do(upreq.WithContext(ctx))
 }
 
-func parseContentLengthHeader(value string) (int64, bool, error) {
-	if value == "" {
-		return 0, false, nil
-	}
-	contentLength, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		return 0, false, fmt.Errorf("could not parse %s header (value '%s'): %s", headerContentLength, value, err)
-	}
-	if contentLength < 0 {
-		return 0, false, fmt.Errorf("%s header must be 0 or greater, received value '%s'", headerContentLength, value)
-	}
-	return contentLength, true, nil
-}
-
 func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 	if value == "" {
 		return nil, nil
@@ -327,33 +313,40 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		}
 	}
 	w.WriteHeader(upresp.StatusCode)
-
-	contentLength, hasLength, err := parseContentLengthHeader(upresp.Header.Get(headerContentLength))
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerContentLength, upresp.Header.Get(headerContentLength), err), http.StatusNotFound)
+	if inreq.Method == http.MethodHead {
 		return
+	}
+
+	hasLength := upresp.Header.Get(headerContentLength) != ""
+	contentLength, err := strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
+	if err != nil {
+		hasLength = false
 	}
 
 	hasContentType := upresp.Header.Get(headerContentType) != ""
 	contentType := upresp.Header.Get(headerContentType)
 
-	// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
-	hash, err := parseDockerContentDigestHeader(upresp.Header.Get(headerDockerContentDigest))
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerDockerContentDigest, upresp.Header.Get(headerDockerContentDigest), err), http.StatusNotFound)
-		return
-	}
-
-	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasLength && hash != nil && hasContentType {
-		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, *hash, contentType, contentLength)
-		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
-		}
-	} else {
+	cacheable := upresp.StatusCode == http.StatusOK && hasLength && resolvedRefIsDigest && hasContentType
+	if !cacheable {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL, err)
 		}
+		return
+	}
+
+	hash, err := gcr.NewHash(resolvedRef.Identifier())
+	if err != nil {
+		_, err = io.Copy(w, upresp.Body)
+		if err != nil && err != context.Canceled {
+			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL, err)
+		}
+		return
+	}
+
+	err = writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, hash, contentType, contentLength)
+	if err != nil && err != context.Canceled {
+		log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
 	}
 }
 
