@@ -1738,6 +1738,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
 	}
 	if repoDirInfo != nil {
+		writeCommandSummary(ws.log, "Starting from a recycled runner")
 		writeCommandSummary(ws.log, "Syncing existing repo...")
 		if err := os.Chdir(repoDirName); err != nil {
 			return status.WrapError(err, "cd")
@@ -1761,6 +1762,8 @@ func (ws *workspace) setup(ctx context.Context) error {
 			return status.WrapErrorf(err, "rm -rf %q", repoDirName)
 		}
 	}
+
+	writeCommandSummary(ws.log, "Starting from a clean runner")
 
 	if err := os.Mkdir(repoDirName, 0777); err != nil {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
