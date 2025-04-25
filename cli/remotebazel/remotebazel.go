@@ -313,6 +313,8 @@ func Config() (*RepoConfig, error) {
 	fetchURL := remote.url
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
+	// Fetching remote data from GitHub can be slow. If we don't need the data
+	// because the user has passed in enough information manually, skip the fetch.
 	shouldFetchBaseRef := *runFromBranch == "" && *runFromCommit == ""
 	shouldFetchDefaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH") == ""
 	shouldFetchRemote := shouldFetchBaseRef || shouldFetchDefaultBranch
