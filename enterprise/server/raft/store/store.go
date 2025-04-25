@@ -2416,22 +2416,29 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	if err := addLocalRangeEdits(leftRange, updatedLeftRange, leftBatch); err != nil {
 		return nil, err
 	}
-	leftBatch.AddPostCommitHook(&rfpb.SnapshotClusterHook{})
 	rightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   constants.LocalRangeKey,
 			Value: newRightRangeBuf,
 		},
 	})
-	rightBatch.AddPostCommitHook(&rfpb.SnapshotClusterHook{})
 	metaBatch := rbuilder.NewBatchBuilder()
 	if err := addMetaRangeEdits(leftRange, updatedLeftRange, newRightRange, metaBatch); err != nil {
 		return nil, err
 	}
 	mrd := s.sender.GetMetaRangeDescriptor()
-	txn := rbuilder.NewTxn().AddStatement(leftRange, leftBatch)
-	txn = txn.AddStatement(newRightRange, rightBatch)
-	txn = txn.AddStatement(mrd, metaBatch)
+
+	txn := rbuilder.NewTxn()
+	leftStmt := txn.AddStatement()
+	leftStmt = leftStmt.SetRangeDescriptor(leftRange).SetBatch(leftBatch)
+	leftStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
+
+	rightStmt := txn.AddStatement()
+	rightStmt.SetRangeDescriptor(newRightRange).SetBatch(rightBatch)
+	rightStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
+
+	metaStmt := txn.AddStatement()
+	metaStmt.SetRangeDescriptor(mrd).SetBatch(metaBatch)
 	if err := s.txnCoordinator.RunTxn(ctx, txn); err != nil {
 		return nil, err
 	}
@@ -2993,12 +3000,17 @@ func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, 
 	txn := rbuilder.NewTxn()
 	if newReplica.GetRangeId() == metaReplica.GetRangeId() {
 		localBatch.Add(metaRangeCasReq)
-		txn.AddStatement(mrd, localBatch)
+		stmt := txn.AddStatement()
+		stmt.SetRangeDescriptor(mrd).SetBatch(localBatch)
 	} else {
 		metaRangeBatch := rbuilder.NewBatchBuilder()
 		metaRangeBatch.Add(metaRangeCasReq)
-		txn.AddStatement(new, localBatch)
-		txn = txn.AddStatement(mrd, metaRangeBatch)
+
+		stmt := txn.AddStatement()
+		stmt.SetRangeDescriptor(new).SetBatch(localBatch)
+
+		stmt = txn.AddStatement()
+		stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)
 	}
 	err = s.txnCoordinator.RunTxn(ctx, txn)
 	if err != nil {

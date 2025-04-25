@@ -591,17 +591,6 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
 	txKey = sm.replicaLocalKey(txKey)
 
-	// Lookup our request so that post-commit hooks can be applied, then
-	// delete it from the batch, since the txn is being committed.
-	batchReq := &rfpb.BatchCmdRequest{}
-	iter, err := txn.NewIter(nil /*default iterOptions*/)
-	if err != nil {
-		return err
-	}
-	defer iter.Close()
-	if err := pebble.LookupProto(iter, txKey, batchReq); err != nil {
-		return err
-	}
 	txn.Delete(txKey, nil /*ignore write options*/)
 
 	if err := txn.Commit(pebble.Sync); err != nil {
@@ -609,10 +598,6 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 	}
 	sm.updateInMemoryState(txn)
 
-	// Run post commit hooks, if any are set.
-	for _, hook := range batchReq.GetPostCommitHooks() {
-		sm.handlePostCommit(hook)
-	}
 	return nil
 }
 
