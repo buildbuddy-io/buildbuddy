@@ -733,12 +733,10 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		}
 	}
 
-	action := &repb.Action{}
-	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, adInstanceDigest, action); err != nil {
-		log.CtxWarningf(ctx, "Error fetching action: %s", err.Error())
+	action, err := s.fetchAction(ctx, adInstanceDigest)
+	if err != nil {
 		return err
 	}
-
 	if !action.DoNotCache {
 		// Check if there's already an identical action pending execution. If
 		// so, wait on the result of that execution instead of starting a new
