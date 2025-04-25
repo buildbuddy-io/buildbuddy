@@ -241,6 +241,11 @@ func parseRemote(s string) (*gitRemote, error) {
 // `ref: refs/heads/main	HEAD`
 // and this function would return `main`.
 func determineDefaultBranch(remoteData string) (string, error) {
+	defaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH")
+	if defaultBranch != "" {
+		return defaultBranch, nil
+	}
+
 	re := regexp.MustCompile(`ref: refs/heads/(\S+)\s+HEAD`)
 	match := re.FindStringSubmatch(remoteData)
 	if len(match) > 1 {
@@ -308,9 +313,17 @@ func Config() (*RepoConfig, error) {
 	fetchURL := remote.url
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
-	remoteData, err := runGit("ls-remote", "--symref", remote.name)
-	if err != nil {
-		return nil, status.WrapErrorf(err, "git remote show %s", remote.name)
+	// Fetching remote data from GitHub can be slow. If we don't need the data
+	// because the user has passed in enough information manually, skip the fetch.
+	shouldFetchBaseRef := *runFromBranch == "" && *runFromCommit == ""
+	shouldFetchDefaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH") == ""
+	shouldFetchRemote := shouldFetchBaseRef || shouldFetchDefaultBranch
+	var remoteData string
+	if shouldFetchRemote {
+		remoteData, err = runGit("ls-remote", "--symref", remote.name)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "git remote show %s", remote.name)
+		}
 	}
 
 	branch, commit, err := getBaseBranchAndCommit(remoteData)

@@ -274,6 +274,23 @@ remotely built outputs locally - are supported when running with a bash script.
 If you only need to run a single bazel command on the remote runner, we recommend
 not using `--script` and using the syntax `bb remote <bazel command>` (like `bb remote build //...`) to access the richer feature-set.
 
+#### Speeding up the CLI
+
+For more details on CLI performance, run Remote Bazel with `--verbose=1` to see
+where the CLI is spending its time.
+
+```bash
+bb --verbose=1 remote build //...
+```
+
+Often, performance can be improved by skipping time-intensive remote git operations.
+Optimizations include:
+
+- Disabling [git mirroring](#automatic-git-state-mirroring) and directing the runner
+  to run from a specific ref using `--run_from_branch` or `--run_from_commit`.
+- Manually setting the default git branch by setting the environment variable
+  GIT_REPO_DEFAULT_BRANCH in your local environment.
+
 ### CURL request
 
 See the API definition [here](enterprise-api.md).
