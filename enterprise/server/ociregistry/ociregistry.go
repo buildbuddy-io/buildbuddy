@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -410,17 +412,21 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	w.Header().Add(headerContentType, blobMetadata.GetContentType())
 	w.WriteHeader(http.StatusOK)
 
-	if writeBody {
-		blobRN := digest.NewCASResourceName(
-			blobCASDigest,
-			"",
-			repb.DigestFunction_SHA256,
-		)
-		blobRN.SetCompressor(repb.Compressor_ZSTD)
-		return cachetools.GetBlob(ctx, bsClient, blobRN, w)
-	} else {
+	if !writeBody {
 		return nil
 	}
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		repb.DigestFunction_SHA256,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	err = cachetools.GetBlob(ctx, bsClient, blobRN, w)
+	if err == nil {
+		metrics.OCIRegistryCASDownloadSizeBytes.With(prometheus.Labels{}).Observe(float64(blobMetadata.GetContentLength()))
+		return nil
+	}
+	return err
 }
 
 func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
