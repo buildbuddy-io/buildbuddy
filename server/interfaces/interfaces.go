@@ -230,7 +230,7 @@ type BuildEventChannel interface {
 }
 
 type BuildEventHandler interface {
-	OpenChannel(ctx context.Context, iid string) BuildEventChannel
+	OpenChannel(ctx context.Context, iid string) (BuildEventChannel, error)
 }
 
 type GitHubStatusService interface {

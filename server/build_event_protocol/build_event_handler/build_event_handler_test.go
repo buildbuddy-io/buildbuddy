@@ -283,7 +283,8 @@ func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send unauthenticated started event without an api key
 	request := streamRequest(startedEvent("--remote_upload_local_results"), testInvocationID, 1)
@@ -309,7 +310,8 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send authenticated started event with api key
 	request := streamRequest(startedEvent("--remote_upload_local_results --remote_header='"+authutil.APIKeyHeader+"=APIKEY1' --remote_instance_name=foo --should_be_redacted=APIKEY1", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
@@ -349,7 +351,8 @@ func TestAuthenticatedHandleEventWithOptionlessStartedEvent(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	request := streamRequest(startedEvent("", &bspb.BuildEventId_WorkspaceStatus{}, &bspb.BuildEventId_OptionsParsed{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
@@ -391,7 +394,8 @@ func TestAuthenticatedHandleEventWithRedactedStartedEvent(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	request := streamRequest(startedEvent("", &bspb.BuildEventId_WorkspaceStatus{}, &bspb.BuildEventId_OptionsParsed{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
@@ -433,7 +437,8 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send progress event
 	request := streamRequest(progressEvent(), testInvocationID, 1)
@@ -479,7 +484,8 @@ func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send progress event
 	request := streamRequest(progressEvent(), testInvocationID, 1)
@@ -511,7 +517,8 @@ func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send 104 progress events
 	for i := 1; i < 105; i++ {
@@ -545,7 +552,8 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send progress event
 	request := streamRequest(progressEvent(), testInvocationID, 1)
@@ -599,7 +607,8 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 
 	testInvocationID := testUUID.String()
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send unauthenticated started event without an api key
 	request := streamRequest(startedEvent(
@@ -663,7 +672,8 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send started event with api key
 	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1' --should_be_redacted=USER1"), testInvocationID, 1)
@@ -691,7 +701,8 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send started event with api key
 	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
@@ -739,7 +750,8 @@ func TestFinishedFinalize(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send started event with api key
 	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
@@ -785,7 +797,8 @@ func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send started event with api key
 	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
@@ -828,7 +841,8 @@ func TestUnfinishedFinalize(t *testing.T) {
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send started event with api key
 	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
@@ -871,7 +885,8 @@ func TestRetryOnComplete(t *testing.T) {
 	flags.Set(t, "storage.chunk_file_size_bytes", chunkSize)
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send started event with api key
 	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
@@ -918,7 +933,8 @@ func TestRetryOnComplete(t *testing.T) {
 	assert.True(t, exists)
 
 	// Attempt to start a new invocation with the same id
-	channel = handler.OpenChannel(ctx, testInvocationID)
+	channel, err = handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 	request = streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'"), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
@@ -945,7 +961,8 @@ func TestRetryOnDisconnect(t *testing.T) {
 	flags.Set(t, "storage.chunk_file_size_bytes", chunkSize)
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send started event with api key
 	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
@@ -987,7 +1004,8 @@ func TestRetryOnDisconnect(t *testing.T) {
 	assert.True(t, exists)
 
 	// Attempt to start a new invocation with the same id
-	channel = handler.OpenChannel(ctx, testInvocationID)
+	channel, err = handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 	request = streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
@@ -1052,7 +1070,8 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	flags.Set(t, "storage.chunk_file_size_bytes", chunkSize)
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Send started event with api key
 	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
@@ -1094,7 +1113,8 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.True(t, exists)
 
 	// Attempt to start a new invocation with the same id
-	channel = handler.OpenChannel(ctx, testInvocationID)
+	channel, err = handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 	request = streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
@@ -1144,7 +1164,8 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.True(t, exists)
 
 	// Attempt to start a new invocation with the same id
-	channel = handler.OpenChannel(ctx, testInvocationID)
+	channel, err = handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 	request = streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
@@ -1230,7 +1251,8 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	flags.Set(t, "storage.chunk_file_size_bytes", chunkSize)
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 
 	// Say that it occurred 5 hours ago
 	te.GetInvocationDB().SetNowFunc(func() time.Time {
@@ -1280,7 +1302,8 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	te.GetInvocationDB().SetNowFunc(time.Now)
 
 	// Attempt to start a new invocation with the same id
-	channel = handler.OpenChannel(ctx, testInvocationID)
+	channel, err = handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
 	request = streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
@@ -1375,7 +1398,8 @@ func TestBuildStatusReporting(t *testing.T) {
 
 			// Start an invocation
 			seq := NewBESSequence(t)
-			channel := handler.OpenChannel(ctx, seq.InvocationID)
+			channel, err := handler.OpenChannel(ctx, seq.InvocationID)
+			require.NoError(t, err)
 
 			// Handle Started event referencing the metadata events as children.
 			var metadataEventIDs []*bspb.BuildEventId
@@ -1533,7 +1557,8 @@ func TestBuildStatusReportingDisabled(t *testing.T) {
 
 			// Start an invocation
 			seq := NewBESSequence(t)
-			channel := handler.OpenChannel(ctx, seq.InvocationID)
+			channel, err := handler.OpenChannel(ctx, seq.InvocationID)
+			require.NoError(t, err)
 
 			// Handle Started event referencing the metadata events as children.
 			var metadataEventIDs []*bspb.BuildEventId
@@ -1650,7 +1675,8 @@ func TestBuildStatusReporting_LegacyMethods(t *testing.T) {
 
 			// Start an invocation
 			seq := NewBESSequence(t)
-			channel := handler.OpenChannel(ctx, seq.InvocationID)
+			channel, err := handler.OpenChannel(ctx, seq.InvocationID)
+			require.NoError(t, err)
 
 			// Handle Started event referencing the metadata events as children.
 			var metadataEventIDs []*bspb.BuildEventId
