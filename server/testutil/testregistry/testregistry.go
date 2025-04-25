@@ -25,6 +25,8 @@ import (
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
+const headerDockerContentDigest = "Docker-Content-Digest"
+
 var blobsPathRegexp = regexp.MustCompile("/v2/(.+?)/blobs/(.+)")
 
 type Opts struct {
@@ -44,9 +46,18 @@ func Run(t *testing.T, opts Opts) *Registry {
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
 
+	// Docker Hub returns a Docker-Content-Digest header for manifests,
+	// but not for blobs (layers).
+	// Make sure the test registry does not return a Docker-Content-Digest
+	// header for blobs (layers), so that clients do not accidentally
+	// depend on this header.
 	f := http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			mux.ServeHTTP(w, r)
+			rw := w
+			if blobsPathRegexp.MatchString(r.URL.Path) {
+				rw = &discardingResponseWriter{w}
+			}
+			mux.ServeHTTP(rw, r)
 		})
 	if opts.HttpInterceptor != nil {
 		f = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -194,11 +205,11 @@ func (rw *discardingResponseWriter) Header() http.Header {
 }
 
 func (rw *discardingResponseWriter) Write(p []byte) (int, error) {
-	rw.ResponseWriter.Header().Del("Docker-Content-Digest")
+	rw.ResponseWriter.Header().Del(headerDockerContentDigest)
 	return rw.ResponseWriter.Write(p)
 }
 
 func (rw *discardingResponseWriter) WriteHeader(statusCode int) {
-	rw.ResponseWriter.Header().Del("Docker-Content-Digest")
+	rw.ResponseWriter.Header().Del(headerDockerContentDigest)
 	rw.ResponseWriter.WriteHeader(statusCode)
 }
