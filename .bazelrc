@@ -39,9 +39,6 @@ common:target-linux-arm64 --config=workspace-target-linux-arm64
 # These often require "include-secrets: true" exec property in their BUILD file.
 test --test_tag_filters=-docker,-bare,-secrets
 
-# Build with --config=local to send build logs to your local server
-common:local --extra_execution_platforms=@buildbuddy_toolchain//:platform
-
 # Configuration used for GitHub actions-based CI
 common:ci --config=remote-minimal
 common:ci --build_metadata=ROLE=CI
