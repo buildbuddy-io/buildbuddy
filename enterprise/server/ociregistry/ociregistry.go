@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -421,14 +422,14 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		repb.DigestFunction_SHA256,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	err = cachetools.GetBlob(ctx, bsClient, blobRN, w)
-	if err == nil {
-		metrics.OCIRegistryCASDownloadSizeBytes.With(prometheus.Labels{
+	counter := &ioutil.Counter{}
+	mw := io.MultiWriter(w, counter)
+	defer func() {
+		metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
 			metrics.CacheTypeLabel: "cas",
-		}).Observe(float64(blobMetadata.GetContentLength()))
-		return nil
-	}
-	return err
+		}).Observe(float64(counter.Count()))
+	}()
+	return cachetools.GetBlob(ctx, bsClient, blobRN, mw)
 }
 
 func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {

@@ -3268,7 +3268,7 @@ var (
 		StatusLabel,
 	})
 
-	OCIRegistryCASDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	OCIRegistryCacheDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "ociregistry",
 		Name:      "cache_download_size_bytes",
