@@ -183,7 +183,7 @@ message TxnRequest {
     reserved 1;
     BatchCmdRequest raw_batch = 2;
     RangeDescriptor range = 3;
-	repeated TransactionHook hooks = 4;
+    repeated TransactionHook hooks = 4;
   }
   repeated Statement statements = 2;
 }
