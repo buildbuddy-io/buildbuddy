@@ -9900,6 +9900,7 @@
         "Error ratio": "dark-red"
       },
       "bars": false,
+      "collapsed": true,
       "dashLength": 10,
       "dashes": false,
       "datasource": {
@@ -9984,12 +9985,12 @@
       ],
       "yaxis": {
         "align": false
-      },
-      "collapsed": true
+      }
     },
     {
       "aliasColors": {},
       "bars": false,
+      "collapsed": true,
       "dashLength": 10,
       "dashes": false,
       "datasource": {
@@ -10078,12 +10079,12 @@
       ],
       "yaxis": {
         "align": false
-      },
-      "collapsed": true
+      }
     },
     {
       "aliasColors": {},
       "bars": false,
+      "collapsed": true,
       "dashLength": 10,
       "dashes": false,
       "datasource": {
@@ -10172,8 +10173,7 @@
       ],
       "yaxis": {
         "align": false
-      },
-      "collapsed": true
+      }
     },
     {
       "aliasColors": {
@@ -10181,6 +10181,7 @@
         "500": "dark-red"
       },
       "bars": false,
+      "collapsed": true,
       "dashLength": 10,
       "dashes": false,
       "datasource": {
@@ -10269,12 +10270,12 @@
       ],
       "yaxis": {
         "align": false
-      },
-      "collapsed": true
+      }
     },
     {
       "aliasColors": {},
       "bars": false,
+      "collapsed": true,
       "dashLength": 10,
       "dashes": false,
       "datasource": {
@@ -10360,12 +10361,12 @@
       ],
       "yaxis": {
         "align": false
-      },
-      "collapsed": true
+      }
     },
     {
       "aliasColors": {},
       "bars": false,
+      "collapsed": true,
       "dashLength": 10,
       "dashes": false,
       "datasource": {
@@ -10450,12 +10451,12 @@
       ],
       "yaxis": {
         "align": false
-      },
-      "collapsed": true
+      }
     },
     {
       "aliasColors": {},
       "bars": false,
+      "collapsed": true,
       "dashLength": 10,
       "dashes": false,
       "datasource": {
@@ -10546,12 +10547,12 @@
       ],
       "yaxis": {
         "align": false
-      },
-      "collapsed": true
+      }
     },
     {
       "aliasColors": {},
       "bars": false,
+      "collapsed": true,
       "dashLength": 10,
       "dashes": false,
       "datasource": {
@@ -10642,12 +10643,12 @@
       ],
       "yaxis": {
         "align": false
-      },
-      "collapsed": true
+      }
     },
     {
       "aliasColors": {},
       "bars": false,
+      "collapsed": true,
       "dashLength": 10,
       "dashes": false,
       "datasource": {
@@ -10705,7 +10706,7 @@
       ],
       "thresholds": [],
       "timeRegions": [],
-      "title": "HTTP client bytes read per request (quantile)",
+      "title": "HTTP client bytes read per request, q${quantile}",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -10734,8 +10735,7 @@
       ],
       "yaxis": {
         "align": false
-      },
-      "collapsed": true
+      }
     },
     {
       "collapsed": true,
