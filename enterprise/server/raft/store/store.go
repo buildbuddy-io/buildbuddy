@@ -1299,13 +1299,10 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	// checking for one. If the referenced shard is not present on this
 	// node, the request will fail in client.SyncProposeLocal().
 	if header.GetRangeId() == 0 && header.GetReplica() != nil {
-		s.log.Infof("this is a proxied request")
 		rangeID = header.GetReplica().GetRangeId()
 	} else {
 		r, err := s.LeasedRange(ctx, req.GetHeader())
-		s.log.Infof("checking leased range")
 		if err != nil {
-			s.log.Infof("leased range returns error: %s", err)
 			return nil, err
 		}
 		rangeID = r.RangeID()

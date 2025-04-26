@@ -561,7 +561,6 @@ func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest
 // so it can be applied or reverted via CommitTransaction or
 // RollbackTransaction.
 func (sm *Replica) PrepareTransaction(wb pebble.Batch, txid []byte, batchReq *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	sm.log.Infof("prepare transaction")
 	// Save the txn batch in memory and acquire locks.
 	batchRsp, err := sm.loadTxnIntoMemory(txid, batchReq)
 	if err != nil {
