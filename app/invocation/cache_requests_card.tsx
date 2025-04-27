@@ -673,6 +673,67 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     );
   }
 
+  private durationTooltip() {
+    return (
+      <Tooltip
+        renderContent={() => (
+          <div className="cache-requests-card-hovercard">
+            <div>
+              <p>
+                <b>Duration</b>
+              </p>
+              <p>
+                The time difference between when the server started processing the request and finished sending all
+                requested bytes.
+              </p>
+              <p>This time is measured by the server, and may not include load balancer or client processing time.</p>
+            </div>
+          </div>
+        )}>
+        <HelpCircle className="icon" />
+      </Tooltip>
+    );
+  }
+
+  private savingsTooltip() {
+    return (
+      <Tooltip
+        renderContent={() => (
+          <div className="cache-requests-card-hovercard">
+            <div>
+              <p>
+                <b>Savings</b>
+              </p>
+              <p>Action Cache (AC) items only. The amount of wall time that was saved by using this cached action.</p>
+              <p>
+                Determined by looking at how long the action took to build when it was originally written to the cache.
+              </p>
+            </div>
+          </div>
+        )}>
+        <HelpCircle className="icon" />
+      </Tooltip>
+    );
+  }
+
+  private waterfallTooltip() {
+    return (
+      <Tooltip
+        renderContent={() => (
+          <div className="cache-requests-card-hovercard">
+            <div>
+              <p>
+                <b>Waterfall</b>
+              </p>
+              <p>When this cache request took place in the overall timeline of the build.</p>
+            </div>
+          </div>
+        )}>
+        <HelpCircle className="icon" />
+      </Tooltip>
+    );
+  }
+
   async executeRemoteBazelQuery(target: string) {
     const isSupported = await supportsRemoteRun(this.props.model.getRepo());
     if (!isSupported) {
@@ -836,9 +897,11 @@ fi
             <div className="status-column">Status</div>
             <div className="digest-column">Digest (hash/size)</div>
             {this.isCompressedSizeColumnVisible() && <div className="compressed-size-column">Compression</div>}
-            <div className="duration-column">Duration</div>
-            {capabilities.config.trendsSummaryEnabled && <div className="duration-column">Savings</div>}
-            <div className="waterfall-column">Waterfall</div>
+            <div className="duration-column">Duration {this.durationTooltip()}</div>
+            {capabilities.config.trendsSummaryEnabled && (
+              <div className="duration-column">Savings {this.savingsTooltip()}</div>
+            )}
+            <div className="waterfall-column">Waterfall {this.waterfallTooltip()}</div>
           </div>
           {groups === null && (
             <div className="results-list column">
