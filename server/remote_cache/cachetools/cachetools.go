@@ -1098,18 +1098,17 @@ func maybeSetCompressor(rn *digest.CASResourceName) {
 	}
 }
 
-type casWriteCloser struct {
+type uploadWriteCloser struct {
 	ctx          context.Context
 	stream       bspb.ByteStream_WriteClient
 	sender       rpcutil.Sender[*bspb.WriteRequest]
 	resource     *digest.CASResourceName
 	uploadString string
 
-	errored       bool
 	bytesUploaded int64
 }
 
-func (cwc *casWriteCloser) Write(p []byte) (int, error) {
+func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 	n := 0
 	for {
 		bytesRemaining := int64(len(p)) - (cwc.bytesUploaded + int64(n))
@@ -1126,7 +1125,6 @@ func (cwc *casWriteCloser) Write(p []byte) (int, error) {
 				break
 			}
 			cwc.bytesUploaded = 0
-			cwc.errored = true
 			return 0, err
 		}
 		n += len(req.Data)
@@ -1139,7 +1137,7 @@ func (cwc *casWriteCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (cwc *casWriteCloser) Close() error {
+func (cwc *uploadWriteCloser) Close() error {
 	req := &bspb.WriteRequest{
 		ResourceName: cwc.uploadString,
 		WriteOffset:  cwc.bytesUploaded,
@@ -1148,13 +1146,11 @@ func (cwc *casWriteCloser) Close() error {
 
 	err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 	if err != nil {
-		cwc.errored = true
 		return err
 	}
 
 	rsp, err := cwc.stream.CloseAndRecv()
 	if err != nil {
-		cwc.errored = true
 		return err
 	}
 
@@ -1183,7 +1179,7 @@ func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r
 		return nil, err
 	}
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
-	return &casWriteCloser{
+	return &uploadWriteCloser{
 		ctx:          ctx,
 		stream:       stream,
 		sender:       sender,
