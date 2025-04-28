@@ -259,7 +259,15 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			return nil, 0, err
 		}
 		written, err := io.Copy(w, in)
-		return r.GetDigest(), written, err
+		if err != nil {
+			w.Close()
+			return nil, 0, err
+		}
+		err = w.Close()
+		if err != nil {
+			return nil, 0, err
+		}
+		return r.GetDigest(), written, nil
 	}
 
 	stream, err := bsClient.Write(ctx)
