@@ -252,6 +252,16 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if r.IsEmpty() {
 		return r.GetDigest(), 0, nil
 	}
+
+	if r.GetCompressor() == repb.Compressor_IDENTITY {
+		w, err := newUploadWriteCloser(ctx, bsClient, r)
+		if err != nil {
+			return nil, 0, err
+		}
+		written, err := io.Copy(w, in)
+		return r.GetDigest(), written, err
+	}
+
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
 		return nil, 0, err
