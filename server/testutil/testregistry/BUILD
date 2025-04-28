@@ -17,6 +17,6 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/types",
         "@com_github_stretchr_testify//require",
-        "@io_bazel_rules_go//go/runfiles:go_default_library",
+        "@io_bazel_rules_go//go/runfiles",
     ],
 )
