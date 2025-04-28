@@ -144,6 +144,23 @@ func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress
 	require.NoError(t, err)
 }
 
+// Run remote bazel in a separate process so it doesn't interfere with
+// the local server and cause a race condition.
+func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress string, args ...string) {
+	cmd := testcli.Command(t, workDir, append(
+		[]string{
+			"remote",
+			fmt.Sprintf("--remote_runner=%s", serverAddress),
+			// Have the ci runner use the "none" isolation type because it's simpler
+			// to setup than a firecracker runner
+			"--runner_exec_properties=workload-isolation-type=none",
+			"--runner_exec_properties=container-image=",
+		},
+		args...)...)
+	err := cmd.Run()
+	require.NoError(t, err)
+}
+
 func TestWithPublicRepo(t *testing.T) {
 	// Use a dir that is persisted on recycled runners
 	rootDir := "/root/workspace/remote-bazel-integration-test"
