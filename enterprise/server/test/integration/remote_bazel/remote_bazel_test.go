@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
+	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
@@ -99,7 +100,7 @@ func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBu
 	require.FailNowf(t, "timeout", "Timed out waiting for invocation to reach expected status %v", expectedStatus)
 }
 
-func clonePrivateTestRepo(t *testing.T) {
+func clonePrivateTestRepo(t *testing.T) string {
 	repoName := "private-test-repo"
 	// If you need to re-generate this PAT, it should only have read access to
 	// `private-test-repo`, and should be saved as a BB secret in all environments.
@@ -124,6 +125,7 @@ func clonePrivateTestRepo(t *testing.T) {
 	err = os.Chdir(repoDir)
 	require.NoError(t, err)
 	testshell.Run(t, repoDir, "git pull")
+	return repoDir
 }
 
 func resetFlags(t *testing.T) {
@@ -134,6 +136,23 @@ func resetFlags(t *testing.T) {
 	err = flagutil.SetValueForFlagSet(remotebazel.RemoteFlagset, "env", []string{}, nil, false)
 	require.NoError(t, err)
 	err = flagutil.SetValueForFlagSet(remotebazel.RemoteFlagset, "script", "", nil, false)
+	require.NoError(t, err)
+}
+
+// Run remote bazel in a separate process so it doesn't interfere with
+// the local server and cause a race condition.
+func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress string, args ...string) {
+	cmd := testcli.Command(t, workDir, append(
+		[]string{
+			"remote",
+			fmt.Sprintf("--remote_runner=%s", serverAddress),
+			// Have the ci runner use the "none" isolation type because it's simpler
+			// to setup than a firecracker runner
+			"--runner_exec_properties=workload-isolation-type=none",
+			"--runner_exec_properties=container-image=",
+		},
+		args...)...)
+	err := cmd.Run()
 	require.NoError(t, err)
 }
 
@@ -150,12 +169,13 @@ func TestWithPublicRepo(t *testing.T) {
 	err = os.MkdirAll(rootDir, 0755)
 	require.NoError(t, err)
 
-	if _, err := os.Stat(fmt.Sprintf("%s/bazel-gazelle", rootDir)); os.IsNotExist(err) {
+	workDir := fmt.Sprintf("%s/bazel-gazelle", rootDir)
+	if _, err := os.Stat(workDir); os.IsNotExist(err) {
 		output := testshell.Run(t, rootDir, "git clone https://github.com/bazelbuild/bazel-gazelle --filter=blob:none --depth=1")
 		require.NotContains(t, output, "fatal")
 	}
 
-	err = os.Chdir(fmt.Sprintf("%s/bazel-gazelle", rootDir))
+	err = os.Chdir(workDir)
 	require.NoError(t, err)
 
 	// Run a server and executor locally to run remote bazel against
@@ -179,16 +199,7 @@ func TestWithPublicRepo(t *testing.T) {
 	require.NoError(t, err)
 	apiKey := apiRsp.ApiKey.Value
 
-	exitCode, err := remotebazel.HandleRemoteBazel([]string{
-		fmt.Sprintf("--remote_runner=%s", bbServer.GRPCAddress()),
-		// Have the ci runner use the "none" isolation type because it's simpler
-		// to setup than a firecracker runner
-		"--runner_exec_properties=workload-isolation-type=none",
-		"--runner_exec_properties=container-image=",
-		"help",
-		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", apiKey)})
-	require.NoError(t, err)
-	require.Equal(t, 0, exitCode)
+	runRemoteBazelInSeparateProcess(t, workDir, bbServer.GRPCAddress(), "help", fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", apiKey))
 
 	// Check the invocation logs to ensure the "bazel help" command successfully run
 	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
@@ -212,26 +223,18 @@ func TestWithPrivateRepo(t *testing.T) {
 		resetFlags(t)
 	})
 
-	clonePrivateTestRepo(t)
+	repoDir := clonePrivateTestRepo(t)
 
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
 
 	// Run a server and executor locally to run remote bazel against
 	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
 
-	// Run remote bazel
-	exitCode, err := remotebazel.HandleRemoteBazel([]string{
-		fmt.Sprintf("--remote_runner=%s", bbServer.GRPCAddress()),
-		// Have the ci runner use the "none" isolation type because it's simpler
-		// to setup than a firecracker runner
-		"--runner_exec_properties=workload-isolation-type=none",
-		"--runner_exec_properties=container-image=",
+	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		"run",
 		":hello_world",
 		"--noenable_bzlmod",
-		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
-	require.NoError(t, err)
-	require.Equal(t, 0, exitCode)
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check the invocation logs to ensure the bazel command successfully ran
 	bbClient := env.GetBuildBuddyServiceClient()
@@ -400,7 +403,7 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 		resetFlags(t)
 	})
 
-	clonePrivateTestRepo(t)
+	repoDir := clonePrivateTestRepo(t)
 
 	// Run a server and executor locally to run remote bazel against
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
@@ -408,23 +411,16 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 
 	// Run remote bazel
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
-	exitCode, err := remotebazel.HandleRemoteBazel([]string{
-		fmt.Sprintf("--remote_runner=%s", bbServer.GRPCAddress()),
-		// Have the ci runner use the "none" isolation type because it's simpler
-		// to setup than a firecracker runner
-		"--runner_exec_properties=workload-isolation-type=none",
-		"--runner_exec_properties=container-image=",
+	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		// Ensure the build is happening on a clean runner, because if the build
 		// artifact is locally cached, we won't upload it to the remote cache
 		// and we won't be able to fetch it.
-		"--runner_exec_properties=instance_name=" + randomStr,
+		"--runner_exec_properties=instance_name="+randomStr,
 		// Pass a startup flag to test parsing
 		"--digest_function=BLAKE3",
 		"build",
 		":hello_world_go",
-		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
-	require.NoError(t, err)
-	require.Equal(t, 0, exitCode)
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check that the remote build output was fetched locally.
 	// The outputs will be downloaded to a directory that may change with the platform,
@@ -465,7 +461,7 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 		resetFlags(t)
 	})
 
-	clonePrivateTestRepo(t)
+	repoDir := clonePrivateTestRepo(t)
 
 	// Run a server and executor locally to run remote bazel against
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
@@ -473,24 +469,17 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 
 	// Run remote bazel
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
-	exitCode, err := remotebazel.HandleRemoteBazel([]string{
-		fmt.Sprintf("--remote_runner=%s", bbServer.GRPCAddress()),
-		// Have the ci runner use the "none" isolation type because it's simpler
-		// to setup than a firecracker runner
-		"--runner_exec_properties=workload-isolation-type=none",
-		"--runner_exec_properties=container-image=",
+	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		// Ensure the build is happening on a clean runner, because if the build
 		// artifact is locally cached, we won't upload it to the remote cache
 		// and we won't be able to fetch it.
-		"--runner_exec_properties=instance_name=" + randomStr,
+		"--runner_exec_properties=instance_name="+randomStr,
 		// Pass a startup flag to test parsing
 		"--digest_function=BLAKE3",
 		"--run_remotely=0",
 		"run",
 		":hello_world_go",
-		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
-	require.NoError(t, err)
-	require.Equal(t, 0, exitCode)
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check that the remote runner didn't run the script
 	bbClient := env.GetBuildBuddyServiceClient()
@@ -527,7 +516,7 @@ func TestAccessingSecrets(t *testing.T) {
 		resetFlags(t)
 	})
 
-	clonePrivateTestRepo(t)
+	repoDir := clonePrivateTestRepo(t)
 
 	initSecretService, pubKey := setupSecrets(t)
 
@@ -546,20 +535,13 @@ func TestAccessingSecrets(t *testing.T) {
 	saveSecret(t, bbClient, ctx, reqCtx, *pubKey, "SECRET_TARGET", ":hello_world")
 
 	// Run remote bazel
-	exitCode, err := remotebazel.HandleRemoteBazel([]string{
-		fmt.Sprintf("--remote_runner=%s", bbServer.GRPCAddress()),
-		// Have the ci runner use the "none" isolation type because it's simpler
-		// to setup than a firecracker runner
-		"--runner_exec_properties=workload-isolation-type=none",
-		"--runner_exec_properties=container-image=",
+	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		// Initialize secrets as env vars on the runner
 		"--runner_exec_properties=include-secrets=true",
 		// Use --script here, because otherwise $SECRET_TARGET will be parsed
 		// as a string literal and will not be expanded as an env var
 		"--script=bazel run $SECRET_TARGET --noenable_bzlmod",
-		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
-	require.NoError(t, err)
-	require.Equal(t, 0, exitCode)
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check the invocation logs to ensure the bazel command successfully ran
 	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
@@ -656,25 +638,18 @@ func TestBashScript(t *testing.T) {
 		resetFlags(t)
 	})
 
-	clonePrivateTestRepo(t)
+	repoDir := clonePrivateTestRepo(t)
 
 	// Run a server and executor locally to run remote bazel against
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
 	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
 
 	// Run remote bazel
-	exitCode, err := remotebazel.HandleRemoteBazel([]string{
-		fmt.Sprintf("--remote_runner=%s", bbServer.GRPCAddress()),
-		// Have the ci runner use the "none" isolation type because it's simpler
-		// to setup than a firecracker runner
-		"--runner_exec_properties=workload-isolation-type=none",
-		"--runner_exec_properties=container-image=",
+	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		"--script=echo $VAL",
 		"--env=VAL=Hello from the remote runner!",
-		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)},
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1),
 	)
-	require.NoError(t, err)
-	require.Equal(t, 0, exitCode)
 
 	// Verify invocation logs.
 	bbClient := env.GetBuildBuddyServiceClient()

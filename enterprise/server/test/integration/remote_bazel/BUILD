@@ -28,6 +28,7 @@ go_test(
     ],
     deps = [
         "//cli/remotebazel",
+        "//cli/testutil/testcli",
         "//enterprise/server/backends/kms",
         "//enterprise/server/execution_service",
         "//enterprise/server/githubapp",
