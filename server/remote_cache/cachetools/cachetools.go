@@ -1121,6 +1121,38 @@ func (cwc *casWriteCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
+func (cwc *casWriteCloser) Close() error {
+	req := &bspb.WriteRequest{
+		ResourceName: cwc.uploadString,
+		WriteOffset:  cwc.bytesUploaded,
+		FinishWrite:  true,
+	}
+
+	err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+	if err != nil {
+		cwc.errored = true
+		return err
+	}
+
+	rsp, err := cwc.stream.CloseAndRecv()
+	if err != nil {
+		cwc.errored = true
+		return err
+	}
+
+	if cwc.resource.GetCompressor() != repb.Compressor_IDENTITY {
+		return status.FailedPreconditionError("casWriteCloser does not support compression")
+	}
+	remoteSize := rsp.GetCommittedSize()
+	// Either the write succeeded or was short-circuited, but in
+	// either case, the remoteSize for uncompressed uploads should
+	// match the file size.
+	if remoteSize != cwc.resource.GetDigest().GetSizeBytes() {
+		return status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, cwc.resource.GetDigest().GetSizeBytes())
+	}
+	return nil
+}
+
 func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (io.WriteCloser, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
