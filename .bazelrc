@@ -15,10 +15,6 @@ import %workspace%/shared.bazelrc
 # PUBLIC REPO EXCLUSIVE CONFIGS #
 #################################
 
-# Enable bzlmod by default
-common --enable_bzlmod
-common --noenable_workspace
-
 # By default, build logs get sent to the production server
 #
 # Note: Use remote.buildbuddy.io and NOT buildbuddy.buildbuddy.io
