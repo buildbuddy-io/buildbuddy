@@ -411,7 +411,7 @@ func TestCgroupSettings(t *testing.T) {
 			CpuWeight:          proto.Int64(39),
 			CpuQuotaLimitUsec:  proto.Int64(30 * 100 * 1e3),
 			CpuQuotaPeriodUsec: proto.Int64(1 * 100 * 1e3),
-			PidsMax:            proto.Int64(2048),
+			PidsMax:            proto.Int64(2048 + 1024), // 2048 base limit + (1*1024) CPU-based limit
 			MemoryOomGroup:     proto.Bool(true),
 		}
 		assert.Empty(t, cmp.Diff(expected, actual, protocmp.Transform()))
@@ -427,4 +427,13 @@ func TestCgroupSettings(t *testing.T) {
 		settings := tasksize.GetCgroupSettings(size)
 		assert.Equal(t, int64(weight), settings.GetCpuWeight())
 	}
+}
+
+func TestCgroupSettings_AdditionalPIDsLimit(t *testing.T) {
+	flags.Set(t, "remote_execution.pids_limit", 10_000)
+	flags.Set(t, "remote_execution.additional_pids_limit_per_cpu", 200)
+	size := &scpb.TaskSize{EstimatedMilliCpu: 1500}
+	settings := tasksize.GetCgroupSettings(size)
+	const wantPidsMax = 10_300 // 10K base limit + (1.5*200 = 300) CPU-based limit
+	assert.Equal(t, int64(10_300), settings.GetPidsMax())
 }
