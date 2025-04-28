@@ -55,7 +55,7 @@ Some example queries:
 ```bash
   $ blaze run codesearch/cmd/server -- \
     --codesearch.index_dir=/tmp/csindex/ \
-	--codesearch.scratch_dir=/tmp/csscratch \
+    --codesearch.scratch_dir=/tmp/csscratch \
     --codesearch.remote_cache=grpcs://remote.buildbuddy.dev \
     --auth.remote_auth_target=grpcs://remote.buildbuddy.dev \
     --auth.jwt_key=SET_THIS_TO_THE_DEV_JWT_KEY \
