@@ -722,7 +722,7 @@ func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx interfaces
 }
 
 func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, groupID string, caps []akpb.ApiKey_Capability) error {
-	userCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, groupID)
+	userCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env.GetAuthenticator(), groupID)
 	if err != nil {
 		return err
 	}
@@ -773,7 +773,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 	if userID != u.GetUserID() {
 		// ORG_ADMIN is required to create keys for a user other than the
 		// authenticated user.
-		caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, groupID)
+		caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env.GetAuthenticator(), groupID)
 		if err != nil {
 			return nil, status.WrapError(err, "get capabilities")
 		}
@@ -868,7 +868,7 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	// within the authenticated group.
 	// If the authenticated user doesn't have this capability within the group
 	// associated with the key, then perform the usual ACL check on the key.
-	caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, key.GroupID)
+	caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env.GetAuthenticator(), key.GroupID)
 	if err != nil {
 		return nil, status.WrapError(err, "get capabilities")
 	}
@@ -982,7 +982,7 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiK
 	// within the authenticated group.
 	// If the authenticated user doesn't have this capability within the group
 	// associated with the key, then perform the usual ACL check on the key.
-	caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, key.GroupID)
+	caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env.GetAuthenticator(), key.GroupID)
 	if err != nil {
 		return nil, status.WrapError(err, "get capabilities")
 	}
@@ -1063,7 +1063,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]
 	// If trying to access keys for another user, ORG_ADMIN capability is
 	// required, and the user must be a member of the org.
 	if userID != u.GetUserID() {
-		caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, groupID)
+		caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env.GetAuthenticator(), groupID)
 		if err != nil {
 			return nil, err
 		}

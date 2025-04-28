@@ -154,7 +154,7 @@ func (c *Proxy) prepareContext(ctx context.Context) context.Context {
 }
 
 func (c *Proxy) readWriteContext(ctx context.Context) (context.Context, error) {
-	ctx, err := prefix.AttachUserPrefixToContext(c.prepareContext(ctx), c.env)
+	ctx, err := prefix.AttachUserPrefixToContext(c.prepareContext(ctx), c.env.GetAuthenticator())
 	if err != nil {
 		return ctx, err
 	}

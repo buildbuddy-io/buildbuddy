@@ -138,7 +138,7 @@ func (s *SociArtifactStore) getTargetImageInfo(ctx context.Context, image string
 }
 
 func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArtifactsRequest) (*socipb.GetArtifactsResponse, error) {
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}

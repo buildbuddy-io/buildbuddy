@@ -363,7 +363,7 @@ func TestSnapshotVersioning(t *testing.T) {
 		versionKey, err := snaploader.SnapshotVersionKey(snapshotKey2.GetBranchKey())
 		require.NoError(t, err)
 		versionDigest := digest.NewResourceName(versionKey, "", rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
-		ctx, err = prefix.AttachUserPrefixToContext(ctx, env)
+		ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 		require.NoError(t, err)
 		err = cache.Delete(ctx, versionDigest.ToProto())
 		require.NoError(t, err)
@@ -444,7 +444,7 @@ func TestRemoteSnapshotFetching_RemoteEviction(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
 	env := setupEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err)
 	loader, err := snaploader.New(env)
 	require.NoError(t, err)
