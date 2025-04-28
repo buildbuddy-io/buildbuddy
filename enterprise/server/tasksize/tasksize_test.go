@@ -428,3 +428,12 @@ func TestCgroupSettings(t *testing.T) {
 		assert.Equal(t, int64(weight), settings.GetCpuWeight())
 	}
 }
+
+func TestCgroupSettings_AdditionalPIDsLimit(t *testing.T) {
+	flags.Set(t, "remote_execution.pids_limit", 10_000)
+	flags.Set(t, "remote_execution.additional_pids_limit_per_cpu", 200)
+	size := &scpb.TaskSize{EstimatedMilliCpu: 1500}
+	settings := tasksize.GetCgroupSettings(size)
+	const wantPidsMax = 10_300 // 10K base limit + (1.5*200 = 300) CPU-based limit
+	assert.Equal(t, int64(10_300), settings.GetPidsMax())
+}
