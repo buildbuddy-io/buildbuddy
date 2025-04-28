@@ -1269,7 +1269,6 @@ func (sm *Replica) handlePostCommit(hook *rfpb.PostCommitHook) {
 		}
 		if targetReplicaID == 0 {
 			sm.log.Errorf("Error processing start shard post-commit hook: cannot find replica id for nhid %q in initial members %v", localNHID, initialMember)
-
 		} else {
 			req := &rfpb.StartShardRequest{
 				RangeId:       startShard.GetRangeId(),
