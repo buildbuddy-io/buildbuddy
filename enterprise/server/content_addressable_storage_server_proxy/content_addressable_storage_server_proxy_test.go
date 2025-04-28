@@ -85,7 +85,7 @@ func runRemoteCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*gr
 	return conn, &unaryRequestCounter, &streamRequestCounter
 }
 
-func runLocalCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (bspb.ByteStreamClient, repb.ContentAddressableStorageClient) {
+func runLocalCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (bspb.ByteStreamClient, repb.ContentAddressableStorageServer) {
 	bs, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
 	cas, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
@@ -97,7 +97,7 @@ func runLocalCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (bspb
 	conn, err := testenv.LocalInternalGRPCConn(ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	return bspb.NewByteStreamClient(conn), repb.NewContentAddressableStorageClient(conn)
+	return bspb.NewByteStreamClient(conn), cas
 }
 
 func runCASProxy(ctx context.Context, clientConn *grpc.ClientConn, env *testenv.TestEnv, t testing.TB) *grpc.ClientConn {
@@ -105,7 +105,7 @@ func runCASProxy(ctx context.Context, clientConn *grpc.ClientConn, env *testenv.
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(clientConn))
 	bs, cas := runLocalCASS(ctx, env, t)
 	env.SetLocalByteStreamClient(bs)
-	env.SetLocalCASClient(cas)
+	env.SetLocalCASServer(cas)
 	casServer, err := New(env)
 	require.NoError(t, err)
 	bsServer, err := byte_stream_server_proxy.New(env)
