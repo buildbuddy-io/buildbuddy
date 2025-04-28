@@ -118,6 +118,10 @@ func (dc *DirectClient) Lookup(ctx context.Context, in *vfspb.LookupRequest, opt
 	return dc.s.Lookup(ctx, in)
 }
 
+func (dc *DirectClient) Mknod(ctx context.Context, in *vfspb.MknodRequest, opts ...grpc.CallOption) (*vfspb.MknodResponse, error) {
+	return dc.s.Mknod(ctx, in)
+}
+
 func (dc *DirectClient) Create(ctx context.Context, in *vfspb.CreateRequest, opts ...grpc.CallOption) (*vfspb.CreateResponse, error) {
 	return dc.s.Create(ctx, in)
 }
@@ -210,6 +214,7 @@ const (
 	fsDirectoryNode = iota
 	fsFileNode
 	fsSymlinkNode
+	fsCharDevNode
 )
 
 type fsNode struct {
@@ -248,6 +253,8 @@ func (fsn *fsNode) mode() uint32 {
 		return syscall.S_IFDIR
 	case fsSymlinkNode:
 		return syscall.S_IFLNK
+	case fsCharDevNode:
+		return syscall.S_IFCHR
 	}
 	return 0
 }
@@ -750,28 +757,19 @@ func (h *fileHandle) allocate(req *vfspb.AllocateRequest) (*vfspb.AllocateRespon
 	return &vfspb.AllocateResponse{}, nil
 }
 
-func (p *Server) createFile(ctx context.Context, request *vfspb.CreateRequest, parentNode *fsNode, name string) (*os.File, *fsNode, error) {
-	localFilePath, err := p.generateScratchPath(name)
-	if err != nil {
-		return nil, nil, syscallErrStatus(err)
-	}
-	f, err := os.OpenFile(localFilePath, int(request.GetFlags()), os.FileMode(request.GetMode()))
-	if err != nil {
-		return nil, nil, syscallErrStatus(err)
-	}
-
+func (p *Server) createNode(nodeType byte, backingPath string, mode uint32, parentNode *fsNode, name string) (*fsNode, error) {
 	now := time.Now()
 
 	node := &fsNode{
-		nodeType: fsFileNode,
+		nodeType: nodeType,
 		name:     name,
 		attrs: &vfspb.Attrs{
-			Perm:       request.GetMode(),
+			Perm:       mode,
 			Nlink:      1,
 			MtimeNanos: uint64(now.UnixNano()),
 			AtimeNanos: uint64(now.UnixNano()),
 		},
-		backingPath: localFilePath,
+		backingPath: backingPath,
 		parent:      parentNode,
 	}
 
@@ -782,7 +780,16 @@ func (p *Server) createFile(ctx context.Context, request *vfspb.CreateRequest, p
 	parentNode.children[name] = node
 	parentNode.mu.Unlock()
 	p.addNode(node)
-	return f, node, nil
+	return node, nil
+}
+
+func (p *Server) createFile(ctx context.Context, mode uint32, parentNode *fsNode, name string) (*fsNode, error) {
+	localFilePath, err := p.generateScratchPath(name)
+	if err != nil {
+		return nil, syscallErrStatus(err)
+	}
+
+	return p.createNode(fsFileNode, localFilePath, mode, parentNode, name)
 }
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -897,16 +904,52 @@ func (cf *casFetcher) UpdateIOStats(stats *repb.VfsStats) {
 	stats.FileDownloadDurationUsec = cf.downloadDuration.Microseconds()
 }
 
+func (p *Server) Mknod(ctx context.Context, request *vfspb.MknodRequest) (*vfspb.MknodResponse, error) {
+	parentNode, err := p.lookupNode(request.GetParentId())
+	if err != nil {
+		return nil, err
+	}
+
+	if request.GetMode()&unix.S_IFREG != 0 {
+		node, err := p.createFile(ctx, request.GetMode(), parentNode, request.GetName())
+		if err != nil {
+			return nil, err
+		}
+		if err := unix.Mknod(node.backingPath, request.GetMode(), 0); err != nil {
+			return nil, syscallErrStatus(err)
+		}
+		return &vfspb.MknodResponse{Id: node.id, Attrs: node.attrs}, nil
+	}
+
+	if request.GetMode()&unix.S_IFCHR != 0 {
+		if request.GetDev() != 0 {
+			return nil, syscallErrStatus(syscall.ENOSYS)
+		}
+		node, err := p.createNode(fsCharDevNode, "", request.GetMode(), parentNode, request.GetName())
+		if err != nil {
+			return nil, err
+		}
+		return &vfspb.MknodResponse{Id: node.id, Attrs: node.attrs}, nil
+	}
+
+	return nil, syscallErrStatus(syscall.ENOSYS)
+}
+
 func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfspb.CreateResponse, error) {
 	parentNode, err := p.lookupNode(request.GetParentId())
 	if err != nil {
 		return nil, err
 	}
 
-	file, node, err := p.createFile(ctx, request, parentNode, request.GetName())
+	node, err := p.createFile(ctx, request.GetMode(), parentNode, request.GetName())
 	if err != nil {
 		log.CtxWarningf(p.taskCtx(), "Open %q could not create new file: %s", request.GetName(), err)
 		return nil, err
+	}
+
+	file, err := os.OpenFile(node.backingPath, int(request.GetFlags()), os.FileMode(request.GetMode()))
+	if err != nil {
+		return nil, syscallErrStatus(err)
 	}
 
 	node.mu.Lock()
@@ -1207,18 +1250,23 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 	newChildNode, newExists := newParentNode.children[request.GetNewName()]
 	newParentNode.mu.Unlock()
 	if newExists {
-		if oldChildNode.IsFile() && newChildNode.IsFile() {
-			if err := unlink(newParentNode, newChildNode, request.GetNewName()); err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, syscallErrStatus(syscall.EEXIST)
+		if err := unlink(newParentNode, newChildNode, request.GetNewName()); err != nil {
+			return nil, err
 		}
 	}
 
-	oldParentNode.mu.Lock()
-	delete(oldParentNode.children, request.GetOldName())
-	oldParentNode.mu.Unlock()
+	// If RENAME_WHITEOUT flag is present, we need to create a character
+	// device where the old node used to be.
+	if request.GetFlags()&unix.RENAME_WHITEOUT != 0 {
+		_, err := p.createNode(fsCharDevNode, "", 0644, oldParentNode, request.GetOldName())
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		oldParentNode.mu.Lock()
+		delete(oldParentNode.children, request.GetOldName())
+		oldParentNode.mu.Unlock()
+	}
 
 	newParentNode.mu.Lock()
 	if newParentNode.children == nil {
