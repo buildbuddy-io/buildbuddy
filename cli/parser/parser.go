@@ -397,7 +397,7 @@ func (p *Parser) canonicalizeArgs(args []string, onlyStartupOptions bool) ([]str
 		}
 		if _, ok := p.BazelCommands[token]; ok {
 			if onlyStartupOptions {
-				return arg.JoinExecutableArgs(append(arguments.AsFormatted(processedArgs), args[i:]...), execArgs), nil
+				return arg.JoinExecutableArgs(append(arguments.FormatAll(processedArgs), args[i:]...), execArgs), nil
 			}
 			// When we see the bazel command token, switch to parsing command
 			// options instead of startup options.
