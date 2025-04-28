@@ -87,7 +87,7 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // This registry does not support resumable pulls via the Range header.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
 		return

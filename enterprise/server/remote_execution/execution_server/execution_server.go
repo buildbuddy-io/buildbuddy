@@ -716,7 +716,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	}
 
 	adInstanceDigest := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
-	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env.GetAuthenticator())
 	if err != nil {
 		return err
 	}
@@ -871,7 +871,7 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 
 func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
 	log.CtxInfof(ctx, "WaitExecution called for: %q", req.GetName())
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return err
 	}
@@ -1035,7 +1035,7 @@ func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID stri
 }
 
 func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperationServer) error {
-	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env.GetAuthenticator())
 	if err != nil {
 		return err
 	}

@@ -189,6 +189,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/components/digest",
+        "//app/components/link",
         "//app/format",
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_target_group_card",

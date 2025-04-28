@@ -144,7 +144,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 		return resp, err
 	}
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}

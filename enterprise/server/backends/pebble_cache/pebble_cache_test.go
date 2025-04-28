@@ -64,7 +64,7 @@ const (
 )
 
 func getAnonContext(t testing.TB, env environment.Env) context.Context {
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err)
 	return ctx
 }

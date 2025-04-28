@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { copyToClipboard } from "../util/clipboard";
 import { renderDuration, renderTestSize } from "./target_util";
-import Link from "../components/link/link";
+import Link, { TextLink } from "../components/link/link";
 import rpc_service, { CancelablePromise } from "../service/rpc_service";
 import error_service from "../errors/error_service";
 import Spinner from "../components/spinner/spinner";
@@ -243,14 +243,15 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
                   <div className="artifact-list">
                     {target.files.map((output) => (
                       <div className="artifact-line">
-                        <a
+                        <TextLink
+                          plain
                           href={rpc_service.getBytestreamUrl(output.uri, this.props.invocationId, {
                             filename: output.name,
                           })}
                           className="artifact-name"
                           onClick={(event) => this.onClickFile(event, output)}>
                           {output.name}
-                        </a>
+                        </TextLink>
                         {output.uri?.startsWith("bytestream://") && (
                           <a className="artifact-view" href={this.getCodeURL(output)}>
                             <FileCode className="icon" /> View

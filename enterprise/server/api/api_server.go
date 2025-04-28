@@ -66,7 +66,7 @@ func NewAPIServer(env environment.Env) *APIServer {
 }
 
 func (s *APIServer) authorizeWrites(ctx context.Context) error {
-	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 	if err != nil {
 		return err
 	}
@@ -399,7 +399,7 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 		return nil, status.PermissionDeniedError("DeleteFile API not enabled")
 	}
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}

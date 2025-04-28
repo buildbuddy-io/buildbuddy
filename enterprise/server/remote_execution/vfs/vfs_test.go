@@ -807,7 +807,7 @@ func TestAttrCaching(t *testing.T) {
 func TestComputeStats(t *testing.T) {
 	env := setupEnv(t)
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err)
 
 	rn1, buf := testdigest.RandomCASResourceBuf(t, 100)

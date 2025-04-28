@@ -76,7 +76,7 @@ func (e *evilCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName
 func TestBatchUpdateBlobs(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
 func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -394,7 +394,7 @@ func TestBatchUpdateAndRead_CacheHandlesCompression(t *testing.T) {
 func TestMalevolentCache(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -442,7 +442,7 @@ func TestGetTree(t *testing.T) {
 	instanceName := ""
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -487,7 +487,7 @@ func TestGetTreeCaching(t *testing.T) {
 	instanceName := ""
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -584,7 +584,7 @@ func TestGetTreeCachingWithSplitting(t *testing.T) {
 	instanceName := ""
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -658,7 +658,7 @@ func TestGetTreeWithSubtrees(t *testing.T) {
 	instanceName := ""
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -785,7 +785,7 @@ func TestGetTreeMissingRoot(t *testing.T) {
 	instanceName := ""
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}

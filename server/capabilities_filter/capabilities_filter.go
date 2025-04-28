@@ -210,7 +210,7 @@ func AllowedRPCs(ctx context.Context, env environment.Env, groupID string) []str
 	}
 
 	if groupID != "" {
-		userGroupCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, env, groupID)
+		userGroupCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, env.GetAuthenticator(), groupID)
 		if err == nil {
 			if slices.Contains(userGroupCapabilities, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
 				out = append(out, getGroupAdminOnlyRPCs()...)
