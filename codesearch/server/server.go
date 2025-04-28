@@ -138,7 +138,7 @@ func (css *codesearchServer) getUserNamespace(ctx context.Context, requestedName
 	if !isAlphaNumPath(requestedNamespace) {
 		return "", status.InvalidArgumentError("namespace must match a/b/c")
 	}
-	gid, err := prefix.UserPrefix(ctx, css.env)
+	gid, err := prefix.UserPrefix(ctx, css.env.GetAuthenticator())
 	if err != nil {
 		return "", err
 	}

@@ -7,6 +7,7 @@ import { ArrowDownCircle, FileCode } from "lucide-react";
 import TargetGroupCard from "./invocation_target_group_card";
 import format from "../format/format";
 import DigestComponent from "../components/digest/digest";
+import { TextLink } from "../components/link/link";
 
 interface Props {
   model: InvocationModel;
@@ -144,14 +145,15 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                 <div className="artifact-list">
                   {target.outputs.map((output) => (
                     <div className="artifact-line">
-                      <a
+                      <TextLink
+                        plain
                         href={rpcService.getBytestreamUrl(output.uri, this.props.model.getInvocationId(), {
                           filename: output.name,
                         })}
                         className="artifact-name"
                         onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
                         {output.name}
-                      </a>
+                      </TextLink>
                       {output.uri?.startsWith("bytestream://") && (
                         <a
                           className="artifact-view"

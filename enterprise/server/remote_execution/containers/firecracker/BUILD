@@ -64,7 +64,7 @@ go_library(
         "@com_github_klauspost_cpuid_v2//:cpuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_sirupsen_logrus//:logrus",
-        "@io_bazel_rules_go//go/runfiles:go_default_library",
+        "@io_bazel_rules_go//go/runfiles",
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//health/grpc_health_v1",
@@ -129,8 +129,6 @@ go_test(
     ],
     deps = [
         ":firecracker",
-        "//enterprise/server/action_cache_server_proxy",
-        "//enterprise/server/byte_stream_server_proxy",
         "//enterprise/server/clientidentity",
         "//enterprise/server/ociregistry",
         "//enterprise/server/remote_execution/container",

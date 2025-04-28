@@ -96,7 +96,7 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 		return false, err
 	}
 
-	caps, err := capabilities.ForAuthenticatedUser(ctx, d.env)
+	caps, err := capabilities.ForAuthenticatedUser(ctx, d.env.GetAuthenticator())
 	if err != nil {
 		// Set empty capabilities by default
 		caps = []akpb.ApiKey_Capability{}

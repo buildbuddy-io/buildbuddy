@@ -47,14 +47,22 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
   );
 });
 
-export type TextLinkProps = LinkProps;
+export type TextLinkProps = LinkProps & {
+  /**
+   * Don't apply color styling to the link except when hovering.
+   *
+   * This style is used for links rendered in lists of items, where the blue
+   * link color can be overwhelming.
+   */
+  plain?: boolean;
+};
 
 /**
  * TextLink renders an inline text `<Link>` with underline styling.
  */
 export const TextLink = React.forwardRef((props: TextLinkProps, ref: React.Ref<HTMLAnchorElement>) => {
-  const { className, ...rest } = props;
-  return <Link ref={ref} className={`text-link ${className}`} {...rest} />;
+  const { className, plain, ...rest } = props;
+  return <Link ref={ref} className={`text-link ${plain ? "plain" : ""} ${className}`} {...rest} />;
 });
 
 export default Link;

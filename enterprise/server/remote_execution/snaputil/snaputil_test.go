@@ -40,7 +40,7 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 
 func TestCacheAndFetchArtifact(t *testing.T) {
 	env := setupEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err)
 	tmpDir := testfs.MakeTempDir(t)
 	fc := env.GetFileCache()
@@ -101,7 +101,7 @@ func TestCacheAndFetchArtifact(t *testing.T) {
 
 func TestCacheAndFetchArtifact_LocalOnly(t *testing.T) {
 	env := setupEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err)
 	tmpDir := testfs.MakeTempDir(t)
 	fc := env.GetFileCache()
@@ -136,7 +136,7 @@ func TestCacheAndFetchArtifact_LocalOnly(t *testing.T) {
 
 func TestCacheAndFetchBytes(t *testing.T) {
 	env := setupEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err)
 	tmpDir := testfs.MakeTempDir(t)
 	fc := env.GetFileCache()

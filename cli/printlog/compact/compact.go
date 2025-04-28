@@ -294,6 +294,12 @@ func (slr *SpawnLogReconstructor) GetSpawnExec() (*spb.SpawnExec, error) {
 			slr.sets[entry.GetId()] = e.InputSet
 		case *spb.ExecLogEntry_Spawn_:
 			return slr.reconstructSpawn(e.Spawn), nil
+		case *spb.ExecLogEntry_SymlinkAction_:
+			// TODO: Handle symlink actions
+		case *spb.ExecLogEntry_SymlinkEntrySet_:
+			// TODO: Handle symlink entry sets
+		case *spb.ExecLogEntry_RunfilesTree_:
+			// TODO: Handle runfiles trees
 		default:
 			log.Warnf("unknown exec log entry: %v", entry)
 		}
@@ -337,6 +343,22 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) *s
 	var actualOutputs []*spb.File
 	for _, output := range s.GetOutputs() {
 		switch o := output.GetType().(type) {
+		case *spb.ExecLogEntry_Output_OutputId:
+			if f, ok := slr.files[o.OutputId]; ok {
+				listedOutputs = append(listedOutputs, f.GetPath())
+				actualOutputs = append(actualOutputs, f)
+				continue
+			}
+			if d, ok := slr.dirs[o.OutputId]; ok {
+				listedOutputs = append(listedOutputs, d.path)
+				actualOutputs = append(actualOutputs, d.files...)
+				continue
+			}
+			if symlink, ok := slr.symlinks[o.OutputId]; ok {
+				listedOutputs = append(listedOutputs, symlink.GetPath())
+				actualOutputs = append(actualOutputs, symlink)
+				continue
+			}
 		case *spb.ExecLogEntry_Output_FileId:
 			f := slr.files[o.FileId]
 			listedOutputs = append(listedOutputs, f.GetPath())
@@ -375,37 +397,73 @@ func (slr *SpawnLogReconstructor) reconstructInputs(setID uint32) ([]string, map
 		setsToVisit = setsToVisit[1:]
 		set := slr.sets[currentID]
 
+		for _, setID := range set.GetTransitiveSetIds() {
+			if _, ok := visited[setID]; ok {
+				continue
+			}
+			visited[setID] = struct{}{}
+			setsToVisit = append(setsToVisit, setID)
+		}
+
+		// The input_id is a relatively new field that combines
+		// files, directories, unresolved symlinks or runfiles trees.
+		if len(set.GetInputIds()) > 0 {
+			for _, inputIds := range set.GetInputIds() {
+				if _, ok := visited[inputIds]; ok {
+					continue
+				}
+
+				visited[inputIds] = struct{}{}
+				if f, ok := slr.files[inputIds]; ok {
+					order = append(order, f.GetPath())
+					inputs[f.GetPath()] = f
+					continue
+				}
+				if d, ok := slr.dirs[inputIds]; ok {
+					for _, f := range d.files {
+						order = append(order, f.GetPath())
+						inputs[f.GetPath()] = f
+					}
+					continue
+				}
+				if symlink, ok := slr.symlinks[inputIds]; ok {
+					order = append(order, symlink.GetPath())
+					inputs[symlink.GetPath()] = symlink
+					continue
+				}
+			}
+			continue
+		}
+
+		// Handle deprecated fields
 		for _, fileID := range set.GetFileIds() {
-			if _, ok := visited[fileID]; !ok {
-				visited[fileID] = struct{}{}
-				f := slr.files[fileID]
+			if _, ok := visited[fileID]; ok {
+				continue
+			}
+			visited[fileID] = struct{}{}
+			f := slr.files[fileID]
+			order = append(order, f.GetPath())
+			inputs[f.GetPath()] = f
+		}
+		for _, dirID := range set.GetDirectoryIds() {
+			if _, ok := visited[dirID]; ok {
+				continue
+			}
+			visited[dirID] = struct{}{}
+			d := slr.dirs[dirID]
+			for _, f := range d.files {
 				order = append(order, f.GetPath())
 				inputs[f.GetPath()] = f
 			}
 		}
-		for _, dirID := range set.GetDirectoryIds() {
-			if _, ok := visited[dirID]; !ok {
-				visited[dirID] = struct{}{}
-				d := slr.dirs[dirID]
-				for _, f := range d.files {
-					order = append(order, f.GetPath())
-					inputs[f.GetPath()] = f
-				}
-			}
-		}
 		for _, symlinkID := range set.GetUnresolvedSymlinkIds() {
-			if _, ok := visited[symlinkID]; !ok {
-				visited[symlinkID] = struct{}{}
-				s := slr.symlinks[symlinkID]
-				order = append(order, s.GetPath())
-				inputs[s.GetPath()] = s
+			if _, ok := visited[symlinkID]; ok {
+				continue
 			}
-		}
-		for _, setID := range set.GetTransitiveSetIds() {
-			if _, ok := visited[setID]; !ok {
-				visited[setID] = struct{}{}
-				setsToVisit = append(setsToVisit, setID)
-			}
+			visited[symlinkID] = struct{}{}
+			s := slr.symlinks[symlinkID]
+			order = append(order, s.GetPath())
+			inputs[s.GetPath()] = s
 		}
 	}
 	return order, inputs

@@ -127,7 +127,7 @@ func TestRPCRead(t *testing.T) {
 		},
 	}
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -502,7 +502,7 @@ func Test_CacheHandlesCompression(t *testing.T) {
 			flags.Set(t, "cache.zstd_transcoding_enabled", true)
 			te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
 
-			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(t, err)
 			clientConn := runByteStreamServer(ctx, t, te)
 			bsClient := bspb.NewByteStreamClient(clientConn)

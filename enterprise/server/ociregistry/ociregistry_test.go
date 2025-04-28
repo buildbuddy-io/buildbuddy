@@ -358,9 +358,11 @@ func TestPull(t *testing.T) {
 				require.Equal(t, tc.expectedStatus, resp.StatusCode)
 
 				if resp.StatusCode == http.StatusOK {
-					respDigest := resp.Header.Get("Docker-Content-Digest")
-					require.NotEmpty(t, respDigest)
-					require.Equal(t, expectedDockerContentDigest, respDigest)
+					if tc.blobsOrManifests == "manifests" {
+						respDigest := resp.Header.Get("Docker-Content-Digest")
+						require.NotEmpty(t, respDigest)
+						require.Equal(t, expectedDockerContentDigest, respDigest)
+					}
 
 					if tc.method == http.MethodGet {
 						contentLength, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)

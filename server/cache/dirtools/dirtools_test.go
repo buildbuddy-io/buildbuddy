@@ -1108,7 +1108,7 @@ func TestDownloadTreeExistingIncorrectSymlink(t *testing.T) {
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}

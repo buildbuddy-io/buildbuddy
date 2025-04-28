@@ -1136,7 +1136,7 @@ func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts)
 	command := minimalCommand(args...)
 	command.Platform.Properties = append(command.Platform.Properties, opts.Properties...)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.testEnv)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.testEnv.GetAuthenticator())
 	if err != nil {
 		assert.FailNowf(r.t, "could not attach user prefix", err.Error())
 	}

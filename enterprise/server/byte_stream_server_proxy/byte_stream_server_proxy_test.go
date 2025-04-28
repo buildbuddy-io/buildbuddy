@@ -195,7 +195,7 @@ func TestRead(t *testing.T) {
 		},
 	}
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestRead_RemoteAtimeUpdated(t *testing.T) {
 	proxy := runBSProxy(ctx, bs, proxyEnv, t)
 
 	// Upload the test blob to the proxy
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	require.NoError(t, err)
 	uploadRn := fmt.Sprintf("uploads/%s/blobs/%s/%d", uuid.New(), d.Hash, d.SizeBytes)
 	bazelVersion := "5.0.0"
@@ -351,7 +351,7 @@ func TestWrite(t *testing.T) {
 			flags.Set(t, "cache.zstd_transcoding_enabled", true)
 			proxyEnv.SetCache(&testcompression.CompressionCache{Cache: proxyEnv.GetCache()})
 
-			ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 			require.NoError(t, err)
 			remote, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
 			proxy := runBSProxy(ctx, remote, proxyEnv, t)
@@ -461,7 +461,7 @@ func TestSkipRemote(t *testing.T) {
 	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
 	proxy := runBSProxy(ctx, bs, proxyEnv, t)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -495,7 +495,7 @@ func BenchmarkRead(b *testing.B) {
 	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, b)
 	proxy := runBSProxy(ctx, bs, proxyEnv, b)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	if err != nil {
 		b.Errorf("error attaching user prefix: %v", err)
 	}
@@ -545,7 +545,7 @@ func BenchmarkWrite(b *testing.B) {
 	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, b)
 	proxy := runBSProxy(ctx, bs, proxyEnv, b)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
 	if err != nil {
 		b.Errorf("error attaching user prefix: %v", err)
 	}

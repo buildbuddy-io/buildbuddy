@@ -46,7 +46,7 @@ func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.Tes
 }
 
 func getAnonContext(t *testing.T, env environment.Env) context.Context {
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err, "error ataching user prefix")
 	return ctx
 }
@@ -583,7 +583,7 @@ func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
 	defer mc.Stop()
 
 	authenticatedCtx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
-	authenticatedCtx, err = prefix.AttachUserPrefixToContext(authenticatedCtx, te)
+	authenticatedCtx, err = prefix.AttachUserPrefixToContext(authenticatedCtx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	// Save data to different isolations in src cache

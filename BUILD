@@ -163,7 +163,7 @@ nogo(
 
 gazelle_binary(
     name = "bb_gazelle_binary",
-    languages = DEFAULT_LANGUAGES + ["@bazel_gazelle//language/bazel/visibility:go_default_library"],
+    languages = DEFAULT_LANGUAGES + ["@bazel_gazelle//language/bazel/visibility"],
 )
 
 # Ignore the node_modules dir
@@ -184,6 +184,23 @@ gazelle_binary(
 # gazelle:resolve go kythe.io/kythe/proto/filetree_go_proto @io_kythe//kythe/proto:filetree_go_proto
 # gazelle:resolve go kythe.io/kythe/proto/graph_go_proto @io_kythe//kythe/proto:graph_go_proto
 # gazelle:resolve go kythe.io/kythe/proto/xref_go_proto @io_kythe//kythe/proto:xref_go_proto
+#
+# This is a list of default when using Gazelle from BzlMod.
+# We force these mapping manually so that we do not oscillate during migrating to BzlMod
+# (and potentially any revert back to WORKSPACE mode).
+#
+# TODO(sluongng): remove these once we deem BzlMod stable enough
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/config @bazel_gazelle//config
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/label @bazel_gazelle//label
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language @bazel_gazelle//language
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language/bazel/visibility @bazel_gazelle//language/bazel/visibility
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language/go @bazel_gazelle//language/go
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language/proto @bazel_gazelle//language/proto
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/repo @bazel_gazelle//repo
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/resolve @bazel_gazelle//resolve
+# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/rule @bazel_gazelle//rule
+# gazelle:resolve go github.com/bazelbuild/rules_go/go/runfiles @io_bazel_rules_go//go/runfiles
+# gazelle:resolve go github.com/bazelbuild/rules_go/go/tools/bazel @io_bazel_rules_go//go/tools/bazel
 #
 # Make these the default compilers for proto rules.
 # See https://github.com/bazelbuild/rules_go/pull/3761 for more details

@@ -340,7 +340,7 @@ func setup(t *testing.T, blobCounter *atomic.Int32) (*testenv.TestEnv, *SociArti
 	})
 	err, store := newSociArtifactStore(env)
 	require.NoError(t, err)
-	ctx, err := prefix.AttachUserPrefixToContext(context.TODO(), env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.TODO(), env.GetAuthenticator())
 	require.NoError(t, err)
 	return env, store, reg, ctx
 }

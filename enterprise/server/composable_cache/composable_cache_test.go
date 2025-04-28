@@ -23,7 +23,7 @@ import (
 func testEnvAndContext(t *testing.T) (environment.Env, context.Context) {
 	target := testredis.Start(t).Target
 	te := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{RedisTarget: target})
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
 	require.NoError(t, err)
 	return te, ctx
 }
