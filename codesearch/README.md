@@ -40,20 +40,20 @@ Some example queries:
 
 ```bash
   # Index the ~/buildbuddy directory.
-  $ blaze build codesearch/cmd/cli && time bazel-bin/codesearch/cmd/cli/cli_/cli index --index_dir=/tmp/csindex ~/buildbuddy
+  $ bazel build codesearch/cmd/cli && time bazel-bin/codesearch/cmd/cli/cli_/cli index --index_dir=/tmp/csindex ~/buildbuddy
 ```
 
 ## Search the index (CLI)
 
 ```bash
   # Search (w/ a regex)
-  $ blaze build codesearch/cmd/cli && time bazel-bin/codesearch/cmd/cli/cli_/cli search --index_dir=/tmp/csindex "className=\.*"
+  $ bazel build codesearch/cmd/cli && time bazel-bin/codesearch/cmd/cli/cli_/cli search --index_dir=/tmp/csindex "className=\.*"
 ```
 
 ## Run a codesearch server
 
 ```bash
-  $ blaze run codesearch/cmd/server -- \
+  $ bazel run codesearch/cmd/server -- \
     --codesearch.index_dir=/tmp/csindex/ \
     --codesearch.scratch_dir=/tmp/csscratch \
     --codesearch.remote_cache=grpcs://remote.buildbuddy.dev \
@@ -65,8 +65,7 @@ Some example queries:
 ## Index some code (server)
 
 ```bash
-  $ alias stubby=grpc_cli
-  $ stubby call --metadata x-buildbuddy-api-key:YOUR_DEV_API_KEY localhost:2633 codesearch.service.CodesearchService.Index 'git_repo:<repo_url:"https://github.com/buildbuddy-io/buildbuddy"> repo_state:<commit_sha:"master">'
+  $ grpc_cli call --metadata x-buildbuddy-api-key:YOUR_DEV_API_KEY localhost:2633 codesearch.service.CodesearchService.Index 'git_repo:<repo_url:"https://github.com/buildbuddy-io/buildbuddy"> repo_state:<commit_sha:"master">'
   #
   # grpcurl version:
   $ grpcurl -plaintext -H "x-buildbuddy-api-key:YOUR_DEV_API_KEY" -d '{"git_repo": {"repo_url":"https://github.com/buildbuddy-io/buildbuddy"}, "repo_state": {"commit_sha":"master"}}' localhost:2633 codesearch.service.CodesearchService.Index
@@ -75,8 +74,7 @@ Some example queries:
 ## Perform a Search (server)
 
 ```bash
-  $ alias stubby=grpc_cli
-  $ stubby call --metadata x-buildbuddy-api-key:YOUR_DEV_API_KEY localhost:2633 codesearch.service.CodesearchService.Search 'query: <term: "package codesearch">'
+  $ grpc_cli call --metadata x-buildbuddy-api-key:YOUR_DEV_API_KEY localhost:2633 codesearch.service.CodesearchService.Search 'query: <term: "package codesearch">'
   #
   # grpcurl version:
   $ grpcurl -plaintext -H "x-buildbuddy-api-key:YOUR_DEV_API_KEY" -d '{"query": {"term": "package codesearch"}}' localhost:2633 codesearch.service.CodesearchService.Search
@@ -87,8 +85,7 @@ Some example queries:
 ```bash
   # go find a recent workflow run of the "Generate CodeSearch Index" workflow on dev
   # and copy the digest of the `kythe_serving.sst` file from the `Artifacts` tab
-  $ alias stubby=grpc_cli
-  $ stubby call --metadata x-buildbuddy-api-key:YOUR_DEV_API_KEY localhost:2633 codesearch.service.CodesearchService.IngestAnnotations 'sstable_name: <digest: <hash:"327b0639e2f515053584f19437a6756ae9f6a78b5d96931039b6b23aa1a97ff8" size_bytes:100000> cache_type: CAS>'
+  $ grpc_cli call --metadata x-buildbuddy-api-key:YOUR_DEV_API_KEY localhost:2633 codesearch.service.CodesearchService.IngestAnnotations 'sstable_name: <digest: <hash:"YOUR_HASH" size_bytes:100000> cache_type: CAS>'
   #
   # grpcurl version:
   $ grpcurl -plaintext -H "x-buildbuddy-api-key:YOUR_DEV_API_KEY" -d '{"sstable_name": {"digest": {"hash":"YOUR_HASH", "size_bytes":1000000}, "cache_type":"CAS"}}' localhost:2633 codesearch.service.CodesearchService.IngestAnnotations
@@ -97,8 +94,7 @@ Some example queries:
 ## Fetch Kythe annotations (server)
 
 ```bash
-  $ alias stubby=grpc_cli
-  $ stubby call --metadata x-buildbuddy-api-key:YOUR_DEV_API_KEY localhost:2633 codesearch.service.CodesearchService.KytheProxy 'decorations_request: <location: <ticket:"kythe://buildbuddy?path=proto/spawn_diff.proto"> references:true target_definitions:true semantic_scopes:true diagnostics:true>'
+  $ grpc_cli call --metadata x-buildbuddy-api-key:YOUR_DEV_API_KEY localhost:2633 codesearch.service.CodesearchService.KytheProxy 'decorations_request: <location: <ticket:"kythe://buildbuddy?path=proto/spawn_diff.proto"> references:true target_definitions:true semantic_scopes:true diagnostics:true>'
   #
   # grpcurl version:
   $ grpcurl -plaintext -H "x-buildbuddy-api-key:YOUR_DEV_API_KEY" -d '{"decorations_request":{"location": {"ticket":"kythe://buildbuddy?path=proto/spawn_diff.proto"}, "references":true, "target_definitions": true, "semantic_scopes": true, "diagnostics": true}}' localhost:2633 codesearch.service.CodesearchService.KytheProxy
