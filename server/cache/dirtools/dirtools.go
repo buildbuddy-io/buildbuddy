@@ -286,7 +286,7 @@ func (f *fileToUpload) FileNode() *repb.FileNode {
 	}
 }
 
-func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, env environment.Env, filesToUpload []*fileToUpload, instanceName string, digestFunction repb.DigestFunction_Value) (alreadyPresentBytes int64, _ error) {
+func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, env environment.Env, filesToUpload []*fileToUpload, instanceName string, digestFunction repb.DigestFunction_Value, addToFileCache bool) (alreadyPresentBytes int64, _ error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -345,17 +345,17 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 	fc := env.GetFileCache()
 	for batch := range batches {
 		alreadyPresentBytes += batch.presentBytes
-		if err := uploadFiles(ctx, uploader, fc, batch.files); err != nil {
+		if err := uploadFiles(ctx, uploader, fc, batch.files, addToFileCache); err != nil {
 			return 0, err
 		}
 	}
 	return alreadyPresentBytes, nil
 }
 
-func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
+func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload, addToFileCache bool) error {
 	for _, uploadableFile := range filesToUpload {
 		// Add output files to the filecache.
-		if fc != nil {
+		if fc != nil && addToFileCache {
 			node := uploadableFile.FileNode()
 			if err := fc.AddFile(ctx, node, uploadableFile.fullPath); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
@@ -446,7 +446,7 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 	return nil
 }
 
-func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult) (*TransferInfo, error) {
+func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, cmd *repb.Command, actionResult *repb.ActionResult, addToFileCache bool) (*TransferInfo, error) {
 	startTime := time.Now()
 	outputDirectoryPaths := make([]string, 0)
 	filesToUpload := make([]*fileToUpload, 0)
@@ -536,7 +536,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 
 	// Upload output files to the remote cache and also add them to the local
 	// cache since they are likely to be used as inputs to subsequent actions.
-	alreadyPresentBytes, err := uploadMissingFiles(ctx, uploader, env, filesToUpload, instanceName, digestFunction)
+	alreadyPresentBytes, err := uploadMissingFiles(ctx, uploader, env, filesToUpload, instanceName, digestFunction, addToFileCache)
 	if err != nil {
 		return nil, err
 	}
