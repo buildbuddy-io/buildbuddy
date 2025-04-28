@@ -1164,12 +1164,6 @@ code .comment {
   padding-left: 16px;
 }
 
-.artifact-name {
-  font-weight: 600;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 .artifact-view {
   font-weight: 600;
   display: flex;
@@ -1922,8 +1916,9 @@ code .comment {
   color: #4caf50;
 }
 
-.coverage-source {
+a.coverage-source {
   font-weight: 600;
+  color: #000;
 }
 
 .coverage-percent {
