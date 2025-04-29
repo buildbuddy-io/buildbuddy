@@ -190,14 +190,12 @@ func startNNodes(t *testing.T, configs []testConfig) []*raft_cache.RaftCache {
 }
 
 func TestAutoBringup(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNNodes(t, configs)
 	waitForShutdown(t, caches...)
 }
 
 func TestReaderAndWriter(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNNodes(t, configs)
 	rc1 := caches[0]
@@ -257,7 +255,6 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNNodes(t, configs)
 
@@ -289,7 +286,6 @@ func TestDistributedRanges(t *testing.T) {
 }
 
 func TestFindMissingBlobs(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNNodes(t, configs)
 
