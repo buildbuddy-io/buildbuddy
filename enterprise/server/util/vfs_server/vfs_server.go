@@ -997,12 +997,15 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 			return nil, syscallErrStatus(err)
 		}
 		openedFile = f
-	} else {
+	} else if node.fileNode != nil {
 		f, err := p.casFetcher.Open(p.taskCtx(), node)
 		if err != nil {
 			return nil, err
 		}
 		openedFile = f
+	} else {
+		log.CtxWarningf(p.taskCtx(), "Open called on an unlinked node %q", node.Path())
+		return nil, syscallErrStatus(syscall.EINVAL)
 	}
 
 	fh := &fileHandle{
@@ -1389,6 +1392,7 @@ func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
 			childNode.mu.Unlock()
 			return syscallErrStatus(err)
 		}
+		childNode.backingPath = ""
 		childNode.server.mu.Lock()
 		childNode.server.blocks -= childNode.server.statBlocksToFSBlocks(childNode.attrs.Blocks)
 		childNode.server.mu.Unlock()
