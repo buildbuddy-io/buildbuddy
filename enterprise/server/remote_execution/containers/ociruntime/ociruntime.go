@@ -383,11 +383,7 @@ func (c *ociContainer) rootfsPath() string {
 }
 
 func (c *ociContainer) cgroupRootRelativePath() string {
-	// Each container gets 2 cgroups: a parent cgroup and a child cgroup. We do
-	// this to work around crun deleting the container cgroup after the
-	// containerized process has run, which is inconvenient because we still
-	// want to read from the cgroup after the process has exited.
-	return filepath.Join(c.cgroupParent, c.cid+"_parent", c.cid)
+	return filepath.Join(c.cgroupParent, c.cid)
 }
 
 func (c *ociContainer) cgroupPath() string {
@@ -511,7 +507,10 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	}
 
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
-		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
+		// Using the --keep option here to ensure the cgroup doesn't get deleted
+		// immediately after the process completes, so that we can read cgroup
+		// stats at the end.
+		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), "--keep", c.cid)
 	})
 }
 
@@ -646,13 +645,9 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 		firstErr = status.UnavailableErrorf("remove bundle: %s", err)
 	}
 
-	// Remove child cgroup if crun hasn't deleted it already
+	// Remove cgroup in case the runtime didn't do it for us.
 	if err := os.Remove(c.cgroupPath()); err != nil && firstErr == nil && !os.IsNotExist(err) {
 		firstErr = status.UnavailableErrorf("remove container cgroup: %s", err)
-	}
-	// Remove parent cgroup
-	if err := os.Remove(filepath.Dir(c.cgroupPath())); err != nil && firstErr == nil && !os.IsNotExist(err) {
-		firstErr = status.UnavailableErrorf("remove parent cgroup: %s", err)
 	}
 
 	if c.releaseCPUs != nil {
@@ -729,24 +724,56 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	}
 	res.UsageStats = combinedStats
 
-	// Check for oom_kill memory events in the cgroup and return a
-	// ResourceExhausted error if found. We read this from the parent cgroup,
-	// because at this point, crun will have deleted the child cgroup.
-	memoryEvents, err := cgroup.ReadMemoryEvents(filepath.Dir(c.cgroupPath()))
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to get memory events: %s", err)
-	} else if memoryEvents["oom_kill"] > 0 {
-		if res.ExitCode == 0 {
-			// TODO: look into any logs that happen here, and consider whether
-			// it makes sense to make these failures.
-			log.CtxWarningf(ctx, "Task succeeded, but cgroup reported oom_kill events.")
-		} else {
-			res.ExitCode = commandutil.KilledExitCode
-			res.Error = status.UnavailableError("task process or child process killed by oom killer")
-		}
+	// Inspect cgroup events to check for any issues that might've been the
+	// root cause of the command failure.
+	if err := c.checkOOMKill(ctx, res); err != nil {
+		res.ExitCode = commandutil.KilledExitCode
+		res.Error = err
+		return res
+	}
+	if err := c.checkPIDLimitExceeded(ctx, res); err != nil {
+		res.ExitCode = commandutil.NoExitCode
+		res.Error = err
+		return res
 	}
 
 	return res
+}
+
+// checkOOMKill checks for oom_kill memory events in the cgroup and returns an
+// Unavailable error if found.
+func (c *ociContainer) checkOOMKill(ctx context.Context, res *interfaces.CommandResult) error {
+	memoryEvents, err := cgroup.ReadMemoryEvents(c.cgroupPath())
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get memory events: %s", err)
+		return nil
+	}
+	if memoryEvents["oom_kill"] == 0 {
+		return nil
+	}
+	if res.ExitCode == 0 {
+		log.CtxWarningf(ctx, "Task succeeded, but cgroup reported oom_kill events.")
+		return nil
+	}
+	return status.UnavailableError("task process or child process killed by oom killer")
+}
+
+// checkPIDLimitExceeded checks for pid limit exceeded events in the cgroup and
+// returns an Unavailable error if found.
+func (c *ociContainer) checkPIDLimitExceeded(ctx context.Context, res *interfaces.CommandResult) error {
+	pidsEvents, err := cgroup.ReadPidsEvents(c.cgroupPath())
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get pids events: %s", err)
+		return nil
+	}
+	if pidsEvents["max"] == 0 {
+		return nil
+	}
+	if res.ExitCode == 0 {
+		log.CtxWarningf(ctx, "Task succeeded, but cgroup reported pid limit exceeded events.")
+		return nil
+	}
+	return status.UnavailableErrorf("pids limit exceeded (maximum number of pids allowed is %d)", c.cgroupSettings.GetPidsMax())
 }
 
 func (c *ociContainer) setupCgroup(ctx context.Context) error {
@@ -761,11 +788,6 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	path := c.cgroupPath()
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create cgroup: %w", err)
-	}
-	// Propagate enabled controllers to the child cgroup before performing
-	// cgroup setup.
-	if err := cgroup.DelegateControllers(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("delegate controllers: %w", err)
 	}
 	if err := cgroup.Setup(ctx, path, c.cgroupSettings, c.blockDevice); err != nil {
 		return fmt.Errorf("configure cgroup: %w", err)

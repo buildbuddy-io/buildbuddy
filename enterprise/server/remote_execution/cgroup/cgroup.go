@@ -88,8 +88,13 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 	for name, value := range m {
 		controller, _, _ := strings.Cut(name, ".")
 		if !enabledControllers[controller] {
-			log.CtxWarningf(ctx, "Skipping cgroup %q setting for disabled cgroup controller %q", name, controller)
-			continue
+			// Attempt to enable the controller if it's not already enabled.
+			parent := filepath.Dir(path)
+			if err := WriteSubtreeControl(parent, map[string]bool{controller: true}); err != nil {
+				log.CtxWarningf(ctx, "Failed to enable cgroup controller %q for cgroup parent %q: %s", controller, parent, err)
+				continue
+			}
+			enabledControllers[controller] = true
 		}
 		settingFilePath := filepath.Join(path, name)
 		if err := os.WriteFile(settingFilePath, []byte(value), 0); err != nil {
@@ -303,6 +308,13 @@ func (p *Paths) Stats(ctx context.Context, name string, blockDevice *block_io.De
 // absolute path, including the /sys/fs/cgroup prefix.
 func ReadMemoryEvents(dir string) (map[string]int64, error) {
 	return readAllInt64Fields(filepath.Join(dir, "memory.events"))
+}
+
+// ReadPidsEvents reads the "pids.events" file under the given cgroup
+// directory and returns the counter values as a map. The directory should be an
+// absolute path, including the /sys/fs/cgroup prefix.
+func ReadPidsEvents(dir string) (map[string]int64, error) {
+	return readAllInt64Fields(filepath.Join(dir, "pids.events"))
 }
 
 // Stats reads all stats from the given cgroup2 directory. The directory should
