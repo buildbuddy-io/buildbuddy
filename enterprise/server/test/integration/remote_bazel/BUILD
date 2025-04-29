@@ -55,7 +55,6 @@ go_test(
         "//server/testutil/testgit",
         "//server/testutil/testshell",
         "//server/util/bazel",
-        "//server/util/flagutil",
         "//server/util/git",
         "//server/util/log",
         "//server/util/testing/flags",
