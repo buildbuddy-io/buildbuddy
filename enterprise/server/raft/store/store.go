@@ -132,7 +132,7 @@ type Store struct {
 
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
-	rangeMap   *rangemap.RangeMap
+	rangeMap   *rangemap.RangeMap[*rfpb.RangeDescriptor]
 
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
@@ -270,7 +270,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 		rangeMu:    sync.RWMutex{},
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
-		rangeMap:   rangemap.New(),
+		rangeMap:   rangemap.New[*rfpb.RangeDescriptor](),
 
 		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, listener, eventsChan, lkSession),
 		replicas:    sync.Map{},
@@ -817,27 +817,28 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.log.Debugf("Update range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
 
-	overlaps := make([]*rangemap.Range, 0)
+	var err error
 	s.rangeMu.Lock()
+	s.openRanges[rd.GetRangeId()] = rd
 	if rd.GetStart() != nil && rd.GetEnd() != nil {
-		overlaps = s.rangeMap.GetOverlapping(rd.GetStart(), rd.GetEnd())
+		_, err = s.rangeMap.Add(rd.GetStart(), rd.GetEnd(), rd)
 	}
 	s.rangeMu.Unlock()
+
+	if err != nil {
+		s.log.Warningf("failed to add range %d: [%q, %q) gen %d failed: %s", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration(), err)
+		return
+	}
+
+	if len(rd.GetReplicas()) == 0 {
+		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
+		return
+	}
 
 	if !loaded {
 		metrics.RaftRanges.With(prometheus.Labels{
 			metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
 		}).Inc()
-	}
-	if len(overlaps) > 0 {
-		s.log.Warningf("AddRange range %d: [%q, %q) gen %d failed, store has overlapping ranges such as range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
-		return
-	}
-
-	s.openRanges[rd.GetRangeId()] = rd
-	if len(rd.GetReplicas()) == 0 {
-		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
-		return
 	}
 
 	if rd.GetStart() == nil || rd.GetEnd() == nil {
@@ -875,6 +876,9 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	s.rangeMu.Lock()
 	delete(s.openRanges, rd.GetRangeId())
+	if rd.GetStart() != nil && rd.GetEnd() != nil {
+		s.rangeMap.Remove(rd.GetStart(), rd.GetEnd())
+	}
 	s.rangeMu.Unlock()
 
 	metrics.RaftRanges.With(prometheus.Labels{
@@ -1026,8 +1030,6 @@ func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 }
 
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
-	// This code will be called by all replicas in a range when
-	// doing a split, so we do not check for range leases here.
 	rIface, ok := s.replicas.Load(rangeID)
 	if !ok {
 		return nil, status.OutOfRangeErrorf("%s: replica for range %d not found", constants.RangeNotFoundMsg, rangeID)
