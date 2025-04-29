@@ -221,12 +221,12 @@ func (f *fetcher) unmarshalBlob(b []byte) ([]proto.Message, error) {
 	for buf.Len() > 0 {
 		recordLength, err := binary.ReadVarint(buf)
 		if err != nil {
-			return nil, err
+			return nil, status.WrapError(err, "read varint length prefix")
 		}
 		recordContent := buf.Next(int(recordLength))
 		msg := f.allocator()
 		if err := proto.Unmarshal(recordContent, msg); err != nil {
-			return nil, err
+			return nil, status.WrapError(err, "unmarshal record content")
 		}
 		messages = append(messages, msg)
 	}
@@ -263,7 +263,7 @@ func (w *BufferedProtoReader) ReadProto(ctx context.Context) (proto.Message, err
 			if status.IsNotFoundError(err) {
 				return nil, io.EOF
 			}
-			return nil, err
+			return nil, status.WrapError(err, "read proto file")
 		}
 		w.buffer = messages
 	}

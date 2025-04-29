@@ -1396,7 +1396,7 @@ func streamRawInvocationEvents(env environment.Env, ctx context.Context, streamI
 			break
 		}
 		if err != nil {
-			return err
+			return status.WrapError(err, "read invocation event proto")
 		}
 		if err := callback(event.(*inpb.InvocationEvent)); err != nil {
 			return err
