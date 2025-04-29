@@ -162,3 +162,56 @@ func TestParseIOStats(t *testing.T) {
 		{Maj: 9, Min: 0, Rbytes: 3952640, Wbytes: 0, Rios: 48, Wios: 0, Dbytes: 0, Dios: 0},
 	}, stats, protocmp.Transform()))
 }
+
+func TestParentPath(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{
+			name:     "root",
+			path:     "/",
+			expected: "/",
+		},
+		{
+			name:     "single level",
+			path:     "/foo",
+			expected: "/",
+		},
+		{
+			name:     "multi level",
+			path:     "/foo/bar",
+			expected: "/foo",
+		},
+		{
+			name:     "multi level with trailing slash",
+			path:     "/foo/bar/",
+			expected: "/foo",
+		},
+		{
+			name:     "empty string",
+			path:     "",
+			expected: ".",
+		},
+		{
+			name:     "dot",
+			path:     ".",
+			expected: ".",
+		},
+		{
+			name:     "relative path",
+			path:     "foo",
+			expected: ".",
+		},
+		{
+			name:     "relative path with dot",
+			path:     "./foo",
+			expected: ".",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.expected, ParentPath(test.path))
+		})
+	}
+}
