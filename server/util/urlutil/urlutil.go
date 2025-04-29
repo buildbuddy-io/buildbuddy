@@ -28,11 +28,14 @@ func GetDomain(host string) string {
 	}
 	i = strings.LastIndexByte(host, '.')
 	if i < 0 {
+		// If there aren't any periods, return the whole host.
 		return host
 	}
 	i = strings.LastIndexByte(host[:i], '.')
 	if i < 0 {
+		// If there's only 1 period, also return the whole host.
 		return host
 	}
+	// Everything after the second to last period.
 	return host[i+1:]
 }
