@@ -337,7 +337,11 @@ func (o *RequiredValueOption) Format() []string {
 }
 
 func (o *RequiredValueOption) UseShortName(u bool) {
-	o.UsesShortName = u && o.Definition.ShortName() != ""
+	if o.ShortName() == "" {
+		log.Warnf("Attempted to use short name for option %s, which lacks a short name.", o.Name())
+		return
+	}
+	o.UsesShortName = u
 }
 
 func (o *RequiredValueOption) Normalized() Option {
@@ -423,7 +427,11 @@ func (o *BooleanOption) AsBool() (bool, error) {
 }
 
 func (o *BooleanOption) UseShortName(u bool) {
-	o.UsesShortName = u && o.Definition.ShortName() != ""
+	if o.ShortName() == "" {
+		log.Warnf("Attempted to use short name for option %s, which lacks a short name.", o.Name())
+		return
+	}
+	o.UsesShortName = u
 }
 
 func (o *BooleanOption) Normalized() Option {
@@ -515,7 +523,11 @@ func (o *ExpansionOption) Format() []string {
 }
 
 func (o *ExpansionOption) UseShortName(u bool) {
-	o.UsesShortName = u && o.Definition.ShortName() != ""
+	if o.ShortName() == "" {
+		log.Warnf("Attempted to use short name for option %s, which lacks a short name.", o.Name())
+		return
+	}
+	o.UsesShortName = u
 }
 
 func (o *ExpansionOption) Normalized() Option {
