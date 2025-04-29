@@ -18,6 +18,7 @@ go_test(
         "//proto:cache_go_proto",
         "//proto:invocation_go_proto",
         "//server/testutil/buildbuddy",
+        "//server/testutil/quarantine",
         "//server/testutil/testbazel",
         "//server/testutil/testfs",
         "//server/testutil/testgit",
