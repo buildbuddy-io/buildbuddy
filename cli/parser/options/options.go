@@ -275,6 +275,7 @@ func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 type Option interface {
 	arguments.Argument
 	Defined
+	HasValue() bool
 	ExpectsValue() bool
 	ClearValue()
 	GetDefinition() *Definition
@@ -304,6 +305,10 @@ type RequiredValueOption struct {
 
 func (o *RequiredValueOption) GetDefinition() *Definition {
 	return o.Definition
+}
+
+func (o *RequiredValueOption) HasValue() bool {
+	return o.Value != nil
 }
 
 func (o *RequiredValueOption) ExpectsValue() bool {
@@ -509,6 +514,10 @@ type ExpansionOption struct {
 
 func (o *ExpansionOption) GetDefinition() *Definition {
 	return o.Definition
+}
+
+func (_ *ExpansionOption) HasValue() bool {
+	return false
 }
 
 func (_ *ExpansionOption) ExpectsValue() bool {
