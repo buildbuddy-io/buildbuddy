@@ -51,6 +51,7 @@ go_test(
         "//proto:resource_go_proto",
         "//server/gossip",
         "//server/interfaces",
+        "//server/testutil/quarantine",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
