@@ -4,7 +4,10 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "ci_runner_test",
-    size = "small",
+    size = "medium",
+    exec_properties = {
+        "test.EstimatedComputeUnits": "3",
+    },
     srcs = ["ci_runner_test.go"],
     data = [
         "//enterprise/server/cmd/ci_runner",
