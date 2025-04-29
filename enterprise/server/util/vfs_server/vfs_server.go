@@ -1000,6 +1000,7 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	} else if node.fileNode != nil {
 		f, err := p.casFetcher.Open(p.taskCtx(), node)
 		if err != nil {
+			log.CtxWarningf(p.taskCtx(), "Open %q could not fetch file from cache: %s", node.Path(), err)
 			return nil, err
 		}
 		openedFile = f
