@@ -46,6 +46,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/elastic/gosigar"
@@ -131,6 +132,7 @@ type Store struct {
 
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
+	rangeMap   *rangemap.RangeMap
 
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
@@ -268,6 +270,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 		rangeMu:    sync.RWMutex{},
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
+		rangeMap:   rangemap.New(),
 
 		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, listener, eventsChan, lkSession),
 		replicas:    sync.Map{},
@@ -814,8 +817,11 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.log.Debugf("Update range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
 
+	overlaps := make([]*rangemap.Range, 0)
 	s.rangeMu.Lock()
-	s.openRanges[rd.GetRangeId()] = rd
+	if rd.GetStart() != nil && rd.GetEnd() != nil {
+		overlaps = s.rangeMap.GetOverlapping(rd.GetStart(), rd.GetEnd())
+	}
 	s.rangeMu.Unlock()
 
 	if !loaded {
@@ -823,13 +829,18 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 			metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
 		}).Inc()
 	}
+	if len(overlaps) > 0 {
+		s.log.Warningf("AddRange range %d: [%q, %q) gen %d failed, store has overlapping ranges such as range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
+		return
+	}
 
+	s.openRanges[rd.GetRangeId()] = rd
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
 		return
 	}
 
-	if rd.GetStart() == nil && rd.GetEnd() == nil {
+	if rd.GetStart() == nil || rd.GetEnd() == nil {
 		s.log.Debugf("range %d has no bounds (yet?)", rd.GetRangeId())
 		return
 	}
