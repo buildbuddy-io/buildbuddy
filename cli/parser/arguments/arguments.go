@@ -40,14 +40,6 @@ func FromConcrete[T Argument](args []T) []Argument {
 	return argSlice
 }
 
-func AsPositionalArguments(args []string) []Argument {
-	pos := make([]Argument, 0, len(args))
-	for _, arg := range args {
-		pos = append(pos, &PositionalArgument{Value: arg})
-	}
-	return pos
-}
-
 func FormatAll[T Argument](args []T) []string {
 	s := make([]string, 0, len(args))
 	for _, arg := range args {
