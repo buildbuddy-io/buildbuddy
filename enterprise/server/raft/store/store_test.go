@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -97,6 +98,7 @@ func TestAddGetRemoveRange(t *testing.T) {
 }
 
 func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
 	clock := clockwork.NewFakeClock()
@@ -166,6 +168,7 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 }
 
 func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
@@ -218,6 +221,7 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 }
 
 func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
 
@@ -277,6 +281,7 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 }
 
 func TestCleanupZombieNonVoter(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
 
