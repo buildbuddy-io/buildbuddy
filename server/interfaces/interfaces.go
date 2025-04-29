@@ -639,7 +639,7 @@ type WorkspaceService interface {
 }
 
 type SnapshotService interface {
-	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
+	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey, remoteEnabled bool) (string, error)
 }
 
 // GitHubApp represents a specific instance of either the read-only or read-write

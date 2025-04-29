@@ -1650,7 +1650,8 @@ func (s *BuildBuddyServer) InvalidateSnapshot(ctx context.Context, request *wfpb
 			al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_INVALIDATE_VM_SNAPSHOT, request)
 		}
 
-		if _, err := ss.InvalidateSnapshot(ctx, request.SnapshotKey); err != nil {
+		remoteEnabled := request.GetIsCiRunnerTask()
+		if _, err := ss.InvalidateSnapshot(ctx, request.SnapshotKey, remoteEnabled); err != nil {
 			return nil, err
 		}
 		return &wfpb.InvalidateSnapshotResponse{}, nil

@@ -695,13 +695,12 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		if snaputil.IsChunkedSnapshotSharingEnabled() {
 			runnerID = ""
 		}
-		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, cd.GetHash(), runnerID)
+		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, cd.GetHash(), runnerID, c.supportsRemoteSnapshots)
 		if err != nil {
 			return nil, err
 		}
 		// If recycling is enabled and a snapshot exists, then when calling
 		// Create(), load the snapshot instead of creating a new VM.
-
 		recyclingEnabled := platform.IsTrue(platform.FindValue(platform.GetProto(task.GetAction(), task.GetCommand()), platform.RecycleRunnerPropertyName))
 		c.recyclingEnabled = recyclingEnabled
 		if recyclingEnabled && snaputil.IsChunkedSnapshotSharingEnabled() {
@@ -2464,7 +2463,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		log.CtxWarningf(ctx, "Failed to check existence of %s: %s", invalidateSnapshotMarkerFile, err)
 	} else if exists {
 		log.CtxInfof(ctx, "Action created %s file in workspace root; invalidating snapshot for key %v", invalidateSnapshotMarkerFile, c.SnapshotKeySet().GetBranchKey())
-		_, err = snaploader.NewSnapshotService(c.env).InvalidateSnapshot(ctx, c.SnapshotKeySet().GetBranchKey())
+		_, err = snaploader.NewSnapshotService(c.env).InvalidateSnapshot(ctx, c.SnapshotKeySet().GetBranchKey(), c.supportsRemoteSnapshots)
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to invalidate snapshot despite existence of %s: %s", invalidateSnapshotMarkerFile, err)
 		}

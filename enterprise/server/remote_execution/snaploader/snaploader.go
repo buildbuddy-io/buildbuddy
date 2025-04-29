@@ -50,7 +50,7 @@ const (
 
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
 // as well as the key that should be written to.
-func (l *FileCacheLoader) SnapshotKeySet(ctx context.Context, task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb.SnapshotKeySet, error) {
+func (l *FileCacheLoader) SnapshotKeySet(ctx context.Context, task *repb.ExecutionTask, configurationHash, runnerID string, remoteEnabled bool) (*fcpb.SnapshotKeySet, error) {
 	pd, err := digest.ComputeForMessage(platform.GetProto(task.GetAction(), task.GetCommand()), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, status.WrapErrorf(err, "failed to compute platform hash")
@@ -64,7 +64,7 @@ func (l *FileCacheLoader) SnapshotKeySet(ctx context.Context, task *repb.Executi
 		RunnerId:          runnerID,
 	}
 
-	snapshotVersion, err := l.currentSnapshotVersion(ctx, branchKey)
+	snapshotVersion, err := l.currentSnapshotVersion(ctx, branchKey, remoteEnabled)
 	if err != nil {
 		return nil, status.WrapError(err, "get snapshot version")
 	}
@@ -109,13 +109,20 @@ func (l *FileCacheLoader) SnapshotKeySet(ctx context.Context, task *repb.Executi
 
 // currentSnapshotVersion returns the current valid snapshot version. Snapshots on
 // different versions should not be used.
-func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.SnapshotKey) (string, error) {
-	versionKey, err := SnapshotVersionKey(key)
+func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.SnapshotKey, remoteEnabled bool) (string, error) {
+	versionKey, err := l.SnapshotVersionKey(ctx, key, remoteEnabled)
 	if err != nil {
 		return "", err
 	}
-	rn := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
-	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
+
+	var acResult *repb.ActionResult
+	if remoteEnabled {
+		rn := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
+		acResult, err = cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
+	} else {
+		acResult, err = l.GetLocalManifestACResult(ctx, versionKey)
+	}
+
 	if status.IsNotFoundError(err) {
 		// Version metadata might not exist in the cache if:
 		// * The snapshot version has never been set (Ex. if you've never invalidated
@@ -125,7 +132,7 @@ func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.
 		// invalid snapshot. So here we generate a new version ID to guarantee
 		// we start from a clean snapshot.
 		ss := NewSnapshotService(l.env)
-		return ss.InvalidateSnapshot(ctx, key)
+		return ss.InvalidateSnapshot(ctx, key, remoteEnabled)
 	} else if err != nil {
 		return "", err
 	}
@@ -218,11 +225,22 @@ func RemoteManifestKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
 //
 // This key intentionally does not include the ref, so that all related
 // branch and fallback keys are invalidated simultaneously.
-func SnapshotVersionKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
+func (l *FileCacheLoader) SnapshotVersionKey(ctx context.Context, s *fcpb.SnapshotKey, remoteEnabled bool) (*repb.Digest, error) {
+	gid := ""
+	if !remoteEnabled {
+		// The filecache does not have explicit group AC partitioning unlike the
+		// remote cache, so we need to manually hash in the group ID as part of the
+		// key.
+		var err error
+		gid, err = groupID(ctx, l.env)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// Note: .version is not a real file that we ever create, it's
 	// effectively just part of the cache key used to locate the version metadata.
 	return &repb.Digest{
-		Hash:      hashStrings(s.InstanceName, s.PlatformHash, s.ConfigurationHash, ".version"),
+		Hash:      hashStrings(gid, s.InstanceName, s.PlatformHash, s.ConfigurationHash, ".version"),
 		SizeBytes: 1, /*=arbitrary size*/
 	}, nil
 }
@@ -1038,7 +1056,7 @@ func NewSnapshotService(env environment.Env) *SnapshotService {
 }
 
 // InvalidateSnapshot returns the new valid version ID for snapshots to be based off.
-func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error) {
+func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey, remoteEnabled bool) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	// Update the snapshot version to a random value. This will invalidate all past
@@ -1057,14 +1075,29 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 		},
 	}
 
-	versionKey, err := SnapshotVersionKey(key)
+	ssLoader, err := New(l.env)
+	if err != nil {
+		return "", err
+	}
+	versionKey, err := ssLoader.SnapshotVersionKey(ctx, key, remoteEnabled)
 	if err != nil {
 		return "", err
 	}
 
-	acDigest := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
-	if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, versionMetadataActionResult); err != nil {
-		return "", err
+	if remoteEnabled {
+		acDigest := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
+		if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, versionMetadataActionResult); err != nil {
+			return "", err
+		}
+	} else {
+		b, err := proto.Marshal(versionMetadataActionResult)
+		if err != nil {
+			return "", err
+		}
+		_, err = l.env.GetFileCache().Write(ctx, &repb.FileNode{Digest: versionKey}, b)
+		if err != nil {
+			return "", err
+		}
 	}
 	log.CtxInfof(ctx, "Invalidated all snapshots for key %s. New version is %s.", key, newVersion)
 	return newVersion, nil
