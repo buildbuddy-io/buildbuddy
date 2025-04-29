@@ -173,7 +173,7 @@ type provider struct {
 
 	imageStore  *ImageStore
 	cgroupPaths *cgroup.Paths
-
+	cg2execTool *cgroup.ExecTool
 	// Configured runtime path.
 	runtime string
 
@@ -296,6 +296,12 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		return nil, err
 	}
 
+	// Unpack cg2exec tool.
+	cg2execTool, err := cgroup.UnpackExecTool(filepath.Join(cacheRoot, "bin", "cg2exec"))
+	if err != nil {
+		return nil, err
+	}
+
 	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
 
@@ -309,6 +315,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		imageStore:     imageStore,
 		networkPool:    networkPool,
 		lxcfsMount:     lxcfsMount,
+		cg2execTool:    cg2execTool,
 	}, nil
 }
 
@@ -319,6 +326,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		tiniPath:       p.tiniPath,
 		containersRoot: p.containersRoot,
 		cgroupPaths:    p.cgroupPaths,
+		cg2execTool:    p.cg2execTool,
 		imageCacheRoot: p.imageCacheRoot,
 		imageStore:     p.imageStore,
 		networkPool:    p.networkPool,
@@ -347,6 +355,7 @@ type ociContainer struct {
 	runtime        string
 	tiniPath       string
 	cgroupPaths    *cgroup.Paths
+	cg2execTool    *cgroup.ExecTool
 	cgroupParent   string
 	cgroupSettings *scpb.CgroupSettings
 	blockDevice    *block_io.Device
@@ -382,12 +391,22 @@ func (c *ociContainer) rootfsPath() string {
 	return filepath.Join(c.bundlePath(), "rootfs")
 }
 
+func (c *ociContainer) hasParentCgroup() bool {
+	// For runtimes other than crun, we use a parent and child cgroup pair,
+	// because the runtime will delete the container cgroup after the container
+	// has run, giving us less control.
+	//
+	// For crun, we can disable runtime-managed cgroups by setting
+	// --cgroup-manager=disabled, letting us use only a single cgroup for the
+	// container.
+	return filepath.Base(c.runtime) != "crun"
+}
+
 func (c *ociContainer) cgroupRootRelativePath() string {
-	// Each container gets 2 cgroups: a parent cgroup and a child cgroup. We do
-	// this to work around crun deleting the container cgroup after the
-	// containerized process has run, which is inconvenient because we still
-	// want to read from the cgroup after the process has exited.
-	return filepath.Join(c.cgroupParent, c.cid+"_parent", c.cid)
+	if c.hasParentCgroup() {
+		return filepath.Join(c.cgroupParent, c.cid+"_parent", c.cid)
+	}
+	return filepath.Join(c.cgroupParent, c.cid)
 }
 
 func (c *ociContainer) cgroupPath() string {
@@ -646,13 +665,16 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 		firstErr = status.UnavailableErrorf("remove bundle: %s", err)
 	}
 
-	// Remove child cgroup if crun hasn't deleted it already
+	// Remove the container cgroup. If the container cgroup is managed by the
+	// runtime, then this will normally fail with a "No such file or directory".
 	if err := os.Remove(c.cgroupPath()); err != nil && firstErr == nil && !os.IsNotExist(err) {
 		firstErr = status.UnavailableErrorf("remove container cgroup: %s", err)
 	}
-	// Remove parent cgroup
-	if err := os.Remove(filepath.Dir(c.cgroupPath())); err != nil && firstErr == nil && !os.IsNotExist(err) {
-		firstErr = status.UnavailableErrorf("remove parent cgroup: %s", err)
+	// Remove parent cgroup if applicable
+	if c.hasParentCgroup() {
+		if err := os.Remove(filepath.Dir(c.cgroupPath())); err != nil && firstErr == nil && !os.IsNotExist(err) {
+			firstErr = status.UnavailableErrorf("remove parent cgroup: %s", err)
+		}
 	}
 
 	if c.releaseCPUs != nil {
@@ -729,24 +751,55 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	}
 	res.UsageStats = combinedStats
 
-	// Check for oom_kill memory events in the cgroup and return a
-	// ResourceExhausted error if found. We read this from the parent cgroup,
-	// because at this point, crun will have deleted the child cgroup.
-	memoryEvents, err := cgroup.ReadMemoryEvents(filepath.Dir(c.cgroupPath()))
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to get memory events: %s", err)
-	} else if memoryEvents["oom_kill"] > 0 {
-		if res.ExitCode == 0 {
-			// TODO: look into any logs that happen here, and consider whether
-			// it makes sense to make these failures.
-			log.CtxWarningf(ctx, "Task succeeded, but cgroup reported oom_kill events.")
-		} else {
-			res.ExitCode = commandutil.KilledExitCode
-			res.Error = status.UnavailableError("task process or child process killed by oom killer")
-		}
+	// Inspect cgroup events to check for any issues that might've been the
+	// root cause of the command failure.
+
+	if err := c.checkOOMKill(ctx, res); err != nil {
+		res.ExitCode = commandutil.KilledExitCode
+		res.Error = err
+		return res
+	}
+	if err := c.checkPIDLimitExceeded(ctx, res); err != nil {
+		res.ExitCode = commandutil.NoExitCode
+		res.Error = err
+		return res
 	}
 
 	return res
+}
+
+// checkOOMKill checks for oom_kill memory events in the cgroup and returns an
+// Unavailable error if found.
+func (c *ociContainer) checkOOMKill(ctx context.Context, res *interfaces.CommandResult) error {
+	memoryEvents, err := cgroup.ReadMemoryEvents(filepath.Dir(c.cgroupPath()))
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get memory events: %s", err)
+		return nil
+	}
+	if memoryEvents["oom_kill"] > 0 {
+		if res.ExitCode == 0 {
+			log.CtxWarningf(ctx, "Task succeeded, but cgroup reported oom_kill events.")
+			return nil
+		}
+		return status.UnavailableError("task process or child process killed by oom killer")
+	}
+	return nil
+}
+
+func (c *ociContainer) checkPIDLimitExceeded(ctx context.Context, res *interfaces.CommandResult) error {
+	pidsEvents, err := cgroup.ReadPidsEvents(filepath.Dir(c.cgroupPath()))
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get pids events: %s", err)
+		return nil
+	}
+	if pidsEvents["max"] > 0 {
+		if res.ExitCode == 0 {
+			log.CtxWarningf(ctx, "Task succeeded, but cgroup reported pid limit exceeded events.")
+			return nil
+		}
+		return status.UnavailableErrorf("pids limit exceeded (maximum number of allowed pids is %d)", c.cgroupSettings.GetPidsMax())
+	}
+	return nil
 }
 
 func (c *ociContainer) setupCgroup(ctx context.Context) error {
@@ -759,13 +812,16 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
 
 	path := c.cgroupPath()
+	if c.hasParentCgroup() {
+		// Apply our settings to the parent cgroup path.
+		path = filepath.Dir(path)
+		// Propagate enabled controllers to the child cgroup.
+		if err := cgroup.DelegateControllers(path); err != nil {
+			return fmt.Errorf("delegate controllers: %w", err)
+		}
+	}
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create cgroup: %w", err)
-	}
-	// Propagate enabled controllers to the child cgroup before performing
-	// cgroup setup.
-	if err := cgroup.DelegateControllers(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("delegate controllers: %w", err)
 	}
 	if err := cgroup.Setup(ctx, path, c.cgroupSettings, c.blockDevice); err != nil {
 		return fmt.Errorf("configure cgroup: %w", err)
@@ -1138,14 +1194,25 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		log.CtxDebugf(ctx, "[%s] %s %s\n", time.Since(start), c.runtime, args[0])
 	}()
 
+	// working dir for crun itself doesn't really matter - just default to cwd.
+	wd, err := os.Getwd()
+	if err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("getwd: %s", err))
+	}
+
 	globalArgs := []string{
 		// "strace", "-o", "/tmp/strace.log",
 		c.runtime,
 		"--log-format=json",
 	}
 	runtimeName := filepath.Base(c.runtime)
+	var execInCgroup string
 	if runtimeName == "crun" {
-		globalArgs = append(globalArgs, "--cgroup-manager=cgroupfs")
+		// Disable crun-managed cgroups; we'll handle them manually. Only done
+		// on crun for now since other runtimes don't seem to support this
+		// option.
+		globalArgs = append(globalArgs, "--cgroup-manager=disabled")
+		execInCgroup = filepath.Dir(c.cgroupPath())
 	}
 	if *runtimeRoot != "" {
 		globalArgs = append(globalArgs, "--root="+*runtimeRoot)
@@ -1154,10 +1221,8 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	runtimeArgs := append(globalArgs, args...)
 	runtimeArgs = append(runtimeArgs, command.GetArguments()...)
 
-	// working dir for crun itself doesn't really matter - just default to cwd.
-	wd, err := os.Getwd()
-	if err != nil {
-		return commandutil.ErrorResult(status.UnavailableErrorf("getwd: %s", err))
+	if execInCgroup != "" {
+		runtimeArgs = c.cg2execTool.GetCommand(execInCgroup, runtimeArgs...)
 	}
 
 	log.CtxDebugf(ctx, "Running %v", runtimeArgs)

@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	_ "embed"
+
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -37,6 +39,28 @@ var (
 	// ErrV1NotSupported is returned when a function does not support cgroup V1.
 	ErrV1NotSupported = fmt.Errorf("cgroup v1 is not supported")
 )
+
+//go:embed cg2exec_binary
+var cg2execBytes []byte
+
+// ExecTool is the extracted cg2exec binary.
+type ExecTool struct {
+	path string
+}
+
+func UnpackExecTool(path string) (*ExecTool, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return nil, fmt.Errorf("create cg2exec binary parent directory: %w", err)
+	}
+	if err := os.WriteFile(path, cg2execBytes, 0755); err != nil {
+		return nil, fmt.Errorf("extract cg2exec binary: %w", err)
+	}
+	return &ExecTool{path: path}, nil
+}
+
+func (e *ExecTool) GetCommand(cgroupPath string, command ...string) []string {
+	return append([]string{e.path, cgroupPath}, command...)
+}
 
 // GetCurrent returns the cgroup of which the current process is a member.
 //
@@ -303,6 +327,13 @@ func (p *Paths) Stats(ctx context.Context, name string, blockDevice *block_io.De
 // absolute path, including the /sys/fs/cgroup prefix.
 func ReadMemoryEvents(dir string) (map[string]int64, error) {
 	return readAllInt64Fields(filepath.Join(dir, "memory.events"))
+}
+
+// ReadPidsEvents reads the "pids.events" file under the given cgroup
+// directory and returns the counter values as a map. The directory should be an
+// absolute path, including the /sys/fs/cgroup prefix.
+func ReadPidsEvents(dir string) (map[string]int64, error) {
+	return readAllInt64Fields(filepath.Join(dir, "pids.events"))
 }
 
 // Stats reads all stats from the given cgroup2 directory. The directory should

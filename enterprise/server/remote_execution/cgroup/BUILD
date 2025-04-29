@@ -5,6 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "cgroup",
     srcs = ["cgroup.go"],
+    embedsrcs = [":cg2exec_binary"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup",
     target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
@@ -35,4 +36,11 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//testing/protocmp",
     ],
+)
+
+genrule(
+    name = "cg2exec_binary",
+    srcs = ["//enterprise/server/remote_execution/cgroup/cmd/cg2exec"],
+    outs = ["cg2exec_binary"],
+    cmd = "cp $(SRCS) $@",
 )
