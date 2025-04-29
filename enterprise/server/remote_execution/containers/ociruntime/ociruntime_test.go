@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
@@ -198,14 +197,6 @@ func TestCgroupSettings(t *testing.T) {
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	// Enable the cgroup controllers that we're going to test (this test is run
-	// in a firecracker VM which doesn't enable any controllers by default)
-	err = cgroup.WriteSubtreeControl(cgroup.RootPath, map[string]bool{
-		"cpu":  true,
-		"pids": true,
-	})
-	require.NoError(t, err)
-
 	c, err := provider.New(ctx, &container.Init{
 		Task: &repb.ScheduledTask{
 			SchedulingMetadata: &scpb.SchedulingMetadata{
@@ -357,10 +348,6 @@ func TestRunOOM(t *testing.T) {
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	// Make sure the memory controller is enabled in the root cgroup; we need it
-	// for this test.
-	err = cgroup.WriteSubtreeControl(cgroup.RootPath, map[string]bool{"memory": true})
-	require.NoError(t, err, "enable memory controller")
 	c, err := provider.New(ctx, &container.Init{
 		Task: &repb.ScheduledTask{
 			SchedulingMetadata: &scpb.SchedulingMetadata{

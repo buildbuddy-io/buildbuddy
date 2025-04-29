@@ -88,8 +88,13 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 	for name, value := range m {
 		controller, _, _ := strings.Cut(name, ".")
 		if !enabledControllers[controller] {
-			log.CtxWarningf(ctx, "Skipping cgroup %q setting for disabled cgroup controller %q", name, controller)
-			continue
+			// Attempt to enable the controller if it's not already enabled.
+			parent := filepath.Dir(path)
+			if err := WriteSubtreeControl(parent, map[string]bool{controller: true}); err != nil {
+				log.CtxWarningf(ctx, "Failed to enable cgroup controller %q for cgroup parent %q: %s", controller, parent, err)
+				continue
+			}
+			enabledControllers[controller] = true
 		}
 		settingFilePath := filepath.Join(path, name)
 		if err := os.WriteFile(settingFilePath, []byte(value), 0); err != nil {
