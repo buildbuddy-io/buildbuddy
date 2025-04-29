@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -1809,6 +1810,8 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	// the lease returns. Instead of piping it all the way through, override it
 	// with the value in the task.
 	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
+
+	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, taskProto.GetJwt())
 
 	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", experiments.WithContext("executor_hostname", executorHostname))
 	if skipResavingGroup == "" {
