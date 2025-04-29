@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -37,12 +38,6 @@ func init() {
 	*log.LogLevel = "error"
 	*log.IncludeShortFileName = true
 	log.Configure()
-}
-
-func getTestEnv(t testing.TB, users map[string]interfaces.UserInfo) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
-	return te
 }
 
 func getAnonContext(t testing.TB, te *testenv.TestEnv) context.Context {
@@ -95,14 +90,15 @@ func getDiskCache(t testing.TB, env environment.Env) interfaces.Cache {
 	return dc
 }
 
-func getDistributedCache(t testing.TB, te *testenv.TestEnv, c interfaces.Cache) interfaces.Cache {
+func getDistributedCache(t testing.TB, te environment.Env, c interfaces.Cache, lookasideCacheSizeBytes int64) interfaces.Cache {
 	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	conf := distributed.CacheConfig{
-		ListenAddr:         listenAddr,
-		GroupName:          "default",
-		ReplicationFactor:  1,
-		Nodes:              []string{listenAddr},
-		DisableLocalLookup: true,
+		ListenAddr:              listenAddr,
+		GroupName:               "default",
+		ReplicationFactor:       1,
+		Nodes:                   []string{listenAddr},
+		DisableLocalLookup:      true,
+		LookasideCacheSizeBytes: lookasideCacheSizeBytes,
 	}
 	dc, err := distributed.NewDistributedCache(te, c, conf, te.GetHealthChecker())
 	if err != nil {
@@ -112,7 +108,7 @@ func getDistributedCache(t testing.TB, te *testenv.TestEnv, c interfaces.Cache) 
 	return dc
 }
 
-func getPebbleCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
+func getPebbleCache(t testing.TB, te environment.Env) interfaces.Cache {
 	testRootDir := testfs.MakeTempDir(t)
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
 		RootDirectory: testRootDir,
@@ -204,19 +200,22 @@ type namedCache struct {
 	Name string
 }
 
-func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
+func getAllCaches(b *testing.B, te environment.Env) []*namedCache {
+	flags.Set(b, "cache.distributed_cache.consistent_hash_function", "SHA256")
 	dc := getDiskCache(b, te)
-	ddc := getDistributedCache(b, te, dc)
+	ddc := getDistributedCache(b, te, dc, 0)
 	pc := getPebbleCache(b, te)
-	dpc := getDistributedCache(b, te, pc)
+	dpc := getDistributedCache(b, te, pc, 0)
+	lpc := getDistributedCache(b, te, getPebbleCache(b, te), 100_000)
 
 	time.Sleep(100 * time.Millisecond)
 	caches := []*namedCache{
-		{getMemoryCache(b), "Memory"},
-		{getDiskCache(b, te), "Disk"},
+		{getMemoryCache(b), "LocalMemory"},
+		{getDiskCache(b, te), "LocalDisk"},
 		{ddc, "DistDisk"},
-		{getPebbleCache(b, te), "Pebble"},
+		{getPebbleCache(b, te), "LocalPebble"},
 		{dpc, "DistPebble"},
+		{lpc, "LookasideDistPebble"},
 	}
 	return caches
 }
@@ -236,7 +235,7 @@ func BenchmarkSet(b *testing.B) {
 	}
 }
 
-func BenchmarkGet(b *testing.B) {
+func BenchmarkGetSingle(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
