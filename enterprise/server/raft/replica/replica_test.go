@@ -166,13 +166,15 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 	return wc
 }
 
-func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
-	writeLocalRangeDescriptor(t, em, r, &rfpb.RangeDescriptor{
+func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) *rfpb.RangeDescriptor {
+	rd := &rfpb.RangeDescriptor{
 		Start:      keys.Key{constants.UnsplittableMaxByte},
 		End:        keys.MaxByte,
 		RangeId:    1,
 		Generation: 1,
-	})
+	}
+	writeLocalRangeDescriptor(t, em, r, rd)
+	return rd
 }
 
 func randomRecord(t *testing.T, partition string, sizeBytes int64) (*sgpb.FileRecord, []byte) {
@@ -1000,7 +1002,7 @@ func TestUsage(t *testing.T) {
 	require.NoError(t, err)
 
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl.Replica)
+	rd := writeDefaultRangeDescriptor(t, em, repl.Replica)
 
 	rt := newWriteTester(t, em, repl.Replica)
 
@@ -1012,7 +1014,6 @@ func TestUsage(t *testing.T) {
 	rt.writeRandom(header, anotherPartition, 300)
 
 	repl.DB().Flush()
-	rd := repl.RangeDescriptor()
 	{
 		ru, err := repl.Usage()
 		require.NoError(t, err)

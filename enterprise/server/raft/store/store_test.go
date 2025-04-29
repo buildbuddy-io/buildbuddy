@@ -1218,7 +1218,8 @@ func TestUpReplicate(t *testing.T) {
 	waitForReplicaToCatchUp(t, ctx, r2, desiredAppliedIndex)
 	waitStart := time.Now()
 	for {
-		l := len(r2.RangeDescriptor().GetReplicas())
+		rd2 := s3.GetRange(2)
+		l := len(rd2.GetReplicas())
 		if l == 3 {
 			break
 		}

@@ -2269,7 +2269,7 @@ func newDeleteSessionsWorker(clock clockwork.Clock, store *Store, clientSessionT
 }
 
 func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.Replica) error {
-	rd := repl.RangeDescriptor()
+	rd := w.store.lookupRange(repl.RangeID())
 	lastExecutionTimeI, found := w.lastExecutionTime.Load(rd.GetRangeId())
 	if found {
 		lastExecutionTime, ok := lastExecutionTimeI.(time.Time)
@@ -3103,7 +3103,8 @@ func (s *Store) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) 
 			res[r.GetReplicaId()] = constants.ReplicaStateUnknown
 		}
 	}
-	rd = localReplica.RangeDescriptor()
+
+	rd = s.lookupRange(localReplica.RangeID())
 	indicesByReplicaID := s.GetRemoteLastAppliedIndices(ctx, rd, localReplica)
 	for replicaID, index := range indicesByReplicaID {
 		if index >= curIndex {
