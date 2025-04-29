@@ -202,9 +202,26 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 // service was able to commit and whether the service views the resource as
 // `complete` or not.
 
-type writeState struct {
+// WriteState enapsulates an on-going ByteStream write to a cache, freeing
+// the caller of having to manage writing and committing-to the cache, tracking
+// cache hits, verifying checksums, etc. Here is how it must be used:
+//   - A new WriteState may be obtained by providing the first frame of the
+//     stream to the BeginWrite() function. This function will return a new
+//     WriteState, or an error.
+//   - If a WriteState is returned from BeginWrite(), the function returned from
+//     WriteState.Cleanup() must be deferred to free system resources.
+//   - Each subsequent frame should be passed to WriteState.Write(), which will
+//     return an error on error (note: io.EOF indicates the cache believes the
+//     write is finished), or an optional WriteResponse that should be sent to
+//     the client if the client indicated the write is finished. This function
+//     will return (nil, nil) if the frame was processed successfully, but the
+//     write is not finished yet.
+type WriteState struct {
 	// Top-level writer that handles incoming bytes.
 	writer io.Writer
+
+	bytesUploadedFromClient int
+	hitTracker              interfaces.HitTracker
 
 	decompressorCloser io.Closer
 	cacheCommitter     interfaces.Committer
@@ -226,7 +243,7 @@ func checkInitialPreconditions(req *bspb.WriteRequest) error {
 	return nil
 }
 
-func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error {
+func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *WriteState) error {
 	if req.ResourceName != "" {
 		if req.ResourceName != ws.resourceNameString {
 			return status.InvalidArgumentErrorf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.resourceNameString)
@@ -238,7 +255,11 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error 
 	return nil
 }
 
-func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
+func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteRequest) (*WriteState, error) {
+	if err := checkInitialPreconditions(req); err != nil {
+		return nil, err
+	}
+
 	r, err := digest.ParseUploadResourceName(req.ResourceName)
 	if err != nil {
 		return nil, err
@@ -251,9 +272,19 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		return nil, err
 	}
 
-	ws := &writeState{
+	ws := &WriteState{
+		hitTracker:         s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx)),
 		resourceName:       r,
 		resourceNameString: req.ResourceName,
+	}
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
+	if err != nil {
+		return nil, err
+	}
+	if !canWrite {
+		// Return already-exists error if the API key may not write so that
+		// higher-level code can detect and short-circuit this case.
+		return nil, status.AlreadyExistsError("The provided API Key does not have permission to write to the cache")
 	}
 
 	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
@@ -323,13 +354,31 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	return ws, nil
 }
 
-func (w *writeState) Write(buf []byte) error {
-	n, err := w.writer.Write(buf)
+func (w *WriteState) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) {
+	w.bytesUploadedFromClient += len(req.Data)
+
+	if err := checkSubsequentPreconditions(req, w); err != nil {
+		return nil, err
+	}
+
+	n, err := w.writer.Write(req.Data)
+	if err != nil {
+		return nil, err
+	}
 	w.offset += int64(n)
-	return err
+
+	if req.FinishWrite {
+		if err := w.commit(); err != nil {
+			return nil, err
+		}
+		return &bspb.WriteResponse{CommittedSize: w.offset}, nil
+	}
+	return nil, nil
 }
 
-func (w *writeState) Flush() error {
+func (w *WriteState) commit() error {
+	// Note: Need to Flush before committing, since this flushes any currently
+	// buffered bytes from the decompressor to the cache writer.
 	if w.decompressorCloser != nil {
 		defer func() {
 			w.decompressorCloser = nil
@@ -344,10 +393,6 @@ func (w *writeState) Flush() error {
 		}
 	}
 
-	return nil
-}
-
-func (w *writeState) Commit() error {
 	// Verify the checksum. If it does not match, note that the cache writer is
 	// not committed, since that persists the file to cache.
 	if err := w.checksum.Check(w.resourceName); err != nil {
@@ -357,93 +402,62 @@ func (w *writeState) Commit() error {
 	return w.cacheCommitter.Commit()
 }
 
-func (w *writeState) Close() error {
+func (w *WriteState) close() error {
 	if w.decompressorCloser != nil {
 		w.decompressorCloser.Close()
 	}
 	return w.cacheCloser.Close()
 }
 
+func (w *WriteState) Cleanup() func() {
+	return func() {
+		if err := w.close(); err != nil {
+			log.Error(err.Error())
+		}
+
+		uploadTracker := w.hitTracker.TrackUpload(w.resourceName.GetDigest())
+		if err := uploadTracker.CloseWithBytesTransferred(w.offset, int64(w.bytesUploadedFromClient), w.resourceName.GetCompressor(), "byte_stream_server"); err != nil {
+			log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
+		}
+	}
+}
+
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
-
-	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
-	if err != nil {
-		return err
-	}
-
-	var streamState *writeState
-	bytesUploadedFromClient := 0
+	var streamState *WriteState
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			break
+			return nil
 		}
 		if err != nil {
 			return err
 		}
 
-		bytesUploadedFromClient += len(req.Data)
-		if streamState == nil { // First message
-			if err := checkInitialPreconditions(req); err != nil {
-				return err
-			}
-
-			ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
-
-			// If the API key is read-only, pretend the object already exists.
-			if !canWrite {
-				return s.handleAlreadyExists(ctx, ht, stream, req)
-			}
-
-			streamState, err = s.initStreamState(ctx, req)
+		if streamState == nil {
+			streamState, err = s.BeginWrite(ctx, req)
 			if status.IsAlreadyExistsError(err) {
-				return s.handleAlreadyExists(ctx, ht, stream, req)
+				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+				return s.handleAlreadyExists(ctx, hitTracker, stream, req)
 			}
 			if err != nil {
 				return err
 			}
-			defer func() {
-				if err := streamState.Close(); err != nil {
-					log.Error(err.Error())
-				}
-			}()
-			uploadTracker := ht.TrackUpload(streamState.resourceName.GetDigest())
-			defer func() {
-				if err := uploadTracker.CloseWithBytesTransferred(streamState.offset, int64(bytesUploadedFromClient), streamState.resourceName.GetCompressor(), "byte_stream_server"); err != nil {
-					log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
-				}
-			}()
-		} else { // Subsequent messages
-			if err := checkSubsequentPreconditions(req, streamState); err != nil {
-				return err
-			}
+			defer streamState.Cleanup()()
 		}
-		if err := streamState.Write(req.Data); err != nil {
+
+		resp, err := streamState.Write(req)
+		if err != nil {
 			return err
 		}
-
-		if req.FinishWrite {
-			// Note: Need to Flush before committing, since this
-			// flushes any currently buffered bytes from the
-			// decompressor to the cache writer.
-			if err := streamState.Flush(); err != nil {
-				return err
-			}
-			if err := streamState.Commit(); err != nil {
-				return err
-			}
-
+		if resp != nil {
 			// Warn after the write has completed.
-			if err := s.warner.Warn(ctx); err != nil {
+			if err := s.warner.Warn(stream.Context()); err != nil {
 				return err
 			}
-			return stream.SendAndClose(&bspb.WriteResponse{
-				CommittedSize: streamState.offset,
-			})
+			return stream.SendAndClose(resp)
 		}
 	}
-	return nil
 }
 
 func (s *ByteStreamServer) supportsCompressor(compression repb.Compressor_Value) bool {
