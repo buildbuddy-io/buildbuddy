@@ -373,6 +373,14 @@ func GetParser() (*Parser, error) {
 }
 
 func CanonicalizeStartupArgs(args []string) ([]string, error) {
+	// Check for bazel command prior to running the parser to avoid the
+	// performance cost of generating the parser, which runs bazel.
+	bazelCommand, _ := GetBazelCommandAndIndex(args)
+	if bazelCommand == "" {
+		// Not a bazel command; no startup args to canonicalize.
+		return args, nil
+	}
+
 	p, err := GetParser()
 	if err != nil {
 		return nil, err
@@ -381,6 +389,14 @@ func CanonicalizeStartupArgs(args []string) ([]string, error) {
 }
 
 func CanonicalizeArgs(args []string) ([]string, error) {
+	// Check for bazel command prior to running the parser to avoid the
+	// performance cost of generating the parser, which runs bazel.
+	bazelCommand, _ := GetBazelCommandAndIndex(args)
+	if bazelCommand == "" {
+		// Not a bazel command; no args to canonicalize.
+		return args, nil
+	}
+
 	p, err := GetParser()
 	if err != nil {
 		return nil, err
@@ -389,12 +405,6 @@ func CanonicalizeArgs(args []string) ([]string, error) {
 }
 
 func (p *Parser) canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) {
-	bazelCommand, _ := GetBazelCommandAndIndex(args)
-	if bazelCommand == "" {
-		// Not a bazel command; no startup args to canonicalize.
-		return args, nil
-	}
-
 	args, execArgs := arg.SplitExecutableArgs(args)
 	// First pass: go through args, expanding short names, converting bool
 	// values to 0 or 1, and converting "--name value" args to "--name=value"
