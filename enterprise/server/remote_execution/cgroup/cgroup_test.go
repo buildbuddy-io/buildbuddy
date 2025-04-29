@@ -175,29 +175,24 @@ func TestParentPath(t *testing.T) {
 			expected: "/",
 		},
 		{
-			name:     "single level",
-			path:     "/foo",
-			expected: "/",
+			name:     "cgroup root",
+			path:     "/sys/fs/cgroup",
+			expected: "/sys/fs/cgroup",
 		},
 		{
-			name:     "multi level",
-			path:     "/foo/bar",
-			expected: "/foo",
+			name:     "cgroup root with trailing slash",
+			path:     "/sys/fs/cgroup/",
+			expected: "/sys/fs/cgroup",
 		},
 		{
-			name:     "multi level with trailing slash",
-			path:     "/foo/bar/",
-			expected: "/foo",
+			name:     "single level under cgroup root",
+			path:     "/sys/fs/cgroup/foo",
+			expected: "/sys/fs/cgroup",
 		},
 		{
-			name:     "empty string",
-			path:     "",
-			expected: ".",
-		},
-		{
-			name:     "dot",
-			path:     ".",
-			expected: ".",
+			name:     "multi level under cgroup root",
+			path:     "/sys/fs/cgroup/foo/bar",
+			expected: "/sys/fs/cgroup/foo",
 		},
 		{
 			name:     "relative path",
@@ -207,6 +202,16 @@ func TestParentPath(t *testing.T) {
 		{
 			name:     "relative path with dot",
 			path:     "./foo",
+			expected: ".",
+		},
+		{
+			name:     "empty string",
+			path:     "",
+			expected: ".",
+		},
+		{
+			name:     "dot",
+			path:     ".",
 			expected: ".",
 		},
 	} {
