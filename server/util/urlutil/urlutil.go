@@ -22,11 +22,17 @@ func SameHostname(urlStringA, urlStringB string) bool {
 // something that works for arbitrary domains.
 func GetDomain(host string) string {
 	// If there is a port number, remove it.
-	host, _, _ = strings.Cut(host, ":")
-
-	pts := strings.Split(host, ".")
-	if len(pts) < 2 {
+	i := strings.IndexByte(host, ':')
+	if i >= 0 {
+		host = host[:i]
+	}
+	i = strings.LastIndexByte(host, '.')
+	if i < 0 {
 		return host
 	}
-	return strings.Join(pts[len(pts)-2:], ".")
+	i = strings.LastIndexByte(host[:i], '.')
+	if i < 0 {
+		return host
+	}
+	return host[i+1:]
 }
