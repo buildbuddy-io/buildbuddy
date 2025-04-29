@@ -529,7 +529,7 @@ func Canonicalize(opts []Option) []Option {
 		lastOptionIndex[opt.Name()] = i
 	}
 	// Accumulate only the last instance of a given option
-	var canonical []Option
+	canonical := make([]Option, 0, len(lastOptionIndex))
 	for i, opt := range opts {
 		if !opt.Multi() && lastOptionIndex[opt.Name()] > i {
 			continue
