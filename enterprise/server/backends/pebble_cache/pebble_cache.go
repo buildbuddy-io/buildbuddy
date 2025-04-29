@@ -71,6 +71,7 @@ var (
 	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
 	atimeUpdateThresholdFlag  = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
 	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	numAtimeUpdateWorkers     = flag.Int("cache.pebble.num_atime_update_workers", DefaultNumAtimeUpdateWorkers, "How many threads to use to update atimes")
 	sampleBufferSize          = flag.Int("cache.pebble.sample_buffer_size", DefaultSampleBufferSize, "Buffer up to this many samples for eviction sampling")
 	deleteBufferSize          = flag.Int("cache.pebble.delete_buffer_size", DefaultDeleteBufferSize, "Buffer up to this many samples for eviction eviction")
 	numDeleteWorkers          = flag.Int("cache.pebble.num_delete_workers", DefaultNumDeleteWorkers, "Number of deletes in parallel")
@@ -110,6 +111,7 @@ var (
 	// Their defaults must be vars so we can take their addresses)
 	DefaultAtimeUpdateThreshold     = 10 * time.Minute
 	DefaultAtimeBufferSize          = 100000
+	DefaultNumAtimeUpdateWorkers    = 5
 	DefaultSampleBufferSize         = 8000
 	DefaultSamplesPerBatch          = 10000
 	DefaultSamplerIterRefreshPeriod = 5 * time.Minute
@@ -179,6 +181,7 @@ type Options struct {
 
 	AtimeUpdateThreshold     *time.Duration
 	AtimeBufferSize          *int
+	NumAtimeUpdateWorkers    *int
 	MinEvictionAge           *time.Duration
 	SampleBufferSize         *int
 	SamplesPerBatch          *int
@@ -229,9 +232,10 @@ type PebbleCache struct {
 
 	includeMetadataSize bool
 
-	atimeUpdateThreshold time.Duration
-	atimeBufferSize      int
-	minEvictionAge       time.Duration
+	atimeUpdateThreshold  time.Duration
+	atimeBufferSize       int
+	numAtimeUpdateWorkers int
+	minEvictionAge        time.Duration
 
 	activeKeyVersion int64
 	minDBVersion     filestore.PebbleKeyVersion
@@ -335,6 +339,7 @@ func Register(env *real_environment.RealEnv) error {
 		MinBytesAutoZstdCompression: *minBytesAutoZstdCompression,
 		AtimeUpdateThreshold:        atimeUpdateThresholdFlag,
 		AtimeBufferSize:             atimeBufferSizeFlag,
+		NumAtimeUpdateWorkers:       numAtimeUpdateWorkers,
 		SampleBufferSize:            sampleBufferSize,
 		DeleteBufferSize:            deleteBufferSize,
 		NumDeleteWorkers:            numDeleteWorkers,
@@ -422,6 +427,9 @@ func SetOptionDefaults(opts *Options) {
 	}
 	if opts.AtimeBufferSize == nil {
 		opts.AtimeBufferSize = &DefaultAtimeBufferSize
+	}
+	if opts.NumAtimeUpdateWorkers == nil {
+		opts.NumAtimeUpdateWorkers = &DefaultNumAtimeUpdateWorkers
 	}
 	if opts.MinEvictionAge == nil {
 		opts.MinEvictionAge = &DefaultMinEvictionAge
@@ -606,6 +614,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		averageChunkSizeBytes:       opts.AverageChunkSizeBytes,
 		atimeUpdateThreshold:        *opts.AtimeUpdateThreshold,
 		atimeBufferSize:             *opts.AtimeBufferSize,
+		numAtimeUpdateWorkers:       *opts.NumAtimeUpdateWorkers,
 		minEvictionAge:              *opts.MinEvictionAge,
 		activeKeyVersion:            *opts.ActiveKeyVersion,
 		env:                         env,
@@ -3358,9 +3367,11 @@ func (p *PebbleCache) Start() error {
 		p.processSizeUpdates()
 		return nil
 	})
-	p.eg.Go(func() error {
-		return p.processAccessTimeUpdates(p.quitChan)
-	})
+	for range p.numAtimeUpdateWorkers {
+		p.eg.Go(func() error {
+			return p.processAccessTimeUpdates(p.quitChan)
+		})
+	}
 	p.eg.Go(func() error {
 		return p.backgroundRepair(p.quitChan)
 	})
