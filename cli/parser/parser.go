@@ -148,7 +148,11 @@ func (p *Parser) AddOptionDefinition(o *options.Definition) error {
 // If args[start] corresponds to an option definition that is not known by the
 // parser, the returned values will be (nil, start+1). It is up to the caller to
 // decide how args[start] should be interpreted.
-func (p *Parser) Next(args []string, start int) (option options.Option, next int, err error) {
+//
+// TODO(zoey): when we have plugin option defintions, remove the "startup"
+// parameter since it only exists to aid in the guessing heuristic for unknown
+// options.
+func (p *Parser) Next(args []string, start int, startup bool) (option options.Option, next int, err error) {
 	if start > len(args) {
 		return nil, -1, fmt.Errorf("arg index %d out of bounds", start)
 	}
@@ -161,20 +165,35 @@ func (p *Parser) Next(args []string, start int) (option options.Option, next int
 		// positional argument
 		return nil, start + 1, nil
 	}
-	if option.PluginID() == options.UnknownBuiltinPluginID {
+	if unknownOption, ok := option.(*options.UnknownOption); ok {
 		log.Debugf("Unknown option %s", startToken)
 		// Unknown option, possibly a plugin-specific argument. Apply a rough
 		// heuristic to determine whether or not to have it consume the next
 		// argument.
-		if g, ok := option.(*options.GeneralOption); ok && g.Value == nil {
-			nextArgIsNonOption := (start+1 < len(args) && !strings.HasPrefix(args[start+1], "-"))
-			if !strings.HasPrefix(option.Name(), "no") && nextArgIsNonOption {
-				g.Definition = options.NewDefinition(
-					g.Name(),
-					options.WithMulti(),
-					options.WithRequiresValue(),
-					options.WithPluginID(options.UnknownBuiltinPluginID),
-				)
+		if b, ok := unknownOption.Option.(options.Negatable); ok && !option.HasValue() && !b.Negated() {
+			// This could actually be a required-value-type option rather than a
+			// boolean option; if the next argument doesn't look like an option or a
+			// bazel command, let's assume that it is.
+			if start+1 < len(args) {
+				if nextArg := args[start+1]; !strings.HasPrefix(nextArg, "-") {
+					if _, ok := p.BazelCommands[nextArg]; !startup || !ok {
+						innerOption, err := options.NewOption(
+							strings.TrimLeft(startToken, "-"),
+							nil,
+							options.NewDefinition(
+								option.Name(),
+								options.WithMulti(),
+								options.WithRequiresValue(),
+								options.WithShortName(option.ShortName()),
+								options.WithPluginID(options.UnknownBuiltinPluginID),
+							),
+						)
+						if err != nil {
+							return nil, -1, err
+						}
+						unknownOption.Option = innerOption
+					}
+				}
 			}
 		}
 	}
@@ -363,7 +382,7 @@ func (p *Parser) canonicalizeArgs(args []string, onlyStartupOptions bool) ([]str
 	command := "startup"
 	for i < len(args) {
 		token := args[i]
-		option, next, err := p.Next(args, i)
+		option, next, err := p.Next(args, i, command == "startup")
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse %s options: %s", command, err)
 		}
@@ -383,7 +402,7 @@ func (p *Parser) canonicalizeArgs(args []string, onlyStartupOptions bool) ([]str
 		}
 		if _, ok := p.BazelCommands[token]; ok {
 			if onlyStartupOptions {
-				return arg.JoinExecutableArgs(append(arguments.AsFormatted(processedArgs), args[i:]...), execArgs), nil
+				return arg.JoinExecutableArgs(append(arguments.FormatAll(processedArgs), args[i:]...), execArgs), nil
 			}
 			// When we see the bazel command token, switch to parsing command
 			// options instead of startup options.
@@ -863,7 +882,7 @@ func (p *Parser) appendArgsForConfig(command string, rules *Rules, args []string
 				// determine how many args to consume in this iteration.
 				// e.g., need to skip 2 args for "-c opt", 1 arg for
 				// "--nocache_test_results", and 1 arg for "--curses=yes".
-				option, next, err := p.Next(rule.Tokens, i)
+				option, next, err := p.Next(rule.Tokens, i, false)
 				if err != nil {
 					return nil, err
 				}

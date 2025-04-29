@@ -29,7 +29,18 @@ func (a *PositionalArgument) Format() []string {
 	return []string{a.Value}
 }
 
-func AsFormatted[T Argument](args []T) []string {
+func FromConcrete[T Argument](args []T) []Argument {
+	argSlice := make([]Argument, 0, len(args))
+	for _, a := range args {
+		// `append(a, b...)` only works if `a` and `b` have exactly the same type,
+		// even if the slice element types are the same. So we use a loop and append
+		// one-by-one, converting each element to `Argument` with each append.
+		argSlice = append(argSlice, a)
+	}
+	return argSlice
+}
+
+func FormatAll[T Argument](args []T) []string {
 	s := make([]string, 0, len(args))
 	for _, arg := range args {
 		s = append(s, arg.Format()...)
