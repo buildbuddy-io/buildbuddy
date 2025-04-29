@@ -1109,13 +1109,13 @@ type uploadWriteCloser struct {
 }
 
 func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
-	n := 0
-	for {
-		bytesRemaining := int64(len(p)) - (cwc.bytesUploaded + int64(n))
+	written := 0
+	for len(p) > 0 {
+		n := min(len(p), uploadBufSizeBytes)
 		req := &bspb.WriteRequest{
-			Data:         p[cwc.bytesUploaded+int64(n) : cwc.bytesUploaded+int64(n)+min(bytesRemaining, uploadBufSizeBytes)],
+			Data:         p[:n],
 			ResourceName: cwc.uploadString,
-			WriteOffset:  cwc.bytesUploaded + int64(n),
+			WriteOffset:  cwc.bytesUploaded + int64(written),
 			FinishWrite:  false,
 		}
 
@@ -1124,17 +1124,14 @@ func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 			if err == io.EOF {
 				break
 			}
-			cwc.bytesUploaded = 0
-			return 0, err
+			cwc.bytesUploaded += int64(written)
+			return written, err
 		}
-		n += len(req.Data)
-		if n >= len(p) {
-			break
-		}
+		written += n
+		p = p[n:]
 	}
-
-	cwc.bytesUploaded += int64(n)
-	return n, nil
+	cwc.bytesUploaded += int64(written)
+	return written, nil
 }
 
 func (cwc *uploadWriteCloser) Close() error {
@@ -1154,9 +1151,6 @@ func (cwc *uploadWriteCloser) Close() error {
 		return err
 	}
 
-	if cwc.resource.GetCompressor() != repb.Compressor_IDENTITY {
-		return status.FailedPreconditionError("casWriteCloser does not support compression")
-	}
 	remoteSize := rsp.GetCommittedSize()
 	// Either the write succeeded or was short-circuited, but in
 	// either case, the remoteSize for uncompressed uploads should
