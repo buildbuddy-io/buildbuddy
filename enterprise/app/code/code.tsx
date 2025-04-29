@@ -562,7 +562,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                 record.data.map((r) => {
                   const parts = r.split(",");
                   const lineNum = parseInt(parts[0]);
-                  const hit = parts[1] == "1";
+                  const hit = parseInt(parts[1]) > 0;
                   return {
                     range: new monaco.Range(lineNum, 0, lineNum, 0),
                     options: {
