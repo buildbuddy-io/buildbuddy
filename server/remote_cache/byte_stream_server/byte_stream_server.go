@@ -202,26 +202,26 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 // service was able to commit and whether the service views the resource as
 // `complete` or not.
 
-// WriteState enapsulates an on-going ByteStream write to a cache, freeing
+// WriteHandler enapsulates an on-going ByteStream write to a cache, freeing
 // the caller of having to manage writing and committing-to the cache, tracking
 // cache hits, verifying checksums, etc. Here is how it must be used:
-//   - A new WriteState may be obtained by providing the first frame of the
+//   - A new WriteHandler may be obtained by providing the first frame of the
 //     stream to the BeginWrite() function. This function will return a new
-//     WriteState, or an error.
-//   - If a WriteState is returned from BeginWrite(), the function returned from
-//     WriteState.Cleanup() must be deferred to free system resources.
-//   - Each subsequent frame should be passed to WriteState.Write(), which will
-//     return an error on error (note: io.EOF indicates the cache believes the
-//     write is finished), or an optional WriteResponse that should be sent to
-//     the client if the client indicated the write is finished. This function
-//     will return (nil, nil) if the frame was processed successfully, but the
-//     write is not finished yet.
-type WriteState struct {
+//     WriteHandler, or an error.
+//   - If a WriteHandler is returned from BeginWrite(), WriteHandler.Close()
+//     must be called to free system resources when the write is finished.
+//   - Each subsequent frame should be passed to WriteHandler.Write(), which
+//     will return an error on error (note: io.EOF indicates the cache believes
+//     the write is finished), or an optional WriteResponse that should be sent
+//     to the client if the client indicated the write is finished. This
+//     function will return (nil, nil) if the frame was processed successfully,
+//     but the write is not finished yet.
+type WriteHandler struct {
 	// Top-level writer that handles incoming bytes.
 	writer io.Writer
 
 	bytesUploadedFromClient int
-	hitTracker              interfaces.HitTracker
+	transferTimer           interfaces.TransferTimer
 
 	decompressorCloser io.Closer
 	cacheCommitter     interfaces.Committer
@@ -243,7 +243,7 @@ func checkInitialPreconditions(req *bspb.WriteRequest) error {
 	return nil
 }
 
-func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *WriteState) error {
+func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *WriteHandler) error {
 	if req.ResourceName != "" {
 		if req.ResourceName != ws.resourceNameString {
 			return status.InvalidArgumentErrorf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.resourceNameString)
@@ -255,7 +255,7 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *WriteState) error 
 	return nil
 }
 
-func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteRequest) (*WriteState, error) {
+func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteRequest) (*WriteHandler, error) {
 	if err := checkInitialPreconditions(req); err != nil {
 		return nil, err
 	}
@@ -272,8 +272,9 @@ func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteReques
 		return nil, err
 	}
 
-	ws := &WriteState{
-		hitTracker:         s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx)),
+	hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
+	ws := &WriteHandler{
+		transferTimer:      hitTracker.TrackUpload(r.GetDigest()),
 		resourceName:       r,
 		resourceNameString: req.ResourceName,
 	}
@@ -354,9 +355,7 @@ func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteReques
 	return ws, nil
 }
 
-func (w *WriteState) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) {
-	w.bytesUploadedFromClient += len(req.Data)
-
+func (w *WriteHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) {
 	if err := checkSubsequentPreconditions(req, w); err != nil {
 		return nil, err
 	}
@@ -365,6 +364,7 @@ func (w *WriteState) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) 
 	if err != nil {
 		return nil, err
 	}
+	w.bytesUploadedFromClient += len(req.Data)
 	w.offset += int64(n)
 
 	if req.FinishWrite {
@@ -376,9 +376,7 @@ func (w *WriteState) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) 
 	return nil, nil
 }
 
-func (w *WriteState) commit() error {
-	// Note: Need to Flush before committing, since this flushes any currently
-	// buffered bytes from the decompressor to the cache writer.
+func (w *WriteHandler) commit() error {
 	if w.decompressorCloser != nil {
 		defer func() {
 			w.decompressorCloser = nil
@@ -402,29 +400,20 @@ func (w *WriteState) commit() error {
 	return w.cacheCommitter.Commit()
 }
 
-func (w *WriteState) close() error {
+func (w *WriteHandler) Close() error {
+	if err := w.transferTimer.CloseWithBytesTransferred(w.offset, int64(w.bytesUploadedFromClient), w.resourceName.GetCompressor(), "byte_stream_server"); err != nil {
+		log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
+	}
+
 	if w.decompressorCloser != nil {
 		w.decompressorCloser.Close()
 	}
 	return w.cacheCloser.Close()
 }
 
-func (w *WriteState) Cleanup() func() {
-	return func() {
-		if err := w.close(); err != nil {
-			log.Error(err.Error())
-		}
-
-		uploadTracker := w.hitTracker.TrackUpload(w.resourceName.GetDigest())
-		if err := uploadTracker.CloseWithBytesTransferred(w.offset, int64(w.bytesUploadedFromClient), w.resourceName.GetCompressor(), "byte_stream_server"); err != nil {
-			log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
-		}
-	}
-}
-
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
-	var streamState *WriteState
+	var streamState *WriteHandler
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -443,7 +432,11 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err != nil {
 				return err
 			}
-			defer streamState.Cleanup()()
+			defer func() {
+				if err := streamState.Close(); err != nil {
+					log.Error(err.Error())
+				}
+			}()
 		}
 
 		resp, err := streamState.Write(req)
@@ -452,7 +445,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		}
 		if resp != nil {
 			// Warn after the write has completed.
-			if err := s.warner.Warn(stream.Context()); err != nil {
+			if err := s.warner.Warn(ctx); err != nil {
 				return err
 			}
 			return stream.SendAndClose(resp)
