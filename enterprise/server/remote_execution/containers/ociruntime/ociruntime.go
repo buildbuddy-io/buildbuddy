@@ -724,17 +724,18 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	}
 	res.UsageStats = combinedStats
 
-	// Inspect cgroup events to check for any issues that might've been the
-	// root cause of the command failure.
+	// If there was an oom_kill event, return an error instead of a normal exit
+	// status.
 	if err := c.checkOOMKill(ctx, res); err != nil {
 		res.ExitCode = commandutil.KilledExitCode
 		res.Error = err
 		return res
 	}
+
+	// Check whether the pid limit was exceeded, and just log it for now so that
+	// it can be diagnosed.
 	if err := c.checkPIDLimitExceeded(ctx, res); err != nil {
-		res.ExitCode = commandutil.NoExitCode
-		res.Error = err
-		return res
+		log.CtxWarning(ctx, status.Message(err))
 	}
 
 	return res
