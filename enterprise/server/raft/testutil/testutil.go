@@ -293,6 +293,9 @@ func (fs *FakeStore) Sender() *sender.Sender {
 func (fs *FakeStore) SnapshotCluster(ctx context.Context, rangeID uint64) error {
 	return nil
 }
+func (fs *FakeStore) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error) {
+	return nil, nil
+}
 func (fs *FakeStore) NHID() string {
 	return ""
 }

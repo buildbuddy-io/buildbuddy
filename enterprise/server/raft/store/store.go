@@ -18,7 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
@@ -1322,7 +1321,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	batchResponse, err := session.SyncProposeLocal(ctx, s.nodeHost, rangeID, req.GetBatch())
 	if err != nil {
 		if err == dragonboat.ErrShardNotFound {
-			return nil, status.OutOfRangeErrorf("%s: range %d not found", constants.RangeLeaseInvalidMsg, rangeID)
+			return nil, status.OutOfRangeErrorf("%s: range %d not found", constants.RangeNotFoundMsg, rangeID)
 		}
 		return nil, err
 	}
@@ -2360,41 +2359,20 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		return nil, status.InternalErrorf("could not reserve replica IDs for new range %d: %s", rangeID, err)
 	}
 
-	stubRightRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
-	stubRightRange.Start = nil
-	stubRightRange.End = nil
-	stubRightRange.RangeId = newRangeID
-	stubRightRange.Generation += 1
-	for i, r := range stubRightRange.GetReplicas() {
-		r.ReplicaId = replicaIDs[i]
-		r.RangeId = newRangeID
-	}
-	stubRightRangeBuf, err := proto.Marshal(stubRightRange)
-	if err != nil {
-		return nil, err
-	}
-	stubBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: stubRightRangeBuf,
-		},
-	})
-	// Bringup new peers.
-	servers := make(map[string]string, len(leftRange.GetReplicas()))
-	for _, r := range leftRange.GetReplicas() {
+	initialMembers := make(map[uint64]string, len(leftRange.GetReplicas()))
+	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(leftRange.GetReplicas()))
+
+	for i, r := range leftRange.GetReplicas() {
 		if r.GetNhid() == "" {
 			return nil, status.InternalErrorf("empty nhid in ReplicaDescriptor %+v", r)
 		}
-		grpcAddr, err := s.registry.ResolveGRPC(ctx, r.GetNhid())
-		if err != nil {
-			return nil, err
-		}
-		servers[r.GetNhid()] = grpcAddr
-	}
-	bootstrapInfo := bringup.MakeBootstrapInfo(newRangeID, 1, servers)
-	log.CtxDebugf(ctx, "StartShard called with bootstrapInfo: %+v", bootstrapInfo)
-	if err := bringup.StartShard(ctx, s, bootstrapInfo, stubBatch); err != nil {
-		return nil, status.WrapErrorf(err, "failed to split range %d, new range id=%d", rangeID, newRangeID)
+		replicaID := replicaIDs[i]
+		replicas = append(replicas, &rfpb.ReplicaDescriptor{
+			RangeId:   newRangeID,
+			ReplicaId: replicaID,
+			Nhid:      proto.String(r.GetNhid()),
+		})
+		initialMembers[replicaID] = r.GetNhid()
 	}
 
 	// Assemble new range descriptor.
@@ -2402,7 +2380,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	newRightRange.Start = splitPointResponse.GetSplitKey()
 	newRightRange.RangeId = newRangeID
 	newRightRange.Generation += 1
-	newRightRange.Replicas = bootstrapInfo.Replicas
+	newRightRange.Replicas = replicas
 	newRightRangeBuf, err := proto.Marshal(newRightRange)
 	if err != nil {
 		return nil, err
@@ -2416,6 +2394,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	if err := addLocalRangeEdits(leftRange, updatedLeftRange, leftBatch); err != nil {
 		return nil, err
 	}
+
 	rightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   constants.LocalRangeKey,
@@ -2428,18 +2407,22 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	}
 	mrd := s.sender.GetMetaRangeDescriptor()
 
-	txn := rbuilder.NewTxn()
-	leftStmt := txn.AddStatement()
+	tb := rbuilder.NewTxn()
+	leftStmt := tb.AddStatement()
 	leftStmt = leftStmt.SetRangeDescriptor(leftRange).SetBatch(leftBatch)
 	leftStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
+	leftStmt.AddPostCommitHook(rfpb.TransactionHook_PREPARE, &rfpb.StartShardHook{
+		RangeId:       newRangeID,
+		InitialMember: initialMembers,
+	})
 
-	rightStmt := txn.AddStatement()
+	rightStmt := tb.AddStatement()
 	rightStmt.SetRangeDescriptor(newRightRange).SetBatch(rightBatch)
 	rightStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
 
-	metaStmt := txn.AddStatement()
+	metaStmt := tb.AddStatement()
 	metaStmt.SetRangeDescriptor(mrd).SetBatch(metaBatch)
-	if err := s.txnCoordinator.RunTxn(ctx, txn); err != nil {
+	if err := s.txnCoordinator.RunTxn(ctx, tb); err != nil {
 		return nil, err
 	}
 

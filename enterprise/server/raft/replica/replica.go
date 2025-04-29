@@ -56,6 +56,7 @@ type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	SnapshotCluster(ctx context.Context, rangeID uint64) error
+	StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error)
 	NHID() string
 }
 
@@ -1251,9 +1252,36 @@ func (sm *Replica) handlePostCommit(hook *rfpb.PostCommitHook) {
 	if snap := hook.GetSnapshotCluster(); snap != nil {
 		go func() {
 			if err := sm.store.SnapshotCluster(sm.bgCtx, sm.rangeID); err != nil {
-				sm.log.Errorf("Error processing post-commit hook: %s", err)
+				sm.log.Errorf("Error processing snapshotCluster post-commit hook: %s", err)
 			}
 		}()
+		return
+	}
+
+	if startShard := hook.GetStartShard(); startShard != nil {
+		localNHID := sm.store.NHID()
+		targetReplicaID := uint64(0)
+		initialMember := startShard.GetInitialMember()
+		for replicaID, nhid := range initialMember {
+			if nhid == localNHID {
+				targetReplicaID = replicaID
+			}
+		}
+		if targetReplicaID == 0 {
+			sm.log.Errorf("Error processing start shard post-commit hook: cannot find replica id for nhid %q in initial members %v", localNHID, initialMember)
+		} else {
+			req := &rfpb.StartShardRequest{
+				RangeId:       startShard.GetRangeId(),
+				ReplicaId:     targetReplicaID,
+				InitialMember: initialMember,
+			}
+			go func() {
+				if _, err := sm.store.StartShard(sm.bgCtx, req); err != nil {
+					sm.log.Errorf("Error processing start shard post-commit hook: %s", err)
+				}
+			}()
+		}
+		return
 	}
 }
 

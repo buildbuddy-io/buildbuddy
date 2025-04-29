@@ -160,8 +160,14 @@ message ResponseUnion {
 
 message SnapshotClusterHook {}
 
+message StartShardHook {
+  uint64 range_id = 1;
+  map<uint64, string> initial_member = 2;
+}
+
 message PostCommitHook {
   SnapshotClusterHook snapshot_cluster = 1;
+  StartShardHook start_shard = 2;
 }
 
 message TransactionHook {
