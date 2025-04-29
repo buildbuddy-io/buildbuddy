@@ -340,6 +340,15 @@
 .cache-requests-card .results-list > .row > div,
 .cache-requests-card .row.column-headers > div {
   padding: 4px;
+
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cache-requests-card .row.column-headers svg {
+  width: 16px;
+  height: 16px;
 }
 
 .cache-requests-card :is(.results-list .row, .column-headers.row) > div:not(:first-child) {
@@ -364,7 +373,7 @@
 }
 
 .cache-requests-card .duration-column {
-  width: 60px;
+  width: 80px;
   text-align: right;
 }
 
@@ -488,6 +497,17 @@
 
 .cache-requests-card .load-more-button {
   gap: 8px;
+}
+
+.cache-requests-card-hovercard {
+  margin: 12px;
+  background: rgba(255, 255, 255, 1);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+  backdrop-filter: blur(3px);
+  display: flex;
 }
 
 .cache-result-hovercard {

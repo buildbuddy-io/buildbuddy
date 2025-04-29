@@ -153,7 +153,7 @@ func TestDispatch(t *testing.T) {
 
 	// note: AttachUserPrefix is normally done by Execute(), which wraps
 	// Dispatch().
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, env)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	require.NoError(t, err)
 	taskID, err := s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad})
 	require.NoError(t, err)

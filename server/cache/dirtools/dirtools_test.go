@@ -653,7 +653,7 @@ func TestUploadTree(t *testing.T) {
 			dirHelper := dirtools.NewDirHelper(rootDir, tc.cmd, fs.FileMode(0o755))
 
 			actionResult := &repb.ActionResult{}
-			txInfo, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, tc.cmd, actionResult)
+			txInfo, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, tc.cmd, actionResult, true /*=addToFileCache*/)
 			require.NoError(t, err)
 
 			assert.Equal(t, tc.expectedInfo.FileCount, txInfo.FileCount)
@@ -1108,7 +1108,7 @@ func TestDownloadTreeExistingIncorrectSymlink(t *testing.T) {
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}

@@ -26,14 +26,15 @@ import (
 )
 
 var (
-	useMeasuredSizes    = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
-	modelEnabled        = flag.Bool("remote_execution.task_size_model.enabled", false, "Whether to enable model-based task size prediction.")
-	psiCorrectionFactor = flag.Float64("remote_execution.task_size_psi_correction", 1.0, "What percentage of full-stall time should be subtracted from the execution duration.")
-	cpuQuotaLimit       = flag.Duration("remote_execution.cpu_quota_limit", 30*100*time.Millisecond /*30 cores*/, "Maximum CPU time allowed for each quota period.")
-	cpuQuotaPeriod      = flag.Duration("remote_execution.cpu_quota_period", 100*time.Millisecond, "How often the CPU quota is refreshed.")
-	memoryLimitBytes    = flag.Int64("remote_execution.memory_limit_bytes", 0, "Task cgroup memory limit in bytes.")
-	memoryOOMGroup      = flag.Bool("remote_execution.memory_oom_group", true, "If there is an OOM within any process in a cgroup, fail the entire execution with an OOM error.")
-	pidLimit            = flag.Int64("remote_execution.pids_limit", 2048, "Maximum number of processes allowed per task at any time.")
+	useMeasuredSizes          = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
+	modelEnabled              = flag.Bool("remote_execution.task_size_model.enabled", false, "Whether to enable model-based task size prediction.")
+	psiCorrectionFactor       = flag.Float64("remote_execution.task_size_psi_correction", 1.0, "What percentage of full-stall time should be subtracted from the execution duration.")
+	cpuQuotaLimit             = flag.Duration("remote_execution.cpu_quota_limit", 30*100*time.Millisecond /*30 cores*/, "Maximum CPU time allowed for each quota period.")
+	cpuQuotaPeriod            = flag.Duration("remote_execution.cpu_quota_period", 100*time.Millisecond, "How often the CPU quota is refreshed.")
+	memoryLimitBytes          = flag.Int64("remote_execution.memory_limit_bytes", 0, "Task cgroup memory limit in bytes.")
+	memoryOOMGroup            = flag.Bool("remote_execution.memory_oom_group", true, "If there is an OOM within any process in a cgroup, fail the entire execution with an OOM error.")
+	pidLimit                  = flag.Int64("remote_execution.pids_limit", 2048, "Maximum number of processes allowed per task at any time.")
+	additionalPIDsLimitPerCPU = flag.Int64("remote_execution.additional_pids_limit_per_cpu", 1024, "Additional number of processes allowed per estimated CPU.")
 	// TODO: enforce a lower CPU hard limit for tasks in general, instead of
 	// just limiting the task size that gets stored in redis.
 	milliCPULimit = flag.Int64("remote_execution.stored_task_size_millicpu_limit", 7500, "Limit placed on milliCPU calculated from task execution statistics.")
@@ -81,7 +82,11 @@ const (
 	// a firecracker VM, multiplied by ~3X.
 	DockerInFirecrackerAdditionalDiskEstimateBytes = int64(12 * 1e9) // 12 GB
 
+	// The maximum amount of disk a workflow may request.
 	MaxEstimatedFreeDisk = int64(100 * 1e9) // 100GB
+
+	// The maximum amount of disk a non-recyclable workflow may request.
+	MaxEstimatedFreeDiskRecycleFalse = int64(200 * 1e9) // 200GB
 
 	// The fraction of an executor's allocatable resources to make available for task sizing.
 	MaxResourceCapacityRatio = 1
@@ -504,8 +509,17 @@ func ApplyLimits(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
 		clone.EstimatedMemoryBytes = minMemoryBytes
 	}
 	if clone.EstimatedFreeDiskBytes > MaxEstimatedFreeDisk {
-		log.Infof("Task %q requested %d free disk which is more than the max %d", task.GetExecutionId(), clone.EstimatedFreeDiskBytes, MaxEstimatedFreeDisk)
-		clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
+		request := clone.EstimatedFreeDiskBytes
+		props, err := platform.ParseProperties(task)
+		if err != nil {
+			log.Infof("Failed to parse task properties: %s", err)
+			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
+		} else if props.RecycleRunner {
+			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
+		} else {
+			clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDiskRecycleFalse
+		}
+		log.Infof("Task %q requested %d free disk, capped at %d", task.GetExecutionId(), request, clone.EstimatedFreeDiskBytes)
 	}
 	return clone
 }
@@ -514,7 +528,7 @@ func ApplyLimits(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
 // and scheduled task size.
 func GetCgroupSettings(size *scpb.TaskSize) *scpb.CgroupSettings {
 	settings := &scpb.CgroupSettings{
-		PidsMax: proto.Int64(*pidLimit),
+		PidsMax: proto.Int64(*pidLimit + (*additionalPIDsLimitPerCPU*size.GetEstimatedMilliCpu())/1000),
 
 		// Set CPU weight using the same milliCPU => weight conversion used by k8s.
 		// Using the same weight as k8s is not strictly required, since we are

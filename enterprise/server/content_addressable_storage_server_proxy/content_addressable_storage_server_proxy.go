@@ -31,7 +31,7 @@ var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", fals
 type CASServerProxy struct {
 	atimeUpdater  interfaces.AtimeUpdater
 	authenticator interfaces.Authenticator
-	local         repb.ContentAddressableStorageClient
+	local         repb.ContentAddressableStorageServer
 	remote        repb.ContentAddressableStorageClient
 }
 
@@ -53,7 +53,7 @@ func New(env environment.Env) (*CASServerProxy, error) {
 	if authenticator == nil {
 		return nil, fmt.Errorf("An Authenticator is required to enable the ContentAddressableStorageServerProxy")
 	}
-	local := env.GetLocalCASClient()
+	local := env.GetLocalCASServer()
 	if local == nil {
 		return nil, fmt.Errorf("A local ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
 	}

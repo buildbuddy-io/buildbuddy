@@ -34,7 +34,7 @@ type ActionCacheServerProxy struct {
 	authenticator  interfaces.Authenticator
 	localCache     interfaces.Cache
 	remoteACClient repb.ActionCacheClient
-	localACClient  repb.ActionCacheClient
+	localACServer  repb.ActionCacheServer
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -56,7 +56,7 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 		authenticator:  env.GetAuthenticator(),
 		localCache:     env.GetCache(),
 		remoteACClient: remoteCache,
-		localACClient:  env.GetLocalActionCacheClient(),
+		localACServer:  env.GetLocalActionCacheServer(),
 	}, nil
 }
 
@@ -144,13 +144,13 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 		return resp, err
 	}
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}
 
 	if proxy_util.SkipRemote(ctx) {
-		rsp, err := s.localACClient.GetActionResult(ctx, req)
+		rsp, err := s.localACServer.GetActionResult(ctx, req)
 
 		cacheStatus := metrics.MissStatusLabel
 		if err == nil {
@@ -221,7 +221,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	// Only if it's explicitly requested do we cache AC results locally.
 	if proxy_util.SkipRemote(ctx) && !authutil.EncryptionEnabled(ctx, s.authenticator) {
-		resp, err := s.localACClient.UpdateActionResult(ctx, req)
+		resp, err := s.localACServer.UpdateActionResult(ctx, req)
 
 		labels := prometheus.Labels{
 			metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),

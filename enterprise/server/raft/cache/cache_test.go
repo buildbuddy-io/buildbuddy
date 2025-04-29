@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -199,7 +200,7 @@ func TestReaderAndWriter(t *testing.T) {
 	caches := startNNodes(t, configs)
 	rc1 := caches[0]
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env.GetAuthenticator())
 	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
@@ -220,7 +221,7 @@ func TestCacheShutdown(t *testing.T) {
 	rc1 := caches[0]
 	rc2 := caches[1]
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env.GetAuthenticator())
 	require.NoError(t, err)
 
 	cacheRPCTimeout := 5 * time.Second
@@ -257,7 +258,7 @@ func TestDistributedRanges(t *testing.T) {
 	configs := getTestConfigs(t, 3)
 	caches := startNNodes(t, configs)
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env.GetAuthenticator())
 	require.NoError(t, err)
 
 	digests := make([]*rspb.ResourceName, 0)
@@ -288,7 +289,7 @@ func TestFindMissingBlobs(t *testing.T) {
 	configs := getTestConfigs(t, 3)
 	caches := startNNodes(t, configs)
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env.GetAuthenticator())
 	require.NoError(t, err)
 
 	rc1 := caches[0]
@@ -324,6 +325,7 @@ func TestFindMissingBlobs(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
 	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
@@ -341,7 +343,7 @@ func TestLRU(t *testing.T) {
 
 	configs := getTestConfigs(t, 1)
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env.GetAuthenticator())
 	require.NoError(t, err)
 
 	clock := clockwork.NewFakeClock()

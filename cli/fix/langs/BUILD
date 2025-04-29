@@ -47,9 +47,9 @@ go_library(
     deps = [
         "//cli/fix/golang",
         "//cli/fix/typescript",
-        "@bazel_gazelle//language:go_default_library",
-        "@bazel_gazelle//language/bazel/visibility:go_default_library",
-        "@bazel_gazelle//language/proto:go_default_library",
+        "@bazel_gazelle//language",
+        "@bazel_gazelle//language/bazel/visibility",
+        "@bazel_gazelle//language/proto",
     ],
 )
 

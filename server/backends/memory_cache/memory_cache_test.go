@@ -31,7 +31,7 @@ func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.Tes
 
 func getAnonContext(t *testing.T) context.Context {
 	te := getTestEnv(t, emptyUserMap)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}

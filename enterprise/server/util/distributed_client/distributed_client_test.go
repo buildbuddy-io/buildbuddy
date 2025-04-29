@@ -101,7 +101,7 @@ func TestReaderMaxOffset(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestReader(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -365,7 +365,7 @@ func TestWriter(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestReadWrite_Compressed(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -562,7 +562,7 @@ func TestContains(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -634,7 +634,7 @@ func TestOversizeBlobs(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -709,7 +709,7 @@ func TestFindMissing(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -781,7 +781,7 @@ func TestGetMulti(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -845,7 +845,7 @@ func TestEmptyRead(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -889,7 +889,7 @@ func TestDelete(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Fatalf("error attaching user prefix: %v", err)
 	}
@@ -924,7 +924,7 @@ func TestMetadata(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	if err != nil {
 		t.Fatalf("error attaching user prefix: %v", err)
 	}
@@ -997,7 +997,7 @@ func BenchmarkWrite(b *testing.B) {
 				ctx := context.Background()
 				te := getTestEnv(b, emptyUserMap)
 
-				ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+				ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 				require.NoError(b, err)
 
 				peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
@@ -1038,7 +1038,7 @@ func BenchmarkRead(b *testing.B) {
 			peer := fmt.Sprintf("localhost:%d", testport.FindFree(b))
 			c := distributed_client.New(te, te.GetCache(), peer)
 
-			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(b, err)
 			remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
 			err = c.StartListening()

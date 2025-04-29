@@ -379,6 +379,8 @@ func TestSymlinks(t *testing.T) {
 
 type rawStats struct {
 	Ino       uint64
+	Mode      uint32
+	Rdev      uint64
 	Nlink     uint64
 	Atime     time.Time
 	Mtime     time.Time
@@ -391,6 +393,8 @@ func toRawStats(fi fs.FileInfo) *rawStats {
 	rs := fi.Sys().(*syscall.Stat_t)
 	return &rawStats{
 		Ino:       rs.Ino,
+		Mode:      rs.Mode,
+		Rdev:      rs.Rdev,
 		Nlink:     uint64(rs.Nlink),
 		Mtime:     time.Unix(rs.Mtim.Sec, rs.Mtim.Nsec),
 		Atime:     time.Unix(rs.Atim.Sec, rs.Atim.Nsec),
@@ -807,7 +811,7 @@ func TestAttrCaching(t *testing.T) {
 func TestComputeStats(t *testing.T) {
 	env := setupEnv(t)
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err)
 
 	rn1, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -852,4 +856,40 @@ func TestComputeStats(t *testing.T) {
 	require.EqualValues(t, 1, stats.FileDownloadCount)
 	require.EqualValues(t, 100, stats.FileDownloadSizeBytes)
 	require.Greater(t, stats.FileDownloadDurationUsec, int64(0))
+}
+
+func TestRenameWhiteout(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := filepath.Join(fsPath, "hello.txt")
+	f, err := os.Create(testFile)
+	require.NoError(t, err)
+	defer f.Close()
+
+	newPath := filepath.Join(fsPath, "bye.txt")
+	err = unix.Renameat2(0, testFile, 0, newPath, unix.RENAME_WHITEOUT)
+	require.NoError(t, err)
+
+	rs := rawStat(t, testFile)
+	require.EqualValues(t, unix.S_IFCHR, rs.Mode&unix.S_IFMT)
+	require.EqualValues(t, 0, rs.Rdev)
+
+	rs = rawStat(t, newPath)
+	require.EqualValues(t, unix.S_IFREG, rs.Mode&unix.S_IFMT)
+}
+
+func TestMknod(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := filepath.Join(fsPath, "hello.txt")
+	err := unix.Mknod(testFile, unix.S_IFREG, 0)
+	require.NoError(t, err)
+	rs := rawStat(t, testFile)
+	require.EqualValues(t, unix.S_IFREG, rs.Mode&unix.S_IFMT)
+
+	testCharDevice := filepath.Join(fsPath, "char")
+	err = unix.Mknod(testCharDevice, unix.S_IFCHR, 0)
+	require.NoError(t, err)
+	rs = rawStat(t, testCharDevice)
+	require.EqualValues(t, unix.S_IFCHR, rs.Mode&unix.S_IFMT)
 }

@@ -38,7 +38,7 @@ func runACProxy(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticato
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(ta)
 	env.SetActionCacheClient(client)
-	env.SetLocalActionCacheClient(runLocalActionCacheServerForProxy(ctx, env, t))
+	env.SetLocalActionCacheServer(runLocalActionCacheServerForProxy(ctx, env, t))
 
 	proxyServer, err := NewActionCacheServerProxy(env)
 	require.NoError(t, err)
@@ -51,16 +51,10 @@ func runACProxy(ctx context.Context, t *testing.T, ta *testauth.TestAuthenticato
 	return repb.NewActionCacheClient(conn)
 }
 
-func runLocalActionCacheServerForProxy(ctx context.Context, env *testenv.TestEnv, t *testing.T) repb.ActionCacheClient {
+func runLocalActionCacheServerForProxy(ctx context.Context, env *testenv.TestEnv, t *testing.T) repb.ActionCacheServer {
 	server, err := action_cache_server.NewActionCacheServer(env)
 	require.NoError(t, err)
-	grpcServer, runFunc, lis := testenv.RegisterLocalInternalGRPCServer(t, env)
-	repb.RegisterActionCacheServer(grpcServer, server)
-	go runFunc()
-	conn, err := testenv.LocalInternalGRPCConn(ctx, lis)
-	require.NoError(t, err)
-	t.Cleanup(func() { conn.Close() })
-	return repb.NewActionCacheClient(conn)
+	return server
 }
 
 func update(ctx context.Context, client repb.ActionCacheClient, digest *repb.Digest, code int32, t *testing.T) {

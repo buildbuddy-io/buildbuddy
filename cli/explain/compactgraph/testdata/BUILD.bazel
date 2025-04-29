@@ -23,7 +23,7 @@ go_library(
     deps = [
         "//server/util/log",
         "@com_github_otiai10_copy//:copy",
-        "@io_bazel_rules_go//go/runfiles:go_default_library",
+        "@io_bazel_rules_go//go/runfiles",
         "@org_golang_x_tools//txtar",
     ],
 )
