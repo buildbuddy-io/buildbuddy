@@ -626,11 +626,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  // TODO: Test
   private onClickInvalidateSnapshot(snapshotKey: firecracker.SnapshotKey) {
+    const isCiRunnerTask = this.state.command && this.state.command.arguments.length > 0 && this.state.command.arguments[0].includes("buildbuddy_ci_runner");
     rpcService.service
       .invalidateSnapshot(
         new workflow.InvalidateSnapshotRequest({
           snapshotKey: snapshotKey,
+          isCiRunnerTask: isCiRunnerTask,
         })
       )
       .then(() => {

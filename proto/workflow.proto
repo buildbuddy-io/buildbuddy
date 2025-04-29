@@ -242,6 +242,10 @@ message InvalidateSnapshotRequest {
   context.RequestContext request_context = 1;
 
   firecracker.SnapshotKey snapshot_key = 2;
+
+  // Whether the corresponding task is a ci_runner task (i.e. Workflows or
+  // Remote Bazel). Will be false for RBE actions.
+  bool is_ci_runner_task = 3;
 }
 
 message InvalidateSnapshotResponse {

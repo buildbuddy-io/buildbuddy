@@ -207,6 +207,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
     rpcService.service.invalidateSnapshot(
       new workflow.InvalidateSnapshotRequest({
         snapshotKey: snapshotKey,
+        isCiRunnerTask: true, /* all workflows are ci_runner tasks */
       })
     );
   }
