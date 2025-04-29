@@ -232,6 +232,50 @@ func TestCgroupSettings(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 }
 
+func TestPIDLimitExceeded(t *testing.T) {
+	setupNetworking(t)
+	image := manuallyProvisionedBusyboxImage(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider.New(ctx, &container.Init{
+		Task: &repb.ScheduledTask{
+			SchedulingMetadata: &scpb.SchedulingMetadata{
+				CgroupSettings: &scpb.CgroupSettings{
+					PidsMax: proto.Int64(32),
+				},
+			},
+		},
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Spawn several background processes to exceed the PID limit.
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		for i in $(seq 1 33); do
+			sleep 99999999 &
+		done
+		exit 1
+	`}}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+
+	assert.Equal(t, -2, res.ExitCode)
+	assert.Equal(t, status.UnavailableError("pid limit exceeded (maximum number of pids allowed is 32)"), res.Error)
+}
+
 func TestRunUsageStats(t *testing.T) {
 	setupNetworking(t)
 

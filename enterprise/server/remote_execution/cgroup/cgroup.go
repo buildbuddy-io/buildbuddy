@@ -351,6 +351,13 @@ func ReadMemoryEvents(dir string) (map[string]int64, error) {
 	return readAllInt64Fields(filepath.Join(dir, "memory.events"))
 }
 
+// ReadPidsEvents reads the "pids.events" file under the given cgroup
+// directory and returns the counter values as a map. The directory should be an
+// absolute path, including the /sys/fs/cgroup prefix.
+func ReadPidsEvents(dir string) (map[string]int64, error) {
+	return readAllInt64Fields(filepath.Join(dir, "pids.events"))
+}
+
 // Stats reads all stats from the given cgroup2 directory. The directory should
 // be an absolute path, including the /sys/fs/cgroup prefix.
 func Stats(ctx context.Context, dir string, blockDevice *block_io.Device) (*repb.UsageStats, error) {
