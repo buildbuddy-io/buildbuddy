@@ -445,7 +445,7 @@ func (ws *Workspace) stopVFS(ctx context.Context) error {
 	if ws.vfsServer != nil {
 		ws.vfsServer.Stop()
 		if ws.Opts.UseTmpfs {
-			if err := syscall.Unmount(ws.rootDir, 0); err != nil {
+			if err := syscall.Unmount(ws.vfsServer.Path(), 0); err != nil {
 				return status.WrapError(err, "unmount tmpfs")
 			}
 		} else {
