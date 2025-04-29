@@ -352,9 +352,14 @@ func (o *RequiredValueOption) Normalized() Option {
 	}
 }
 
-// BooleanOption is used to represent an option whose definition specifies
+type Negatable interface {
+	Negated() bool
+	Negate()
+}
+
+// BoolOrEnumOption is used to represent an option whose definition specifies
 // `HasNegative` as `true`.
-type BooleanOption struct {
+type BoolOrEnumOption struct {
 	*Definition
 
 	// The string Value of this option, if any
@@ -371,15 +376,19 @@ type BooleanOption struct {
 	UsesShortName bool
 }
 
-func (o *BooleanOption) GetDefinition() *Definition {
+func (o *BoolOrEnumOption) GetDefinition() *Definition {
 	return o.Definition
 }
 
-func (o *BooleanOption) ExpectsValue() bool {
+func (o *BoolOrEnumOption) HasValue() bool {
+	return o.Value != nil
+}
+
+func (o *BoolOrEnumOption) ExpectsValue() bool {
 	return false
 }
 
-func (o *BooleanOption) GetValue() string {
+func (o *BoolOrEnumOption) GetValue() string {
 	if o.Value != nil {
 		return *o.Value
 	}
@@ -389,21 +398,25 @@ func (o *BooleanOption) GetValue() string {
 	return "1"
 }
 
-func (o *BooleanOption) ClearValue() {
+func (o *BoolOrEnumOption) ClearValue() {
 	o.Value = nil
 	o.IsNegative = false
 }
 
-func (o *BooleanOption) SetValue(value string) {
+func (o *BoolOrEnumOption) SetValue(value string) {
 	o.Value = &value
 }
 
-func (o *BooleanOption) SetNegative() {
+func (o *BoolOrEnumOption) Negated() bool {
+	return o.Value == nil && o.IsNegative
+}
+
+func (o *BoolOrEnumOption) Negate() {
 	o.Value = nil
 	o.IsNegative = true
 }
 
-func (o *BooleanOption) Format() []string {
+func (o *BoolOrEnumOption) Format() []string {
 	switch {
 	case o.Value != nil:
 		return []string{"--" + o.Name() + "=" + *o.Value}
@@ -416,7 +429,7 @@ func (o *BooleanOption) Format() []string {
 	}
 }
 
-func (o *BooleanOption) AsBool() (bool, error) {
+func (o *BoolOrEnumOption) AsBool() (bool, error) {
 	switch o.GetValue() {
 	case "yes", "true", "1", "":
 		return true, nil
@@ -426,7 +439,7 @@ func (o *BooleanOption) AsBool() (bool, error) {
 	return false, fmt.Errorf("Error converting to bool: flag '--%s' has non-boolean value '%s'.", o.Name(), o.GetValue())
 }
 
-func (o *BooleanOption) UseShortName(u bool) {
+func (o *BoolOrEnumOption) UseShortName(u bool) {
 	if o.ShortName() == "" {
 		log.Warnf("Attempted to use short name for option %s, which lacks a short name.", o.Name())
 		return
@@ -434,16 +447,16 @@ func (o *BooleanOption) UseShortName(u bool) {
 	o.UsesShortName = u
 }
 
-func (o *BooleanOption) Normalized() Option {
+func (o *BoolOrEnumOption) Normalized() Option {
 	if v, err := o.AsBool(); err == nil {
-		return &BooleanOption{
+		return &BoolOrEnumOption{
 			Definition:    o.Definition,
 			Value:         nil,
 			IsNegative:    !v,
 			UsesShortName: false,
 		}
 	}
-	return &BooleanOption{
+	return &BoolOrEnumOption{
 		Definition:    o.Definition,
 		Value:         o.Value,
 		UsesShortName: false,
@@ -453,12 +466,12 @@ func (o *BooleanOption) Normalized() Option {
 // starlarkOption is used to represent an option that has been identified as
 // having a starlark option prefix.
 type starlarkOption struct {
-	BooleanOption
+	BoolOrEnumOption
 }
 
 func (o *starlarkOption) Normalized() Option {
 	// don't normalize starlark flags
-	return &BooleanOption{
+	return &BoolOrEnumOption{
 		Definition: o.Definition,
 		Value:      o.Value,
 		IsNegative: o.IsNegative,
@@ -471,7 +484,7 @@ func (o *starlarkOption) Format() []string {
 		// that here.
 		return []string{"--no" + o.Name() + "=" + *o.Value}
 	}
-	return o.BooleanOption.Format()
+	return o.BoolOrEnumOption.Format()
 }
 
 func (_ *starlarkOption) HasSupportedCommands() bool {
@@ -633,7 +646,7 @@ func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 		}
 	}
 	if d.hasNegative {
-		return &BooleanOption{Definition: d, Value: v, UsesShortName: form == shortForm, IsNegative: form == negativeForm}, nil
+		return &BoolOrEnumOption{Definition: d, Value: v, UsesShortName: form == shortForm, IsNegative: form == negativeForm}, nil
 	}
 	return &ExpansionOption{Definition: d, UsesShortName: form == shortForm}, nil
 }

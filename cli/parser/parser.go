@@ -148,6 +148,10 @@ func (p *Parser) AddOptionDefinition(o *options.Definition) error {
 // If args[start] corresponds to an option definition that is not known by the
 // parser, the returned values will be (nil, start+1). It is up to the caller to
 // decide how args[start] should be interpreted.
+//
+// TODO(zoey): when we have plugin option defintions, remove the "startup"
+// parameter since it only exists to aid in the guessing heuristic for unknown
+// options.
 func (p *Parser) Next(args []string, start int, startup bool) (option options.Option, next int, err error) {
 	if start > len(args) {
 		return nil, -1, fmt.Errorf("arg index %d out of bounds", start)
@@ -166,7 +170,7 @@ func (p *Parser) Next(args []string, start int, startup bool) (option options.Op
 		// Unknown option, possibly a plugin-specific argument. Apply a rough
 		// heuristic to determine whether or not to have it consume the next
 		// argument.
-		if b, ok := unknownOption.Option.(*options.BooleanOption); ok && b.Value == nil && !b.IsNegative {
+		if b, ok := unknownOption.Option.(options.Negatable); ok && b.Negated() {
 			// This could actually be a required-value-type option rather than a
 			// boolean option; if the next argument doesn't look like an option or a
 			// bazel command, let's assume that it is.
