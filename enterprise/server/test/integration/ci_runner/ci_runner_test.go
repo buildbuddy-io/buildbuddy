@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
@@ -1790,7 +1789,6 @@ actions:
 }
 
 func TestTimeout(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, _ := makeGitRepo(t, workspaceContentsWithRunScript)
 

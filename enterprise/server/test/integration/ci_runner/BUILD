@@ -27,7 +27,6 @@ go_test(
         "//server/remote_cache/cachetools",
         "//server/testutil/app",
         "//server/testutil/buildbuddy",
-        "//server/testutil/quarantine",
         "//server/testutil/testbazel",
         "//server/testutil/testfs",
         "//server/testutil/testgit",
