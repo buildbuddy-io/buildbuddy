@@ -6,6 +6,7 @@ go_web_test_suite(
     name = "saml_test",
     srcs = ["saml_test.go"],
     exec_properties = {
+        "test.EstimatedComputeUnits": "3",
         "test.workload-isolation-type": "firecracker",
         "test.recycle-runner": "true",
         "test.init-dockerd": "true",
