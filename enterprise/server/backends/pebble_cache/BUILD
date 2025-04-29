@@ -66,6 +66,7 @@ go_test(
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/testutil/mockgcs",
+        "//server/testutil/quarantine",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",

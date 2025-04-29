@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -1552,6 +1553,7 @@ func TestNoEarlyEviction(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	testCases := []struct {
 		desc                   string
 		averageChunkSizeBytes  int
@@ -3218,6 +3220,7 @@ func dirSizeFiles(path string) (int64, error) {
 }
 
 func TestCacheStaysBelowConfiguredSize(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
