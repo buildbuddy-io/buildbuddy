@@ -25,6 +25,7 @@ go_library(
         "//server/remote_execution/config",
         "//server/resources",
         "//server/scheduling/scheduler_server/config",
+        "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
         "//server/util/grpc_client",
