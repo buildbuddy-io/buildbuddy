@@ -14,20 +14,24 @@ var (
 	RangeDoesNotExistError = errors.New("Range does not exist")
 )
 
-// Range[T] is a data structure that holds [start, end) (i.e. inclusive start and
-// exclusive end) and a value.
-type Range[T any] struct {
+type Range struct {
 	Start []byte
 	End   []byte
+}
+
+// RangeWithVal[T] is a data structure that holds [start, end) (i.e. inclusive start and
+// exclusive end) and a value.
+type RangeWithVal[T any] struct {
+	Range
 
 	Val T
 }
 
-func (r *Range[T]) String() string {
+func (r *Range) String() string {
 	return fmt.Sprintf("[%q, %q)", string(r.Start), string(r.End))
 }
 
-func (r *Range[T]) Contains(key []byte) bool {
+func (r *Range) Contains(key []byte) bool {
 	// bytes.Compare(a,b) does:
 	//  0 if a==b, -1 if a < b, and +1 if a > b
 	greaterThanOrEqualToStart := bytes.Compare(key, r.Start) > -1
@@ -40,18 +44,18 @@ func (r *Range[T]) Contains(key []byte) bool {
 // RangeMap is an ordered map of ranges that supports add, remove, and look up
 // Ranges. The ranges in RangeMap are non-overlapping.
 type RangeMap[T any] struct {
-	ranges []*Range[T]
+	ranges []*RangeWithVal[T]
 }
 
 func New[T any]() *RangeMap[T] {
 	return &RangeMap[T]{
-		ranges: make([]*Range[T], 0),
+		ranges: make([]*RangeWithVal[T], 0),
 	}
 }
 
 // Add adds a range to RangeMap. Returns an error if the new range overlap with
 // existing ranges.
-func (rm *RangeMap[T]) Add(start, end []byte, value T) (*Range[T], error) {
+func (rm *RangeMap[T]) Add(start, end []byte, value T) (*RangeWithVal[T], error) {
 	insertIndex := sort.Search(len(rm.ranges), func(i int) bool {
 		//  0 if a==b, -1 if a < b, and +1 if a > b
 		c := bytes.Compare(rm.ranges[i].Start, end)
@@ -68,10 +72,12 @@ func (rm *RangeMap[T]) Add(start, end []byte, value T) (*Range[T], error) {
 		}
 	}
 
-	newRange := &Range[T]{
-		Start: start,
-		End:   end,
-		Val:   value,
+	newRange := &RangeWithVal[T]{
+		Range: Range{
+			Start: start,
+			End:   end,
+		},
+		Val: value,
 	}
 
 	if insertIndex >= len(rm.ranges) {
@@ -103,7 +109,7 @@ func (rm *RangeMap[T]) Remove(start, end []byte) error {
 
 // Get returns the range with the specific start and end. Returns nil if the
 // range is not found.
-func (rm *RangeMap[T]) Get(start, end []byte) *Range[T] {
+func (rm *RangeMap[T]) Get(start, end []byte) *RangeWithVal[T] {
 	if len(rm.ranges) == 0 {
 		return nil
 	}
@@ -133,7 +139,7 @@ func (rm *RangeMap[T]) Get(start, end []byte) *Range[T] {
 
 // GetOverlapping returns a list of ranges overlapped with the specific start
 // and end.
-func (rm *RangeMap[T]) GetOverlapping(start, end []byte) []*Range[T] {
+func (rm *RangeMap[T]) GetOverlapping(start, end []byte) []*RangeWithVal[T] {
 	if len(rm.ranges) == 0 {
 		return nil
 	}
@@ -204,10 +210,10 @@ func (rm *RangeMap[T]) String() string {
 }
 
 // Ranges returns a list of ordered ranges that the RangeMap contains.
-func (rm *RangeMap[T]) Ranges() []*Range[T] {
+func (rm *RangeMap[T]) Ranges() []*RangeWithVal[T] {
 	return rm.ranges
 }
 
 func (rm *RangeMap[T]) Clear() {
-	rm.ranges = make([]*Range[T], 0)
+	rm.ranges = make([]*RangeWithVal[T], 0)
 }

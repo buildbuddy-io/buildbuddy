@@ -310,7 +310,7 @@ func TestGetOverlappingMulti(t *testing.T) {
 }
 
 func TestString(t *testing.T) {
-	r := rangemap.Range[int]{
+	r := rangemap.Range{
 		Start: []byte("a"),
 		End:   []byte{math.MaxUint8},
 	}
