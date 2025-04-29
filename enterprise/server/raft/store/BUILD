@@ -77,6 +77,7 @@ go_test(
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//proto:storage_go_proto",
+        "//server/testutil/quarantine",
         "//server/testutil/testdigest",
         "//server/util/log",
         "//server/util/proto",
