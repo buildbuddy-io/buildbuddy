@@ -20,7 +20,7 @@ const (
 	// readyCheckTimeout determines how long to wait until giving up on waiting for
 	// BuildBuddy server to become ready. If this timeout is reached, the test case
 	// running the server will fail with a timeout error.
-	readyCheckTimeout = 60 * time.Second
+	readyCheckTimeout = 30 * time.Second
 )
 
 type Server struct {
