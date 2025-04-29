@@ -474,7 +474,9 @@ func (_ *starlarkOption) Supports(command string) bool {
 	return command != "startup"
 }
 
-// ExpansionOption is used to represent an option that expands to other options. These options cannot take values and are not interpreted as booleans (true or false)
+// ExpansionOption is used to represent an option that expands to other options.
+// These options cannot take values and are not interpreted as booleans (true or
+// false).
 type ExpansionOption struct {
 	*Definition
 
@@ -523,6 +525,18 @@ func (o *ExpansionOption) Normalized() Option {
 	}
 }
 
+// UnknownOption is used to represent an option that lacks a predetermined
+// option definition. These are assumed to be plugin options, but they may also
+// be misspellings of known options by users.
+type UnknownOption struct {
+	Option
+}
+
+func (o *UnknownOption) Normalized() Option {
+	// do not normalize unknown options.
+	return o
+}
+
 func Canonicalize(opts []Option) []Option {
 	lastOptionIndex := map[string]int{}
 	for i, opt := range opts {
@@ -534,11 +548,7 @@ func Canonicalize(opts []Option) []Option {
 		if !opt.Multi() && lastOptionIndex[opt.Name()] > i {
 			continue
 		}
-		if opt.PluginID() != UnknownBuiltinPluginID {
-			// don't normalize unknown options
-			opt = opt.Normalized()
-		}
-		canonical = append(canonical, opt)
+		canonical = append(canonical, opt.Normalized())
 	}
 	return canonical
 }
@@ -553,6 +563,17 @@ func NewStarlarkOptionDefinition(optName string) *Definition {
 }
 
 func NewOption(optName string, v *string, d *Definition) (Option, error) {
+	option, err := newOptionImpl(optName, v, d)
+	if err != nil {
+		return nil, err
+	}
+	if option.PluginID() == UnknownBuiltinPluginID {
+		return &UnknownOption{Option: option}, nil
+	}
+	return option, nil
+}
+
+func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 	if d == nil {
 		return nil, fmt.Errorf("In NewOption: definition was nil for optname %s and value %+v", optName, v)
 	}
