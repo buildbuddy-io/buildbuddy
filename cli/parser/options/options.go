@@ -474,8 +474,7 @@ func (_ *starlarkOption) Supports(command string) bool {
 	return command != "startup"
 }
 
-// ExpansionOption is used to represent an option whose definition specifies
-// both `RequiresValue` and `HasNegative` as `false`.
+// ExpansionOption is used to represent an option that expands to other options. These options cannot take values and are not interpreted as booleans (true or false)
 type ExpansionOption struct {
 	*Definition
 
