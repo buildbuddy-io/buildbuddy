@@ -86,9 +86,9 @@ common:race --@io_bazel_rules_go//go/config:race
 common:performance --compilation_mode=opt
 
 # Configurations used to debug flaky tests
-common:debug --config=remote-minimal
-test:debug --config=race
-test:debug --test_env=RUN_QUARANTINED_TESTS=true
+common:quarantine --config=remote-minimal
+test:quarantine --config=race
+test:quarantine --test_env=RUN_QUARANTINED_TESTS=true
 
 # Configuration used to deflake tests
 common:deflake --config=remote-minimal
@@ -96,7 +96,7 @@ test:deflake --runs_per_test=20
 test:deflake --test_output=errors
 test:deflake --test_runner_fail_fast
 test:deflake --notest_keep_going
-test:deflake --config=debug
+test:deflake --config=quarantine
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
