@@ -237,6 +237,16 @@ func WithReason(err error, reason string) error {
 	return st.Err()
 }
 
+// Code returns the gRPC status code for a given error.
+// If the error is nil, it returns codes.OK.
+// If the error is not a gRPC error, it returns codes.Unknown.
+func Code(err error) codes.Code {
+	if s, ok := status.FromError(err); ok {
+		return s.Code()
+	}
+	return codes.Unknown
+}
+
 // Message extracts the error message from a given error, which for gRPC errors
 // is just the "desc" part of the error.
 func Message(err error) string {

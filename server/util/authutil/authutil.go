@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
+	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -94,6 +95,98 @@ func AuthorizeGroupAccessForStats(ctx context.Context, env environment.Env, grou
 		return status.ResourceExhaustedError("Too many rows.")
 	}
 	return nil
+}
+
+func AuthorizeRead(ctx context.Context, authenticator interfaces.Authenticator, acl *aclpb.ACL) error {
+	if acl == nil {
+		return status.InvalidArgumentError("acl cannot be nil.")
+	}
+
+	if acl.GetOthersPermissions().GetRead() {
+		return nil
+	}
+
+	var userID string
+	var allowedGroupIDs []string
+	u, err := authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		if !IsAnonymousUserError(err) || !authenticator.AnonymousUsageEnabled(ctx) {
+			return err
+		}
+		// Anonymous user; u will be nil.
+	} else {
+		userID = u.GetUserID()
+		allowedGroupIDs = u.GetAllowedGroups()
+	}
+
+	// If the user ID is specified then check owner_permissions.
+	// Otherwise ignore owner_permissions.
+	if acl.GetUserId().GetId() != "" {
+		isOwner := userID == acl.GetUserId().GetId()
+		if isOwner && acl.GetOwnerPermissions().GetRead() {
+			return nil
+		}
+	}
+
+	// If the group ID is specified then check group_permissions.
+	// Otherwise ignore group_permissions.
+	if acl.GetGroupId() != "" {
+		if acl.GetGroupPermissions().GetRead() {
+			for _, groupID := range allowedGroupIDs {
+				if groupID == acl.GetGroupId() {
+					return nil
+				}
+			}
+		}
+	}
+
+	return status.PermissionDeniedError("You do not have permission to perform this action.")
+}
+
+func AuthorizeWrite(ctx context.Context, authenticator interfaces.Authenticator, acl *aclpb.ACL) error {
+	if acl == nil {
+		return status.InvalidArgumentError("acl cannot be nil.")
+	}
+
+	if acl.GetOthersPermissions().GetWrite() {
+		log.CtxWarningf(ctx, "Ignoring request to allow OTHERS_WRITE. This should not happen!")
+	}
+
+	var userID string
+	var allowedGroupIDs []string
+	u, err := authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		if !IsAnonymousUserError(err) || !authenticator.AnonymousUsageEnabled(ctx) {
+			return err
+		}
+		// Anonymous user; u will be nil.
+	} else {
+		userID = u.GetUserID()
+		allowedGroupIDs = u.GetAllowedGroups()
+	}
+
+	// If the user ID is specified then check owner_permissions.
+	// Otherwise ignore owner_permissions.
+	if acl.GetUserId().GetId() != "" {
+		isOwner := userID == acl.GetUserId().GetId()
+		if isOwner && acl.GetOwnerPermissions().GetWrite() {
+			return nil
+		}
+	}
+
+	// If the group ID is specified then check group_permissions.
+	// Otherwise ignore group_permissions.
+	if acl.GetGroupId() != "" {
+		if acl.GetGroupPermissions().GetWrite() {
+			for _, groupID := range allowedGroupIDs {
+				if groupID == acl.GetGroupId() {
+					return nil
+				}
+			}
+		}
+	}
+
+	return status.PermissionDeniedError("You do not have permission to perform this action.")
 }
 
 // AnonymousUserError returns an error indicating that the user is not

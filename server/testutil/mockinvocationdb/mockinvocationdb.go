@@ -22,7 +22,7 @@ func (m *MockInvocationDB) CreateInvocation(ctx context.Context, in *tables.Invo
 func (m *MockInvocationDB) UpdateInvocation(ctx context.Context, in *tables.Invocation) (bool, error) {
 	return false, nil
 }
-func (m *MockInvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string, acl *aclpb.ACL) error {
+func (m *MockInvocationDB) UpdateInvocationACL(ctx context.Context, invocationID string, acl *aclpb.ACL) error {
 	return nil
 }
 func (m *MockInvocationDB) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {

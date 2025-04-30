@@ -854,8 +854,8 @@ func (d *AuthDB) getAPIKey(ctx context.Context, h interfaces.DB, apiKeyID string
 }
 
 func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error) {
-	user, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
+	// Short-circuit if not logged in.
+	if _, err := d.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -874,7 +874,7 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	}
 	if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
 		acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
-		if err := perms.AuthorizeRead(user, acl); err != nil {
+		if err := authutil.AuthorizeRead(ctx, d.env.GetAuthenticator(), acl); err != nil {
 			return nil, err
 		}
 	}
@@ -970,10 +970,6 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiK
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key ID is required")
 	}
-	user, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
 	key, err := d.getAPIKey(ctx, h, apiKeyID)
 	if err != nil {
 		return nil, err
@@ -988,7 +984,7 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiK
 	}
 	if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
 		acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
-		if err := perms.AuthorizeWrite(&user, acl); err != nil {
+		if err := authutil.AuthorizeWrite(ctx, d.env.GetAuthenticator(), acl); err != nil {
 			return nil, err
 		}
 	}

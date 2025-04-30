@@ -11,7 +11,6 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/authutil",
-        "//server/util/log",
         "//server/util/query_builder",
         "//server/util/status",
     ],

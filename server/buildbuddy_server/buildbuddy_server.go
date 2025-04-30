@@ -239,13 +239,8 @@ func (s *BuildBuddyServer) GetInvocationFilterSuggestions(ctx context.Context, r
 }
 
 func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.UpdateInvocationRequest) (*inpb.UpdateInvocationResponse, error) {
-	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	db := s.env.GetInvocationDB()
-	if err := db.UpdateInvocationACL(ctx, &authenticatedUser, req.GetInvocationId(), req.GetAcl()); err != nil {
+	if err := db.UpdateInvocationACL(ctx, req.GetInvocationId(), req.GetAcl()); err != nil {
 		return nil, err
 	}
 	if al := s.env.GetAuditLogger(); al != nil {
@@ -751,18 +746,13 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 }
 
 func (s *BuildBuddyServer) authorizeInvocationWrite(ctx context.Context, invocationID string) error {
-	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return err
-	}
-
 	in, err := s.env.GetInvocationDB().LookupInvocation(ctx, invocationID)
 	if err != nil {
 		return err
 	}
 	acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
 
-	return perms.AuthorizeWrite(&authenticatedUser, acl)
+	return authutil.AuthorizeWrite(ctx, s.env.GetAuthenticator(), acl)
 }
 
 func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApiKeyRequest) (*akpb.UpdateApiKeyResponse, error) {

@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -2194,8 +2195,8 @@ func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueue
 }
 
 func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupID string) ([]*scpb.ExecutionNode, error) {
-	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
+	// Short-circuit if unauthenticated.
+	if _, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
 		return nil, err
 	}
 	poolSetKey := s.redisKeyForExecutorPools(groupID)
@@ -2215,7 +2216,7 @@ func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupI
 				return nil, err
 			}
 
-			err := perms.AuthorizeRead(user, registeredNode.GetAcl())
+			err := authutil.AuthorizeRead(ctx, s.env.GetAuthenticator(), registeredNode.GetAcl())
 			if err != nil {
 				continue
 			}

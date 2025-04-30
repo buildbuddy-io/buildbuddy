@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/authutil",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:acl_go_proto",
         "//proto:api_key_go_proto",
         "//server/environment",
         "//server/interfaces",
@@ -24,8 +25,14 @@ go_test(
     name = "authutil_test",
     size = "small",
     srcs = ["authutil_test.go"],
-    embed = [":authutil"],
     deps = [
+        ":authutil",
+        "//proto:acl_go_proto",
+        "//proto:user_id_go_proto",
+        "//server/real_environment",
+        "//server/testutil/testauth",
+        "//server/util/status",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

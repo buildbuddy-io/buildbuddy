@@ -288,7 +288,7 @@ func (ws *workflowService) DeleteLegacyWorkflow(ctx context.Context, req *wfpb.D
 			return err
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: wf.UserID}, wf.GroupID, wf.Perms)
-		if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
+		if err := authutil.AuthorizeWrite(ctx, ws.env.GetAuthenticator(), acl); err != nil {
 			return err
 		}
 		return tx.NewQuery(ctx, "workflow_delete").Raw(
@@ -397,8 +397,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	// Authenticate
-	user, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
+	if _, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -409,7 +408,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 	// Authorize workflow access
 	wfACL := perms.ToACLProto(&uidpb.UserId{Id: wf.GroupID}, wf.GroupID, wf.Perms)
-	if err := perms.AuthorizeRead(user, wfACL); err != nil {
+	if err := authutil.AuthorizeRead(ctx, ws.env.GetAuthenticator(), wfACL); err != nil {
 		return nil, err
 	}
 

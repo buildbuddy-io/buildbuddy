@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -98,69 +97,6 @@ func FromACL(acl *aclpb.ACL) (int32, error) {
 		p |= OTHERS_WRITE
 	}
 	return p, nil
-}
-
-func AuthorizeRead(u interfaces.UserInfo, acl *aclpb.ACL) error {
-	if u == nil {
-		return status.InvalidArgumentError("user cannot be nil.")
-	}
-	if acl == nil {
-		return status.InvalidArgumentError("acl cannot be nil.")
-	}
-
-	perms, err := FromACL(acl)
-	if err != nil {
-		return err
-	}
-
-	if perms&OTHERS_READ != 0 {
-		return nil
-	}
-	isOwner := u.GetUserID() == acl.GetUserId().GetId()
-	if isOwner && perms&OWNER_READ != 0 {
-		return nil
-	}
-	if perms&GROUP_READ != 0 {
-		for _, groupID := range u.GetAllowedGroups() {
-			if groupID == acl.GetGroupId() {
-				return nil
-			}
-		}
-	}
-
-	return status.PermissionDeniedError("You do not have permission to perform this action.")
-}
-
-func AuthorizeWrite(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) error {
-	if authenticatedUser == nil {
-		return status.InvalidArgumentError("authenticatedUser cannot be nil.")
-	}
-	u := *authenticatedUser
-	if acl == nil {
-		return status.InvalidArgumentError("acl cannot be nil.")
-	}
-
-	perms, err := FromACL(acl)
-	if err != nil {
-		return err
-	}
-
-	if perms&OTHERS_WRITE != 0 {
-		log.Warning("Ignoring request to allow OTHERS_WRITE. This should not happen!")
-	}
-	isOwner := u.GetUserID() == acl.GetUserId().GetId()
-	if isOwner && perms&OWNER_WRITE != 0 {
-		return nil
-	}
-	if perms&GROUP_WRITE != 0 {
-		for _, groupID := range u.GetAllowedGroups() {
-			if groupID == acl.GetGroupId() {
-				return nil
-			}
-		}
-	}
-
-	return status.PermissionDeniedError("You do not have permission to perform this action.")
 }
 
 func AddPermissionsCheckToQuery(ctx context.Context, env environment.Env, q *query_builder.Query) error {

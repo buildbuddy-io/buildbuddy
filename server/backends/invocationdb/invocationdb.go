@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -128,7 +129,7 @@ func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocati
 	return updated, err
 }
 
-func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string, acl *aclpb.ACL) error {
+func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID string, acl *aclpb.ACL) error {
 	p, err := perms.FromACL(acl)
 	if err != nil {
 		return err
@@ -148,7 +149,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 			return status.PermissionDeniedError("Your organization does not allow this action.")
 		}
 
-		if err := perms.AuthorizeWrite(authenticatedUser, getACL(&in)); err != nil {
+		if err := authutil.AuthorizeWrite(ctx, d.env.GetAuthenticator(), getACL(&in)); err != nil {
 			return err
 		}
 		if err := tx.NewQuery(ctx, "invocationdb_update_invocation_acl").Raw(
@@ -169,14 +170,8 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 		`SELECT * FROM "Invocations" WHERE invocation_id = ?`, invocationID).Take(ti); err != nil {
 		return nil, err
 	}
-	if ti.Perms&perms.OTHERS_READ == 0 {
-		u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if err := perms.AuthorizeRead(u, getACL(ti)); err != nil {
-			return nil, err
-		}
+	if err := authutil.AuthorizeRead(ctx, d.env.GetAuthenticator(), getACL(ti)); err != nil {
+		return nil, err
 	}
 	return ti, nil
 }

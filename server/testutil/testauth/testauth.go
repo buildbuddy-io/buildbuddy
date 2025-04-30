@@ -87,6 +87,10 @@ func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthent
 	}
 }
 
+func (a *TestAuthenticator) SetAnonymousUsageEnabled(enabled bool) {
+	a.NullAuthenticator = nullauth.NewNullAuthenticator(enabled, "")
+}
+
 func (a *TestAuthenticator) AdminGroupID() string {
 	return a.ServerAdminGroupID
 }
