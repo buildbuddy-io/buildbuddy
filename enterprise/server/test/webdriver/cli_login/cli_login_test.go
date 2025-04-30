@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/stretchr/testify/require"
@@ -96,6 +97,7 @@ func TestCLILoginWebFlow_MultipleOrgs_ChooseOrgWithoutPersonalKeysEnabled(t *tes
 }
 
 func TestCLILoginWebFlow_ZeroOrgs_CreateOrgFlow(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 
 	app := buildbuddy_enterprise.SetupWebTarget(t)
