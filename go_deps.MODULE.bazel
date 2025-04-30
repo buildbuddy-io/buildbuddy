@@ -90,8 +90,22 @@ go_deps.module_override(
 
 # Go repos with custom directives
 go_deps.gazelle_override(
-    directives = ["gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2"],
+    directives = [
+        "gazelle:go_proto_compilers @io_bazel_rules_go//proto:go_proto,@@//proto:vtprotobuf_compiler",
+    ],
+    path = "github.com/prometheus/client_model",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
     path = "github.com/awslabs/soci-snapshotter",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    path = "github.com/buildbuddy-io/tensorflow-proto",
 )
 go_deps.gazelle_override(
     directives = [
@@ -129,12 +143,6 @@ go_deps.gazelle_override(
         "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
     ],
     path = "cel.dev/expr",
-)
-go_deps.gazelle_override(
-    directives = [
-        "gazelle:go_proto_compilers @io_bazel_rules_go//proto:go_proto,@@//proto:vtprotobuf_compiler",
-    ],
-    path = "github.com/prometheus/client_model",
 )
 go_deps.gazelle_override(
     directives = [
