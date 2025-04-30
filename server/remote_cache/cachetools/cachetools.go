@@ -261,6 +261,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		}
 		bytesUploaded, err := w.ReadFrom(in)
 		if err != nil {
+			w.Close()
 			return nil, 0, err
 		}
 		if err := w.Close(); err != nil {
