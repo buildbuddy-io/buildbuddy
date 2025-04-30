@@ -299,6 +299,12 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 
 	bsClient := r.env.GetByteStreamClient()
 	acClient := r.env.GetActionCacheClient()
+
+	// To fetch a blob or manifest from the AC and CAS, you need a digest.
+	// Blob requests MUST be by digest.
+	// Manifest requests can be by digest or by tag.
+	// If we successfully resolved a manifest tag to a digest above, it's safe
+	// to look up the manifest in the cache.
 	if resolvedRefIsDigest {
 		writeBody := inreq.Method == http.MethodGet
 		err := fetchBlobOrManifestFromCache(ctx, w, bsClient, acClient, resolvedRef, ociResourceType, writeBody)
@@ -338,6 +344,9 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	hasContentType := upresp.Header.Get(headerContentType) != ""
 	contentType := upresp.Header.Get(headerContentType)
 
+	// In order to cache a blob or manifest, you need a digest,
+	// metadata (content length and content type), and the contents of the blob or manifest
+	// (which will be in the body of an upstream HTTP GET).
 	cacheable := upresp.StatusCode == http.StatusOK && hasLength && resolvedRefIsDigest && hasContentType
 	if !cacheable {
 		_, err = io.Copy(w, upresp.Body)
