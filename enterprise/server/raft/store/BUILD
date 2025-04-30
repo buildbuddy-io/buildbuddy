@@ -60,7 +60,7 @@ go_test(
     srcs = ["store_test.go"],
     exec_properties = {
         "test.EstimatedComputeUnits": "8",
-		"test.workload-isolation-type": "firecracker",
+        "test.workload-isolation-type": "firecracker",
     },
     shard_count = 8,
     tags = ["block-network"],
