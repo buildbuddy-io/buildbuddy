@@ -494,5 +494,5 @@ func (lk *LeaseKeeper) HaveLease(ctx context.Context, rid uint64) bool {
 			action:  Drop,
 		})
 	}
-	return valid
+	return valid && shouldHaveLease
 }
