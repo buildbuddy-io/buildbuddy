@@ -774,6 +774,7 @@ ts_library(
         "//:node_modules/react",
         "//app/components/button",
         "//app/components/select",
+        "//app/errors:error_service",
         "//app/format",
         "//app/invocation:invocation_execution_table",
         "//app/invocation:invocation_execution_util",

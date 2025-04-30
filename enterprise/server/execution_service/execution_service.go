@@ -164,8 +164,10 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		}
 		// group_id ACL check should have been done in LookupInvocation, but
 		// check it again here just to be explicit.
-		if err := authutil.AuthorizeGroupAccess(ctx, es.env, inv.GroupID); err != nil {
-			return err
+		if inv.GroupID != "" {
+			if err := authutil.AuthorizeGroupAccess(ctx, es.env, inv.GroupID); err != nil {
+				return err
+			}
 		}
 		// Select only the execution fields that will be shown on the Executions
 		// page.
