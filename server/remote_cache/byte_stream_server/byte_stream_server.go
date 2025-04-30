@@ -179,29 +179,6 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	return err
 }
 
-// `Write()` is used to send the contents of a resource as a sequence of
-// bytes. The bytes are sent in a sequence of request protos of a client-side
-// streaming FUNC (S *BYTESTREAMSERVER).
-//
-// A `Write()` action is resumable. If there is an error or the connection is
-// broken during the `Write()`, the client should check the status of the
-// `Write()` by calling `QueryWriteStatus()` and continue writing from the
-// returned `committed_size`. This may be less than the amount of data the
-// client previously sent.
-//
-// Calling `Write()` on a resource name that was previously written and
-// finalized could cause an error, depending on whether the underlying service
-// allows over-writing of previously written resources.
-//
-// When the client closes the request channel, the service will respond with
-// a `WriteResponse`. The service will not view the resource as `complete`
-// until the client has sent a `WriteRequest` with `finish_write` set to
-// `true`. Sending any requests on a stream after sending a request with
-// `finish_write` set to `true` will cause an error. The client **should**
-// check the `WriteResponse` it receives to determine how much data the
-// service was able to commit and whether the service views the resource as
-// `complete` or not.
-
 // WriteHandler enapsulates an on-going ByteStream write to a cache, freeing
 // the caller of having to manage writing and committing-to the cache, tracking
 // cache hits, verifying checksums, etc. Here is how it must be used:
@@ -355,6 +332,28 @@ func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteReques
 	return ws, nil
 }
 
+// `Write()` is used to send the contents of a resource as a sequence of
+// bytes. The bytes are sent in a sequence of request protos of a client-side
+// streaming FUNC (S *BYTESTREAMSERVER).
+//
+// A `Write()` action is resumable. If there is an error or the connection is
+// broken during the `Write()`, the client should check the status of the
+// `Write()` by calling `QueryWriteStatus()` and continue writing from the
+// returned `committed_size`. This may be less than the amount of data the
+// client previously sent.
+//
+// Calling `Write()` on a resource name that was previously written and
+// finalized could cause an error, depending on whether the underlying service
+// allows over-writing of previously written resources.
+//
+// When the client closes the request channel, the service will respond with
+// a `WriteResponse`. The service will not view the resource as `complete`
+// until the client has sent a `WriteRequest` with `finish_write` set to
+// `true`. Sending any requests on a stream after sending a request with
+// `finish_write` set to `true` will cause an error. The client **should**
+// check the `WriteResponse` it receives to determine how much data the
+// service was able to commit and whether the service views the resource as
+// `complete` or not.
 func (w *WriteHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) {
 	if err := checkSubsequentPreconditions(req, w); err != nil {
 		return nil, err
