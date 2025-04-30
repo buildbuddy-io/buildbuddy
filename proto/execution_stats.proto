@@ -128,6 +128,13 @@ message Execution {
   // retried internally, this Execution will reflect the latest execution
   // attempt.
   string execution_id = 14;
+
+  // The target label associated with the execution.
+  string target_label = 15;
+
+  // The executor hostname that ran the execution. This is only populated if the
+  // user has permission to view the executor metadata.
+  string executor_hostname = 16;
 }
 
 // Auxiliary metadata with BuildBuddy-specific information.
