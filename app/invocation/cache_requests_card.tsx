@@ -151,7 +151,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   }
 
   private fetchResults(pageToken = this.state.nextPageToken) {
-    this.setState({ loading: true });
+    this.setState({ loading: true, nextPageToken: pageToken });
 
     const filterFields: string[] = [];
 
@@ -889,6 +889,15 @@ fi
           onRequestClose={() => this.setState({ isLinkRepoModalOpen: false })}
         />
         <div debug-id="cache-results-table" className="results-table">
+          {/* When the results are being replaced, show an overlay indicating that the
+              current results are stale. */}
+          {this.state.loading && !this.state.nextPageToken && (
+            <>
+              <div className="loading-overlay" />
+              <div className="loading loading-slim results-updating" />
+            </>
+          )}
+
           <div className="row column-headers">
             {this.getGroupBy() !== cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION && (
               <div className="name-column">Name</div>
