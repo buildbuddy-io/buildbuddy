@@ -427,7 +427,6 @@ func TestAddNodeToCluster(t *testing.T) {
 }
 
 func TestRemoveNodeFromCluster(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
