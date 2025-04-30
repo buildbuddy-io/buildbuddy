@@ -618,9 +618,7 @@ func BenchmarkEnqueue(b *testing.B) {
 	_, updater, _, _ := setup(b)
 
 	b.ReportAllocs()
-	b.StopTimer()
-	for i := 0; i < b.N; i++ {
-		b.StartTimer()
+	for b.Loop() {
 		wg := sync.WaitGroup{}
 		for i := 0; i < 10_000; i++ {
 			for _, instance := range instances {
@@ -639,6 +637,5 @@ func BenchmarkEnqueue(b *testing.B) {
 			}
 		}
 		wg.Wait()
-		b.StopTimer()
 	}
 }

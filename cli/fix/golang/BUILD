@@ -8,9 +8,9 @@ go_library(
     deps = [
         "//cli/log",
         "//cli/workspace",
-        "@bazel_gazelle//label:go_default_library",
-        "@bazel_gazelle//language:go_default_library",
-        "@bazel_gazelle//language/go:go_default_library",
+        "@bazel_gazelle//label",
+        "@bazel_gazelle//language",
+        "@bazel_gazelle//language/go",
         "@org_golang_x_mod//modfile",
     ],
 )

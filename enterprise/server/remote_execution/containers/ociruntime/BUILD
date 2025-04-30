@@ -77,7 +77,6 @@ go_test(
     },
     deps = [
         ":ociruntime",
-        "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/persistentworker",
         "//enterprise/server/remote_execution/platform",
@@ -89,6 +88,7 @@ go_test(
         "//proto:worker_go_proto",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/testutil/quarantine",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testnetworking",
@@ -106,7 +106,7 @@ go_test(
         "@com_github_google_go_containerregistry//pkg/v1/mutate",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@io_bazel_rules_go//go/runfiles:go_default_library",
+        "@io_bazel_rules_go//go/runfiles",
     ],
 )
 

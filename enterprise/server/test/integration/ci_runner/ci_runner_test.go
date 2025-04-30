@@ -420,31 +420,33 @@ func TestCIRunner_RunsBashCommands_BazelWithOptions(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		workspaceContents := map[string]string{
-			"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
-			"print_args.sh": "echo 'args: {{' $@ '}}'",
-			"buildbuddy.yaml": `
+		t.Run(tc.name, func(t *testing.T) {
+			workspaceContents := map[string]string{
+				"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+				"print_args.sh": "echo 'args: {{' $@ '}}'",
+				"buildbuddy.yaml": `
 actions:
   - name: "Test action"
     steps:
       - run: ` + tc.command,
-		}
+			}
 
-		repoPath, _ := makeGitRepo(t, workspaceContents)
-		runnerFlags := []string{
-			"--workflow_id=test-workflow",
-			"--action_name=Test action",
-			"--trigger_event=push",
-			"--pushed_repo_url=file://" + repoPath,
-			"--pushed_branch=master",
-		}
-		// Start the app so the runner can use it as the BES backend.
-		app := buildbuddy.Run(t)
-		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+			repoPath, _ := makeGitRepo(t, workspaceContents)
+			runnerFlags := []string{
+				"--workflow_id=test-workflow",
+				"--action_name=Test action",
+				"--trigger_event=push",
+				"--pushed_repo_url=file://" + repoPath,
+				"--pushed_branch=master",
+			}
+			// Start the app so the runner can use it as the BES backend.
+			app := buildbuddy.Run(t)
+			runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 
-		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
-		runnerInvocation := getRunnerInvocation(t, app, result)
-		require.Regexp(t, tc.outputMustMatch, runnerInvocation.ConsoleBuffer, tc.name)
+			result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+			runnerInvocation := getRunnerInvocation(t, app, result)
+			require.Regexp(t, tc.outputMustMatch, runnerInvocation.ConsoleBuffer, tc.name)
+		})
 	}
 }
 
@@ -870,13 +872,15 @@ func TestCIRunner_Fork_MergesTargetBranchBeforeRunning(t *testing.T) {
 	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
 
 	for _, tc := range testCases {
-		runnerFlags := append(baselineRunnerFlags, tc.repoFlags...)
-		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
-		runnerInvocation := getRunnerInvocation(t, app, result)
-		// We should be able to see both of the changes we made, since they should
-		// be merged together.
-		assert.Contains(t, runnerInvocation.ConsoleBuffer, "NONCONFLICTING_EDIT_1", tc.name)
-		assert.Contains(t, runnerInvocation.ConsoleBuffer, "NONCONFLICTING_EDIT_2", tc.name)
+		t.Run(tc.name, func(t *testing.T) {
+			runnerFlags := append(baselineRunnerFlags, tc.repoFlags...)
+			result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+			runnerInvocation := getRunnerInvocation(t, app, result)
+			// We should be able to see both of the changes we made, since they should
+			// be merged together.
+			assert.Contains(t, runnerInvocation.ConsoleBuffer, "NONCONFLICTING_EDIT_1", tc.name)
+			assert.Contains(t, runnerInvocation.ConsoleBuffer, "NONCONFLICTING_EDIT_2", tc.name)
+		})
 	}
 }
 
@@ -1077,30 +1081,31 @@ func TestRunAction_RespectsCommitSha(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		wsPath := testfs.MakeTempDir(t)
-		repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
+		t.Run(fmt.Sprintf("setBranchName_%t", tc.setBranchName), func(t *testing.T) {
+			wsPath := testfs.MakeTempDir(t)
+			repoPath, initialCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
 
-		baselineRunnerFlags := []string{
-			"--workflow_id=test-workflow",
-			"--action_name=Print args",
-			"--trigger_event=push",
-			"--pushed_repo_url=file://" + repoPath,
-			"--target_repo_url=file://" + repoPath,
-		}
-		// Start the app so the runner can use it as the BES backend.
-		app := buildbuddy.Run(t)
-		baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
-		if tc.setBranchName {
-			baselineRunnerFlags = append(baselineRunnerFlags, "--pushed_branch=master", "--target_branch=master")
-		}
+			baselineRunnerFlags := []string{
+				"--workflow_id=test-workflow",
+				"--action_name=Print args",
+				"--trigger_event=push",
+				"--pushed_repo_url=file://" + repoPath,
+				"--target_repo_url=file://" + repoPath,
+			}
+			// Start the app so the runner can use it as the BES backend.
+			app := buildbuddy.Run(t)
+			baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
+			if tc.setBranchName {
+				baselineRunnerFlags = append(baselineRunnerFlags, "--pushed_branch=master", "--target_branch=master")
+			}
 
-		runnerFlagsCommit1 := append(baselineRunnerFlags, "--commit_sha="+initialCommitSHA)
-		result := invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
-		checkRunnerResult(t, result)
-		assert.Contains(t, result.Output, "args: {{ Hello world }}")
+			runnerFlagsCommit1 := append(baselineRunnerFlags, "--commit_sha="+initialCommitSHA)
+			result := invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
+			checkRunnerResult(t, result)
+			assert.Contains(t, result.Output, "args: {{ Hello world }}")
 
-		// Commit changes to the print statement in the workflow config
-		modifiedWorkflowConfig := `
+			// Commit changes to the print statement in the workflow config
+			modifiedWorkflowConfig := `
 actions:
   - name: "Print args"
     triggers:
@@ -1109,37 +1114,38 @@ actions:
     bazel_commands:
       - run //:print_args -- "Switcheroo!"
 `
-		newCommitSha := testgit.CommitFiles(t, repoPath, map[string]string{"buildbuddy.yaml": modifiedWorkflowConfig})
+			newCommitSha := testgit.CommitFiles(t, repoPath, map[string]string{"buildbuddy.yaml": modifiedWorkflowConfig})
 
-		// When invoked with the initial commit sha, should not contain the modified print statement
-		result = invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
-		if !tc.setBranchName {
-			// Older versions of Git do not support fetching non-HEAD commits by
-			// default. In this case, if pushed_branch is not set as a fallback, the
-			// fetch will fail. However, the default behavior for this has since
-			// changed and the old behavior been entirely removed as an option in
-			// https://patchwork.kernel.org/project/git/patch/20181217221625.1523-1-avarab@gmail.com/#22387021
-			if result.ExitCode != 0 {
-				require.NotEqual(t, 0, result.ExitCode)
-				// The DO_NOT_RECYCLE file should get created here since we failed
-				// to set up the workspace - recreate the workspace here to match
-				// what the executor would do.
-				require.True(t, testfs.Exists(t, wsPath, ".BUILDBUDDY_DO_NOT_RECYCLE"))
-				wsPath = testfs.MakeTempDir(t)
+			// When invoked with the initial commit sha, should not contain the modified print statement
+			result = invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
+			if !tc.setBranchName {
+				// Older versions of Git do not support fetching non-HEAD commits by
+				// default. In this case, if pushed_branch is not set as a fallback, the
+				// fetch will fail. However, the default behavior for this has since
+				// changed and the old behavior been entirely removed as an option in
+				// https://patchwork.kernel.org/project/git/patch/20181217221625.1523-1-avarab@gmail.com/#22387021
+				if result.ExitCode != 0 {
+					require.NotEqual(t, 0, result.ExitCode)
+					// The DO_NOT_RECYCLE file should get created here since we failed
+					// to set up the workspace - recreate the workspace here to match
+					// what the executor would do.
+					require.True(t, testfs.Exists(t, wsPath, ".BUILDBUDDY_DO_NOT_RECYCLE"))
+					wsPath = testfs.MakeTempDir(t)
+				} else {
+					checkRunnerResult(t, result)
+					assert.Contains(t, result.Output, "args: {{ Hello world }}")
+				}
 			} else {
 				checkRunnerResult(t, result)
 				assert.Contains(t, result.Output, "args: {{ Hello world }}")
 			}
-		} else {
-			checkRunnerResult(t, result)
-			assert.Contains(t, result.Output, "args: {{ Hello world }}")
-		}
 
-		// When invoked with the new commit sha, should contain the modified print statement
-		runnerFlagsCommit2 := append(baselineRunnerFlags, "--commit_sha="+newCommitSha)
-		result = invokeRunner(t, runnerFlagsCommit2, []string{}, wsPath)
-		checkRunnerResult(t, result)
-		assert.Contains(t, result.Output, "args: {{ Switcheroo! }}")
+			// When invoked with the new commit sha, should contain the modified print statement
+			runnerFlagsCommit2 := append(baselineRunnerFlags, "--commit_sha="+newCommitSha)
+			result = invokeRunner(t, runnerFlagsCommit2, []string{}, wsPath)
+			checkRunnerResult(t, result)
+			assert.Contains(t, result.Output, "args: {{ Switcheroo! }}")
+		})
 	}
 }
 
@@ -1195,29 +1201,31 @@ func TestRunAction_PushedRepoOnly(t *testing.T) {
 	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
 
 	for _, tc := range testCases {
-		runnerFlags := append(baselineRunnerFlags, tc.repoFlags...)
-		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
-		checkRunnerResult(t, result)
-		assert.Contains(t, result.Output, "args: {{ Hello world }}", tc.name)
+		t.Run(tc.name, func(t *testing.T) {
+			runnerFlags := append(baselineRunnerFlags, tc.repoFlags...)
+			result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+			checkRunnerResult(t, result)
+			assert.Contains(t, result.Output, "args: {{ Hello world }}", tc.name)
 
-		// Check that metadata was reported correctly
-		runnerInvocation := getRunnerInvocation(t, app, result)
-		var workspaceStatusEvent *bespb.WorkspaceStatus
-		for _, e := range runnerInvocation.Event {
-			if e.BuildEvent.GetWorkspaceStatus() != nil {
-				workspaceStatusEvent = e.BuildEvent.GetWorkspaceStatus()
-				break
+			// Check that metadata was reported correctly
+			runnerInvocation := getRunnerInvocation(t, app, result)
+			var workspaceStatusEvent *bespb.WorkspaceStatus
+			for _, e := range runnerInvocation.Event {
+				if e.BuildEvent.GetWorkspaceStatus() != nil {
+					workspaceStatusEvent = e.BuildEvent.GetWorkspaceStatus()
+					break
+				}
 			}
-		}
-		require.NotNil(t, workspaceStatusEvent, tc.name)
+			require.NotNil(t, workspaceStatusEvent, tc.name)
 
-		workspaceStatusMap := make(map[string]string, len(workspaceStatusEvent.Item))
-		for _, i := range workspaceStatusEvent.Item {
-			workspaceStatusMap[i.GetKey()] = i.GetValue()
-		}
+			workspaceStatusMap := make(map[string]string, len(workspaceStatusEvent.Item))
+			for _, i := range workspaceStatusEvent.Item {
+				workspaceStatusMap[i.GetKey()] = i.GetValue()
+			}
 
-		require.Equal(t, tc.expectedReportingValues["branch"], workspaceStatusMap["GIT_BRANCH"], tc.name)
-		require.Equal(t, tc.expectedReportingValues["commit"], workspaceStatusMap["COMMIT_SHA"], tc.name)
+			require.Equal(t, tc.expectedReportingValues["branch"], workspaceStatusMap["GIT_BRANCH"], tc.name)
+			require.Equal(t, tc.expectedReportingValues["commit"], workspaceStatusMap["COMMIT_SHA"], tc.name)
+		})
 	}
 }
 
@@ -1253,15 +1261,17 @@ func TestRunAction_PushedAndTargetBranchAreEqual(t *testing.T) {
 	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
 
 	for _, tc := range testCases {
-		runnerFlags := baselineRunnerFlags
-		if tc.useSha {
-			runnerFlags = append(runnerFlags, "--commit_sha="+initialCommitSHA)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			runnerFlags := baselineRunnerFlags
+			if tc.useSha {
+				runnerFlags = append(runnerFlags, "--commit_sha="+initialCommitSHA)
+			}
 
-		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
-		checkRunnerResult(t, result)
-		assert.Contains(t, result.Output, "args: {{ Hello world }}", tc.name)
-		assert.NotContains(t, result.Output, "git merge", tc.name)
+			result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+			checkRunnerResult(t, result)
+			assert.Contains(t, result.Output, "args: {{ Hello world }}", tc.name)
+			assert.NotContains(t, result.Output, "git merge", tc.name)
+		})
 	}
 }
 

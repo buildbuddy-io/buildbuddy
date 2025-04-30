@@ -150,7 +150,7 @@ func parseChecksumQualifier(qualifier *rapb.Qualifier) (repb.DigestFunction_Valu
 }
 
 func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest) (*rapb.FetchBlobResponse, error) {
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, p.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, p.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +408,7 @@ func mirrorToCache(
 	}
 	defer rsp.Body.Close()
 	if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
-		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, err)
+		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
 	}
 
 	// If we know what the hash should be and the content length is known,
@@ -417,6 +417,7 @@ func mirrorToCache(
 	if checksumFunc == storageFunc && expectedChecksum != "" && rsp.ContentLength >= 0 {
 		d := &repb.Digest{Hash: expectedChecksum, SizeBytes: rsp.ContentLength}
 		rn := digest.NewCASResourceName(d, remoteInstanceName, storageFunc)
+		rn.SetCompressor(repb.Compressor_ZSTD)
 		if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
 			return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
 		}

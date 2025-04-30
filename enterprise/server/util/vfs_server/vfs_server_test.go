@@ -33,7 +33,7 @@ import (
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	require.NoError(t, err)
 	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	require.NoError(t, err)

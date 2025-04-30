@@ -57,7 +57,10 @@ func createInvocationForTesting(te environment.Env, user string) (string, error)
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, testInvocationID)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	if err != nil {
+		return "", err
+	}
 
 	// Send started event with api key
 	options := ""
@@ -133,7 +136,7 @@ func TestGetInvocation_FetchChildren(t *testing.T) {
 
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
 	te.SetAuthenticator(auth)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
 	require.NoError(t, err)
 	ctx, err = auth.WithAuthenticatedUser(ctx, user1)
 	require.NoError(t, err)

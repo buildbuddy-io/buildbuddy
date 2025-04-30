@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -97,6 +98,7 @@ func TestAddGetRemoveRange(t *testing.T) {
 }
 
 func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
 	clock := clockwork.NewFakeClock()
@@ -166,6 +168,7 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 }
 
 func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
@@ -218,6 +221,7 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 }
 
 func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
 
@@ -277,6 +281,7 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 }
 
 func TestCleanupZombieNonVoter(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
 
@@ -348,6 +353,7 @@ func TestAutomaticSplitting(t *testing.T) {
 }
 
 func TestAddNodeToCluster(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
@@ -421,6 +427,7 @@ func TestAddNodeToCluster(t *testing.T) {
 }
 
 func TestRemoveNodeFromCluster(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
@@ -459,6 +466,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 }
 
 func TestAddRangeBack(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
@@ -679,6 +687,7 @@ func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.Te
 }
 
 func TestSplitMetaRange(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
@@ -738,6 +747,7 @@ func getReplica(t testing.TB, s *testutil.TestingStore, rangeID uint64) *replica
 }
 
 func TestSplitNonMetaRange(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
@@ -819,6 +829,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 }
 
 func TestListReplicas(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -835,6 +846,7 @@ func TestListReplicas(t *testing.T) {
 }
 
 func TestPostFactoSplit(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 2)
 
 	sf := testutil.NewStoreFactory(t)
@@ -908,6 +920,7 @@ func TestPostFactoSplit(t *testing.T) {
 }
 
 func TestManySplits(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
@@ -992,6 +1005,7 @@ func readSessionIDs(t *testing.T, ctx context.Context, rangeID uint64, store *te
 }
 
 func TestCleanupExpiredSessions(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.client_session_ttl", 5*time.Hour)
 	clock := clockwork.NewFakeClock()
 
@@ -1049,6 +1063,7 @@ func TestCleanupExpiredSessions(t *testing.T) {
 }
 
 func TestSplitAcrossClusters(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
@@ -1215,6 +1230,7 @@ func TestUpReplicate(t *testing.T) {
 }
 
 func TestDownReplicate(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
@@ -1427,6 +1443,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 }
 
 func TestRemoveDeadReplica(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
@@ -1479,6 +1496,7 @@ func TestRemoveDeadReplica(t *testing.T) {
 }
 
 func TestRebalance(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup

@@ -1892,6 +1892,18 @@ var (
 		HTTPMethodLabel,
 	})
 
+	HTTPClientResponseSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "client_response_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Response size of response for each HTTP client request in **bytes**.",
+	}, []string{
+		HTTPHostLabel,
+		HTTPMethodLabel,
+		HTTPResponseCodeLabel,
+	})
+
 	// ## Internal metrics
 	//
 	// These metrics are for monitoring lower-level subsystems of BuildBuddy.
@@ -3044,6 +3056,15 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheFindMissingDigestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_find_missing_digest_count",
+		Help:      "Count of digests within FindMissing requests.",
+	}, []string{
+		CacheNameLabel,
+	})
+
 	// ## Podman metrics
 
 	PodmanSociStoreCrashes = promauto.NewCounter(prometheus.CounterOpts{
@@ -3254,6 +3275,26 @@ var (
 	}, []string{
 		GroupID,
 		StatusLabel,
+	})
+
+	OCIRegistryCacheDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ociregistry",
+		Name:      "cache_download_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Number of bytes downloaded from the cache by the OCI registry mirror (only tracking CAS currently)",
+	}, []string{
+		CacheTypeLabel,
+	})
+
+	OCIRegistryCacheEvents = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ociregistry",
+		Name:      "cache_events",
+		Help:      "Number of cache events handled.",
+	}, []string{
+		CacheTypeLabel,
+		CacheEventTypeLabel,
 	})
 )
 

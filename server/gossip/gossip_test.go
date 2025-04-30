@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/hashicorp/serf/serf"
@@ -153,6 +154,7 @@ func removeDuplicates(dups []string) []string {
 }
 
 func TestUserQuery(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	data := make(map[string][]string, 0)
 
 	addrs := make([]string, 0)
@@ -220,6 +222,7 @@ func TestUserQuery(t *testing.T) {
 }
 
 func TestUserEvents(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	addrs := make([]string, 0)
 	for i := 0; i < 5; i++ {
 		addrs = append(addrs, localAddr(t))

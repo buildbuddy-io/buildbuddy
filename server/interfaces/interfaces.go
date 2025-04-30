@@ -230,7 +230,7 @@ type BuildEventChannel interface {
 }
 
 type BuildEventHandler interface {
-	OpenChannel(ctx context.Context, iid string) BuildEventChannel
+	OpenChannel(ctx context.Context, iid string) (BuildEventChannel, error)
 }
 
 type GitHubStatusService interface {
@@ -840,7 +840,7 @@ type SplashPrinter interface {
 }
 
 type RemoteExecutionService interface {
-	Dispatch(ctx context.Context, req *repb.ExecuteRequest) (string, error)
+	Dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action) (string, error)
 	Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error
 	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
 	PublishOperation(stream repb.Execution_PublishOperationServer) error

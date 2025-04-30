@@ -56,6 +56,7 @@ type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	SnapshotCluster(ctx context.Context, rangeID uint64) error
+	StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error)
 	NHID() string
 }
 
@@ -87,16 +88,21 @@ type Replica struct {
 
 	fileStorer filestore.Store
 
-	quitChan  chan struct{}
 	broadcast chan<- events.Event
 
 	readQPS        *qps.Counter
 	raftProposeQPS *qps.Counter
 
-	lockedKeys map[string][]byte       // key => txid
-	prepared   map[string]pebble.Batch // string(txid) => prepared batch.
+	// txid that locked the mapped range.
+	// We want to lock the mapped range when we are in the process of splitting.
+	mappedRangeLockingTXID []byte
+	lockedKeys             map[string][]byte       // key => txid
+	prepared               map[string]pebble.Batch // string(txid) => prepared batch.
 
 	entriesBetweenUsageChecks uint64
+
+	bgCtx      context.Context
+	bgCancelFn context.CancelFunc
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -463,6 +469,12 @@ func (sm *Replica) checkLocks(wb pebble.Batch, txid []byte) error {
 		if ok && !bytes.Equal(txid, lockingTxid) {
 			return status.UnavailableErrorf("[%s] Conflict on key %q, locked by %q", sm.name(), keyString, string(lockingTxid))
 		}
+		sm.rangeMu.RLock()
+		containsKey := sm.mappedRange != nil && sm.mappedRange.Contains(ukey)
+		sm.rangeMu.RUnlock()
+		if containsKey && len(sm.mappedRangeLockingTXID) > 0 && !bytes.Equal(txid, sm.mappedRangeLockingTXID) {
+			return status.UnavailableErrorf("[%s] Conflict on key %q, locked by %q", sm.name(), keyString, string(sm.mappedRangeLockingTXID))
+		}
 	}
 	return nil
 }
@@ -533,6 +545,10 @@ func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest
 	// If not, acquire locks for all changed keys.
 	sm.acquireLocks(txn, txid)
 
+	if batchReq.GetLockMappedRange() {
+		sm.mappedRangeLockingTXID = txid
+	}
+
 	// Save the txn batch in memory.
 	sm.prepared[string(txid)] = txn
 	loaded = true
@@ -576,17 +592,6 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
 	txKey = sm.replicaLocalKey(txKey)
 
-	// Lookup our request so that post-commit hooks can be applied, then
-	// delete it from the batch, since the txn is being committed.
-	batchReq := &rfpb.BatchCmdRequest{}
-	iter, err := txn.NewIter(nil /*default iterOptions*/)
-	if err != nil {
-		return err
-	}
-	defer iter.Close()
-	if err := pebble.LookupProto(iter, txKey, batchReq); err != nil {
-		return err
-	}
 	txn.Delete(txKey, nil /*ignore write options*/)
 
 	if err := txn.Commit(pebble.Sync); err != nil {
@@ -594,10 +599,6 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 	}
 	sm.updateInMemoryState(txn)
 
-	// Run post commit hooks, if any are set.
-	for _, hook := range batchReq.GetPostCommitHooks() {
-		sm.handlePostCommit(hook)
-	}
 	return nil
 }
 
@@ -784,7 +785,6 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	}
 	defer db.Close()
 
-	sm.quitChan = make(chan struct{})
 	if err := sm.loadReplicaState(db); err != nil {
 		return 0, err
 	}
@@ -1251,10 +1251,37 @@ func statusProto(err error) *statuspb.Status {
 func (sm *Replica) handlePostCommit(hook *rfpb.PostCommitHook) {
 	if snap := hook.GetSnapshotCluster(); snap != nil {
 		go func() {
-			if err := sm.store.SnapshotCluster(context.TODO(), sm.rangeID); err != nil {
-				sm.log.Errorf("Error processing post-commit hook: %s", err)
+			if err := sm.store.SnapshotCluster(sm.bgCtx, sm.rangeID); err != nil {
+				sm.log.Errorf("Error processing snapshotCluster post-commit hook: %s", err)
 			}
 		}()
+		return
+	}
+
+	if startShard := hook.GetStartShard(); startShard != nil {
+		localNHID := sm.store.NHID()
+		targetReplicaID := uint64(0)
+		initialMember := startShard.GetInitialMember()
+		for replicaID, nhid := range initialMember {
+			if nhid == localNHID {
+				targetReplicaID = replicaID
+			}
+		}
+		if targetReplicaID == 0 {
+			sm.log.Errorf("Error processing start shard post-commit hook: cannot find replica id for nhid %q in initial members %v", localNHID, initialMember)
+		} else {
+			req := &rfpb.StartShardRequest{
+				RangeId:       startShard.GetRangeId(),
+				ReplicaId:     targetReplicaID,
+				InitialMember: initialMember,
+			}
+			go func() {
+				if _, err := sm.store.StartShard(sm.bgCtx, req); err != nil {
+					sm.log.Errorf("Error processing start shard post-commit hook: %s", err)
+				}
+			}()
+		}
+		return
 	}
 }
 
@@ -2061,9 +2088,7 @@ func (sm *Replica) TestingDB() (pebble.IPebbleDB, error) {
 // IOnDiskStateMachine instance has been closed, the Close method is not
 // allowed to update the state of IOnDiskStateMachine visible to the outside.
 func (sm *Replica) Close() error {
-	if sm.quitChan != nil {
-		close(sm.quitChan)
-	}
+	sm.bgCancelFn()
 
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
@@ -2081,6 +2106,7 @@ func (sm *Replica) Close() error {
 
 // New creates a new Replica, an on-disk state machine.
 func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
+	bgCtx, bgCancelFn := context.WithCancel(context.Background())
 	repl := &Replica{
 		rangeID:                   rangeID,
 		replicaID:                 replicaID,
@@ -2096,6 +2122,8 @@ func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcas
 		lockedKeys:                make(map[string][]byte),
 		prepared:                  make(map[string]pebble.Batch),
 		entriesBetweenUsageChecks: uint64(*entriesBetweenUsageChecks),
+		bgCtx:                     bgCtx,
+		bgCancelFn:                bgCancelFn,
 	}
 	repl.log = log.NamedSubLogger(repl.name())
 	return repl

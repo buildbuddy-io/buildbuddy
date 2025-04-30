@@ -48,7 +48,7 @@ func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticat
 	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(userMap)
 	te.SetAuthenticator(ta)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -994,7 +994,7 @@ func TestHintedHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, env)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}

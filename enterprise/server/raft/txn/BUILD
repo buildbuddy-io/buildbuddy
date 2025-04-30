@@ -14,6 +14,7 @@ go_library(
         "//proto:raft_go_proto",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/retry",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
     ],

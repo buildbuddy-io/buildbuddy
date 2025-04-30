@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -38,6 +39,8 @@ import (
 const (
 	uploadBufSizeBytes    = 1000000 // 1MB
 	maxCompressionBufSize = int64(4000000)
+	// Matches https://github.com/bazelbuild/bazel/blob/9c22032c8dc0eb2ec20d8b5a5c73d1f5f075ae37/src/main/java/com/google/devtools/build/lib/remote/options/RemoteOptions.java#L461-L464
+	minSizeBytesToCompress = 100
 )
 
 var (
@@ -45,7 +48,7 @@ var (
 	casRPCTimeout               = flag.Duration("cache.client.cas_rpc_timeout", 1*time.Minute, "Maximum time a single batch RPC or a single ByteStream chunk read can take.")
 	acRPCTimeout                = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
 	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250304", "A salt to invalidate filecache tree hashes, if/when needed.")
-	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", false, "If true, GetTree requests will set send_cached_subtree_digests.")
+	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", true, "If true, GetTree requests will set send_cached_subtree_digests.")
 )
 
 func retryOptions(name string) *retry.Options {
@@ -250,6 +253,23 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if r.IsEmpty() {
 		return r.GetDigest(), 0, nil
 	}
+
+	if r.GetCompressor() == repb.Compressor_IDENTITY {
+		w, err := newUploadWriteCloser(ctx, bsClient, r)
+		if err != nil {
+			return nil, 0, err
+		}
+		bytesUploaded, err := w.ReadFrom(in)
+		if err != nil {
+			w.Close()
+			return nil, 0, err
+		}
+		if err := w.Close(); err != nil {
+			return nil, 0, err
+		}
+		return r.GetDigest(), bytesUploaded, nil
+	}
+
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -401,6 +421,7 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 	if err != nil {
 		return nil, err
 	}
+	maybeSetCompressor(resourceName)
 	// Go back to the beginning so we can re-read the file contents as we upload.
 	if _, err := reader.Seek(0, io.SeekStart); err != nil {
 		return nil, err
@@ -414,6 +435,7 @@ func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	if err != nil {
 		return nil, err
 	}
+	maybeSetCompressor(resourceName)
 	// Go back to the beginning so we can re-read the file contents as we upload.
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
 		return nil, err
@@ -432,12 +454,10 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	if err != nil {
 		return nil, err
 	}
+	maybeSetCompressor(resourceName)
 	// Go back to the beginning so we can re-read the file contents as we upload.
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return nil, err
-	}
-	if *enableUploadCompression {
-		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
 	result, _, err := UploadFromReader(ctx, bsClient, resourceName, f)
 	return result, err
@@ -511,6 +531,7 @@ func UploadBlobToCAS(ctx context.Context, bsClient bspb.ByteStreamClient, instan
 	if resourceName.IsEmpty() {
 		return d, nil
 	}
+	maybeSetCompressor(resourceName)
 	result, _, err := UploadFromReader(ctx, bsClient, resourceName, reader)
 	return result, err
 }
@@ -617,7 +638,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	r := io.ReadCloser(rsc)
 
 	compressor := repb.Compressor_IDENTITY
-	if ul.supportsCompression() {
+	if ul.supportsCompression() && d.GetSizeBytes() >= minSizeBytesToCompress {
 		compressor = repb.Compressor_ZSTD
 	}
 
@@ -1069,4 +1090,115 @@ func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient 
 
 func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.CASResourceName) (*repb.Tree, error) {
 	return GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, casClient, r, nil, nil)
+}
+
+func maybeSetCompressor(rn *digest.CASResourceName) {
+	if *enableUploadCompression && rn.GetDigest().GetSizeBytes() >= minSizeBytesToCompress {
+		rn.SetCompressor(repb.Compressor_ZSTD)
+	}
+}
+
+type uploadWriteCloser struct {
+	ctx          context.Context
+	stream       bspb.ByteStream_WriteClient
+	sender       rpcutil.Sender[*bspb.WriteRequest]
+	resource     *digest.CASResourceName
+	uploadString string
+
+	bytesUploaded int64
+}
+
+func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
+	written := 0
+	for len(p) > 0 {
+		n := min(len(p), uploadBufSizeBytes)
+		req := &bspb.WriteRequest{
+			Data:         p[:n],
+			ResourceName: cwc.uploadString,
+			WriteOffset:  cwc.bytesUploaded + int64(written),
+			FinishWrite:  false,
+		}
+
+		err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			cwc.bytesUploaded += int64(written)
+			return written, err
+		}
+		written += n
+		p = p[n:]
+	}
+	cwc.bytesUploaded += int64(written)
+	return written, nil
+}
+
+func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
+	buf := make([]byte, uploadBufSizeBytes)
+	var bytesUploaded int64
+	for {
+		n, err := ioutil.ReadTryFillBuffer(r, buf)
+		done := err == io.EOF
+		if err != nil && !done {
+			return bytesUploaded, err
+		}
+		written, err := cwc.Write(buf[:n])
+		if err != nil {
+			return bytesUploaded + int64(written), err
+		}
+		bytesUploaded += int64(written)
+		if done {
+			break
+		}
+	}
+	return bytesUploaded, nil
+}
+
+func (cwc *uploadWriteCloser) Close() error {
+	req := &bspb.WriteRequest{
+		ResourceName: cwc.uploadString,
+		WriteOffset:  cwc.bytesUploaded,
+		FinishWrite:  true,
+	}
+
+	err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+	if err != nil {
+		return err
+	}
+
+	rsp, err := cwc.stream.CloseAndRecv()
+	if err != nil {
+		return err
+	}
+
+	remoteSize := rsp.GetCommittedSize()
+	// Either the write succeeded or was short-circuited, but in
+	// either case, the remoteSize for uncompressed uploads should
+	// match the file size.
+	if remoteSize != cwc.resource.GetDigest().GetSizeBytes() {
+		return status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, cwc.resource.GetDigest().GetSizeBytes())
+	}
+	return nil
+}
+
+func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*uploadWriteCloser, error) {
+	if bsClient == nil {
+		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
+	}
+	if r.GetCompressor() != repb.Compressor_IDENTITY {
+		return nil, status.FailedPreconditionError("casWriteCloser does not support compression")
+	}
+	stream, err := bsClient.Write(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+	return &uploadWriteCloser{
+		ctx:          ctx,
+		stream:       stream,
+		sender:       sender,
+		resource:     r,
+		uploadString: r.NewUploadString(),
+	}, nil
 }

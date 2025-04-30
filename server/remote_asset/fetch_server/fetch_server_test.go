@@ -197,7 +197,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 			clientConn := runFetchServer(ctx, t, te)
 			fetchClient := rapb.NewFetchClient(clientConn)
 
-			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(t, err)
 
 			checksumDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.checksumFunc)

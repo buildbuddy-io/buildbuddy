@@ -196,11 +196,11 @@ func (a *githubAuthenticator) Logout(w http.ResponseWriter, r *http.Request) err
 	// their access token.
 	jwt := cookie.GetCookie(r, cookie.JWTCookie)
 	if jwt == "" {
-		return status.UnauthenticatedError("Logged out!")
+		return nil
 	}
 	sessionID := cookie.GetCookie(r, cookie.SessionIDCookie)
 	if sessionID == "" {
-		return status.UnauthenticatedError("Logged out!")
+		return nil
 	}
 
 	if authDB := a.env.GetAuthDB(); authDB != nil {
@@ -208,7 +208,7 @@ func (a *githubAuthenticator) Logout(w http.ResponseWriter, r *http.Request) err
 			log.Errorf("Error clearing user session on logout: %s", err)
 		}
 	}
-	return status.UnauthenticatedError("Logged out!")
+	return nil
 }
 
 func (a *githubAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
@@ -23,6 +24,10 @@ import (
 
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
+
+const headerDockerContentDigest = "Docker-Content-Digest"
+
+var blobsPathRegexp = regexp.MustCompile("/v2/(.+?)/blobs/(.+)")
 
 type Opts struct {
 	// An interceptor applied to HTTP calls. Returns true if the request
@@ -41,14 +46,27 @@ func Run(t *testing.T, opts Opts) *Registry {
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
 
+	// Docker Hub returns a Docker-Content-Digest header for manifests,
+	// but not for blobs (layers).
+	// Make sure the test registry does not return a Docker-Content-Digest
+	// header for blobs (layers), so that clients do not accidentally
+	// depend on this header.
 	f := http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			mux.ServeHTTP(w, r)
+			rw := w
+			if blobsPathRegexp.MatchString(r.URL.Path) {
+				rw = &discardingResponseWriter{w}
+			}
+			mux.ServeHTTP(rw, r)
 		})
 	if opts.HttpInterceptor != nil {
 		f = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if opts.HttpInterceptor(w, r) {
-				mux.ServeHTTP(w, r)
+			rw := w
+			if blobsPathRegexp.MatchString(r.URL.Path) {
+				rw = &discardingResponseWriter{w}
+			}
+			if opts.HttpInterceptor(rw, r) {
+				mux.ServeHTTP(rw, r)
 			}
 		})
 	}
@@ -176,4 +194,22 @@ func (ul *bytesLayer) Uncompressed() (io.ReadCloser, error) {
 // MediaType returns the media type of the layer
 func (ul *bytesLayer) MediaType() (types.MediaType, error) {
 	return ul.mediaType, nil
+}
+
+type discardingResponseWriter struct {
+	http.ResponseWriter
+}
+
+func (rw *discardingResponseWriter) Header() http.Header {
+	return rw.ResponseWriter.Header()
+}
+
+func (rw *discardingResponseWriter) Write(p []byte) (int, error) {
+	rw.ResponseWriter.Header().Del(headerDockerContentDigest)
+	return rw.ResponseWriter.Write(p)
+}
+
+func (rw *discardingResponseWriter) WriteHeader(statusCode int) {
+	rw.ResponseWriter.Header().Del(headerDockerContentDigest)
+	rw.ResponseWriter.WriteHeader(statusCode)
 }

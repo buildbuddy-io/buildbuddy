@@ -179,8 +179,13 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			if streamID == nil && in.GetOrderedBuildEvent().GetStreamId().GetInvocationId() != "" {
 				streamID = in.GetOrderedBuildEvent().GetStreamId()
 				ctx = log.EnrichContext(ctx, log.InvocationIDKey, streamID.GetInvocationId())
-				channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.GetInvocationId())
+				newChannel, err := s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.GetInvocationId())
+				if err != nil {
+					log.CtxWarningf(ctx, "Failed to open invocation channel: %s", err)
+					return err
+				}
 				log.CtxInfo(ctx, "Opened invocation channel")
+				channel = newChannel
 				channelDone = channel.Context().Done()
 				defer channel.Close()
 			}

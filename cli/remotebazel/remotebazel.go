@@ -241,6 +241,11 @@ func parseRemote(s string) (*gitRemote, error) {
 // `ref: refs/heads/main	HEAD`
 // and this function would return `main`.
 func determineDefaultBranch(remoteData string) (string, error) {
+	defaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH")
+	if defaultBranch != "" {
+		return defaultBranch, nil
+	}
+
 	re := regexp.MustCompile(`ref: refs/heads/(\S+)\s+HEAD`)
 	match := re.FindStringSubmatch(remoteData)
 	if len(match) > 1 {
@@ -308,9 +313,17 @@ func Config() (*RepoConfig, error) {
 	fetchURL := remote.url
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
-	remoteData, err := runGit("ls-remote", "--symref", remote.name)
-	if err != nil {
-		return nil, status.WrapErrorf(err, "git remote show %s", remote.name)
+	// Fetching remote data from GitHub can be slow. If we don't need the data
+	// because the user has passed in enough information manually, skip the fetch.
+	shouldFetchBaseRef := *runFromBranch == "" && *runFromCommit == ""
+	shouldFetchDefaultBranch := os.Getenv("GIT_REPO_DEFAULT_BRANCH") == ""
+	shouldFetchRemote := shouldFetchBaseRef || shouldFetchDefaultBranch
+	var remoteData string
+	if shouldFetchRemote {
+		remoteData, err = runGit("ls-remote", "--symref", remote.name)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "git remote show %s", remote.name)
+		}
 	}
 
 	branch, commit, err := getBaseBranchAndCommit(remoteData)
@@ -836,12 +849,17 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		envVars["BUILD_USER"] = val
 	}
 
-	// If not explicitly set, try to set the default branch env var,
-	// because it will allow us to fallback to snapshots for the default branch
+	// If not explicitly set, try to set the default and base branch env vars,
+	// because it will allow us to fallback to snapshots for those branches
 	// if there is no snapshot for the current branch
-	if !(contains(envVars, "GIT_REPO_DEFAULT_BRANCH") || contains(envVars, "GIT_BASE_BRANCH")) {
+	if !contains(envVars, "GIT_REPO_DEFAULT_BRANCH") {
 		defaultBranch := strings.TrimPrefix(repoConfig.DefaultBranch, "refs/heads/")
 		envVars["GIT_REPO_DEFAULT_BRANCH"] = defaultBranch
+	}
+	if !contains(envVars, "GIT_BASE_BRANCH") {
+		// $GITHUB_BASE_REF is set on GitHub Action runners automatically.
+		// It represents the name of the base ref for a pull request.
+		envVars["GIT_BASE_BRANCH"] = os.Getenv("GITHUB_BASE_REF")
 	}
 
 	if *useSystemGitCredentials {

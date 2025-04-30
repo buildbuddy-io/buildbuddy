@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -200,13 +201,6 @@ func WaitUntilExists(ctx context.Context, path string, opts WaitOpts) error {
 type readCloser struct {
 	*io.SectionReader
 	io.Closer
-	ctx context.Context
-}
-
-func (r *readCloser) Read(p []byte) (int, error) {
-	_, spn := tracing.StartSpan(r.ctx)
-	defer spn.End()
-	return r.SectionReader.Read(p)
 }
 
 func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.ReadCloser, error) {
@@ -214,14 +208,13 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 	if err != nil {
 		return nil, err
 	}
-	if length > 0 {
-		return &readCloser{io.NewSectionReader(f, offset, length), f, ctx}, nil
+	if offset == 0 && length == 0 {
+		return f, nil
 	}
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
+	if length == 0 {
+		length = math.MaxInt64
 	}
-	return &readCloser{io.NewSectionReader(f, offset, info.Size()-offset), f, ctx}, nil
+	return &readCloser{io.NewSectionReader(f, offset, length), f}, nil
 }
 
 type writeMover struct {

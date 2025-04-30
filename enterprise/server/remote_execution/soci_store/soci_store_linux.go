@@ -289,7 +289,7 @@ func getArtifacts(ctx context.Context, client socipb.SociArtifactStoreClient, en
 			Observe(float64(time.Since(startTime).Microseconds()))
 	}()
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	if err != nil {
 		return err
 	}

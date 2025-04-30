@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
@@ -551,17 +552,20 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	// TODO(http://go/b/1192): Figure out why CloseAndRecv() hangs if we call
 	// it too soon after establishing the clientStream, and remove this delay.
 	const closeStreamDelay = 10 * time.Millisecond
-	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, st, clientStream); err != nil {
-		log.CtxWarningf(ctx, "ExecuteTaskAndStreamResults error: %s", err)
-		time.Sleep(time.Until(start.Add(closeStreamDelay)))
-		if _, streamErr := clientStream.CloseAndRecv(); streamErr != nil {
-			log.CtxWarningf(ctx, "Error closing execution status update stream: %s", streamErr)
-		}
-		return retry, err
+
+	retry, executionError := q.exec.ExecuteTaskAndStreamResults(ctx, st, clientStream)
+	if executionError != nil {
+		log.CtxWarningf(ctx, "ExecuteTaskAndStreamResults error: %s", executionError)
 	}
+
 	time.Sleep(time.Until(start.Add(closeStreamDelay)))
-	if _, err = clientStream.CloseAndRecv(); err != nil {
-		return true, status.WrapError(err, "failed to finalize execution update stream")
+	if _, streamErr := clientStream.CloseAndRecv(); streamErr != nil {
+		log.CtxWarningf(ctx, "Error closing execution status update stream: %s", streamErr)
+		return true, status.WrapError(streamErr, "finalize execution update stream")
+	}
+
+	if executionError != nil {
+		return retry, executionError
 	}
 	return false, nil
 }
@@ -802,6 +806,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 	ctx := log.EnrichContext(q.rootContext, log.ExecutionIDKey, reservation.GetTaskId())
 	ctx, cancel := context.WithCancel(ctx)
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, reservation.GetTraceMetadata())
+	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, reservation.GetJwt())
 	log.CtxInfof(ctx, "Scheduling task of size %s", tasksize.String(nextTask.GetTaskSize()))
 
 	q.trackTask(reservation, &cancel)

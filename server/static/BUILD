@@ -22,7 +22,7 @@ go_library(
         "//server/util/status",
         "//server/util/subdomain",
         "//server/version",
-        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@io_bazel_rules_go//go/tools/bazel",
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )

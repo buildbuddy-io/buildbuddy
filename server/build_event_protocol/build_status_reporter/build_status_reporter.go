@@ -77,6 +77,11 @@ func (r *BuildStatusReporter) initGHClient(ctx context.Context) interfaces.GitHu
 
 func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, repoURL string) bool {
 	r.once.Do(func() {
+		if github.AlwaysEnableStatusReporting() {
+			r.shouldReportCommitStatuses = true
+			return
+		}
+
 		dbh := r.env.GetDBHandle()
 		if dbh == nil {
 			return

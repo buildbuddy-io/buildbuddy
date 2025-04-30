@@ -387,8 +387,11 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 				return status.WrapError(err, "apply overlay upperdir changes")
 			}
 		}
+		// Don't try to add files to the filecache if VFS is enabled. We use hard links to store data in the file
+		// cache and hard links across filesystems are not possible.
+		addToFileCache := ws.vfs == nil
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.inputRoot(), cmd, executeResponse.Result)
+		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.inputRoot(), cmd, executeResponse.Result, addToFileCache)
 		return err
 	})
 	var logsMu sync.Mutex

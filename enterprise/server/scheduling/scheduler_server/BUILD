@@ -25,6 +25,7 @@ go_library(
         "//server/remote_execution/config",
         "//server/resources",
         "//server/scheduling/scheduler_server/config",
+        "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
         "//server/util/grpc_client",
@@ -46,15 +47,17 @@ go_library(
 
 go_test(
     name = "scheduler_server_test",
-    size = "small",
+    size = "medium",
     srcs = ["scheduler_server_test.go"],
     embed = [":scheduler_server"],
     deps = [
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize",
+        "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testredis",
+        "//proto:context_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/environment",

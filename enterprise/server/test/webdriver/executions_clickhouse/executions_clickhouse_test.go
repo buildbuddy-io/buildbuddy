@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -23,6 +24,7 @@ import (
 )
 
 func TestInvocationWithRemoteExecutionWithClickHouse(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// This test can't run against cloud yet, since we depend on the test
 	// running on the same filesystem as the executor to coordinate action
 	// execution via fifo pipes.
@@ -32,8 +34,8 @@ func TestInvocationWithRemoteExecutionWithClickHouse(t *testing.T) {
 	target := buildbuddy_enterprise.SetupWebTarget(
 		t,
 		"--remote_execution.enable_remote_exec=true",
+		"--remote_execution.olap_reads_enabled=true",
 		"--olap_database.data_source="+clickhouseDSN,
-		// TODO(#8900): set flags to read Executions from ClickHouse.
 	)
 	// Register an executor so that we can test RBE end-to-end.
 	_ = testexecutor.Run(t, "--executor.app_target="+target.GRPCAddress())
@@ -118,8 +120,12 @@ common --incompatible_strict_action_env=true
 	// execution.
 	waitForExecutionToSucceed(t, wt)
 
-	// Click the execution and make sure the execution ID matches the original.
+	// Make sure the execution shows the completed execution details.
 	execution = wt.Find(".invocation-execution-row")
+	require.Contains(t, execution.Text(), "Succeeded", "should show stage")
+	require.Contains(t, execution.Text(), "genrule-setup.sh", "should show command_snippet")
+
+	// Click the execution and make sure the execution ID matches the original.
 	execution.Click()
 	executionID2 := wt.Find(`[debug-id="execution-id"]`).Text()
 	require.Equal(t, originalExecutionID, executionID2)

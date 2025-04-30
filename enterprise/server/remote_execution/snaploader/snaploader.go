@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -116,7 +115,6 @@ func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.
 		return "", err
 	}
 	rn := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
-	ctx = proxy_util.SetSkipRemote(ctx)
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if status.IsNotFoundError(err) {
 		// Version metadata might not exist in the cache if:
@@ -229,7 +227,7 @@ func SnapshotVersionKey(s *fcpb.SnapshotKey) (*repb.Digest, error) {
 	}, nil
 }
 
-func KeyDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey, remote bool) string {
+func snapshotDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKey, remote bool, snapshotID string) string {
 	gid, err := groupID(ctx, env)
 	if err != nil {
 		gid = fmt.Sprintf("<error: %s>", err)
@@ -250,15 +248,24 @@ func KeyDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKe
 	if err != nil {
 		jb = []byte(fmt.Sprintf("%q", err))
 	}
-	return fmt.Sprintf(`{"group_id": %q, "instance_name": %q, "key_digest": %q, "key": %s}`, gid, s.InstanceName, dStr, string(jb))
+	idStr := ""
+	if snapshotID != "" {
+		idStr = fmt.Sprintf(`"snapshot_id": %q, `, snapshotID)
+	}
+	return fmt.Sprintf(`{"group_id": %q, "instance_name": %q, %s"key_digest": %q, "key": %s}`, gid, s.InstanceName, idStr, dStr, string(jb))
+
 }
 
 func KeysetDebugString(ctx context.Context, env environment.Env, s *fcpb.SnapshotKeySet, remote bool) string {
-	keySetStr := KeyDebugString(ctx, env, s.GetBranchKey(), remote)
+	keySetStr := snapshotDebugString(ctx, env, s.GetBranchKey(), remote, "" /*snapshotID*/)
 	for _, key := range s.FallbackKeys {
-		keySetStr += fmt.Sprintf(", %s", KeyDebugString(ctx, env, key, remote))
+		keySetStr += fmt.Sprintf(", %s", snapshotDebugString(ctx, env, key, remote, "" /*snapshotID*/))
 	}
 	return keySetStr
+}
+
+func SnapshotDebugString(ctx context.Context, env environment.Env, s *Snapshot) string {
+	return snapshotDebugString(ctx, env, s.GetKey(), s.remoteEnabled, s.GetVMMetadata().GetSnapshotId())
 }
 
 func fileDigest(filePath string) (*repb.Digest, error) {
@@ -430,12 +437,6 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 		return nil, err
 	}
 	rn := digest.NewACResourceName(manifestKey, key.InstanceName, repb.DigestFunction_BLAKE3)
-
-	// If the proxy is enabled, skip writing snapshots to the remote cache to minimize
-	// high network transfer. Snapshots can't be shared across different machine
-	// types, so there's no reason to support snapshot sharing across clusters.
-	ctx = proxy_util.SetSkipRemote(ctx)
-
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if err != nil {
 		return nil, err
@@ -715,7 +716,6 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.SnapshotKey, ar *repb.ActionResult, opts *CacheSnapshotOptions) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	ctx = proxy_util.SetSkipRemote(ctx)
 	b, err := proto.Marshal(ar)
 	if err != nil {
 		return err
@@ -730,7 +730,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, ar); err != nil {
 			return err
 		}
-		log.CtxInfof(ctx, "Cached master remote snapshot manifest %s", KeyDebugString(ctx, l.env, key, true /*remote*/))
+		log.CtxInfof(ctx, "Updated remote master snapshot manifest %s", snapshotDebugString(ctx, l.env, key, true /*remote*/, "" /*=snapshotID*/))
 
 		// Cache snapshot manifest for this specific snapshot ID
 		if opts.VMMetadata.GetSnapshotId() != "" {
@@ -741,15 +741,15 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 			}
 			snapshotSpecificManifestKey, err := RemoteManifestKey(snapshotSpecificKey)
 			if err != nil {
-				log.Warningf("Failed to generate snapshot specific remote manifest key for snapshot ID %s: %s", snapshotID, err)
+				log.CtxWarningf(ctx, "Failed to generate snapshot specific remote manifest key for snapshot ID %s: %s", snapshotID, err)
 				return nil
 			}
 			snapshotSpecificAcDigest := digest.NewACResourceName(snapshotSpecificManifestKey, key.InstanceName, repb.DigestFunction_BLAKE3)
 			if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), snapshotSpecificAcDigest, ar); err != nil {
-				log.Warningf("Failed to cache remote snapshot specific manifest for snapshot ID %s: %s", snapshotID, err)
+				log.CtxWarningf(ctx, "Failed to cache remote snapshot specific manifest for snapshot ID %s: %s", snapshotID, err)
 				return nil
 			}
-			log.CtxInfof(ctx, "Cached remote snapshot manifest for snapshot ID %s: %s", snapshotID, KeyDebugString(ctx, l.env, snapshotSpecificKey, true /*remote*/))
+			log.CtxInfof(ctx, "Cached remote snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, true /*remote*/, snapshotID))
 		}
 
 		return nil
@@ -767,7 +767,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, b); err != nil {
 		return err
 	}
-	log.CtxInfof(ctx, "Cached master local snapshot manifest %s", KeyDebugString(ctx, l.env, key, false /*remote*/))
+	log.CtxInfof(ctx, "Updated local master snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/))
 
 	// Cache snapshot manifest for this specific snapshot ID
 	if opts.VMMetadata.GetSnapshotId() != "" {
@@ -789,7 +789,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 			return nil
 		}
 
-		log.CtxInfof(ctx, "Cached local snapshot manifest for snapshot ID %s: %s", snapshotID, KeyDebugString(ctx, l.env, snapshotSpecificKey, false /*remote*/))
+		log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, false /*remote*/, snapshotID))
 	}
 
 	return nil
@@ -1063,8 +1063,6 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 	}
 
 	acDigest := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
-
-	ctx = proxy_util.SetSkipRemote(ctx)
 	if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, versionMetadataActionResult); err != nil {
 		return "", err
 	}

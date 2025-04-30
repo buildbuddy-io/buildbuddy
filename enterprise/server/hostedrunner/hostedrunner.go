@@ -373,7 +373,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	if err := r.checkPreconditions(req); err != nil {
 		return nil, status.WrapError(err, "check preconditions")
 	}
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
 	if err != nil {
 		return nil, status.WrapError(err, "attach user prefix")
 	}
