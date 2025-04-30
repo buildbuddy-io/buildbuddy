@@ -244,14 +244,11 @@ var Metrics = sync.OnceValue(func() *grpc_prometheus.ServerMetrics {
 
 func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerConfig) []grpc.ServerOption {
 	return []grpc.ServerOption{
+		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithMeterProvider(noop.NewMeterProvider()))),
+		grpc.ChainUnaryInterceptor(propagateRequestMetadataIDsToSpanUnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(propagateRequestMetadataIDsToSpanStreamServerInterceptor()),
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
 		interceptors.GetStreamInterceptor(env, config.ExtraChainedStreamInterceptors...),
-		grpc.ChainUnaryInterceptor(
-			otelgrpc.UnaryServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())),
-			propagateRequestMetadataIDsToSpanUnaryServerInterceptor()),
-		grpc.ChainStreamInterceptor(
-			otelgrpc.StreamServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())),
-			propagateRequestMetadataIDsToSpanStreamServerInterceptor()),
 		grpc.StreamInterceptor(Metrics().StreamServerInterceptor()),
 		grpc.UnaryInterceptor(Metrics().UnaryServerInterceptor()),
 		experimental.BufferPool(mem.DefaultBufferPool()),
