@@ -140,7 +140,8 @@ func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress
 			"--runner_exec_properties=container-image=",
 		},
 		args...)...)
-	err := cmd.Run()
+	b, err := cmd.CombinedOutput()
+	t.Log(string(b))
 	require.NoError(t, err)
 }
 
