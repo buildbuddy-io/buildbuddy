@@ -3286,6 +3286,16 @@ var (
 	}, []string{
 		CacheTypeLabel,
 	})
+
+	OCIRegistryCacheEvents = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ociregistry",
+		Name:      "cache_events",
+		Help:      "Number of cache events handled.",
+	}, []string{
+		CacheTypeLabel,
+		CacheEventTypeLabel,
+	})
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in
