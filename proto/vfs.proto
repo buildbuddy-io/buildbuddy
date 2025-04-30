@@ -81,6 +81,18 @@ message GetDirectoryContentsResponse {
   repeated Node nodes = 1;
 }
 
+message MknodRequest {
+  uint64 parent_id = 1;
+  string name = 2;
+  uint32 mode = 3;
+  uint32 dev = 4;
+}
+
+message MknodResponse {
+  uint64 id = 1;
+  Attrs attrs = 2;
+}
+
 message CreateRequest {
   uint64 parent_id = 1;
   string name = 2;
@@ -227,6 +239,7 @@ message RenameRequest {
   string old_name = 2;
   uint64 new_parent_id = 3;
   string new_name = 4;
+  uint32 flags = 5;
 }
 
 message RenameResponse {}
@@ -318,6 +331,9 @@ service FileSystem {
   rpc Lookup(LookupRequest) returns (LookupResponse);
   rpc GetDirectoryContents(GetDirectoryContentsRequest)
       returns (GetDirectoryContentsResponse);
+
+  // Mknod creates a file system node of a specific type.
+  rpc Mknod(MknodRequest) returns (MknodResponse);
 
   // Create creates a file and returns a file handle.
   rpc Create(CreateRequest) returns (CreateResponse);

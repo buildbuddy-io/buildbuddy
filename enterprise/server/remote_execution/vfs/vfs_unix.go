@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/go-units"
@@ -738,6 +740,37 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	return inode, rf, 0, 0
 }
 
+func (n *Node) Mknod(ctx context.Context, name string, mode uint32, dev uint32, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
+	if n.vfs.verbose {
+		newPath := filepath.Join(n.relativePath(), name)
+		log.CtxDebugf(n.vfs.rpcCtx, "Mknod %q mode %s dev %d", newPath, modeDebugString(mode), dev)
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.rpcCtx, "Mknod %q: %s", newPath, attrDebugString(node, &out.Attr))
+			} else {
+				log.CtxDebugf(n.vfs.rpcCtx, "Mknod %q: %s", newPath, errno)
+			}
+		}()
+	}
+
+	rsp, err := n.vfs.vfsClient.Mknod(n.vfs.getRPCContext(), &vfspb.MknodRequest{
+		ParentId: n.StableAttr().Ino,
+		Name:     name,
+		Mode:     mode,
+		Dev:      dev,
+	})
+	if err != nil {
+		return nil, rpcErrToSyscallErrno(err)
+	}
+
+	fillFuseAttr(&out.Attr, rsp.GetAttrs())
+
+	child := &Node{vfs: n.vfs}
+	inode := n.vfs.root.NewInode(ctx, child, fs.StableAttr{Mode: mode, Ino: rsp.GetId()})
+
+	return inode, 0
+}
+
 func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint64, out *fs.Inode, fhOut fs.FileHandle, offOut uint64, len uint64, flags uint64) (uint32, syscall.Errno) {
 	n.startOP("CopyFileRange")
 	n.resetCachedAttrs()
@@ -770,7 +803,7 @@ func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint
 	return rsp.GetNumBytesCopied(), fs.OK
 }
 
-func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
+func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) (errno syscall.Errno) {
 	n.startOP("Rename")
 	newParentNode, ok := newParent.EmbeddedInode().Operations().(*Node)
 	if !ok {
@@ -778,7 +811,16 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		return syscall.EINVAL
 	}
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Rename %q => %q", filepath.Join(n.relativePath(), name), filepath.Join(newParentNode.relativePath(), newName))
+		oldPath := filepath.Join(n.relativePath(), name)
+		newPath := filepath.Join(newParentNode.relativePath(), newName)
+		log.CtxDebugf(n.vfs.getRPCContext(), "Rename %q => %q (flags %x)", oldPath, newPath, flags)
+		defer func() {
+			if errno == 0 {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Rename %q => %q: OK", oldPath, newPath)
+			} else {
+				log.CtxDebugf(n.vfs.getRPCContext(), "Rename %q => %q: %s", oldPath, newPath, errno)
+			}
+		}()
 	}
 
 	_, err := n.vfs.vfsClient.Rename(n.vfs.getRPCContext(), &vfspb.RenameRequest{
@@ -786,6 +828,7 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		OldName:     name,
 		NewParentId: newParent.EmbeddedInode().StableAttr().Ino,
 		NewName:     newName,
+		Flags:       flags,
 	})
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
@@ -810,7 +853,29 @@ func fillFuseAttr(out *fuse.Attr, attr *vfspb.Attrs) {
 }
 
 func attrDebugString(n *fs.Inode, attr *fuse.Attr) string {
-	return fmt.Sprintf("ino %d size %d mode %#o num links %d", n.StableAttr().Ino, attr.Size, attr.Mode, attr.Nlink)
+	return fmt.Sprintf("ino %d size %d mode %s num links %d", n.StableAttr().Ino, attr.Size, modeDebugString(attr.Mode), attr.Nlink)
+}
+
+func modeDebugString(mode uint32) string {
+	typ := "<UNKNOWN %d>"
+	switch mode & unix.S_IFMT {
+	case unix.S_IFBLK:
+		typ = "S_IFBLK"
+	case unix.S_IFCHR:
+		typ = "S_IFCHR"
+	case unix.S_IFIFO:
+		typ = "S_IFIFO"
+	case unix.S_IFREG:
+		typ = "S_IFREG"
+	case unix.S_IFSOCK:
+		typ = "S_IFSOCK"
+	case unix.S_IFDIR:
+		typ = "S_IFDIR"
+	default:
+		typ = fmt.Sprintf("<UNKNOWN TYPE %d>", mode&unix.S_IFMT)
+	}
+
+	return fmt.Sprintf("%s %#o", typ, mode & ^uint32(unix.S_IFMT))
 }
 
 func (n *Node) getattr() (*vfspb.Attrs, error) {
@@ -1257,5 +1322,6 @@ func (n *Node) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
 	out.Blocks = rsp.TotalBlocks
 	out.Bavail = rsp.BlocksAvailable
 	out.Bfree = rsp.BlocksFree
+	out.NameLen = 255
 	return fs.OK
 }

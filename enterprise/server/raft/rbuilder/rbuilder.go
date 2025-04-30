@@ -148,6 +148,10 @@ func (bb *BatchBuilder) AddPostCommitHook(m proto.Message) *BatchBuilder {
 		bb.cmd.PostCommitHooks = append(bb.cmd.PostCommitHooks, &rfpb.PostCommitHook{
 			SnapshotCluster: value,
 		})
+	case *rfpb.StartShardHook:
+		bb.cmd.PostCommitHooks = append(bb.cmd.PostCommitHooks, &rfpb.PostCommitHook{
+			StartShard: value,
+		})
 	}
 	return bb
 }
@@ -348,27 +352,56 @@ func (br *BatchResponse) FetchRangesResponse(n int) (*rfpb.FetchRangesResponse, 
 	return u.GetFetchRanges(), br.unionError(u)
 }
 
-type txnStatement struct {
-	rangeDescriptor *rfpb.RangeDescriptor
-	rawBatch        *BatchBuilder
-}
-
 type TxnBuilder struct {
-	statements []txnStatement
+	statements []*TxnStatementBuilder
 }
 
 func NewTxn() *TxnBuilder {
 	return &TxnBuilder{
-		statements: make([]txnStatement, 0),
+		statements: make([]*TxnStatementBuilder, 0),
 	}
 }
 
-func (tb *TxnBuilder) AddStatement(rd *rfpb.RangeDescriptor, batch *BatchBuilder) *TxnBuilder {
-	tb.statements = append(tb.statements, txnStatement{
-		rangeDescriptor: rd,
-		rawBatch:        batch,
-	})
-	return tb
+type TxnStatementBuilder struct {
+	rangeDescriptor *rfpb.RangeDescriptor
+	rawBatch        *BatchBuilder
+	hooks           []*rfpb.TransactionHook
+}
+
+func (sb *TxnStatementBuilder) SetRangeDescriptor(rd *rfpb.RangeDescriptor) *TxnStatementBuilder {
+	sb.rangeDescriptor = rd
+	return sb
+}
+
+func (sb *TxnStatementBuilder) SetBatch(batch *BatchBuilder) *TxnStatementBuilder {
+	sb.rawBatch = batch
+	return sb
+}
+
+func (sb *TxnStatementBuilder) AddPostCommitHook(phase rfpb.TransactionHook_Phase, m proto.Message) *TxnStatementBuilder {
+	switch value := m.(type) {
+	case *rfpb.SnapshotClusterHook:
+		sb.hooks = append(sb.hooks, &rfpb.TransactionHook{
+			Phase: phase,
+			Hook: &rfpb.PostCommitHook{
+				SnapshotCluster: value,
+			}})
+	case *rfpb.StartShardHook:
+		sb.hooks = append(sb.hooks, &rfpb.TransactionHook{
+			Phase: phase,
+			Hook: &rfpb.PostCommitHook{
+				StartShard: value,
+			}})
+	}
+	return sb
+}
+
+func (tb *TxnBuilder) AddStatement() *TxnStatementBuilder {
+	sb := &TxnStatementBuilder{
+		hooks: make([]*rfpb.TransactionHook, 0),
+	}
+	tb.statements = append(tb.statements, sb)
+	return sb
 }
 
 func (tb *TxnBuilder) ToProto() (*rfpb.TxnRequest, error) {
@@ -389,6 +422,7 @@ func (tb *TxnBuilder) ToProto() (*rfpb.TxnRequest, error) {
 		req.Statements = append(req.Statements, &rfpb.TxnRequest_Statement{
 			Range:    statement.rangeDescriptor,
 			RawBatch: batchProto,
+			Hooks:    statement.hooks,
 		})
 	}
 	return req, nil

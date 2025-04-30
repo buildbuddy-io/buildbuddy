@@ -88,8 +88,12 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 	for name, value := range m {
 		controller, _, _ := strings.Cut(name, ".")
 		if !enabledControllers[controller] {
-			log.CtxWarningf(ctx, "Skipping cgroup %q setting for disabled cgroup controller %q", name, controller)
-			continue
+			// Attempt to enable the controller if it's not already enabled.
+			if err := EnableController(path, controller); err != nil {
+				log.CtxWarningf(ctx, "Failed to enable cgroup controller %q for cgroup %q: %s", controller, path, err)
+				continue
+			}
+			enabledControllers[controller] = true
 		}
 		settingFilePath := filepath.Join(path, name)
 		if err := os.WriteFile(settingFilePath, []byte(value), 0); err != nil {
@@ -112,6 +116,48 @@ func EnabledControllers(path string) (map[string]bool, error) {
 		enabled[f] = true
 	}
 	return enabled, nil
+}
+
+// EnableController enables the given controller for the cgroup at the given
+// path. It recursively enables the controller for all ancestor cgroups as
+// needed. Note that this will fail if any non-root ancestors have processes in
+// them, since non-root cgroups cannot have child cgroups if they have
+// processes.
+func EnableController(path string, controller string) error {
+	path = filepath.Clean(path)
+	log.Debugf("Enabling cgroup controller %q for %q", controller, path)
+	// Stack of cgroup paths to enable the controller for.
+	var stack []string
+	for {
+		enabled, err := EnabledControllers(path)
+		if err != nil {
+			return fmt.Errorf("read enabled controllers for %q: %w", path, err)
+		}
+		if enabled[controller] {
+			break
+		}
+		path = ParentPath(path)
+		stack = append(stack, path)
+		if path == RootPath {
+			break
+		}
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		log.Infof("Enabling cgroup subtree controller %q for %q", controller, stack[i])
+		if err := WriteSubtreeControl(stack[i], map[string]bool{controller: true}); err != nil {
+			return fmt.Errorf("write subtree control for %q: %w", stack[i], err)
+		}
+	}
+	return nil
+}
+
+// ParentPath returns the parent cgroup path for the given cgroup path.
+func ParentPath(path string) string {
+	path = filepath.Clean(path)
+	if path == RootPath {
+		return RootPath
+	}
+	return filepath.Dir(path)
 }
 
 // WriteSubtreeControl writes to the "cgroup.subtree_control" file under the

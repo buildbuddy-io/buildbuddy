@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 
@@ -83,22 +84,10 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 
 	var prepareError error
 	for _, statement := range txnProto.GetStatements() {
-		batch := statement.GetRawBatch()
-		batch.TransactionId = txnID
-		rangeID := statement.GetRange().GetRangeId()
-
-		// Prepare each statement.
-		syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, statement.GetRange(), batch)
+		err := tc.prepareStatement(ctx, txnID, statement)
 		if err != nil {
-			log.Errorf("Error preparing txn statement for %q (range: %d): %s", txnID, rangeID, err)
 			prepareError = err
-			break
-		}
-		rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
-		if err := rsp.AnyError(); err != nil {
-			log.Errorf("Error preparing txn statement for %q (range: %d): %s", txnID, rangeID, err)
-			prepareError = err
-			break
+			log.Errorf("failed to prepare txn for %d: %s", statement.GetRange().GetRangeId(), err)
 		}
 	}
 
@@ -116,14 +105,13 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	}
 
 	for _, stmt := range txnProto.GetStatements() {
-		rd := stmt.GetRange()
 		// Finalize each statement.
-		if err := tc.finalizeTxn(ctx, txnID, operation, rd); err != nil {
+		if err := tc.finalizeTxn(ctx, txnID, operation, stmt); err != nil {
 			if isTxnNotFoundError(err) && operation == rfpb.FinalizeOperation_ROLLBACK {
 				// if there is error during preparation for this range, then txn not found is expected during rollback.
 				continue
 			}
-			return status.InternalErrorf("failed to finalize statement in txn(%q)for range_id:%d, operation: %s, %s", txnID, rd.GetRangeId(), operation, err)
+			return status.InternalErrorf("failed to finalize statement in txn(%q)for range_id:%d, operation: %s, %s", txnID, stmt.GetRange().GetRangeId(), operation, err)
 		}
 	}
 
@@ -134,6 +122,43 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 		return prepareError
 	}
 	return nil
+}
+
+func (tc *Coordinator) prepareStatement(ctx context.Context, txnID []byte, statement *rfpb.TxnRequest_Statement) error {
+	batch := statement.GetRawBatch()
+	batch.TransactionId = txnID
+	rangeID := statement.GetRange().GetRangeId()
+
+	for _, hook := range statement.GetHooks() {
+		if hook.GetPhase() == rfpb.TransactionHook_PREPARE {
+			log.Infof("add post commit hook")
+			batch.PostCommitHooks = append(batch.PostCommitHooks, hook.GetHook())
+		}
+	}
+
+	retrier := retry.DefaultWithContext(ctx)
+
+	var lastError error
+
+	for retrier.Next() {
+		// Prepare each statement.
+		log.Infof("prepare statement for range %d", rangeID)
+		syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, statement.GetRange(), batch)
+		if err == nil {
+			rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
+			if err := rsp.AnyError(); err != nil {
+				return err
+			}
+			log.Infof("prepare statement for range %d finished", rangeID)
+			return nil
+		}
+
+		if !status.IsOutOfRangeError(err) {
+			return err
+		}
+		lastError = err
+	}
+	return status.UnavailableErrorf("prepareStatement retries exceeded for txid: %q err: %s", txnID, lastError)
 }
 
 func (tc *Coordinator) deleteTxnRecord(ctx context.Context, txnID []byte) error {
@@ -173,7 +198,7 @@ func (tc *Coordinator) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRe
 	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
 }
 
-func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.FinalizeOperation, rd *rfpb.RangeDescriptor) error {
+func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.FinalizeOperation, stmt *rfpb.TxnRequest_Statement) error {
 	batch := rbuilder.NewBatchBuilder().SetTransactionID(txnID)
 	batch.SetFinalizeOperation(op)
 
@@ -182,8 +207,14 @@ func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.Fi
 		return err
 	}
 
-	// Prepare each statement.
-	syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, rd, batchProto)
+	if op == rfpb.FinalizeOperation_COMMIT {
+		for _, hook := range stmt.GetHooks() {
+			if hook.GetPhase() == rfpb.TransactionHook_COMMIT {
+				batchProto.PostCommitHooks = append(batchProto.PostCommitHooks, hook.GetHook())
+			}
+		}
+	}
+	syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, stmt.GetRange(), batchProto)
 	if err != nil {
 		return err
 	}
@@ -278,7 +309,7 @@ func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 	if txnRecord.GetTxnState() == rfpb.TxnRecord_PENDING {
 		// The transaction is not fully prepared. Let's rollback all the statements.
 		for _, statement := range txnRecord.GetTxnRequest().GetStatements() {
-			err := tc.finalizeTxn(ctx, txnID, rfpb.FinalizeOperation_ROLLBACK, statement.GetRange())
+			err := tc.finalizeTxn(ctx, txnID, rfpb.FinalizeOperation_ROLLBACK, statement)
 			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is not prepared, we will get NotFound Error when we rollback and this is fine.
 				return err
@@ -292,7 +323,7 @@ func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 		}
 
 		for _, stmt := range txnRecord.GetTxnRequest().GetStatements() {
-			err := tc.finalizeTxn(ctx, txnID, txnRecord.GetOp(), stmt.GetRange())
+			err := tc.finalizeTxn(ctx, txnID, txnRecord.GetOp(), stmt)
 			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is already finalized, we will get NotFound Error when we finalize and this is fine.
 				return err

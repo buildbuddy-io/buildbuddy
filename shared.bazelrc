@@ -155,6 +155,20 @@ common:authed-bes --bes_backend=grpcs://buildbuddy.buildbuddy.io
 common:local --bes_results_url=http://localhost:8080/invocation/
 common:local --bes_backend=grpc://localhost:1985
 common:local --remote_cache=grpc://localhost:1985
+common:local --config=cache-shared
+
+# Build with --config=local-rbe-linux to target a local linux executor, using
+# BuildBuddy's RBE container image (x86_64 only for now). For this to work, the
+# local executor must have an isolation type enabled which supports
+# containerized execution, such as docker (the default), podman, or oci.
+common:local-rbe-linux --remote_executor=grpc://localhost:1985
+common:local-rbe-linux --config=target-linux-x86
+common:local-rbe-linux --config=local
+
+# Build with --config=local-rbe-mac to target a local executor on macOS.
+common:local-rbe-mac --remote_executor=grpc://localhost:1985
+common:local-rbe-mac --config=local-rbe
+common:local-rbe-mac --config=local
 
 # Build with --config=dev to send build logs to the dev server
 common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
@@ -293,11 +307,20 @@ common:release-windows --config=release-shared
 common:release-windows --repository_cache=D:/bazel/repo-cache/
 common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows
 
+# Common flags for Github Actions and BuildBuddy Workflows setup
+# Note that the actual Remote endpoint is not included here.
+common:ci-shared --config=cache-shared
+common:ci-shared --config=download-minimal
+# common:ci-shared --config=race
+common:ci-shared --build_metadata=ROLE=CI
+common:ci-shared --flaky_test_attempts=2
+common:ci-shared --repository_cache=~/repo-cache/
+common:ci-shared --color=yes
+
 # Configuration used for untrusted GitHub actions-based CI
+common:untrusted-ci --config=ci-shared
 common:untrusted-ci --config=remote-minimal
 common:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
-common:untrusted-ci --repository_cache=~/repo-cache/
-common:untrusted-ci --flaky_test_attempts=2
 common:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
 common:untrusted-ci --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci --bes_backend=grpcs://remote.buildbuddy.io
@@ -305,13 +328,23 @@ common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 common:untrusted-ci --remote_header=x-buildbuddy-platform.enable-vfs=true
 
 # Disabled RBE for Windows
-common:untrusted-ci-windows --config=cache-shared
+common:untrusted-ci-windows --config=ci-shared
 common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows
 common:untrusted-ci-windows --repository_cache=D:/bazel/repo-cache/
-common:untrusted-ci-windows --flaky_test_attempts=2
 common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
+
+# Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
+# These will point to local, dev, or prod, depending on which app created the workflow action.
+common:workflows --config=buildbuddy_bes_backend
+common:workflows --config=buildbuddy_bes_results_url
+common:workflows --config=buildbuddy_remote_cache
+common:workflows --config=buildbuddy_experimental_remote_downloader
+# Explicitly disable repository cache for BuildBuddy Workflows.
+# This helps reduce disk space usage in the Firecracker, thus reduce the VM snapshot size.
+# Rely on remote downloader to cache downloads through Remote Asset API instead.
+common:workflows --repository_cache=
 
 # Configuration used for Linux workflows
 common:linux-workflows --config=remote-shared

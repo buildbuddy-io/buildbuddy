@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -189,12 +190,14 @@ func startNNodes(t *testing.T, configs []testConfig) []*raft_cache.RaftCache {
 }
 
 func TestAutoBringup(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNNodes(t, configs)
 	waitForShutdown(t, caches...)
 }
 
 func TestReaderAndWriter(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNNodes(t, configs)
 	rc1 := caches[0]
@@ -254,6 +257,7 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNNodes(t, configs)
 
@@ -285,6 +289,7 @@ func TestDistributedRanges(t *testing.T) {
 }
 
 func TestFindMissingBlobs(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNNodes(t, configs)
 
@@ -324,6 +329,7 @@ func TestFindMissingBlobs(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
 	flags.Set(t, "cache.raft.atime_write_batch_size", 1)

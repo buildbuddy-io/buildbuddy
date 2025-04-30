@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -21,6 +22,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -30,8 +32,8 @@ import (
 var (
 	remoteHitTrackerTarget       = flag.String("cache_proxy.remote_hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracking service.")
 	remoteHitTrackerPollInterval = flag.Duration("cache_proxy.remote_hit_tracker.update_interval", 250*time.Millisecond, "The time interval to wait between sending remote cache-hit-tracking RPCs.")
-	maxPendingHitsPerGroup       = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 2_000_000, "The maximum number of pending cache-hit updates to store in memory for a given group.")
-	maxHitsPerUpdate             = flag.Int("cache_proxy.remote_hit_tracker.max_hits_per_update", 100_000, "The maximum number of cache-hit updates to send in one request to the hit-tracking backend.")
+	maxPendingHitsPerGroup       = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 2_500_000, "The maximum number of pending cache-hit updates to store in memory for a given group.")
+	maxHitsPerUpdate             = flag.Int("cache_proxy.remote_hit_tracker.max_hits_per_update", 250_000, "The maximum number of cache-hit updates to send in one request to the hit-tracking backend.")
 	remoteHitTrackerWorkers      = flag.Int("cache_proxy.remote_hit_tracker.workers", 1, "The number of workers to use to send asynchronous remote cache-hit-tracking RPCs.")
 )
 
@@ -119,16 +121,21 @@ type HitTrackerFactory struct {
 }
 
 func (h *HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	// For Action Cache hit-tracking, explicitly ignore everything. These cache
-	// artifacts should always be served from the authoritative cache which
-	// will take care of hit-tracking.
-	return &NoOpHitTracker{}
+	if !proxy_util.SkipRemote(ctx) {
+		// For Action Cache hit-tracking hitting the remote cache, the
+		// authoritative cache should always take care of hit-tracking.
+		alert.UnexpectedEvent("Unexpected call to NewACHitTracker in the proxy")
+	}
+
+	// Use a hit-tracker that sends information
+	// about local cache hits to the RPC service at the configured backend.
+	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_AC}
 }
 
 func (h *HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
 	// For CAS hit-tracking, use a hit-tracker that sends information about
 	// local cache hits to the RPC service at the configured backend.
-	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata}
+	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_CAS}
 }
 
 type NoOpHitTracker struct{}
@@ -164,16 +171,29 @@ type HitTrackerClient struct {
 	enqueueFn       func(context.Context, *repb.RequestMetadata, *hitpb.CacheHit)
 	client          hitpb.HitTrackerServiceClient
 	requestMetadata *repb.RequestMetadata
+	cacheType       rspb.CacheType
 }
 
-// This should only be used for Action Cache hit tracking.
+// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4875) Implement
 func (h *HitTrackerClient) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) {
+	// This is used to track action durations and is not used for non-RBE executions.
+	// Currently skip-remote behavior is not used for RBE, so do nothing in this case.
+	if proxy_util.SkipRemote(h.ctx) {
+		return
+	}
+	// By default, AC hit tracking should be handled by the remote cache.
 	alert.UnexpectedEvent("Unexpected call to SetExecutedActionMetadata")
 }
 
-// Local cache misses hit the backing cache, which will take care of
-// hit-tracking for this request.
+// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4875) Implement
 func (h *HitTrackerClient) TrackMiss(d *repb.Digest) error {
+	// For requests that hit the backing cache: local cache misses hit the backing
+	// cache, which will take care of hit-tracking for this request.
+	//
+	// For requests that skip the backing cache: tracking misses is only used for
+	// populating the cache scorecard for Bazel builds with remote caching.
+	// Currently skip-remote behavior is only used for workflows + Remote Bazel,
+	// and not typical Bazel builds, so don't worry about tracking misses.
 	return nil
 }
 
@@ -231,13 +251,15 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 }
 
 type TransferTimer struct {
-	ctx             context.Context
-	enqueueFn       func(context.Context, *repb.RequestMetadata, *hitpb.CacheHit)
-	invocationID    string
-	requestMetadata *repb.RequestMetadata
-	digest          *repb.Digest
-	start           time.Time
-	client          hitpb.HitTrackerServiceClient
+	ctx              context.Context
+	enqueueFn        func(context.Context, *repb.RequestMetadata, *hitpb.CacheHit)
+	invocationID     string
+	requestMetadata  *repb.RequestMetadata
+	digest           *repb.Digest
+	start            time.Time
+	client           hitpb.HitTrackerServiceClient
+	cacheType        rspb.CacheType
+	cacheRequestType capb.RequestType
 }
 
 func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
@@ -245,10 +267,11 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 		RequestMetadata: t.requestMetadata,
 		Resource: &rspb.ResourceName{
 			Digest:    t.digest,
-			CacheType: rspb.CacheType_CAS,
+			CacheType: t.cacheType,
 		},
-		SizeBytes: bytesTransferredClient,
-		Duration:  durationpb.New(time.Since(t.start)),
+		SizeBytes:        bytesTransferredClient,
+		Duration:         durationpb.New(time.Since(t.start)),
+		CacheRequestType: t.cacheRequestType,
 	}
 	t.enqueueFn(t.ctx, t.requestMetadata, hit)
 	return nil
@@ -260,17 +283,31 @@ func (t *TransferTimer) Record(bytesTransferred int64, duration time.Duration, c
 
 func (h *HitTrackerClient) TrackDownload(digest *repb.Digest) interfaces.TransferTimer {
 	return &TransferTimer{
-		ctx:             h.ctx,
-		enqueueFn:       h.enqueueFn,
-		requestMetadata: h.requestMetadata,
-		digest:          digest,
-		start:           time.Now(),
-		client:          h.client,
+		ctx:              h.ctx,
+		enqueueFn:        h.enqueueFn,
+		requestMetadata:  h.requestMetadata,
+		digest:           digest,
+		start:            time.Now(),
+		client:           h.client,
+		cacheType:        h.cacheType,
+		cacheRequestType: capb.RequestType_READ,
 	}
 }
 
-// Writes hit the backing cache, so no need to report on hit-tracking.
 func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferTimer {
+	if proxy_util.SkipRemote(h.ctx) {
+		return &TransferTimer{
+			ctx:              h.ctx,
+			enqueueFn:        h.enqueueFn,
+			requestMetadata:  h.requestMetadata,
+			digest:           digest,
+			start:            time.Now(),
+			client:           h.client,
+			cacheType:        h.cacheType,
+			cacheRequestType: capb.RequestType_WRITE,
+		}
+	}
+	// If writes hit the backing cache, it will handle hit tracking.
 	return &NoOpTransferTimer{}
 }
 

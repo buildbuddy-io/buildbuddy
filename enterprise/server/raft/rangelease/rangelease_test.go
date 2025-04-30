@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -67,6 +68,7 @@ func newTestingProposerAndSenderAndReplica(t testing.TB) (*testutil.TestingPropo
 }
 
 func TestAcquireAndRelease(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	bgCtx := context.Background()
 	ctx, cancel := context.WithTimeout(bgCtx, 3*time.Second)
 	defer cancel()

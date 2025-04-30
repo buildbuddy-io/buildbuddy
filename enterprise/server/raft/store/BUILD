@@ -7,7 +7,6 @@ go_library(
     srcs = ["store.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store",
     deps = [
-        "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
@@ -78,6 +77,7 @@ go_test(
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//proto:storage_go_proto",
+        "//server/testutil/quarantine",
         "//server/testutil/testdigest",
         "//server/util/log",
         "//server/util/proto",

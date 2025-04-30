@@ -229,6 +229,10 @@ buildbuddy.msvc_toolchain(
     # From 'Microsoft Visual C++ 2022 Minimum Runtime' for x64 architecture
     # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
     msvc_version = "14.43.34808",
+    # From 'Installed Windows SDKs'
+    # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md#installed-windows-sdks
+    windows_kits_release = "10",
+    windows_kits_version = "10.0.22621.0",
 )
 
 # Explicitly register the toolchains in the order which we want to use.

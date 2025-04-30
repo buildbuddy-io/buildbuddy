@@ -160,8 +160,27 @@ message ResponseUnion {
 
 message SnapshotClusterHook {}
 
+message StartShardHook {
+  uint64 range_id = 1;
+  map<uint64, string> initial_member = 2;
+}
+
 message PostCommitHook {
   SnapshotClusterHook snapshot_cluster = 1;
+  StartShardHook start_shard = 2;
+}
+
+message TransactionHook {
+  enum Phase {
+    UNKNOWN_PHASE = 0;
+    // Run this hook at the end of prepare-phase
+    PREPARE = 1;
+    // Run this hook at the end of commit-phase
+    COMMIT = 2;
+  }
+
+  Phase phase = 1;
+  PostCommitHook hook = 2;
 }
 
 message TxnRequest {
@@ -170,6 +189,7 @@ message TxnRequest {
     reserved 1;
     BatchCmdRequest raw_batch = 2;
     RangeDescriptor range = 3;
+    repeated TransactionHook hooks = 4;
   }
   repeated Statement statements = 2;
 }

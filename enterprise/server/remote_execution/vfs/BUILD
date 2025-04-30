@@ -25,6 +25,7 @@ go_library(
             "@com_github_hanwen_go_fuse_v2//fs",
             "@com_github_hanwen_go_fuse_v2//fuse",
             "@org_golang_google_grpc//status",
+            "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:darwin_arm64": [
             "//proto:vfs_go_proto",
@@ -34,6 +35,7 @@ go_library(
             "@com_github_hanwen_go_fuse_v2//fs",
             "@com_github_hanwen_go_fuse_v2//fuse",
             "@org_golang_google_grpc//status",
+            "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:linux_amd64": [
             "//proto:vfs_go_proto",
@@ -43,6 +45,7 @@ go_library(
             "@com_github_hanwen_go_fuse_v2//fs",
             "@com_github_hanwen_go_fuse_v2//fuse",
             "@org_golang_google_grpc//status",
+            "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:linux_arm64": [
             "//proto:vfs_go_proto",
@@ -52,6 +55,7 @@ go_library(
             "@com_github_hanwen_go_fuse_v2//fs",
             "@com_github_hanwen_go_fuse_v2//fuse",
             "@org_golang_google_grpc//status",
+            "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:windows_amd64": [
             "//proto:vfs_go_proto",

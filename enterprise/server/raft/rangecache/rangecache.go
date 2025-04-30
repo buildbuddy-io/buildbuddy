@@ -17,13 +17,13 @@ type RangeCache struct {
 	rangeMu sync.RWMutex
 
 	// Keep a rangemap that maps from ranges to descriptors.
-	rangeMap *rangemap.RangeMap
+	rangeMap *rangemap.RangeMap[*lockingRangeDescriptor]
 }
 
 func New() *RangeCache {
 	return &RangeCache{
 		rangeMu:  sync.RWMutex{},
-		rangeMap: rangemap.New(),
+		rangeMap: rangemap.New[*lockingRangeDescriptor](),
 	}
 }
 
@@ -70,11 +70,7 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 		// ranges and possibly delete them or if they are newer, then we'll
 		// ignore this update.
 		for _, overlappingRange := range overlappingRanges {
-			lr, ok := overlappingRange.Val.(*lockingRangeDescriptor)
-			if !ok {
-				continue
-			}
-			v := lr.Get()
+			v := overlappingRange.Val.Get()
 			if v.GetGeneration() >= newDescriptor.GetGeneration() {
 				log.Debugf("Ignoring rangeDescriptor %+v, because current has same or later generation: %+v", newDescriptor, v)
 				return nil
@@ -91,9 +87,9 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 		_, err := rc.rangeMap.Add(start, end, newLockingRangeDescriptor(newDescriptor))
 		return err
 	} else {
-		lr, ok := r.Val.(*lockingRangeDescriptor)
-		if !ok {
-			return status.FailedPreconditionError("Val was not a rangeVal")
+		lr := r.Val
+		if lr == nil {
+			return status.FailedPreconditionError("Val was nil")
 		}
 		v := lr.Get()
 		if newDescriptor.GetGeneration() > v.GetGeneration() {
@@ -123,8 +119,9 @@ func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb
 		return
 	}
 
-	lr, ok := r.Val.(*lockingRangeDescriptor)
-	if !ok {
+	lr := r.Val
+	if lr == nil {
+		log.Errorf("locking range descriptor value for range [%q, %q) is nil", r.Start, r.End)
 		return
 	}
 	rd := lr.Get()
@@ -151,12 +148,12 @@ func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 	rc.rangeMu.RLock()
 	defer rc.rangeMu.RUnlock()
 
-	val := rc.rangeMap.Lookup(key)
+	lr, found := rc.rangeMap.Lookup(key)
 
 	var rd *rfpb.RangeDescriptor
 	label := "miss"
 
-	if lr, ok := val.(*lockingRangeDescriptor); ok {
+	if found {
 		rd = lr.Get()
 		label = "hit"
 	}

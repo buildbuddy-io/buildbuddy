@@ -39,30 +39,17 @@ common:target-linux-arm64 --config=workspace-target-linux-arm64
 # These often require "include-secrets: true" exec property in their BUILD file.
 test --test_tag_filters=-docker,-bare,-secrets
 
+# CI invocations from public repo should be publicly accessible.
+common:ci-shared --build_metadata=VISIBILITY=PUBLIC
+
 # Configuration used for GitHub actions-based CI
+common:ci --config=ci-shared
 common:ci --config=remote-minimal
-common:ci --build_metadata=ROLE=CI
-common:ci --build_metadata=VISIBILITY=PUBLIC
 common:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
-common:ci --repository_cache=~/repo-cache/
-common:ci --flaky_test_attempts=2
-common:ci --color=yes
-# common:ci --@io_bazel_rules_go//go/config:race
 
 # Configuration used for all BuildBuddy workflows
-common:workflows --config=cache-shared
-common:workflows --config=download-minimal
-common:workflows --build_metadata=ROLE=CI
-common:workflows --build_metadata=VISIBILITY=PUBLIC
+common:workflows --config=ci-shared
 common:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
-common:workflows --color=yes
-common:workflows --flaky_test_attempts=2
-# Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
-# These will point to local, dev, or prod, depending on which app created the workflow action.
-common:workflows --config=buildbuddy_bes_backend
-common:workflows --config=buildbuddy_bes_results_url
-common:workflows --config=buildbuddy_remote_cache
-common:workflows --config=buildbuddy_experimental_remote_downloader
 
 
 ########################

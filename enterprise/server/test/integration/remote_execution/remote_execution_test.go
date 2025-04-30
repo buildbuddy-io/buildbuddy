@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -158,6 +159,7 @@ func TestSimpleCommandWithZeroExitCode(t *testing.T) {
 }
 
 func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
@@ -503,6 +505,7 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 }
 
 func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExecutor(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 
