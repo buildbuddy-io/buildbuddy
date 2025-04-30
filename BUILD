@@ -166,16 +166,12 @@ gazelle_binary(
     languages = DEFAULT_LANGUAGES + ["@bazel_gazelle//language/bazel/visibility"],
 )
 
-## Ignore the node_modules dir
-# gazelle:exclude node_modules
-#
 ## Ignore generated proto files
 # gazelle:exclude **/*.pb.go
 # gazelle:exclude bundle.go
 # gazelle:exclude enterprise/bundle.go
 #
-## Ignore NodeJS directories
-# gazelle:exclude **/node_modules/**
+## Ignore website dir
 # TODO(siggisim): remove once we support .css imports properly
 # gazelle:exclude website/**
 #
@@ -211,11 +207,6 @@ gazelle_binary(
 # gazelle:resolve go github.com/bazelbuild/bazel-gazelle/rule @bazel_gazelle//rule
 # gazelle:resolve go github.com/bazelbuild/rules_go/go/runfiles @io_bazel_rules_go//go/runfiles
 # gazelle:resolve go github.com/bazelbuild/rules_go/go/tools/bazel @io_bazel_rules_go//go/tools/bazel
-#
-## Make these the default compilers for proto rules.
-## See https://github.com/bazelbuild/rules_go/pull/3761 for more details
-#
-# gazelle:go_proto_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2
 gazelle(
     name = "gazelle",
     gazelle = ":bb_gazelle_binary",
