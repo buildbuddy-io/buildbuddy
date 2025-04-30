@@ -435,9 +435,10 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*testutil.TestingStore{s1, s2}
+	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
@@ -460,9 +461,9 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	replicas := getMembership(t, s, ctx, 2)
-	require.Equal(t, 1, len(replicas))
+	require.Equal(t, 2, len(replicas))
 	rd = s.GetRange(2)
-	require.Equal(t, 1, len(rd.GetReplicas()))
+	require.Equal(t, 2, len(rd.GetReplicas()))
 }
 
 func TestAddRangeBack(t *testing.T) {
