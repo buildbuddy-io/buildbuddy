@@ -259,24 +259,9 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		if err != nil {
 			return nil, 0, err
 		}
-		buf := make([]byte, uploadBufSizeBytes)
-		var bytesUploaded int64
-		for {
-			n, err := ioutil.ReadTryFillBuffer(in, buf)
-			done := err == io.EOF
-			if err != nil && !done {
-				w.Close()
-				return nil, 0, err
-			}
-			written, err := w.Write(buf[:n])
-			if err != nil {
-				w.Close()
-				return nil, 0, err
-			}
-			bytesUploaded += int64(written)
-			if done {
-				break
-			}
+		bytesUploaded, err := w.ReadFrom(in)
+		if err != nil {
+			return nil, 0, err
 		}
 		if err := w.Close(); err != nil {
 			return nil, 0, err
@@ -1148,6 +1133,27 @@ func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 	return written, nil
 }
 
+func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
+	buf := make([]byte, uploadBufSizeBytes)
+	var bytesUploaded int64
+	for {
+		n, err := ioutil.ReadTryFillBuffer(r, buf)
+		done := err == io.EOF
+		if err != nil && !done {
+			return bytesUploaded, err
+		}
+		written, err := cwc.Write(buf[:n])
+		if err != nil {
+			return bytesUploaded + int64(written), err
+		}
+		bytesUploaded += int64(written)
+		if done {
+			break
+		}
+	}
+	return bytesUploaded, nil
+}
+
 func (cwc *uploadWriteCloser) Close() error {
 	req := &bspb.WriteRequest{
 		ResourceName: cwc.uploadString,
@@ -1175,7 +1181,7 @@ func (cwc *uploadWriteCloser) Close() error {
 	return nil
 }
 
-func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (io.WriteCloser, error) {
+func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*uploadWriteCloser, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
