@@ -116,7 +116,7 @@ var (
 	DefaultSamplesPerBatch          = 10000
 	DefaultSamplerIterRefreshPeriod = 5 * time.Minute
 	DefaultDeleteBufferSize         = 20
-	DefaultNumDeleteWorkers         = 4
+	DefaultNumDeleteWorkers         = 16
 	DefaultMinEvictionAge           = 6 * time.Hour
 
 	DefaultName         = "pebble_cache"
