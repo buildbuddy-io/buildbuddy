@@ -313,12 +313,6 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	if stage == repb.ExecutionStage_COMPLETED {
-		if err := action_merger.DeletePendingExecution(ctx, s.rdb, executionID); err != nil {
-			log.CtxWarningf(ctx, "could not delete pending execution %q: %s", executionID, err)
-		}
-	}
-
 	result := s.env.GetDBHandle().GORM(ctx, "execution_server_update_execution").Where(
 		"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution)
 	dbErr := result.Error
@@ -492,7 +486,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	return s.execute(req, stream)
 }
 
-func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID string, req *repb.ExecuteRequest) error {
+func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID string, req *repb.ExecuteRequest, action *repb.Action) error {
 	if s.teeLimiter == nil {
 		return nil
 	}
@@ -517,7 +511,7 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 		md["x-buildbuddy-platform.pool"] = []string{teePoolName}
 		ctx = metadata.NewIncomingContext(ctx, md)
 
-		id, _, err := s.dispatch(ctx, teeReq, &dispatchOpts{teedRequest: true})
+		id, _, err := s.dispatch(ctx, teeReq, action, &dispatchOpts{teedRequest: true})
 		if err != nil {
 			log.CtxWarningf(ctx, "Could not tee execution %q: %s", originalExecutionID, err)
 			return
@@ -527,18 +521,18 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 	return nil
 }
 
-func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest) (string, error) {
-	id, pool, err := s.dispatch(ctx, req, &dispatchOpts{recordActionMergingState: true})
+func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action) (string, error) {
+	id, pool, err := s.dispatch(ctx, req, action, &dispatchOpts{recordActionMergingState: true})
 	if err == nil && pool.IsShared && pool.Name == "" {
-		if err := s.teeExecution(ctx, id, req); err != nil {
+		if err := s.teeExecution(ctx, id, req, action); err != nil {
 			log.CtxWarningf(ctx, "Could not tee execution: %s", err)
 		}
 	}
 	return id, err
 }
 
-func (s *ExecutionServer) dispatchHedge(ctx context.Context, req *repb.ExecuteRequest) (string, error) {
-	id, _, err := s.dispatch(ctx, req, &dispatchOpts{recordActionMergingState: false})
+func (s *ExecutionServer) dispatchHedge(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action) (string, error) {
+	id, _, err := s.dispatch(ctx, req, action, &dispatchOpts{recordActionMergingState: false})
 	return id, err
 }
 
@@ -547,7 +541,7 @@ type dispatchOpts struct {
 	teedRequest              bool
 }
 
-func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest, opts *dispatchOpts) (string, *interfaces.PoolInfo, error) {
+func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, opts *dispatchOpts) (string, *interfaces.PoolInfo, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -571,7 +565,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	adInstanceDigest := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
-	action, command, err := s.fetchActionAndCommand(ctx, adInstanceDigest)
+	command, err := s.fetchCommand(ctx, adInstanceDigest, action)
 	if err != nil {
 		return "", nil, err
 	}
@@ -737,7 +731,13 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			}
 			return nil
 		}
+	}
 
+	action, err := s.fetchAction(ctx, adInstanceDigest)
+	if err != nil {
+		return err
+	}
+	if !action.DoNotCache {
 		// Check if there's already an identical action pending execution. If
 		// so, wait on the result of that execution instead of starting a new
 		// one.
@@ -764,7 +764,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	mergedExecution := executionID != ""
 	if executionID == "" {
 		log.CtxInfof(ctx, "Scheduling new execution for %q for invocation %q", downloadString, invocationID)
-		newExecutionID, err := s.Dispatch(ctx, req)
+		newExecutionID, err := s.Dispatch(ctx, req, action)
 		if err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
 			return err
@@ -779,7 +779,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// in the background.
 	if hedge {
 		action_merger.RecordHedgedExecution(ctx, s.rdb, adInstanceDigest, s.getGroupIDForMetrics(ctx))
-		hedgedExecutionID, err := s.dispatchHedge(ctx, req)
+		hedgedExecutionID, err := s.dispatchHedge(ctx, req, action)
 		if err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for action %q and invocation %q: %s", downloadString, invocationID, err)
 			return err
@@ -1065,6 +1065,16 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		return true
 	})
 
+	deletePendingExecutionOnce := sync.OnceFunc(func() {
+		if taskID == "" {
+			return
+		}
+		if err := action_merger.DeletePendingExecution(ctx, s.rdb, taskID); err != nil {
+			log.CtxWarningf(ctx, "could not delete pending execution %q: %s", taskID, err)
+		}
+	})
+	defer deletePendingExecutionOnce()
+
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
@@ -1130,6 +1140,11 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return status.InternalErrorf("Failed to parse platform properties: %s", err)
 			}
+			// Keep this close to, but before the cacheActionResult call: Since any action that can merge into this one
+			// may specify skip_cache_lookup, we need to ensure that the result is not visible in the cache before the
+			// action is merged. At the same time, we don't want the window between the calls to be too large to avoid
+			// reducing the effectiveness of merging.
+			deletePendingExecutionOnce()
 			actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
 			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
@@ -1285,15 +1300,19 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	return ut.Increment(ctx, labels, counts)
 }
 
-func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, *repb.Command, error) {
+func (s *ExecutionServer) fetchAction(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, error) {
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
 			err = digest.MissingDigestError(actionResourceName.GetDigest())
 		}
 		log.CtxWarningf(ctx, "Error fetching action: %s", err.Error())
-		return nil, nil, err
+		return nil, err
 	}
+	return action, nil
+}
+
+func (s *ExecutionServer) fetchCommand(ctx context.Context, actionResourceName *digest.CASResourceName, action *repb.Action) (*repb.Command, error) {
 	cmdDigest := action.GetCommandDigest()
 	cmdInstanceNameDigest := digest.NewCASResourceName(cmdDigest, actionResourceName.GetInstanceName(), actionResourceName.GetDigestFunction())
 	cmd := &repb.Command{}
@@ -1302,6 +1321,18 @@ func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResou
 			err = digest.MissingDigestError(actionResourceName.GetDigest())
 		}
 		log.CtxWarningf(ctx, "Error fetching command: %s", err.Error())
+		return nil, err
+	}
+	return cmd, nil
+}
+
+func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, *repb.Command, error) {
+	action, err := s.fetchAction(ctx, actionResourceName)
+	if err != nil {
+		return nil, nil, err
+	}
+	cmd, err := s.fetchCommand(ctx, actionResourceName, action)
+	if err != nil {
 		return nil, nil, err
 	}
 	return action, cmd, nil

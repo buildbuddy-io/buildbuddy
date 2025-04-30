@@ -148,14 +148,15 @@ func TestDispatch(t *testing.T) {
 	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
 
-	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, &repb.Action{})
+	action := &repb.Action{}
+	arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
 	ad := arn.GetDigest()
 
 	// note: AttachUserPrefix is normally done by Execute(), which wraps
 	// Dispatch().
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	require.NoError(t, err)
-	taskID, err := s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad})
+	taskID, err := s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action)
 	require.NoError(t, err)
 
 	rn, err := digest.ParseUploadResourceName(taskID)
