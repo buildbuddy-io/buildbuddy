@@ -724,24 +724,57 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	}
 	res.UsageStats = combinedStats
 
-	// Check for oom_kill memory events in the cgroup and return a
-	// ResourceExhausted error if found. We read this from the parent cgroup,
-	// because at this point, crun will have deleted the child cgroup.
-	memoryEvents, err := cgroup.ReadMemoryEvents(c.cgroupPath())
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to get memory events: %s", err)
-	} else if memoryEvents["oom_kill"] > 0 {
-		if res.ExitCode == 0 {
-			// TODO: look into any logs that happen here, and consider whether
-			// it makes sense to make these failures.
-			log.CtxWarningf(ctx, "Task succeeded, but cgroup reported oom_kill events.")
-		} else {
-			res.ExitCode = commandutil.KilledExitCode
-			res.Error = status.UnavailableError("task process or child process killed by oom killer")
-		}
+	// If there was an oom_kill event, return an error instead of a normal exit
+	// status.
+	if err := c.checkOOMKill(ctx, res); err != nil {
+		res.ExitCode = commandutil.KilledExitCode
+		res.Error = err
+		return res
+	}
+
+	// Check whether the pid limit was exceeded, and just log it for now so that
+	// it can be diagnosed.
+	if err := c.checkPIDLimitExceeded(ctx, res); err != nil {
+		log.CtxWarning(ctx, status.Message(err))
 	}
 
 	return res
+}
+
+// checkOOMKill checks for oom_kill memory events in the cgroup and returns an
+// Unavailable error if found.
+func (c *ociContainer) checkOOMKill(ctx context.Context, res *interfaces.CommandResult) error {
+	memoryEvents, err := cgroup.ReadMemoryEvents(c.cgroupPath())
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get memory events: %s", err)
+		return nil
+	}
+	if memoryEvents["oom_kill"] == 0 {
+		return nil
+	}
+	if res.ExitCode == 0 {
+		log.CtxWarningf(ctx, "Task succeeded, but cgroup reported oom_kill events.")
+		return nil
+	}
+	return status.UnavailableError("task process or child process killed by oom killer")
+}
+
+// checkPIDLimitExceeded checks for pid limit exceeded events in the cgroup and
+// returns an Unavailable error if found.
+func (c *ociContainer) checkPIDLimitExceeded(ctx context.Context, res *interfaces.CommandResult) error {
+	pidsEvents, err := cgroup.ReadPidsEvents(c.cgroupPath())
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get pids events: %s", err)
+		return nil
+	}
+	if pidsEvents["max"] == 0 {
+		return nil
+	}
+	if res.ExitCode == 0 {
+		log.CtxWarningf(ctx, "Task succeeded, but cgroup reported pid limit exceeded events.")
+		return nil
+	}
+	return status.UnavailableErrorf("pid limit exceeded (maximum number of pids allowed is %d)", c.cgroupSettings.GetPidsMax())
 }
 
 func (c *ociContainer) setupCgroup(ctx context.Context) error {
