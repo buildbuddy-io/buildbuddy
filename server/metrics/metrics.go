@@ -3056,6 +3056,15 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheFindMissingDigestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_find_missing_digest_count",
+		Help:      "Count of digests within FindMissing requests.",
+	}, []string{
+		CacheNameLabel,
+	})
+
 	// ## Podman metrics
 
 	PodmanSociStoreCrashes = promauto.NewCounter(prometheus.CounterOpts{

@@ -1582,6 +1582,8 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 	}
 	defer db.Close()
 
+	metrics.PebbleCacheFindMissingDigestCount.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Add(float64(len(resources)))
+
 	var missing []*repb.Digest
 	for _, r := range resources {
 		err = p.findMissing(ctx, db, r)
