@@ -945,15 +945,36 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 
 	vmd := c.getVMMetadata().CloneVT()
 	vmd.LastExecutedTask = c.getVMTask()
+
+	// Only save a remote snapshot if a remote snapshot for the primary git branch key
+	// doesn't already exist. Otherwise, only save a local snapshot. Workloads
+	// should hit an executor with a local snapshot due to affinity routing on
+	// the git branch key.
+	//
+	// We want to always save the master snapshot remotely, because it is used as
+	// a fallback for runs on other branches, and we want the latest master snapshot available
+	// to all executors. `!c.hasFallbackKeys()` is a good proxy for whether we're
+	// running on the master snapshot.
+	hasRemoteSnapshotForBranchKey := c.hasRemoteSnapshotForBranchKey(ctx)
+	shouldCacheRemotely := c.supportsRemoteSnapshots &&
+		(!c.hasFallbackKeys() || !hasRemoteSnapshotForBranchKey)
+	if !shouldCacheRemotely && c.supportsRemoteSnapshots {
+		log.CtxInfof(ctx, "Would not save remote snapshot. "+
+			"Has remote snapshot for branch key: %v. Snapshot keys: %v", hasRemoteSnapshotForBranchKey, c.snapshotKeySet)
+	}
+	if shouldCacheRemotely && hasRemoteSnapshotForBranchKey {
+		log.CtxInfof(ctx, "Would save remote snapshot even though one already exists. Snapshot keys: %v", c.snapshotKeySet)
+	}
 	opts := &snaploader.CacheSnapshotOptions{
-		VMMetadata:          vmd,
-		VMConfiguration:     c.vmConfig,
-		VMStateSnapshotPath: filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:     c.executorConfig.GuestKernelImagePath,
-		InitrdImagePath:     c.executorConfig.InitrdImagePath,
-		ChunkedFiles:        map[string]*copy_on_write.COWStore{},
-		Recycled:            c.recycled,
-		Remote:              c.supportsRemoteSnapshots,
+		VMMetadata:                 vmd,
+		VMConfiguration:            c.vmConfig,
+		VMStateSnapshotPath:        filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
+		KernelImagePath:            c.executorConfig.GuestKernelImagePath,
+		InitrdImagePath:            c.executorConfig.InitrdImagePath,
+		ChunkedFiles:               map[string]*copy_on_write.COWStore{},
+		Recycled:                   c.recycled,
+		Remote:                     c.supportsRemoteSnapshots,
+		WouldNotHaveCachedRemotely: !shouldCacheRemotely,
 	}
 	if snapshotSharingEnabled {
 		if c.rootStore != nil {
@@ -2968,6 +2989,37 @@ func (c *FirecrackerContainer) machineHasBalloon(ctx context.Context) bool {
 	}
 	_, err := c.machine.GetBalloonConfig(ctx)
 	return err == nil
+}
+
+// hasRemoteSnapshotForBranchKey returns whether a remote snapshot exists for the current
+// `snapshotKeySet.BranchKey`.
+//
+// This function does not consider fallback snapshot keys, because snapshots
+// for the branch key are assumed to be the most up-to-date.
+func (c *FirecrackerContainer) hasRemoteSnapshotForBranchKey(ctx context.Context) bool {
+	if !c.supportsRemoteSnapshots {
+		return false
+	}
+	loader, err := snaploader.New(c.env)
+	if err != nil {
+		log.Warningf("Could not initialize snaploader when checking for remote snapshot: %s", err)
+		return false
+	}
+	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: c.SnapshotKeySet().GetBranchKey()}, c.supportsRemoteSnapshots)
+	if err != nil {
+		log.Warningf("Could not check for remote snapshot %v: %s", c.SnapshotKeySet().GetBranchKey(), err)
+		return false
+	}
+	return true
+}
+
+// hasFallbackKeys reports whether there are fallback snapshot keys.
+//
+// If none are present, it's likely this run is for the master snapshot
+// (i.e. the default branch), which typically serves as the fallback for runs
+// on other branches.
+func (c *FirecrackerContainer) hasFallbackKeys() bool {
+	return len(c.snapshotKeySet.GetFallbackKeys()) > 0
 }
 
 func isExitErrorSIGTERM(err error) bool {
