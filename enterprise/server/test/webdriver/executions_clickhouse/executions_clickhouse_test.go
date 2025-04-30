@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -23,6 +24,7 @@ import (
 )
 
 func TestInvocationWithRemoteExecutionWithClickHouse(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	// This test can't run against cloud yet, since we depend on the test
 	// running on the same filesystem as the executor to coordinate action
 	// execution via fifo pipes.
