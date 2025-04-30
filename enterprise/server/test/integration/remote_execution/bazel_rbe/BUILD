@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "bazel_rbe_test",
-    size = "small",
+    size = "medium",
     srcs = ["bazel_rbe_test.go"],
     shard_count = 15,
     deps = [
