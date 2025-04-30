@@ -123,16 +123,10 @@ func clonePrivateTestRepo(t *testing.T) string {
 	}
 
 	repoDir := fmt.Sprintf("%s/%s", rootDir, repoName)
-	err = os.Chdir(repoDir)
+	t.Chdir(repoDir)
 	require.NoError(t, err)
 	testshell.Run(t, repoDir, "git pull")
 	return repoDir
-}
-
-func newUUID(t *testing.T) string {
-	id, err := uuid.NewRandom()
-	require.NoError(t, err)
-	return id.String()
 }
 
 // makeLocalGitRepo creates a local git repo to use for tests. This is faster
@@ -141,7 +135,7 @@ func makeLocalGitRepo(t *testing.T, contents map[string]string) (path, commitSHA
 	// Make the repo contents globally unique so that this makeGitRepo func can be
 	// called more than once to create unique repos with incompatible commit
 	// history.
-	contents[".repo_id"] = newUUID(t)
+	contents[".repo_id"] = uuid.New().String()
 	// References bazel from runfiles that is optimized to run faster for tests.
 	contents[".bazelversion"] = testbazel.BinaryPath(t)
 	path = testbazel.MakeTempModule(t, contents)
@@ -322,8 +316,7 @@ sh_binary(
 		cancel()
 	}()
 
-	err = os.Chdir(repoDir)
-	require.NoError(t, err)
+	t.Chdir(repoDir)
 	err = remotebazel.RemoteFlagset.Parse([]string{"--runner_exec_properties=workload-isolation-type=none", "--runner_exec_properties=container-image="})
 	require.NoError(t, err)
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
@@ -416,8 +409,7 @@ int main() {
 		})
 		return outputPath, err
 	}
-	err := os.Chdir(repoDir)
-	require.NoError(t, err)
+	t.Chdir(repoDir)
 	downloadedOutputPath, err := findFile(remotebazel.BuildBuddyArtifactDir, "main")
 	require.NoError(t, err)
 
