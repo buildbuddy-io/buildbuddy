@@ -13,6 +13,7 @@ go_web_test_suite(
         "//proto:context_go_proto",
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",
+        "//server/testutil/quarantine",
         "//server/testutil/webtester",
         "//server/util/grpc_client",
         "@com_github_stretchr_testify//require",
