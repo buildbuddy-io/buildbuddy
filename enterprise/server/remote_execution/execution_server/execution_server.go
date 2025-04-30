@@ -1065,6 +1065,16 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		return true
 	})
 
+	deletePendingExecutionOnce := sync.OnceFunc(func() {
+		if taskID == "" {
+			return
+		}
+		if err := action_merger.DeletePendingExecution(ctx, s.rdb, taskID); err != nil {
+			log.CtxWarningf(ctx, "could not delete pending execution %q: %s", taskID, err)
+		}
+	})
+	defer deletePendingExecutionOnce()
+
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
@@ -1134,9 +1144,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			// may specify skip_cache_lookup, we need to ensure that the result is not visible in the cache before the
 			// action is merged. At the same time, we don't want the window between the calls to be too large to avoid
 			// reducing the effectiveness of merging.
-			if err := action_merger.DeletePendingExecution(ctx, s.rdb, taskID); err != nil {
-				log.CtxWarningf(ctx, "could not delete pending execution %q: %s", taskID, err)
-			}
+			deletePendingExecutionOnce()
 			actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
 			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
