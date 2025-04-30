@@ -21,6 +21,8 @@ package ociregistry;
 // Metadata needed for serving a manifest or layer from the CAS.
 message OCIBlobMetadata {
   int64 content_length = 1;
+  // The value of the Content-Type HTTP header received
+  // from the upstream registry.
   string content_type = 2;
 }
 
@@ -53,5 +55,7 @@ message OCIActionResultKey {
 
 message OCIManifestContent {
   bytes raw = 1;
+  // The value of the Content-Type HTTP header received
+  // from the upstream registry.
   string content_type = 2;
 }
