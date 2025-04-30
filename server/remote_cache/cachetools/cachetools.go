@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -258,16 +259,29 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		if err != nil {
 			return nil, 0, err
 		}
-		written, err := io.Copy(w, in)
-		if err != nil {
-			w.Close()
+		buf := make([]byte, uploadBufSizeBytes)
+		var bytesUploaded int64
+		for {
+			n, err := ioutil.ReadTryFillBuffer(in, buf)
+			done := err == io.EOF
+			if err != nil && !done {
+				w.Close()
+				return nil, 0, err
+			}
+			written, err := w.Write(buf[:n])
+			if err != nil {
+				w.Close()
+				return nil, 0, err
+			}
+			bytesUploaded += int64(written)
+			if done {
+				break
+			}
+		}
+		if err := w.Close(); err != nil {
 			return nil, 0, err
 		}
-		err = w.Close()
-		if err != nil {
-			return nil, 0, err
-		}
-		return r.GetDigest(), written, nil
+		return r.GetDigest(), bytesUploaded, nil
 	}
 
 	stream, err := bsClient.Write(ctx)
