@@ -77,7 +77,6 @@ go_test(
     },
     deps = [
         ":ociruntime",
-        "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/persistentworker",
         "//enterprise/server/remote_execution/platform",
@@ -89,6 +88,7 @@ go_test(
         "//proto:worker_go_proto",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/testutil/quarantine",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testnetworking",

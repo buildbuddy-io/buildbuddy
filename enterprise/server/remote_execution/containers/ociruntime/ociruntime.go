@@ -383,11 +383,7 @@ func (c *ociContainer) rootfsPath() string {
 }
 
 func (c *ociContainer) cgroupRootRelativePath() string {
-	// Each container gets 2 cgroups: a parent cgroup and a child cgroup. We do
-	// this to work around crun deleting the container cgroup after the
-	// containerized process has run, which is inconvenient because we still
-	// want to read from the cgroup after the process has exited.
-	return filepath.Join(c.cgroupParent, c.cid+"_parent", c.cid)
+	return filepath.Join(c.cgroupParent, c.cid)
 }
 
 func (c *ociContainer) cgroupPath() string {
@@ -511,7 +507,10 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	}
 
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
-		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
+		// Use --keep to prevent the cgroup from being deleted when the
+		// container exits, since we still want to be able to look at stats,
+		// events, etc. after completion.
+		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--keep", "--bundle="+c.bundlePath(), c.cid)
 	})
 }
 
@@ -646,13 +645,9 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 		firstErr = status.UnavailableErrorf("remove bundle: %s", err)
 	}
 
-	// Remove child cgroup if crun hasn't deleted it already
+	// Remove the cgroup in case the delete command didn't work as expected.
 	if err := os.Remove(c.cgroupPath()); err != nil && firstErr == nil && !os.IsNotExist(err) {
 		firstErr = status.UnavailableErrorf("remove container cgroup: %s", err)
-	}
-	// Remove parent cgroup
-	if err := os.Remove(filepath.Dir(c.cgroupPath())); err != nil && firstErr == nil && !os.IsNotExist(err) {
-		firstErr = status.UnavailableErrorf("remove parent cgroup: %s", err)
 	}
 
 	if c.releaseCPUs != nil {
@@ -732,7 +727,7 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	// Check for oom_kill memory events in the cgroup and return a
 	// ResourceExhausted error if found. We read this from the parent cgroup,
 	// because at this point, crun will have deleted the child cgroup.
-	memoryEvents, err := cgroup.ReadMemoryEvents(filepath.Dir(c.cgroupPath()))
+	memoryEvents, err := cgroup.ReadMemoryEvents(c.cgroupPath())
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to get memory events: %s", err)
 	} else if memoryEvents["oom_kill"] > 0 {
@@ -761,11 +756,6 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	path := c.cgroupPath()
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create cgroup: %w", err)
-	}
-	// Propagate enabled controllers to the child cgroup before performing
-	// cgroup setup.
-	if err := cgroup.DelegateControllers(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("delegate controllers: %w", err)
 	}
 	if err := cgroup.Setup(ctx, path, c.cgroupSettings, c.blockDevice); err != nil {
 		return fmt.Errorf("configure cgroup: %w", err)
