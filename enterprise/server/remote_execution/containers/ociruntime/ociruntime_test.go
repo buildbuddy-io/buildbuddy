@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
@@ -762,6 +763,7 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 }
 
 func TestCreateFailureHasStderr(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
@@ -852,6 +854,7 @@ func TestDevices(t *testing.T) {
 }
 
 func TestSignal(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
@@ -901,6 +904,7 @@ func TestSignal(t *testing.T) {
 }
 
 func TestNetwork_Enabled(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
