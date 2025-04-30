@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -42,10 +43,10 @@ const (
 	// File name used for the rootfs snapshot artifact.
 	rootfsFileName = "rootfs.ext4"
 
-	// Max number of goroutines allowed to run concurrently when uploading a
+	// Min number of goroutines to run concurrently when uploading a
 	// chunked file's contents to cache (one goroutine is spawned per chunk, and
 	// this limit applies per-file).
-	chunkedFileWriteConcurrency = 4
+	minChunkedFileWriteConcurrency = 4
 )
 
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
@@ -902,7 +903,8 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
-	eg.SetLimit(chunkedFileWriteConcurrency)
+	writeConcurrency := int(math.Max(minChunkedFileWriteConcurrency, float64(cacheOpts.VMConfiguration.GetNumCpus())))
+	eg.SetLimit(writeConcurrency)
 
 	chunks := cow.SortedChunks()
 	var mu sync.RWMutex
