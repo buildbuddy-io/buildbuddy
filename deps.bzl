@@ -519,8 +519,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bazelbuild_bazel_gazelle",
         importpath = "github.com/bazelbuild/bazel-gazelle",
-        sum = "h1:BpkUzE3H2l6buJYFTKgzVMecJimQgWwYud25qVIx0SQ=",
-        version = "v0.42.0",
+        sum = "h1:NQmf8f7+7OcecUdnAgYoPete6RzAutjEuYjNhE9LU68=",
+        version = "v0.43.0",
     )
     go_repository(
         name = "com_github_bazelbuild_bazelisk",
@@ -654,7 +654,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bojand_ghz",
         build_directives = [
-            "gazelle:resolve go github.com/prometheus/client_model/go @{}//proto:prometheus_client_go_proto".format(workspace_name),
+            "gazelle:resolve go github.com/prometheus/client_model/go @com_github_prometheus_client_model//io/prometheus/client:go",
         ],
         importpath = "github.com/bojand/ghz",
         sum = "h1:6F4wsmZVwFg5UnD+/R+IABWk6sKE/0OKIBdUQUZnOdo=",
@@ -1034,22 +1034,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_containerd_containerd_api",
-        build_directives = [
-            "gazelle:proto file",
-            "gazelle:proto_import_prefix github.com/containerd/containerd/api",
-            "gazelle:resolve proto go github.com/containerd/containerd/api/types //types:types",
-            "gazelle:resolve go github.com/containerd/containerd/api/types/descriptor //types:types",
-            "gazelle:resolve go github.com/containerd/containerd/api/types/fieldpath //types:types",
-            "gazelle:resolve go github.com/containerd/containerd/api/types/metrics //types:types",
-            "gazelle:resolve go github.com/containerd/containerd/api/types/mount //types:types",
-            "gazelle:resolve go github.com/containerd/containerd/api/types/platform //types:types",
-            "gazelle:resolve go github.com/containerd/containerd/api/types/sandbox //types:types",
-            "gazelle:resolve go github.com/containerd/containerd/api/types/task //types/task:task",
-            "gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
-            "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
-        ],
+        build_file_proto_mode = "disable_global",
         importpath = "github.com/containerd/containerd/api",
-        patches = ["@{}//buildpatches:com_github_containerd_containerd_api.patch".format(workspace_name)],
         sum = "h1:hVTNJKR8fMc/2Tiw60ZRijntNMd1U+JVMyTRdsD2bS0=",
         version = "v1.8.0",
     )
@@ -4099,7 +4085,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_prometheus_client_golang",
         build_directives = [
-            "gazelle:resolve go github.com/prometheus/client_model/go @{}//proto:prometheus_client_go_proto".format(workspace_name),
+            "gazelle:resolve go github.com/prometheus/client_model/go @com_github_prometheus_client_model//io/prometheus/client:go",
         ],
         importpath = "github.com/prometheus/client_golang",
         sum = "h1:DIsaGmiaBkSangBgMtWdNfxbMNdku5IK6iNhrEqWvdA=",
@@ -4107,6 +4093,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_prometheus_client_model",
+        build_directives = [
+            "gazelle:go_proto_compilers @io_bazel_rules_go//proto:go_proto,@buildbuddy//proto:vtprotobuf_compiler",
+        ],
         importpath = "github.com/prometheus/client_model",
         sum = "h1:ZKSh/rekM+n3CeS952MLRAdFwIKqeY8b62p8ais2e9E=",
         version = "v0.6.1",
@@ -4114,7 +4103,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_prometheus_common",
         build_directives = [
-            "gazelle:resolve go github.com/prometheus/client_model/go @{}//proto:prometheus_client_go_proto".format(workspace_name),
+            "gazelle:resolve go github.com/prometheus/client_model/go @com_github_prometheus_client_model//io/prometheus/client:go",
         ],
         importpath = "github.com/prometheus/common",
         sum = "h1:xasJaQlnWAeyHdUBeGjXmutelfJHWMRr+Fg4QszZ2Io=",

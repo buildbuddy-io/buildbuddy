@@ -49,11 +49,6 @@ go_deps.module_override(
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["@@//buildpatches:com_github_bojand_ghz.patch"],
-    path = "github.com/bojand/ghz",
-)
-go_deps.module_override(
-    patch_strip = 1,
     patches = [
         "@@//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch",
         "@@//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_cgroup.patch",
@@ -85,12 +80,6 @@ go_deps.module_override(
         "@@//buildpatches:io_kythe.patch",
     ],
     path = "kythe.io",
-)
-go_deps.module_override(
-    patches = [
-        "@@//buildpatches:com_github_containerd_containerd_api.patch",
-    ],
-    path = "github.com/containerd/containerd/api",
 )
 go_deps.module_override(
     patches = [
@@ -128,20 +117,7 @@ go_deps.gazelle_override(
     path = "github.com/cncf/xds/go",
 )
 go_deps.gazelle_override(
-    directives = [
-        "gazelle:proto file",
-        "gazelle:proto_import_prefix github.com/containerd/containerd/api",
-        "gazelle:resolve proto go github.com/containerd/containerd/api/types //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/descriptor //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/fieldpath //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/metrics //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/mount //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/platform //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/sandbox //types:types",
-        "gazelle:resolve go github.com/containerd/containerd/api/types/task //types/task:task",
-        "gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
-        "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
-    ],
+    directives = ["gazelle:proto disable"],
     path = "github.com/containerd/containerd/api",
 )
 go_deps.gazelle_override(
@@ -172,13 +148,25 @@ go_deps.gazelle_override(
 )
 go_deps.gazelle_override(
     directives = [
-        "gazelle:resolve go github.com/prometheus/client_model/go @@//proto:prometheus_client_go_proto",
+        "gazelle:go_proto_compilers @io_bazel_rules_go//proto:go_proto,@@//proto:vtprotobuf_compiler",
+    ],
+    path = "github.com/prometheus/client_model",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:resolve go github.com/prometheus/client_model/go @com_github_prometheus_client_model//io/prometheus/client:go",
+    ],
+    path = "github.com/bojand/ghz",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:resolve go github.com/prometheus/client_model/go @com_github_prometheus_client_model//io/prometheus/client:go",
     ],
     path = "github.com/prometheus/client_golang",
 )
 go_deps.gazelle_override(
     directives = [
-        "gazelle:resolve go github.com/prometheus/client_model/go @@//proto:prometheus_client_go_proto",
+        "gazelle:resolve go github.com/prometheus/client_model/go @com_github_prometheus_client_model//io/prometheus/client:go",
     ],
     path = "github.com/prometheus/common",
 )
