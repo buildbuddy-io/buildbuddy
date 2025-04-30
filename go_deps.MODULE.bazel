@@ -90,20 +90,8 @@ go_deps.module_override(
 
 # Go repos with custom directives
 go_deps.gazelle_override(
-    directives = ["gazelle:proto disable"],
-    path = "k8s.io/kubelet",
-)
-go_deps.gazelle_override(
-    directives = ["gazelle:proto disable"],
-    path = "google.golang.org/protobuf",
-)
-go_deps.gazelle_override(
     directives = ["gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2"],
     path = "github.com/awslabs/soci-snapshotter",
-)
-go_deps.gazelle_override(
-    directives = ["gazelle:proto disable"],
-    path = "github.com/cockroachdb/errors",
 )
 go_deps.gazelle_override(
     directives = [
@@ -115,10 +103,6 @@ go_deps.gazelle_override(
 go_deps.gazelle_override(
     directives = ["gazelle:resolve go cel.dev/expr @dev_cel_expr//proto/cel/expr:expr_go_proto"],
     path = "github.com/cncf/xds/go",
-)
-go_deps.gazelle_override(
-    directives = ["gazelle:proto disable"],
-    path = "github.com/containerd/containerd/api",
 )
 go_deps.gazelle_override(
     directives = [
