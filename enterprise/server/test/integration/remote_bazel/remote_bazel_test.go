@@ -141,7 +141,7 @@ func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress
 		},
 		args...)...)
 	b, err := cmd.CombinedOutput()
-	fmt.Println(string(b))
+	t.Log(string(b))
 	require.NoError(t, err)
 }
 
