@@ -360,7 +360,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 }
 
-func trackCache(cacheType, eventType string) {
+func updateCacheEventMetric(cacheType, eventType string) {
 	metrics.OCIRegistryCacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      cacheType,
 		metrics.CacheEventTypeLabel: eventType,
@@ -370,7 +370,7 @@ func trackCache(cacheType, eventType string) {
 func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
 	hash, err := gcr.NewHash(ref.Identifier())
 	if err != nil {
-		trackCache(actionCacheLabel, missLabel)
+		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return err
 	}
 	arKey := &ocipb.OCIActionResultKey{
@@ -382,12 +382,12 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	}
 	arKeyBytes, err := proto.Marshal(arKey)
 	if err != nil {
-		trackCache(actionCacheLabel, missLabel)
+		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return err
 	}
 	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
 	if err != nil {
-		trackCache(actionCacheLabel, missLabel)
+		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return err
 	}
 	arRN := digest.NewACResourceName(
@@ -397,10 +397,10 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	)
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
-		trackCache(actionCacheLabel, missLabel)
+		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return err
 	}
-	trackCache(actionCacheLabel, hitLabel)
+	updateCacheEventMetric(actionCacheLabel, hitLabel)
 
 	var blobMetadataCASDigest *repb.Digest
 	var blobCASDigest *repb.Digest
@@ -415,7 +415,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		}
 	}
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
-		trackCache(casLabel, missLabel)
+		updateCacheEventMetric(casLabel, missLabel)
 		return fmt.Errorf("missing blob metadata digest or blob digest for %s", ref)
 	}
 	blobMetadataRN := digest.NewCASResourceName(
@@ -426,10 +426,10 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	blobMetadata := &ocipb.OCIBlobMetadata{}
 	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
 	if err != nil {
-		trackCache(casLabel, missLabel)
+		updateCacheEventMetric(casLabel, missLabel)
 		return err
 	}
-	trackCache(casLabel, hitLabel)
+	updateCacheEventMetric(casLabel, hitLabel)
 	w.Header().Add(headerDockerContentDigest, hash.String())
 	w.Header().Add(headerContentLength, strconv.FormatInt(blobMetadata.GetContentLength(), 10))
 	w.Header().Add(headerContentType, blobMetadata.GetContentType())
@@ -452,10 +452,10 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		}).Observe(float64(counter.Count()))
 	}()
 	if err := cachetools.GetBlob(ctx, bsClient, blobRN, mw); err != nil {
-		trackCache(casLabel, missLabel)
+		updateCacheEventMetric(casLabel, missLabel)
 		return err
 	}
-	trackCache(casLabel, hitLabel)
+	updateCacheEventMetric(casLabel, hitLabel)
 	return nil
 }
 
@@ -471,7 +471,7 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
 	tr := io.TeeReader(upstream, w)
-	trackCache(casLabel, uploadLabel)
+	updateCacheEventMetric(casLabel, uploadLabel)
 	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, tr)
 	if err != nil {
 		return err
@@ -481,7 +481,7 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		ContentLength: contentLength,
 		ContentType:   contentType,
 	}
-	trackCache(casLabel, uploadLabel)
+	updateCacheEventMetric(casLabel, uploadLabel)
 	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
 	if err != nil {
 		return err
@@ -519,7 +519,7 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		actionResultInstanceName,
 		repb.DigestFunction_SHA256,
 	)
-	trackCache(actionCacheLabel, uploadLabel)
+	updateCacheEventMetric(actionCacheLabel, uploadLabel)
 	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
 	if err != nil {
 		return err
