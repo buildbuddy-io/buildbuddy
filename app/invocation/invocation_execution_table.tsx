@@ -8,11 +8,11 @@ import {
   executionDuration,
   uploadDuration,
   getActionPageLink,
+  workerDuration,
 } from "./invocation_execution_util";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
-import { digestToString } from "../util/cache";
 
 interface Props {
   executions: execution_stats.Execution[];
@@ -35,11 +35,33 @@ export default class InvocationExecutionTable extends React.Component<Props> {
               href={getActionPageLink(this.props.invocationIdProvider(execution), execution)}>
               <div className="invocation-execution-row-image">{status.icon}</div>
               <div>
-                <div className="invocation-execution-row-header">
-                  <span className="invocation-execution-row-header-status">{status.name}</span>
-                  <DigestComponent digest={execution.actionDigest} expanded={true} />
+                <div className="execution-header">
+                  {execution.targetLabel && <span className="target-label">{execution.targetLabel}</span>}
+                  <DigestComponent digest={execution.actionDigest} />
                 </div>
-                <div>{execution.commandSnippet}</div>
+                <div className="command-snippet">$ {execution.commandSnippet}</div>
+                <div className="status">
+                  {!execution.status?.code && (
+                    <span>
+                      {execution.exitCode ? (
+                        <>
+                          <span className="status-name failed">{status.name}</span> in{" "}
+                          {format.durationUsec(workerDuration(execution))} (exit code {execution.exitCode})
+                        </>
+                      ) : (
+                        <>
+                          <span className="status-name success">{status.name}</span> in{" "}
+                          {format.durationUsec(workerDuration(execution))}
+                        </>
+                      )}
+                    </span>
+                  )}
+                  {!!execution.status?.code && (
+                    <span className="status-code">
+                      <span className="status-name error">{status.name}:</span> {execution.status.message}
+                    </span>
+                  )}
+                </div>
                 <div className="invocation-execution-row-stats">
                   <div>Executor Host ID: {execution.executedActionMetadata?.worker}</div>
                   <div>Total duration: {format.durationUsec(totalDuration(execution))}</div>
@@ -56,9 +78,6 @@ export default class InvocationExecutionTable extends React.Component<Props> {
                     {format.formatWithCommas(execution?.executedActionMetadata?.ioStats?.fileUploadCount)} files)
                   </div>
                 </div>
-                {execution.status?.code !== 0 && execution.status?.message && (
-                  <div className="invocation-execution-row-status-message">{execution.status.message}</div>
-                )}
               </div>
             </Link>
           );

@@ -157,6 +157,7 @@ func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
 			},
 			DoNotCache: in.DoNotCache,
 		},
+		TargetLabel:    in.TargetLabel,
 		CommandSnippet: in.CommandSnippet,
 	}
 
@@ -194,6 +195,7 @@ func ExecutionListingColumns() []string {
 		"peak_memory_bytes",
 		"do_not_cache",
 		"command_snippet",
+		"target_label",
 	}
 }
 
