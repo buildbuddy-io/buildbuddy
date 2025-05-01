@@ -344,6 +344,32 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	return nil, status.UnauthenticatedErrorf("%s: %s", authutil.UserNotFoundMsg, err.Error())
 }
 
+// ChangeSelectedGroupID changes the authenticated user's selected group ID to
+// the given value.
+//
+// It returns a PermissionDenied error if the user does not have access to the
+// given group ID.
+func ChangeSelectedGroupID(ctx context.Context, env environment.Env, groupID string) (context.Context, error) {
+	// TODO: break circular dependency and move this function to authutil.
+
+	// Verify that the user has access to the given group ID.
+	if err := authutil.AuthorizeGroupAccess(ctx, env, groupID); err != nil {
+		return ctx, err
+	}
+
+	// Get authenticated claims from the context.
+	c, err := ClaimsFromContext(ctx)
+	if err != nil {
+		return ctx, err
+	}
+
+	// Assemble a new JWT with the group ID overridden.
+	newClaims := *c
+	newClaims.GroupID = groupID
+
+	return AuthContextFromClaims(ctx, &newClaims, nil /*=err*/), nil
+}
+
 // ClaimsCache helps reduce CPU overhead due to JWT parsing by caching parsed
 // and verified JWT claims.
 //

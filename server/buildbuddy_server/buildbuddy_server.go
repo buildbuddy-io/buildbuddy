@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -1877,7 +1878,8 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 	if iid == "" {
 		return http.StatusBadRequest, status.FailedPreconditionError("Missing invocation_id param")
 	}
-	if _, err := s.env.GetInvocationDB().LookupInvocation(ctx, iid); err != nil {
+	invocation, err := s.env.GetInvocationDB().LookupInvocation(ctx, iid)
+	if err != nil {
 		if status.IsPermissionDeniedError(err) {
 			return http.StatusForbidden, status.PermissionDeniedErrorf("User does not have permissions to access invocation %s", iid)
 		} else if status.IsNotFoundError(err) {
@@ -1887,6 +1889,19 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			return http.StatusInternalServerError, status.InternalErrorf("Internal server error")
 		}
 	}
+
+	// Set the selected group ID to the group ID of the invocation. If the
+	// invocation is public, and the user doesn't have access to the group,
+	// we'll get an error here. Just log it for now, preserving the currently
+	// selected group ID. The artifact may or may not be accessible in this
+	// case, depending on the artifact type.
+	if invocation.GroupID != "" {
+		ctx, err = claims.ChangeSelectedGroupID(ctx, s.env, invocation.GroupID)
+		if err != nil {
+			log.CtxInfof(ctx, "Could not change selected group ID to %s for invocation %q: %s", invocation.GroupID, iid, err)
+		}
+	}
+
 	switch artifact := params.Get("artifact"); artifact {
 	case "raw_json":
 		if err := s.serveRawEventJSON(ctx, w, iid); err != nil {
@@ -2016,6 +2031,20 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 	lookup, err := parseByteStreamURL(params.Get("bytestream_url"), params.Get("filename"))
 	if err != nil {
 		return http.StatusBadRequest, err
+	}
+
+	// Cache artifacts may only be accessible when authenticated as the
+	// invocation owner. So, if the invocation ID is set in the URL, attempt to
+	// set the selected group ID to the invocation owner group ID.
+	if iid := params.Get("invocation_id"); iid != "" {
+		invocation, err := s.env.GetInvocationDB().LookupInvocation(ctx, iid)
+		if err != nil {
+			return http.StatusNotFound, status.NotFoundErrorf("Invocation not found.")
+		}
+		ctx, err = claims.ChangeSelectedGroupID(ctx, s.env, invocation.GroupID)
+		if err != nil {
+			log.CtxInfof(ctx, "Could not change selected group ID to %s for invocation %q: %s", invocation.GroupID, iid, err)
+		}
 	}
 
 	var zipReference = params.Get("z")
