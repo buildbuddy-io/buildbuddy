@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -206,4 +207,50 @@ func AddAuthHeadersToContext(ctx context.Context, headers map[string][]string, a
 		}
 	}
 	return ctx
+}
+
+// CapabilitiesForGroup returns the authenticated user's capabilities for the
+// given group ID. It always returns an error for anonymous requests.
+func CapabilitiesForGroup(ctx context.Context, authenticator interfaces.Authenticator, groupID string) ([]akpb.ApiKey_Capability, error) {
+	u, err := authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, gm := range u.GetGroupMemberships() {
+		if gm.GroupID == groupID {
+			return gm.Capabilities, nil
+		}
+	}
+	return nil, status.PermissionDeniedError("you are not a member of the requested organization")
+}
+
+// CapabilitiesForSelectedGroup returns the authenticated user's capabilities
+// for their authenticated group, or the anonymous user capabilities if not
+// authenticated.
+func CapabilitiesForSelectedGroup(ctx context.Context, authenticator interfaces.Authenticator) ([]akpb.ApiKey_Capability, error) {
+	u, err := authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		if IsAnonymousUserError(err) && authenticator.AnonymousUsageEnabled(ctx) {
+			return capabilities.AnonymousUserCapabilities, nil
+		}
+		return nil, err
+	}
+	return u.GetCapabilities(), nil
+}
+
+// HasCapabilityForSelectedGroup returns true if the authenticated user has the
+// given capability within their selected group.
+func HasCapabilityForSelectedGroup(ctx context.Context, authenticator interfaces.Authenticator, cap akpb.ApiKey_Capability) (bool, error) {
+	caps, err := CapabilitiesForSelectedGroup(ctx, authenticator)
+	if err != nil {
+		// TODO: this check exists to match the old behavior of
+		// capabilities.IsGranted, but is inconsistent with
+		// CapabilitiesForSelectedGroup, which returns an error in this case.
+		// Probably worth revisiting this.
+		if IsAnonymousUserError(err) && !authenticator.AnonymousUsageEnabled(ctx) {
+			return false, nil
+		}
+		return false, err
+	}
+	return slices.Contains(caps, cap), nil
 }

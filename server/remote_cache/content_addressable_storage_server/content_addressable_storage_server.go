@@ -18,9 +18,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -154,10 +154,11 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		return nil, err
 	}
 
-	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
+	caps, err := authutil.CapabilitiesForSelectedGroup(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}
+	canWrite := slices.Contains(caps, akpb.ApiKey_CACHE_WRITE_CAPABILITY) || slices.Contains(caps, akpb.ApiKey_CAS_WRITE_CAPABILITY)
 	if !canWrite {
 		// For read-only API keys, pretend the write succeeded.
 		for _, uploadRequest := range req.Requests {

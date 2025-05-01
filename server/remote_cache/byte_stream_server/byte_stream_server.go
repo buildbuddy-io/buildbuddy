@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"slices"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_deprecation"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
-	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -241,10 +242,11 @@ func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteReques
 		resourceName:       r,
 		resourceNameString: req.ResourceName,
 	}
-	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
+	caps, err := authutil.CapabilitiesForSelectedGroup(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
 	}
+	canWrite := slices.Contains(caps, akpb.ApiKey_CACHE_WRITE_CAPABILITY) || slices.Contains(caps, akpb.ApiKey_CAS_WRITE_CAPABILITY)
 	if !canWrite {
 		// Return already-exists error if the API key may not write so that
 		// higher-level code can detect and short-circuit this case.

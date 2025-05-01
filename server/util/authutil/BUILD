@@ -11,6 +11,7 @@ go_library(
         "//server/interfaces",
         "//server/util/alert",
         "//server/util/blocklist",
+        "//server/util/capabilities",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
@@ -24,8 +25,13 @@ go_test(
     name = "authutil_test",
     size = "small",
     srcs = ["authutil_test.go"],
-    embed = [":authutil"],
     deps = [
+        ":authutil",
+        "//proto:api_key_go_proto",
+        "//server/interfaces",
+        "//server/nullauth",
+        "//server/testutil/testauth",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

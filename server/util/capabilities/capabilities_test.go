@@ -1,11 +1,9 @@
 package capabilities_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -56,67 +54,4 @@ func TestFromInt_OneCapability(t *testing.T) {
 func TestFromInt_MultipleCapabilities(t *testing.T) {
 	// TODO: we don't have multiple capabilities yet but should def test it when we do
 	t.Skip()
-}
-
-func TestIsGranted_AnonymousUsageEnabled_AnonymousUser_True(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	anonCtx := context.Background()
-
-	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
-
-	assert.True(t, canWrite)
-	assert.Nil(t, err)
-}
-
-func TestIsGranted_NullAuthenticator(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	te.SetAuthenticator(&nullauth.NullAuthenticator{})
-	anonCtx := context.Background()
-
-	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
-
-	assert.True(t, canWrite)
-	assert.Nil(t, err)
-}
-
-func TestNotGranted_NullAuthenticator_AnonymousUsage_Disabled(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	te.SetAuthenticator(nullauth.NewNullAuthenticator(false, ""))
-
-	anonCtx := context.Background()
-
-	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
-
-	assert.False(t, canWrite)
-	assert.Nil(t, err)
-}
-
-func TestIsGranted_TestUserWithCapability_True(t *testing.T) {
-	user := &testauth.TestUser{
-		UserID:       "US1",
-		GroupID:      "GR1",
-		Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
-	}
-	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
-	authCtx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
-
-	canWrite, err := capabilities.IsGranted(authCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
-
-	assert.True(t, canWrite)
-	assert.Nil(t, err)
-}
-
-func TestIsGranted_TestUserWithoutCapability_False(t *testing.T) {
-	user := &testauth.TestUser{
-		UserID:       "US1",
-		GroupID:      "GR1",
-		Capabilities: []akpb.ApiKey_Capability{},
-	}
-	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
-	authCtx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
-
-	canWrite, err := capabilities.IsGranted(authCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
-
-	assert.False(t, canWrite)
-	assert.Nil(t, err)
 }

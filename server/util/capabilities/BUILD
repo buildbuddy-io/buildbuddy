@@ -5,12 +5,7 @@ go_library(
     srcs = ["capabilities.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/capabilities",
     visibility = ["//visibility:public"],
-    deps = [
-        "//proto:api_key_go_proto",
-        "//server/interfaces",
-        "//server/util/authutil",
-        "//server/util/status",
-    ],
+    deps = ["//proto:api_key_go_proto"],
 )
 
 go_test(
@@ -21,7 +16,6 @@ go_test(
         ":capabilities",
         "//proto:api_key_go_proto",
         "//server/interfaces",
-        "//server/nullauth",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "@com_github_stretchr_testify//assert",
