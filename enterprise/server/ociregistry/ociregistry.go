@@ -630,10 +630,12 @@ func fetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	}
 	arKeyBytes, err := proto.Marshal(arKey)
 	if err != nil {
+		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return nil, err
 	}
 	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
 	if err != nil {
+		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return nil, err
 	}
 	arRN := digest.NewACResourceName(
@@ -644,15 +646,18 @@ func fetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
+		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return nil, err
 	}
 	meta := ar.GetExecutionMetadata()
 	if meta == nil {
+		updateCacheEventMetric(actionCacheLabel, missLabel)
 		log.CtxWarningf(ctx, "Missing execution metadata for manifest in %q", ref.Context())
 		return nil, status.InternalErrorf("missing execution metadata for manifest in %q", ref.Context())
 	}
 	aux := meta.GetAuxiliaryMetadata()
 	if aux == nil || len(aux) != 1 {
+		updateCacheEventMetric(actionCacheLabel, missLabel)
 		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest in %q", ref.Context())
 		return nil, status.InternalErrorf("missing auxiliary metadata for manifest in %q", ref.Context())
 	}
@@ -660,8 +665,10 @@ func fetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	var mc ocipb.OCIManifestContent
 	err = any.UnmarshalTo(&mc)
 	if err != nil {
+		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return nil, status.InternalErrorf("could not unmarshal metadata for manifest in %q: %s", ref.Context(), err)
 	}
+	updateCacheEventMetric(actionCacheLabel, hitLabel)
 	return &mc, nil
 }
 
