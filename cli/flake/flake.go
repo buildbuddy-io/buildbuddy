@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -46,10 +47,11 @@ func HandleFlake(args []string) (int, error) {
 		return 1, nil
 	}
 
-	ctx := context.Background()
-	if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil && apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+	apiKey, err := storage.ReadRepoConfig("api-key")
+	if err != nil {
+		return 1, fmt.Errorf("could not read api key: %s", err)
 	}
+	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
 	// Dial BuildBuddy API
 	conn, err := grpc_client.DialSimple(*targetFlag)
 	if err != nil {
@@ -59,20 +61,27 @@ func HandleFlake(args []string) (int, error) {
 
 	client := buildbuddy_service.NewBuildBuddyServiceClient(conn)
 
-	// Create and send the request
-	req := &target.GetDailyTargetStatsRequest{}
-	resp, err := client.GetDailyTargetStats(ctx, req)
+	req := &target.GetTargetStatsRequest{}
+	resp, err := client.GetTargetStats(ctx, req)
 	if err != nil {
-		return -1, fmt.Errorf("GetDailyTargetStats RPC failed: %w", err)
+		return -1, fmt.Errorf("GetTargetStats RPC failed: %w", err)
 	}
 
-	// Print the flaky targets
-	fmt.Fprintln(os.Stdout, "Flaky target stats over the last 7 days:")
+	if len(resp.Stats) == 0 {
+		fmt.Fprintln(os.Stdout, "No flaky targets found in the last 7 days.")
+		return 0, nil
+	}
+
+	// Sort by flaky runs descending
+	sort.Slice(resp.Stats, func(i, j int) bool {
+		return resp.Stats[i].Data.FlakyRuns > resp.Stats[j].Data.FlakyRuns
+	})
+
+	fmt.Fprintln(os.Stdout, "Top flaky targets in the last 7 days:")
 	for _, stat := range resp.Stats {
-		if stat.Data.GetFlakyRuns() > 0 {
-			fmt.Fprintf(os.Stdout, "Date: %s, Flaky runs: %d\n", stat.Date, stat.Data.GetFlakyRuns())
+		if stat.Data.FlakyRuns > 0 {
+			fmt.Fprintf(os.Stdout, "%6d flakes  %s\n", stat.Data.FlakyRuns, stat.Label)
 		}
 	}
-
 	return 0, nil
 }
