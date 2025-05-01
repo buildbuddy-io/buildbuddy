@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
@@ -36,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
@@ -121,10 +123,32 @@ func clonePrivateTestRepo(t *testing.T) string {
 	}
 
 	repoDir := fmt.Sprintf("%s/%s", rootDir, repoName)
-	err = os.Chdir(repoDir)
+	t.Chdir(repoDir)
 	require.NoError(t, err)
 	testshell.Run(t, repoDir, "git pull")
 	return repoDir
+}
+
+// makeLocalGitRepo creates a local git repo to use for tests. This is faster
+// than using `clonePrivateTestRepo` which fetches from the remote GitHub server.
+func makeLocalGitRepo(t *testing.T, contents map[string]string) (path, commitSHA string) {
+	// Make the repo contents globally unique so that this makeGitRepo func can be
+	// called more than once to create unique repos with incompatible commit
+	// history.
+	contents[".repo_id"] = uuid.New().String()
+	// References bazel from runfiles that is optimized to run faster for tests.
+	contents[".bazelversion"] = testbazel.BinaryPath(t)
+	path = testbazel.MakeTempModule(t, contents)
+	commitSHA = testgit.Init(t, path)
+	testfs.WriteAllFileContents(t, path, map[string]string{
+		// Set up remote URL for the local git repo.
+		".git/config": `
+[remote "origin"]
+	url = file://` + path + `
+	fetch = +refs/heads/*:refs/remotes/origin/*
+`,
+	})
+	return path, commitSHA
 }
 
 // Run remote bazel in a separate process so it doesn't interfere with
@@ -145,71 +169,11 @@ func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress
 	require.NoError(t, err)
 }
 
-func TestWithPublicRepo(t *testing.T) {
-	// Use a dir that is persisted on recycled runners
-	rootDir := "/root/workspace/remote-bazel-integration-test"
-	err := os.Setenv("HOME", rootDir)
-	require.NoError(t, err)
-
-	err = os.MkdirAll(rootDir, 0755)
-	require.NoError(t, err)
-
-	workDir := fmt.Sprintf("%s/bazel-gazelle", rootDir)
-	if _, err := os.Stat(workDir); os.IsNotExist(err) {
-		output := testshell.Run(t, rootDir, "git clone https://github.com/bazelbuild/bazel-gazelle --filter=blob:none --depth=1")
-		require.NotContains(t, output, "fatal")
-	}
-
-	err = os.Chdir(workDir)
-	require.NoError(t, err)
-
-	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, "", "https://github.com/bazelbuild/bazel-gazelle", nil)
-	ctx := env.WithUserID(context.Background(), env.UserID1)
-	reqCtx := &ctxpb.RequestContext{
-		UserId:  &uidpb.UserId{Id: env.UserID1},
-		GroupId: env.GroupID1,
-	}
-
-	// Get an API key to authenticate the remote bazel request
-	bbClient := env.GetBuildBuddyServiceClient()
-	apiRsp, err := bbClient.CreateApiKey(ctx, &akpb.CreateApiKeyRequest{
-		RequestContext: reqCtx,
-		Capability: []akpb.ApiKey_Capability{
-			akpb.ApiKey_CAS_WRITE_CAPABILITY,
-			akpb.ApiKey_CACHE_WRITE_CAPABILITY,
-			akpb.ApiKey_ORG_ADMIN_CAPABILITY,
-		},
-	})
-	require.NoError(t, err)
-	apiKey := apiRsp.ApiKey.Value
-
-	runRemoteBazelInSeparateProcess(t, workDir, bbServer.GRPCAddress(), "help", fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", apiKey))
-
-	// Check the invocation logs to ensure the "bazel help" command successfully run
-	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
-		RequestContext: reqCtx,
-		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
-	})
-	require.NoError(t, err)
-	require.Equal(t, 1, len(searchRsp.GetInvocation()))
-	invocationID := searchRsp.Invocation[0].InvocationId
-
-	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-		InvocationId: invocationID,
-		MinLines:     math.MaxInt32,
-	})
-	require.NoError(t, err)
-	require.Contains(t, string(logResp.GetBuffer()), "Usage: bazel <command> <options>")
-}
-
 func TestWithPrivateRepo(t *testing.T) {
 	repoDir := clonePrivateTestRepo(t)
 
-	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
+	env, bbServer, _ := runLocalServerAndExecutor(t, true, nil)
 
 	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		"run",
@@ -249,7 +213,14 @@ func TestWithPrivateRepo(t *testing.T) {
 	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
 }
 
-func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
+func runLocalServerAndExecutor(t *testing.T, mockPrivateGithubToken bool, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
+	githubToken := ""
+	repoURL := ""
+	if mockPrivateGithubToken {
+		githubToken = os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
+		repoURL = "https://github.com/buildbuddy-io/private-test-repo"
+	}
+
 	env := rbetest.NewRBETestEnv(t)
 	mockGithubAppID := int64(1234)
 	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
@@ -284,33 +255,42 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string,
 	flags.Set(t, "github.app.enabled", true)
 
 	// Create a workflow for the repo - will be used to fetch the git token
-	dbh := env.GetDBHandle()
-	require.NotNil(t, dbh)
-	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
-		RepoURL: repoURL,
-		GroupID: env.GroupID1,
-		AppID:   mockGithubAppID,
-	})
-	require.NoError(t, err)
-	parsedRepo, err := git.ParseGitHubRepoURL(repoURL)
-	require.NoError(t, err)
-	err = dbh.NewQuery(context.Background(), "create_github_app_install_for_test").Create(&tables.GitHubAppInstallation{
-		GroupID: env.GroupID1,
-		AppID:   mockGithubAppID,
-		Owner:   parsedRepo.Owner,
-	})
-	require.NoError(t, err)
+	if repoURL != "" {
+		dbh := env.GetDBHandle()
+		require.NotNil(t, dbh)
+		err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
+			RepoURL: repoURL,
+			GroupID: env.GroupID1,
+			AppID:   mockGithubAppID,
+		})
+		require.NoError(t, err)
+		parsedRepo, err := git.ParseGitHubRepoURL(repoURL)
+		require.NoError(t, err)
+		err = dbh.NewQuery(context.Background(), "create_github_app_install_for_test").Create(&tables.GitHubAppInstallation{
+			GroupID: env.GroupID1,
+			AppID:   mockGithubAppID,
+			Owner:   parsedRepo.Owner,
+		})
+		require.NoError(t, err)
+	}
 
 	return env, bbServer, executors[0]
 }
 
 func TestCancel(t *testing.T) {
-	clonePrivateTestRepo(t)
-
-	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{
+		"BUILD": `
+sh_binary(
+    name = "sleep_forever_test",
+    srcs = ["sleep_forever_test.sh"],
+)
+`,
+		"sleep_forever_test.sh": "sleep 2147483647",
+		"WORKSPACE":             "",
+	})
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
+	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
 	ctx := env.WithUserID(context.Background(), env.UserID1)
 	reqCtx := &ctxpb.RequestContext{
 		UserId:  &uidpb.UserId{Id: env.UserID1},
@@ -337,6 +317,7 @@ func TestCancel(t *testing.T) {
 		cancel()
 	}()
 
+	t.Chdir(repoDir)
 	err = remotebazel.RemoteFlagset.Parse([]string{"--runner_exec_properties=workload-isolation-type=none", "--runner_exec_properties=container-image="})
 	require.NoError(t, err)
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
@@ -376,13 +357,27 @@ func TestCancel(t *testing.T) {
 }
 
 func TestFetchRemoteBuildOutputs(t *testing.T) {
-	repoDir := clonePrivateTestRepo(t)
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{
+		"BUILD": `
+cc_binary(
+    name = "main",
+    srcs = ["main.c"],
+)
+`,
+		"main.c": `
+#include <stdio.h>
+
+int main() {
+    printf("Hello from main!");
+    return 0;
+}
+`,
+		"WORKSPACE": "",
+	})
 
 	// Run a server and executor locally to run remote bazel against
-	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
+	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
 
-	// Run remote bazel
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
 	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		// Ensure the build is happening on a clean runner, because if the build
@@ -392,9 +387,10 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 		// Pass a startup flag to test parsing
 		"--digest_function=BLAKE3",
 		"build",
-		":hello_world_go",
+		":main",
+		"--noenable_bzlmod",
+		"--enable_workspace",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
-
 	// Check that the remote build output was fetched locally.
 	// The outputs will be downloaded to a directory that may change with the platform,
 	// so recursively search for the build output named `hello_world_go`.
@@ -414,7 +410,8 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 		})
 		return outputPath, err
 	}
-	downloadedOutputPath, err := findFile(remotebazel.BuildBuddyArtifactDir, "hello_world_go")
+	t.Chdir(repoDir)
+	downloadedOutputPath, err := findFile(remotebazel.BuildBuddyArtifactDir, "main")
 	require.NoError(t, err)
 
 	// Make sure we can successfully run the fetched binary.
@@ -426,15 +423,30 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 	cmd.Stdout = &buf
 	err = cmd.Run()
 	require.NoError(t, err)
-	require.Equal(t, "Hello! I'm a go program.\n", buf.String())
+	require.Equal(t, "Hello from main!", buf.String())
 }
 
 func TestBuildRemotelyRunLocally(t *testing.T) {
-	repoDir := clonePrivateTestRepo(t)
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{
+		"BUILD": `
+cc_binary(
+    name = "main",
+    srcs = ["main.c"],
+)
+`,
+		"main.c": `
+#include <stdio.h>
+
+int main() {
+    printf("Hello from main!");
+    return 0;
+}
+`,
+		"WORKSPACE": "",
+	})
 
 	// Run a server and executor locally to run remote bazel against
-	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
+	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
 
 	// Run remote bazel
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
@@ -447,7 +459,9 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 		"--digest_function=BLAKE3",
 		"--run_remotely=0",
 		"run",
-		":hello_world_go",
+		":main",
+		"--noenable_bzlmod",
+		"--enable_workspace",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check that the remote runner didn't run the script
@@ -477,17 +491,24 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 		MinLines:     math.MaxInt32,
 	})
 	require.NoError(t, err)
-	require.NotContains(t, string(logResp.GetBuffer()), "Hello! I'm a go program.")
+	require.NotContains(t, string(logResp.GetBuffer()), "Hello from main!")
 }
 
 func TestAccessingSecrets(t *testing.T) {
-	repoDir := clonePrivateTestRepo(t)
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{
+		"BUILD": `
+sh_binary(
+    name = "hello_world",
+    srcs = ["hello_world.sh"],
+)
+`,
+		"hello_world.sh": "echo \"FUTURE OF BUILDS!\"",
+	})
 
 	initSecretService, pubKey := setupSecrets(t)
 
 	// Run a server and executor locally to run remote bazel against
-	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", initSecretService)
+	env, bbServer, _ := runLocalServerAndExecutor(t, false, initSecretService)
 
 	bbClient := env.GetBuildBuddyServiceClient()
 	ctx := env.WithUserID(context.Background(), env.UserID1)
@@ -505,7 +526,7 @@ func TestAccessingSecrets(t *testing.T) {
 		"--runner_exec_properties=include-secrets=true",
 		// Use --script here, because otherwise $SECRET_TARGET will be parsed
 		// as a string literal and will not be expanded as an env var
-		"--script=bazel run $SECRET_TARGET --noenable_bzlmod",
+		"--script=bazel run $SECRET_TARGET --noenable_bzlmod --enable_workspace",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 
 	// Check the invocation logs to ensure the bazel command successfully ran
@@ -599,13 +620,11 @@ func saveSecret(t *testing.T, bbClient bbspb.BuildBuddyServiceClient, ctx contex
 }
 
 func TestBashScript(t *testing.T) {
-	repoDir := clonePrivateTestRepo(t)
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{})
 
 	// Run a server and executor locally to run remote bazel against
-	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
+	env, bbServer, _ := runLocalServerAndExecutor(t, false, nil)
 
-	// Run remote bazel
 	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		"--script=echo $VAL",
 		"--env=VAL=Hello from the remote runner!",
