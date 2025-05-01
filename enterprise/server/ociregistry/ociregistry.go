@@ -185,7 +185,7 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	w.WriteHeader(upresp.StatusCode)
 	_, err = io.Copy(w, upresp.Body)
 	if err != nil && err != context.Canceled {
-		log.CtxWarningf(ctx, "Error reading response from %s: %s", u.Host, err)
+		log.CtxWarningf(ctx, "Error reading response from %s: %s", u.Hostname(), err)
 	}
 }
 
