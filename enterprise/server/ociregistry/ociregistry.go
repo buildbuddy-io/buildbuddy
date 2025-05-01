@@ -207,7 +207,7 @@ func (r *registry) makeUpstreamRequest(ctx context.Context, method, acceptHeader
 
 	upreq, err := http.NewRequest(method, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("could not make %s request to upstream registry %q: %s", method, upreq.URL.Host, err)
+		return nil, status.UnavailableErrorf("could not make %s request to upstream registry %q: %s", method, upreq.URL.Hostname(), err)
 	}
 	if acceptHeader != "" {
 		upreq.Header.Set(headerAccept, acceptHeader)
@@ -224,7 +224,7 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 	}
 	hash, err := gcr.NewHash(value)
 	if err != nil {
-		return nil, fmt.Errorf("could not parse %s header: %s", headerDockerContentDigest, err)
+		return nil, status.InvalidArgumentErrorf("could not parse %s header: %s", headerDockerContentDigest, err)
 	}
 	return &hash, nil
 }
@@ -232,7 +232,7 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, bool, error) {
 	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
 	if err != nil {
-		return nil, false, fmt.Errorf("error making %s request to upstream registry: %s", http.MethodHead, err)
+		return nil, false, status.UnavailableErrorf("error making %s request to upstream registry: %s", http.MethodHead, err)
 	}
 	defer headresp.Body.Close()
 
@@ -240,12 +240,12 @@ func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, auth
 		return nil, false, nil
 	}
 	if headresp.StatusCode != http.StatusOK {
-		return nil, false, fmt.Errorf("could not fetch manifest for %s", ref.Context())
+		return nil, false, status.UnavailableErrorf("could not fetch manifest for %s, upstream HTTP status %d", ref.Context(), headresp.StatusCode)
 	}
 	value := headresp.Header.Get(headerDockerContentDigest)
 	hash, err := parseDockerContentDigestHeader(value)
 	if err != nil {
-		return nil, true, fmt.Errorf("error parsing %s header: %s", headerDockerContentDigest, err)
+		return nil, true, status.InvalidArgumentErrorf("error parsing %s header: %s", headerDockerContentDigest, err)
 	}
 	return hash, true, nil
 }
@@ -428,7 +428,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	}
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
 		updateCacheEventMetric(casLabel, missLabel)
-		return fmt.Errorf("missing blob metadata digest or blob digest for %s", ref.Context())
+		return status.NotFoundErrorf("missing blob metadata digest or blob digest for %s", ref.Context())
 	}
 	blobMetadataRN := digest.NewCASResourceName(
 		blobMetadataCASDigest,
