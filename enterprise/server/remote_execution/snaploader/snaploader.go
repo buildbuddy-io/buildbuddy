@@ -334,6 +334,10 @@ type CacheSnapshotOptions struct {
 
 	// Whether to save the snapshot to the remote cache (in addition to locally)
 	Remote bool
+
+	// Whether we would've cached this snapshot remotely if our remote snapshot
+	// limits were applied.
+	WouldNotHaveCachedRemotely bool
 }
 
 type UnpackedSnapshot struct {
@@ -1018,6 +1022,12 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	metrics.COWSnapshotEmptyChunkRatio.With(prometheus.Labels{
 		metrics.FileName: name,
 	}).Observe(float64(emptyChunkCount) / float64(len(chunks)))
+
+	if cacheOpts.Remote && cacheOpts.WouldNotHaveCachedRemotely {
+		metrics.COWSnapshotSkippedRemoteBytes.With(prometheus.Labels{
+			metrics.FileName: name,
+		}).Add(float64(compressedBytesWrittenRemotely))
+	}
 
 	for chunkSrc, count := range chunkSourceCounter {
 		metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{

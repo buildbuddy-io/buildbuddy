@@ -1453,6 +1453,16 @@ var (
 		ChunkSource,
 	})
 
+	// TODO(Maggie): Delete after evaluating the results
+	COWSnapshotSkippedRemoteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_skipped_remote_bytes",
+		Help:      "The number of compressed bytes that would not be written to the remote cache if stricter remote write logic was applied.",
+	}, []string{
+		FileName,
+	})
+
 	COWSnapshotMemoryMappedBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
