@@ -53,6 +53,8 @@ const (
 
 	actionCacheLabel = "action_cache"
 	casLabel         = "cas"
+
+	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
 var (
@@ -396,7 +398,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return err
 	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
 	if err != nil {
 		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return err
@@ -404,7 +406,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	arRN := digest.NewACResourceName(
 		arDigest,
 		actionResultInstanceName,
-		repb.DigestFunction_SHA256,
+		cacheDigestFunction,
 	)
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
@@ -432,7 +434,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	blobMetadataRN := digest.NewCASResourceName(
 		blobMetadataCASDigest,
 		"",
-		repb.DigestFunction_SHA256,
+		cacheDigestFunction,
 	)
 	blobMetadata := &ocipb.OCIBlobMetadata{}
 	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
@@ -452,7 +454,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
 		"",
-		repb.DigestFunction_SHA256,
+		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
 	counter := &ioutil.Counter{}
@@ -490,7 +492,7 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
 		"",
-		repb.DigestFunction_SHA256,
+		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
 	tr := io.TeeReader(r, w)
@@ -505,7 +507,7 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		ContentType:   contentType,
 	}
 	updateCacheEventMetric(casLabel, uploadLabel)
-	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
+	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", cacheDigestFunction, blobMetadata)
 	if err != nil {
 		return err
 	}
@@ -533,14 +535,14 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 	if err != nil {
 		return err
 	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
 	if err != nil {
 		return err
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
 		actionResultInstanceName,
-		repb.DigestFunction_SHA256,
+		cacheDigestFunction,
 	)
 	updateCacheEventMetric(actionCacheLabel, uploadLabel)
 	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
@@ -562,14 +564,14 @@ func writeManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 	if err != nil {
 		return err
 	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
 	if err != nil {
 		return err
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
 		manifestContentInstanceName,
-		repb.DigestFunction_SHA256,
+		cacheDigestFunction,
 	)
 
 	m := &ocipb.OCIManifestContent{
