@@ -319,7 +319,7 @@ func (a *OrderedArgs) RemoveOptions(optionNames ...string) []*IndexedOption {
 		toRemove[n] = struct{}{}
 	}
 	var removed []*IndexedOption
-	for i:= 0; i < len(a.Args); i++ {
+	for i := 0; i < len(a.Args); i++ {
 		if o, ok := a.Args[i].(options.Option); ok {
 			if _, ok := toRemove[o.Name()]; ok {
 				a.Args = slices.Delete(a.Args, i, i+1)
