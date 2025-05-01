@@ -385,6 +385,31 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return err
 	}
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
+		mc, err := fetchManifestFromAC(ctx, acClient, ref, hash)
+		if err != nil {
+			return err
+		}
+		w.Header().Add(headerDockerContentDigest, hash.String())
+		w.Header().Add(headerContentLength, strconv.Itoa(len(mc.GetRaw())))
+		w.Header().Add(headerContentType, mc.GetContentType())
+		w.WriteHeader(http.StatusOK)
+		if !writeBody {
+			return nil
+		}
+		counter := &ioutil.Counter{}
+		mw := io.MultiWriter(w, counter)
+		defer func() {
+			metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
+				metrics.CacheTypeLabel: casLabel,
+			}).Observe(float64(counter.Count()))
+		}()
+		if _, err := io.Copy(mw, bytes.NewReader(mc.GetRaw())); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	arKey := &ocipb.OCIActionResultKey{
 		Registry:      ref.Context().RegistryStr(),
 		Repository:    ref.Context().RepositoryStr(),
@@ -460,7 +485,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	mw := io.MultiWriter(w, counter)
 	defer func() {
 		metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
-			metrics.CacheTypeLabel: "cas",
+			metrics.CacheTypeLabel: casLabel,
 		}).Observe(float64(counter.Count()))
 	}()
 	if err := cachetools.GetBlob(ctx, bsClient, blobRN, mw); err != nil {
@@ -593,6 +618,51 @@ func writeManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 	}
 	updateCacheEventMetric(actionCacheLabel, uploadLabel)
 	return cachetools.UploadActionResult(ctx, acClient, arRN, ar)
+}
+
+func fetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash) (*ocipb.OCIManifestContent, error) {
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      ref.Context().RegistryStr(),
+		Repository:    ref.Context().RepositoryStr(),
+		ResourceType:  ocipb.OCIResourceType_MANIFEST,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return nil, err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
+	if err != nil {
+		return nil, err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		manifestContentInstanceName,
+		cacheDigestFunction,
+	)
+
+	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
+	if err != nil {
+		return nil, err
+	}
+	meta := ar.GetExecutionMetadata()
+	if meta == nil {
+		log.CtxWarningf(ctx, "Missing execution metadata for manifest in %q", ref.Context())
+		return nil, status.InternalErrorf("missing execution metadata for manifest in %q", ref.Context())
+	}
+	aux := meta.GetAuxiliaryMetadata()
+	if aux == nil || len(aux) != 1 {
+		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest in %q", ref.Context())
+		return nil, status.InternalErrorf("missing auxiliary metadata for manifest in %q", ref.Context())
+	}
+	any := aux[0]
+	var mc ocipb.OCIManifestContent
+	err = any.UnmarshalTo(&mc)
+	if err != nil {
+		return nil, status.InternalErrorf("could not unmarshal metadata for manifest in %q: %s", ref.Context(), err)
+	}
+	return &mc, nil
 }
 
 func isDigest(identifier string) bool {
