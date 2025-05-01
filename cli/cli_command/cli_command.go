@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
+	"github.com/buildbuddy-io/buildbuddy/cli/flake"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
@@ -56,6 +57,11 @@ var Commands = []Command{
 		Name:    "fix",
 		Help:    "Applies fixes to WORKSPACE and BUILD files.",
 		Handler: fix.HandleFix,
+	},
+	{
+		Name:    "flake",
+		Help:    "Lists test flakes.",
+		Handler: flake.HandleFlake,
 	},
 	// Handle 'help' command separately to avoid circular dependency with `cli_command`
 	// package
