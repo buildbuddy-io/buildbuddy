@@ -169,24 +169,11 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		},
 	}
 
-	// Start and register services on the internal gRPC server first because
-	// the external proxy services rely on the internal services.
-	is, err := grpc_server.New(env, grpc_server.InternalGRPCPort(), false, grpcServerConfig)
-	if err != nil {
+	// Start and register internal servers first because the external proxy
+	// services rely on the internal servers.
+	if err := registerInternalServices(env); err != nil {
 		return err
 	}
-	if err := registerInternalGRPCServices(is.GetServer(), env); err != nil {
-		return err
-	}
-	if err := is.Start(); err != nil {
-		return err
-	}
-
-	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.InternalGRPCPort()))
-	if err != nil {
-		return status.InternalErrorf("CacheProxy: error starting local bytestream gRPC server: %s", err.Error())
-	}
-	env.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
 
 	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)
 	if err != nil {
@@ -247,12 +234,12 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	log.Infof("Cache proxy proxying requests to %s", *remoteCache)
 }
 
-func registerInternalGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv) error {
+func registerInternalServices(env *real_environment.RealEnv) error {
 	localBSS, err := byte_stream_server.NewByteStreamServer(env)
 	if err != nil {
 		return status.InternalErrorf("CacheProxy: error starting local bytestream server: %s", err.Error())
 	}
-	bspb.RegisterByteStreamServer(grpcServer, localBSS)
+	env.SetLocalByteStreamServer(localBSS)
 
 	localCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	if err != nil {
