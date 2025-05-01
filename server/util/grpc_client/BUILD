@@ -12,6 +12,8 @@ go_library(
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
+        "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
+        "@io_opentelemetry_go_otel_metric//noop",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//connectivity",
         "@org_golang_google_grpc//credentials/google",
