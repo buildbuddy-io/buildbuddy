@@ -47,6 +47,8 @@ const (
 	actionResultInstanceName    = interfaces.OCIImageInstanceNamePrefix
 	manifestContentInstanceName = interfaces.OCIImageInstanceNamePrefix + "_manifest_content_"
 
+	maxManifestSize = 10000000
+
 	hitLabel    = "hit"
 	missLabel   = "miss"
 	uploadLabel = "upload"
@@ -475,7 +477,10 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
 	r := upstream
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
-		raw, err := io.ReadAll(upstream)
+		if contentLength > maxManifestSize {
+			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
+		}
+		raw, err := io.ReadAll(io.LimitReader(upstream, contentLength))
 		if err != nil {
 			return err
 		}
