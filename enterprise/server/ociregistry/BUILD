@@ -24,6 +24,7 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_protobuf//types/known/anypb",
     ],
 )
 
