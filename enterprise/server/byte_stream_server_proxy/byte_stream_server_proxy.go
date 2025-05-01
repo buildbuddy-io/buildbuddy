@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sync/atomic"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -14,11 +13,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc/metadata"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
@@ -68,47 +65,23 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 // Wrapper around a ByteStream_ReadServer that counts the number of frames
 // and bytes read through it.
 type meteredReadServerStream struct {
-	bytes  *atomic.Int64
-	frames *atomic.Int64
-	proxy  bspb.ByteStream_ReadServer
+	bytes  *int64
+	frames *int64
+	bspb.ByteStream_ReadServer
 }
 
 func (s *meteredReadServerStream) GetByteCount() int64 {
-	return s.bytes.Load()
+	return *s.bytes
 }
 
 func (s *meteredReadServerStream) GetFrameCount() int64 {
-	return s.frames.Load()
+	return *s.frames
 }
 
 func (s meteredReadServerStream) Send(message *bspb.ReadResponse) error {
-	s.bytes.Add(int64(proto.Size(message)))
-	s.frames.Add(1)
-	return s.proxy.Send(message)
-}
-
-func (s meteredReadServerStream) SetHeader(header metadata.MD) error {
-	return s.proxy.SetHeader(header)
-}
-
-func (s meteredReadServerStream) SendHeader(header metadata.MD) error {
-	return s.proxy.SendHeader(header)
-}
-
-func (s meteredReadServerStream) SetTrailer(trailer metadata.MD) {
-	s.proxy.SetTrailer(trailer)
-}
-
-func (s meteredReadServerStream) Context() context.Context {
-	return s.proxy.Context()
-}
-
-func (s meteredReadServerStream) SendMsg(message any) error {
-	return s.proxy.SendMsg(message)
-}
-
-func (s meteredReadServerStream) RecvMsg(message any) error {
-	return s.proxy.RecvMsg(message)
+	*s.bytes += int64(len(message.GetData()))
+	*s.frames++
+	return s.ByteStream_ReadServer.Send(message)
 }
 
 func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
@@ -118,10 +91,12 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	cacheStatus := "unknown"
 	var err error
 	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(ctx)
+	bytes := int64(0)
+	frames := int64(0)
 	meteredStream := &meteredReadServerStream{
-		bytes:  &atomic.Int64{},
-		frames: &atomic.Int64{},
-		proxy:  stream,
+		bytes:                 &bytes,
+		frames:                &frames,
+		ByteStream_ReadServer: stream,
 	}
 	stream = meteredStream
 
@@ -273,46 +248,18 @@ func recordReadMetrics(cacheStatus string, proxyRequestType string, err error, b
 // Wrapper around a ByteStream_WriteServer that counts the number of bytes
 // written through it.
 type meteredServerSideClientStream struct {
-	bytes *atomic.Int64
-	proxy bspb.ByteStream_WriteServer
+	bytes *int64
+	bspb.ByteStream_WriteServer
 }
 
 func (s *meteredServerSideClientStream) GetByteCount() int64 {
-	return s.bytes.Load()
-}
-
-func (s meteredServerSideClientStream) SendAndClose(message *bspb.WriteResponse) error {
-	return s.proxy.SendAndClose(message)
+	return *s.bytes
 }
 
 func (s meteredServerSideClientStream) Recv() (*bspb.WriteRequest, error) {
-	message, err := s.proxy.Recv()
-	s.bytes.Add(int64(proto.Size(message)))
+	message, err := s.ByteStream_WriteServer.Recv()
+	*s.bytes += int64(len(message.GetData()))
 	return message, err
-}
-
-func (s meteredServerSideClientStream) SetHeader(header metadata.MD) error {
-	return s.proxy.SetHeader(header)
-}
-
-func (s meteredServerSideClientStream) SendHeader(header metadata.MD) error {
-	return s.proxy.SendHeader(header)
-}
-
-func (s meteredServerSideClientStream) SetTrailer(trailer metadata.MD) {
-	s.proxy.SetTrailer(trailer)
-}
-
-func (s meteredServerSideClientStream) Context() context.Context {
-	return s.proxy.Context()
-}
-
-func (s meteredServerSideClientStream) SendMsg(message any) error {
-	return s.proxy.SendMsg(message)
-}
-
-func (s meteredServerSideClientStream) RecvMsg(message any) error {
-	return s.proxy.RecvMsg(message)
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
@@ -320,9 +267,10 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	defer spn.End()
 
 	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(stream.Context())
+	bytes := int64(0)
 	meteredStream := &meteredServerSideClientStream{
-		bytes: &atomic.Int64{},
-		proxy: stream,
+		bytes:                  &bytes,
+		ByteStream_WriteServer: stream,
 	}
 	stream = meteredStream
 	var err error
@@ -415,7 +363,7 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 		// Handle stream-finished cases
 		if remoteDone {
 			if localWriteStream != nil && !localDone {
-				log.CtxDebug(ctx, "remote write done but local write is not")
+				log.CtxInfo(ctx, "remote write done but local write is not")
 			}
 			resp, err := remoteWriteStream.CloseAndRecv()
 			if err != nil {
@@ -424,7 +372,7 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 			err = stream.SendAndClose(resp)
 			return err
 		} else if localDone {
-			log.CtxDebug(ctx, "local write done but remote write is not")
+			log.CtxInfo(ctx, "local write done but remote write is not")
 		}
 
 		// Finally, receive the next frame from the client
