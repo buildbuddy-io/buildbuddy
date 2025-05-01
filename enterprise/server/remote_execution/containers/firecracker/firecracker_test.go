@@ -329,7 +329,7 @@ func runProxyGrpcServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *test
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	proxyEnv.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
-	proxyEnv.SetLocalActionCacheClient(repb.NewActionCacheClient(conn))
+	proxyEnv.SetLocalActionCacheServer(acServer)
 }
 
 func executorRootDir(t *testing.T) string {
@@ -1334,10 +1334,10 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 	err = vm.Pause(ctx)
 	require.NoError(t, err)
 
-	// No snapshot data should've been saved to the remote cache. It should only
-	// be cached in the proxy.
+	// Only the snapshot version should've been saved to the remote cache. All
+	// other shapsnot artifacts should only be cached in the proxy.
 	remoteCacheStats := env.GetCache().(*disk_cache.DiskCache).Statusz(ctx)
-	require.Contains(t, remoteCacheStats, "Items: 0")
+	require.Contains(t, remoteCacheStats, "Items: 1")
 
 	// Make sure we can start from a snapshot fetched from the proxy
 	err = vm.Unpause(ctx)

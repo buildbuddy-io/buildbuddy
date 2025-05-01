@@ -117,7 +117,9 @@ func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.
 		return "", err
 	}
 	rn := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
-	ctx = proxy_util.SetSkipRemote(ctx)
+	// NOTE: We don't use `proxy_util.SetSkipRemote` here because the snapshot
+	// version data should always live in the authoritative cache, to ensure that
+	// any updates are applied universally.
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if status.IsNotFoundError(err) {
 		// Version metadata might not exist in the cache if:
@@ -1075,7 +1077,9 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 
 	acDigest := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
 
-	ctx = proxy_util.SetSkipRemote(ctx)
+	// NOTE: We don't use `proxy_util.SetSkipRemote` here because the snapshot
+	// version data should always live in the authoritative cache, to ensure that
+	// any updates are applied universally.
 	if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, versionMetadataActionResult); err != nil {
 		return "", err
 	}
