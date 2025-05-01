@@ -131,7 +131,7 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 		if err == nil {
 			break
 		}
-		if !*enableReconnect || !status.IsUnavailableError(err) {
+		if !*enableReconnect || !(status.IsUnavailableError(err) || status.IsInternalError(err)) {
 			return nil, err
 		}
 		originalErr := err
@@ -181,7 +181,7 @@ func (t *TaskLease) keepLease(ctx context.Context) {
 				return
 			case <-time.After(t.ttl):
 				if _, err := t.pingServer(ctx); err != nil {
-					log.CtxWarningf(ctx, "Error updating lease for task: %q: %s", t.taskID, err.Error())
+					log.CtxErrorf(ctx, "Error updating lease for task: %q: %s", t.taskID, err)
 					t.cancelFunc()
 					return
 				}
