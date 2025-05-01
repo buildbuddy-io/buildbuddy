@@ -235,7 +235,7 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 		syncFlag := arg.Get(args, "sync")
 		if !isFlagTrue(syncFlag) {
 			log.Debugf("CI build detected. add --sync=true")
-			args = append(args, "--sync=true")
+			args = arg.Append(args, "--sync=true")
 		}
 	}
 
@@ -291,7 +291,7 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 	if synchronousWriteFlag == "1" || synchronousWriteFlag == "true" {
 		sidecarArgs = append(sidecarArgs, "--local_cache_proxy.synchronous_write")
 		sidecarArgs = append(sidecarArgs, "--bes_synchronous")
-		args = append(args, "--bes_upload_mode=wait_for_upload_complete")
+		args = arg.Append(args, "--bes_upload_mode=wait_for_upload_complete")
 	}
 
 	sidecarArgs = append(sidecarArgs, []string{
@@ -329,14 +329,14 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 			continue
 		}
 		if sidecarBESEnabled {
-			args = append(args, fmt.Sprintf("--bes_backend=unix://%s", instance.SockPath))
+			args = arg.Append(args, fmt.Sprintf("--bes_backend=unix://%s", instance.SockPath))
 		}
 		if sidecarCacheEnabled {
-			args = append(args, fmt.Sprintf("--remote_cache=unix://%s", instance.SockPath))
+			args = arg.Append(args, fmt.Sprintf("--remote_cache=unix://%s", instance.SockPath))
 			// Set bytestream URI prefix to match the actual remote cache
 			// backend, rather than the sidecar socket.
 			instanceName := arg.Get(args, "remote_instance_name")
-			args = append(args, fmt.Sprintf("--remote_bytestream_uri_prefix=%s", bytestreamURIPrefix(remoteCacheFlag, instanceName)))
+			args = arg.Append(args, fmt.Sprintf("--remote_bytestream_uri_prefix=%s", bytestreamURIPrefix(remoteCacheFlag, instanceName)))
 		}
 		return args, instance
 	}
