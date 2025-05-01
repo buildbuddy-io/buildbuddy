@@ -123,24 +123,30 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		frames: &atomic.Int64{},
 		proxy:  stream,
 	}
-	stream = nil // use meteredStream
+	stream = meteredStream
 
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
 		cacheStatus = metrics.UncacheableStatusLabel
-		err = s.readRemoteOnly(ctx, req, meteredStream)
+		err = s.readRemoteOnly(ctx, req, stream)
 	} else if proxy_util.SkipRemote(ctx) {
-		err = s.readLocalOnly(req, meteredStream)
+		err = s.readLocalOnly(req, stream)
 		cacheStatus = metrics.MissStatusLabel
 		if err == nil {
 			cacheStatus = metrics.HitStatusLabel
+		} else {
+			log.CtxInfof(ctx, "Error reading local: %v", err)
 		}
 	} else {
-		localErr := s.local.Read(req, meteredStream)
+		localErr := s.local.Read(req, stream)
+		// If some responses were streamed to the client, just return the
+		// error. Otherwise, fall-back to remote. We might be able to continue
+		// streaming to the client by doing an offset read from the remote
+		// cache, but keep it simple for now.
 		if localErr != nil && meteredStream.GetFrameCount() == 0 {
 			// Recover from local error if no frames have been sent
 			cacheStatus = metrics.MissStatusLabel
-			err = s.readRemoteWriteLocal(req, meteredStream)
-		} else {
+			err = s.readRemoteWriteLocal(req, stream)
+		} else if localErr == nil {
 			cacheStatus = metrics.HitStatusLabel
 			s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
 		}
@@ -153,11 +159,13 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 func (s *ByteStreamServerProxy) readRemoteOnly(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
 	remoteReadStream, err := s.remote.Read(ctx, req)
 	if err != nil {
+		log.CtxInfof(ctx, "error reading from remote: %s", err)
 		return err
 	}
 	for {
 		message, err := remoteReadStream.Recv()
 		if err != nil {
+			log.CtxInfof(ctx, "Error streaming from remote for read: %s", err)
 			return err
 		}
 		if err = stream.Send(message); err != nil {
@@ -189,46 +197,36 @@ func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stre
 		return err
 	}
 
-	uploadRN := ""
-	localWriteOffset := req.ReadOffset
+	// Retrieve first frame from read stream
+	rsp, err := remoteReadStream.Recv()
+	if err == io.EOF {
+		return nil
+	}
+	if err != nil {
+		log.CtxInfof(ctx, "Error streaming from remote for read-remote-write-local: %s", err)
+		return err
+	}
+
+	// Rewrite the resource name so we can write to the local server
+	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
+	if err != nil {
+		return err
+	}
+	uploadRN := rn.NewUploadString()
+
+	// Open the local writer (if possible).
+	localWriteOffset := req.GetReadOffset()
 	var localWriter interfaces.ByteStreamWriteHandler
+	if req.GetReadOffset() == 0 {
+		localWriter, err = s.local.BeginWrite(ctx, writeRequest(uploadRN, rsp.GetData(), localWriteOffset, false))
+		if err != nil {
+			log.CtxDebugf(ctx, "Error opening local ByteStreamServer write stream: %v", err)
+		} else {
+			defer localWriter.Close()
+		}
+	}
 
 	for {
-		rsp, err := remoteReadStream.Recv()
-
-		if err == io.EOF {
-			if localWriter != nil {
-				_, err = localWriter.Write(writeRequest(uploadRN, []byte{}, localWriteOffset, true))
-				if err != nil {
-					log.CtxDebugf(ctx, "Error writing to local ByteStreamServer: %v", err)
-				}
-			}
-			return nil
-		}
-		if err != nil {
-			log.CtxInfof(ctx, "Error streaming from remote for read through: %s", err)
-			return err
-		}
-
-		if uploadRN == "" {
-			// Rewrite the resource name so we can write to the local server.
-			rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
-			if err != nil {
-				return err
-			}
-			uploadRN = rn.NewUploadString()
-		}
-
-		// Initialize local cache writer if necessary
-		if localWriteOffset == 0 && localWriter == nil {
-			localWriter, err = s.local.BeginWrite(ctx, writeRequest(uploadRN, rsp.GetData(), localWriteOffset, false))
-			if err != nil {
-				log.CtxDebugf(ctx, "Error opening local ByteStreamServer write stream: %v", err)
-			} else {
-				defer localWriter.Close()
-			}
-		}
-
 		// Write to local cache
 		if localWriter != nil {
 			_, err = localWriter.Write(writeRequest(uploadRN, rsp.GetData(), localWriteOffset, false))
@@ -241,6 +239,22 @@ func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stre
 		// Send frame to client
 		localWriteOffset += int64(len(rsp.GetData()))
 		if err = stream.Send(rsp); err != nil {
+			return err
+		}
+
+		// Retreive the next frame and handle errors
+		rsp, err = remoteReadStream.Recv()
+		if err == io.EOF {
+			if localWriter != nil {
+				_, err = localWriter.Write(writeRequest(uploadRN, []byte{}, localWriteOffset, true))
+				if err != nil {
+					log.CtxDebugf(ctx, "Error writing to local ByteStreamServer: %v", err)
+				}
+			}
+			return nil
+		}
+		if err != nil {
+			log.CtxInfof(ctx, "Error streaming from remote for read through: %s", err)
 			return err
 		}
 	}
@@ -310,14 +324,14 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 		bytes: &atomic.Int64{},
 		proxy: stream,
 	}
-	stream = nil // use meteredStream
+	stream = meteredStream
 	var err error
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
-		err = s.writeRemoteOnly(ctx, meteredStream)
+		err = s.writeRemoteOnly(ctx, stream)
 	} else if proxy_util.SkipRemote(ctx) {
-		err = s.writeLocalOnly(meteredStream)
+		err = s.writeLocalOnly(stream)
 	} else {
-		err = s.dualWrite(ctx, meteredStream)
+		err = s.dualWrite(ctx, stream)
 	}
 	recordWriteMetrics(meteredStream.GetByteCount(), err, requestTypeLabel)
 	return err
@@ -366,7 +380,7 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 	if err == nil {
 		defer localWriteStream.Close()
 	} else {
-		log.CtxDebugf(ctx, "Error opening local write stream: %v", err)
+		log.CtxWarningf(ctx, "Error opening local write stream: %v", err)
 	}
 
 	remoteWriteStream, err := s.remote.Write(ctx)
