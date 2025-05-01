@@ -36,6 +36,7 @@ import (
 func getMembership(t *testing.T, ts *testutil.TestingStore, ctx context.Context, rangeID uint64) []*rfpb.ReplicaDescriptor {
 	membership, err := ts.GetMembership(ctx, rangeID)
 	if err != nil {
+		log.Errorf("shard not found on %s", ts.NHID())
 		if errors.Is(err, dragonboat.ErrShardNotFound) {
 			return []*rfpb.ReplicaDescriptor{}
 		}
@@ -427,7 +428,6 @@ func TestAddNodeToCluster(t *testing.T) {
 }
 
 func TestRemoveNodeFromCluster(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
@@ -435,34 +435,42 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*testutil.TestingStore{s1, s2}
+	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	remaining := make([]*testutil.TestingStore, 0, 2)
 
 	// RemoveReplica can't remove the replica on its own machine.
 	rd := s.GetRange(2)
-	replicaIdToRemove := uint64(0)
+	var replicaToRemove *rfpb.ReplicaDescriptor
+
 	for _, repl := range rd.GetReplicas() {
 		if repl.GetNhid() != s.NHID() {
-			replicaIdToRemove = repl.GetReplicaId()
+			replicaToRemove = repl
 			break
 		}
 	}
-	log.Infof("remove replica c%dn%d", rd.GetRangeId(), replicaIdToRemove)
+	for _, store := range stores {
+		if store.NHID() != replicaToRemove.GetNhid() {
+			remaining = append(remaining, store)
+		}
+	}
+	log.Infof("remove replica c%dn%d", rd.GetRangeId(), replicaToRemove.GetReplicaId())
 	_, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
 		Range:     rd,
-		ReplicaId: replicaIdToRemove,
+		ReplicaId: replicaToRemove.GetReplicaId(),
 	})
 	require.NoError(t, err)
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
 	replicas := getMembership(t, s, ctx, 2)
-	require.Equal(t, 1, len(replicas))
+	require.Equal(t, 2, len(replicas))
 	rd = s.GetRange(2)
-	require.Equal(t, 1, len(rd.GetReplicas()))
+	require.Equal(t, 2, len(rd.GetReplicas()))
 }
 
 func TestAddRangeBack(t *testing.T) {
