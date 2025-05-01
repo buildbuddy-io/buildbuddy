@@ -70,14 +70,6 @@ type meteredReadServerStream struct {
 	bspb.ByteStream_ReadServer
 }
 
-func (s *meteredReadServerStream) GetByteCount() int64 {
-	return s.bytes
-}
-
-func (s *meteredReadServerStream) GetFrameCount() int64 {
-	return s.frames
-}
-
 func (s *meteredReadServerStream) Send(message *bspb.ReadResponse) error {
 	s.bytes += int64(len(message.GetData()))
 	s.frames++
@@ -91,8 +83,8 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	cacheStatus := "unknown"
 	var err error
 	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(ctx)
-	meteredStream := meteredReadServerStream{ByteStream_ReadServer: stream}
-	stream = &meteredStream
+	meteredStream := &meteredReadServerStream{ByteStream_ReadServer: stream}
+	stream = meteredStream
 
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
 		cacheStatus = metrics.UncacheableStatusLabel
@@ -111,7 +103,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		// error. Otherwise, fall-back to remote. We might be able to continue
 		// streaming to the client by doing an offset read from the remote
 		// cache, but keep it simple for now.
-		if localErr != nil && meteredStream.GetFrameCount() == 0 {
+		if localErr != nil && meteredStream.frames == 0 {
 			// Recover from local error if no frames have been sent
 			cacheStatus = metrics.MissStatusLabel
 			err = s.readRemoteWriteLocal(req, stream)
@@ -121,7 +113,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		}
 	}
 
-	recordReadMetrics(cacheStatus, requestTypeLabel, err, int(meteredStream.GetByteCount()))
+	recordReadMetrics(cacheStatus, requestTypeLabel, err, int(meteredStream.bytes))
 	return err
 }
 
@@ -246,10 +238,6 @@ type meteredServerSideClientStream struct {
 	bspb.ByteStream_WriteServer
 }
 
-func (s *meteredServerSideClientStream) GetByteCount() int64 {
-	return s.bytes
-}
-
 func (s *meteredServerSideClientStream) Recv() (*bspb.WriteRequest, error) {
 	message, err := s.ByteStream_WriteServer.Recv()
 	s.bytes += int64(len(message.GetData()))
@@ -261,8 +249,8 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	defer spn.End()
 
 	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(stream.Context())
-	meteredStream := meteredServerSideClientStream{ByteStream_WriteServer: stream}
-	stream = &meteredStream
+	meteredStream := &meteredServerSideClientStream{ByteStream_WriteServer: stream}
+	stream = meteredStream
 	var err error
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
 		err = s.writeRemoteOnly(ctx, stream)
@@ -271,7 +259,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	} else {
 		err = s.dualWrite(ctx, stream)
 	}
-	recordWriteMetrics(meteredStream.GetByteCount(), err, requestTypeLabel)
+	recordWriteMetrics(meteredStream.bytes, err, requestTypeLabel)
 	return err
 }
 
