@@ -401,7 +401,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		mw := io.MultiWriter(w, counter)
 		defer func() {
 			metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
-				metrics.CacheTypeLabel: casLabel,
+				metrics.CacheTypeLabel: actionCacheLabel,
 			}).Observe(float64(counter.Count()))
 		}()
 		if _, err := io.Copy(mw, bytes.NewReader(mc.GetRaw())); err != nil {
