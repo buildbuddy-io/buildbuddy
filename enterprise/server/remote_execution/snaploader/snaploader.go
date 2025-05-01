@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -116,6 +117,9 @@ func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.
 		return "", err
 	}
 	rn := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
+	// NOTE: We don't use `proxy_util.SetSkipRemote` here because the snapshot
+	// version data should always live in the authoritative cache, to ensure that
+	// any updates are applied universally.
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if status.IsNotFoundError(err) {
 		// Version metadata might not exist in the cache if:
@@ -442,6 +446,12 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 		return nil, err
 	}
 	rn := digest.NewACResourceName(manifestKey, key.InstanceName, repb.DigestFunction_BLAKE3)
+
+	// If the proxy is enabled, skip writing snapshots to the remote cache to minimize
+	// high network transfer. Snapshots can't be shared across different machine
+	// types, so there's no reason to support snapshot sharing across clusters.
+	ctx = proxy_util.SetSkipRemote(ctx)
+
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if err != nil {
 		return nil, err
@@ -721,6 +731,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.SnapshotKey, ar *repb.ActionResult, opts *CacheSnapshotOptions) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+	ctx = proxy_util.SetSkipRemote(ctx)
 	b, err := proto.Marshal(ar)
 	if err != nil {
 		return err
@@ -1075,6 +1086,10 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 	}
 
 	acDigest := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
+
+	// NOTE: We don't use `proxy_util.SetSkipRemote` here because the snapshot
+	// version data should always live in the authoritative cache, to ensure that
+	// any updates are applied universally.
 	if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, versionMetadataActionResult); err != nil {
 		return "", err
 	}
