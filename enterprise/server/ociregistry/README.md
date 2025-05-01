@@ -25,14 +25,14 @@ The registry server stores data in both the action cache (AC) and the content ad
 
 ### Current cache organization for public images
 
-* The manifest or layer contents are stored as a blob in the CAS.
+* The manifest or layer contents are stored as a blob in the CAS, to allow the registry to serve `GET` requests. The manifest or layer digest is the same for the CAS and for the upstream registry.
 * Metadata about the manifest or layer (the content length, plus the HTTP `Content-Type` header value returned from the upstream registry) are stored
-in a proto in the CAS.
-* An ActionResult pointing to the CAS blob and the CAS metadata proto is stored in the AC. The key is a hash of `{registry, repository, blob|manifest, hash function, hash hex string}`.
+in a proto in the CAS. This metadata is stored separately from the contents so that the registry can serve `HEAD` requests without fetching contents.
+* An ActionResult pointing to the CAS blob and the CAS metadata proto is stored in the AC. The key is a hash of `{registry, repository, blob|manifest, hash function, hash hex string}`. The registry server has this information when serving a request (or can find it out from the upstream).
 
 If any of the above three entries are missing, the registry server considers it a cache miss.
 
 ### Future cache organization for public and private images
 
 Manifest contents are usually small enough to fit in the AC. So we're moving to a single AC entry for manifests:
-* An ActionResult containing the manifest `Content-Type` header value and the manifest contents as execution metadata.
+* An ActionResult containing the manifest `Content-Type` header value and the manifest contents as execution metadata. The key is still a hash of `{registry, repository, blob|manifest, hash function, hash hex string}`.
