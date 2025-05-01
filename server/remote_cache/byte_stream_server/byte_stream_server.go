@@ -179,21 +179,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	return err
 }
 
-// WriteHandler enapsulates an on-going ByteStream write to a cache, freeing
-// the caller of having to manage writing and committing-to the cache, tracking
-// cache hits, verifying checksums, etc. Here is how it must be used:
-//   - A new WriteHandler may be obtained by providing the first frame of the
-//     stream to the BeginWrite() function. This function will return a new
-//     WriteHandler, or an error.
-//   - If a WriteHandler is returned from BeginWrite(), WriteHandler.Close()
-//     must be called to free system resources when the write is finished.
-//   - Each subsequent frame should be passed to WriteHandler.Write(), which
-//     will return an error on error (note: io.EOF indicates the cache believes
-//     the write is finished), or an optional WriteResponse that should be sent
-//     to the client if the client indicated the write is finished. This
-//     function will return (nil, nil) if the frame was processed successfully,
-//     but the write is not finished yet.
-type WriteHandler struct {
+type writeHandler struct {
 	// Top-level writer that handles incoming bytes.
 	writer io.Writer
 
@@ -220,7 +206,7 @@ func checkInitialPreconditions(req *bspb.WriteRequest) error {
 	return nil
 }
 
-func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *WriteHandler) error {
+func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeHandler) error {
 	if req.ResourceName != "" {
 		if req.ResourceName != ws.resourceNameString {
 			return status.InvalidArgumentErrorf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.resourceNameString)
@@ -232,7 +218,7 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *WriteHandler) erro
 	return nil
 }
 
-func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteRequest) (*WriteHandler, error) {
+func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteRequest) (interfaces.ByteStreamWriteHandler, error) {
 	if err := checkInitialPreconditions(req); err != nil {
 		return nil, err
 	}
@@ -250,7 +236,7 @@ func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteReques
 	}
 
 	hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
-	ws := &WriteHandler{
+	ws := &writeHandler{
 		transferTimer:      hitTracker.TrackUpload(r.GetDigest()),
 		resourceName:       r,
 		resourceNameString: req.ResourceName,
@@ -332,29 +318,7 @@ func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteReques
 	return ws, nil
 }
 
-// `Write()` is used to send the contents of a resource as a sequence of
-// bytes. The bytes are sent in a sequence of request protos of a client-side
-// streaming FUNC (S *BYTESTREAMSERVER).
-//
-// A `Write()` action is resumable. If there is an error or the connection is
-// broken during the `Write()`, the client should check the status of the
-// `Write()` by calling `QueryWriteStatus()` and continue writing from the
-// returned `committed_size`. This may be less than the amount of data the
-// client previously sent.
-//
-// Calling `Write()` on a resource name that was previously written and
-// finalized could cause an error, depending on whether the underlying service
-// allows over-writing of previously written resources.
-//
-// When the client closes the request channel, the service will respond with
-// a `WriteResponse`. The service will not view the resource as `complete`
-// until the client has sent a `WriteRequest` with `finish_write` set to
-// `true`. Sending any requests on a stream after sending a request with
-// `finish_write` set to `true` will cause an error. The client **should**
-// check the `WriteResponse` it receives to determine how much data the
-// service was able to commit and whether the service views the resource as
-// `complete` or not.
-func (w *WriteHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) {
+func (w *writeHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error) {
 	if err := checkSubsequentPreconditions(req, w); err != nil {
 		return nil, err
 	}
@@ -375,7 +339,7 @@ func (w *WriteHandler) Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error
 	return nil, nil
 }
 
-func (w *WriteHandler) commit() error {
+func (w *writeHandler) commit() error {
 	if w.decompressorCloser != nil {
 		defer func() {
 			w.decompressorCloser = nil
@@ -399,7 +363,7 @@ func (w *WriteHandler) commit() error {
 	return w.cacheCommitter.Commit()
 }
 
-func (w *WriteHandler) Close() error {
+func (w *writeHandler) Close() error {
 	if err := w.transferTimer.CloseWithBytesTransferred(w.offset, int64(w.bytesUploadedFromClient), w.resourceName.GetCompressor(), "byte_stream_server"); err != nil {
 		log.Debugf("ByteStream Write: uploadTracker.CloseWithBytesTransferred error: %s", err)
 	}
@@ -410,9 +374,31 @@ func (w *WriteHandler) Close() error {
 	return w.cacheCloser.Close()
 }
 
+// `Write()` is used to send the contents of a resource as a sequence of
+// bytes. The bytes are sent in a sequence of request protos of a client-side
+// streaming FUNC (S *BYTESTREAMSERVER).
+//
+// A `Write()` action is resumable. If there is an error or the connection is
+// broken during the `Write()`, the client should check the status of the
+// `Write()` by calling `QueryWriteStatus()` and continue writing from the
+// returned `committed_size`. This may be less than the amount of data the
+// client previously sent.
+//
+// Calling `Write()` on a resource name that was previously written and
+// finalized could cause an error, depending on whether the underlying service
+// allows over-writing of previously written resources.
+//
+// When the client closes the request channel, the service will respond with
+// a `WriteResponse`. The service will not view the resource as `complete`
+// until the client has sent a `WriteRequest` with `finish_write` set to
+// `true`. Sending any requests on a stream after sending a request with
+// `finish_write` set to `true` will cause an error. The client **should**
+// check the `WriteResponse` it receives to determine how much data the
+// service was able to commit and whether the service views the resource as
+// `complete` or not.
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
-	var streamState *WriteHandler
+	var streamState interfaces.ByteStreamWriteHandler
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {

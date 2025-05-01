@@ -48,6 +48,7 @@ go_library(
         "@com_github_google_go_github_v59//github",
         "@com_github_hashicorp_serf//serf",
         "@io_gorm_gorm//:gorm",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//health/grpc_health_v1",
     ],
