@@ -45,7 +45,7 @@ const (
 
 	// Min number of goroutines to run concurrently when uploading a
 	// chunked file's contents to cache (one goroutine is spawned per chunk).
-	minChunkedFileWriteConcurrency = 4
+	minChunkedFileWriteConcurrency = 8
 )
 
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
@@ -896,6 +896,9 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
+	earlyExitCtx, cancelForEarlyExit := context.WithCancel(egCtx)
+	defer cancelForEarlyExit()
+
 	writeConcurrency := int(math.Max(minChunkedFileWriteConcurrency, float64(cacheOpts.VMConfiguration.GetNumCpus())))
 	eg.SetLimit(writeConcurrency)
 
@@ -903,15 +906,9 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	var mu sync.RWMutex
 	chunkSourceCounter := make(map[snaputil.ChunkSource]int, len(chunks))
 	chunkNodes := make([]*repb.FileNode, 0, len(chunks))
-	earlyExitErrorChan := make(chan error, 1)
-outer:
 	for i, c := range chunks {
-		// Don't iterate through the rest of the chunks if one chunk failed
-		// to upload.
-		select {
-		case <-earlyExitErrorChan:
-			break outer
-		default:
+		if earlyExitCtx.Err() != nil {
+			break
 		}
 
 		i := i
@@ -926,17 +923,11 @@ outer:
 
 		eg.Go(func() error {
 			returnError := func(err error) error {
-				// Report the error to the early exit channel if an error
-				// hasn't already been reported.
-				select {
-				case earlyExitErrorChan <- err:
-				default:
-				}
-
+				cancelForEarlyExit()
 				return status.WrapError(err, fmt.Sprintf("cache chunk %d/%d", i, len(chunks)))
 			}
 
-			ctx := egCtx
+			ctx := earlyExitCtx
 
 			chunkSrc := c.Source()
 			mu.Lock()
