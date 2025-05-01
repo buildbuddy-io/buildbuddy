@@ -249,7 +249,7 @@ func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 		req.ReEnqueueReason = s.Proto()
 	}
 	if err := t.stream.Send(req); err != nil {
-		log.CtxWarningf(ctx, "Could not send request: %s", err)
+		log.CtxWarningf(ctx, "Failed to send final message on task lease stream: %s", err)
 	}
 	closedCleanly := false
 	for {
