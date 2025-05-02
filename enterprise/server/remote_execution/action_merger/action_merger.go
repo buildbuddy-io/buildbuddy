@@ -278,6 +278,10 @@ func shouldHedge(hash map[string]string) bool {
 
 // Deletes the pending execution with the provided execution ID.
 func DeletePendingExecution(ctx context.Context, rdb redis.UniversalClient, executionID string) error {
+	// The pending execution should be cleaned up regardless of whether
+	// the original request is canceled or times out.
+	ctx = context.WithoutCancel(ctx)
+
 	if !*enableActionMerging {
 		return nil
 	}
