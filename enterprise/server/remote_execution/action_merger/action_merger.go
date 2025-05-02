@@ -289,18 +289,6 @@ func MaybeMergeExecutions(ctx context.Context, rdb redis.UniversalClient, schedu
 		return newExecutionID, NEW
 	}
 
-	// Finally, confirm this execution exists in the scheduler and hasn't been
-	// lost somehow.
-	//ok, err := schedulerService.ExistsTask(ctx, executionID)
-	//if err != nil {
-	//	log.CtxWarningf(ctx, "Error checking if pending execution %q exists in the scheduler: %s", newExecutionID, err)
-	//	return newExecutionID, NEW
-	//}
-	//if !ok {
-	//	log.CtxWarningf(ctx, "Pending execution %q does not exist in the scheduler", newExecutionID)
-	//	return newExecutionID, NEW
-	//}
-
 	if shouldHedge(hash) {
 		return executionID, HEDGE
 	} else {
