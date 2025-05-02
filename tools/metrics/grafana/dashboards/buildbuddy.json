@@ -17697,10 +17697,10 @@
         "current": {
           "selected": true,
           "text": [
-            "gke-prod-dtib7-spot-executor-c2-6ee8decb-grp-2t72"
+            "All"
           ],
           "value": [
-            "gke-prod-dtib7-spot-executor-c2-6ee8decb-grp-2t72"
+            "$__all"
           ]
         },
         "datasource": {
