@@ -1106,32 +1106,70 @@ type uploadWriteCloser struct {
 	uploadString string
 
 	bytesUploaded int64
+	buf           []byte
+}
+
+func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*uploadWriteCloser, error) {
+	if bsClient == nil {
+		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
+	}
+	if r.GetCompressor() != repb.Compressor_IDENTITY {
+		return nil, status.FailedPreconditionError("casWriteCloser does not support compression")
+	}
+	stream, err := bsClient.Write(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+	return &uploadWriteCloser{
+		ctx:           ctx,
+		stream:        stream,
+		sender:        sender,
+		resource:      r,
+		uploadString:  r.NewUploadString(),
+		bytesUploaded: 0,
+		buf:           make([]byte, 0, uploadBufSizeBytes),
+	}, nil
 }
 
 func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 	written := 0
-	for len(p) > 0 {
-		n := min(len(p), uploadBufSizeBytes)
-		req := &bspb.WriteRequest{
-			Data:         p[:n],
-			ResourceName: cwc.uploadString,
-			WriteOffset:  cwc.bytesUploaded + int64(written),
-			FinishWrite:  false,
-		}
 
-		err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
-		if err != nil {
-			if err == io.EOF {
-				break
+	for len(p) > 0 {
+		remaining := cap(cwc.buf) - len(cwc.buf)
+		toCopy := min(len(p), remaining)
+
+		cwc.buf = append(cwc.buf, p[:toCopy]...)
+		p = p[toCopy:]
+		written += toCopy
+
+		if len(cwc.buf) == uploadBufSizeBytes {
+			if err := cwc.flush(false); err != nil {
+				return written, err
 			}
-			cwc.bytesUploaded += int64(written)
-			return written, err
 		}
-		written += n
-		p = p[n:]
 	}
-	cwc.bytesUploaded += int64(written)
 	return written, nil
+}
+
+func (cwc *uploadWriteCloser) flush(finish bool) error {
+	if len(cwc.buf) == 0 && !finish {
+		return nil
+	}
+
+	req := &bspb.WriteRequest{
+		Data:         cwc.buf,
+		ResourceName: cwc.uploadString,
+		WriteOffset:  cwc.bytesUploaded,
+		FinishWrite:  finish,
+	}
+	err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+	if err != nil {
+		return err
+	}
+	cwc.bytesUploaded += int64(len(cwc.buf))
+	cwc.buf = cwc.buf[:0]
+	return nil
 }
 
 func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
@@ -1156,17 +1194,9 @@ func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
 }
 
 func (cwc *uploadWriteCloser) Close() error {
-	req := &bspb.WriteRequest{
-		ResourceName: cwc.uploadString,
-		WriteOffset:  cwc.bytesUploaded,
-		FinishWrite:  true,
-	}
-
-	err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
-	if err != nil {
+	if err := cwc.flush(true); err != nil {
 		return err
 	}
-
 	rsp, err := cwc.stream.CloseAndRecv()
 	if err != nil {
 		return err
@@ -1177,28 +1207,8 @@ func (cwc *uploadWriteCloser) Close() error {
 	// either case, the remoteSize for uncompressed uploads should
 	// match the file size.
 	if remoteSize != cwc.resource.GetDigest().GetSizeBytes() {
-		return status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, cwc.resource.GetDigest().GetSizeBytes())
+		err := status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, cwc.resource.GetDigest().GetSizeBytes())
+		return err
 	}
 	return nil
-}
-
-func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*uploadWriteCloser, error) {
-	if bsClient == nil {
-		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
-	}
-	if r.GetCompressor() != repb.Compressor_IDENTITY {
-		return nil, status.FailedPreconditionError("casWriteCloser does not support compression")
-	}
-	stream, err := bsClient.Write(ctx)
-	if err != nil {
-		return nil, err
-	}
-	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
-	return &uploadWriteCloser{
-		ctx:          ctx,
-		stream:       stream,
-		sender:       sender,
-		resource:     r,
-		uploadString: r.NewUploadString(),
-	}, nil
 }
