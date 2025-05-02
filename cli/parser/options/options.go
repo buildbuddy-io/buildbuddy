@@ -357,7 +357,10 @@ func (o *RequiredValueOption) Normalized() Option {
 	}
 }
 
-type Negatable interface {
+type BoolLike interface {
+	AsBool() (bool, error)
+	Cleared() bool
+	Clear()
 	Negated() bool
 	Negate()
 }
@@ -410,6 +413,15 @@ func (o *BoolOrEnumOption) ClearValue() {
 
 func (o *BoolOrEnumOption) SetValue(value string) {
 	o.Value = &value
+}
+
+func (o *BoolOrEnumOption) Cleared() bool {
+	return o.Value == nil && !o.IsNegative
+}
+
+func (o *BoolOrEnumOption) Clear() {
+	o.Value = nil
+	o.IsNegative = false
 }
 
 func (o *BoolOrEnumOption) Negated() bool {

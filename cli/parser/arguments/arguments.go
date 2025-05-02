@@ -30,6 +30,9 @@ func (a *PositionalArgument) Format() []string {
 }
 
 func FromConcrete[T Argument](args []T) []Argument {
+	if len(args) == 0 {
+		return nil
+	}
 	argSlice := make([]Argument, 0, len(args))
 	for _, a := range args {
 		// `append(a, b...)` only works if `a` and `b` have exactly the same type,
@@ -40,7 +43,21 @@ func FromConcrete[T Argument](args []T) []Argument {
 	return argSlice
 }
 
+func ToPositionalArguments(args []string) []Argument {
+	if len(args) == 0 {
+		return nil
+	}
+	pos := make([]Argument, 0, len(args))
+	for _, arg := range args {
+		pos = append(pos, &PositionalArgument{Value: arg})
+	}
+	return pos
+}
+
 func FormatAll[T Argument](args []T) []string {
+	if args == nil {
+		return nil
+	}
 	s := make([]string, 0, len(args))
 	for _, arg := range args {
 		s = append(s, arg.Format()...)

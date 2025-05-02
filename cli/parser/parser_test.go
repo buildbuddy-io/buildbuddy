@@ -318,12 +318,14 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 	} {
-		p, err := GetParser()
-		require.NoError(t, err)
-		expandedArgs, err := p.expandConfigs(ws, tc.args)
+		t.Run("", func(t *testing.T) {
+			p, err := GetParser()
+			require.NoError(t, err)
+			expandedArgs, err := p.expandConfigs(ws, tc.args)
 
-		require.NoError(t, err, "error expanding %s", tc.args)
-		assert.Equal(t, tc.expectedExpandedArgs, expandedArgs)
+			require.NoError(t, err, "error expanding %s", tc.args)
+			assert.Equal(t, tc.expectedExpandedArgs, expandedArgs)
+		})
 	}
 }
 
@@ -446,127 +448,158 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 func TestCanonicalizeArgs(t *testing.T) {
 	// Use some args that look like bazel commands but are actually
 	// specifying flag values.
-	args := []string{
-		"--output_base", "build",
-		"--host_jvm_args", "query",
-		"--unknown_plugin_flag", "unknown_plugin_flag_value",
-		"--ignore_all_rc_files",
-		"test",
-		"-c", "opt",
-		"--another_unknown_plugin_flag",
-		"--cache_test_results",
-		"--nocache_test_results",
-		"--bes_backend", "remote.buildbuddy.io",
-		"--bes_backend=",
-		"--remote_header", "x-buildbuddy-foo=1",
-		"--remote_header", "x-buildbuddy-bar=2",
-		"--remote_download_minimal=value",
-		"--noexperimental_convenience_symlinks",
-		"--subcommands=pretty_print",
+	testcases := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name: "Test canonicalize command options",
+			input: []string{
+				"--output_base", "build",
+				"--host_jvm_args", "query",
+				"--unknown_plugin_flag", "unknown_plugin_flag_value",
+				"--ignore_all_rc_files",
+				"test",
+				"-c", "opt",
+				"--another_unknown_plugin_flag",
+				"--cache_test_results",
+				"--nocache_test_results",
+				"--bes_backend", "remote.buildbuddy.io",
+				"--bes_backend=",
+				"--remote_header", "x-buildbuddy-foo=1",
+				"--remote_header", "x-buildbuddy-bar=2",
+				"--remote_download_minimal=value",
+				"--noexperimental_convenience_symlinks",
+				"--subcommands=pretty_print",
+			},
+			expected: []string{
+				"--output_base=build",
+				"--host_jvm_args=query",
+				"--unknown_plugin_flag",
+				"unknown_plugin_flag_value",
+				"--ignore_all_rc_files",
+				"test",
+				"--compilation_mode=opt",
+				"--another_unknown_plugin_flag",
+				"--nocache_test_results",
+				"--bes_backend=",
+				"--remote_header=x-buildbuddy-foo=1",
+				"--remote_header=x-buildbuddy-bar=2",
+				"--remote_download_minimal",
+				"--noexperimental_convenience_symlinks",
+				"--subcommands=pretty_print",
+			},
+		},
+		{
+			name: "Test canonicalize startup options",
+			input: []string{
+				"--output_base", "build",
+				"--host_jvm_args", "query",
+				"--host_jvm_args=another_arg",
+				"--unknown_plugin_flag", "unknown_plugin_flag_value",
+				"--ignore_all_rc_files",
+				"--bazelrc", "/tmp/bazelrc_1",
+				"--bazelrc=/tmp/bazelrc_2",
+				"--host_jvm_debug",
+				"test",
+				"-c", "opt",
+				"--another_unknown_plugin_flag",
+				"--cache_test_results",
+				"--nocache_test_results",
+				"--bes_backend", "remote.buildbuddy.io",
+				"--bes_backend=",
+				"--remote_header", "x-buildbuddy-foo=1",
+				"--remote_header", "x-buildbuddy-bar=2",
+				"--", "hello",
+			},
+			expected: []string{
+				"--output_base=build",
+				"--host_jvm_args=query",
+				"--host_jvm_args=another_arg",
+				"--unknown_plugin_flag",
+				"unknown_plugin_flag_value",
+				"--ignore_all_rc_files",
+				"--bazelrc=/tmp/bazelrc_1",
+				"--bazelrc=/tmp/bazelrc_2",
+				"--host_jvm_debug",
+				"test",
+				"--compilation_mode=opt",
+				"--another_unknown_plugin_flag",
+				"--nocache_test_results",
+				"--bes_backend=",
+				"--remote_header=x-buildbuddy-foo=1",
+				"--remote_header=x-buildbuddy-bar=2",
+				"hello",
+			},
+		},
+		{
+			name: "Test canonicalize exec args",
+			input: []string{
+				"--output_base", "build",
+				"run",
+				"//:some_target",
+				"--",
+				"cmd",
+				"-foo=bar",
+			},
+			expected: []string{
+				"--output_base=build",
+				"run",
+				"//:some_target",
+				"--",
+				"cmd",
+				"-foo=bar",
+			},
+		},
+		{
+			name: "Test canonicalize negative target",
+			input: []string{
+				"--output_base", "query",
+				"build",
+				"//...",
+				"--",
+				"-//:some_target",
+			},
+			expected: []string{
+				"--output_base=query",
+				"build",
+				"--",
+				"//...",
+				"-//:some_target",
+			},
+		},
+		{
+			name: "Test canonicalize negative target and exec args",
+			input: []string{
+				"--output_base", "build",
+				"run",
+				"--",
+				"-//:some_target",
+				"cmd",
+				"-foo=bar",
+			},
+			expected: []string{
+				"--output_base=build",
+				"run",
+				"--",
+				"-//:some_target",
+				"cmd",
+				"-foo=bar",
+			},
+		},
 	}
 
-	p, err := GetParser()
-	require.NoError(t, err)
-	canonicalArgs, err := p.canonicalizeArgs(args, false)
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := GetParser()
+			require.NoError(t, err)
+			canonicalArgs, err := p.canonicalizeArgs(tc.input)
 
-	require.NoError(t, err)
-	expectedCanonicalArgs := []string{
-		"--output_base=build",
-		"--host_jvm_args=query",
-		"--unknown_plugin_flag",
-		"unknown_plugin_flag_value",
-		"--ignore_all_rc_files",
-		"test",
-		"--compilation_mode=opt",
-		"--another_unknown_plugin_flag",
-		"--nocache_test_results",
-		"--bes_backend=",
-		"--remote_header=x-buildbuddy-foo=1",
-		"--remote_header=x-buildbuddy-bar=2",
-		"--remote_download_minimal",
-		"--noexperimental_convenience_symlinks",
-		"--subcommands=pretty_print",
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, canonicalArgs)
+		})
 	}
-	assert.Equal(t, expectedCanonicalArgs, canonicalArgs)
-}
-
-func TestCanonicalizeStartupArgs(t *testing.T) {
-	// Use some args that look like bazel commands but are actually
-	// specifying flag values.
-	args := []string{
-		"--output_base", "build",
-		"--host_jvm_args", "query",
-		"--host_jvm_args=another_arg",
-		"--unknown_plugin_flag", "unknown_plugin_flag_value",
-		"--ignore_all_rc_files",
-		"--bazelrc", "/tmp/bazelrc_1",
-		"--bazelrc=/tmp/bazelrc_2",
-		"--host_jvm_debug",
-		"test",
-		"-c", "opt",
-		"--another_unknown_plugin_flag",
-		"--cache_test_results",
-		"--nocache_test_results",
-		"--bes_backend", "remote.buildbuddy.io",
-		"--bes_backend=",
-		"--remote_header", "x-buildbuddy-foo=1",
-		"--remote_header", "x-buildbuddy-bar=2",
-		"--", "hello",
-	}
-
-	p, err := GetParser()
-	require.NoError(t, err)
-	canonicalArgs, err := p.canonicalizeArgs(args, true)
-
-	require.NoError(t, err)
-	expectedCanonicalArgs := []string{
-		"--output_base=build",
-		"--host_jvm_args=query",
-		"--host_jvm_args=another_arg",
-		"--unknown_plugin_flag",
-		"unknown_plugin_flag_value",
-		"--ignore_all_rc_files",
-		"--bazelrc=/tmp/bazelrc_1",
-		"--bazelrc=/tmp/bazelrc_2",
-		"--host_jvm_debug",
-		"test",
-		"-c", "opt",
-		"--another_unknown_plugin_flag",
-		"--cache_test_results",
-		"--nocache_test_results",
-		"--bes_backend", "remote.buildbuddy.io",
-		"--bes_backend=",
-		"--remote_header", "x-buildbuddy-foo=1",
-		"--remote_header", "x-buildbuddy-bar=2",
-		"--", "hello",
-	}
-	assert.Equal(t, expectedCanonicalArgs, canonicalArgs)
-}
-
-func TestCanonicalizeArgs_Passthrough(t *testing.T) {
-	args := []string{
-		"--output_base", "build",
-		"test",
-		"//:some_target",
-		"--",
-		"cmd",
-		"-foo=bar",
-	}
-
-	p, err := GetParser()
-	require.NoError(t, err)
-	canonicalArgs, err := p.canonicalizeArgs(args, false)
-
-	require.NoError(t, err)
-	expectedCanonicalArgs := []string{
-		"--output_base=build",
-		"test",
-		"//:some_target",
-		"--",
-		"cmd",
-		"-foo=bar",
-	}
-	assert.Equal(t, expectedCanonicalArgs, canonicalArgs)
 }
 
 func TestGetFirstTargetPattern(t *testing.T) {
