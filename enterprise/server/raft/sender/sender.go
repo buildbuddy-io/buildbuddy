@@ -271,6 +271,54 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 	})
 }
 
+// tryReplica tries the this fn on the replica and return whether to try a different replica
+func (s *Sender) tryReplica(ctx context.Context, rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor, fn runFunc, makeHeaderFn makeHeaderFunc) (bool, error) {
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	default:
+		// continue for loop
+	}
+	client, err := s.apiClient.GetForReplica(ctx, replica)
+	if err != nil {
+		if status.IsUnavailableError(err) {
+			return true, status.WrapErrorf(err, "skipping c%dn%d: unavailable when getting client", replica.GetRangeId(), replica.GetReplicaId())
+		}
+		return false, err
+	}
+	header := makeHeaderFn(rd, replica)
+
+	fnCtx, spn := tracing.StartSpan(ctx)
+	spn.SetName("TryReplicas: fn")
+	rangeIDAttr := attribute.Int64("range_id", int64(replica.GetRangeId()))
+	replicaIDAttr := attribute.Int64("replica_id", int64(replica.GetReplicaId()))
+	spn.SetAttributes(rangeIDAttr, replicaIDAttr)
+
+	err = fn(fnCtx, client, header)
+	tracing.RecordErrorToSpan(spn, err)
+	spn.End()
+	if err == nil {
+		return false, nil
+	}
+	if status.IsOutOfRangeError(err) {
+		m := status.Message(err)
+		switch {
+		// range not found, no replicas are likely to have it; bail.
+		case strings.HasPrefix(m, constants.RangeNotCurrentMsg):
+			return false, status.OutOfRangeErrorf("failed to TryReplicas on c%dn%d: no replicas are likely to have it: %s", replica.GetRangeId(), replica.GetReplicaId(), m)
+		case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg), strings.HasPrefix(m, constants.RangeNotFoundMsg):
+			return true, status.WrapErrorf(err, "skipping c%dn%d: out of range", replica.GetRangeId(), replica.GetReplicaId())
+		default:
+			break
+		}
+	}
+	if status.IsUnavailableError(err) {
+		// try a different replica if the current replica is not available.
+		return true, status.WrapErrorf(err, "skipping c%dn%d: unavailable when running fn", replica.GetRangeId(), replica.GetReplicaId())
+	}
+	return false, err
+}
+
 func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, makeHeaderFn makeHeaderFunc) (replicaIdx int, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	attr := attribute.Int64("range_id", int64(rd.GetRangeId()))
@@ -286,54 +334,34 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 			}
 		}
 	}()
+
 	for i, replica := range rd.GetReplicas() {
-		select {
-		case <-ctx.Done():
-			return 0, ctx.Err()
-		default:
-			// continue for loop
-		}
-		client, err := s.apiClient.GetForReplica(ctx, replica)
-		if err != nil {
-			if status.IsUnavailableError(err) {
-				// try a different replica if the current replica is not available.
-				logs = append(logs, fmt.Sprintf("skipping c%dn%d: unavailable when getting client: %s", replica.GetRangeId(), replica.GetReplicaId(), err))
-				continue
+		shouldContinue, err := s.tryReplica(ctx, rd, replica, fn, makeHeaderFn)
+		if shouldContinue {
+			if err != nil {
+				logs = append(logs, err.Error())
 			}
-			return 0, err
+			continue
 		}
-		header := makeHeaderFn(rd, replica)
 
-		fnCtx, spn := tracing.StartSpan(ctx)
-		spn.SetName("TryReplicas: fn")
-		rangeIDAttr := attribute.Int64("range_id", int64(replica.GetRangeId()))
-		replicaIDAttr := attribute.Int64("replica_id", int64(replica.GetReplicaId()))
-		spn.SetAttributes(rangeIDAttr, replicaIDAttr)
-
-		err = fn(fnCtx, client, header)
-		tracing.RecordErrorToSpan(spn, err)
-		spn.End()
 		if err == nil {
 			return i, nil
 		}
-		if status.IsOutOfRangeError(err) {
-			m := status.Message(err)
-			switch {
-			// range not found, no replicas are likely to have it; bail.
-			case strings.HasPrefix(m, constants.RangeNotCurrentMsg):
-				return 0, status.OutOfRangeErrorf("failed to TryReplicas on c%dn%d: no replicas are likely to have it: %s", replica.GetRangeId(), replica.GetReplicaId(), m)
-			case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg), strings.HasPrefix(m, constants.RangeNotFoundMsg):
-				logs = append(logs, fmt.Sprintf("skipping c%dn%d: out of range: %s", replica.GetRangeId(), replica.GetReplicaId(), err))
-				continue
-			default:
-				break
+
+		return 0, err
+	}
+
+	for _, replica := range rd.GetStaging() {
+		shouldContinue, err := s.tryReplica(ctx, rd, replica, fn, makeHeaderFn)
+		if shouldContinue {
+			if err != nil {
+				logs = append(logs, err.Error())
 			}
-		}
-		if status.IsUnavailableError(err) {
-			logs = append(logs, fmt.Sprintf("skipping c%dn%d: unavailable when running fn: %s", replica.GetRangeId(), replica.GetReplicaId(), err))
-			// try a different replica if the current replica is not available.
 			continue
 		}
+
+		// even if fn succeeds on the replica, we want to return 0 to signal to
+		// the caller not to set the preferred replica
 		return 0, err
 	}
 	return 0, status.OutOfRangeErrorf("No replicas available in range %d", rd.GetRangeId())
