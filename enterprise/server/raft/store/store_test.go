@@ -629,11 +629,12 @@ func fetchRangeDescriptorsFromMetaRange(ctx context.Context, t *testing.T, ts *t
 		ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
 	}).ToProto()
 	require.NoError(t, err)
-	c, err := ts.APIClient().GetForReplica(ctx, metaRangeDescriptor.GetReplicas()[0])
+	repl := metaRangeDescriptor.GetReplicas()[0]
+	c, err := ts.APIClient().GetForReplica(ctx, repl)
 	require.NoError(t, err)
 	for {
 		rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
-			Header: header.New(metaRangeDescriptor, 0, rfpb.Header_LINEARIZABLE),
+			Header: header.New(metaRangeDescriptor, repl, rfpb.Header_LINEARIZABLE),
 			Batch:  batchReq,
 		})
 		if status.IsOutOfRangeError(err) {
