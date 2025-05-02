@@ -1060,7 +1060,6 @@ func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r
 }
 
 func (uwc *uploadWriteCloser) Write(p []byte) (int, error) {
-	log.Debugf("WRITE %d bytes", len(p))
 	written := 0
 
 	for len(p) > 0 {
@@ -1073,19 +1072,15 @@ func (uwc *uploadWriteCloser) Write(p []byte) (int, error) {
 
 		if len(uwc.wbuf) == uploadBufSizeBytes {
 			if err := uwc.flush(false); err != nil {
-				log.Debugf("WRITE %d written, err: %s", written, err)
 				return written, err
 			}
 		}
 	}
-	log.Debugf("WRITE ok %d written", written)
 	return written, nil
 }
 
 func (uwc *uploadWriteCloser) flush(finish bool) error {
-	log.Debugf("FLUSH %t bytesUploaded %d", finish, uwc.bytesUploaded)
 	if len(uwc.wbuf) == 0 && !finish {
-		log.Debugf("FLUSH %t ok", finish)
 		return nil
 	}
 
@@ -1101,12 +1096,10 @@ func (uwc *uploadWriteCloser) flush(finish bool) error {
 	}
 	err := uwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 	if err != nil {
-		log.Debugf("FLUSH %t err: %s", finish, err)
 		return err
 	}
 	uwc.bytesUploaded += int64(len(data))
 	uwc.wbuf = uwc.wbuf[:0]
-	log.Debugf("FLUSH %t ok bytesUploaded %d", finish, uwc.bytesUploaded)
 	return nil
 }
 
@@ -1132,14 +1125,11 @@ func (uwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
 }
 
 func (uwc *uploadWriteCloser) Close() error {
-	log.Debug("CLOSE")
 	if err := uwc.flush(true); err != nil {
-		log.Debugf("CLOSE err: %s", err)
 		return err
 	}
 	rsp, err := uwc.stream.CloseAndRecv()
 	if err != nil {
-		log.Debugf("CLOSE err: %s", err)
 		return err
 	}
 
@@ -1149,20 +1139,14 @@ func (uwc *uploadWriteCloser) Close() error {
 		// either case, the remoteSize for uncompressed uploads should
 		// match the file size.
 		if remoteSize != uwc.resource.GetDigest().GetSizeBytes() {
-			err := status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, uwc.resource.GetDigest().GetSizeBytes())
-			log.Debugf("CLOSE err: %s", err)
-			return err
+			return status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, uwc.resource.GetDigest().GetSizeBytes())
 		}
-		log.Debug("CLOSE ok")
 		return nil
 	}
 	if remoteSize != uwc.bytesUploaded && remoteSize != -1 {
 		// -1 is returned if the blob already exists, otherwise the
 		// remoteSize should agree with what we uploaded.
-		err := status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, uwc.resource.GetDigest().GetSizeBytes())
-		log.Debugf("CLOSE err: %s", err)
-		return err
+		return status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, uwc.resource.GetDigest().GetSizeBytes())
 	}
-	log.Debug("CLOSE ok")
 	return nil
 }
