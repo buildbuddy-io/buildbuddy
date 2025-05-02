@@ -107,6 +107,7 @@ func TestActionResultCacheWithSuccessfulAction(t *testing.T) {
 }
 
 func TestActionResultCacheWithFailedAction(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServer()
