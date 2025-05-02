@@ -425,6 +425,8 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		if err == nil || !remoteEnabled || !*snaputil.EnableRemoteSnapshotSharing {
 			return manifest, err
 		}
+	} else if !remoteEnabled {
+		return nil, status.InternalErrorf("invalid state: EnableLocalSnapshotSharing=false and remoteEnabled=false")
 	}
 
 	// Fall back to fetching remote manifest.
