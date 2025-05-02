@@ -219,6 +219,11 @@
   margin-top: 24px;
 }
 
+.cache-requests-card.card {
+  /* 'overflow: hidden' styling prevents sticky spinner from working properly. */
+  overflow: initial;
+}
+
 .cache-requests-card .action-id {
   font-weight: 600;
 }
@@ -317,6 +322,28 @@
 .cache-requests-card .results-table {
   border: 1px solid #eee;
   border-radius: 4px;
+  position: relative;
+}
+
+.cache-requests-card .loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: grayscale(100%);
+}
+
+.cache-requests-card .loading.results-updating {
+  position: sticky;
+  top: 0;
+  height: 0;
+  overflow: visible;
+  z-index: 1;
+  transform: translateY(32px);
 }
 
 .cache-requests-card .column-headers {
