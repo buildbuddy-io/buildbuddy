@@ -1086,7 +1086,8 @@ func (uwc *uploadWriteCloser) flush(finish bool) error {
 
 	data := uwc.wbuf
 	if uwc.resource.GetCompressor() == repb.Compressor_ZSTD {
-		data = compression.CompressZstd(uwc.cbuf[:0], uwc.wbuf)
+		uwc.cbuf = compression.CompressZstd(uwc.cbuf[:0], uwc.wbuf)
+		data = uwc.cbuf
 	}
 	req := &bspb.WriteRequest{
 		Data:         data,
