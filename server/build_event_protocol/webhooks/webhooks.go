@@ -174,7 +174,7 @@ func (h *invocationUploadHook) s3Upload(ctx context.Context, u *url.URL, gzr io.
 	}
 	bucket := parts[0]
 	region := parts[2]
-	key := u.Path
+	key := strings.TrimPrefix(u.Path, "/")
 
 	// TODO: only create this config/client once per region?
 	creds, err := getAWSCreds()
