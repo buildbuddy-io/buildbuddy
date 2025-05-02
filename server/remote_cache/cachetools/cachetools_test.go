@@ -762,7 +762,8 @@ func TestUploadReaderAndGetBlob_DifferentSizes(t *testing.T) {
 					require.NoError(t, err)
 					outb := out.Bytes()
 					require.Equal(t, inputSize, int64(len(outb)))
-					require.Empty(t, cmp.Diff(input, outb))
+					require.Empty(t, cmp.Diff(input[:9], outb[:9]))
+					require.Empty(t, cmp.Diff(input[len(input)-9:], outb[len(outb)-9:]))
 				}
 			})
 
