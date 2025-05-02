@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -44,9 +45,8 @@ const (
 	rootfsFileName = "rootfs.ext4"
 
 	// Min number of goroutines to run concurrently when uploading a
-	// chunked file's contents to cache (one goroutine is spawned per chunk, and
-	// this limit applies per-file).
-	minChunkedFileWriteConcurrency = 4
+	// chunked file's contents to cache (one goroutine is spawned per chunk).
+	minChunkedFileWriteConcurrency = 8
 )
 
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
@@ -116,6 +116,9 @@ func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.
 		return "", err
 	}
 	rn := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
+	// NOTE: We don't use `proxy_util.SetSkipRemote` here because the snapshot
+	// version data should always live in the authoritative cache, to ensure that
+	// any updates are applied universally.
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if status.IsNotFoundError(err) {
 		// Version metadata might not exist in the cache if:
@@ -335,6 +338,10 @@ type CacheSnapshotOptions struct {
 
 	// Whether to save the snapshot to the remote cache (in addition to locally)
 	Remote bool
+
+	// Whether we would've cached this snapshot remotely if our remote snapshot
+	// limits were applied.
+	WouldNotHaveCachedRemotely bool
 }
 
 type UnpackedSnapshot struct {
@@ -438,6 +445,12 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 		return nil, err
 	}
 	rn := digest.NewACResourceName(manifestKey, key.InstanceName, repb.DigestFunction_BLAKE3)
+
+	// If the proxy is enabled, skip writing snapshots to the remote cache to minimize
+	// high network transfer. Snapshots can't be shared across different machine
+	// types, so there's no reason to support snapshot sharing across clusters.
+	ctx = proxy_util.SetSkipRemote(ctx)
+
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if err != nil {
 		return nil, err
@@ -687,21 +700,15 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		})
 	}
 	for name, cow := range opts.ChunkedFiles {
-		name, cow := name, cow
+		treeDigest, err := l.cacheCOW(egCtx, name, key.InstanceName, cow, opts)
+		if err != nil {
+			return status.WrapErrorf(err, "cache %q COW", name)
+		}
 		dir := &repb.OutputDirectory{
-			Path: name,
-			// TreeDigest is computed in goroutine.
+			Path:       name,
+			TreeDigest: treeDigest,
 		}
 		ar.OutputDirectories = append(ar.OutputDirectories, dir)
-		eg.Go(func() error {
-			ctx := egCtx
-			treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow, opts)
-			if err != nil {
-				return status.WrapErrorf(err, "cache %q COW", name)
-			}
-			dir.TreeDigest = treeDigest
-			return nil
-		})
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -717,6 +724,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.SnapshotKey, ar *repb.ActionResult, opts *CacheSnapshotOptions) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+	ctx = proxy_util.SetSkipRemote(ctx)
 	b, err := proto.Marshal(ar)
 	if err != nil {
 		return err
@@ -903,6 +911,9 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
+	earlyExitCtx, cancelForEarlyExit := context.WithCancel(egCtx)
+	defer cancelForEarlyExit()
+
 	writeConcurrency := int(math.Max(minChunkedFileWriteConcurrency, float64(cacheOpts.VMConfiguration.GetNumCpus())))
 	eg.SetLimit(writeConcurrency)
 
@@ -910,7 +921,12 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	var mu sync.RWMutex
 	chunkSourceCounter := make(map[snaputil.ChunkSource]int, len(chunks))
 	chunkNodes := make([]*repb.FileNode, 0, len(chunks))
-	for _, c := range chunks {
+	for i, c := range chunks {
+		if earlyExitCtx.Err() != nil {
+			break
+		}
+
+		i := i
 		c := c
 
 		// Make sure chunks are appended in order
@@ -921,7 +937,12 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		chunkNodes = append(chunkNodes, fn)
 
 		eg.Go(func() error {
-			ctx := egCtx
+			returnError := func(err error) error {
+				cancelForEarlyExit()
+				return status.WrapError(err, fmt.Sprintf("cache chunk %d/%d", i, len(chunks)))
+			}
+
+			ctx := earlyExitCtx
 
 			chunkSrc := c.Source()
 			mu.Lock()
@@ -931,13 +952,13 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			// Get or compute the digest.
 			d, err := c.Digest()
 			if err != nil {
-				return status.WrapError(err, "compute digest")
+				return returnError(status.WrapError(err, "compute digest"))
 			}
 			fn.Digest = d
 
 			chunkSize, err := c.SizeBytes()
 			if err != nil {
-				return status.WrapError(err, "chunk size")
+				return returnError(status.WrapError(err, "chunk size"))
 			}
 
 			// Skip caching chunks of all 0s
@@ -953,7 +974,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 					// Sync dirty chunks to make sure the underlying file is up to date
 					// before we add it to cache.
 					if err := c.Sync(); err != nil {
-						return status.WrapError(err, "sync dirty chunk")
+						return returnError(status.WrapError(err, "sync dirty chunk"))
 					}
 				}
 
@@ -966,7 +987,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 					path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
 					bytesWritten, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path, name)
 					if err != nil {
-						return status.WrapError(err, "write chunk to cache")
+						return returnError(status.WrapError(err, "write chunk to cache"))
 					}
 					atomic.AddInt64(&compressedBytesWrittenRemotely, bytesWritten)
 				} else if *snaputil.VerboseLogging {
@@ -978,7 +999,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			// After processing each chunk, we won't still need
 			// the data in memory, so unmap it to reduce memory usage on the executor
 			if err := c.Unmap(); err != nil {
-				return status.WrapError(err, "unmap chunk")
+				return returnError(status.WrapError(err, "unmap chunk"))
 			}
 
 			return nil
@@ -986,7 +1007,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}
 
 	if err := eg.Wait(); err != nil {
-		return nil, status.WrapError(err, "cache chunks")
+		return nil, err
 	}
 
 	// Filter out empty chunks
@@ -1020,6 +1041,12 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	metrics.COWSnapshotEmptyChunkRatio.With(prometheus.Labels{
 		metrics.FileName: name,
 	}).Observe(float64(emptyChunkCount) / float64(len(chunks)))
+
+	if cacheOpts.Remote && cacheOpts.WouldNotHaveCachedRemotely {
+		metrics.COWSnapshotSkippedRemoteBytes.With(prometheus.Labels{
+			metrics.FileName: name,
+		}).Add(float64(compressedBytesWrittenRemotely))
+	}
 
 	for chunkSrc, count := range chunkSourceCounter {
 		metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{
@@ -1065,6 +1092,10 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 	}
 
 	acDigest := digest.NewACResourceName(versionKey, key.InstanceName, repb.DigestFunction_BLAKE3)
+
+	// NOTE: We don't use `proxy_util.SetSkipRemote` here because the snapshot
+	// version data should always live in the authoritative cache, to ensure that
+	// any updates are applied universally.
 	if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, versionMetadataActionResult); err != nil {
 		return "", err
 	}

@@ -16,6 +16,10 @@ go_library(
 go_test(
     name = "compression_test",
     srcs = ["compression_test.go"],
-    embed = [":compression"],
-    deps = ["@com_github_stretchr_testify//require"],
+    deps = [
+        ":compression",
+        "//server/testutil/testdigest",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_stretchr_testify//require",
+    ],
 )

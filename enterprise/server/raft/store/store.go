@@ -1169,7 +1169,7 @@ func (s *Store) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req
 		_, err := c.RemoveReplica(ctx, req)
 		return err
 	}
-	_, err := s.sender.TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
+	_, err := s.sender.TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
 		return nil
 	})
 
@@ -1874,15 +1874,6 @@ func (s *Store) updateStoreUsageTag(ctx context.Context) {
 	}
 }
 
-func makeHeader(rangeDescriptor *rfpb.RangeDescriptor) *rfpb.Header {
-	return &rfpb.Header{
-		Replica:         rangeDescriptor.GetReplicas()[0],
-		RangeId:         rangeDescriptor.GetRangeId(),
-		Generation:      rangeDescriptor.GetGeneration(),
-		ConsistencyMode: rfpb.Header_LINEARIZABLE,
-	}
-}
-
 func (s *Store) Usage() *rfpb.StoreUsage {
 	su := &rfpb.StoreUsage{
 		Node: s.NodeDescriptor(),
@@ -2461,7 +2452,7 @@ func (s *Store) GetRemoteLastAppliedIndex(ctx context.Context, rd *rfpb.RangeDes
 	}
 	// To read a local key for a replica, we don't need to check whether the
 	// replica has lease or not.
-	header := header.New(rd, replicaIdx, rfpb.Header_STALE)
+	header := header.New(rd, r, rfpb.Header_STALE)
 	syncResp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
 		Header: header,
 		Batch:  readReq,
@@ -2927,28 +2918,6 @@ func addMetaRangeEdits(oldLeftRange, newLeftRange, newRightRange *rfpb.RangeDesc
 	})
 	return nil
 }
-
-func (s *Store) updateMetarange(ctx context.Context, oldStart, start, end *rfpb.RangeDescriptor) error {
-	b := rbuilder.NewBatchBuilder()
-	if err := addMetaRangeEdits(oldStart, start, end, b); err != nil {
-		return err
-	}
-	batchProto, err := b.ToProto()
-	if err != nil {
-		return err
-	}
-	rsp, err := s.Sender().SyncPropose(ctx, keys.RangeMetaKey(end.GetEnd()), batchProto)
-	if err != nil {
-		return err
-	}
-	batchRsp := rbuilder.NewBatchResponseFromProto(rsp)
-	_, err = batchRsp.CASResponse(0)
-	if err != nil {
-		return err
-	}
-	return batchRsp.AnyError()
-}
-
 func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, new *rfpb.RangeDescriptor) error {
 	s.log.Infof("start to update range descriptor for rangeID %d to gen %d", rangeID, new.GetGeneration())
 	oldBuf, err := proto.Marshal(old)

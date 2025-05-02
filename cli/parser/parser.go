@@ -18,11 +18,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -156,6 +156,88 @@ func (p *Parser) AddOptionDefinition(o *options.Definition) error {
 	return nil
 }
 
+func ParseArgs(args []string) (*parsed.OrderedArgs, error) {
+	p, err := GetParser()
+	if err != nil {
+		return nil, err
+	}
+	return p.ParseArgsForCommand(args, "startup")
+}
+
+func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.OrderedArgs, error) {
+	parsedArgs := &parsed.OrderedArgs{}
+	next := args
+	for {
+		opts, argIndex, err := p.ParseOptions(next, command)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse %s options: %s", command, err)
+		}
+		parsedArgs.Args = append(parsedArgs.Args, arguments.FromConcrete(opts)...)
+		next = next[argIndex:]
+		if len(next) == 0 {
+			break
+		}
+		if next[0] == "--" {
+			if command == "startup" {
+				// Bazel does not recognize `--` until the command has been encountered.
+				return nil, fmt.Errorf("unknown startup option '--'.")
+			}
+			parsedArgs.Args = append(parsedArgs.Args, arguments.ToPositionalArguments(next)...)
+			break
+		}
+		if command == "startup" {
+			command = next[0]
+			if command == "" {
+				// bazel treats a blank command as a help command that halts both option and
+				// argument parsing and ignores all non-startup options in the rc file.
+				break
+			}
+			if _, ok := p.BazelCommands[command]; !ok {
+				return nil, fmt.Errorf("Command '%s' not found. Try 'bb help'", command)
+			}
+		}
+		parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: next[0]})
+		next = next[1:]
+	}
+	return parsedArgs, nil
+}
+
+// Parse options until we encounter a positional argument, and return the
+// options and the index of the positional argument that terminated parsing, or
+// the length of the input arguments array if no positional argument was
+// encountered. If no command is provided, options will not be filtered by
+// command.
+func (p *Parser) ParseOptions(args []string, command string) ([]options.Option, int, error) {
+	var parsedOptions []options.Option
+	// Iterate through the args, looking for a terminating token.
+	for i := 0; i < len(args); {
+		token := args[i]
+		if token == "--" {
+			// POSIX-specified (and bazel-supported) delimiter to end option parsing
+			return parsedOptions, i, nil
+		}
+		option, next, err := p.Next(args, i, command == "startup")
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to parse options: %s", err)
+		}
+		if option == nil {
+			// This is a positional argument, return it.
+			return parsedOptions, i, nil
+		}
+		if command != "" {
+			if option.PluginID() == options.UnknownBuiltinPluginID {
+				// If this is an unknown option, assume it's supported by this command.
+				option.GetDefinition().AddSupportedCommand(command)
+			} else if !option.Supports(command) {
+				return nil, 0, fmt.Errorf("failed to parse options: Option '%s' does not support command '%s'", token, command)
+			}
+		}
+		parsedOptions = append(parsedOptions, option)
+		i = next
+	}
+	return parsedOptions, len(args), nil
+}
+
 // Next parses the next option in the args list, starting at the given index. It
 // is intended to be called in a loop that parses an argument list against a
 // Parser.
@@ -192,14 +274,14 @@ func (p *Parser) Next(args []string, start int, startup bool) (option options.Op
 		// Unknown option, possibly a plugin-specific argument. Apply a rough
 		// heuristic to determine whether or not to have it consume the next
 		// argument.
-		if b, ok := unknownOption.Option.(options.Negatable); ok && !option.HasValue() && !b.Negated() {
+		if b, ok := unknownOption.Option.(options.BoolLike); ok && !option.HasValue() && !b.Negated() {
 			// This could actually be a required-value-type option rather than a
 			// boolean option; if the next argument doesn't look like an option or a
 			// bazel command, let's assume that it is.
 			if start+1 < len(args) {
 				if nextArg := args[start+1]; !strings.HasPrefix(nextArg, "-") {
 					if _, ok := p.BazelCommands[nextArg]; !startup || !ok {
-						innerOption, err := options.NewOption(
+						option, err = options.NewOption(
 							strings.TrimLeft(startToken, "-"),
 							nil,
 							options.NewDefinition(
@@ -213,7 +295,6 @@ func (p *Parser) Next(args []string, start int, startup bool) (option options.Op
 						if err != nil {
 							return nil, -1, err
 						}
-						unknownOption.Option = innerOption
 					}
 				}
 			}
@@ -354,11 +435,14 @@ func GenerateParser(flagCollection *bfpb.FlagCollection) (*Parser, error) {
 	parser := NewParser(nil)
 	for _, info := range flagCollection.FlagInfos {
 		d := options.DefinitionFrom(info)
-		for cmd := range d.SupportedCommands() {
-			if cmd != "startup" {
-				// startup is not a real command, just a flag classifier
+		if !d.Supports("startup") {
+			// only add commands from non-startup flags to the bazel commands
+			for cmd := range d.SupportedCommands() {
 				parser.BazelCommands[cmd] = struct{}{}
 			}
+			// non-startup flags support the "common" and "always" bazelrc classifiers
+			d.AddSupportedCommand("common")
+			d.AddSupportedCommand("always")
 		}
 		if err := parser.AddOptionDefinition(d); err != nil {
 			return nil, err
@@ -370,22 +454,6 @@ func GenerateParser(flagCollection *bfpb.FlagCollection) (*Parser, error) {
 func GetParser() (*Parser, error) {
 	once := generateParserOnce()
 	return once.p, once.error
-}
-
-func CanonicalizeStartupArgs(args []string) ([]string, error) {
-	// Check for bazel command prior to running the parser to avoid the
-	// performance cost of generating the parser, which runs bazel.
-	bazelCommand, _ := GetBazelCommandAndIndex(args)
-	if bazelCommand == "" {
-		// Not a bazel command; no startup args to canonicalize.
-		return args, nil
-	}
-
-	p, err := GetParser()
-	if err != nil {
-		return nil, err
-	}
-	return p.canonicalizeArgs(args, true)
 }
 
 func CanonicalizeArgs(args []string) ([]string, error) {
@@ -401,60 +469,21 @@ func CanonicalizeArgs(args []string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return p.canonicalizeArgs(args, false)
+	return p.canonicalizeArgs(args)
 }
 
-func (p *Parser) canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) {
-	args, execArgs := arg.SplitExecutableArgs(args)
-	// First pass: go through args, expanding short names, converting bool
-	// values to 0 or 1, and converting "--name value" args to "--name=value"
-	// form.
-	var processedArgs []arguments.Argument
-	lastOptionIndex := map[string]int{}
-	i := 0
-	command := "startup"
-	for i < len(args) {
-		token := args[i]
-		option, next, err := p.Next(args, i, command == "startup")
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse %s options: %s", command, err)
-		}
-		i = next
-		switch {
-		case option == nil:
-			// This is a positional argument
-			processedArgs = append(processedArgs, &arguments.PositionalArgument{Value: token})
-		case !option.HasSupportedCommands():
-			// This option is unsupported by bazel, assume a plugin option
-			fallthrough
-		case option.Supports(command):
-			lastOptionIndex[option.Name()] = len(processedArgs)
-			processedArgs = append(processedArgs, option.Normalized())
-		default:
-			return nil, fmt.Errorf("option '%s' is not a '%s' option.", option.Name(), command)
-		}
-		if _, ok := p.BazelCommands[token]; ok {
-			if onlyStartupOptions {
-				return arg.JoinExecutableArgs(append(arguments.FormatAll(processedArgs), args[i:]...), execArgs), nil
-			}
-			// When we see the bazel command token, switch to parsing command
-			// options instead of startup options.
-			command = token
+func (p *Parser) canonicalizeArgs(args []string) ([]string, error) {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		if _, ok := p.BazelCommands[args[0]]; !ok {
+			// Not a bazel command; no startup args to canonicalize.
+			return args, nil
 		}
 	}
-	// Second pass: loop through the canonical args so far, and remove any args
-	// which are overridden by a later arg. Note that multi-args cannot be
-	// overriden.
-	var canonical []string
-	for i, arg := range processedArgs {
-		if opt, ok := arg.(options.Option); ok {
-			if opt != nil && !opt.Multi() && lastOptionIndex[opt.Name()] > i {
-				continue
-			}
-		}
-		canonical = append(canonical, arg.Format()...)
+	parsedArgs, err := ParseArgs(args)
+	if err != nil {
+		return nil, err
 	}
-	return arg.JoinExecutableArgs(canonical, execArgs), nil
+	return parsedArgs.Canonicalized().Format(), nil
 }
 
 // runBazelHelpWithCache returns the `bazel help <topic>` output for the version
@@ -721,6 +750,42 @@ func ParseRCFiles(workspaceDir string, filePaths ...string) ([]*RcRule, error) {
 	return opts, nil
 }
 
+// Convenience function to use the singleton parser's MakeOption function.
+func MakeOption(optionName string, value *string) (option options.Option, err error) {
+	p, err := GetParser()
+	if err != nil {
+		return nil, err
+	}
+	o, err := p.MakeOption(optionName, value)
+	if err != nil {
+		return nil, err
+	}
+	return o, nil
+}
+
+func (p *Parser) MakeOption(optionName string, value *string) (option options.Option, err error) {
+	if len(optionName) == 1 {
+		// assume length 1 is a short name
+		option, err = p.parseShortNameOption(optionName)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		option, err = p.parseLongNameOption(optionName)
+		if err != nil {
+			return nil, err
+		}
+	}
+	option, err = options.NewOption(optionName, value, option.GetDefinition())
+	if err != nil {
+		return nil, err
+	}
+	if option.ExpectsValue() {
+		return nil, fmt.Errorf("Required value option %s must have a value, but none was provided.", optionName)
+	}
+	return option, nil
+}
+
 func ExpandConfigs(args []string) ([]string, error) {
 	p, err := GetParser()
 	if err != nil {
@@ -734,7 +799,7 @@ func ExpandConfigs(args []string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return p.canonicalizeArgs(args, false)
+	return p.canonicalizeArgs(args)
 }
 
 // Mirroring the behavior here:
@@ -811,33 +876,44 @@ func (p *Parser) expandConfigs(workspaceDir string, args []string) ([]string, er
 	args = concat(args[:commandIndex+1], defaultArgs, args[commandIndex+1:])
 	log.Debugf("Args after expanding default rc rules: %v", args)
 
-	enable, enableIndex, enableLength := arg.FindLast(args, enablePlatformSpecificConfigFlag)
-	_, noEnableIndex, _ := arg.FindLast(args, "no"+enablePlatformSpecificConfigFlag)
-	if enableIndex > noEnableIndex {
-		if strings.HasPrefix(enable, "-") {
-			// It's likely that the "enable" value here is just another Bazel flag, such as `--config` or `-c`.
-			// And our --enable_platform_specific_config flag is a standalone flag that does not come with a value.
-			//
-			// In this case, manually fix arg.FindLast results to avoid confusion.
-			// TODO(sluongng): This is a hack. We should fix arg.FindLast to return the correct index.
-			enable = "true"
-			enableLength = 1
-		}
-		if enable == "true" || enable == "yes" || enable == "1" || enable == "" {
-			args = concat(args[:enableIndex], []string{"--config", getBazelOS()}, args[enableIndex+enableLength:])
-			log.Debugf("Args after inserting artificial platform-specific --config argument: %s", args)
+	parsedArgs, err := ParseArgs(args)
+	if err != nil {
+		return nil, err
+	}
+
+	// Replace the last occurrence of `--enable_platform_specific_config` with
+	// `--config=<bazelOS>`, so long as the last occurrence evaluates as true.
+	opts := parsedArgs.RemoveOptions(enablePlatformSpecificConfigFlag)
+	if len(opts) > 0 {
+		enable := opts[len(opts)-1].Option
+		index := opts[len(opts)-1].Index
+		if b, ok := enable.(options.BoolLike); ok {
+			if v, err := b.AsBool(); err != nil && v {
+				bazelOS := getBazelOS()
+				o, err := p.MakeOption("config", &bazelOS)
+				if err != nil {
+					return nil, err
+				}
+				parsedArgs.Args = slices.Insert(parsedArgs.Args, index, arguments.Argument(o))
+			}
 		}
 	}
 
-	offset := 0
+	offset := parsedArgs.Offset(len(parsedArgs.GetStartupOptions())) + 1
 	for offset < len(args) {
+		parsedArgs, err := p.ParseArgsForCommand(args[offset:], command)
+		if err != nil {
+			return nil, err
+		}
 		// Find the next --config arg, starting from just after we expanded
 		// the last config arg.
-		config, configIndex, length := arg.Find(args[offset:], "config")
-		if configIndex < 0 {
+		opts := parsedArgs.GetOptionsByName("config")
+		if len(opts) == 0 {
 			break
 		}
-		configIndex = offset + configIndex
+		config := opts[0].GetValue()
+		configIndex := offset + parsedArgs.Offset(opts[0].Index)
+		length := len(opts[0].Format())
 
 		// If the config isn't defined, leave it as-is, and let bazel return
 		// an error.

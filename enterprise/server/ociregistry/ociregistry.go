@@ -141,7 +141,7 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		case "manifests":
 			ociResourceType = ocipb.OCIResourceType_MANIFEST
 		default:
-			http.Error(w, fmt.Sprintf("expect requests for /v2/<repository>/blobs/... or /v2/<repository>/manifests/..., instead received %s", req.URL.Path), http.StatusNotFound)
+			http.Error(w, fmt.Sprintf("Expected request for /v2/<repository>/blobs/... or /v2/<repository>/manifests/..., instead received %q", req.URL.Path), http.StatusBadRequest)
 			return
 		}
 
@@ -170,12 +170,12 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	}
 	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u, err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("Could not make %s request to upstream registry %q: %s", inreq.Method, u.Hostname(), err), http.StatusServiceUnavailable)
 		return
 	}
 	upresp, err := r.client.Do(upreq.WithContext(ctx))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("transport error making %s request to upstream registry '%s': %s", inreq.Method, u, err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("Transport error making %s request to upstream registry %q: %s", inreq.Method, u.Hostname(), err), http.StatusServiceUnavailable)
 		return
 	}
 	defer upresp.Body.Close()
@@ -184,11 +184,8 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	}
 	w.WriteHeader(upresp.StatusCode)
 	_, err = io.Copy(w, upresp.Body)
-	if err != nil {
-		if err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL, u, err)
-		}
-		return
+	if err != nil && err != context.Canceled {
+		log.CtxWarningf(ctx, "Error reading response from %s: %s", u.Hostname(), err)
 	}
 }
 
@@ -200,7 +197,7 @@ func (r *registry) makeUpstreamRequest(ctx context.Context, method, acceptHeader
 	case ocipb.OCIResourceType_MANIFEST:
 		path = "/v2/" + ref.Context().RepositoryStr() + "/manifests/" + ref.Identifier()
 	case ocipb.OCIResourceType_UNKNOWN:
-		return nil, fmt.Errorf("unknown OCI resource type, expected blobs or manifests")
+		return nil, status.FailedPreconditionError("unknown OCI resource type, expected blobs or manifests")
 	}
 	u := &url.URL{
 		Scheme: ref.Context().Scheme(),
@@ -210,7 +207,7 @@ func (r *registry) makeUpstreamRequest(ctx context.Context, method, acceptHeader
 
 	upreq, err := http.NewRequest(method, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("could not make %s request to upstream registry '%s': %s", method, u, err)
+		return nil, status.UnavailableErrorf("could not make %s request to upstream registry %q: %s", method, upreq.URL.Hostname(), err)
 	}
 	if acceptHeader != "" {
 		upreq.Header.Set(headerAccept, acceptHeader)
@@ -227,7 +224,7 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 	}
 	hash, err := gcr.NewHash(value)
 	if err != nil {
-		return nil, fmt.Errorf("could not parse %s header (value '%s'): %s", headerDockerContentDigest, value, err)
+		return nil, status.InvalidArgumentErrorf("could not parse %s header: %s", headerDockerContentDigest, err)
 	}
 	return &hash, nil
 }
@@ -235,7 +232,7 @@ func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
 func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, bool, error) {
 	headresp, err := r.makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
 	if err != nil {
-		return nil, false, fmt.Errorf("error making %s request to upstream registry: %s", http.MethodHead, err)
+		return nil, false, status.UnavailableErrorf("error making %s request to upstream registry: %s", http.MethodHead, err)
 	}
 	defer headresp.Body.Close()
 
@@ -243,12 +240,12 @@ func (r *registry) resolveManifestDigest(ctx context.Context, acceptHeader, auth
 		return nil, false, nil
 	}
 	if headresp.StatusCode != http.StatusOK {
-		return nil, false, fmt.Errorf("could not fetch manifest for %s", ref)
+		return nil, false, status.UnavailableErrorf("could not fetch manifest for %s, upstream HTTP status %d", ref.Context(), headresp.StatusCode)
 	}
 	value := headresp.Header.Get(headerDockerContentDigest)
 	hash, err := parseDockerContentDigestHeader(value)
 	if err != nil {
-		return nil, true, fmt.Errorf("error parsing %s header (value %s): %s", headerDockerContentDigest, value, err)
+		return nil, true, status.InvalidArgumentErrorf("error parsing %s header: %s", headerDockerContentDigest, err)
 	}
 	return hash, true, nil
 }
@@ -261,13 +258,13 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 
 	identifierIsDigest := isDigest(identifier)
 	if ociResourceType == ocipb.OCIResourceType_BLOB && !identifierIsDigest {
-		http.Error(w, fmt.Sprintf("can only retrieve blobs by digest, received '%s'", identifier), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("Can only retrieve blobs by digest, received '%q'", identifier), http.StatusNotFound)
 		return
 	}
 
 	ref, err := parseReference(repository, identifier)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error parsing image repository '%s' and identifier '%s': %s", repository, identifier, err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("Error parsing image repository %q and identifier %q: %s", repository, identifier, err), http.StatusBadRequest)
 		return
 	}
 
@@ -281,20 +278,20 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
 		hash, exists, err := r.resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("could not resolve digest for manifest %s: %s", ref, err), http.StatusServiceUnavailable)
+			http.Error(w, fmt.Sprintf("Could not resolve digest for manifest %q: %s", ref.Context(), err), http.StatusServiceUnavailable)
 			return
 		}
 		if !exists {
-			http.Error(w, fmt.Sprintf("could not find manifest %s", ref), http.StatusNotFound)
+			http.Error(w, fmt.Sprintf("Could not find manifest %q", ref.Context()), http.StatusNotFound)
 			return
 		}
 		if hash == nil {
-			http.Error(w, fmt.Sprintf("could not parse digest from manifest for %s", ref), http.StatusNotFound)
+			http.Error(w, fmt.Sprintf("Could not parse digest from manifest for %q", ref.Context()), http.StatusNotFound)
 			return
 		}
 		manifestRef, err := parseReference(repository, hash.String())
 		if err != nil {
-			log.CtxErrorf(ctx, "could not parse reference for manifest (repository %s, resolved hash %s): %s", repository, hash, err)
+			log.CtxErrorf(ctx, "Could not parse manifest reference for %q: %s", repository, err)
 		} else {
 			resolvedRef = manifestRef
 			resolvedRefIsDigest = true
@@ -313,18 +310,18 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		writeBody := inreq.Method == http.MethodGet
 		err := fetchBlobOrManifestFromCache(ctx, w, bsClient, acClient, resolvedRef, ociResourceType, writeBody)
 		if err == nil {
-			return
-		} else if !status.IsNotFoundError(err) {
-			message := fmt.Sprintf("error fetching image %s from the CAS: %s", ref, err)
-			log.CtxError(ctx, message)
-			http.Error(w, message, http.StatusNotFound)
+			return // Successfully served request from cache.
+		}
+		if !status.IsNotFoundError(err) {
+			log.CtxErrorf(ctx, "error fetching image %q from the cache: %s", resolvedRef.Context(), err)
+			http.Error(w, fmt.Sprintf("Error fetching image %q from the cache: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
 			return
 		}
 	}
 
 	upresp, err := r.makeUpstreamRequest(ctx, inreq.Method, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error making %s request to upstream registry: %s", inreq.Method, err), http.StatusServiceUnavailable)
+		http.Error(w, fmt.Sprintf("Error making %s request to upstream registry: %s", inreq.Method, err), http.StatusServiceUnavailable)
 		return
 	}
 	defer upresp.Body.Close()
@@ -355,7 +352,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	if !cacheable {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL, err)
+			log.CtxWarningf(ctx, "Error writing response body for %q: %s", resolvedRef.Context(), err)
 		}
 		return
 	}
@@ -364,14 +361,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	if err != nil {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL, err)
+			log.CtxWarningf(ctx, "Error writing response body for %q: %s", resolvedRef.Context(), err)
 		}
 		return
 	}
 
 	err = writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, hash, contentType, contentLength)
 	if err != nil && err != context.Canceled {
-		log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
+		log.CtxWarningf(ctx, "Error writing response body to cache for %q: %s", resolvedRef.Context(), err)
 	}
 }
 
@@ -426,12 +423,12 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		case blobOutputFilePath:
 			blobCASDigest = outputFile.GetDigest()
 		default:
-			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s", outputFile.GetPath(), ref)
+			log.CtxErrorf(ctx, "Unknown output file path %q in ActionResult for %q", outputFile.GetPath(), ref.Context())
 		}
 	}
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
 		updateCacheEventMetric(casLabel, missLabel)
-		return fmt.Errorf("missing blob metadata digest or blob digest for %s", ref)
+		return status.NotFoundErrorf("missing blob metadata digest or blob digest for %s", ref.Context())
 	}
 	blobMetadataRN := digest.NewCASResourceName(
 		blobMetadataCASDigest,
@@ -485,7 +482,7 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 			return err
 		}
 		if err := writeManifestToAC(ctx, raw, acClient, ref, hash, contentType); err != nil {
-			log.CtxWarningf(ctx, "error writing manifest to AC: %s", err)
+			log.CtxWarningf(ctx, "Error writing manifest to AC for %q: %s", ref.Context(), err)
 		}
 		r = bytes.NewReader(raw)
 	}
