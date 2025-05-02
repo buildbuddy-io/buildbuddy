@@ -52,14 +52,14 @@ func GetCacheScoreCard(ctx context.Context, env environment.Env, req *capb.GetCa
 				// it's okay for scorecards to be missing for prior attempts
 				continue
 			}
-			return nil, err
+			return nil, status.WrapErrorf(err, "read cache scorecard for invocation %s attempt %d", req.GetInvocationId(), attempt)
 		}
 		scorecard.Misses = append(scorecard.Misses, sc.Misses...)
 		scorecard.Results = append(scorecard.Results, sc.Results...)
 	}
 	sc, err := Read(ctx, env, req.InvocationId, invocation.Attempt)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapErrorf(err, "read cache scorecard for invocation %s attempt %d", req.GetInvocationId(), invocation.Attempt)
 	}
 	scorecard.Misses = append(scorecard.Misses, sc.Misses...)
 	scorecard.Results = append(scorecard.Results, sc.Results...)
@@ -331,7 +331,7 @@ func Read(ctx context.Context, env environment.Env, invocationID string, invocat
 
 	sc := &capb.ScoreCard{}
 	if err := proto.Unmarshal(buf, sc); err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "unmarshal cache scorecard")
 	}
 	return sc, nil
 }
