@@ -271,7 +271,7 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 	})
 }
 
-// tryReplica tries the this fn on the replica and return whether to try a different replica
+// tryReplica tries the fn on the replica and returns whether to try a different replica
 func (s *Sender) tryReplica(ctx context.Context, rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor, fn runFunc, makeHeaderFn makeHeaderFunc) (bool, error) {
 	select {
 	case <-ctx.Done():
@@ -301,8 +301,7 @@ func (s *Sender) tryReplica(ctx context.Context, rd *rfpb.RangeDescriptor, repli
 		return false, nil
 	}
 	if status.IsOutOfRangeError(err) {
-		m := status.Message(err)
-		switch {
+		switch m := status.Message(err); {
 		// range not found, no replicas are likely to have it; bail.
 		case strings.HasPrefix(m, constants.RangeNotCurrentMsg):
 			return false, status.OutOfRangeErrorf("failed to TryReplicas on c%dn%d: no replicas are likely to have it: %s", replica.GetRangeId(), replica.GetReplicaId(), m)
