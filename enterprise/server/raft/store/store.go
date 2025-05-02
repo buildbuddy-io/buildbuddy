@@ -2927,28 +2927,6 @@ func addMetaRangeEdits(oldLeftRange, newLeftRange, newRightRange *rfpb.RangeDesc
 	})
 	return nil
 }
-
-func (s *Store) updateMetarange(ctx context.Context, oldStart, start, end *rfpb.RangeDescriptor) error {
-	b := rbuilder.NewBatchBuilder()
-	if err := addMetaRangeEdits(oldStart, start, end, b); err != nil {
-		return err
-	}
-	batchProto, err := b.ToProto()
-	if err != nil {
-		return err
-	}
-	rsp, err := s.Sender().SyncPropose(ctx, keys.RangeMetaKey(end.GetEnd()), batchProto)
-	if err != nil {
-		return err
-	}
-	batchRsp := rbuilder.NewBatchResponseFromProto(rsp)
-	_, err = batchRsp.CASResponse(0)
-	if err != nil {
-		return err
-	}
-	return batchRsp.AnyError()
-}
-
 func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, new *rfpb.RangeDescriptor) error {
 	s.log.Infof("start to update range descriptor for rangeID %d to gen %d", rangeID, new.GetGeneration())
 	oldBuf, err := proto.Marshal(old)
