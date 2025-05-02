@@ -928,6 +928,21 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	for {
 		inRsp, executeResponse, latestErr = attemptRun(ctx, bbClient, execClient, req)
 
+		// Handle known error conditions.
+		if latestErr != nil {
+			if strings.Contains(latestErr.Error(), "failed to get snapshot") {
+				log.Warnf("The requested snapshot was not found. Failing the request...")
+				return 1, nil
+			} else if strings.Contains(latestErr.Error(), "requested executor ID not found") {
+				log.Warnf("The requested executor ID was not found. Falling back to remote snapshot...")
+				req.ExecProperties = append(req.ExecProperties, &repb.Platform_Property{
+					Name:  "debug-executor-id",
+					Value: "",
+				})
+				continue
+			}
+		}
+
 		if latestErr == nil ||
 			!rexec.Retryable(latestErr) ||
 			status.IsDeadlineExceededError(latestErr) ||
