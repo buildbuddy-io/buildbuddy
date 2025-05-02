@@ -130,6 +130,13 @@ func TestActionResultCacheWithFailedAction(t *testing.T) {
 	assert.Equal(t, 5, res.ExitCode, "exit code should be propagated")
 
 	ctx := context.Background()
+	// ExecuteResponse should eventually be cached (this can happen in the
+	// background since it's only used to power the Execution page, and is not
+	// strictly needed by the RE client).
+	require.Eventually(t, func() bool {
+		_, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
+		return err == nil
+	}, 1*time.Minute, 100*time.Millisecond)
 	execRes, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int32(5), execRes.GetResult().GetExitCode(), "exit code should be set in action result")
