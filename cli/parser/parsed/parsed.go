@@ -1,3 +1,10 @@
+// Package parsed provides types and functions for manipulating parsed bazel
+// arguments.
+//
+// It abstracts operations on sets of bazel arguments so that they can be easily
+// modified and inspected without the user of library having to concern
+// themselves with any of the implementation details of bazel command-line
+// parsing.
 package parsed
 
 import (
@@ -11,19 +18,59 @@ import (
 )
 
 type Args interface {
+	// Format renders the Args as a (lexed) slice of string tokens.
 	Format() []string
+
+	// Canonicalized does not modify the original Args, and instead returns a new
+	// Args, which represents the arguments after being canonicalized.
+	// Canonicalization consists of:
+	// - removing non-multi options that are overridden later in the arguments
+	// - reordering the arguments to match the form:
+	//     [startupOptions...] [command [commandOptions...] [targets... ["--" execArgs...]]]
+	//   or, if Args contains ar least one negative target (prefixed by "-"):
+	//     [startupOptions...] command [commandOptions...] "--" targets... [execArgs...]
+	// - replacing all options with their normalized forms, as returned by their
+	//   Normalized() method.
+	//
+	// Note that Canonicalized does NOT sort options lexicographically, as
+	// Canonicalized does not require that all options are expanded, so sorting
+	// could lead to a re-ordering of options that, after expansion, changes which
+	// options are overridden or the order of positional arguments, and
+	// canonicalization should of course never result in semantic changes to the
+	// Args.
+	//
+	// Additionally, no guarantee is made that this a deep clone, so changes to
+	// the underlying Arguments in either the original or the canonicalized Args
+	// may affect the Arguments in the other.
 	Canonicalized() Args
+
+	// GetStartupOptions returns a slice of all the startup options Args contains.
 	GetStartupOptions() []options.Option
+
+	// GetCommand returns the command this Args contains, or "help" if it does not
+	// contain a command.
 	GetCommand() string
+
+	// GetStartupOptions returns a slice of all the command options Args contains.
 	GetCommandOptions() []options.Option
+
+	// GetTargets returns a slice of all the bazel tagets Args contains.
 	GetTargets() []*arguments.PositionalArgument
+
+	// GetExecArgs returns a slice of all the arguments bazel will forward to the
+	// executable it will run. Executable args only ever exist in the presence of
+	// a "run" command.
 	GetExecArgs() []*arguments.PositionalArgument
-	GetOptionsByName(string) []*IndexedOption
+
+	// GetOptionsByName returns a slice of all options whose definitions have
+	// names that match optionName in the order in which they appear in Args.
+	// The accompanying index is the index at which they are located in Args.
+	GetOptionsByName(optionName string) []*IndexedOption
 
 	// RemoveOption removes all options whose definitions have names that match
 	// optionName and returns a slice of all removed options, if any, in the order
-	// in which they appeared in the args. The index is the index they were
-	// removed at.
+	// in which they appeared in the args. The accompanying index is the index at
+	// which they were removed in Args.
 	RemoveOptions(...string) []*IndexedOption
 
 	// Append appends the given arguments by inserting them in the last valid
@@ -130,10 +177,20 @@ func (c *classifier) Classify(arg arguments.Argument) Classified {
 	return &UnsupportedArgument{arg}
 }
 
-// Classify takes a slice of Arguments and returns a sequence of those Arguments
-// in the same order, wrapped in Classified types. Classify assumes that the
-// Arguments passed in are a full list of arguments in command-line order and
-// has unspecified behavior if they are not. Command-line order looks like:
+// Classify takes a slice of elements that implement arguments.Argument and
+// returns a sequence of those Arguments in the same order, wrapped in
+// Classified types. Classify assumes that the arguments passed in are a full
+// list of arguments in command-line order and has unspecified behavior if they
+// are not. Command-line order looks like:
+//
+//	[ startupOptions... ]
+//	[
+//	  command [ commandOption | target ]...
+//	  {
+//	    [ { commandOption | execArg } ]... [ "--" [ execArgs...] ]  |
+//	    "--" targets... [ execArgs... ]
+//	  }
+//	]
 func Classify[E arguments.Argument](args []E) iter.Seq2[int, Classified] {
 	return func(yield func(int, Classified) bool) {
 		c := &classifier{}
@@ -145,6 +202,22 @@ func Classify[E arguments.Argument](args []E) iter.Seq2[int, Classified] {
 	}
 }
 
+// Find takes a slice of elements that implement arguments.Argument and returns
+// the first index and argument element that is classified as the provided type
+// `T`, with the argument in question wrapped in the provided type. If no
+// qualifying argument is found, Find returns -1 and the zero-value of T. Find
+// assumes that the Arguments passed in are a full list of arguments in
+// command-line order and has unspecified behavior if they are not. Command-line
+// order looks like:
+//
+//	[ startupOptions... ]
+//	[
+//	  command [ commandOption | target ]...
+//	  {
+//	    [ { commandOption | execArg } ]... [ "--" [ execArgs...] ]  |
+//	    "--" targets... [ execArgs... ]
+//	  }
+//	]
 func Find[T Classified, E arguments.Argument](args []E) (int, T) {
 	for i, c := range Classify(args) {
 		if t, ok := c.(T); ok {
@@ -298,6 +371,8 @@ func (a *OrderedArgs) SplitExecutableArgs() ([]string, []string) {
 	return bazelArgs, executableArgs
 }
 
+// IndexedOption is used by Args.GetOptionsByName and Args.RemoveOptions to
+// couple options with their associated indices when returning them.
 type IndexedOption struct {
 	options.Option
 	Index int
