@@ -194,18 +194,6 @@ func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.Ord
 			}
 			if _, ok := p.BazelCommands[command]; !ok {
 				return nil, fmt.Errorf("Command '%s' not found. Try 'bb help'", command)
-				/*
-					// This isn't a bazel command, but it might be a bb extension.
-					extensionParser := NewParser(nil)
-					extensionParser.BazelCommands[command] = struct{}{}
-					extensionArgs, err := extensionParser.ParseArgsForCommand(next[1:], command)
-					if err != nil {
-						return nil, err
-					}
-					parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: next[0]})
-					parsedArgs.Args = append(parsedArgs.Args, extensionArgs.Args...)
-					return parsedArgs, nil
-				*/
 			}
 		}
 		parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: next[0]})
