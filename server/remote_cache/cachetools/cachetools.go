@@ -463,9 +463,10 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	return result, err
 }
 
-// byteWriteSeeker implements an io.Writer and io.Seeker with a []byte array.
-// Implementing the seeker is important (and the reason we don't use a
-// byte.Buffer), because it allows getBlob() to retry failed downloads.
+// byteWriteSeeker implements an io.WriterAt with a []byte array. In turn, this
+// allows using io.OffsetWriter to implement a Writer + Seeker that can be
+// passed to GetBlob, which allows retrying failed downloads. We don't use a
+// bytes.Buffer because it does not implement the io.Seeker interface.
 type byteWriteSeeker []byte
 
 func (ws byteWriteSeeker) WriteAt(p []byte, off int64) (int, error) {
