@@ -93,14 +93,11 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		return metrics.UncacheableStatusLabel, s.readRemoteOnly(ctx, req, stream)
 	}
 	if proxy_util.SkipRemote(ctx) {
-		err := s.readLocalOnly(req, stream)
-		cacheStatus := metrics.MissStatusLabel
-		if err == nil {
-			cacheStatus = metrics.HitStatusLabel
-		} else {
+		if err := s.readLocalOnly(req, stream); err != nil {
 			log.CtxInfof(ctx, "Error reading local: %v", err)
+			return metrics.MissStatusLabel, err
 		}
-		return cacheStatus, err
+		return metrics.HitStatusLabel, nil
 	}
 
 	localErr := s.local.Read(req, stream)
