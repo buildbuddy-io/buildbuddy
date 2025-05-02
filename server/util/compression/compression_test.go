@@ -1,6 +1,7 @@
 package compression_test
 
 import (
+	"bytes"
 	"io"
 	"strings"
 	"testing"
@@ -10,29 +11,104 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// CompressZstd -> DecompressZstd, NewZstdDecompressor, NewZStdDecompressingReader
-// NewZstdCompressingReader -> DecompressZstd, NewZstdDecompressor, NewZStdDecompressingReader
+func TestLossless(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		compress   func(*testing.T, []byte) []byte
+		decompress func(*testing.T, int, []byte) []byte
+	}{
+		{
+			name:       "CompressZstd -> DecompressZstd",
+			compress:   compressWithCompressZstd,
+			decompress: decompressWithDecompressZstd,
+		},
+		{
+			name:       "CompressZstd -> NewZstdDecompressor",
+			compress:   compressWithCompressZstd,
+			decompress: decompressWithNewZstdDecompressor,
+		},
+		{
+			name:       "CompressZstd -> NewZstdDecompressingReader",
+			compress:   compressWithCompressZstd,
+			decompress: decompressWithNewZstdDecompressingReader,
+		},
+		{
+			name:       "NewZstdCompressingReader -> DecompressZstd",
+			compress:   compressWithNewZstdCompressingReader,
+			decompress: decompressWithDecompressZstd,
+		},
+		{
+			name:       "NewZstdCompressingReader -> NewZstdDecompressor",
+			compress:   compressWithNewZstdCompressingReader,
+			decompress: decompressWithNewZstdDecompressor,
+		},
+		{
+			name:       "NewZstdCompressingReader -> NewZstdDecompressingReader",
+			compress:   compressWithNewZstdCompressingReader,
+			decompress: decompressWithNewZstdDecompressingReader,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := []byte(strings.Repeat("Please compress me.", 1024))
+			compressed := tc.compress(t, src)
 
-func TestLossless_CompressZstd(t *testing.T) {
-	src := []byte(strings.Repeat("Please compress me.", 1024))
+			decompressed := tc.decompress(t, len(src), compressed)
+			require.Empty(t, cmp.Diff(src, decompressed))
+		})
+	}
+}
+
+func compressWithCompressZstd(t *testing.T, src []byte) []byte {
 	dst := make([]byte, len(src))
 	compressed := compression.CompressZstd(dst, src)
 	require.LessOrEqual(t, len(compressed), len(src))
-
-	decompressed := make([]byte, len(src))
-	decompressed, err := compression.DecompressZstd(decompressed, compressed)
-	require.NoError(t, err)
-	require.Empty(t, cmp.Diff(src, decompressed))
+	return compressed
 }
 
-func Test_NewZstdDecompressingReader(t *testing.T) {
-	blob := "AAAAAAAAAAAAA"
-	compressedBlob := compression.CompressZstd(nil, []byte(blob))
-	compressedReader := strings.NewReader(string(compressedBlob))
-	decompressedReader, err := compression.NewZstdDecompressingReader(io.NopCloser(compressedReader))
+func compressWithNewZstdCompressingReader(t *testing.T, src []byte) []byte {
+	readBuf := make([]byte, len(src))
+	compressBuf := make([]byte, len(src))
+	rc := io.NopCloser(bytes.NewReader(src))
+	c, err := compression.NewZstdCompressingReader(rc, readBuf, compressBuf)
 	require.NoError(t, err)
 
-	b, err := io.ReadAll(decompressedReader)
+	compressed, err := io.ReadAll(c)
 	require.NoError(t, err)
-	require.Equal(t, blob, string(b))
+	err = c.Close()
+	require.NoError(t, err)
+	return compressed
+}
+
+func decompressWithDecompressZstd(t *testing.T, srclen int, compressed []byte) []byte {
+	decompressed := make([]byte, srclen)
+	decompressed, err := compression.DecompressZstd(decompressed, compressed)
+	require.NoError(t, err)
+	return decompressed
+}
+
+func decompressWithNewZstdDecompressor(t *testing.T, _ int, compressed []byte) []byte {
+	buf := &bytes.Buffer{}
+	d, err := compression.NewZstdDecompressor(buf)
+	require.NoError(t, err)
+	n, err := d.Write(compressed)
+	require.NoError(t, err)
+	require.Equal(t, len(compressed), n)
+	err = d.Close()
+	require.NoError(t, err)
+	return buf.Bytes()
+}
+
+func decompressWithNewZstdDecompressingReader(t *testing.T, srclen int, compressed []byte) []byte {
+	rc := io.NopCloser(bytes.NewReader(compressed))
+	d, err := compression.NewZstdDecompressingReader(rc)
+	require.NoError(t, err)
+	buf := make([]byte, srclen)
+	n, err := d.Read(buf)
+	require.NoError(t, err)
+	require.Equal(t, srclen, n)
+	err = d.Close()
+	require.NoError(t, err)
+	err = rc.Close()
+	require.NoError(t, err)
+	return buf
 }
