@@ -15,10 +15,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -709,5 +711,61 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestUploadReaderAndGetBlob_DifferentSizes(t *testing.T) {
+	for _, useZstd := range []bool{false, true} {
+		for _, inputSize := range []int64{9, 99, 999, 9999, 99999, 999999, 1999999} {
+			name := fmt.Sprintf("use_zstd_%t_%d_bytes", useZstd, inputSize)
+			t.Run(name, func(t *testing.T) {
+				_, r := testdigest.NewReader(t, inputSize)
+				input, err := io.ReadAll(r)
+				require.NoError(t, err)
+				require.Equal(t, inputSize, int64(len(input)))
+
+				te := testenv.GetTestEnv(t)
+				_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+				testcache.Setup(t, te, localGRPClis)
+				go runServer()
+
+				sum := sha256.Sum256(input)
+				hexstring := hex.EncodeToString(sum[:])
+				ctx := context.Background()
+				{
+					upd := &repb.Digest{
+						Hash:      hexstring,
+						SizeBytes: inputSize,
+					}
+					uprn := digest.NewCASResourceName(upd, "", repb.DigestFunction_SHA256)
+					if useZstd {
+						uprn.SetCompressor(repb.Compressor_ZSTD)
+					}
+					r := bytes.NewReader(input)
+					d, _, err := cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), uprn, r)
+					require.NoError(t, err)
+					require.NotNil(t, d)
+					require.Equal(t, hexstring, d.Hash)
+				}
+
+				{
+					getd := &repb.Digest{
+						Hash:      hexstring,
+						SizeBytes: inputSize,
+					}
+					getrn := digest.NewCASResourceName(getd, "", repb.DigestFunction_SHA256)
+					if useZstd {
+						getrn.SetCompressor(repb.Compressor_ZSTD)
+					}
+					out := bytes.NewBuffer(make([]byte, 0, inputSize))
+					err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), getrn, out)
+					require.NoError(t, err)
+					outb := out.Bytes()
+					require.Equal(t, inputSize, int64(len(outb)))
+					require.Empty(t, cmp.Diff(input, outb))
+				}
+			})
+
+		}
 	}
 }
