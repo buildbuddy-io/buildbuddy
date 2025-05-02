@@ -463,9 +463,26 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	return result, err
 }
 
+// byteWriteSeeker implements an io.Writer and io.Seeker with a []byte array.
+// Implementing the seeker is important (and the reason we don't use a
+// byte.Buffer), because it allows getBlob() to retry failed downloads.
+type byteWriteSeeker []byte
+
+func (ws byteWriteSeeker) WriteAt(p []byte, off int64) (int, error) {
+	if len(p)+int(off) > len(ws) {
+		return 0, status.FailedPreconditionError("Write off end of byte array")
+	}
+	return copy(ws[off:], p), nil
+}
+func (ws byteWriteSeeker) Bytes() []byte {
+	return ws
+}
+
 func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out proto.Message) error {
-	buf := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
-	if err := GetBlob(ctx, bsClient, r, buf); err != nil {
+	buf := byteWriteSeeker(make([]byte, r.GetDigest().GetSizeBytes()))
+	bufWriter := io.NewOffsetWriter(buf, 0)
+
+	if err := GetBlob(ctx, bsClient, r, bufWriter); err != nil {
 		return err
 	}
 	return proto.Unmarshal(buf.Bytes(), out)
