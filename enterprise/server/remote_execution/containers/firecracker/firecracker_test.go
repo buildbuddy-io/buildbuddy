@@ -854,6 +854,12 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 				{Name: "recycle-runner", Value: "true"},
 			}},
 			Arguments: []string{"./buildbuddy_ci_runner"},
+			// Simulate that this is for a PR branch, because master snapshots
+			// are always saved to the remote cache.
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "master"},
+				{Name: "GIT_BRANCH", Value: "my-pr"},
+			},
 		},
 		ExecuteRequest: &repb.ExecuteRequest{
 			InstanceName: instanceName,
