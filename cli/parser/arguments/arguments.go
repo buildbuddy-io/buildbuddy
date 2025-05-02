@@ -30,7 +30,7 @@ func (a *PositionalArgument) Format() []string {
 }
 
 func FromConcrete[T Argument](args []T) []Argument {
-	if args == nil {
+	if len(args) == 0 {
 		return nil
 	}
 	argSlice := make([]Argument, 0, len(args))
