@@ -3,9 +3,11 @@ package compression_test
 import (
 	"bytes"
 	"io"
-	"strings"
+	"math"
+	"strconv"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
@@ -48,20 +50,26 @@ func TestLossless(t *testing.T) {
 			decompress: decompressWithNewZstdDecompressingReader,
 		},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			src := []byte(strings.Repeat("Please compress me.", 1024))
-			compressed := tc.compress(t, src)
+		for i := 1; i <= 5; i++ {
+			srclen := int(math.Pow10(i))
+			name := tc.name + "_" + strconv.Itoa(srclen) + "_bytes"
+			t.Run(name, func(t *testing.T) {
+				_, r := testdigest.NewReader(t, int64(srclen))
+				src, err := io.ReadAll(r)
+				require.NoError(t, err)
+				require.Equal(t, srclen, len(src))
+				compressed := tc.compress(t, src)
 
-			decompressed := tc.decompress(t, len(src), compressed)
-			require.Empty(t, cmp.Diff(src, decompressed))
-		})
+				decompressed := tc.decompress(t, len(src), compressed)
+				require.Empty(t, cmp.Diff(src, decompressed))
+			})
+		}
 	}
 }
 
 func compressWithCompressZstd(t *testing.T, src []byte) []byte {
 	dst := make([]byte, len(src))
 	compressed := compression.CompressZstd(dst, src)
-	require.LessOrEqual(t, len(compressed), len(src))
 	return compressed
 }
 
