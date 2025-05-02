@@ -263,11 +263,11 @@ func (s *Sender) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 }
 
 type runFunc func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error
-type makeHeaderFunc func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header
+type makeHeaderFunc func(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header
 
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, mode rfpb.Header_ConsistencyMode) (int, error) {
-	return s.TryReplicas(ctx, rd, fn, func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
-		return header.New(rd, replicaIdx, mode)
+	return s.TryReplicas(ctx, rd, fn, func(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
+		return header.New(rd, replica, mode)
 	})
 }
 
@@ -302,7 +302,7 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 			}
 			return 0, err
 		}
-		header := makeHeaderFn(rd, i)
+		header := makeHeaderFn(rd, replica)
 
 		fnCtx, spn := tracing.StartSpan(ctx)
 		spn.SetName("TryReplicas: fn")
@@ -543,8 +543,8 @@ func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.Ra
 		syncRsp = r
 		return nil
 	}
-	_, err := s.TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
-		return header.NewWithoutRangeInfo(rd, replicaIdx, rfpb.Header_LINEARIZABLE)
+	_, err := s.TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
+		return header.NewWithoutRangeInfo(replica, rfpb.Header_LINEARIZABLE)
 	})
 	return syncRsp, err
 }

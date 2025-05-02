@@ -675,7 +675,7 @@ func (rq *Queue) finishReplicaRemoval(rd *rfpb.RangeDescriptor) *change {
 func (rq *Queue) splitRange(rd *rfpb.RangeDescriptor) *change {
 	return &change{
 		splitOp: &rfpb.SplitRangeRequest{
-			Header: header.New(rd, 0, rfpb.Header_LINEARIZABLE),
+			Header: header.New(rd, rd.GetReplicas()[0], rfpb.Header_LINEARIZABLE),
 			Range:  rd,
 		},
 	}
