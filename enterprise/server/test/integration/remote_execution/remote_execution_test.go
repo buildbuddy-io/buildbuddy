@@ -472,6 +472,10 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 }
 
 func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor(t *testing.T) {
+	// Set a long max scheduling delay and disable work-stealing to guarantee
+	// affinity routing.
+	flags.Set(t, "remote_execution.max_scheduling_delay", 24*time.Hour)
+	flags.Set(t, "executor.excess_capacity_threshold", -1)
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 
@@ -484,7 +488,7 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 			{Name: "preserve-workspace", Value: "true"},
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
-			{Name: "runner-recycling-max-wait", Value: "1m"},
+			{Name: "runner-recycling-max-wait", Value: "24h"},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{APIKey: rbe.APIKey1}
@@ -512,7 +516,10 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 }
 
 func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExecutor(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
+	// Set a long max scheduling delay and disable work-stealing to guarantee
+	// affinity routing.
+	flags.Set(t, "remote_execution.max_scheduling_delay", 24*time.Hour)
+	flags.Set(t, "executor.excess_capacity_threshold", -1)
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 
@@ -528,7 +535,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 			{Name: "Pool", Value: "THIS_VALUE_SHOULD_BE_OVERRIDDEN"},
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
-			{Name: "runner-recycling-max-wait", Value: "1m"},
+			{Name: "runner-recycling-max-wait", Value: "24h"},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{
