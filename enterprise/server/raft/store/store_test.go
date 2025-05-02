@@ -354,11 +354,11 @@ func TestAutomaticSplitting(t *testing.T) {
 }
 
 func TestAddNodeToCluster(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_driver", false)
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -367,8 +367,9 @@ func TestAddNodeToCluster(t *testing.T) {
 
 	sf.StartShard(t, ctx, s1, s2)
 
-	stores := []*testutil.TestingStore{s1, s2}
-	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	storesBefore := []*testutil.TestingStore{s1, s2}
+	storesAfter := []*testutil.TestingStore{s1, s2, s3}
+	s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
 
 	rd := s.GetRange(2)
 	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
@@ -384,7 +385,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 3, len(replicas))
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 2)
 	rd = s.GetRange(2)
 	require.Equal(t, 3, len(rd.GetReplicas()))
 	{
@@ -398,7 +399,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	}
 
 	// Add Replica for meta range
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 1)
 	mrd := s.GetRange(1)
 	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: mrd,
@@ -413,7 +414,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	replicas = getMembership(t, s, ctx, 1)
 	require.Equal(t, 3, len(replicas))
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	s = testutil.GetStoreWithRangeLease(t, ctx, storesAfter, 1)
 	rd = s.GetRange(1)
 	require.Equal(t, 3, len(rd.GetReplicas()))
 	{
