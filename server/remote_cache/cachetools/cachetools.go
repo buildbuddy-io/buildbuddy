@@ -475,9 +475,6 @@ func (ws byteWriteSeeker) WriteAt(p []byte, off int64) (int, error) {
 	}
 	return copy(ws[off:], p), nil
 }
-func (ws byteWriteSeeker) Bytes() []byte {
-	return ws
-}
 
 func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out proto.Message) error {
 	buf := byteWriteSeeker(make([]byte, r.GetDigest().GetSizeBytes()))
@@ -486,7 +483,7 @@ func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *dige
 	if err := GetBlob(ctx, bsClient, r, bufWriter); err != nil {
 		return err
 	}
-	return proto.Unmarshal(buf.Bytes(), out)
+	return proto.Unmarshal([]byte(buf), out)
 }
 
 func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *rspb.ResourceName, out proto.Message) error {
