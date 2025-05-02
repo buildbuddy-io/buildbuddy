@@ -44,7 +44,7 @@ func FromConcrete[T Argument](args []T) []Argument {
 }
 
 func ToPositionalArguments(args []string) []Argument {
-	if args == nil {
+	if len(args) == 0 {
 		return nil
 	}
 	pos := make([]Argument, 0, len(args))
