@@ -466,8 +466,8 @@ message RangeDescriptor {
   // this list.
   repeated ReplicaDescriptor removed = 8;
 
-  // Replicas marked as staging are going to be added to the raft system. Once 
-  // they are successfully added to raft, we will move the replica descriptor 
+  // Replicas marked as staging are going to be added to the raft system. Once
+  // they are successfully added to raft, we will move the replica descriptor
   // from staging to the replicas field above.
   repeated ReplicaDescriptor staging = 9;
 }
