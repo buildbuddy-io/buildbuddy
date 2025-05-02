@@ -17365,8 +17365,8 @@
       {
         "current": {
           "selected": true,
-          "text": "us-west2",
-          "value": "us-west2"
+          "text": "us-west1",
+          "value": "us-west1"
         },
         "datasource": {
           "type": "prometheus",
