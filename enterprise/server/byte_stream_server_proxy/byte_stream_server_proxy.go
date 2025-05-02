@@ -302,7 +302,7 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 	// Grab the first frame from the client so the local writer can be created
 	req, err := stream.Recv()
 	if err == io.EOF {
-		log.CtxWarningf(ctx, "Unexpected EOF reading first frame: %v", err)
+		log.CtxInfof(ctx, "Unexpected EOF reading first frame: %v", err)
 		return nil
 	}
 	if err != nil {
