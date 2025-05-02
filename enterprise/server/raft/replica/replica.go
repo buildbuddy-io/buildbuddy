@@ -2052,13 +2052,6 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 	return sm.loadReplicaState(db)
 }
 
-func (sm *Replica) RangeDescriptor() *rfpb.RangeDescriptor {
-	sm.rangeMu.RLock()
-	rd := sm.rangeDescriptor
-	sm.rangeMu.RUnlock()
-	return rd.CloneVT()
-}
-
 func (sm *Replica) ReplicaID() uint64 {
 	return sm.replicaID
 }

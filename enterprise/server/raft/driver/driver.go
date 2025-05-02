@@ -152,7 +152,6 @@ func (a DriverAction) String() string {
 }
 
 type IReplica interface {
-	RangeDescriptor() *rfpb.RangeDescriptor
 	ReplicaID() uint64
 	RangeID() uint64
 	Usage() (*rfpb.ReplicaUsage, error)
@@ -160,6 +159,7 @@ type IReplica interface {
 
 type IStore interface {
 	GetReplica(rangeID uint64) (*replica.Replica, error)
+	GetRange(rangeID uint64) *rfpb.RangeDescriptor
 	HaveLease(ctx context.Context, rangeID uint64) bool
 	AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error)
 	RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error)
@@ -376,9 +376,9 @@ func (rq *Queue) getReplica(rangeID uint64) (IReplica, error) {
 
 // computeAction computes the action needed and its priority.
 func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction, float64) {
-	rd := repl.RangeDescriptor()
+	rd := rq.store.GetRange(repl.RangeID())
 	action := DriverNoop
-	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
+	if rd == nil || !rq.store.HaveLease(ctx, rd.GetRangeId()) {
 		return action, action.Priority()
 	}
 
@@ -1223,8 +1223,12 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 
 func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action DriverAction) RequeueType {
 	var change *change
-	rd := repl.RangeDescriptor()
 	rangeID := repl.RangeID()
+	rd := rq.store.GetRange(rangeID)
+	if rd == nil {
+		// We might be calling GetRange in the small window between RemoveRange and AddRange
+		return RequeueCheckOtherActions
+	}
 
 	switch action {
 	case DriverNoop:
