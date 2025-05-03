@@ -412,12 +412,23 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (nod
 		return nil, rpcErrToSyscallErrno(err)
 	}
 
+	n.vfs.inodeCache.cacheAttrs(rsp.Id, rsp.Attrs)
+	// getAttr takes care of refreshing the attributes if there are currently
+	// any open file handles.
+	// For performance reasons, Lookup does not refresh attributes on every call as it's
+	// a very frequently performed operation. If a file has been modified
+	// but not yet closed it may return stale attributes. We defer to getAttr to trigger
+	// a refresh if necessary as it already handles this case for the GetAttr call.
+	attrs, err := n.getattr()
+	if err != nil {
+		return nil, 0
+	}
+	fillFuseAttr(&out.Attr, attrs)
+
 	child := &Node{
 		vfs:           n.vfs,
 		symlinkTarget: rsp.SymlinkTarget,
 	}
-	n.vfs.inodeCache.cacheAttrs(rsp.Id, rsp.Attrs)
-	fillFuseAttr(&out.Attr, rsp.GetAttrs())
 	return n.NewInode(ctx, child, fs.StableAttr{Mode: rsp.Mode, Ino: rsp.Id}), 0
 }
 
