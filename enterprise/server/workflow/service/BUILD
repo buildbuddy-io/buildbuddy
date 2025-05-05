@@ -57,6 +57,7 @@ go_test(
     name = "service_test",
     size = "small",
     srcs = ["service_test.go"],
+    shard_count = 6,
     deps = [
         ":service",
         "//enterprise/server/githubapp",
