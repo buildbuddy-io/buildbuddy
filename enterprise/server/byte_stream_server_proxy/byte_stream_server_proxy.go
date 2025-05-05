@@ -80,38 +80,41 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
+	cacheStatus := "unknown"
+	var err error
 	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(ctx)
 	meteredStream := &meteredReadServerStream{ByteStream_ReadServer: stream}
 	stream = meteredStream
-	cacheStatus, err := s.read(ctx, req, meteredStream)
+
+	if authutil.EncryptionEnabled(ctx, s.authenticator) {
+		cacheStatus = metrics.UncacheableStatusLabel
+		err = s.readRemoteOnly(ctx, req, stream)
+	} else if proxy_util.SkipRemote(ctx) {
+		err = s.readLocalOnly(req, stream)
+		cacheStatus = metrics.MissStatusLabel
+		if err == nil {
+			cacheStatus = metrics.HitStatusLabel
+		} else {
+			log.CtxInfof(ctx, "Error reading local: %v", err)
+		}
+	} else {
+		localErr := s.local.Read(req, stream)
+		// If some responses were streamed to the client, just return the
+		// error. Otherwise, fall-back to remote. We might be able to continue
+		// streaming to the client by doing an offset read from the remote
+		// cache, but keep it simple for now.
+		if localErr != nil && meteredStream.frames == 0 {
+			// Recover from local error if no frames have been sent
+			cacheStatus = metrics.MissStatusLabel
+			err = s.readRemoteWriteLocal(req, stream)
+		} else if localErr == nil {
+			cacheStatus = metrics.HitStatusLabel
+			s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
+		}
+	}
+
 	recordReadMetrics(cacheStatus, requestTypeLabel, err, int(meteredStream.bytes))
 	return err
-}
-
-func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (string, error) {
-	if authutil.EncryptionEnabled(ctx, s.authenticator) {
-		return metrics.UncacheableStatusLabel, s.readRemoteOnly(ctx, req, stream)
-	}
-	if proxy_util.SkipRemote(ctx) {
-		if err := s.readLocalOnly(req, stream); err != nil {
-			log.CtxInfof(ctx, "Error reading local: %v", err)
-			return metrics.MissStatusLabel, err
-		}
-		return metrics.HitStatusLabel, nil
-	}
-
-	localErr := s.local.Read(req, stream)
-	// If some responses were streamed to the client, just return the
-	// error. Otherwise, fall-back to remote. We might be able to continue
-	// streaming to the client by doing an offset read from the remote
-	// cache, but keep it simple for now.
-	if localErr != nil && stream.frames == 0 {
-		// Recover from local error if no frames have been sent
-		return metrics.MissStatusLabel, s.readRemoteWriteLocal(req, stream)
-	} else {
-		s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
-		return metrics.HitStatusLabel, localErr
-	}
 }
 
 func (s *ByteStreamServerProxy) readRemoteOnly(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
@@ -122,9 +125,6 @@ func (s *ByteStreamServerProxy) readRemoteOnly(ctx context.Context, req *bspb.Re
 	}
 	for {
 		message, err := remoteReadStream.Recv()
-		if err == io.EOF {
-			return nil
-		}
 		if err != nil {
 			log.CtxInfof(ctx, "Error streaming from remote for read: %s", err)
 			return err
@@ -298,10 +298,6 @@ func (s *ByteStreamServerProxy) writeLocalOnly(stream bspb.ByteStream_WriteServe
 func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
 	// Grab the first frame from the client so the local writer can be created
 	req, err := stream.Recv()
-	if err == io.EOF {
-		log.CtxInfof(ctx, "Unexpected EOF reading first frame: %v", err)
-		return nil
-	}
 	if err != nil {
 		return err
 	}
