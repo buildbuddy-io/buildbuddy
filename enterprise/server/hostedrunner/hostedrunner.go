@@ -242,6 +242,15 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		})
 	}
 
+	if isolationType != string(platform.FirecrackerContainerType) {
+		// If not running with Firecracker, run an init process so that the
+		// bazel process can be reaped.
+		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+			Name:  platform.DockerInitPropertyName,
+			Value: "true",
+		})
+	}
+
 	cmd.Platform.Properties = append(cmd.Platform.Properties, req.GetExecProperties()...)
 
 	// Normalize to adhere to the REAPI spec.
