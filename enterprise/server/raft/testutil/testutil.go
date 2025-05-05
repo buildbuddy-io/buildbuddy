@@ -86,6 +86,7 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 		RaftAddress:    ts.RaftAddress,
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: nrf,
+			LogDB:               dbConfig.GetSmallMemLogDBConfig(),
 		},
 		DefaultNodeRegistryEnabled: false,
 		RaftEventListener:          raftListener,
