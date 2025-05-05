@@ -641,6 +641,11 @@ func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 		return nil, fmt.Errorf("option name '%s' cannot specify an option with definition '%#v'", optName, d)
 	}
 
+	if d.PluginID() == StarlarkBuiltinPluginID {
+		return &starlarkOption{
+			BoolOrEnumOption: BoolOrEnumOption{Definition: d, Value: v, UsesShortName: form == shortForm, IsNegative: form == negativeForm},
+		}, nil
+	}
 	if d.RequiresValue() {
 		return &RequiredValueOption{Definition: d, Value: v, UsesShortName: form == shortForm, Joined: v != nil}, nil
 	}
