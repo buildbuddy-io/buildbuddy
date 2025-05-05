@@ -54,6 +54,10 @@ var (
 		"GetAction",
 		"GetFile",
 		"DeleteFile",
+
+		// GitHub user-level token management does not require group membership.
+		"UnlinkUserGitHubAccount",
+
 		// GitHub passthrough endpoints use User's linked GitHub account
 		"GetGithubUserInstallations",
 		"GetGithubUser",
