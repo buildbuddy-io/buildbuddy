@@ -35,6 +35,7 @@ go_test(
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "clickhouse",
     },
+    tags = ["docker"],
     deps = [
         ":auditlog",
         "//enterprise/server/testutil/enterprise_testenv",
