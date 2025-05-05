@@ -272,7 +272,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 		proxyEnv.SetActionCacheClient(acClient)
 		proxyEnv.SetByteStreamClient(bsClient)
 		proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
-		runProxyServers(ctx, proxyEnv, t)
+		runProxyGrpcServers(ctx, proxyEnv, t)
 
 		acProxy, err := action_cache_server_proxy.NewActionCacheServerProxy(proxyEnv)
 		require.NoError(t, err)
@@ -316,12 +316,19 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	return env
 }
 
-func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.T) {
+func runProxyGrpcServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.T) {
 	server, err := byte_stream_server.NewByteStreamServer(proxyEnv)
 	require.NoError(t, err)
 	acServer, err := action_cache_server.NewActionCacheServer(proxyEnv)
 	require.NoError(t, err)
-	proxyEnv.SetLocalByteStreamServer(server)
+	grpcServer, runFunc, lis := testenv.RegisterLocalInternalGRPCServer(t, proxyEnv)
+	bspb.RegisterByteStreamServer(grpcServer, server)
+	repb.RegisterActionCacheServer(grpcServer, acServer)
+	go runFunc()
+	conn, err := testenv.LocalInternalGRPCConn(ctx, lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	proxyEnv.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
 	proxyEnv.SetLocalActionCacheServer(acServer)
 }
 
