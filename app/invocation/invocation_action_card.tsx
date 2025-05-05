@@ -651,10 +651,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
     this.setState({ showSnapshotMenu: false });
   }
 
-  private onClickCopyRemoteBazelCommand(vmMetadata: firecracker.VMMetadata) {
+  private onClickCopyRemoteBazelCommand(
+    vmMetadata: firecracker.VMMetadata,
+    executionMetadata: build.bazel.remote.execution.v2.ExecutedActionMetadata
+  ) {
     const snapshotKey = this.getSnapshotKeyForSnapshotID(vmMetadata);
     const snapshotKeyJSON = JSON.stringify(snapshotKey);
-    const cmd = `bb remote --run_from_snapshot='${snapshotKeyJSON}' --script='echo "My custom bash command!"'`;
+    const cmd = `bb remote --run_from_snapshot='${snapshotKeyJSON}' --runner_exec_properties=debug-executor-id=${executionMetadata.executorId} --script='echo "My custom bash command!"'`;
     copyToClipboard(cmd);
     alert_service.success("Command copied to clipboard");
     this.setState({ showSnapshotMenu: false });
@@ -1153,7 +1156,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                                 Copy snapshot key
                                               </MenuItem>
                                               <MenuItem
-                                                onClick={this.onClickCopyRemoteBazelCommand.bind(this, vmMetadata)}>
+                                                onClick={this.onClickCopyRemoteBazelCommand.bind(
+                                                  this,
+                                                  vmMetadata,
+                                                  this.state.actionResult.executionMetadata
+                                                )}>
                                                 Copy Remote Bazel command to run commands in snapshot
                                               </MenuItem>
                                             </Menu>
