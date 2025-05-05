@@ -1916,11 +1916,6 @@ code .comment {
   color: #4caf50;
 }
 
-a.coverage-source {
-  font-weight: 600;
-  color: #000;
-}
-
 .coverage-percent {
   font-weight: 700;
 }
@@ -1933,4 +1928,8 @@ a.coverage-source {
   border-top: 1px solid #eee;
   padding-top: 8px;
   margin-top: 8px;
+}
+
+.coverage-total-label {
+  font-weight: 600;
 }

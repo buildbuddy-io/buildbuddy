@@ -804,6 +804,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/components/button",
+        "//app/components/link",
         "//app/docs:setup_code",
         "//app/errors:error_service",
         "//app/format",

@@ -9,6 +9,7 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { parseLcov } from "../util/lcov";
 import format from "../format/format";
 import { percentageColor } from "../util/color";
+import { TextLink } from "../components/link/link";
 
 interface Props {
   model: InvocationModel;
@@ -225,29 +226,31 @@ export default class InvocationCoverageCardComponent extends React.Component<Pro
                     const percent = (record.numLinesHit * 1.0) / record.numLinesFound;
                     return (
                       <div className="coverage-record">
-                        <a
+                        <TextLink
+                          plain
                           href={
                             repoPath
                               ? `${repoPath}${
                                   record.sourceFile
                                 }?lcov=${testCoverageUrl}&invocation_id=${this.props.model.getInvocationId()}&commit=${this.props.model.getCommit()}`
                               : "#"
-                          }>
-                          <span className="coverage-source">{record.sourceFile}</span>:{" "}
-                          <span className="coverage-percent" style={{ color: percentageColor(percent) }}>
-                            {format.percent(percent)}%
-                          </span>{" "}
-                          <span className="coverage-details">
-                            ({format.formatWithCommas(record.numLinesHit)} hits /{" "}
-                            {format.formatWithCommas(record.numLinesFound)} lines)
-                          </span>
-                        </a>
+                          }
+                          className="coverage-source">
+                          {record.sourceFile}
+                        </TextLink>{" "}
+                        <span className="coverage-percent" style={{ color: percentageColor(percent) }}>
+                          {format.percent(percent)}%
+                        </span>{" "}
+                        <span className="coverage-details">
+                          ({format.formatWithCommas(record.numLinesHit)} hits /{" "}
+                          {format.formatWithCommas(record.numLinesFound)} lines)
+                        </span>
                       </div>
                     );
                   })}
             </div>
             <div className="coverage-record coverage-record-total">
-              <span className="coverage-source">Total</span>{" "}
+              <span className="coverage-total-label">Total</span>{" "}
               <span className="coverage-percent" style={{ color: percentageColor(totalPercent) }}>
                 {format.percent(totalPercent)}%
               </span>{" "}
