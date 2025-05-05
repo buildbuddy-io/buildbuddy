@@ -17,7 +17,6 @@ go_web_test_suite(
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//enterprise/server/testutil/testexecutor",
-        "//server/testutil/quarantine",
         "//server/testutil/testbazel",
         "//server/testutil/testclickhouse",
         "//server/testutil/testfs",
