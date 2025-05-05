@@ -2407,7 +2407,7 @@ type watermark struct {
 
 // TestingWaitForGC should be used by tests only.
 // This function waits until any active file deletion has finished.
-func (p *PebbleCache) TestingWaitForGC() error {
+func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 	lastSize := make(map[string]watermark)
 	for {
 		p.statusMu.Lock()
@@ -2427,11 +2427,6 @@ func (p *PebbleCache) TestingWaitForGC() error {
 					timestamp: time.Now(),
 					sizeBytes: totalSizeBytes,
 				}
-			} else {
-				// Are we still making progress? If not, bail.
-				if lastSize[e.part.ID].sizeBytes > 0 && time.Since(lastSize[e.part.ID].timestamp) > 3*time.Second {
-					return status.FailedPreconditionError("LRU not making progress")
-				}
 			}
 			if totalSizeBytes <= maxAllowedSize {
 				done += 1
@@ -2439,6 +2434,12 @@ func (p *PebbleCache) TestingWaitForGC() error {
 		}
 		if done == len(evictors) {
 			break
+		}
+		select {
+		case <-ctx.Done():
+			return status.CanceledError("context canceled waiting for GC")
+		default:
+			continue
 		}
 	}
 	return nil
