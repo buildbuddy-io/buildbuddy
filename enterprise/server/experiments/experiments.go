@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/open-feature/go-sdk/openfeature"
 
@@ -102,13 +101,7 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 		targetingKey: interfaces.AuthAnonymousUser,
 		attributes:   make(map[string]interface{}, 0),
 	}
-	for _, optI := range opts {
-		if opt, ok := optI.(Option); ok {
-			opt(options)
-		}
-	}
 	claims, err := claims.ClaimsFromContext(ctx)
-	log.Infof("VANJAAAAAAAAAAA - claims err: %v; claims: %+v", err, claims)
 	if err == nil {
 		options.targetingKey = claims.GetGroupID()
 		options.attributes["group_id"] = claims.GetGroupID()
@@ -120,6 +113,11 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	}
 	if aid := rmd.GetActionId(); len(aid) > 0 {
 		options.attributes["action_id"] = aid
+	}
+	for _, optI := range opts {
+		if opt, ok := optI.(Option); ok {
+			opt(options)
+		}
 	}
 
 	evalContext := openfeature.NewEvaluationContext(options.targetingKey, options.attributes)

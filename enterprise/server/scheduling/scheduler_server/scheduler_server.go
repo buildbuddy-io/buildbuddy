@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -434,9 +435,9 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	req = req.CloneVT()
 	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
 
-	// if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
-	// 	req.Jwt = tokenString
-	// }
+	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
+		req.Jwt = tokenString
+	}
 
 	if req.GetSchedulingMetadata() == nil {
 		return status.InvalidArgumentError("request is missing scheduling metadata")
@@ -1808,7 +1809,6 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if isolationType != string(platform.FirecrackerContainerType) {
 		return task
 	}
-	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, taskProto.GetJwt())
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until
@@ -1816,7 +1816,17 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	// with the value in the task.
 	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
 
-	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", experiments.WithContext("executor_hostname", executorHostname))
+	expOptions := make([]any, 0, 3)
+	expOptions = append(expOptions, experiments.WithContext("executor_hostname", executorHostname))
+	if c, err := claims.ParseClaims(taskProto.GetJwt()); err != nil {
+		// Override the group ID and user ID that's otherwise set from the
+		// context. Currently, this is based on the API key of the executor.
+		// TODO(vanja) Figure out how to remove this.
+		expOptions = append(expOptions,
+			experiments.WithContext("group_id", c.GroupID),
+			experiments.WithContext("user_id", c.UserID))
+	}
+	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
 	if skipResavingGroup == "" {
 		return task
 	}
