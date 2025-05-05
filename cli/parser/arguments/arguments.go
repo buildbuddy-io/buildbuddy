@@ -55,7 +55,7 @@ func ToPositionalArguments(args []string) []Argument {
 }
 
 func FormatAll[T Argument](args []T) []string {
-	if args == nil {
+	if len(args) == 0 {
 		return nil
 	}
 	s := make([]string, 0, len(args))
