@@ -452,6 +452,10 @@ func (fc *fakeCollector) AppendExecution(_ context.Context, _ string, execution 
 	return nil
 }
 
+func (fc *fakeCollector) DeleteInProgressExecution(_ context.Context, _ string) error {
+	return nil
+}
+
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
