@@ -28,7 +28,13 @@ go_test(
     srcs = ["claims_test.go"],
     deps = [
         ":claims",
+        "//proto:context_go_proto",
+        "//server/interfaces",
         "//server/util/authutil",
+        "//server/util/capabilities",
+        "//server/util/request_context",
+        "//server/util/role",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],

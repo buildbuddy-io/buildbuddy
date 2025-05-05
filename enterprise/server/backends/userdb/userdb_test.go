@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
@@ -31,6 +32,7 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -1910,6 +1912,14 @@ func TestChildGroupAuth(t *testing.T) {
 	}})
 	require.NoError(t, err, "should be able to update role of US2")
 
+	// Admin key for group1 shouldn't be able to set the effective group to group2 via RequestContext.
+	errCtx := env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
+	err, _ = authutil.AuthErrorFromContext(errCtx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+
 	us1Group.SamlIdpMetadataUrl = "https://some/saml/url"
 	us1Group.URLIdentifier = "org1"
 	_, err = udb.UpdateGroup(ctx1, &us1Group)
@@ -1927,6 +1937,13 @@ func TestChildGroupAuth(t *testing.T) {
 		Role:   grpb.Group_DEVELOPER_ROLE,
 	}})
 	require.Error(t, err, "should not be able to update role of US2")
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	errCtx = env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
+	err, _ = authutil.AuthErrorFromContext(errCtx)
+	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
 
 	// Now mark the first group as a "parent" organization.
@@ -1950,4 +1967,12 @@ func TestChildGroupAuth(t *testing.T) {
 	}})
 	require.Error(t, err, "should not be able to update role of US1")
 	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Should be able to change the effective group to group2 via the Request
+	gr2Ctx := env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
+	cl, err := claims.ClaimsFromContext(gr2Ctx)
+	require.NoError(t, err)
+	require.Equal(t, us2Group.GroupID, cl.GetGroupID())
 }
