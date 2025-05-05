@@ -26,6 +26,7 @@ import (
 func TestUpdateSecret(t *testing.T) {
 	te := enterprise_testenv.New(t)
 	authenticator := enterprise_testauth.Configure(t, te)
+	ctx := context.Background()
 
 	// Get slices of users by gid with the admin user at the beginning
 	groups := make(map[string][]*tables.User, 12)
@@ -33,7 +34,9 @@ func TestUpdateSecret(t *testing.T) {
 		for _, g := range u.Groups {
 			gid := g.Group.GroupID
 			if users, ok := groups[gid]; ok {
-				if err := authutil.AuthorizeOrgAdmin(authenticator.UserProvider(u.UserID), gid); err == nil {
+				ui, err := authenticator.UserProvider(ctx, u.UserID)
+				require.NoError(t, err)
+				if err := authutil.AuthorizeOrgAdmin(ui, gid); err == nil {
 					groups[gid] = append([]*tables.User{u}, users...)
 				} else {
 					groups[gid] = append(users, u)
