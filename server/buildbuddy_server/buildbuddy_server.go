@@ -1458,6 +1458,17 @@ func (s *BuildBuddyServer) GetWorkspaceFile(ctx context.Context, req *wspb.GetWo
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) UnlinkUserGitHubAccount(ctx context.Context, req *ghpb.UnlinkUserGitHubAccountRequest) (*ghpb.UnlinkUserGitHubAccountResponse, error) {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	if err := udb.DeleteUserGitHubToken(ctx); err != nil {
+		return nil, err
+	}
+	return &ghpb.UnlinkUserGitHubAccountResponse{}, nil
+}
+
 func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.UnlinkGitHubAccountRequest) (*ghpb.UnlinkGitHubAccountResponse, error) {
 	udb := s.env.GetUserDB()
 	if udb == nil {
