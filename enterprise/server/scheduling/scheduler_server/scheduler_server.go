@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -434,9 +433,9 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	req = req.CloneVT()
 	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
 
-	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
-		req.Jwt = tokenString
-	}
+	// if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
+	// 	req.Jwt = tokenString
+	// }
 
 	if req.GetSchedulingMetadata() == nil {
 		return status.InvalidArgumentError("request is missing scheduling metadata")

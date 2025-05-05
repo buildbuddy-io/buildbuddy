@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
@@ -806,7 +805,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 	ctx := log.EnrichContext(q.rootContext, log.ExecutionIDKey, reservation.GetTaskId())
 	ctx, cancel := context.WithCancel(ctx)
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, reservation.GetTraceMetadata())
-	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, reservation.GetJwt())
+	// ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, reservation.GetJwt())
 	log.CtxInfof(ctx, "Scheduling task of size %s", tasksize.String(nextTask.GetTaskSize()))
 
 	q.trackTask(reservation, &cancel)
