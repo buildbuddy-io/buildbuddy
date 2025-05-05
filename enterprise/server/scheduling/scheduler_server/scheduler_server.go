@@ -1488,16 +1488,28 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 	if err != nil {
 		return nil, err
 	}
-	// Filter to tasks which can fit on the node.
-	//
+
 	// TODO: sample only from tasks that fit. Currently we randomly sample then
 	// do this filtering, which means that even if there are `count` tasks that
 	// can fit, we might wind up returning an empty list here.
 	tasksThatFit := make([]*persistedTask, 0, len(tasks))
 	for _, task := range tasks {
-		if nodeCanFitTask(node, task.metadata.GetTaskSize()) {
-			tasksThatFit = append(tasksThatFit, task)
+		// Filter to tasks which can fit on the node.
+		if !nodeCanFitTask(node, task.metadata.GetTaskSize()) {
+			continue
 		}
+
+		// Don't try to re-assign tasks intended to run on a specific executor.
+		fullTask := &repb.ExecutionTask{}
+		if err := proto.Unmarshal(task.serializedTask, fullTask); err != nil {
+			log.CtxWarningf(ctx, "failed to parse task %s", task.taskID)
+			continue
+		}
+		if id := platform.FindEffectiveValue(fullTask, "debug-executor-id"); id != "" {
+			continue
+		}
+
+		tasksThatFit = append(tasksThatFit, task)
 	}
 	return tasksThatFit, nil
 }
