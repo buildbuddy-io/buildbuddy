@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
@@ -930,11 +931,11 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 		// Handle known error conditions.
 		if latestErr != nil {
-			if strings.Contains(latestErr.Error(), "failed to get snapshot") {
-				log.Warnf("The requested snapshot was not found. Failing the request...")
+			if error_util.IsSnapshotNotFoundError(latestErr) {
+				log.Warnf("The requested snapshot was not found. It may have expired from the cache. Aborting...")
 				return 1, nil
-			} else if strings.Contains(latestErr.Error(), "requested executor ID not found") {
-				log.Warnf("The requested executor ID was not found. Falling back to remote snapshot...")
+			} else if error_util.IsRequestedExecutorNotFoundError(latestErr) {
+				log.Warnf("The requested executor ID was not found. The executor may have been killed. Falling back to remote snapshot...")
 				req.ExecProperties = append(req.ExecProperties, &repb.Platform_Property{
 					Name:  "debug-executor-id",
 					Value: "",
@@ -1038,7 +1039,7 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 
 	rsp, err := bbClient.Run(ctx, req)
 	if err != nil {
-		return nil, nil, status.UnknownErrorf("error running bazel: %s", err)
+		return nil, nil, err
 	}
 	iid := rsp.GetInvocationId()
 
