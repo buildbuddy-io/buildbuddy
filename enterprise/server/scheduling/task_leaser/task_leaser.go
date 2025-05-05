@@ -6,16 +6,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -166,9 +163,6 @@ func (t *TaskLease) reEnqueueTask(ctx context.Context, reason string) error {
 		LeaseId: t.leaseID,
 		Reason:  reason,
 	}
-	if apiKey := executor_auth.APIKey(); apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
-	}
 	_, err := t.env.GetSchedulerClient().ReEnqueueTask(ctx, req)
 	return err
 }
@@ -194,18 +188,14 @@ func (t *TaskLease) claim(ctx context.Context) (context.Context, []byte, error) 
 	if t.env.GetSchedulerClient() == nil {
 		return nil, nil, status.FailedPreconditionError("Scheduler client not configured")
 	}
-	leaseTaskCtx := ctx
-	if apiKey := executor_auth.APIKey(); apiKey != "" {
-		leaseTaskCtx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
-	}
-	stream, err := t.env.GetSchedulerClient().LeaseTask(leaseTaskCtx)
+	stream, err := t.env.GetSchedulerClient().LeaseTask(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	t.stream = stream
-	serializedTask, err := t.pingServer(leaseTaskCtx)
+	serializedTask, err := t.pingServer(ctx)
 	if err == nil {
-		defer t.keepLease(leaseTaskCtx)
+		defer t.keepLease(ctx)
 		log.CtxInfof(ctx, "Worker leased task: %q", t.taskID)
 	}
 	ctx, cancel := context.WithCancel(ctx)

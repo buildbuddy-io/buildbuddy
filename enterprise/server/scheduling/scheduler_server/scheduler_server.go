@@ -1821,6 +1821,8 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if isolationType != string(platform.FirecrackerContainerType) {
 		return task
 	}
+	c, err := claims.ClaimsFromContext(ctx)
+	log.Infof("VANJAAAAAAAAAAAAAAAA - claims err: %v, claims %+v", err, c)
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until
@@ -1828,17 +1830,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	// with the value in the task.
 	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
 
-	expOptions := make([]any, 0, 3)
-	expOptions = append(expOptions, experiments.WithContext("executor_hostname", executorHostname))
-	if c, err := claims.ParseClaims(taskProto.GetJwt()); err == nil {
-		// Override the group ID and user ID that's otherwise set from the
-		// context. Currently, this is based on the API key of the executor.
-		// TODO(vanja) Figure out how to remove this.
-		expOptions = append(expOptions,
-			experiments.WithContext("group_id", c.GroupID),
-			experiments.WithContext("user_id", c.UserID))
-	}
-	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
+	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", experiments.WithContext("executor_hostname", executorHostname))
 	if skipResavingGroup == "" {
 		return task
 	}
