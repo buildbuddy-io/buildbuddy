@@ -47,7 +47,7 @@ const (
 )
 
 var (
-	envVarOptionNames      = []string{"client_env", "repo_env", "test_env"}
+	envVarOptionNames      = []string{"action_env", "client_env", "repo_env", "test_env"}
 	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(envVarOptionNames, "|") + `)=\w+=).*`)
 
 	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
