@@ -1818,7 +1818,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 
 	expOptions := make([]any, 0, 3)
 	expOptions = append(expOptions, experiments.WithContext("executor_hostname", executorHostname))
-	if c, err := claims.ParseClaims(taskProto.GetJwt()); err != nil {
+	if c, err := claims.ParseClaims(taskProto.GetJwt()); err == nil {
 		// Override the group ID and user ID that's otherwise set from the
 		// context. Currently, this is based on the API key of the executor.
 		// TODO(vanja) Figure out how to remove this.
