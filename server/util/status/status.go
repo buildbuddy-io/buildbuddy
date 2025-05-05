@@ -10,6 +10,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/protoadapt"
 )
 
 var LogErrorStackTraces = flag.Bool("app.log_error_stack_traces", false, "If true, stack traces will be printed for errors that have them.")
@@ -48,12 +49,27 @@ func callers() *stack {
 	return &st
 }
 
-func makeStatusError(code codes.Code, msg string) error {
+func makeStatusError(code codes.Code, msg string, details ...protoadapt.MessageV1) error {
+	var statusError error
+
+	// If no details are provided (most common case) don't call WithDetails
+	// since it allocates a new status proto.
+	if len(details) > 0 {
+		s := status.New(code, msg)
+		s, err := s.WithDetails(details...)
+		if err != nil {
+			return InternalErrorf("add error details to error: %s", err)
+		}
+		statusError = s.Err()
+	} else {
+		statusError = status.Error(code, msg)
+	}
+
 	if !*LogErrorStackTraces {
-		return status.Error(code, msg)
+		return statusError
 	}
 	return &wrappedError{
-		status.Error(code, msg),
+		statusError,
 		callers(),
 	}
 }
@@ -206,9 +222,29 @@ func UnauthenticatedErrorf(format string, a ...interface{}) error {
 	return UnauthenticatedError(fmt.Sprintf(format, a...))
 }
 
-// Wrap adds additional context to an error, preserving the underlying status code.
+// WrapError prepends additional context to an error description, preserving the
+// underlying status code and error details.
 func WrapError(err error, msg string) error {
-	return makeStatusError(status.Code(err), fmt.Sprintf("%s: %s", msg, Message(err)))
+	s, ok := status.FromError(err)
+	if !ok {
+		return UnknownErrorf("wrap error: %s", err)
+	}
+
+	// Preserve any details from the original error.
+	decodedDetails := s.Details()
+	details := make([]protoadapt.MessageV1, len(decodedDetails))
+	for i, detail := range decodedDetails {
+		if err, ok := detail.(error); ok {
+			return InternalErrorf("unmarshal status detail: %v", err)
+		}
+		if pb, ok := detail.(protoadapt.MessageV1); ok {
+			details[i] = pb
+		} else {
+			return InternalErrorf("unmarshal status detail: unrecognized detail type %T", detail)
+		}
+	}
+
+	return makeStatusError(status.Code(err), fmt.Sprintf("%s: %s", msg, Message(err)), details...)
 }
 
 // Wrapf is the "Printf" version of `Wrap`.
