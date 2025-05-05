@@ -106,8 +106,9 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 			opt(options)
 		}
 	}
-
-	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
+	claims, err := claims.ClaimsFromContext(ctx)
+	fmt.Println("VANJAAAAAAAAAAA - claims:", claims, err)
+	if err == nil {
 		options.targetingKey = claims.GetGroupID()
 		options.attributes["group_id"] = claims.GetGroupID()
 		options.attributes["user_id"] = claims.GetUserID()
