@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/open-feature/go-sdk/openfeature"
 
@@ -107,7 +108,7 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 		}
 	}
 	claims, err := claims.ClaimsFromContext(ctx)
-	fmt.Println("VANJAAAAAAAAAAA - claims:", claims, err)
+	log.Infof("VANJAAAAAAAAAAA - claims err: %v; claims: %v", claims, err)
 	if err == nil {
 		options.targetingKey = claims.GetGroupID()
 		options.attributes["group_id"] = claims.GetGroupID()
