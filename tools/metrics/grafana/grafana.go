@@ -98,6 +98,7 @@ func run() error {
 		if !*kube {
 			args = append(args, "--file", "docker-compose.redis-exporter.yml")
 			args = append(args, "--file", "docker-compose.victoria-metrics.yml")
+			args = append(args, "--file", "docker-compose.node-exporter.yml")
 		}
 		args = append(args, "up")
 		// Note: CommandContext kills with SIGKILL - we don't want that since it
