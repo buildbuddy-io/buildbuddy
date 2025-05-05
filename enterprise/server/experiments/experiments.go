@@ -101,8 +101,8 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 		targetingKey: interfaces.AuthAnonymousUser,
 		attributes:   make(map[string]interface{}, 0),
 	}
-	claims, err := claims.ClaimsFromContext(ctx)
-	if err == nil {
+
+	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
 		options.targetingKey = claims.GetGroupID()
 		options.attributes["group_id"] = claims.GetGroupID()
 		options.attributes["user_id"] = claims.GetUserID()

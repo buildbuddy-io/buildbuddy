@@ -312,7 +312,6 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 	// If the context already contains trusted Claims, return them directly
 	// instead of re-parsing the JWT (which is expensive).
 	if claims, ok := ctx.Value(contextClaimsKey).(*Claims); ok && claims != nil {
-		log.Infof("VANJAAAAAA - cached claims: %+v", claims)
 		return claims, nil
 	}
 
