@@ -276,7 +276,11 @@ func (s *ByteStreamServerProxy) writeRemoteOnly(ctx context.Context, stream bspb
 		if err != nil {
 			return err
 		}
-		if err = remoteStream.Send(req); err != nil {
+		err = remoteStream.Send(req)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
 			return err
 		}
 		if req.GetFinishWrite() {
