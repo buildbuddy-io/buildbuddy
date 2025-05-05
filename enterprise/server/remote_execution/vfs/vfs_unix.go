@@ -421,7 +421,7 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (nod
 	// a refresh if necessary as it already handles this case for the GetAttr call.
 	attrs, err := n.getattr()
 	if err != nil {
-		return nil, 0
+		return nil, rpcErrToSyscallErrno(err)
 	}
 	fillFuseAttr(&out.Attr, attrs)
 
