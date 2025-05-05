@@ -26,8 +26,8 @@ func TestNegativeStarlarkFlagWithValue(t *testing.T) {
 		Expanded []string
 	}{
 		{
-			Name:    "ExpandStarlarkFlagsFromCommonConfig",
-			Args:    []string{"build", "--no@io_bazel_rules_docker//transitions:enable=foo"},
+			Name: "ExpandStarlarkFlagsFromCommonConfig",
+			Args: []string{"build", "--no@io_bazel_rules_docker//transitions:enable=foo"},
 			Expanded: []string{
 				"--ignore_all_rc_files",
 				"build",
