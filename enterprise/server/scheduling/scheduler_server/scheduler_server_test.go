@@ -797,7 +797,7 @@ func TestEnqueueTaskReservation_Exists(t *testing.T) {
 	require.False(t, resp.GetExists())
 }
 
-func TestAskForMoreWorkOnlyEnqueuesTasksThatFitOnNode(t *testing.T) {
+func TestAskForMoreWork_OnlyEnqueuesTasksThatFitOnNode(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
 
@@ -841,6 +841,40 @@ func TestAskForMoreWorkOnlyEnqueuesTasksThatFitOnNode(t *testing.T) {
 		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
 	})
 	rsp = <-smallExecutor.schedulerMessages
+	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
+}
+
+func TestAskForMoreWork_RespectRequestedExecutorID(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
+
+	// Register two nodes.
+	executor1 := newFakeExecutorWithId(ctx, t, "n1", env.GetSchedulerClient())
+	executor1.node.AssignableMilliCpu = 1000
+	executor1.Register()
+
+	executor2 := newFakeExecutorWithId(ctx, t, "n2", env.GetSchedulerClient())
+	executor2.node.AssignableMilliCpu = 1000
+	executor2.Register()
+
+	var rsp *scpb.RegisterAndStreamWorkResponse
+
+	// Schedule a task on executor1.
+	taskID := scheduleTask(ctx, t, env, map[string]string{"debug-executor-id": "n1"})
+	// Ensure the task was enqueued on executor1, but don't have
+	// executor1 claim the task, so that it's eligible to be enqueued
+	// as part of AskForMoreWork.
+	rsp = <-executor1.schedulerMessages
+	require.Equal(t, taskID, rsp.GetEnqueueTaskReservationRequest().GetTaskId())
+
+	// Have executor2 ask for more work now. The scheduler should not
+	// schedule any work on executor2 because the task specifically requested
+	// executor1. It should only reply with an AskForMoreWorkResponse to increase
+	// the client backoff.
+	executor2.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	rsp = <-executor2.schedulerMessages
 	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
 }
 
