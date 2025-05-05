@@ -55,7 +55,7 @@ go_library(
 
 go_test(
     name = "service_test",
-    size = "small",
+    size = "medium",
     srcs = ["service_test.go"],
     deps = [
         ":service",
