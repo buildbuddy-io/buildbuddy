@@ -17,8 +17,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -1100,10 +1102,10 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 	// Need to temporarily instruct the test authenticator to not fail the test
 	// when it sees invalid API keys.
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
-	auth.APIKeyProvider = func(apiKey string) interfaces.UserInfo {
-		_, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(context.Background(), apiKey)
+	auth.APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
+		_, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, apiKey)
 		require.Error(t, err)
-		return nil
+		return nil, nil
 	}
 	key1Ctx = env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
 
@@ -1508,10 +1510,14 @@ func TestRequestToJoinGroup_NoAutoJoinForSAMLUser(t *testing.T) {
 	// Have US2 be a user using SAML login.
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
 	p := auth.UserProvider
-	auth.UserProvider = func(userID string) interfaces.UserInfo {
-		c := p(userID).(*claims.Claims)
+	auth.UserProvider = func(ctx context.Context, userID string) (interfaces.UserInfo, error) {
+		ui, err := p(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		c := ui.(*claims.Claims)
 		c.SAML = true
-		return c
+		return c, nil
 	}
 	createUser(t, ctx, env, "US2", "org1.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
@@ -1867,10 +1873,10 @@ func TestChildGroupAuth(t *testing.T) {
 	ctx := context.Background()
 
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
-	auth.APIKeyProvider = func(apiKey string) interfaces.UserInfo {
-		ui, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(context.Background(), apiKey)
+	auth.APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
+		ui, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, apiKey)
 		require.NoError(t, err)
-		return claims.APIKeyGroupClaims(ui)
+		return claims.APIKeyGroupClaims(ctx, ui)
 	}
 
 	// Start with two independent groups.
@@ -1892,7 +1898,6 @@ func TestChildGroupAuth(t *testing.T) {
 		[]akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
-	//adminCtx2 := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key2.Value)
 
 	// Admin key for group1 shouldn't be able to affect anything in group2.
 	err = udb.UpdateGroupUsers(adminCtx1, us2Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
@@ -1906,6 +1911,14 @@ func TestChildGroupAuth(t *testing.T) {
 		Role:   grpb.Group_DEVELOPER_ROLE,
 	}})
 	require.NoError(t, err, "should be able to update role of US2")
+
+	// Admin key for group1 shouldn't be able to set the effective group to group2 via RequestContext.
+	errCtx := env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
+	err, _ = authutil.AuthErrorFromContext(errCtx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
 
 	us1Group.SamlIdpMetadataUrl = "https://some/saml/url"
 	us1Group.URLIdentifier = "org1"
@@ -1924,6 +1937,13 @@ func TestChildGroupAuth(t *testing.T) {
 		Role:   grpb.Group_DEVELOPER_ROLE,
 	}})
 	require.Error(t, err, "should not be able to update role of US2")
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	errCtx = env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
+	err, _ = authutil.AuthErrorFromContext(errCtx)
+	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
 
 	// Now mark the first group as a "parent" organization.
@@ -1947,4 +1967,12 @@ func TestChildGroupAuth(t *testing.T) {
 	}})
 	require.Error(t, err, "should not be able to update role of US1")
 	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Should be able to change the effective group to group2 via the Request
+	gr2Ctx := env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
+	cl, err := claims.ClaimsFromContext(gr2Ctx)
+	require.NoError(t, err)
+	require.Equal(t, us2Group.GroupID, cl.GetGroupID())
 }

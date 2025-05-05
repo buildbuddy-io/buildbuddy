@@ -186,7 +186,8 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 			assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
 
 			// Converting to Claims should produce the expected value
-			c := claims.APIKeyGroupClaims(akg)
+			c, err := claims.APIKeyGroupClaims(ctx, akg)
+			require.NoError(t, err)
 			assert.Equal(t, randKey.GroupID, c.GetGroupID())
 			assert.Equal(t, capabilities.FromInt(randKey.Capabilities), c.GetCapabilities())
 			require.Len(t, c.GetGroupMemberships(), 1)
@@ -766,4 +767,49 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	env := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, env) // provisions AuthDB and UserDB
 	return env
+}
+
+func TestAPIKeyRequestContext(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	adb := env.GetAuthDB()
+
+	keys := createRandomAPIKeys(t, ctx, env)
+	randKey := keys[rand.Intn(len(keys))]
+
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, randKey.Value)
+	require.NoError(t, err)
+
+	assert.Equal(t, "", akg.GetUserID())
+	assert.Equal(t, randKey.GroupID, akg.GetGroupID())
+	assert.Equal(t, randKey.Capabilities, akg.GetCapabilities())
+	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
+
+	// Converting to Claims should produce the expected value
+	c, err := claims.APIKeyGroupClaims(ctx, akg)
+	require.NoError(t, err)
+	assert.Equal(t, randKey.GroupID, c.GetGroupID())
+	assert.Equal(t, capabilities.FromInt(randKey.Capabilities), c.GetCapabilities())
+	require.Len(t, c.GetGroupMemberships(), 1)
+	assert.Equal(t, []*interfaces.GroupMembership{
+		{
+			GroupID:      randKey.GroupID,
+			Capabilities: capabilities.FromInt(randKey.Capabilities),
+			// TODO(bduffany): API keys should not have roles - just
+			// capabilities.
+			Role: role.Developer,
+		},
+	}, c.GetGroupMemberships())
+
+	// Using an invalid or empty value should produce an error
+	akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "")
+	require.Nil(t, akg)
+	require.Truef(
+		t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated error; got: %v", err)
+	akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "INVALID")
+	require.Nil(t, akg)
+	require.Truef(
+		t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated error; got: %v", err)
 }

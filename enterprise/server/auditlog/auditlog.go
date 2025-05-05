@@ -243,14 +243,14 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 		return nil, err
 	}
 
-	if err := authutil.AuthorizeOrgAdmin(u, req.GetRequestContext().GetGroupId()); err != nil {
+	if err := authutil.AuthorizeOrgAdmin(u, u.GetGroupID()); err != nil {
 		return nil, err
 	}
 
 	qb := query_builder.NewQuery(`
 		SELECT * FROM AuditLogs
 	`)
-	qb.AddWhereClause("group_id = ?", req.GetRequestContext().GetGroupId())
+	qb.AddWhereClause("group_id = ?", u.GetGroupID())
 	qb.AddWhereClause("event_time_usec >= ?", req.GetTimestampAfter().AsTime().UnixMicro())
 	qb.AddWhereClause("event_time_usec <= ?", req.GetTimestampBefore().AsTime().UnixMicro())
 	if req.PageToken != "" {

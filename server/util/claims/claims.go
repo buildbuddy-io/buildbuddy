@@ -3,6 +3,7 @@ package claims
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -136,7 +137,7 @@ func ParseClaims(token string) (*Claims, error) {
 	return nil, lastErr
 }
 
-func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
+func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims, error) {
 	keyRole := role.Default
 	// User management through SCIM requires Admin access.
 	if akg.GetCapabilities()&int32(akpb.ApiKey_ORG_ADMIN_CAPABILITY) > 0 {
@@ -156,17 +157,28 @@ func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 			Role:         keyRole,
 		})
 	}
+
+	requestContext := requestcontext.ProtoRequestContextFromContext(ctx)
+	effectiveGroup := akg.GetGroupID()
+	if requestContext.GetGroupId() != "" {
+		if slices.Contains(allowedGroups, requestContext.GetGroupId()) {
+			effectiveGroup = requestContext.GetGroupId()
+		} else {
+			return nil, status.PermissionDeniedErrorf("invalid group id %s", requestContext.GetGroupId())
+		}
+	}
+
 	return &Claims{
 		APIKeyID:               akg.GetAPIKeyID(),
 		UserID:                 akg.GetUserID(),
-		GroupID:                akg.GetGroupID(),
+		GroupID:                effectiveGroup,
 		AllowedGroups:          allowedGroups,
 		GroupMemberships:       groupMemberships,
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
 		EnforceIPRules:         akg.GetEnforceIPRules(),
-	}
+	}, nil
 }
 
 func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*Claims, error) {
