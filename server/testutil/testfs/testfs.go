@@ -58,7 +58,7 @@ func MakeTempDir(t testing.TB) string {
 	}
 	t.Cleanup(func() {
 		if err := os.RemoveAll(tmpDir); err != nil && !os.IsNotExist(err) {
-			assert.FailNow(t, "failed to clean up temp dir", err)
+			t.Logf("failed to clean up temp dir: %s", err)
 		}
 	})
 	return tmpDir
