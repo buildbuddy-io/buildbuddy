@@ -100,24 +100,14 @@ func runRemoteServices(ctx context.Context, env *testenv.TestEnv, t testing.TB) 
 	return bspb.NewByteStreamClient(conn), repb.NewContentAddressableStorageClient(conn), &unaryRequestCounter, &streamRequestCounter
 }
 
-func runLocalBSS(ctx context.Context, env *testenv.TestEnv, t testing.TB) bspb.ByteStreamClient {
-	server, err := byte_stream_server.NewByteStreamServer(env)
-	require.NoError(t, err)
-	grpcServer, runFunc, lis := testenv.RegisterLocalInternalGRPCServer(t, env)
-	bspb.RegisterByteStreamServer(grpcServer, server)
-	go runFunc()
-	conn, err := testenv.LocalInternalGRPCConn(ctx, lis)
-	require.NoError(t, err)
-	t.Cleanup(func() { conn.Close() })
-	return bspb.NewByteStreamClient(conn)
-}
-
 func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.TestEnv, t testing.TB) bspb.ByteStreamClient {
 	if env.GetAtimeUpdater() == nil {
 		env.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	}
 	env.SetByteStreamClient(client)
-	env.SetLocalByteStreamClient(runLocalBSS(ctx, env, t))
+	bss, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+	env.SetLocalByteStreamServer(bss)
 	byteStreamServer, err := New(env)
 	require.NoError(t, err)
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)

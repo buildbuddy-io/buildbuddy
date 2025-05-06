@@ -24,7 +24,7 @@ import (
 type ByteStreamServerProxy struct {
 	atimeUpdater  interfaces.AtimeUpdater
 	authenticator interfaces.Authenticator
-	local         bspb.ByteStreamClient
+	local         interfaces.ByteStreamServer
 	remote        bspb.ByteStreamClient
 }
 
@@ -46,13 +46,13 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 	if authenticator == nil {
 		return nil, fmt.Errorf("An Authenticator is required to enable ByteStreamServerProxy")
 	}
-	local := env.GetLocalByteStreamClient()
-	if local == nil {
-		return nil, fmt.Errorf("A local ByteStreamClient is required to enable ByteStreamServerProxy")
-	}
 	remote := env.GetByteStreamClient()
 	if remote == nil {
 		return nil, fmt.Errorf("A remote ByteStreamClient is required to enable ByteStreamServerProxy")
+	}
+	local := env.GetLocalByteStreamServer()
+	if local == nil {
+		return nil, fmt.Errorf("A local ByteStreamServer is required to enable ByteStreamServerProxy")
 	}
 	return &ByteStreamServerProxy{
 		atimeUpdater:  atimeUpdater,
@@ -62,77 +62,163 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 	}, nil
 }
 
+// Wrapper around a ByteStream_ReadServer that counts the number of frames
+// and bytes read through it.
+type meteredReadServerStream struct {
+	bytes  int64
+	frames int64
+	bspb.ByteStream_ReadServer
+}
+
+func (s *meteredReadServerStream) Send(message *bspb.ReadResponse) error {
+	s.bytes += int64(len(message.GetData()))
+	s.frames++
+	return s.ByteStream_ReadServer.Send(message)
+}
+
 func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
-	skipRemote := proxy_util.SkipRemote(ctx)
 	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(ctx)
+	meteredStream := &meteredReadServerStream{ByteStream_ReadServer: stream}
+	stream = meteredStream
+	cacheStatus, err := s.read(ctx, req, meteredStream)
+	recordReadMetrics(cacheStatus, requestTypeLabel, err, int(meteredStream.bytes))
+	return err
+}
 
+func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest, stream *meteredReadServerStream) (string, error) {
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
-		bytesRead, err := s.readRemote(req, stream)
-		recordReadMetrics(metrics.UncacheableStatusLabel, requestTypeLabel, err, bytesRead)
-		return err
+		return metrics.UncacheableStatusLabel, s.readRemoteOnly(ctx, req, stream)
+	}
+	if proxy_util.SkipRemote(ctx) {
+		if err := s.readLocalOnly(req, stream); err != nil {
+			log.CtxInfof(ctx, "Error reading local: %v", err)
+			return metrics.MissStatusLabel, err
+		}
+		return metrics.HitStatusLabel, nil
 	}
 
-	localReadStream, err := s.local.Read(ctx, req)
-	if err != nil {
-		if skipRemote {
-			recordReadMetrics(metrics.MissStatusLabel, requestTypeLabel, err, 0)
-			return err
-		}
-
-		// Fall back to reading from the remote cache.
-		if !status.IsNotFoundError(err) {
-			log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
-		}
-		bytesRead, err := s.readRemote(req, stream)
-		recordReadMetrics(metrics.MissStatusLabel, requestTypeLabel, err, bytesRead)
-		return err
-	}
-
-	if !skipRemote {
+	localErr := s.local.Read(req, stream)
+	// If some responses were streamed to the client, just return the
+	// error. Otherwise, fall-back to remote. We might be able to continue
+	// streaming to the client by doing an offset read from the remote
+	// cache, but keep it simple for now.
+	if localErr != nil && stream.frames == 0 {
+		// Recover from local error if no frames have been sent
+		return metrics.MissStatusLabel, s.readRemoteWriteLocal(req, stream)
+	} else {
 		s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
+		return metrics.HitStatusLabel, localErr
 	}
+}
 
-	responseSent := false
-	bytesRead := 0
+func (s *ByteStreamServerProxy) readRemoteOnly(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	remoteReadStream, err := s.remote.Read(ctx, req)
+	if err != nil {
+		log.CtxInfof(ctx, "error reading from remote: %s", err)
+		return err
+	}
 	for {
-		rsp, err := localReadStream.Recv()
-		if rsp != nil {
-			bytesRead += len(rsp.Data)
-		}
+		message, err := remoteReadStream.Recv()
 		if err == io.EOF {
-			break
+			return nil
 		}
 		if err != nil {
-			// If some responses were streamed to the client, just return the
-			// error. Otherwise, fall-back to remote. We might be able to
-			// continue streaming to the client by doing an offset read from
-			// the remote cache, but keep it simple for now.
-			if responseSent {
-				log.CtxInfof(ctx, "error midstream of local read: %s", err)
-				recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, err, bytesRead)
-				return err
-			} else if skipRemote {
-				recordReadMetrics(metrics.MissStatusLabel, requestTypeLabel, err, bytesRead)
-				return err
-			} else {
-				// Fall back to reading remotely if the local read fails.
-				remoteBytesRead, err := s.readRemote(req, stream)
-				recordReadMetrics(metrics.MissStatusLabel, requestTypeLabel, err, remoteBytesRead)
-				return err
+			log.CtxInfof(ctx, "Error streaming from remote for read: %s", err)
+			return err
+		}
+		if err = stream.Send(message); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *ByteStreamServerProxy) readLocalOnly(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	return s.local.Read(req, stream)
+}
+
+func writeRequest(resourceName string, data []byte, offset int64, finishWrite bool) *bspb.WriteRequest {
+	return &bspb.WriteRequest{
+		ResourceName: resourceName,
+		Data:         data,
+		WriteOffset:  offset,
+		FinishWrite:  finishWrite,
+	}
+}
+
+func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	ctx, spn := tracing.StartSpan(stream.Context())
+	defer spn.End()
+
+	remoteReadStream, err := s.remote.Read(ctx, req)
+	if err != nil {
+		log.CtxInfof(ctx, "error reading from remote: %s", err)
+		return err
+	}
+
+	// Retrieve first frame from read stream
+	rsp, err := remoteReadStream.Recv()
+	if err == io.EOF {
+		return nil
+	}
+	if err != nil {
+		log.CtxInfof(ctx, "Error streaming from remote for read-remote-write-local: %s", err)
+		return err
+	}
+
+	// Rewrite the resource name so we can write to the local server
+	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
+	if err != nil {
+		return err
+	}
+	uploadRN := rn.NewUploadString()
+
+	// Open the local writer (if possible).
+	localWriteOffset := req.GetReadOffset()
+	var localWriter interfaces.ByteStreamWriteHandler
+	if req.GetReadOffset() == 0 {
+		localWriter, err = s.local.BeginWrite(ctx, writeRequest(uploadRN, rsp.GetData(), localWriteOffset, false))
+		if err != nil {
+			log.CtxDebugf(ctx, "Error opening local ByteStreamServer write stream: %v", err)
+		} else {
+			defer localWriter.Close()
+		}
+	}
+
+	for {
+		// Write to local cache
+		if localWriter != nil {
+			_, err = localWriter.Write(writeRequest(uploadRN, rsp.GetData(), localWriteOffset, false))
+			if err != nil {
+				log.CtxDebugf(ctx, "Error writing to local ByteStreamServer: %v", err)
+				localWriter = nil
 			}
 		}
 
-		if err := stream.Send(rsp); err != nil {
-			recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, err, bytesRead)
+		// Send frame to client
+		localWriteOffset += int64(len(rsp.GetData()))
+		if err = stream.Send(rsp); err != nil {
 			return err
 		}
-		responseSent = true
+
+		// Retreive the next frame and handle errors
+		rsp, err = remoteReadStream.Recv()
+		if err == io.EOF {
+			if localWriter != nil {
+				_, err = localWriter.Write(writeRequest(uploadRN, []byte{}, localWriteOffset, true))
+				if err != nil {
+					log.CtxDebugf(ctx, "Error writing to local ByteStreamServer: %v", err)
+				}
+			}
+			return nil
+		}
+		if err != nil {
+			log.CtxInfof(ctx, "Error streaming from remote for read through: %s", err)
+			return err
+		}
 	}
-	recordReadMetrics(metrics.HitStatusLabel, requestTypeLabel, nil, bytesRead)
-	return nil
 }
 
 func recordReadMetrics(cacheStatus string, proxyRequestType string, err error, bytesRead int) {
@@ -145,221 +231,153 @@ func recordReadMetrics(cacheStatus string, proxyRequestType string, err error, b
 	metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(bytesRead))
 }
 
-func recordWriteMetrics(resp *bspb.WriteResponse, err error, proxyRequestType string) {
-	labels := prometheus.Labels{
-		metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
-		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
-		metrics.CacheProxyRequestType: proxyRequestType,
-	}
-	metrics.ByteStreamProxiedWriteRequests.With(labels).Inc()
-	if resp != nil && resp.GetCommittedSize() > 0 {
-		metrics.ByteStreamProxiedWriteBytes.With(labels).Add(float64(resp.GetCommittedSize()))
-	}
+// Wrapper around a ByteStream_WriteServer that counts the number of bytes
+// written through it.
+type meteredServerSideClientStream struct {
+	bytes int64
+	bspb.ByteStream_WriteServer
 }
 
-// The Write() RPC requires the client keep track of some state. The
-// implementations of this interface take care of that.
-type localWriter interface {
-	send(data []byte) error
-	commit() error
-}
-
-// A localWriter that discards everything sent to it.
-type discardingLocalWriter struct {
-}
-
-func (s *discardingLocalWriter) send(data []byte) error {
-	return nil
-}
-
-func (s *discardingLocalWriter) commit() error {
-	return nil
-}
-
-// A localWriter that writes data to a local ByteStream_WriteClient.
-type realLocalWriter struct {
-	ctx          context.Context
-	local        bspb.ByteStream_WriteClient
-	resourceName string
-	initialized  bool
-	offset       int64
-}
-
-func (s *realLocalWriter) send(data []byte) error {
-	req := &bspb.WriteRequest{WriteOffset: s.offset, Data: data}
-	if !s.initialized {
-		// Rewrite the resource name so we can write to the local server.
-		rn, err := digest.ParseDownloadResourceName(s.resourceName)
-		if err != nil {
-			return err
-		}
-		req.ResourceName = rn.NewUploadString()
-		s.initialized = true
-	}
-	s.offset += int64(len(data))
-	return s.local.Send(req)
-}
-
-func (s *realLocalWriter) commit() error {
-	if err := s.local.Send(&bspb.WriteRequest{WriteOffset: s.offset, FinishWrite: true}); err != nil {
-		return err
-	}
-	// Ignore the local response (but not the error)
-	_, err := s.local.CloseAndRecv()
-	return err
-}
-
-func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) (int, error) {
-	ctx, spn := tracing.StartSpan(stream.Context())
-	defer spn.End()
-
-	remoteReadStream, err := s.remote.Read(ctx, req)
-	if err != nil {
-		log.CtxInfof(ctx, "error reading from remote: %s", err)
-		return 0, err
-	}
-
-	var localWriteStream localWriter = &discardingLocalWriter{}
-	if req.ReadOffset == 0 && !authutil.EncryptionEnabled(ctx, s.authenticator) {
-		localStream, err := s.local.Write(ctx)
-		if err == nil {
-			localWriteStream = &realLocalWriter{
-				ctx:          ctx,
-				local:        localStream,
-				resourceName: req.ResourceName,
-				initialized:  false,
-				offset:       int64(0),
-			}
-		} else {
-			log.CtxInfof(ctx, "error opening local bytestream write stream for read through: %s", err)
-		}
-	}
-
-	bytesRead := 0
-	for {
-		rsp, err := remoteReadStream.Recv()
-		if rsp != nil {
-			bytesRead += len(rsp.Data)
-		}
-		if err != nil {
-			if err == io.EOF {
-				if err := localWriteStream.commit(); err != nil {
-					log.CtxInfof(ctx, "error committing local write: %s", err)
-				}
-				break
-			}
-			log.CtxInfof(ctx, "error streaming from remote for read through: %s", err)
-			return bytesRead, err
-		}
-
-		if err := localWriteStream.send(rsp.Data); err != nil {
-			log.CtxInfof(ctx, "Error writing locally for read through: %s", err)
-			localWriteStream = &discardingLocalWriter{}
-		}
-		if err = stream.Send(rsp); err != nil {
-			return bytesRead, err
-		}
-	}
-	return bytesRead, nil
+func (s *meteredServerSideClientStream) Recv() (*bspb.WriteRequest, error) {
+	message, err := s.ByteStream_WriteServer.Recv()
+	s.bytes += int64(len(message.GetData()))
+	return message, err
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
-	resp, err := s.write(stream)
-	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(stream.Context())
-	recordWriteMetrics(resp, err, requestTypeLabel)
-	return err
-}
-
-func (s *ByteStreamServerProxy) write(stream bspb.ByteStream_WriteServer) (*bspb.WriteResponse, error) {
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
-	var local bspb.ByteStream_WriteClient
-	if !authutil.EncryptionEnabled(ctx, s.authenticator) {
-		localWriter, err := s.local.Write(ctx)
-		if err != nil {
-			log.CtxInfof(ctx, "error opening local bytestream write stream for write: %s", err)
-			localWriter = nil
+	requestTypeLabel := proxy_util.RequestTypeLabelFromContext(stream.Context())
+	meteredStream := &meteredServerSideClientStream{ByteStream_WriteServer: stream}
+	stream = meteredStream
+	var err error
+	if authutil.EncryptionEnabled(ctx, s.authenticator) {
+		err = s.writeRemoteOnly(ctx, stream)
+	} else if proxy_util.SkipRemote(ctx) {
+		err = s.writeLocalOnly(stream)
+	} else {
+		err = s.dualWrite(ctx, stream)
+	}
+	recordWriteMetrics(meteredStream.bytes, err, requestTypeLabel)
+	return err
+}
+
+func (s *ByteStreamServerProxy) writeRemoteOnly(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
+	remoteStream, err := s.remote.Write(ctx)
+	if err != nil {
+		return err
+	}
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			break
 		}
-		local = localWriter
+		if err != nil {
+			return err
+		}
+		err = remoteStream.Send(req)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if req.GetFinishWrite() {
+			break
+		}
+	}
+	resp, err := remoteStream.CloseAndRecv()
+	if err != nil {
+		return err
+	}
+	return stream.SendAndClose(resp)
+}
+
+func (s *ByteStreamServerProxy) writeLocalOnly(stream bspb.ByteStream_WriteServer) error {
+	return s.local.Write(stream)
+}
+
+// TODO(iain): investigate performance of making the local write async
+func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
+	// Grab the first frame from the client so the local writer can be created
+	req, err := stream.Recv()
+	if err == io.EOF {
+		log.CtxInfof(ctx, "Unexpected EOF reading first frame: %v", err)
+		return nil
+	}
+	if err != nil {
+		return err
 	}
 
-	var remote bspb.ByteStream_WriteClient
-	// `local` can be nil for encrypted requests. The proxy doesn't support encrpytion,
-	// so always write encrypted requests to the remote cache.
-	if !proxy_util.SkipRemote(ctx) || local == nil {
-		var err error
-		remote, err = s.remote.Write(ctx)
-		if err != nil {
-			return nil, err
-		}
+	localWriteStream, err := s.local.BeginWrite(ctx, req)
+	if err == nil {
+		defer localWriteStream.Close()
+	} else {
+		log.CtxWarningf(ctx, "Error opening local write stream: %v", err)
+	}
+
+	remoteWriteStream, err := s.remote.Write(ctx)
+	if err != nil {
+		return err
 	}
 
 	for {
-		req, err := stream.Recv()
-		if err != nil {
-			return nil, err
-		}
-
-		// Send to the local ByteStreamServer (if it hasn't errored)
+		// Send to the local ByteStreamServer (if available)
 		localDone := req.GetFinishWrite()
-		if local != nil {
-			if err := local.Send(req); err != nil {
+		if localWriteStream != nil {
+			if _, err := localWriteStream.Write(req); err != nil {
+				localWriteStream = nil
 				if err == io.EOF {
 					localDone = true
 				} else {
-					// Swallow local write errors if we're writing remotely too
-					if remote != nil {
-						log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", err)
-						local = nil
-					} else {
-						return nil, err
-					}
+					log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", err)
 				}
 			}
 		}
 
 		// Send to the remote ByteStreamServer
 		remoteDone := req.GetFinishWrite()
-		if remote != nil {
-			if err := remote.Send(req); err != nil {
-				if err == io.EOF {
-					remoteDone = true
-				} else {
-					return nil, err
-				}
+		if err := remoteWriteStream.Send(req); err != nil {
+			if err == io.EOF {
+				remoteDone = true
+			} else {
+				return err
 			}
 		}
 
-		// If the client or the remote server told us the write is done, send the
-		// response to the client.
-		if remote == nil && localDone {
-			resp, err := local.CloseAndRecv()
+		// Handle stream-finished cases
+		if remoteDone {
+			if localWriteStream != nil && !localDone {
+				log.CtxInfo(ctx, "remote write done but local write is not")
+			}
+			resp, err := remoteWriteStream.CloseAndRecv()
 			if err != nil {
-				return nil, err
+				return err
 			}
 			err = stream.SendAndClose(resp)
-			return resp, err
-		}
-
-		if remote != nil && remoteDone {
-			if local != nil {
-				if !localDone {
-					log.CtxInfo(ctx, "remote write done but local write is not")
-				}
-				if _, err := local.CloseAndRecv(); err != nil {
-					log.CtxInfof(ctx, "error closing local write stream: %s", err)
-				}
-			}
-			resp, err := remote.CloseAndRecv()
-			if err != nil {
-				return nil, err
-			}
-			err = stream.SendAndClose(resp)
-			return resp, err
+			return err
 		} else if localDone {
 			log.CtxInfo(ctx, "local write done but remote write is not")
 		}
+
+		// Finally, receive the next frame from the client
+		req, err = stream.Recv()
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func recordWriteMetrics(bytesWritten int64, err error, proxyRequestType string) {
+	labels := prometheus.Labels{
+		metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
+		metrics.CacheProxyRequestType: proxyRequestType,
+	}
+	metrics.ByteStreamProxiedWriteRequests.With(labels).Inc()
+	if bytesWritten > 0 {
+		metrics.ByteStreamProxiedWriteBytes.With(labels).Add(float64(bytesWritten))
 	}
 }
 
