@@ -339,8 +339,9 @@ type CacheSnapshotOptions struct {
 	// Whether to save the snapshot to the remote cache (in addition to locally)
 	Remote bool
 
-	// Whether we skipped caching remotely due to newly applied remote snapshot limits.
-	SkippedCacheRemotely bool
+	// Whether we would've cached this snapshot remotely if our remote snapshot
+	// limits were applied.
+	WouldNotHaveCachedRemotely bool
 }
 
 type UnpackedSnapshot struct {
@@ -417,20 +418,19 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKe
 func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-
-	// Always prioritize the local manifest if it exists. It may point to a more
-	// updated snapshot than the remote manifest, which is updated less frequently.
-	if *snaputil.EnableLocalSnapshotSharing {
-		manifest, err := l.getLocalManifest(ctx, key)
-		if err == nil || !remoteEnabled || !*snaputil.EnableRemoteSnapshotSharing {
-			return manifest, err
+	if *snaputil.EnableRemoteSnapshotSharing && remoteEnabled {
+		manifest, err := l.fetchRemoteManifest(ctx, key)
+		if err != nil {
+			return nil, status.WrapError(err, "fetch remote manifest")
 		}
-	} else if !remoteEnabled {
-		return nil, status.InternalErrorf("invalid state: EnableLocalSnapshotSharing=false and remoteEnabled=false")
+		return manifest, nil
 	}
 
-	// Fall back to fetching remote manifest.
-	return l.fetchRemoteManifest(ctx, key)
+	manifest, err := l.getLocalManifest(ctx, key)
+	if err != nil {
+		return nil, status.WrapError(err, "get local manifest")
+	}
+	return manifest, nil
 }
 
 // fetchRemoteManifest fetches the most recent snapshot manifest from the remote
@@ -1042,7 +1042,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		metrics.FileName: name,
 	}).Observe(float64(emptyChunkCount) / float64(len(chunks)))
 
-	if cacheOpts.SkippedCacheRemotely {
+	if cacheOpts.Remote && cacheOpts.WouldNotHaveCachedRemotely {
 		metrics.COWSnapshotSkippedRemoteBytes.With(prometheus.Labels{
 			metrics.FileName: name,
 		}).Add(float64(compressedBytesWrittenRemotely))

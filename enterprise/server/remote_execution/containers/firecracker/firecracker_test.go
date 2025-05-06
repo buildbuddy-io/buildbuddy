@@ -853,6 +853,21 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 		}
 	})
 
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:            1,
+			MemSizeMb:          minMemSizeMB, // small to make snapshotting faster.
+			EnableNetworking:   false,
+			ScratchDiskSizeMb:  100,
+			GuestKernelVersion: cfg.GuestKernelVersion,
+			FirecrackerVersion: cfg.FirecrackerVersion,
+			GuestApiVersion:    cfg.GuestAPIVersion,
+		},
+		ExecutorConfig: cfg,
+	}
 	instanceName := "test-instance-name"
 	task := &repb.ExecutionTask{
 		Command: &repb.Command{
@@ -861,62 +876,57 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 				{Name: "recycle-runner", Value: "true"},
 			}},
 			Arguments: []string{"./buildbuddy_ci_runner"},
-			// Simulate that this is for a PR branch, because master snapshots
-			// are always saved to the remote cache.
-			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-				{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "master"},
-				{Name: "GIT_BRANCH", Value: "my-pr"},
-			},
 		},
 		ExecuteRequest: &repb.ExecuteRequest{
 			InstanceName: instanceName,
 		},
 	}
+	baseVM, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	containersToCleanup = append(containersToCleanup, baseVM)
+	err = container.PullImageIfNecessary(ctx, env, baseVM, oci.Credentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = baseVM.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	baseSnapshotId := baseVM.SnapshotID()
 
-	runAndSnapshotVM := func(workDir string, stringToLog string, expectedOutput string, snapshotKeyOverride *fcpb.SnapshotKey) string {
-		opts := firecracker.ContainerOpts{
-			ContainerImage:         busyboxImage,
-			ActionWorkingDirectory: workDir,
-			VMConfiguration: &fcpb.VMConfiguration{
-				NumCpus:           1,
-				MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-				EnableNetworking:  false,
-				ScratchDiskSizeMb: 100,
-			},
-			ExecutorConfig:      cfg,
-			OverrideSnapshotKey: snapshotKeyOverride,
-		}
-		vm, err := firecracker.NewContainer(ctx, env, task, opts)
-		require.NoError(t, err)
-		containersToCleanup = append(containersToCleanup, vm)
-		err = vm.Create(ctx, workDir)
-		require.NoError(t, err)
-		cmd := appendToLog(stringToLog)
-		res := vm.Exec(ctx, cmd, nil /*=stdio*/)
-		require.NoError(t, res.Error)
-		require.Equal(t, expectedOutput, string(res.Stdout))
-		require.NotEmpty(t, res.VMMetadata.GetSnapshotId())
-		err = vm.Pause(ctx)
-		require.NoError(t, err)
+	// Create a snapshot. Data written to this snapshot should persist
+	// when other VMs reuse the snapshot
+	cmd := appendToLog("Base")
+	res := baseVM.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, "Base\n", string(res.Stdout))
+	require.NotEmpty(t, res.VMMetadata.GetSnapshotId())
+	err = baseVM.Pause(ctx)
+	require.NoError(t, err)
 
-		return vm.SnapshotID()
-	}
-
-	// Create a snapshot. Data written to this snapshot should be cached remotely,
-	// and persist when other VMs reuse the snapshot.
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	baseSnapshotId := runAndSnapshotVM(workDir, "Cache Remotely", "Cache Remotely\n", nil)
-
-	// Start a VM from the snapshot. Artifacts should be stored locally in the filecache.
-	// The log should contain data written to the original snapshot
-	// and the current VM.
+	// Start a VM from the snapshot. Artifacts should be stored locally in the filecache
 	workDirForkLocalFetch := testfs.MakeDirAll(t, rootDir, "work-fork-local-fetch")
-	runAndSnapshotVM(workDirForkLocalFetch, "Cache Locally", "Cache Remotely\nCache Locally\n", nil)
-
-	// Start another VM from the locally cached snapshot. The log should contain
-	// data from the most recent run, as well as the current run.
-	workDirForkLocalFetch2 := testfs.MakeDirAll(t, rootDir, "work-fork-local-fetch")
-	runAndSnapshotVM(workDirForkLocalFetch2, "Cache Locally 2", "Cache Remotely\nCache Locally\nCache Locally 2\n", nil)
+	opts = firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDirForkLocalFetch,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: cfg,
+	}
+	forkedVM, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	containersToCleanup = append(containersToCleanup, forkedVM)
+	err = forkedVM.Unpause(ctx)
+	require.NoError(t, err)
+	cmd = appendToLog("Fork local fetch")
+	res = forkedVM.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	// The log should contain data written to the original snapshot
+	// and the current VM
+	require.Equal(t, "Base\nFork local fetch\n", string(res.Stdout))
+	require.NotEmpty(t, res.VMMetadata.GetSnapshotId())
+	err = forkedVM.Pause(ctx)
+	require.NoError(t, err)
 
 	// Clear the local filecache. Vms should still be able to unpause the snapshot
 	// by pulling artifacts from the remote cache
@@ -928,25 +938,65 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	fc2.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc2)
 
-	// Start a VM from the remote snapshot. The log should contain data from the
-	// first run, which was saved remotely, but not the two most recent runs which
-	// were only cached locally.
+	// Start a VM from the snapshot.
 	workDirForkRemoteFetch := testfs.MakeDirAll(t, rootDir, "work-fork-remote-fetch")
-	runAndSnapshotVM(workDirForkRemoteFetch, "Cache Locally 3", "Cache Remotely\nCache Locally 3\n", nil)
+	opts = firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDirForkRemoteFetch,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: cfg,
+	}
+	forkedVM2, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	containersToCleanup = append(containersToCleanup, forkedVM2)
+	err = forkedVM2.Unpause(ctx)
+	require.NoError(t, err)
+	cmd = appendToLog("Fork remote fetch")
+	res = forkedVM2.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	// The log should contain data written to the most recent snapshot
+	require.Equal(t, "Base\nFork local fetch\nFork remote fetch\n", string(res.Stdout))
+	require.NotEmpty(t, res.VMMetadata.GetSnapshotId())
 
 	// Should still be able to start from the original snapshot if we use
 	// a snapshot key containing the original VM's snapshot ID.
 	// Note that when using a snapshot ID as the key, we only include the
 	// snapshot_id and instance_name fields.
-	// The log should contain data written to the original snapshot
-	// and the current VM, but not from any of the other VMs, including the master
-	// snapshot
 	workDirForkOriginalSnapshot := testfs.MakeDirAll(t, rootDir, "work-fork-og-snapshot")
 	originalSnapshotKey := &fcpb.SnapshotKey{
 		InstanceName: instanceName,
 		SnapshotId:   baseSnapshotId,
 	}
-	runAndSnapshotVM(workDirForkOriginalSnapshot, "Fork from original vm", "Cache Remotely\nFork from original vm\n", originalSnapshotKey)
+	opts = firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDirForkOriginalSnapshot,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig:      cfg,
+		OverrideSnapshotKey: originalSnapshotKey,
+	}
+	ogFork, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	containersToCleanup = append(containersToCleanup, ogFork)
+	err = ogFork.Unpause(ctx)
+	require.NoError(t, err)
+	cmd = appendToLog("Fork from original vm")
+	res = ogFork.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	// The log should contain data written to the original snapshot
+	// and the current VM, but not from any of the other VMs, including the master
+	// snapshot
+	require.Equal(t, "Base\nFork from original vm\n", string(res.Stdout))
+	require.NotEmpty(t, res.VMMetadata.GetSnapshotId())
 }
 
 func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
