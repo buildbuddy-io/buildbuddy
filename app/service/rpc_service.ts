@@ -142,6 +142,20 @@ class RpcService {
     return bestMatch;
   }
 
+  /**
+   * Temporarily re-scopes the requestContext to use the given group ID as the
+   * selected group ID.
+   *
+   * The returned function must be called to restore the original group ID.
+   */
+  overrideGroupId(groupId: string): () => void {
+    const originalGroupId = this.requestContext.groupId;
+    this.requestContext.groupId = groupId;
+    return () => {
+      this.requestContext.groupId = originalGroupId;
+    };
+  }
+
   getDownloadUrl(params: Record<string, string>): string {
     const encodedRequestContext = uint8ArrayToBase64(context.RequestContext.encode(this.requestContext).finish());
     return `/file/download?${new URLSearchParams({
