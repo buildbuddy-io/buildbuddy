@@ -741,6 +741,7 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 	}
 	return c.distributedProxy.RemoteWriter(ctx, peer, handoffPeer, r)
 }
+
 func (c *Cache) remoteDelete(ctx context.Context, peer string, r *rspb.ResourceName) error {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Delete(ctx, r)
@@ -1313,7 +1314,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
 		log:         c.log,
-		peerClosers: make(map[string]interfaces.CommittedWriteCloser, 0),
+		peerClosers: make(map[string]interfaces.CommittedWriteCloser, c.config.ReplicationFactor),
 		mu:          &sync.Mutex{},
 		listenAddr:  c.config.ListenAddr,
 		r:           r,
