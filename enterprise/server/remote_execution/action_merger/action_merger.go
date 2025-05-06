@@ -282,11 +282,6 @@ func DeletePendingExecution(ctx context.Context, rdb redis.UniversalClient, exec
 		return nil
 	}
 
-	// The pending execution should be cleaned up regardless of whether
-	// the original request is canceled or times out.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-
 	pendingExecutionDigestKey := redisKeyForPendingExecutionDigest(executionID)
 	pendingExecutionKey, err := rdb.Get(ctx, pendingExecutionDigestKey).Result()
 	if err == redis.Nil {
