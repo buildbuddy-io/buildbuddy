@@ -342,6 +342,9 @@ type CacheSnapshotOptions struct {
 	// Whether we would've cached this snapshot remotely if our remote snapshot
 	// limits were applied.
 	WouldNotHaveCachedRemotely bool
+
+	// Whether to save the snapshot manifest to the local cache
+	CacheManifestLocally bool
 }
 
 type UnpackedSnapshot struct {
@@ -760,45 +763,45 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 			}
 			log.CtxInfof(ctx, "Cached remote snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, true /*remote*/, snapshotID))
 		}
-
-		return nil
 	}
 
-	gid, err := groupID(ctx, l.env)
-	if err != nil {
-		return err
-	}
-	d, err := LocalManifestKey(gid, key)
-	if err != nil {
-		return err
-	}
-	manifestNode := &repb.FileNode{Digest: d}
-	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, b); err != nil {
-		return err
-	}
-	log.CtxInfof(ctx, "Updated local master snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/))
-
-	// Cache snapshot manifest for this specific snapshot ID
-	if opts.VMMetadata.GetSnapshotId() != "" {
-		snapshotID := opts.VMMetadata.GetSnapshotId()
-		snapshotSpecificKey := &fcpb.SnapshotKey{
-			InstanceName: key.InstanceName,
-			SnapshotId:   snapshotID,
-		}
-
-		snapshotSpecificManifestKey, err := LocalManifestKey(gid, snapshotSpecificKey)
+	if *snaputil.EnableLocalSnapshotSharing && opts.CacheManifestLocally {
+		gid, err := groupID(ctx, l.env)
 		if err != nil {
-			log.Warningf("Failed to generate snapshot specific local manifest key for snapshot ID %s: %s", snapshotID, err)
-			return nil
+			return err
 		}
-
-		snapshotSpecificManifestNode := &repb.FileNode{Digest: snapshotSpecificManifestKey}
-		if _, err := l.env.GetFileCache().Write(ctx, snapshotSpecificManifestNode, b); err != nil {
-			log.Warningf("Failed to cache local snapshot specific manifest for snapshot ID %s: %s", snapshotID, err)
-			return nil
+		d, err := LocalManifestKey(gid, key)
+		if err != nil {
+			return err
 		}
+		manifestNode := &repb.FileNode{Digest: d}
+		if _, err := l.env.GetFileCache().Write(ctx, manifestNode, b); err != nil {
+			return err
+		}
+		log.CtxInfof(ctx, "Updated local master snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/))
 
-		log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, false /*remote*/, snapshotID))
+		// Cache snapshot manifest for this specific snapshot ID
+		if opts.VMMetadata.GetSnapshotId() != "" {
+			snapshotID := opts.VMMetadata.GetSnapshotId()
+			snapshotSpecificKey := &fcpb.SnapshotKey{
+				InstanceName: key.InstanceName,
+				SnapshotId:   snapshotID,
+			}
+
+			snapshotSpecificManifestKey, err := LocalManifestKey(gid, snapshotSpecificKey)
+			if err != nil {
+				log.Warningf("Failed to generate snapshot specific local manifest key for snapshot ID %s: %s", snapshotID, err)
+				return nil
+			}
+
+			snapshotSpecificManifestNode := &repb.FileNode{Digest: snapshotSpecificManifestKey}
+			if _, err := l.env.GetFileCache().Write(ctx, snapshotSpecificManifestNode, b); err != nil {
+				log.Warningf("Failed to cache local snapshot specific manifest for snapshot ID %s: %s", snapshotID, err)
+				return nil
+			}
+
+			log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, false /*remote*/, snapshotID))
+		}
 	}
 
 	return nil

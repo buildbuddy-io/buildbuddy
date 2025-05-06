@@ -947,6 +947,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	vmd.LastExecutedTask = c.getVMTask()
 
 	shouldCacheRemotely := false
+	shouldCacheManifestLocally := true
 	if c.supportsRemoteSnapshots {
 		// Only save a remote snapshot if a remote snapshot for the primary git branch key
 		// doesn't already exist. Otherwise, only save a local snapshot. Workloads
@@ -958,12 +959,16 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		// to all executors. `!c.hasFallbackKeys()` is a good proxy for whether we're
 		// running on the master snapshot.
 		hasRemoteSnapshotForBranchKey := c.hasRemoteSnapshotForBranchKey(ctx)
-		shouldCacheRemotely = !c.hasFallbackKeys() || !hasRemoteSnapshotForBranchKey
-		if !shouldCacheRemotely {
-			log.CtxInfof(ctx, "Would not save remote snapshot. Has remote snapshot for branch key: %v. Snapshot keys: %v", hasRemoteSnapshotForBranchKey, c.snapshotKeySet)
-		} else if hasRemoteSnapshotForBranchKey {
+		shouldCacheRemotely = !c.hasFallbackKeys() || !hasRemoteSnapshotForBranchKey || !*snaputil.EnableLocalSnapshotSharing
+
+		branchKey := c.snapshotKeySet.GetBranchKey()
+		if shouldCacheRemotely && hasRemoteSnapshotForBranchKey && !(branchKey.Ref == "master" || branchKey.Ref == "main") {
 			log.CtxInfof(ctx, "Would save remote snapshot even though one already exists. Snapshot keys: %v", c.snapshotKeySet)
 		}
+
+		// Don't save local snapshot manifests for the master snapshot, so it always
+		// starts from the remote snapshot.
+		shouldCacheManifestLocally = c.hasFallbackKeys()
 	}
 
 	opts := &snaploader.CacheSnapshotOptions{
@@ -976,6 +981,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		Recycled:                   c.recycled,
 		Remote:                     c.supportsRemoteSnapshots,
 		WouldNotHaveCachedRemotely: !shouldCacheRemotely,
+		CacheManifestLocally:       shouldCacheManifestLocally,
 	}
 	if snapshotSharingEnabled {
 		if c.rootStore != nil {
