@@ -1241,7 +1241,6 @@ func TestUpReplicate(t *testing.T) {
 }
 
 func TestDownReplicate(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
@@ -1319,7 +1318,7 @@ func TestDownReplicate(t *testing.T) {
 
 		if len(replicas) == 0 {
 			// It's possible that between the function call GetStoreWithRangeLease
-			// and getMembership, the replica is removed from the store s and the
+			// and getMembership, the replica is removed from the stores and the
 			// range lease is deleted. In this case, we want to continue the
 			// for loop.
 			continue
@@ -1345,6 +1344,7 @@ func TestDownReplicate(t *testing.T) {
 	db = removed.DB()
 
 	for i := 0; ; i++ {
+		clock.Advance(3 * time.Second)
 		db.Flush()
 		iter2, err := db.NewIter(&pebble.IterOptions{
 			LowerBound: rd.GetStart(),
