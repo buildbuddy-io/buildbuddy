@@ -4094,7 +4094,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_prometheus_client_model",
         build_directives = [
-            "gazelle:go_proto_compilers @io_bazel_rules_go//proto:go_proto,@buildbuddy//proto:vtprotobuf_compiler",
+            "gazelle:go_proto_compilers @io_bazel_rules_go//proto:go_proto,@{}//proto:vtprotobuf_compiler".format(workspace_name),
         ],
         importpath = "github.com/prometheus/client_model",
         sum = "h1:ZKSh/rekM+n3CeS952MLRAdFwIKqeY8b62p8ais2e9E=",
