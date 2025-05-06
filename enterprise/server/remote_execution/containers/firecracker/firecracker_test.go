@@ -45,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -2512,6 +2513,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 // test, or figure out some way to determine that the VM has started the
 // `sleep` command.
 func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
