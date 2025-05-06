@@ -107,6 +107,13 @@ export default function parseAnsi(text: string): AnsiTextSpan[] {
   const spans: AnsiTextSpan[] = [];
   let code = "";
 
+  // rules_go produces test logs containing 0x16 ("synchronous idle") bytes at
+  // the start of the line for some reason. Just ignore these for now -
+  // terminals seem to ignore these bytes too.
+  if (text.startsWith("\x16")) {
+    text = text.substring(1);
+  }
+
   let inEscapeSequence = false;
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
