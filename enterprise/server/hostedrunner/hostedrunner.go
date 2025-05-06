@@ -45,6 +45,8 @@ const (
 	// This is used by default.
 	nonRootUser = "buildbuddy"
 	rootUser    = "root"
+
+	timeoutGracePeriod = 10 * time.Second
 )
 
 type runnerService struct {
@@ -129,6 +131,15 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 	serializedAction := base64.StdEncoding.EncodeToString(actionBytes)
 
+	timeout := ci_runner_util.CIRunnerDefaultTimeout
+	if req.GetTimeout() != "" {
+		d, err := time.ParseDuration(req.GetTimeout())
+		if err != nil {
+			return nil, status.WrapError(err, "parse timeout from request")
+		}
+		timeout = &d
+	}
+
 	args := []string{
 		"./" + ci_runner_util.ExecutableName,
 		"--bes_backend=" + events_api_url.String(),
@@ -143,7 +154,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),
 		"--serialized_action=" + serializedAction,
-		"--timeout=" + ci_runner_util.CIRunnerDefaultTimeout.String(),
+		"--timeout=" + timeout.String(),
 	}
 	if !req.GetRunRemotely() {
 		args = append(args, "--record_run_metadata")
@@ -260,18 +271,15 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if err != nil {
 		return nil, status.WrapError(err, "upload command")
 	}
+	// Prefer to set the timeout in the ci_runner, which gracefully shuts down
+	// the runner. Add some buffer before the action is forcefully terminated by
+	// the executor.
+	actionTimeout := *timeout + timeoutGracePeriod
 	action := &repb.Action{
 		CommandDigest:   cmdDigest,
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
-	}
-
-	if req.GetTimeout() != "" {
-		d, err := time.ParseDuration(req.GetTimeout())
-		if err != nil {
-			return nil, status.WrapError(err, "parse timeout from request")
-		}
-		action.Timeout = durationpb.New(d)
+		Timeout:         durationpb.New(actionTimeout),
 	}
 
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, action)

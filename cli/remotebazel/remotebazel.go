@@ -1061,7 +1061,7 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 		var err error
 		inRsp, err = bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
 		if err != nil {
-			return fmt.Errorf("could not retrieve invocation: %s", err)
+			return fmt.Errorf("could not retrieve invocation: %w", err)
 		}
 		if len(inRsp.GetInvocation()) == 0 {
 			return fmt.Errorf("invocation not found")
@@ -1073,7 +1073,7 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 			InvocationId: iid,
 		}})
 		if err != nil {
-			return fmt.Errorf("could not retrieve ci_runner execution: %s", err)
+			return fmt.Errorf("could not retrieve ci_runner execution: %w", err)
 		}
 		if len(execution.GetExecution()) == 0 {
 			return fmt.Errorf("ci_runner execution not found")
@@ -1087,9 +1087,9 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 		}
 		rsp, err := rexec.Wait(rexec.NewRetryingStream(ctx, execClient, waitExecutionStream, executionID))
 		if err != nil {
-			return fmt.Errorf("wait execution: %v", err)
+			return fmt.Errorf("wait execution: %w", err)
 		} else if rsp.Err != nil {
-			return fmt.Errorf("wait execution: %v", rsp.Err)
+			return fmt.Errorf("wait execution: %w", rsp.Err)
 		} else if rsp.ExecuteResponse.GetResult() == nil {
 			return fmt.Errorf("empty execute response from WaitExecution: %v", rsp.ExecuteResponse.GetStatus())
 		}
