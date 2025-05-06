@@ -156,6 +156,7 @@ go_test(
         "//server/remote_cache/digest",
         "//server/resources",
         "//server/rpc/interceptors",
+        "//server/testutil/quarantine",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
