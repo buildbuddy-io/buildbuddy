@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -947,6 +948,101 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 		SnapshotId:   baseSnapshotId,
 	}
 	runAndSnapshotVM(workDirForkOriginalSnapshot, "Fork from original vm", "Cache Remotely\nFork from original vm\n", originalSnapshotKey)
+}
+
+func TestFirecracker_RemoteSnapshotSharing_MasterSnapshot(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	cfg := getExecutorConfig(t)
+
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	filecacheRoot := testfs.MakeDirAll(t, cfg.JailerRoot, "filecache")
+	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	var containersToCleanup []*firecracker.FirecrackerContainer
+	t.Cleanup(func() {
+		for _, vm := range containersToCleanup {
+			err := vm.Remove(ctx)
+			assert.NoError(t, err)
+		}
+	})
+
+	for _, instanceName := range []string{"", "test-instance-name"} {
+		task := &repb.ExecutionTask{
+			Command: &repb.Command{
+				// Note: platform must match in order to share snapshots
+				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "recycle-runner", Value: "true"},
+				}},
+				Arguments: []string{"./buildbuddy_ci_runner"},
+				// Simulate that this is the master snapshot on the default branch
+				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+					{Name: "GIT_BRANCH", Value: "main"},
+				},
+			},
+			ExecuteRequest: &repb.ExecuteRequest{
+				InstanceName: instanceName,
+			},
+		}
+
+		runAndSnapshotVM := func(workDir string, stringToLog string, expectedOutput string, snapshotKeyOverride *fcpb.SnapshotKey) *firecracker.FirecrackerContainer {
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+					EnableNetworking:  false,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig:      cfg,
+				OverrideSnapshotKey: snapshotKeyOverride,
+			}
+			vm, err := firecracker.NewContainer(ctx, env, task, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, vm)
+			err = vm.Create(ctx, workDir)
+			require.NoError(t, err)
+			cmd := appendToLog(stringToLog)
+			res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+			require.NoError(t, res.Error)
+			require.Equal(t, expectedOutput, string(res.Stdout))
+			require.NotEmpty(t, res.VMMetadata.GetSnapshotId())
+			err = vm.Pause(ctx)
+			require.NoError(t, err)
+
+			return vm
+		}
+
+		// Create a snapshot. Data written to this snapshot should be cached remotely,
+		// and persist when other VMs reuse the snapshot.
+		workDir := testfs.MakeDirAll(t, rootDir, "work")
+		baseVM := runAndSnapshotVM(workDir, "Cache Remotely", "Cache Remotely\n", nil)
+
+		// The manifest should not have been written locally. The master snapshot
+		// should always start from the freshest remote manifest.
+		loader, err := snaploader.New(env)
+		require.NoError(t, err)
+		_, err = loader.GetSnapshot(ctx, baseVM.SnapshotKeySet(), false)
+		require.Error(t, err)
+
+		// Start a VM from the remote snapshot.
+		workDirFork := testfs.MakeDirAll(t, rootDir, "fork")
+		runAndSnapshotVM(workDirFork, "Remote2", "Cache Remotely\nRemote2\n", nil)
+
+		// Should still be able to start from the original snapshot if we use
+		// a snapshot key containing the original VM's snapshot ID.
+		workDirForkOriginalSnapshot := testfs.MakeDirAll(t, rootDir, "work-fork-og-snapshot")
+		originalSnapshotKey := &fcpb.SnapshotKey{
+			InstanceName: instanceName,
+			SnapshotId:   baseVM.SnapshotID(),
+		}
+		runAndSnapshotVM(workDirForkOriginalSnapshot, "Fork from original vm", "Cache Remotely\nFork from original vm\n", originalSnapshotKey)
+	}
 }
 
 func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {

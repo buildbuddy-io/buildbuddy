@@ -339,6 +339,9 @@ type CacheSnapshotOptions struct {
 	// Whether to save the snapshot to the remote cache (in addition to locally)
 	Remote bool
 
+	// Whether to save the snapshot manifest to the local cache
+	CacheManifestLocally bool
+
 	// Whether we skipped caching remotely due to newly applied remote snapshot limits.
 	SkippedCacheRemotely bool
 }
@@ -764,7 +767,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		}
 	}
 
-	if *snaputil.EnableLocalSnapshotSharing {
+	if *snaputil.EnableLocalSnapshotSharing && opts.CacheManifestLocally {
 		gid, err := groupID(ctx, l.env)
 		if err != nil {
 			return err
