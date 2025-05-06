@@ -135,6 +135,9 @@ func getPebbleCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
 func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B, unique bool) {
 	var digestBufs []*digestBuf
 	if unique {
+		// Create as many digests as benchmark iterations, so the distributed
+		// cache can't benefit from its optimization where it calls FindMissing
+		// before doing writes.
 		digestBufs = makeDigests(b, b.N, digestSizeBytes)
 	} else {
 		digestBufs = makeDigests(b, numDigests, digestSizeBytes)
