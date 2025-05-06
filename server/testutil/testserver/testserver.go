@@ -86,7 +86,7 @@ func isOK(resp *http.Response) (bool, error) {
 
 func (s *Server) waitForReady() error {
 	start := time.Now()
-	log.Debugf("testserver waitForReady start %s", start.Format(time.DateTime))
+	log.Debug("testserver waitForReady start")
 	for i := 0; ; i++ {
 		s.mu.Lock()
 		exited := s.exited
