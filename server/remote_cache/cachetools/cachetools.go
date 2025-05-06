@@ -1106,7 +1106,10 @@ type uploadWriteCloser struct {
 	uploadString string
 
 	bytesUploaded int64
+	bytesBuffered int
 	buf           []byte
+	errored       bool
+	finished      bool
 }
 
 func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*uploadWriteCloser, error) {
@@ -1122,29 +1125,38 @@ func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r
 	}
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
 	return &uploadWriteCloser{
-		ctx:           ctx,
-		stream:        stream,
-		sender:        sender,
-		resource:      r,
-		uploadString:  r.NewUploadString(),
-		bytesUploaded: 0,
-		buf:           make([]byte, 0, uploadBufSizeBytes),
+		ctx:          ctx,
+		stream:       stream,
+		sender:       sender,
+		resource:     r,
+		uploadString: r.NewUploadString(),
 	}, nil
 }
 
 func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
-	written := 0
+	if cwc.finished {
+		return 0, status.FailedPreconditionError("cannot write to uploadWriteCloser after it has already finished")
+	}
+	if cwc.errored {
+		return 0, status.FailedPreconditionError("cannot write to uploadWriteCloser after an error")
+	}
+	if len(p) > 0 && cwc.buf == nil {
+		cwc.buf = make([]byte, 0, uploadBufSizeBytes)
+	}
 
+	written := 0
 	for len(p) > 0 {
-		remaining := cap(cwc.buf) - len(cwc.buf)
+		remaining := cap(cwc.buf) - cwc.bytesBuffered
 		toCopy := min(len(p), remaining)
 
 		cwc.buf = append(cwc.buf, p[:toCopy]...)
 		p = p[toCopy:]
 		written += toCopy
+		cwc.bytesBuffered += toCopy
 
-		if len(cwc.buf) == uploadBufSizeBytes {
+		if cwc.bytesBuffered >= uploadBufSizeBytes {
 			if err := cwc.flush(false); err != nil {
+				cwc.errored = true
 				return written, err
 			}
 		}
@@ -1153,7 +1165,14 @@ func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 }
 
 func (cwc *uploadWriteCloser) flush(finish bool) error {
-	if len(cwc.buf) == 0 && !finish {
+	log.CtxDebugf(cwc.ctx, "FLUSH(%t) %d buffered %d uploaded %t finished %t errored", finish, cwc.bytesBuffered, cwc.bytesUploaded, cwc.finished, cwc.errored)
+	if cwc.finished {
+		return status.FailedPreconditionError("cannot flush uploadWriteCloser since it has already finished")
+	}
+	if cwc.errored {
+		return status.FailedPreconditionError("cannot flush uploadWriteCloser after an error")
+	}
+	if cwc.bytesBuffered == 0 && !finish {
 		return nil
 	}
 
@@ -1165,41 +1184,59 @@ func (cwc *uploadWriteCloser) flush(finish bool) error {
 	}
 	err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 	if err != nil {
+		cwc.errored = true
+		log.CtxDebugf(cwc.ctx, "FLUSH(%t) err:", finish, err)
 		return err
 	}
-	cwc.bytesUploaded += int64(len(cwc.buf))
+	cwc.bytesUploaded += int64(cwc.bytesBuffered)
 	cwc.buf = cwc.buf[:0]
+	cwc.bytesBuffered = 0
+	cwc.finished = finish
+	log.CtxDebugf(cwc.ctx, "FLUSH(%t) OK %d buffered %d uploaded %t finished", finish, cwc.bytesBuffered, cwc.bytesUploaded, cwc.finished)
 	return nil
 }
 
 func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
-	buf := make([]byte, uploadBufSizeBytes)
-	var bytesUploaded int64
-	for {
-		n, err := ioutil.ReadTryFillBuffer(r, buf)
+	if cwc.finished {
+		return 0, status.FailedPreconditionError("cannot call ReadFrom on uploadWriteCloser after it has already finished")
+	}
+	if cwc.errored {
+		return 0, status.FailedPreconditionError("cannot call ReadFrom on uploadWriteCloser after an error")
+	}
+	if cwc.buf == nil {
+		cwc.buf = make([]byte, 0, uploadBufSizeBytes)
+	}
+	var bytesRead int64
+	for i := 0; i < 3; i++ {
+		n, err := ioutil.ReadTryFillBuffer(r, cwc.buf[cwc.bytesBuffered:uploadBufSizeBytes])
+		bytesRead += int64(n)
+		cwc.bytesBuffered += n
 		done := err == io.EOF
 		if err != nil && !done {
-			return bytesUploaded, err
+			// Do not mark the uploadWriteCloser as errored if the error comes from the Reader.
+			return bytesRead, err
 		}
-		written, err := cwc.Write(buf[:n])
-		if err != nil {
-			return bytesUploaded + int64(written), err
+		if cwc.bytesBuffered >= uploadBufSizeBytes {
+			if err := cwc.flush(done); err != nil {
+				cwc.errored = true
+				return bytesRead, err
+			}
 		}
-		bytesUploaded += int64(written)
 		if done {
 			break
 		}
 	}
-	return bytesUploaded, nil
+	return bytesRead, nil
 }
 
 func (cwc *uploadWriteCloser) Close() error {
-	if err := cwc.flush(true); err != nil {
-		return err
-	}
+	flusherr := cwc.flush(true)
 	rsp, err := cwc.stream.CloseAndRecv()
 	if err != nil {
 		return err
+	}
+	if flusherr != nil {
+		return flusherr
 	}
 
 	remoteSize := rsp.GetCommittedSize()
@@ -1207,8 +1244,7 @@ func (cwc *uploadWriteCloser) Close() error {
 	// either case, the remoteSize for uncompressed uploads should
 	// match the file size.
 	if remoteSize != cwc.resource.GetDigest().GetSizeBytes() {
-		err := status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, cwc.resource.GetDigest().GetSizeBytes())
-		return err
+		return status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, cwc.resource.GetDigest().GetSizeBytes())
 	}
 	return nil
 }
