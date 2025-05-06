@@ -136,7 +136,7 @@ func ParseClaims(token string) (*Claims, error) {
 	return nil, lastErr
 }
 
-func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
+func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims, error) {
 	keyRole := role.Default
 	// User management through SCIM requires Admin access.
 	if akg.GetCapabilities()&int32(akpb.ApiKey_ORG_ADMIN_CAPABILITY) > 0 {
@@ -166,7 +166,7 @@ func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
 		EnforceIPRules:         akg.GetEnforceIPRules(),
-	}
+	}, nil
 }
 
 func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*Claims, error) {

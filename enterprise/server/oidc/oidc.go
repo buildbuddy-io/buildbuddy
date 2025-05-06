@@ -489,7 +489,7 @@ func (a *OpenIDAuthenticator) claimsFromAPIKey(ctx context.Context, apiKey strin
 	if err != nil {
 		return nil, err
 	}
-	return claims.APIKeyGroupClaims(akg), nil
+	return claims.APIKeyGroupClaims(ctx, akg)
 }
 
 func (a *OpenIDAuthenticator) claimsFromAPIKeyID(ctx context.Context, apiKeyID string) (*claims.Claims, error) {
@@ -497,7 +497,7 @@ func (a *OpenIDAuthenticator) claimsFromAPIKeyID(ctx context.Context, apiKeyID s
 	if err != nil {
 		return nil, err
 	}
-	return claims.APIKeyGroupClaims(akg), nil
+	return claims.APIKeyGroupClaims(ctx, akg)
 }
 
 func (a *OpenIDAuthenticator) claimsFromAuthorityString(ctx context.Context, authority string) (*claims.Claims, error) {

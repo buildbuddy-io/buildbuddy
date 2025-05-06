@@ -186,7 +186,8 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 			assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
 
 			// Converting to Claims should produce the expected value
-			c := claims.APIKeyGroupClaims(akg)
+			c, err := claims.APIKeyGroupClaims(ctx, akg)
+			require.NoError(t, err)
 			assert.Equal(t, randKey.GroupID, c.GetGroupID())
 			assert.Equal(t, capabilities.FromInt(randKey.Capabilities), c.GetCapabilities())
 			require.Len(t, c.GetGroupMemberships(), 1)
