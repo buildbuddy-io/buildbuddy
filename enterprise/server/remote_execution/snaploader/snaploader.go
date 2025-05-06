@@ -421,10 +421,13 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 
 	// Always prioritize the local manifest if it exists. It may point to a more
 	// updated snapshot than the remote manifest, which is updated less frequently.
+	// Note that the master snapshot is never cached locally.
 	if *snaputil.EnableLocalSnapshotSharing {
 		manifest, err := l.getLocalManifest(ctx, key)
 		if err == nil || !remoteEnabled || !*snaputil.EnableRemoteSnapshotSharing {
-			log.CtxInfof(ctx, "Using local manifest")
+			if err == nil {
+				log.CtxInfof(ctx, "Using local manifest")
+			}
 			return manifest, err
 		}
 		log.CtxDebugf(ctx, "Fetch local manifest err: %s", err)
