@@ -225,10 +225,7 @@ func UnauthenticatedErrorf(format string, a ...interface{}) error {
 // WrapError prepends additional context to an error description, preserving the
 // underlying status code and error details.
 func WrapError(err error, msg string) error {
-	s, ok := status.FromError(err)
-	if !ok {
-		return UnknownErrorf("wrap error: %s", err)
-	}
+	s, _ := status.FromError(err)
 
 	// Preserve any details from the original error.
 	decodedDetails := s.Details()

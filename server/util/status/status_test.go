@@ -1,6 +1,7 @@
 package status_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -70,6 +71,17 @@ func TestWrapErrorPreservesWrappedStatusCodeAndMessage(t *testing.T) {
 	inner := status.FailedPreconditionError("inner error")
 	wrapped := status.WrapError(inner, "outer context")
 	assert.Equal(t, status.FailedPreconditionError("outer context: inner error"), wrapped)
+}
+
+func TestWrapErrorHandlesNonStatusError(t *testing.T) {
+	inner := fmt.Errorf("normal error")
+	wrapped := status.WrapError(inner, "outer context")
+	assert.Equal(t, status.UnknownError("outer context: normal error"), wrapped)
+}
+
+func TestWrapErrorPreservesNilError(t *testing.T) {
+	wrapped := status.WrapError(nil, "outer context")
+	assert.Equal(t, nil, wrapped)
 }
 
 func TestWrapErrorPreservesDetails(t *testing.T) {
