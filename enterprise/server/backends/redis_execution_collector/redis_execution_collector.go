@@ -14,8 +14,15 @@ import (
 )
 
 const (
-	redisExecutionKeyPrefix      = "exec"
-	redisInvocationKeyPrefix     = "invocation"
+	// Redis key prefix for mapping an invocation ID to the executions waiting
+	// for the invocation to complete before they can be flushed to ClickHouse.
+	redisExecutionKeyPrefix = "exec"
+
+	// Redis key prefix for mapping an invocation ID to finalized invocation
+	// metadata.
+	redisInvocationKeyPrefix = "invocation"
+
+	// Redis key prefix for mapping execution ID to invocation-execution links.
 	redisInvocationLinkKeyPrefix = "invocationLink"
 
 	invocationExpiration     = 24 * time.Hour
