@@ -1375,8 +1375,8 @@ func TestDownReplicate(t *testing.T) {
 			break
 		}
 		if i >= 5 {
-			require.Zero(t, keysSeen, 0, "range is expected to be empty but have %d keys", keysSeen)
-			require.Zero(t, localKeysSeen, 0, "local range is expected to be empty but have %d keys", localKeysSeen)
+			require.Zero(t, keysSeen, "range is expected to be empty but have %d keys", keysSeen)
+			require.Zero(t, localKeysSeen, "local range is expected to be empty but have %d keys", localKeysSeen)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
