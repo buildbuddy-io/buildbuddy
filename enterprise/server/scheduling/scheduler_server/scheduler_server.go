@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -1821,8 +1820,6 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if isolationType != string(platform.FirecrackerContainerType) {
 		return task
 	}
-	c, err := claims.ClaimsFromContext(ctx)
-	log.Infof("VANJAAAAAAAAAAAAAAAA - claims err: %v, claims %+v", err, c)
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until
