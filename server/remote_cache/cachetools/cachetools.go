@@ -1141,7 +1141,7 @@ func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 		return 0, status.FailedPreconditionError("cannot write to uploadWriteCloser after an error")
 	}
 	if len(p) > 0 && cwc.buf == nil {
-		cwc.buf = make([]byte, 0, uploadBufSizeBytes)
+		cwc.buf = make([]byte, uploadBufSizeBytes)
 	}
 
 	written := 0
@@ -1165,7 +1165,6 @@ func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 }
 
 func (cwc *uploadWriteCloser) flush(finish bool) error {
-	log.CtxDebugf(cwc.ctx, "FLUSH(%t) %d buffered %d uploaded %t finished %t errored", finish, cwc.bytesBuffered, cwc.bytesUploaded, cwc.finished, cwc.errored)
 	if cwc.finished {
 		return status.FailedPreconditionError("cannot flush uploadWriteCloser since it has already finished")
 	}
@@ -1177,7 +1176,7 @@ func (cwc *uploadWriteCloser) flush(finish bool) error {
 	}
 
 	req := &bspb.WriteRequest{
-		Data:         cwc.buf,
+		Data:         cwc.buf[:cwc.bytesBuffered],
 		ResourceName: cwc.uploadString,
 		WriteOffset:  cwc.bytesUploaded,
 		FinishWrite:  finish,
@@ -1185,14 +1184,11 @@ func (cwc *uploadWriteCloser) flush(finish bool) error {
 	err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 	if err != nil {
 		cwc.errored = true
-		log.CtxDebugf(cwc.ctx, "FLUSH(%t) err:", finish, err)
 		return err
 	}
 	cwc.bytesUploaded += int64(cwc.bytesBuffered)
-	cwc.buf = cwc.buf[:0]
 	cwc.bytesBuffered = 0
 	cwc.finished = finish
-	log.CtxDebugf(cwc.ctx, "FLUSH(%t) OK %d buffered %d uploaded %t finished", finish, cwc.bytesBuffered, cwc.bytesUploaded, cwc.finished)
 	return nil
 }
 
@@ -1204,10 +1200,10 @@ func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
 		return 0, status.FailedPreconditionError("cannot call ReadFrom on uploadWriteCloser after an error")
 	}
 	if cwc.buf == nil {
-		cwc.buf = make([]byte, 0, uploadBufSizeBytes)
+		cwc.buf = make([]byte, uploadBufSizeBytes)
 	}
 	var bytesRead int64
-	for i := 0; i < 3; i++ {
+	for {
 		n, err := ioutil.ReadTryFillBuffer(r, cwc.buf[cwc.bytesBuffered:uploadBufSizeBytes])
 		bytesRead += int64(n)
 		cwc.bytesBuffered += n
