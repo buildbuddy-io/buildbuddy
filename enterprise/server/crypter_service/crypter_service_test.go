@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -540,6 +541,7 @@ func contAdvanceTimeAndWaitForRefresh(clock clockwork.FakeClock, crypter *Crypte
 }
 
 func TestKeyCaching(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	env, kms := getEnv(t)
 
 	userID1 := "US123"

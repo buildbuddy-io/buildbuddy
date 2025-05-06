@@ -42,6 +42,7 @@ go_test(
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
+        "//server/testutil/quarantine",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
