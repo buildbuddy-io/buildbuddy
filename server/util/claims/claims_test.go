@@ -4,8 +4,14 @@ import (
 	"context"
 	"testing"
 
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 )
@@ -55,4 +61,113 @@ func TestJWTKeyRotation(t *testing.T) {
 	parsedClaims, err = claims.ClaimsFromContext(testContext)
 	require.NoError(t, err)
 	require.Equal(t, c, parsedClaims)
+}
+
+type fakeAPIKeyGroup struct {
+	capabilities           int32
+	apiKeyID               string
+	userID                 string
+	groupID                string
+	childGroupIDs          []string
+	useGroupOwnedExecutors bool
+	cacheEncryptionEnabled bool
+	enforceIPRules         bool
+}
+
+func (f *fakeAPIKeyGroup) GetCapabilities() int32 {
+	return f.capabilities
+}
+
+func (f *fakeAPIKeyGroup) GetAPIKeyID() string {
+	return f.apiKeyID
+}
+
+func (f *fakeAPIKeyGroup) GetUserID() string {
+	return f.userID
+}
+
+func (f *fakeAPIKeyGroup) GetGroupID() string {
+	return f.groupID
+}
+
+func (f *fakeAPIKeyGroup) GetChildGroupIDs() []string {
+	return f.childGroupIDs
+}
+
+func (f *fakeAPIKeyGroup) GetUseGroupOwnedExecutors() bool {
+	return f.useGroupOwnedExecutors
+}
+
+func (f *fakeAPIKeyGroup) GetCacheEncryptionEnabled() bool {
+	return f.cacheEncryptionEnabled
+}
+
+func (f *fakeAPIKeyGroup) GetEnforceIPRules() bool {
+	return f.enforceIPRules
+}
+
+func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {
+	ctx := context.Background()
+	baseGroupID := "GR9000"
+	caps := capabilities.AnonymousUserCapabilities
+	akg := &fakeAPIKeyGroup{groupID: baseGroupID, capabilities: capabilities.ToInt(caps)}
+	c, err := claims.APIKeyGroupClaims(ctx, akg)
+	require.NoError(t, err)
+	expectedBaseMembership := &interfaces.GroupMembership{
+		GroupID:      baseGroupID,
+		Capabilities: caps,
+		Role:         role.Default,
+	}
+	require.Equal(t, baseGroupID, c.GetGroupID())
+	require.Equal(t, []string{baseGroupID}, c.GetAllowedGroups())
+	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership}, c.GetGroupMemberships())
+
+	// Should be able to set group ID to the base group ID via request context which should yield same results
+	// as before.
+	rctx := requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: baseGroupID})
+	c, err = claims.APIKeyGroupClaims(rctx, akg)
+	require.NoError(t, err)
+	require.Equal(t, baseGroupID, c.GetGroupID())
+	require.Equal(t, []string{baseGroupID}, c.GetAllowedGroups())
+	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership}, c.GetGroupMemberships())
+
+	// Trying to set any other group ID should yield an error.
+	rctx = requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: "BADGROUP"})
+	_, err = claims.APIKeyGroupClaims(rctx, akg)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Now update the API key information to have a child group.
+	childGroupID := "GR9999"
+	akg = &fakeAPIKeyGroup{
+		groupID:       baseGroupID,
+		childGroupIDs: []string{childGroupID},
+		capabilities:  capabilities.ToInt(caps),
+	}
+
+	// Regular call should return the parent group as the effective group.
+	c, err = claims.APIKeyGroupClaims(ctx, akg)
+	require.NoError(t, err)
+	expectedChildMembership := &interfaces.GroupMembership{
+		GroupID:      childGroupID,
+		Capabilities: caps,
+		Role:         role.Default,
+	}
+	require.Equal(t, baseGroupID, c.GetGroupID())
+	require.Equal(t, []string{baseGroupID, childGroupID}, c.GetAllowedGroups())
+	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership, expectedChildMembership}, c.GetGroupMemberships())
+
+	// Should be able to change the effective group ID to the child group using the request context.
+	rctx = requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: childGroupID})
+	c, err = claims.APIKeyGroupClaims(rctx, akg)
+	require.NoError(t, err)
+	require.Equal(t, childGroupID, c.GetGroupID())
+	require.Equal(t, []string{baseGroupID, childGroupID}, c.GetAllowedGroups())
+	require.Equal(t, []*interfaces.GroupMembership{expectedBaseMembership, expectedChildMembership}, c.GetGroupMemberships())
+
+	// Trying to set any other group ID should still yield an error.
+	rctx = requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: "BADGROUP"})
+	_, err = claims.APIKeyGroupClaims(rctx, akg)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
 }
