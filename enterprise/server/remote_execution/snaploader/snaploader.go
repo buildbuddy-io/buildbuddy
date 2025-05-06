@@ -421,8 +421,10 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	// Always prioritize the local manifest if it exists. It may point to a more
 	// updated snapshot than the remote manifest, which is updated less frequently.
 	if *snaputil.EnableLocalSnapshotSharing {
-		manifest, err := l.getLocalManifest(ctx, key)
+		supportsRemoteFallback := remoteEnabled && *snaputil.EnableRemoteSnapshotSharing
+		manifest, err := l.getLocalManifest(ctx, key, supportsRemoteFallback)
 		if err == nil || !remoteEnabled || !*snaputil.EnableRemoteSnapshotSharing {
+			log.CtxInfof(ctx, "Using local manifest")
 			return manifest, err
 		}
 	} else if !remoteEnabled {
@@ -472,7 +474,7 @@ func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifest
 	return acResult, nil
 }
 
-func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
+func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey, supportsRemoteFallback bool) (*fcpb.SnapshotManifest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	gid, err := groupID(ctx, l.env)
@@ -498,8 +500,8 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 	// make sure that the snapshot we return can actually be loaded. This also
 	// updates the last access time of all the artifacts, which helps prevent
 	// the snapshot artifacts from expiring just after we've returned it.
-	if err := l.checkAllArtifactsExist(ctx, manifest); err != nil {
-		return nil, err
+	if err := l.checkAllArtifactsExist(ctx, manifest, key.InstanceName, supportsRemoteFallback); err != nil {
+		return nil, status.WrapError(err, "check all artifacts exist for local manifest")
 	}
 	return manifest, nil
 }
@@ -804,12 +806,19 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	return nil
 }
 
-func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *fcpb.SnapshotManifest) error {
+func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *fcpb.SnapshotManifest, instanceName string, supportsRemoteFallback bool) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	// TODO: Ugh - need to add proxy support for CAS server
+	missingDigests := make([]*repb.Digest, 0)
 	for _, f := range manifest.GetFiles() {
 		if !l.env.GetFileCache().ContainsFile(ctx, f) {
-			return status.NotFoundErrorf("file %q not found (digest %q)", f.GetName(), digest.String(f.GetDigest()))
+			if supportsRemoteFallback {
+				missingDigests = append(missingDigests, f.GetDigest())
+			} else {
+				return status.NotFoundErrorf("file %q not found (digest %q)", f.GetName(), digest.String(f.GetDigest()))
+			}
 		}
 	}
 	for _, cf := range manifest.GetChunkedFiles() {
@@ -818,8 +827,25 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 				Digest: c.GetDigest(),
 			}
 			if !l.env.GetFileCache().ContainsFile(ctx, node) {
-				return status.NotFoundErrorf("chunked file %q missing chunk at offset 0x%x (digest %q)", cf.GetName(), c.GetOffset(), digest.String(node.Digest))
+				if supportsRemoteFallback {
+					missingDigests = append(missingDigests, c.GetDigest())
+				} else {
+					return status.NotFoundErrorf("chunked file %q missing chunk at offset 0x%x (digest %q)", cf.GetName(), c.GetOffset(), digest.String(node.Digest))
+				}
 			}
+		}
+	}
+
+	if supportsRemoteFallback && len(missingDigests) > 0 {
+		rsp, err := l.env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+			InstanceName:   instanceName,
+			BlobDigests:    missingDigests,
+			DigestFunction: repb.DigestFunction_BLAKE3,
+		})
+		if err != nil {
+			return status.WrapError(err, "local fallback to checking for remote artifacts")
+		} else if len(rsp.MissingBlobDigests) > 0 {
+			return status.NotFoundErrorf("digests not found during remote fallback")
 		}
 	}
 	return nil
