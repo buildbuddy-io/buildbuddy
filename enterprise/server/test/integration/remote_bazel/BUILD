@@ -50,6 +50,7 @@ go_test(
         "//server/backends/repo_downloader",
         "//server/interfaces",
         "//server/tables",
+        "//server/testutil/quarantine",
         "//server/testutil/testbazel",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
