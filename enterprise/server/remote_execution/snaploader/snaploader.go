@@ -418,19 +418,24 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKe
 func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	if *snaputil.EnableRemoteSnapshotSharing && remoteEnabled {
-		manifest, err := l.fetchRemoteManifest(ctx, key)
-		if err != nil {
-			return nil, status.WrapError(err, "fetch remote manifest")
+
+	// Always prioritize the local manifest if it exists. It may point to a more
+	// updated snapshot than the remote manifest, which is updated less frequently.
+	if *snaputil.EnableLocalSnapshotSharing {
+		manifest, err := l.getLocalManifest(ctx, key)
+		if err == nil || !remoteEnabled || !*snaputil.EnableRemoteSnapshotSharing {
+			log.CtxInfof(ctx, "Using local manifest")
+			return manifest, err
 		}
-		return manifest, nil
+		log.CtxDebugf(ctx, "Fetch local manifest err: %s", err)
+	} else if !remoteEnabled {
+		return nil, status.InternalErrorf("invalid state: EnableLocalSnapshotSharing=false and remoteEnabled=false")
 	}
 
-	manifest, err := l.getLocalManifest(ctx, key)
-	if err != nil {
-		return nil, status.WrapError(err, "get local manifest")
-	}
-	return manifest, nil
+	// Fall back to fetching remote manifest.
+	log.CtxInfof(ctx, "Fetching remote manifest")
+	return l.fetchRemoteManifest(ctx, key)
+
 }
 
 // fetchRemoteManifest fetches the most recent snapshot manifest from the remote
