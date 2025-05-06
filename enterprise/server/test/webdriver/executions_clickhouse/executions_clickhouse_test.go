@@ -12,7 +12,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -24,7 +23,6 @@ import (
 )
 
 func TestInvocationWithRemoteExecutionWithClickHouse(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	// This test can't run against cloud yet, since we depend on the test
 	// running on the same filesystem as the executor to coordinate action
 	// execution via fifo pipes.
@@ -68,10 +66,12 @@ common --incompatible_strict_action_env=true
 	// Start the invocation in the background. It won't complete until we
 	// signal the genrule to exit.
 	var eg errgroup.Group
-	t.Cleanup(func() {
+	defer func() {
+		// Wait for bazel invocations to finish running (in defer rather than
+		// cleanup, so that ctx is still valid).
 		err := eg.Wait()
 		require.NoError(t, err)
-	})
+	}()
 	eg.Go(func() error {
 		t.Log("Starting invocation " + iid1)
 		return testbazel.Invoke(ctx, t, workspace1Path, "build", buildArgs...).Error
@@ -156,7 +156,7 @@ func goToInvocationPage(t *testing.T, wt *webtester.WebTester, baseURL, iid stri
 
 func waitForExecutionsToAppear(t *testing.T, wt *webtester.WebTester) {
 	require.Eventually(t, func() bool {
-		executions := wt.Find(".invocation-execution-table, .invocation-execution-empty-actions").FindAll(".invocation-execution-row")
+		executions := wt.FindAll(".invocation-execution-row")
 		return len(executions) > 0
 	}, 1*time.Minute, 500*time.Millisecond, "wait for executions to appear")
 }
