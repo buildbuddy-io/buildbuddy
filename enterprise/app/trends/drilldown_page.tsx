@@ -681,13 +681,21 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           <div>
             Base:{" "}
             <span className="drilldown-page-tooltip-base">
-              {((p.payload[0].payload.baseValue / +this.state.drilldownData.totalInBase) * 100).toFixed(1)}%
+              {(+this.state.drilldownData.totalInBase
+                ? (p.payload[0].payload.baseValue / +this.state.drilldownData.totalInBase) * 100
+                : 0
+              ).toFixed(1)}
+              %
             </span>
           </div>
           <div>
             Selection:{" "}
             <span className="drilldown-page-tooltip-selected">
-              {((p.payload[0].payload.selectionValue / +this.state.drilldownData.totalInSelection) * 100).toFixed(1)}%
+              {(+this.state.drilldownData.totalInSelection
+                ? (p.payload[0].payload.selectionValue / +this.state.drilldownData.totalInSelection) * 100
+                : 0
+              ).toFixed(1)}
+              %
             </span>
           </div>
         </div>

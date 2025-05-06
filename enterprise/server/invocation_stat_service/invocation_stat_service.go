@@ -1240,28 +1240,34 @@ func addOutputChartEntry(m map[stpb.DrilldownType]*stpb.DrilldownChart, dm map[s
 		chart = &stpb.DrilldownChart{}
 		chart.DrilldownType = ddType
 		m[ddType] = chart
-		dm[ddType] = -math.MaxFloat64
+		dm[ddType] = 0
 	}
-	dm[ddType] = math.Max(dm[ddType], math.Abs(float64(selection)/float64(totalInSelection)-float64(inverse)/float64(totalInBase)))
+	if totalInSelection != 0 && totalInBase != 0 {
+		dm[ddType] = math.Max(dm[ddType], math.Abs(float64(selection)/float64(totalInSelection)-float64(inverse)/float64(totalInBase)))
+	}
 	chart.Entry = append(chart.Entry, &stpb.DrilldownEntry{Label: *label, BaseValue: inverse, SelectionValue: selection})
 }
 
 func sortDrilldownChartKeys(dm map[stpb.DrilldownType]float64) *[]stpb.DrilldownType {
 	type pair struct {
-		a stpb.DrilldownType
-		v float64
+		ddType stpb.DrilldownType
+		value  float64
 	}
 	slice := make([]pair, 0)
-	for k, v := range dm {
-		slice = append(slice, pair{k, v})
+	for ddType, value := range dm {
+		slice = append(slice, pair{ddType, value})
 	}
-	sort.SliceStable(slice, func(a, b int) bool {
-		return slice[a].v >= slice[b].v
+	sort.Slice(slice, func(i, j int) bool {
+		// Sort by value, breaking ties by drilldown type.
+		if slice[i].value == slice[j].value {
+			return slice[i].ddType < slice[j].ddType
+		}
+		return slice[i].value >= slice[j].value
 	})
 
 	result := make([]stpb.DrilldownType, len(slice))
-	for v, i := range slice {
-		result[v] = i.a
+	for i, pair := range slice {
+		result[i] = pair.ddType
 	}
 	return &result
 }
