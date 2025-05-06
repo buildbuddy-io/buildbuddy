@@ -255,7 +255,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	}
 
 	if r.GetCompressor() == repb.Compressor_IDENTITY {
-		w, err := newUploadWriteCloser(ctx, bsClient, r)
+		w, err := NewUploadWriteCloser(ctx, bsClient, r)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -1112,7 +1112,9 @@ type uploadWriteCloser struct {
 	finished      bool
 }
 
-func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*uploadWriteCloser, error) {
+// NewUploadWriteCloser returns a WriteCloser whose Write method writes bytes to the CAS.
+// The blob is not committed and available for reading until Close() is called.
+func NewUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*uploadWriteCloser, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -1141,7 +1143,7 @@ func (uwc *uploadWriteCloser) Write(p []byte) (int, error) {
 		return 0, status.FailedPreconditionError("cannot write to uploadWriteCloser after an error")
 	}
 	if len(p) > 0 && uwc.buf == nil {
-		uwc.buf = make([]byte, uploadBufSizeBytes)
+		uwc.buf = make([]byte, 0, uploadBufSizeBytes)
 	}
 
 	written := 0
@@ -1200,20 +1202,21 @@ func (uwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
 		return 0, status.FailedPreconditionError("cannot call ReadFrom on uploadWriteCloser after an error")
 	}
 	if uwc.buf == nil {
-		uwc.buf = make([]byte, uploadBufSizeBytes)
+		uwc.buf = make([]byte, 0, uploadBufSizeBytes)
 	}
 	var bytesRead int64
 	for {
-		n, err := ioutil.ReadTryFillBuffer(r, uwc.buf[uwc.bytesBuffered:uploadBufSizeBytes])
+		n, err := ioutil.ReadTryFillBuffer(r, uwc.buf[uwc.bytesBuffered:cap(uwc.buf)])
 		bytesRead += int64(n)
 		uwc.bytesBuffered += n
+		uwc.buf = uwc.buf[:uwc.bytesBuffered]
 		done := err == io.EOF
 		if err != nil && !done {
 			// Do not mark the uploadWriteCloser as errored if the error comes from the Reader.
 			return bytesRead, err
 		}
 		if uwc.bytesBuffered >= uploadBufSizeBytes {
-			if err := uwc.flush(done); err != nil {
+			if err := uwc.flush(false); err != nil {
 				uwc.errored = true
 				return bytesRead, err
 			}
@@ -1226,13 +1229,17 @@ func (uwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
 }
 
 func (uwc *uploadWriteCloser) Close() error {
-	flusherr := uwc.flush(true)
+	if !uwc.finished && !uwc.errored {
+		if err := uwc.flush(true); err != nil {
+			if _, err := uwc.stream.CloseAndRecv(); err != nil {
+				return err
+			}
+			return err
+		}
+	}
 	rsp, err := uwc.stream.CloseAndRecv()
 	if err != nil {
 		return err
-	}
-	if flusherr != nil {
-		return flusherr
 	}
 
 	remoteSize := rsp.GetCommittedSize()
