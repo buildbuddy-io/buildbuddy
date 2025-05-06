@@ -18,6 +18,42 @@ func init() {
 	SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
 }
 
+func TestNegativeStarlarkFlagWithValue(t *testing.T) {
+	for _, test := range []struct {
+		Name     string
+		Bazelrc  string
+		Args     []string
+		Expanded []string
+	}{
+		{
+			Name: "ExpandStarlarkFlagsFromCommonConfig",
+			Args: []string{"build", "--no@io_bazel_rules_docker//transitions:enable=foo"},
+			Expanded: []string{
+				"--ignore_all_rc_files",
+				"build",
+				"--no@io_bazel_rules_docker//transitions:enable=foo",
+			},
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			ws := testfs.MakeTempDir(t)
+			testfs.WriteAllFileContents(t, ws, map[string]string{
+				"WORKSPACE": "",
+				"BUILD":     "",
+				".bazelrc":  test.Bazelrc,
+			})
+
+			p, err := GetParser()
+			require.NoError(t, err)
+			defer delete(p.ByName, "@io_bazel_rules_docker//transitions:enable")
+			expandedArgs, err := p.expandConfigs(ws, test.Args)
+
+			require.NoError(t, err, "error expanding %s", test.Args)
+			assert.Equal(t, test.Expanded, expandedArgs)
+		})
+	}
+}
+
 func TestParseBazelrc_Simple(t *testing.T) {
 	for _, test := range []struct {
 		Name     string

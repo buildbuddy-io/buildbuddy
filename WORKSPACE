@@ -164,14 +164,17 @@ http_archive(
 
 http_archive(
     name = "bazel_gazelle",
-    integrity = "sha256-XYDmKnAxTznMdkwcPqqADFk2yfHqkWJQBiJ85NIM0IY=",
+    integrity = "sha256-fEC3Rjh80Mmk1bsLIDWr0TSz91EQFXEKXuXgdZEAjd4=",
     patch_args = ["-p1"],
     patches = [
         "//buildpatches:gazelle.patch",
+        # TODO(sluongng): remove this once v0.44.0 released
+        # https://github.com/bazel-contrib/bazel-gazelle/pull/2071
+        "//buildpatches:gazelle-pr-2071.patch",
     ],
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.42.0/bazel-gazelle-v0.42.0.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.42.0/bazel-gazelle-v0.42.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.43.0/bazel-gazelle-v0.43.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.43.0/bazel-gazelle-v0.43.0.tar.gz",
     ],
 )
 
