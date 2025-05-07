@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//codesearch/performance",
-        "//codesearch/schema",
         "//codesearch/types",
         "//server/util/log",
         "@org_golang_x_sync//errgroup",
@@ -20,6 +19,7 @@ go_test(
     deps = [
         ":searcher",
         "//codesearch/index",
+        "//codesearch/schema",
         "//codesearch/types",
         "//server/testutil/testfs",
         "@com_github_cockroachdb_pebble//:pebble",
