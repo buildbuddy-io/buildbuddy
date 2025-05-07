@@ -270,7 +270,11 @@ func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 		if taskErr != nil {
 			reason = taskErr.Error()
 		}
-		if err := t.reEnqueueTask(context.Background(), reason); err != nil {
+		ctx := context.Background()
+		if jwt := t.ctx.Value(authutil.ContextTokenStringKey); jwt != nil {
+			ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+		}
+		if err := t.reEnqueueTask(ctx, reason); err != nil {
 			log.CtxWarningf(ctx, "TaskLeaser %q: error re-enqueueing task: %s", t.taskID, err.Error())
 		} else {
 			log.CtxInfof(ctx, "TaskLeaser %q: Successfully re-enqueued.", t.taskID)
