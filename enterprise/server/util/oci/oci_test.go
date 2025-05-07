@@ -20,7 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/google/go-containerregistry/pkg/crane"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
@@ -212,112 +212,164 @@ func newResolver(t *testing.T) *oci.Resolver {
 	return r
 }
 
+type resolveArgs struct {
+	imageName   string
+	platform    *rgpb.Platform
+	credentials oci.Credentials
+}
+
+type resolveTestCase struct {
+	name string
+
+	imageName     string
+	imageFiles    map[string][]byte
+	imagePlatform v1.Platform
+
+	args       resolveArgs
+	checkError func(error) bool
+	opts       testregistry.Opts
+}
+
 func TestResolve(t *testing.T) {
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	registry := testregistry.Run(t, testregistry.Opts{})
-	imageName, _ := registry.PushRandomImage(t)
-	_, err := newResolver(t).Resolve(
-		context.Background(),
-		imageName,
-		&rgpb.Platform{
-			Arch: runtime.GOARCH,
-			Os:   runtime.GOOS,
-		},
-		oci.Credentials{})
-	require.NoError(t, err)
-}
+	for _, tc := range []resolveTestCase{
+		{
+			name: "resolving an existing image without credentials succeeds",
 
-func TestResolve_InvalidImage(t *testing.T) {
-	_, err := newResolver(t).Resolve(
-		context.Background(),
-		":invalid",
-		&rgpb.Platform{
-			Arch: runtime.GOARCH,
-			Os:   runtime.GOOS,
-		},
-		oci.Credentials{})
-	assert.True(t, status.IsInvalidArgumentError(err))
-}
+			imageName: "resolve_existing",
+			imageFiles: map[string][]byte{
+				"/name": []byte("resolving an existing image without credentials succeeds"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			},
 
-func TestResolve_Unauthorized(t *testing.T) {
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	registry := testregistry.Run(t, testregistry.Opts{
-		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-			if r.Method == "GET" {
-				matches, err := regexp.MatchString("/v2/.*/manifests/.*", r.URL.Path)
-				require.NoError(t, err)
-				if matches {
-					w.WriteHeader(401)
-					return false
-				}
-			}
-			return true
+			args: resolveArgs{
+				imageName: "resolve_existing",
+				platform: &rgpb.Platform{
+					Arch: runtime.GOARCH,
+					Os:   runtime.GOOS,
+				},
+			},
 		},
-	})
+		{
+			name: "resolving an invalid image name fails with invalid argument error",
 
-	imageName, _ := registry.PushRandomImage(t)
-	_, err := newResolver(t).Resolve(
-		context.Background(),
-		imageName,
-		&rgpb.Platform{
-			Arch: runtime.GOARCH,
-			Os:   runtime.GOOS,
+			imageName: "resolve_invalid",
+			imageFiles: map[string][]byte{
+				"/name": []byte("resolving an invalid image name fails with invalid argument error"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			},
+
+			args: resolveArgs{
+				imageName: ":invalid",
+				platform: &rgpb.Platform{
+					Arch: runtime.GOARCH,
+					Os:   runtime.GOOS,
+				},
+			},
+			checkError: status.IsInvalidArgumentError,
 		},
-		oci.Credentials{})
-	require.True(t, status.IsPermissionDeniedError(err))
-}
+		{
+			name: "resolving an existing image without authorization fails",
 
-func TestResolve_Arm64VariantIsOptional(t *testing.T) {
-	for _, test := range []struct {
-		name     string
-		platform v1.Platform
-	}{
-		{name: "linux/arm64/v8", platform: v1.Platform{Architecture: "arm64", OS: "linux", Variant: "v8"}},
-		{name: "linux/arm64", platform: v1.Platform{Architecture: "arm64", OS: "linux"}},
+			imageName: "resolve_unauthed",
+			imageFiles: map[string][]byte{
+				"/name": []byte("resolving an existing image without authorization fails"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_unauthed",
+				platform: &rgpb.Platform{
+					Arch: runtime.GOARCH,
+					Os:   runtime.GOOS,
+				},
+			},
+			checkError: status.IsPermissionDeniedError,
+			opts: testregistry.Opts{
+				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+					if r.Method == "GET" {
+						matches, err := regexp.MatchString("/v2/.*/manifests/.*", r.URL.Path)
+						require.NoError(t, err)
+						if matches {
+							w.WriteHeader(401)
+							return false
+						}
+					}
+					return true
+				},
+			},
+		},
+		{
+			name: "resolving a platform-specific image without including the variant succeeds",
+
+			imageName: "resolve_platform_variant",
+			imageFiles: map[string][]byte{
+				"/name":    []byte("resolving a platform-specific image without including the variant succeeds"),
+				"/variant": []byte("v8"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: "arm64",
+				OS:           "linux",
+				Variant:      "v8",
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_platform_variant",
+				platform: &rgpb.Platform{
+					Arch: "arm64",
+					Os:   "linux",
+				},
+			},
+		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-			ctx := context.Background()
-
-			registry := testregistry.Run(t, testregistry.Opts{})
-
-			img, err := crane.Image(map[string][]byte{
-				"/variant.txt": []byte(test.platform.Variant)},
-			)
-			require.NoError(t, err)
-
-			_ = registry.Push(t, img, test.platform.Architecture+test.platform.Variant)
+			registry := testregistry.Run(t, tc.opts)
+			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-				Add: img,
+				Add: pushedImage,
 				Descriptor: v1.Descriptor{
-					Platform: &test.platform,
+					Platform: &tc.imagePlatform,
 				},
 			})
+			registry.PushIndex(t, index, tc.imageName+"_index")
 
-			ref := registry.PushIndex(t, index, "test-multiplatform-image")
-
-			pulledImg, err := newResolver(t).Resolve(ctx, ref, &rgpb.Platform{
-				Arch: "arm64",
-				Os:   "linux",
-			}, oci.Credentials{})
-			require.NoError(t, err)
-			layers, err := pulledImg.Layers()
-			require.NoError(t, err)
-			contents := layerContents(t, layers[0])
-			require.Equal(t, map[string]string{
-				"/variant.txt": test.platform.Variant,
-			}, contents)
+			for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
+				pulledImage, err := newResolver(t).Resolve(
+					context.Background(),
+					registry.ImageAddress(nameToResolve),
+					tc.args.platform,
+					tc.args.credentials,
+				)
+				if tc.checkError != nil {
+					require.True(t, tc.checkError(err))
+					return
+				}
+				require.NoError(t, err)
+				layers, err := pulledImage.Layers()
+				require.NoError(t, err)
+				require.Equal(t, 1, len(layers))
+				require.Empty(t, cmp.Diff(tc.imageFiles, layerFiles(t, layers[0])))
+			}
 		})
 	}
 }
 
-func layerContents(t *testing.T, layer v1.Layer) map[string]string {
+func layerFiles(t *testing.T, layer v1.Layer) map[string][]byte {
 	rc, err := layer.Uncompressed()
 	require.NoError(t, err)
 	defer rc.Close()
 	tr := tar.NewReader(rc)
-	contents := map[string]string{}
+	contents := map[string][]byte{}
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -327,7 +379,7 @@ func layerContents(t *testing.T, layer v1.Layer) map[string]string {
 			var buf bytes.Buffer
 			_, err := io.Copy(&buf, tr)
 			require.NoError(t, err)
-			contents[header.Name] = buf.String()
+			contents[header.Name] = buf.Bytes()
 		}
 	}
 	return contents
