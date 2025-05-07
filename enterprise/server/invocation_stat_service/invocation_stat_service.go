@@ -1204,12 +1204,12 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	if *tagsInDrilldowns {
 		drilldownFields = append(drilldownFields, "tag")
 	}
-	if req.GetDrilldownMetric().Execution != nil {
+	if req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC {
 		drilldownFields = append(drilldownFields, "worker", "target_label", "action_mnemonic")
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
-	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().Execution != nil, req.GetRequestContext()); err != nil {
+	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC, req.GetRequestContext()); err != nil {
 		return "", nil, err
 	}
 
