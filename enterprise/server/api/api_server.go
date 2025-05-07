@@ -607,6 +607,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		ExecProperties: execProps,
 		RemoteHeaders:  req.GetRemoteHeaders(),
 		RunRemotely:    true,
+		InvocationId:   req.GetInvocationId(),
 	})
 	if err != nil {
 		return nil, err

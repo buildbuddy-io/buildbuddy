@@ -387,11 +387,14 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return nil, status.WrapError(err, "attach user prefix")
 	}
 
-	guid, err := uuid.NewRandom()
-	if err != nil {
-		return nil, status.WrapError(err, "uuid")
+	invocationID := req.GetInvocationId()
+	if invocationID == "" {
+		guid, err := uuid.NewRandom()
+		if err != nil {
+			return nil, status.WrapError(err, "uuid")
+		}
+		invocationID = guid.String()
 	}
-	invocationID := guid.String()
 	actionDigest, err := r.createAction(ctx, req, invocationID)
 	if err != nil {
 		return nil, status.WrapError(err, "create action")

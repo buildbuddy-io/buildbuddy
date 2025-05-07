@@ -50,6 +50,10 @@ message RunRequest {
   //
   // This is only supported for bare runners.
   bool use_system_git_credentials = 9;
+
+  // If set, the invocation ID to use for the remote run.
+  // If unset, a random iid is generated.
+  string invocation_id = 11;
 }
 
 message Step {
