@@ -1825,10 +1825,8 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 
 	if is := s.env.GetClientIdentityService(); is != nil {
 		_, err := is.IdentityFromContext(ctx)
-		fmt.Println("VANJAAAAAAAAAAAAAAAAAAA - self hosted = ", err != nil)
+		// Client identity is only set on self-hosted executors.
 		expOptions = append(expOptions, experiments.WithContext("self_hosted_executor", err != nil))
-	} else {
-		fmt.Println("VANJAAAAAAAAAAAA - identity service is nil")
 	}
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
