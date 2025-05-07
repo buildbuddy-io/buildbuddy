@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//codesearch/performance",
+        "//codesearch/schema",
         "//codesearch/types",
         "//server/util/log",
         "@org_golang_x_sync//errgroup",

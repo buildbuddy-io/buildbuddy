@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/kythestorage"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
@@ -48,12 +49,6 @@ import (
 )
 
 const (
-	maxFileLen = 10_000_000
-
-	// The maximum amount of bytes from a file to use for language and
-	// mimetype detection.
-	detectionBufferSize = 1000
-
 	// Used to control how many results may be returned at a time.
 	defaultNumResults = 10
 	maxNumResults     = 1000
@@ -206,7 +201,13 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 		if err != nil {
 			return nil, err
 		}
-		doc, err := schema.MakeDocument(filename, commitSHA, repoURL, buf)
+
+		fields, err := github.ExtractFields(filename, commitSHA, repoURL, buf)
+		if err != nil {
+			log.Debug(err.Error())
+			continue
+		}
+		doc, err := schema.DefaultSchema.MakeDocument(fields)
 		if err != nil {
 			log.Debug(err.Error())
 			continue
@@ -266,7 +267,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	if req.GetNumResults() > 0 && req.GetNumResults() < maxNumResults {
 		numResults = int(req.GetNumResults())
 	}
-	codesearcher := searcher.New(ctx, index.NewReader(ctx, css.db, namespace))
+	codesearcher := searcher.New(ctx, index.NewReader(ctx, css.db, namespace, schema.DefaultSchema))
 	q, err := query.NewReQuery(ctx, req.GetQuery().GetTerm())
 	if err != nil {
 		return nil, err

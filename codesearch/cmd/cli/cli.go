@@ -8,11 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime/pprof"
 	"slices"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
@@ -44,16 +44,6 @@ var (
 	results  = searchCmd.Int("results", 100, "Print this many results")
 	offset   = searchCmd.Int("offset", 0, "Start printing results this far in")
 	snippets = searchCmd.Int("snippets", 5, "Print this many snippets per result")
-
-	skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
-)
-
-const (
-	maxFileLen = 10_000_000
-
-	// The maximum amount of bytes from a file to use for language and
-	// mimetype detection.
-	detectionBufferSize = 1000
 )
 
 func printMainHelpAndDie() {
@@ -189,10 +179,14 @@ func handleIndex(args []string) {
 				if err != nil {
 					return err
 				}
-				doc, err := schema.MakeDocument(path, commitSHA, repoURL, buf)
+				fields, err := github.ExtractFields(path, commitSHA, repoURL, buf)
 				if err != nil {
 					log.Info(err.Error())
 					return nil
+				}
+				doc, err := schema.DefaultSchema.MakeDocument(fields)
+				if err != nil {
+					log.Fatal(err.Error())
 				}
 
 				if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
@@ -217,7 +211,7 @@ func handleSearch(ctx context.Context, args []string) {
 	}
 	defer db.Close()
 
-	codesearcher := searcher.New(ctx, index.NewReader(ctx, db, getNamespace()))
+	codesearcher := searcher.New(ctx, index.NewReader(ctx, db, getNamespace(), schema.DefaultSchema))
 	q, err := query.NewReQuery(ctx, pat)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -286,7 +280,7 @@ func handleSquery(ctx context.Context, args []string) {
 	}
 	defer db.Close()
 
-	ir := index.NewReader(ctx, db, getNamespace())
+	ir := index.NewReader(ctx, db, getNamespace(), schema.DefaultSchema)
 	matches, err := ir.RawQuery(pat)
 	if err != nil {
 		log.Fatal(err.Error())

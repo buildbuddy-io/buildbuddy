@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -13,13 +14,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var testSchema = schema.NewDocumentSchema(
+	[]types.FieldSchema{
+		schema.NewFieldSchemaOrPanic(types.KeywordField, "ident", true),
+		schema.NewFieldSchemaOrPanic(types.SparseNgramField, "content", true),
+	})
+
 func makeTestDoc(ident, content string) types.Document {
-	doc := types.NewMapDocument(
-		map[string]types.NamedField{
-			"ident":   types.NewNamedField(types.KeywordField, "ident", []byte(ident), true /*=stored*/),
-			"content": types.NewNamedField(types.SparseNgramField, "content", []byte(content), true /*=stored*/),
-		},
-	)
+	doc, err := testSchema.MakeDocument(map[string][]byte{
+		"ident":   []byte(ident),
+		"content": []byte(content),
+	})
+	if err != nil {
+		panic(err)
+	}
 	return doc
 }
 
@@ -79,7 +87,7 @@ func createSampleIndex(t testing.TB) *pebble.DB {
 func TestBasicSearcher(t *testing.T) {
 	ctx := context.Background()
 	db := createSampleIndex(t)
-	s := searcher.New(ctx, index.NewReader(ctx, db, "testns"))
+	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
 	docs, err := s.Search(sQuery{"(:all)", zeroScorer{}}, 100, 0)
 	require.NoError(t, err)
 	require.Equal(t, len(sampleData), len(docs))
@@ -88,7 +96,7 @@ func TestBasicSearcher(t *testing.T) {
 func TestSearcherOffsetAndLimit(t *testing.T) {
 	ctx := context.Background()
 	db := createSampleIndex(t)
-	s := searcher.New(ctx, index.NewReader(ctx, db, "testns"))
+	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
 	docs, err := s.Search(sQuery{"(:all)", zeroScorer{}}, 11, 8)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(docs))
