@@ -5,6 +5,7 @@ import (
 	"io"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
@@ -47,7 +48,7 @@ type MigrationCache struct {
 	numCopyWorkers              int
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
-	numCopiesDropped            *int64
+	numCopiesDropped            *atomic.Int64
 	asyncDestWrites             bool
 }
 
@@ -83,7 +84,6 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
-	zero := int64(0)
 	return &MigrationCache{
 		env:                         env,
 		src:                         srcCache,
@@ -95,7 +95,7 @@ func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, sr
 		maxCopiesPerSec:             migrationConfig.MaxCopiesPerSec,
 		eg:                          &errgroup.Group{},
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
-		numCopiesDropped:            &zero,
+		numCopiesDropped:            &atomic.Int64{},
 		numCopyWorkers:              migrationConfig.NumCopyWorkers,
 		asyncDestWrites:             migrationConfig.AsyncDestWrites,
 	}
@@ -861,7 +861,7 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.Resou
 	}:
 	default:
 		log.Debugf("Migration dropping copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
-		*mc.numCopiesDropped++
+		mc.numCopiesDropped.Add(1)
 	}
 }
 
@@ -924,10 +924,9 @@ func (mc *MigrationCache) monitorCopyChanFullness() {
 		case <-mc.quitChan:
 			return
 		case <-copyChanFullTicker.C:
-			if *mc.numCopiesDropped != 0 {
-				log.Warningf("Migration copy chan was full and dropped %d copies in %v. May need to increase buffer size", *mc.numCopiesDropped, mc.copyChanFullWarningInterval)
-				zero := int64(0)
-				mc.numCopiesDropped = &zero
+			dropped := mc.numCopiesDropped.Swap(0)
+			if dropped != 0 {
+				log.Warningf("Migration copy chan was full and dropped %d copies in %v. May need to increase buffer size", dropped, mc.copyChanFullWarningInterval)
 			}
 		case <-metricTicker.C:
 			copyChanSize := len(mc.copyChan)
