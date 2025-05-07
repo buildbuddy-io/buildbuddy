@@ -247,9 +247,7 @@ func NewZstdDecoderPool() *ZstdDecoderPool {
 					return err
 				}
 				ref := &DecoderRef{dc}
-				runtime.SetFinalizer(ref, func(ref *DecoderRef) {
-					ref.Decoder.Close()
-				})
+				runtime.AddCleanup(ref, (*zstd.Decoder).Close, dc)
 				return ref
 			},
 		},
