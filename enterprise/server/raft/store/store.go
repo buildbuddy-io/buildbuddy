@@ -456,8 +456,10 @@ func (s *Store) setMetaRangeBuf(buf []byte) {
 	}
 	// Update the value
 	s.metaRangeData = buf
-	s.log.Infof("update meta range to generation %d", new.GetGeneration())
-	s.sender.UpdateRange(new)
+	if new.GetGeneration() > 0 {
+		s.log.Infof("update meta range to generation %d", new.GetGeneration())
+		s.sender.UpdateRange(new)
+	}
 }
 
 func (s *Store) queryForMetarange(ctx context.Context) {
