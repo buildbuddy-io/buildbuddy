@@ -199,7 +199,7 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_nogo", "
 
 go_rules_dependencies()
 
-GO_SDK_VERSION = "1.24.2"
+GO_SDK_VERSION = "1.24.3"
 
 # Register multiple Go SDKs so that we can perform cross-compilation remotely.
 # i.e. We might want to trigger a Linux AMD64 Go build remotely from a MacOS ARM64 laptop.
