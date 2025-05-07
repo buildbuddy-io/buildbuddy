@@ -213,7 +213,7 @@ func newResolver(t *testing.T) *oci.Resolver {
 }
 
 func TestResolve(t *testing.T) {
-	flags.Set(t, "http.client.allow_localhost", true)
+	// flags.Set(t, "http.client.allow_localhost", true)
 	registry := testregistry.Run(t, testregistry.Opts{})
 	imageName, _ := registry.PushRandomImage(t)
 	_, err := newResolver(t).Resolve(
@@ -435,10 +435,13 @@ func TestAllowPrivateIPs(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.container_registry_allowed_private_ips", tc.allowedIPs)
 			registry := testregistry.Run(t, testregistry.Opts{})
 			err := pushAndFetchRandomImage(t, registry)
 			if tc.expectError {
 				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
 			}
 			if tc.errorContains != "" {
 				require.ErrorContains(t, err, tc.errorContains)
