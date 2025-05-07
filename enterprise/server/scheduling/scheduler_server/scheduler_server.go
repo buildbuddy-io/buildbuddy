@@ -1820,6 +1820,16 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if isolationType != string(platform.FirecrackerContainerType) {
 		return task
 	}
+	expOptions := make([]any, 0, 2)
+	expOptions = append(expOptions, experiments.WithContext("executor_hostname", executorHostname))
+
+	selfHosted := false
+	if is := s.env.GetClientIdentityService(); is != nil {
+		identity, err := is.IdentityFromContext(ctx)
+		// Client identity is only set on managed executors.
+		selfHosted = err != nil || identity.Client != interfaces.ClientIdentityExecutor
+	}
+	expOptions = append(expOptions, experiments.WithContext("self_hosted_executor", selfHosted))
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until
@@ -1827,7 +1837,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	// with the value in the task.
 	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
 
-	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", experiments.WithContext("executor_hostname", executorHostname))
+	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
 	if skipResavingGroup == "" {
 		return task
 	}
