@@ -411,15 +411,38 @@ func pushAndFetchRandomImage(t *testing.T, registry *testregistry.Registry) erro
 }
 
 func TestAllowPrivateIPs(t *testing.T) {
-	registry := testregistry.Run(t, testregistry.Opts{})
-	err := pushAndFetchRandomImage(t, registry)
-	require.ErrorContains(t, err, "not allowed")
-
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-	err = pushAndFetchRandomImage(t, registry)
-	require.NoError(t, err)
-
-	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"0.0.0.0/0"})
-	err = pushAndFetchRandomImage(t, registry)
-	require.NoError(t, err)
+	for _, tc := range []struct {
+		name          string
+		allowedIPs    []string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "private IPs not allowed",
+			allowedIPs:    []string{},
+			expectError:   true,
+			errorContains: "not allowed",
+		},
+		{
+			name:        "localhost allowed",
+			allowedIPs:  []string{"127.0.0.1/32"},
+			expectError: false,
+		},
+		{
+			name:        "all IPv4 addresses allowed",
+			allowedIPs:  []string{"0.0.0.0/0"},
+			expectError: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := testregistry.Run(t, testregistry.Opts{})
+			err := pushAndFetchRandomImage(t, registry)
+			if tc.expectError {
+				require.Error(t, err)
+			}
+			if tc.errorContains != "" {
+				require.ErrorContains(t, err, tc.errorContains)
+			}
+		})
+	}
 }
