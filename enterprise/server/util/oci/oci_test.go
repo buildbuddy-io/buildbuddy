@@ -199,7 +199,7 @@ func creds(username, password string) oci.Credentials {
 	return oci.Credentials{Username: username, Password: password}
 }
 
-func TestToProto(t *testing.T) {
+func TestCredentialsToProto(t *testing.T) {
 	assert.True(t,
 		proto.Equal(
 			&rgpb.Credentials{Username: "foo", Password: "bar"},
