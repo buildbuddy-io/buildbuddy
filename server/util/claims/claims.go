@@ -3,6 +3,7 @@ package claims
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -156,10 +157,21 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 			Role:         keyRole,
 		})
 	}
+
+	requestContext := requestcontext.ProtoRequestContextFromContext(ctx)
+	effectiveGroup := akg.GetGroupID()
+	if requestContext.GetGroupId() != "" {
+		if slices.Contains(allowedGroups, requestContext.GetGroupId()) {
+			effectiveGroup = requestContext.GetGroupId()
+		} else {
+			return nil, status.PermissionDeniedErrorf("invalid group id %s", requestContext.GetGroupId())
+		}
+	}
+
 	return &Claims{
 		APIKeyID:               akg.GetAPIKeyID(),
 		UserID:                 akg.GetUserID(),
-		GroupID:                akg.GetGroupID(),
+		GroupID:                effectiveGroup,
 		AllowedGroups:          allowedGroups,
 		GroupMemberships:       groupMemberships,
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
