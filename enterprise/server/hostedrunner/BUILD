@@ -55,6 +55,7 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/authutil",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

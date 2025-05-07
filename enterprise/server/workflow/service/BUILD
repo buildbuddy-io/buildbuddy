@@ -80,6 +80,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testgit",
         "//server/testutil/testhttp",
+        "//server/util/authutil",
         "//server/util/db",
         "//server/util/perms",
         "//server/util/testing/flags",

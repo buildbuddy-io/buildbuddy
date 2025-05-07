@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -601,7 +602,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		RequestMetadata: rmd,
 	}
 	// Allow execution worker to auth to cache (if necessary).
-	if jwt, ok := ctx.Value("x-buildbuddy-jwt").(string); ok {
+	if jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
 		executionTask.Jwt = jwt
 	}
 
