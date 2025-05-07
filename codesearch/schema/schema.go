@@ -52,10 +52,9 @@ func (f fieldSchema) MakeField(buf []byte) types.Field {
 	}
 }
 
-func NewFieldSchema(ftype types.FieldType, name string, stored bool) (*fieldSchema, error) {
+func NewFieldSchema(ftype types.FieldType, name string, stored bool) (types.FieldSchema, error) {
 	var tokenizer types.Tokenizer = nil
 
-	// TODO(jdelfino): tests for invalid field names (and the rest of this class)
 	if !fieldNameRegex.MatchString(name) {
 		return nil, status.InvalidArgumentErrorf("Invalid field name %q", name)
 	}
@@ -72,7 +71,7 @@ func NewFieldSchema(ftype types.FieldType, name string, stored bool) (*fieldSche
 		return nil, status.InvalidArgumentErrorf("Invalid field type %q", ftype)
 	}
 
-	return &fieldSchema{
+	return fieldSchema{
 		ftype:     ftype,
 		name:      name,
 		stored:    stored,
@@ -132,7 +131,7 @@ func (d documentSchema) MakeDocument(data map[string][]byte) (types.Document, er
 	return document(fields), nil
 }
 
-func NewDocumentSchema(schemas []types.FieldSchema) documentSchema {
+func NewDocumentSchema(schemas []types.FieldSchema) types.DocumentSchema {
 	fieldMap := make(map[string]types.FieldSchema, len(schemas))
 	for _, schema := range schemas {
 		fieldMap[schema.Name()] = schema
@@ -178,6 +177,3 @@ func (d document) Fields() []string {
 	}
 	return fieldNames
 }
-
-// Update index_test
-// Write unit tests
