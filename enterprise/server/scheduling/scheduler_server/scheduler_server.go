@@ -1823,9 +1823,13 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	expOptions := make([]any, 0, 2)
 	expOptions = append(expOptions, experiments.WithContext("executor_hostname", executorHostname))
 
-	_, err := s.env.GetClientIdentityService().IdentityFromContext(ctx)
-	fmt.Println("VANJAAAAAAAAAAAAAAAAAAA - self hosted = ", err != nil)
-	expOptions = append(expOptions, experiments.WithContext("self_hosted_executor", err != nil))
+	if is := s.env.GetClientIdentityService(); is != nil {
+		_, err := is.IdentityFromContext(ctx)
+		fmt.Println("VANJAAAAAAAAAAAAAAAAAAA - self hosted = ", err != nil)
+		expOptions = append(expOptions, experiments.WithContext("self_hosted_executor", err != nil))
+	} else {
+		fmt.Println("VANJAAAAAAAAAAAA - identity service is nil")
+	}
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until
