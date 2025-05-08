@@ -512,7 +512,7 @@ func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx contex
 	ctx = usageutil.WithLocalServerLabels(ctx)
 
 	if execTask.GetJwt() != "" {
-		ctx = context.WithValue(ctx, "x-buildbuddy-jwt", execTask.GetJwt())
+		ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, execTask.GetJwt())
 	}
 	rmd := execTask.GetRequestMetadata()
 	if rmd == nil {
