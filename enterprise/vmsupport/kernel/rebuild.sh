@@ -1,14 +1,41 @@
 #!/bin/bash
 set -e
 
-# usage: VERSION=vX.Y enterprise/vmsupport/kernel/rebuild.sh
+# rebuild.sh: rebuilds the kernel used for firecracker microVMs,
+# and uploads the resulting kernel to GCS.
+# Prints out the deps.bzl snippet to update the kernel.
+#
+# Update VERSION below, then ensure microvm-kernel-<arch>.config is
+# up to date. Then, run this script:
+#
+#     enterprise/vmsupport/kernel/rebuild.sh
+#
+# Once it's done running, copy the output into deps.bzl.
 
-: "${VERSION:=v5.10}"
 : "${WORKDIR:=/tmp/linux}"
 
 cd "$(dirname "$0")"
 ARCH=$(uname -m)
-KERNEL_CONFIG_PATH="$PWD/microvm-kernel-$ARCH.config"
+
+if [[ "$ARCH" == "x86_64" ]]; then
+  VERSION=v6.1
+elif [[ "$ARCH" == "aarch64" ]]; then
+  # TODO: update arm64 to v6.1 as well
+  VERSION=v5.10
+else
+  echo >&2 "Unsupported architecture: $ARCH"
+  exit 1
+fi
+
+# Get version-specific config file.
+#
+# We maintain separate config files for each version so that we can migrate to
+# newer guest kernels while keeping the old configs in place.
+KERNEL_CONFIG_PATH="$PWD/microvm-kernel-${ARCH}-${VERSION}.config"
+if ! [[ -e "$KERNEL_CONFIG_PATH" ]]; then
+  echo >&2 "Kernel config not found at $KERNEL_CONFIG_PATH"
+  exit 1
+fi
 
 mkdir -p "$WORKDIR" && cd "$WORKDIR"
 echo "Working directory: $PWD"
