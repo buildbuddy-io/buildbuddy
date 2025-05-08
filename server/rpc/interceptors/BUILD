@@ -12,6 +12,7 @@ go_library(
         "//server/util/alert",
         "//server/util/authutil",
         "//server/util/bazel_request",
+        "//server/util/cacheutil",
         "//server/util/claims",
         "//server/util/clientip",
         "//server/util/log",
