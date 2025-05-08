@@ -222,7 +222,6 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 }
 
 func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
 
@@ -237,7 +236,18 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
-	rd2 := s1.GetRange(2)
+	var rd2 *rfpb.RangeDescriptor
+	start := time.Now()
+	for {
+		rd2 = s1.GetRange(2)
+		if len(rd2.GetEnd()) > 0 {
+			break
+		}
+		if time.Since(start) > 30*time.Second {
+			require.Fail(t, "failed to get non-empty range descriptor for range 2")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	deleteRDBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectDeleteRequest{
 		Key: keys.RangeMetaKey(rd2.GetEnd()),

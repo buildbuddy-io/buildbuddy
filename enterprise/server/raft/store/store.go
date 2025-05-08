@@ -436,6 +436,9 @@ func (s *Store) getMetaRangeBuf() []byte {
 }
 
 func (s *Store) setMetaRangeBuf(buf []byte) {
+	if len(buf) == 0 {
+		return
+	}
 	s.metaRangeMu.Lock()
 	defer s.metaRangeMu.Unlock()
 	new := &rfpb.RangeDescriptor{}
