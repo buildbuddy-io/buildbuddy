@@ -787,23 +787,19 @@ func (s *Store) GetRange(rangeID uint64) *rfpb.RangeDescriptor {
 	return s.lookupRange(rangeID)
 }
 
-// We need to implement the Add/RemoveRange interface so that stores opened and
-// closed on this node will notify us when their range appears and disappears.
-// We'll use this information to drive the range tags we broadcast.
-func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
-	s.log.Debugf("Adding range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
+func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
+	s.log.Debugf("Update range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
-	if loaded {
-		s.log.Warningf("AddRange stomped on another range. Did you forget to call RemoveRange?")
-	}
 
 	s.rangeMu.Lock()
 	s.openRanges[rd.GetRangeId()] = rd
 	s.rangeMu.Unlock()
 
-	metrics.RaftRanges.With(prometheus.Labels{
-		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-	}).Inc()
+	if !loaded {
+		metrics.RaftRanges.With(prometheus.Labels{
+			metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+		}).Inc()
+	}
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
@@ -2821,7 +2817,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	}
 
 	if err := s.syncRequestDeleteReplica(ctx, rangeID, req.GetReplicaId()); err != nil {
-		return nil, status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", rangeID, req.GetReplicaId(), err)
+		return rsp, status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", rangeID, req.GetReplicaId(), err)
 	}
 
 	return rsp, nil

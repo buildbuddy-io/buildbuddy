@@ -88,7 +88,7 @@ func TestAddGetRemoveRange(t *testing.T) {
 			{RangeId: 1, ReplicaId: 3},
 		},
 	}
-	s1.AddRange(rd, r1)
+	s1.UpdateRange(rd, r1)
 
 	gotRd := s1.GetRange(1)
 	require.Equal(t, rd, gotRd)
@@ -475,7 +475,6 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 }
 
 func TestAddRangeBack(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
@@ -492,41 +491,63 @@ func TestAddRangeBack(t *testing.T) {
 
 	// RemoveReplica can't remove the replica on its own machine.
 	rd := s.GetRange(2)
-	replicaIdToRemove := uint64(0)
-	nhid := ""
+	var replicaToRemove *rfpb.ReplicaDescriptor
+	remaining := make([]*testutil.TestingStore, 0, 2)
 	var testStore *testutil.TestingStore
 	for _, repl := range rd.GetReplicas() {
 		if repl.GetNhid() != s.NHID() {
-			replicaIdToRemove = repl.GetReplicaId()
-			nhid = repl.GetNhid()
+			replicaToRemove = repl
 			break
 		}
 	}
+
 	for _, store := range stores {
-		if store.NHID() == nhid {
+		if store.NHID() != replicaToRemove.GetNhid() {
+			remaining = append(remaining, store)
+		} else {
 			testStore = store
-			break
 		}
 	}
 	require.NotNil(t, testStore)
-	log.Infof("remove replica c%dn%d on nodehost %s", rd.GetRangeId(), replicaIdToRemove, testStore.NHID())
+	log.Infof("remove replica c%dn%d on nodehost %s", rd.GetRangeId(), replicaToRemove.GetReplicaId(), testStore.NHID())
 
-	rsp, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
-		Range:     rd,
-		ReplicaId: replicaIdToRemove,
-	})
-	require.NoError(t, err)
-	_, err = testStore.RemoveData(ctx, &rfpb.RemoveDataRequest{
-		ReplicaId: replicaIdToRemove,
-		Range:     rsp.GetRange(),
-	})
-	require.NoError(t, err)
+	start := time.Now()
+	for {
+		rsp, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: replicaToRemove.GetReplicaId(),
+		})
+		if rsp != nil {
+			rd = rsp.GetRange()
+		}
+		if err != nil {
+			log.Infof("RemoveReplica failed:%s", err)
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		removeDataRsp, err := testStore.RemoveData(ctx, &rfpb.RemoveDataRequest{
+			ReplicaId: replicaToRemove.GetReplicaId(),
+			Range:     rd,
+		})
+		if rsp != nil {
+			rd = removeDataRsp.GetRange()
+		}
+		if err != nil {
+			log.Infof("RemoveData failed:%s", err)
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		if time.Since(start) > 60*time.Second {
+			require.Fail(t, "unable to remove replica and data")
+		}
+		break
+	}
+	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 3, len(replicas))
 
-	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
+	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: s.GetRange(2),
 		Node: &rfpb.NodeDescriptor{
 			Nhid:        testStore.NHID(),
@@ -543,26 +564,29 @@ func TestAddRangeBack(t *testing.T) {
 	require.NoError(t, err)
 
 	r2 := getReplica(t, testStore, 2)
-	require.NotEqual(t, replicaIdToRemove, r2.ReplicaID())
+	require.NotEqual(t, replicaToRemove.GetReplicaId(), r2.ReplicaID())
 
 	// Wait for raft replication to finish bringing the new node up to date.
 	waitForReplicaToCatchUp(t, ctx, r2, lastAppliedIndex)
 
-	// Transfer Leadership to the new node
-	_, err = s.TransferLeadership(ctx, &rfpb.TransferLeadershipRequest{
-		RangeId:         2,
-		TargetReplicaId: r2.ReplicaID(),
-	})
-	require.NoError(t, err)
-
-	start := time.Now()
 	for {
-		if testStore.HaveLease(ctx, 2) {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-		if time.Since(start) > 60*time.Second {
-			require.Failf(t, "failed to get lease", "store %s doesn't get lease for range 2", testStore.NHID())
+		// Transfer Leadership to the new node
+		log.Info("transfer leader")
+		_, err = s.TransferLeadership(ctx, &rfpb.TransferLeadershipRequest{
+			RangeId:         2,
+			TargetReplicaId: r2.ReplicaID(),
+		})
+		require.NoError(t, err)
+		start := time.Now()
+
+		for {
+			if testStore.HaveLease(ctx, 2) {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+			if time.Since(start) > 15*time.Second {
+				break
+			}
 		}
 	}
 }
