@@ -117,27 +117,17 @@ func (d *zstdDecompressor) Close() error {
 }
 
 type compressingReader struct {
+	pr          *io.PipeReader
 	inputReader io.ReadCloser
-	readBuf     []byte
-	compressBuf []byte
 }
 
 func (r *compressingReader) Read(p []byte) (int, error) {
-	if len(r.compressBuf) == 0 {
-		n, err := r.inputReader.Read(r.readBuf)
-		if err != nil {
-			return n, err
-		}
-		r.compressBuf = CompressZstd(r.compressBuf, r.readBuf[:n])
-	}
-	n := copy(p, r.compressBuf)
-	// Save the rest for the next read
-	r.compressBuf = r.compressBuf[n:]
-	return n, nil
+	return r.pr.Read(p)
 }
 
 func (r *compressingReader) Close() error {
-	return r.inputReader.Close()
+	defer r.inputReader.Close()
+	return r.pr.Close()
 }
 
 // NewZstdCompressingReader returns a reader that reads chunks from the given
@@ -160,10 +150,26 @@ func (r *compressingReader) Close() error {
 // the data is even modestly compressible and the compression buffer capacity is
 // at least a few hundred bytes.
 func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
+	pr, pw := io.Pipe()
+	go func() {
+		for {
+			n, err := reader.Read(readBuf)
+			if n > 0 {
+				compressBuf = CompressZstd(compressBuf[:0], readBuf[:n])
+				if _, err := pw.Write(compressBuf); err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+			}
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}
+	}()
 	return &compressingReader{
+		pr:          pr,
 		inputReader: reader,
-		readBuf:     readBuf,
-		compressBuf: compressBuf[:0],
 	}, nil
 }
 
