@@ -120,19 +120,21 @@ type compressingReader struct {
 	inputReader io.ReadCloser
 	readBuf     []byte
 	compressBuf []byte
+	compressed  []byte
 }
 
 func (r *compressingReader) Read(p []byte) (int, error) {
-	if len(r.compressBuf) == 0 {
+	if len(r.compressed) == 0 {
 		n, err := r.inputReader.Read(r.readBuf)
-		if err != nil {
+		if err != nil || n == 0 {
 			return n, err
 		}
-		r.compressBuf = CompressZstd(r.compressBuf, r.readBuf[:n])
+		r.compressBuf = CompressZstd(r.compressBuf[:0], r.readBuf[:n])
+		r.compressed = r.compressBuf
 	}
-	n := copy(p, r.compressBuf)
+	n := copy(p, r.compressed)
 	// Save the rest for the next read
-	r.compressBuf = r.compressBuf[n:]
+	r.compressed = r.compressed[n:]
 	return n, nil
 }
 
@@ -163,7 +165,7 @@ func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf 
 	return &compressingReader{
 		inputReader: reader,
 		readBuf:     readBuf,
-		compressBuf: compressBuf[:0],
+		compressBuf: compressBuf,
 	}, nil
 }
 
