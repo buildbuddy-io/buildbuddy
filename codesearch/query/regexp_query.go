@@ -227,7 +227,12 @@ func expressionToSquery(expr string, fieldName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return RegexpQuery(syn).SQuery(fieldName), nil
+	log.Info(fmt.Sprintf("regexp: %s, top op: %s %v", syn, syn.Op, syn.Sub))
+	r := RegexpQuery(syn)
+	log.Info(fmt.Sprintf("regexp query: %s", r))
+	s := r.SQuery(fieldName)
+	log.Info(fmt.Sprintf("squery: %s", s))
+	return s, nil
 }
 
 func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
@@ -250,6 +255,8 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 	}
 
 	q, filename := filters.ExtractFilenameFilter(q)
+	log.Info(fmt.Sprintf("filename filter: %s", filename))
+
 	if len(filename) > 0 {
 		subQ, err := expressionToSquery(filename, filenameField)
 		if err != nil {

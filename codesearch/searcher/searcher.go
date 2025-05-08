@@ -78,6 +78,10 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 	scoreMap := make(map[uint64]float64, numDocs)
 	var mu sync.Mutex
 
+	// TODO(jdelfino): Rework this - discard docs with 0 score. Estimate
+	// when to stop scoring based on the number of docs scored, stdev of scores
+	// so far, and the number of docs remaining. This is a heuristic, but it should be
+	// better than scoring all docs.
 	// TODO(tylerw): use a priority-queue; stop iteration early.
 	g := new(errgroup.Group)
 	g.SetLimit(runtime.GOMAXPROCS(0))
