@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//codesearch/performance",
         "//codesearch/posting",
-        "//codesearch/token",
         "//codesearch/types",
         "//server/util/log",
         "//server/util/status",
@@ -25,6 +24,7 @@ go_test(
     embed = [":index"],
     deps = [
         "//codesearch/posting",
+        "//codesearch/schema",
         "//codesearch/types",
         "//server/testutil/testfs",
         "//server/util/log",
