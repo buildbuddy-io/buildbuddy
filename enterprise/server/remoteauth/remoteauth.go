@@ -3,7 +3,6 @@ package remoteauth
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -78,7 +77,7 @@ func claimsCacheKey(ctx context.Context) (string, error) {
 		return "", status.PermissionDeniedError("Missing API key")
 	}
 	sub := subdomain.Get(ctx)
-	return fmt.Sprintf("%s:%s", sub, key), nil
+	return sub + ":" + key, nil
 }
 
 type RemoteAuthenticator struct {
@@ -139,7 +138,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 
 	key, err := claimsCacheKey(ctx)
 	if err != nil {
-		authutil.AuthContextWithError(ctx, status.PermissionDeniedError("Missing API key"))
+		return authutil.AuthContextWithError(ctx, status.PermissionDeniedError("Missing API key"))
 	}
 
 	// Try to use a locally-cached JWT, if available and valid.

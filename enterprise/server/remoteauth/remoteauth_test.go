@@ -53,7 +53,7 @@ func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.Authenti
 	defer a.mu.Unlock()
 	if a.nextErr[req.GetSubdomain()] != nil {
 		err := a.nextErr[req.GetSubdomain()]
-		a.nextErr = nil
+		a.nextErr[req.GetSubdomain()] = nil
 		return nil, err
 	}
 	jwt := a.nextJwt[req.GetSubdomain()]
@@ -66,7 +66,10 @@ func (a *fakeAuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPubl
 }
 
 func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
-	fakeAuthService := fakeAuthService{}
+	fakeAuthService := fakeAuthService{
+		nextErr: map[string]error{},
+		nextJwt: map[string]string{},
+	}
 	te := testenv.GetTestEnv(t)
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	authpb.RegisterAuthServiceServer(grpcServer, &fakeAuthService)
@@ -180,7 +183,7 @@ func TestJwtExpiry(t *testing.T) {
 }
 
 func TestSubdomains(t *testing.T) {
-	_, fakeAuth := setup(t)
+	authenticator, fakeAuth := setup(t)
 
 	fooJwt := validJwt(t, "foo")
 	barJwt := validJwt(t, "bar")
@@ -192,15 +195,18 @@ func TestSubdomains(t *testing.T) {
 	// Authenticate at foosub.buildbuddy.io with API key foo
 	fakeAuth.Reset().setNextJwt(t, "foosub", fooJwt)
 	ctx := context.WithValue(contextWithApiKey(t, "foo"), subdomain.Key, "foosub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Ensure that JWT is not cached for a different subdomain
 	fakeAuth.Reset().setNextJwt(t, "barsub", barJwt)
 	ctx = context.WithValue(contextWithApiKey(t, "foo"), subdomain.Key, "barsub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, barJwt, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Also ensure API key bar doesn't work for foosub.buildbuddy.io
 	fakeAuth.Reset().setNextJwt(t, "foosub", bazJwt)
 	ctx = context.WithValue(contextWithApiKey(t, "bar"), subdomain.Key, "foosub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, bazJwt, ctx.Value(authutil.ContextTokenStringKey))
 }
