@@ -2978,7 +2978,7 @@ func (c *FirecrackerContainer) isBalloonEnabled() bool {
 	// enabled and we don't plan to generate a snapshot, don't enable it.
 	// Also disable the balloon for firecracker actions with local-only-snapshot-sharing
 	// (i.e. not workflows), as there seems to be negative performance implications.
-	return *snaputil.EnableBalloon && c.recyclingEnabled && c.supportsRemoteSnapshots
+	return *snaputil.EnableBalloon && c.recyclingEnabled // && c.supportsRemoteSnapshots
 }
 
 // machineHasBalloon returns whether a balloon was initialized in a machine.
