@@ -960,9 +960,9 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		hasRemoteSnapshotForBranchKey := c.hasRemoteSnapshotForBranchKey(ctx)
 		shouldCacheRemotely = !c.hasFallbackKeys() || !hasRemoteSnapshotForBranchKey || !*snaputil.EnableLocalSnapshotSharing
 		if !shouldCacheRemotely {
-			log.CtxInfof(ctx, "Would not save remote snapshot. Has remote snapshot for branch key: %v. Snapshot keys: %v", hasRemoteSnapshotForBranchKey, c.snapshotKeySet)
+			log.CtxInfof(ctx, "Not saving remote snapshot")
 		} else if hasRemoteSnapshotForBranchKey {
-			log.CtxInfof(ctx, "Would save remote snapshot even though one already exists. Snapshot keys: %v", c.snapshotKeySet)
+			log.CtxInfof(ctx, "Saving remote snapshot even though one already exists. Snapshot keys: %v", c.snapshotKeySet)
 		}
 	}
 
