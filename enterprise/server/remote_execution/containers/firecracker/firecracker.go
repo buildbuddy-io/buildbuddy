@@ -958,24 +958,24 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		// to all executors. `!c.hasFallbackKeys()` is a good proxy for whether we're
 		// running on the master snapshot.
 		hasRemoteSnapshotForBranchKey := c.hasRemoteSnapshotForBranchKey(ctx)
-		shouldCacheRemotely = !c.hasFallbackKeys() || !hasRemoteSnapshotForBranchKey
+		shouldCacheRemotely = !c.hasFallbackKeys() || !hasRemoteSnapshotForBranchKey || !*snaputil.EnableLocalSnapshotSharing
 		if !shouldCacheRemotely {
-			log.CtxInfof(ctx, "Would not save remote snapshot. Has remote snapshot for branch key: %v. Snapshot keys: %v", hasRemoteSnapshotForBranchKey, c.snapshotKeySet)
+			log.CtxInfof(ctx, "Not saving remote snapshot")
 		} else if hasRemoteSnapshotForBranchKey {
-			log.CtxInfof(ctx, "Would save remote snapshot even though one already exists. Snapshot keys: %v", c.snapshotKeySet)
+			log.CtxInfof(ctx, "Saving remote snapshot even though one already exists. Snapshot keys: %v", c.snapshotKeySet)
 		}
 	}
 
 	opts := &snaploader.CacheSnapshotOptions{
-		VMMetadata:                 vmd,
-		VMConfiguration:            c.vmConfig,
-		VMStateSnapshotPath:        filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:            c.executorConfig.GuestKernelImagePath,
-		InitrdImagePath:            c.executorConfig.InitrdImagePath,
-		ChunkedFiles:               map[string]*copy_on_write.COWStore{},
-		Recycled:                   c.recycled,
-		Remote:                     c.supportsRemoteSnapshots,
-		WouldNotHaveCachedRemotely: !shouldCacheRemotely,
+		VMMetadata:           vmd,
+		VMConfiguration:      c.vmConfig,
+		VMStateSnapshotPath:  filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
+		KernelImagePath:      c.executorConfig.GuestKernelImagePath,
+		InitrdImagePath:      c.executorConfig.InitrdImagePath,
+		ChunkedFiles:         map[string]*copy_on_write.COWStore{},
+		Recycled:             c.recycled,
+		Remote:               shouldCacheRemotely,
+		SkippedCacheRemotely: c.supportsRemoteSnapshots && !shouldCacheRemotely,
 	}
 	if snapshotSharingEnabled {
 		if c.rootStore != nil {
