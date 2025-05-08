@@ -137,6 +137,7 @@ func (r *compressingReader) Read(p []byte) (int, error) {
 	// Save the rest for the next read
 	r.leftover = r.leftover[n:]
 	if len(r.leftover) > 0 {
+		// Don't return errors until we've drained the leftover buffer.
 		return n, nil
 	}
 	return n, r.readErr
