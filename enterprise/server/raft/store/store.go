@@ -436,6 +436,9 @@ func (s *Store) getMetaRangeBuf() []byte {
 }
 
 func (s *Store) setMetaRangeBuf(buf []byte) {
+	if len(buf) == 0 {
+		return
+	}
 	s.metaRangeMu.Lock()
 	defer s.metaRangeMu.Unlock()
 	new := &rfpb.RangeDescriptor{}
@@ -456,10 +459,8 @@ func (s *Store) setMetaRangeBuf(buf []byte) {
 	}
 	// Update the value
 	s.metaRangeData = buf
-	if new.GetGeneration() > 0 {
-		s.log.Infof("update meta range to generation %d", new.GetGeneration())
-		s.sender.UpdateRange(new)
-	}
+	s.log.Infof("update meta range to generation %d", new.GetGeneration())
+	s.sender.UpdateRange(new)
 }
 
 func (s *Store) queryForMetarange(ctx context.Context) {
