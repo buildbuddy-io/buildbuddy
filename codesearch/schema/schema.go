@@ -21,16 +21,20 @@ var (
 	RepoField     = "repo"
 	SHAField      = "sha"
 
-	DefaultSchema = NewDocumentSchema([]types.FieldSchema{
-		NewFieldSchemaOrPanic(types.KeywordField, IDField, false),
-		NewFieldSchemaOrPanic(types.TrigramField, FilenameField, true),
-		NewFieldSchemaOrPanic(types.SparseNgramField, ContentField, true),
-		NewFieldSchemaOrPanic(types.KeywordField, LanguageField, true),
-		NewFieldSchemaOrPanic(types.KeywordField, OwnerField, true),
-		NewFieldSchemaOrPanic(types.KeywordField, RepoField, true),
-		NewFieldSchemaOrPanic(types.KeywordField, SHAField, true),
+	defaultSchema = NewDocumentSchema([]types.FieldSchema{
+		MustFieldSchema(types.KeywordField, IDField, false),
+		MustFieldSchema(types.TrigramField, FilenameField, true),
+		MustFieldSchema(types.SparseNgramField, ContentField, true),
+		MustFieldSchema(types.KeywordField, LanguageField, true),
+		MustFieldSchema(types.KeywordField, OwnerField, true),
+		MustFieldSchema(types.KeywordField, RepoField, true),
+		MustFieldSchema(types.KeywordField, SHAField, true),
 	})
 )
+
+func DefaultSchema() types.DocumentSchema {
+	return defaultSchema
+}
 
 // Satisfies the types.FieldSchema interface.
 type fieldSchema struct {
@@ -81,7 +85,7 @@ func NewFieldSchema(ftype types.FieldType, name string, stored bool) (types.Fiel
 
 // Schemas are typically static and const, so in the most common situations, it's reasonable to
 // panic if creation fails.
-func NewFieldSchemaOrPanic(ftype types.FieldType, name string, stored bool) types.FieldSchema {
+func MustFieldSchema(ftype types.FieldType, name string, stored bool) types.FieldSchema {
 	fieldSchema, err := NewFieldSchema(ftype, name, stored)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create field schema for %s: %v", name, err))

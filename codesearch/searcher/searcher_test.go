@@ -16,8 +16,8 @@ import (
 
 var testSchema = schema.NewDocumentSchema(
 	[]types.FieldSchema{
-		schema.NewFieldSchemaOrPanic(types.KeywordField, "ident", true),
-		schema.NewFieldSchemaOrPanic(types.SparseNgramField, "content", true),
+		schema.MustFieldSchema(types.KeywordField, "ident", true),
+		schema.MustFieldSchema(types.SparseNgramField, "content", true),
 	})
 
 func makeTestDoc(ident, content string) types.Document {

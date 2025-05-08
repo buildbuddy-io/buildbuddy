@@ -207,7 +207,7 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 			log.Debug(err.Error())
 			continue
 		}
-		doc, err := schema.DefaultSchema.MakeDocument(fields)
+		doc, err := schema.DefaultSchema().MakeDocument(fields)
 		if err != nil {
 			log.Debug(err.Error())
 			continue
@@ -267,7 +267,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	if req.GetNumResults() > 0 && req.GetNumResults() < maxNumResults {
 		numResults = int(req.GetNumResults())
 	}
-	codesearcher := searcher.New(ctx, index.NewReader(ctx, css.db, namespace, schema.DefaultSchema))
+	codesearcher := searcher.New(ctx, index.NewReader(ctx, css.db, namespace, schema.DefaultSchema()))
 	q, err := query.NewReQuery(ctx, req.GetQuery().GetTerm())
 	if err != nil {
 		return nil, err

@@ -184,7 +184,7 @@ func handleIndex(args []string) {
 					log.Info(err.Error())
 					return nil
 				}
-				doc, err := schema.DefaultSchema.MakeDocument(fields)
+				doc, err := schema.DefaultSchema().MakeDocument(fields)
 				if err != nil {
 					log.Fatal(err.Error())
 				}
@@ -211,7 +211,7 @@ func handleSearch(ctx context.Context, args []string) {
 	}
 	defer db.Close()
 
-	codesearcher := searcher.New(ctx, index.NewReader(ctx, db, getNamespace(), schema.DefaultSchema))
+	codesearcher := searcher.New(ctx, index.NewReader(ctx, db, getNamespace(), schema.DefaultSchema()))
 	q, err := query.NewReQuery(ctx, pat)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -280,7 +280,7 @@ func handleSquery(ctx context.Context, args []string) {
 	}
 	defer db.Close()
 
-	ir := index.NewReader(ctx, db, getNamespace(), schema.DefaultSchema)
+	ir := index.NewReader(ctx, db, getNamespace(), schema.DefaultSchema())
 	matches, err := ir.RawQuery(pat)
 	if err != nil {
 		log.Fatal(err.Error())

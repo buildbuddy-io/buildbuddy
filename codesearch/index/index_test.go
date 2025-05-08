@@ -26,8 +26,8 @@ func hash(s string) uint64 {
 
 var testSchema = schema.NewDocumentSchema(
 	[]types.FieldSchema{
-		schema.NewFieldSchemaOrPanic(types.KeywordField, "id", true),
-		schema.NewFieldSchemaOrPanic(types.TrigramField, "text", true),
+		schema.MustFieldSchema(types.KeywordField, "id", true),
+		schema.MustFieldSchema(types.TrigramField, "text", true),
 	},
 )
 
@@ -183,9 +183,9 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 
 	docSchema := schema.NewDocumentSchema(
 		[]types.FieldSchema{
-			schema.NewFieldSchemaOrPanic(types.KeywordField, "id", true),
-			schema.NewFieldSchemaOrPanic(types.KeywordField, "field_a", true),
-			schema.NewFieldSchemaOrPanic(types.KeywordField, "field_b", false),
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "field_a", true),
+			schema.MustFieldSchema(types.KeywordField, "field_b", false),
 		},
 	)
 	doc, err := docSchema.MakeDocument(
@@ -346,8 +346,8 @@ func TestDBFormat(t *testing.T) {
 
 	docSchema := schema.NewDocumentSchema(
 		[]types.FieldSchema{
-			schema.NewFieldSchemaOrPanic(types.KeywordField, "id", true),
-			schema.NewFieldSchemaOrPanic(types.KeywordField, "content", false),
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "content", false),
 		},
 	)
 	doc1, err := docSchema.MakeDocument(
