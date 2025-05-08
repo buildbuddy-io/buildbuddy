@@ -16,13 +16,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	ctrname "github.com/google/go-containerregistry/pkg/name"
+	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 var (
@@ -141,7 +141,7 @@ func CredentialsFromProperties(props *platform.Properties) (Credentials, error) 
 func resolveWithDefaultKeychain(ref reference.Named) (Credentials, error) {
 	// TODO: parse the errors below and if they're 403/401 errors then return
 	// Unauthenticated/PermissionDenied
-	ctrRef, err := ctrname.ParseReference(ref.String())
+	ctrRef, err := gcrname.ParseReference(ref.String())
 	if err != nil {
 		log.Debugf("Failed to parse image ref %q: %s", ref.String(), err)
 		return Credentials{}, nil
@@ -216,10 +216,10 @@ func NewResolver() (*Resolver, error) {
 	return &Resolver{allowedPrivateIPs: allowedPrivateIPNets}, nil
 }
 
-func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
+func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	imageRef, err := ctrname.ParseReference(imageName)
+	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
@@ -227,7 +227,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	remoteOpts := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithPlatform(
-			v1.Platform{
+			gcr.Platform{
 				Architecture: platform.GetArch(),
 				OS:           platform.GetOs(),
 				Variant:      platform.GetVariant(),
