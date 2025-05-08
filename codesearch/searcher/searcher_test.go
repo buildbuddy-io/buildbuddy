@@ -48,10 +48,10 @@ var sampleData = []struct {
 	{"eleven", "turn it up to 11"},
 }
 
-type zeroScorer struct{}
+type constantScorer struct{}
 
-func (s zeroScorer) Skip() bool                                                     { return false }
-func (s zeroScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 { return 0.0 }
+func (s constantScorer) Skip() bool                                                     { return false }
+func (s constantScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 { return 0.1 }
 
 type sQuery struct {
 	s      string
@@ -88,7 +88,7 @@ func TestBasicSearcher(t *testing.T) {
 	ctx := context.Background()
 	db := createSampleIndex(t)
 	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
-	docs, err := s.Search(sQuery{"(:all)", zeroScorer{}}, 100, 0)
+	docs, err := s.Search(sQuery{"(:all)", constantScorer{}}, 100, 0)
 	require.NoError(t, err)
 	require.Equal(t, len(sampleData), len(docs))
 }
@@ -97,7 +97,7 @@ func TestSearcherOffsetAndLimit(t *testing.T) {
 	ctx := context.Background()
 	db := createSampleIndex(t)
 	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
-	docs, err := s.Search(sQuery{"(:all)", zeroScorer{}}, 11, 8)
+	docs, err := s.Search(sQuery{"(:all)", constantScorer{}}, 11, 8)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(docs))
 
@@ -105,3 +105,7 @@ func TestSearcherOffsetAndLimit(t *testing.T) {
 	assert.Equal(t, "ten", string(docs[1].Field("ident").Contents()))
 	assert.Equal(t, "eleven", string(docs[2].Field("ident").Contents()))
 }
+
+// test search for short tokens alone
+// test search for short tokens combined with other tokens, where short tokens match
+// test search for short tokens combined with other tokens, where short token doesn't always match any docs - e.g. "foo is" or "ind.z"

@@ -110,9 +110,9 @@ func (s *reScorer) Score(docMatch types.DocumentMatch, doc types.Document) float
 		matchingRegions := match(re.Clone(), field.Contents())
 		f_qi_d := float64(len(matchingRegions))
 		if f_qi_d == 0 {
-			// HACK? If any of the field matchers fail entirely, it's not a match.
-			// This is only valid if all the field matchers are required, which
-			// they are in the current implementation.
+			// Important note: If any of the field matchers fail entirely, it's not a match.
+			// This is only valid if all the field matchers are required, which was true at the
+			// time this was added.
 			return 0.0
 		}
 		D := float64(len(strings.Fields(string(field.Contents()))))
@@ -323,6 +323,10 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 		}
 	}
 	subLog.Infof("parsed query: [%s]", q)
+
+	// Here we build the squery as a conjunction of all the clauses.
+	// If we ever add support for OR clauses between query terms, the scoring logic will need
+	// to be updated as well. The scorer currently assumes that all fieldMatchers must match.
 
 	squery := ""
 	if len(sQueries) == 1 {

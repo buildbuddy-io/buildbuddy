@@ -106,3 +106,22 @@ func TestUngroupedTerms(t *testing.T) {
 	require.Contains(t, fieldMatchers, "content")
 	assert.Contains(t, fieldMatchers["content"].String(), "(grp)|(trm)")
 }
+
+// define schema
+// make test doc
+// call score on individual docs
+func TestScoringSingleMatch(t *testing.T) {
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "foo")
+	require.NoError(t, err)
+
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	squery := string(q.SQuery())
+	assert.Contains(t, squery, `(:eq content "foo")`)
+
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	require.Contains(t, fieldMatchers, "content")
+	assert.Contains(t, fieldMatchers["content"].String(), "foo")
+}
