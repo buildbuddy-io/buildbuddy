@@ -116,16 +116,16 @@ func (d *zstdDecompressor) Close() error {
 	return lastErr
 }
 
-type compressingReader struct {
+type wrappedReader struct {
 	pr          *io.PipeReader
 	inputReader io.ReadCloser
 }
 
-func (r *compressingReader) Read(p []byte) (int, error) {
+func (r *wrappedReader) Read(p []byte) (int, error) {
 	return r.pr.Read(p)
 }
 
-func (r *compressingReader) Close() error {
+func (r *wrappedReader) Close() error {
 	defer r.inputReader.Close()
 	return r.pr.Close()
 }
@@ -167,7 +167,7 @@ func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf 
 			}
 		}
 	}()
-	return &compressingReader{
+	return &wrappedReader{
 		pr:          pr,
 		inputReader: reader,
 	}, nil
