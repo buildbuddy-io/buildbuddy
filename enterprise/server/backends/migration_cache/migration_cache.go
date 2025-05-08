@@ -203,7 +203,8 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 
 	if mc.doubleRead() {
 		go func() {
-			ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
+			// Timeout is slightly larger than p99.9 latency.
+			ctx, cancel := background.ExtendContextForFinalization(ctx, 2*time.Second)
 			defer cancel()
 			dstContains, dstErr := mc.dest.Contains(ctx, r)
 			if dstErr != nil {
@@ -268,7 +269,8 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 
 	if mc.doubleRead() {
 		go func() {
-			ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
+			// Timeout is slightly larger than p99.9 latency.
+			ctx, cancel := background.ExtendContextForFinalization(ctx, 2*time.Second)
 			defer cancel()
 			dstMissing, dstErr := mc.dest.FindMissing(ctx, resources)
 			if dstErr != nil {
@@ -304,6 +306,9 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 	srcData, srcErr := mc.src.GetMulti(ctx, resources)
 
 	go func() {
+		// Timeout is slightly larger than p99.9 latency.
+		ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
+		defer cancel()
 		doubleRead := mc.doubleRead()
 		var dstErr error
 		var dstData map[*repb.Digest][]byte
@@ -813,6 +818,9 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 	srcBuf, srcErr := mc.src.Get(ctx, r)
 
 	go func() {
+		// Timeout is slightly larger than p99.9 latency.
+		ctx, cancel := background.ExtendContextForFinalization(ctx, 5*time.Second)
+		defer cancel()
 		// Double read some proportion to guarantee that data is consistent between caches
 		doubleRead := mc.doubleRead()
 		if doubleRead {
