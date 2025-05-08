@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 )
@@ -20,6 +21,8 @@ func Register(env *real_environment.RealEnv) {
 }
 
 func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
+	// Override the subdomain with the one for which auth is requested
+	ctx = context.WithValue(ctx, subdomain.Key, req.GetSubdomain())
 	ctx = a.authenticator.AuthenticatedGRPCContext(ctx)
 	err, found := authutil.AuthErrorFromContext(ctx)
 	if found {

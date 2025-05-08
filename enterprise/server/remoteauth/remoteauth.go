@@ -3,6 +3,7 @@ package remoteauth
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -65,6 +67,18 @@ func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator
 		jwtExpirationBuffer: *remoteAuthJwtExpirationBuffer,
 		claimsCache:         claimsCache,
 	}, nil
+}
+
+// The claims cache must be keyed by subdomain and API key to avoid keys
+// leaking across subdomain boundaries. This function extracts an API key and
+// subdomain from a context and builds a claims cache key with them.
+func claimsCacheKey(ctx context.Context) (string, error) {
+	key := getLastMetadataValue(ctx, authutil.APIKeyHeader)
+	if key == "" {
+		return "", status.PermissionDeniedError("Missing API key")
+	}
+	sub := subdomain.Get(ctx)
+	return fmt.Sprintf("%s:%s", sub, key), nil
 }
 
 type RemoteAuthenticator struct {
@@ -123,9 +137,9 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 		return authContext(ctx, jwt, c)
 	}
 
-	key := getAPIKey(ctx)
-	if key == "" {
-		return authutil.AuthContextWithError(ctx, status.PermissionDeniedError("Missing API key"))
+	key, err := claimsCacheKey(ctx)
+	if err != nil {
+		authutil.AuthContextWithError(ctx, status.PermissionDeniedError("Missing API key"))
 	}
 
 	// Try to use a locally-cached JWT, if available and valid.
@@ -195,7 +209,8 @@ func (a *RemoteAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt
 }
 
 func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) {
-	resp, err := a.authClient.Authenticate(ctx, &authpb.AuthenticateRequest{})
+	sd := subdomain.Get(ctx)
+	resp, err := a.authClient.Authenticate(ctx, &authpb.AuthenticateRequest{Subdomain: &sd})
 	if err != nil {
 		return "", err
 	}
