@@ -149,6 +149,7 @@ message ExecutionAuxiliaryMetadata {
   string isolation_type = 2;
 
   build.bazel.remote.execution.v2.ExecuteRequest execute_request = 3;
+
   scheduler.SchedulingMetadata scheduling_metadata = 4;
 
   // The effective action timeout. Either user requested or the default.
@@ -157,6 +158,9 @@ message ExecutionAuxiliaryMetadata {
   string executor_hostname = 7;
 
   repeated string experiments = 8;
+
+  // The timestamp at which the task was locally enqueued on the worker.
+  google.protobuf.Timestamp worker_queued_timestamp = 9;
 }
 
 message ExecutionLookup {

@@ -30,6 +30,7 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -45,8 +46,16 @@ var (
 
 var shuttingDownLogOnce sync.Once
 
+type QueuedTask struct {
+	*scpb.EnqueueTaskReservationRequest
+
+	// WorkerQueuedTimestamp is the timestamp at which the task was added to
+	// the local queue.
+	WorkerQueuedTimestamp time.Time
+}
+
 type groupPriorityQueue struct {
-	*priority_queue.ThreadSafePriorityQueue[*scpb.EnqueueTaskReservationRequest]
+	*priority_queue.ThreadSafePriorityQueue[*QueuedTask]
 	groupID string
 }
 
@@ -68,7 +77,7 @@ type taskQueueIterator struct {
 
 // Next returns the next task in the taskQueue, or nil if the iterator has
 // reached the end of the queue.
-func (t *taskQueueIterator) Next() *scpb.EnqueueTaskReservationRequest {
+func (t *taskQueueIterator) Next() *QueuedTask {
 	t.current = nil
 	if t.i >= t.q.Len() {
 		return nil
@@ -112,6 +121,7 @@ func (t *taskQueueIterator) Current() *queuePosition {
 }
 
 type taskQueue struct {
+	clock clockwork.Clock
 	// List of *groupPriorityQueue items.
 	pqs *list.List
 	// Map to allow quick lookup of a specific *groupPriorityQueue element in the pqs list.
@@ -123,8 +133,9 @@ type taskQueue struct {
 	currentPQ *list.Element
 }
 
-func newTaskQueue() *taskQueue {
+func newTaskQueue(clock clockwork.Clock) *taskQueue {
 	return &taskQueue{
+		clock:       clock,
 		pqs:         list.New(),
 		pqByGroupID: make(map[string]*list.Element),
 		currentPQ:   nil,
@@ -141,8 +152,9 @@ func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
 			log.Error("not a *groupPriorityQueue!??!")
 			continue
 		}
-
-		reservations = append(reservations, pq.GetAll()...)
+		for _, t := range pq.GetAll() {
+			reservations = append(reservations, t.EnqueueTaskReservationRequest)
+		}
 	}
 
 	return reservations
@@ -152,6 +164,8 @@ func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
 // If the task is already enqueued, it will not be enqueued again.
 // Returns true if the task was enqueued, false if it was already enqueued.
 func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
+	enqueuedAt := t.clock.Now()
+
 	// Don't enqueue the same task twice to avoid inflating queue length
 	// metrics. Duplicate enqueues can happen when the executor asks for more
 	// work during mostly-idle periods, since the scheduler doesn't know which
@@ -170,7 +184,7 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
 		}
 	} else {
 		pq = &groupPriorityQueue{
-			ThreadSafePriorityQueue: priority_queue.New[*scpb.EnqueueTaskReservationRequest](),
+			ThreadSafePriorityQueue: priority_queue.New[*QueuedTask](),
 			groupID:                 taskGroupID,
 		}
 		el := t.pqs.PushBack(pq)
@@ -179,9 +193,13 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
 			t.currentPQ = el
 		}
 	}
+	qt := &QueuedTask{
+		EnqueueTaskReservationRequest: req,
+		WorkerQueuedTimestamp:         enqueuedAt,
+	}
 	// Using negative priority here, since the remote execution API specifies
 	// that tasks with lower priority values should be scheduled first.
-	pq.Push(req, -float64(req.GetSchedulingMetadata().GetPriority()))
+	pq.Push(qt, -float64(req.GetSchedulingMetadata().GetPriority()))
 	t.taskIDs[req.GetTaskId()] = struct{}{}
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: taskGroupID}).Set(float64(pq.Len()))
 	if req.GetSchedulingMetadata().GetTrackQueuedTaskSize() {
@@ -206,7 +224,7 @@ func (t *taskQueue) headRef() *queuePosition {
 }
 
 // Dequeue removes the task at the head of the task queue and returns it.
-func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
+func (t *taskQueue) Dequeue() *QueuedTask {
 	if t.currentPQ == nil {
 		return nil
 	}
@@ -221,7 +239,7 @@ func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
 // blocked on custom resources, then we don't rotate to the next the
 // groupPriorityQueue. This is fine for now, because we don't support custom
 // resources in multi-tenant scenarios yet.
-func (t *taskQueue) DequeueAt(pos *queuePosition) *scpb.EnqueueTaskReservationRequest {
+func (t *taskQueue) DequeueAt(pos *queuePosition) *QueuedTask {
 	// Remove from the group queue.
 	pq := pos.GroupQueue.Value.(*groupPriorityQueue)
 	req, ok := pq.RemoveAt(pos.Index)
@@ -261,7 +279,7 @@ func (t *taskQueue) DequeueAt(pos *queuePosition) *scpb.EnqueueTaskReservationRe
 	return req
 }
 
-func (t *taskQueue) Peek() *scpb.EnqueueTaskReservationRequest {
+func (t *taskQueue) Peek() *QueuedTask {
 	if t.currentPQ == nil {
 		return nil
 	}
@@ -356,7 +374,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 	rootContext, rootCancel := context.WithCancel(context.Background())
 	qes := &PriorityTaskScheduler{
 		env:                     env,
-		q:                       newTaskQueue(),
+		q:                       newTaskQueue(env.GetClock()),
 		exec:                    exec,
 		taskLeaser:              taskLeaser,
 		clock:                   env.GetClock(),
@@ -421,7 +439,7 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 
 	// Cancel all tasks early enough to allow containers and workspaces to be
 	// cleaned up.
-	delay := time.Until(deadline) - *shutdownCleanupDuration
+	delay := deadline.Sub(q.clock.Now()) - *shutdownCleanupDuration
 	ctx, cancel := context.WithTimeout(ctx, delay)
 	defer cancel()
 
@@ -432,7 +450,7 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			log.CtxInfof(ctx, "Graceful stop of executor succeeded.")
-		case <-time.After(delay):
+		case <-q.clock.After(delay):
 			log.CtxWarningf(ctx, "Hard-stopping executor!")
 			q.rootCancel()
 		}
@@ -446,7 +464,7 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 		if activeTasks == 0 {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		q.clock.Sleep(100 * time.Millisecond)
 	}
 	// Since all tasks have finished, no new runners can be created, and it is now
 	// safe to wait for all pending cleanup jobs to finish.
@@ -625,7 +643,7 @@ func (q *PriorityTaskScheduler) stats() string {
 // task is eligible to be skipped due to only being blocked on custom resources.
 // Only tasks which _don't_ need custom resources may skip the task in this
 // case.
-func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationRequest) (canFit bool, isSkippable bool) {
+func (q *PriorityTaskScheduler) canFitTask(res *QueuedTask) (canFit bool, isSkippable bool) {
 	// If we're running in exclusiveTaskScheduling mode, only ever allow one
 	// task to run at a time. Otherwise fall through to the logic below.
 	if q.exclusiveTaskScheduling && len(q.activeTaskCancelFuncs) >= 1 {
@@ -670,7 +688,7 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 	return true, false
 }
 
-func (q *PriorityTaskScheduler) nextTaskForPruning() *scpb.EnqueueTaskReservationRequest {
+func (q *PriorityTaskScheduler) nextTaskForPruning() *QueuedTask {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.shuttingDown || q.q.Len() == 0 {
@@ -742,7 +760,7 @@ type queuePosition struct {
 
 // getNextSchedulableTask returns the next task that can be scheduled, and a
 // pointer to the task in the queue.
-func (q *PriorityTaskScheduler) getNextSchedulableTask() (*scpb.EnqueueTaskReservationRequest, *queuePosition) {
+func (q *PriorityTaskScheduler) getNextSchedulableTask() (*QueuedTask, *queuePosition) {
 	// Don't use the experimental custom resource scheduling logic if there are
 	// no custom resources configured.
 	if len(q.customResourcesCapacity) == 0 {
@@ -809,13 +827,13 @@ func (q *PriorityTaskScheduler) handleTask() {
 	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, reservation.GetJwt())
 	log.CtxInfof(ctx, "Scheduling task of size %s", tasksize.String(nextTask.GetTaskSize()))
 
-	q.trackTask(reservation, &cancel)
+	q.trackTask(reservation.EnqueueTaskReservationRequest, &cancel)
 
 	go func() {
 		defer cancel()
 		defer func() {
 			q.mu.Lock()
-			q.untrackTask(reservation, &cancel)
+			q.untrackTask(reservation.EnqueueTaskReservationRequest, &cancel)
 			q.mu.Unlock()
 			// Wake up the scheduling loop since the resources we just freed up
 			// may allow another task to become runnable.
@@ -838,8 +856,9 @@ func (q *PriorityTaskScheduler) handleTask() {
 			ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
 		}
 		scheduledTask := &repb.ScheduledTask{
-			ExecutionTask:      lease.Task(),
-			SchedulingMetadata: reservation.GetSchedulingMetadata(),
+			ExecutionTask:         lease.Task(),
+			SchedulingMetadata:    reservation.GetSchedulingMetadata(),
+			WorkerQueuedTimestamp: timestamppb.New(reservation.WorkerQueuedTimestamp),
 		}
 		retry, err := q.runTask(ctx, scheduledTask)
 		if err != nil {

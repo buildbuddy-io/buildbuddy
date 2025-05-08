@@ -2232,6 +2232,9 @@ message ExecutionTask {
 message ScheduledTask {
   ExecutionTask execution_task = 1;
   scheduler.SchedulingMetadata scheduling_metadata = 2;
+
+  // The timestamp at which the task was locally enqueued on the worker.
+  google.protobuf.Timestamp worker_queued_timestamp = 3;
 }
 
 message ExecutorDetails {
