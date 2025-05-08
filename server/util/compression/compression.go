@@ -120,21 +120,21 @@ type compressingReader struct {
 	inputReader io.ReadCloser
 	readBuf     []byte
 	compressBuf []byte
-	compressed  []byte
+	leftover    []byte
 }
 
 func (r *compressingReader) Read(p []byte) (int, error) {
-	if len(r.compressed) == 0 {
+	if len(r.leftover) == 0 {
 		n, err := r.inputReader.Read(r.readBuf)
 		if err != nil || n == 0 {
 			return n, err
 		}
 		r.compressBuf = CompressZstd(r.compressBuf[:0], r.readBuf[:n])
-		r.compressed = r.compressBuf
+		r.leftover = r.compressBuf
 	}
-	n := copy(p, r.compressed)
+	n := copy(p, r.leftover)
 	// Save the rest for the next read
-	r.compressed = r.compressed[n:]
+	r.leftover = r.leftover[n:]
 	return n, nil
 }
 
