@@ -51,6 +51,17 @@ func truncate(results []uint64, numResults, offset int) []uint64 {
 	return rest
 }
 
+func dropZeroScores(docIDs []uint64, scoreMap map[uint64]float64) []uint64 {
+	// Precondition: docIDs is sorted in descending order of score.
+	for i, docID := range docIDs {
+		if scoreMap[docID] <= 0.0 {
+			log.Infof("Dropping %d zero scores", len(docIDs)-i)
+			return docIDs[:i]
+		}
+	}
+	return docIDs
+}
+
 func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMatch, numResults, offset int) ([]uint64, error) {
 	start := time.Now()
 
@@ -78,10 +89,6 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 	scoreMap := make(map[uint64]float64, numDocs)
 	var mu sync.Mutex
 
-	// TODO(jdelfino): Rework this - discard docs with 0 score. Estimate
-	// when to stop scoring based on the number of docs scored, stdev of scores
-	// so far, and the number of docs remaining. This is a heuristic, but it should be
-	// better than scoring all docs.
 	// TODO(tylerw): use a priority-queue; stop iteration early.
 	g := new(errgroup.Group)
 	g.SetLimit(runtime.GOMAXPROCS(0))
@@ -122,7 +129,8 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 		return scoreMap[docIDs[i]] > scoreMap[docIDs[j]]
 	})
 
-	return truncate(docIDs, numResults, offset), nil
+	docIDs = truncate(docIDs, numResults, offset)
+	return dropZeroScores(docIDs, scoreMap), nil
 }
 
 func (c *CodeSearcher) Search(q types.Query, numResults, offset int) ([]types.Document, error) {

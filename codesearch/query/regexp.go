@@ -13,7 +13,6 @@ import (
 	"unicode"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 // A Query is a matching machine, like a regular expression,
@@ -402,18 +401,13 @@ func (q *Query) SQuery(fieldName string) string {
 
 // RegexpQuery returns a Query for the given regexp.
 func RegexpQuery(re *syntax.Regexp, mods ...token.Option) *Query {
-	log.Info(fmt.Sprintf("origianl syntax.Regexp: %s", re.String()))
-
 	opts := token.DefaultOptions()
 	for _, mod := range mods {
 		mod(opts)
 	}
 	info := analyze(re, opts)
-	log.Info(fmt.Sprintf("regexp before simplify: %s", info.match))
 	info.simplify(true)
-	log.Info(fmt.Sprintf("regexp after simplify: %s", info.match))
 	info.addExact()
-	log.Info(fmt.Sprintf("regexp after addExact: %s", info.match))
 	return info.match
 }
 
