@@ -32,6 +32,8 @@ message ApiKey {
     // Allows changing org-level settings and managing org users, such as via
     // the settings UI or via the SCIM API.
     ORG_ADMIN_CAPABILITY = 8;  // 2^3
+    // Allows read-only access to audit logs.
+    AUDIT_LOG_READ_CAPABILITY = 16; // 2^4
   }
 
   // Capabilities associated with this API key.
