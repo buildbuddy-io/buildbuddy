@@ -261,10 +261,6 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	require.NoError(t, err)
 
-	log.Infof("deleted key: %q, rd2.GetEnd=%q", keys.RangeMetaKey(rd2.GetEnd()), rd2.GetEnd())
-
-	log.Info("====set up complete")
-
 	for {
 		clock.Advance(11 * time.Second)
 		list1, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
