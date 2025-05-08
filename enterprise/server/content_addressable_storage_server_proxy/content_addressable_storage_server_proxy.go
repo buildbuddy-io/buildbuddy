@@ -94,7 +94,7 @@ func recordMetrics(op, status string, digestsPerStatus, bytesPerStatus map[strin
 
 func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	if proxy_util.SkipRemote(ctx) {
-		return nil, status.UnimplementedError("Skip remote not implemented")
+		return s.local.FindMissingBlobs(ctx, req)
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
