@@ -109,12 +109,6 @@ func (s *reScorer) Score(docMatch types.DocumentMatch, doc types.Document) float
 
 		matchingRegions := match(re.Clone(), field.Contents())
 		f_qi_d := float64(len(matchingRegions))
-		if f_qi_d == 0 {
-			// HACK? If any of the field matchers fail entirely, it's not a match.
-			// This is only valid if all the field matchers are required, which
-			// they are in the current implementation.
-			return 0.0
-		}
 		D := float64(len(strings.Fields(string(field.Contents()))))
 		k1, b := bm25Params(field.Name())
 		fieldScore := (f_qi_d * (k1 + 1)) / (f_qi_d + k1*(1-b+b*D))
@@ -233,9 +227,7 @@ func expressionToSquery(expr string, fieldName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	r := RegexpQuery(syn)
-	s := r.SQuery(fieldName)
-	return s, nil
+	return RegexpQuery(syn).SQuery(fieldName), nil
 }
 
 func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
@@ -258,7 +250,6 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 	}
 
 	q, filename := filters.ExtractFilenameFilter(q)
-
 	if len(filename) > 0 {
 		subQ, err := expressionToSquery(filename, filenameField)
 		if err != nil {

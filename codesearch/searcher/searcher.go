@@ -51,17 +51,6 @@ func truncate(results []uint64, numResults, offset int) []uint64 {
 	return rest
 }
 
-func dropZeroScores(docIDs []uint64, scoreMap map[uint64]float64) []uint64 {
-	// Precondition: docIDs is sorted in descending order of score.
-	for i, docID := range docIDs {
-		if scoreMap[docID] <= 0.0 {
-			log.Infof("Dropping %d zero scores", len(docIDs)-i)
-			return docIDs[:i]
-		}
-	}
-	return docIDs
-}
-
 func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMatch, numResults, offset int) ([]uint64, error) {
 	start := time.Now()
 
@@ -129,8 +118,7 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 		return scoreMap[docIDs[i]] > scoreMap[docIDs[j]]
 	})
 
-	docIDs = truncate(docIDs, numResults, offset)
-	return dropZeroScores(docIDs, scoreMap), nil
+	return truncate(docIDs, numResults, offset), nil
 }
 
 func (c *CodeSearcher) Search(q types.Query, numResults, offset int) ([]types.Document, error) {

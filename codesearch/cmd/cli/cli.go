@@ -6,8 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"runtime/pprof"
 	"slices"
 	"strings"
@@ -19,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
-	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
 )
@@ -121,26 +118,6 @@ func getNamespace() string {
 	return os.Getenv("USER") + "-ns"
 }
 
-func extractRepoURL(dir string) *git.RepoURL {
-	cmd := exec.Command("git", "config", "--get", "remote.origin.url")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err == nil {
-		if repoURL, err := git.ParseGitHubRepoURL(strings.TrimSpace(string(out))); err == nil {
-			return repoURL
-		}
-	}
-	return &git.RepoURL{}
-}
-
-func extractGitSHA(dir string) string {
-	cmd := exec.Command("git", "rev-parse", "--verify", "HEAD")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err == nil {
-		return strings.TrimSpace(string(out))
-	}
-	return ""
-}
-
 func handleIndex(args []string) {
 	if *reset {
 		os.RemoveAll(indexDir)
@@ -157,44 +134,9 @@ func handleIndex(args []string) {
 	}
 
 	for _, dir := range args {
-		repoURL := extractRepoURL(dir)
-		commitSHA := extractGitSHA(dir)
-		log.Printf("indexing dir: %q", dir)
-		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if _, elem := filepath.Split(path); elem != "" {
-				// Skip various temporary or "hidden" files or directories.
-				if elem[0] == '.' || elem[0] == '#' || elem[0] == '~' || elem[len(elem)-1] == '~' {
-					if info.IsDir() {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-			}
-			if err != nil {
-				log.Printf("%s: %s", path, err)
-				return nil
-			}
-			if info != nil && info.Mode()&os.ModeType == 0 {
-				buf, err := os.ReadFile(path)
-				if err != nil {
-					return err
-				}
-				fields, err := github.ExtractFields(path, commitSHA, repoURL, buf)
-				if err != nil {
-					log.Info(err.Error())
-					return nil
-				}
-				doc, err := schema.DefaultSchema().MakeDocument(fields)
-				if err != nil {
-					log.Fatal(err.Error())
-				}
-
-				if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
-					log.Fatal(err.Error())
-				}
-			}
-			return nil
-		})
+		if err := github.IndexLocalRepo(dir, iw, schema.DefaultSchema()); err != nil {
+			log.Fatal(err.Error())
+		}
 	}
 
 	if err := iw.Flush(); err != nil {

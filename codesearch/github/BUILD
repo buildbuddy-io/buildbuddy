@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//codesearch/schema",
+        "//codesearch/types",
         "//server/util/git",
         "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_gabriel_vasile_mimetype//:mimetype",

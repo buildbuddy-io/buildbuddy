@@ -1,15 +1,11 @@
 package server
 
 import (
-	"archive/zip"
 	"context"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
@@ -147,74 +143,18 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 	username := req.GetGitRepo().GetUsername()
 	accessToken := req.GetGitRepo().GetAccessToken()
 
-	archiveURL, err := apiArchiveURL(repoURLString, commitSHA, username, accessToken)
+	repoURL, err := git.ParseGitHubRepoURL(repoURLString)
 	if err != nil {
 		return nil, err
 	}
-
-	httpRsp, err := http.Get(archiveURL)
-	if err != nil {
-		return nil, err
-	}
-	defer httpRsp.Body.Close()
-
-	tmpFile, err := os.CreateTemp(css.scratchDirectory, "archive-*.zip")
-	if err != nil {
-		return nil, err
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := io.Copy(tmpFile, httpRsp.Body); err != nil {
-		return nil, err
-	}
-	log.Debugf("Copied archive to %q", tmpFile.Name())
-
-	zipReader, err := zip.OpenReader(tmpFile.Name())
-	if err != nil {
-		return nil, err
-	}
-	defer zipReader.Close()
 
 	iw, err := index.NewWriter(css.db, req.GetNamespace())
 	if err != nil {
 		return nil, err
 	}
 
-	repoURL, err := git.ParseGitHubRepoURL(repoURLString)
-	if err != nil {
+	if err := github.IndexGitHubRepo(repoURL, commitSHA, username, accessToken, css.scratchDirectory, iw, schema.DefaultSchema()); err != nil {
 		return nil, err
-	}
-
-	for _, file := range zipReader.File {
-		parts := strings.Split(file.Name, string(filepath.Separator))
-		if len(parts) == 1 {
-			continue
-		}
-		filename := filepath.Join(parts[1:]...)
-
-		rc, err := file.Open()
-		if err != nil {
-			return nil, err
-		}
-		defer rc.Close()
-		buf, err := io.ReadAll(rc)
-		if err != nil {
-			return nil, err
-		}
-
-		fields, err := github.ExtractFields(filename, commitSHA, repoURL, buf)
-		if err != nil {
-			log.Debug(err.Error())
-			continue
-		}
-		doc, err := schema.DefaultSchema().MakeDocument(fields)
-		if err != nil {
-			log.Debug(err.Error())
-			continue
-		}
-		if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
-			return nil, err
-		}
 	}
 
 	if err := iw.Flush(); err != nil {
