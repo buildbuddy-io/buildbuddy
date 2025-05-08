@@ -131,13 +131,13 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 	serializedAction := base64.StdEncoding.EncodeToString(actionBytes)
 
-	timeout := ci_runner_util.CIRunnerDefaultTimeout
+	timeout := *ci_runner_util.CIRunnerDefaultTimeout
 	if req.GetTimeout() != "" {
 		d, err := time.ParseDuration(req.GetTimeout())
 		if err != nil {
 			return nil, status.WrapError(err, "parse timeout from request")
 		}
-		timeout = &d
+		timeout = d
 	}
 
 	args := []string{
@@ -271,10 +271,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if err != nil {
 		return nil, status.WrapError(err, "upload command")
 	}
-	// Prefer to set the timeout in the ci_runner, which gracefully shuts down
-	// the runner. Add some buffer before the action is forcefully terminated by
-	// the executor.
-	actionTimeout := *timeout + timeoutGracePeriod
+	// Set the action timeout slightly longer than the CI runner timeout, so
+	// that we allow the CI runner to finalize the outer workflow invocation
+	// once the timeout has elapsed, but if the CI runner takes too long to
+	// finalize, we can still kill the action.
+	actionTimeout := timeout + timeoutGracePeriod
 	action := &repb.Action{
 		CommandDigest:   cmdDigest,
 		InputRootDigest: inputRootDigest,
