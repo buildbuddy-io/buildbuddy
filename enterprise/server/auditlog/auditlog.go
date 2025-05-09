@@ -4,13 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -22,6 +23,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 )
 
@@ -242,9 +244,12 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 	if err != nil {
 		return nil, err
 	}
-
-	if err := authutil.AuthorizeOrgAdmin(u, u.GetGroupID()); err != nil {
+	caps, err := capabilities.ForAuthenticatedUser(ctx, l.env.GetAuthenticator())
+	if err != nil {
 		return nil, err
+	}
+	if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) && !slices.Contains(caps, akpb.ApiKey_AUDIT_LOG_READ_CAPABILITY) {
+		return nil, status.PermissionDeniedError("missing required capabilities")
 	}
 
 	qb := query_builder.NewQuery(`

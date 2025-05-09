@@ -82,6 +82,9 @@ var (
 		"UpdateGithubPullRequestComment",
 		"DeleteGithubPullRequestComment",
 		"SendGithubPullRequestReview",
+
+		// Audit logs.
+		"GetAuditLogs",
 	}
 
 	// groupMemberRPCs can only be called when logged in as a member of
@@ -170,8 +173,6 @@ var (
 		// Encryption.
 		"GetEncryptionConfig",
 		"SetEncryptionConfig",
-		// Audit logs.
-		"GetAuditLogs",
 		// Repo management
 		"CreateRepo",
 		// IP Rules.
