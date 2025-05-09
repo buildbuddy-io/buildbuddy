@@ -22,7 +22,7 @@ func Register(env *real_environment.RealEnv) {
 
 func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
 	// Override the subdomain with the one for which auth is requested
-	ctx = subdomain.Context(req.GetSubdomain(), ctx)
+	ctx = subdomain.Context(ctx, req.GetSubdomain())
 	ctx = a.authenticator.AuthenticatedGRPCContext(ctx)
 	err, found := authutil.AuthErrorFromContext(ctx)
 	if found {
