@@ -63,6 +63,7 @@ var (
 	capAdd      = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
 	tiniEnabled = flag.Bool("executor.oci.tini_enabled", false, "Run tini as pid 1 for recycling-enabled containers.")
 	tiniPath    = flag.String("executor.oci.tini_path", "", "Path to tini binary to use as pid 1 for recycling-enabled containers. Defaults to PATH lookup if not set.")
+	mounts      = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -1131,6 +1132,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Options:     []string{"bind", "rprivate", "ro"},
 		})
 	}
+	spec.Mounts = append(spec.Mounts, *mounts...)
 	return &spec, nil
 }
 
