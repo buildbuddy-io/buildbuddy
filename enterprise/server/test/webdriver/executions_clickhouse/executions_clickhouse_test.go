@@ -142,6 +142,8 @@ common --incompatible_strict_action_env=true
 	executions := wt.FindAll(".invocation-execution-row")
 	require.Len(t, executions, 2)
 	require.Equal(t, executions[0].Text(), executions[1].Text())
+	require.Contains(t, executions[0].Text(), "Succeeded")
+	require.Contains(t, executions[0].Text(), "genrule-setup.sh")
 }
 
 func goToInvocationPage(t *testing.T, wt *webtester.WebTester, baseURL, iid string) {
