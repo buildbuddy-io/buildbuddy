@@ -1950,7 +1950,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			var debugExecutorID string
 			debugExecutorID, candidateNodes = filterToDebugExecutorID(candidateNodes, task)
 			if len(candidateNodes) == 0 {
-				return error_util.RequestedExecutorNotFoundError(fmt.Sprintf("requested executor %s not found", debugExecutorID))
+				return status.WrapError(error_util.RequestedExecutorNotFoundError(), fmt.Sprintf("enqueue on debug-executor-id %s", debugExecutorID))
 			}
 			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
 		}
