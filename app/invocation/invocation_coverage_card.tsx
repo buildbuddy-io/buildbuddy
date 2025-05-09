@@ -6,7 +6,7 @@ import Button from "../components/button/button";
 import { ListChecks } from "lucide-react";
 import errorService from "../errors/error_service";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { parseLcov } from "../util/lcov";
+import { LcovItem, parseLcov } from "../util/lcov";
 import format from "../format/format";
 import { percentageColor } from "../util/color";
 import { TextLink } from "../components/link/link";
@@ -16,7 +16,7 @@ interface Props {
 }
 
 interface State {
-  report: any[] | null;
+  report: Array<LcovItem> | null;
   loading: boolean;
   sort: "file" | "most" | "least";
 }
@@ -128,12 +128,14 @@ export default class InvocationCoverageCardComponent extends React.Component<Pro
     this.setState({ sort: sort });
   }
 
-  sort(a: any, b: any) {
+  sort(a: LcovItem, b: LcovItem) {
+    let aratio = a.numLinesFound === 0 ? 0 : a.numLinesHit / a.numLinesFound;
+    let bratio = b.numLinesFound === 0 ? 0 : b.numLinesHit / b.numLinesFound;
     if (this.state.sort == "most") {
-      return b.numLinesHit / b.numLinesFound - a.numLinesHit / a.numLinesFound;
+      return bratio - aratio;
     }
     if (this.state.sort == "least") {
-      return a.numLinesHit / a.numLinesFound - b.numLinesHit / b.numLinesFound;
+      return aratio - bratio;
     }
 
     return a.sourceFile.localeCompare(b.sourceFile);
