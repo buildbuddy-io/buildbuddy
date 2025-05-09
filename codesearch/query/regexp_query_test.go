@@ -10,6 +10,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var testSchema = schema.NewDocumentSchema(
+	[]types.FieldSchema{
+		schema.MustFieldSchema(types.KeywordField, "id", true),
+		schema.MustFieldSchema(types.TrigramField, "filename", true),
+		schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		schema.MustFieldSchema(types.KeywordField, "lang", true),
+	},
+)
+
+func newTestDocument(t *testing.T, fieldMap map[string][]byte) types.Document {
+	doc, err := testSchema.MakeDocument(fieldMap)
+	if err != nil {
+		t.Fatalf("failed to create test document: %v", err)
+	}
+	return doc
+}
+
 func TestCaseSensitive(t *testing.T) {
 	ctx := context.Background()
 	q, err := NewReQuery(ctx, "case:y foo")
@@ -173,27 +190,6 @@ func TestUngroupedTerms(t *testing.T) {
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
 	assert.Contains(t, fieldMatchers["content"].String(), "(grp)|(trm)")
-}
-
-// define schema
-// make test doc
-// call score on individual docs
-
-var testSchema = schema.NewDocumentSchema(
-	[]types.FieldSchema{
-		schema.MustFieldSchema(types.KeywordField, "id", true),
-		schema.MustFieldSchema(types.TrigramField, "filename", true),
-		schema.MustFieldSchema(types.SparseNgramField, "content", true),
-		schema.MustFieldSchema(types.KeywordField, "lang", true),
-	},
-)
-
-func newTestDocument(t *testing.T, fieldMap map[string][]byte) types.Document {
-	doc, err := testSchema.MakeDocument(fieldMap)
-	if err != nil {
-		t.Fatalf("failed to create test document: %v", err)
-	}
-	return doc
 }
 
 func TestScoringMatchContentOnly(t *testing.T) {
