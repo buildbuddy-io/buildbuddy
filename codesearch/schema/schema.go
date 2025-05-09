@@ -38,16 +38,16 @@ func DefaultSchema() types.DocumentSchema {
 
 // Satisfies the types.FieldSchema interface.
 type fieldSchema struct {
-	ftype     types.FieldType
-	name      string
-	stored    bool
-	tokenizer types.Tokenizer
+	ftype   types.FieldType
+	name    string
+	stored  bool
+	makeTok func() types.Tokenizer
 }
 
-func (f fieldSchema) Type() types.FieldType      { return f.ftype }
-func (f fieldSchema) Name() string               { return f.name }
-func (f fieldSchema) Stored() bool               { return f.stored }
-func (f fieldSchema) Tokenizer() types.Tokenizer { return f.tokenizer }
+func (f fieldSchema) Type() types.FieldType          { return f.ftype }
+func (f fieldSchema) Name() string                   { return f.name }
+func (f fieldSchema) Stored() bool                   { return f.stored }
+func (f fieldSchema) MakeTokenizer() types.Tokenizer { return f.makeTok() }
 
 func (f fieldSchema) MakeField(buf []byte) types.Field {
 	return documentField{
@@ -57,7 +57,7 @@ func (f fieldSchema) MakeField(buf []byte) types.Field {
 }
 
 func NewFieldSchema(ftype types.FieldType, name string, stored bool) (types.FieldSchema, error) {
-	var tokenizer types.Tokenizer = nil
+	var makeTok func() types.Tokenizer = nil
 
 	if !fieldNameRegex.MatchString(name) {
 		return nil, status.InvalidArgumentErrorf("Invalid field name %q", name)
@@ -66,20 +66,26 @@ func NewFieldSchema(ftype types.FieldType, name string, stored bool) (types.Fiel
 	switch ftype {
 	case types.SparseNgramField:
 		// TODO(jdelfino): old code used lowercase on query side but not on index side - was it a bug?
-		tokenizer = token.NewSparseNgramTokenizer(token.WithMaxNgramLength(6), token.WithLowerCase(true))
+		makeTok = func() types.Tokenizer {
+			return token.NewSparseNgramTokenizer(token.WithMaxNgramLength(6), token.WithLowerCase(true))
+		}
 	case types.TrigramField:
-		tokenizer = token.NewTrigramTokenizer()
+		makeTok = func() types.Tokenizer {
+			return token.NewTrigramTokenizer()
+		}
 	case types.KeywordField:
-		tokenizer = token.NewWhitespaceTokenizer()
+		makeTok = func() types.Tokenizer {
+			return token.NewWhitespaceTokenizer()
+		}
 	default:
 		return nil, status.InvalidArgumentErrorf("Invalid field type %q", ftype)
 	}
 
 	return fieldSchema{
-		ftype:     ftype,
-		name:      name,
-		stored:    stored,
-		tokenizer: tokenizer,
+		ftype:   ftype,
+		name:    name,
+		stored:  stored,
+		makeTok: makeTok,
 	}, nil
 }
 
