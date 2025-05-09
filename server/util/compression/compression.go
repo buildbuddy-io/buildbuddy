@@ -167,6 +167,9 @@ func (r *compressingReader) Close() error {
 // the data is even modestly compressible and the compression buffer capacity is
 // at least a few hundred bytes.
 func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
+	if len(readBuf) == 0 {
+		return nil, io.ErrShortBuffer
+	}
 	return &compressingReader{
 		inputReader: reader,
 		readBuf:     readBuf,
