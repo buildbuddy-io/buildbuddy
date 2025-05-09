@@ -1078,7 +1078,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if cacheOpts.SkippedCacheRemotely {
 		metrics.COWSnapshotSkippedRemoteBytes.With(prometheus.Labels{
 			metrics.FileName: name,
-		}).Add(float64(compressedBytesWrittenRemotely))
+		}).Add(float64(dirtyBytes))
 	}
 
 	for chunkSrc, count := range chunkSourceCounter {
