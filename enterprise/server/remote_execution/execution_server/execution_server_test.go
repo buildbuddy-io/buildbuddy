@@ -427,7 +427,7 @@ func (fc *fakeCollector) DeleteInvocationLinks(_ context.Context, _ string) erro
 	return nil
 }
 
-func (fc *fakeCollector) AddInvocationLink(_ context.Context, link *sipb.StoredInvocationLink) error {
+func (fc *fakeCollector) AddInvocationLink(_ context.Context, link *sipb.StoredInvocationLink, _ bool) error {
 	fc.invocationLinks = append(fc.invocationLinks, link)
 	return nil
 }

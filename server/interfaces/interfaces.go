@@ -1416,6 +1416,33 @@ type SecretService interface {
 
 // ExecutionCollector keeps track of a list of Executions for each invocation ID.
 type ExecutionCollector interface {
+	// UpdateInProgressExecution updates the given in-progress execution state.
+	// Any zero-valued fields are not updated.
+	//
+	// This method is also called to write the final COMPLETED execution state.
+	// After writing the COMPLETED execution state, the execution server should
+	// read back the execution details using GetInProgressExecution, then create
+	// a pending OLAP Execution row by calling AppendExecution for each linked
+	// invocation ID.
+	UpdateInProgressExecution(ctx context.Context, execution *repb.StoredExecution) error
+
+	// GetInProgressExecution fetches the given in-progress execution.
+	GetInProgressExecution(ctx context.Context, executionID string) (*repb.StoredExecution, error)
+
+	// GetInProgressExecutions fetches all in-progress executions for the given
+	// invocation ID.
+	GetInProgressExecutions(ctx context.Context, invocationID string) ([]*repb.StoredExecution, error)
+
+	// DeleteInProgressExecution deletes the given in-progress execution state.
+	// It does not (currently) automatically clean up the invocation =>
+	// execution link. However, GetInProgressExecutions is aware of this
+	// behavior, and will not return the deleted execution.
+	DeleteInProgressExecution(ctx context.Context, executionID string) error
+
+	// DeleteReverseInvocationLinks deletes all invocation => []execution links
+	// for the given invocation ID.
+	DeleteReverseInvocationLinks(ctx context.Context, invocationID string) error
+
 	AppendExecution(ctx context.Context, iid string, execution *repb.StoredExecution) error
 	// GetExecutions fetches a range of executions for the given invocation ID.
 	// The range start and stop indexes are both inclusive. If the stop index is out
@@ -1425,9 +1452,9 @@ type ExecutionCollector interface {
 	DeleteExecutions(ctx context.Context, iid string) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
-	AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink) error
-	GetInvocationLinks(ctx context.Context, execution_id string) ([]*sipb.StoredInvocationLink, error)
-	DeleteInvocationLinks(ctx context.Context, execution_id string) error
+	AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, storeReverseLink bool) error
+	GetInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error)
+	DeleteInvocationLinks(ctx context.Context, executionID string) error
 }
 
 // SuggestionService enables fetching of suggestions.
