@@ -53,15 +53,8 @@ type region struct {
 	lineNumber  int
 }
 
-type fieldMatcher struct {
-	re *dfa.Regexp
-	// If true, a failure to match on this field will result in a score of 0 for the
-	// entire document.
-	required bool
-}
-
 type reScorer struct {
-	fieldMatchers map[string]fieldMatcher
+	fieldMatchers map[string]*dfa.Regexp
 	skip          bool
 }
 
@@ -115,20 +108,19 @@ func (s *reScorer) Score(docMatch types.DocumentMatch, doc types.Document) float
 
 	docScore := 0.0
 	for fieldName := range s.fieldMatchers {
-		fm := s.fieldMatchers[fieldName]
+		re := s.fieldMatchers[fieldName]
 		contents := doc.Field(fieldName).Contents()
-
 		if len(contents) == 0 {
-			if fm.required {
-				return 0.0
-			} else {
-				continue
-			}
+			// See note below on returning early.
+			return 0.0
 		}
 
-		matchingRegions := match(fm.re.Clone(), contents)
+		matchingRegions := match(re.Clone(), contents)
 		f_qi_d := float64(len(matchingRegions))
-		if fm.required && (f_qi_d == 0) {
+		if f_qi_d == 0 {
+			// Important note: If any of the field matchers fail entirely, it's not a match.
+			// This is only valid if all the field matchers are required, which was true at the
+			// time this check was added.
 			return 0.0
 		}
 		D := float64(len(strings.Fields(string(contents))))
@@ -161,7 +153,7 @@ func extractLine(buf []byte, lineNumber int) []byte {
 }
 
 type reHighlighter struct {
-	contentRe *dfa.Regexp
+	fieldMatchers map[string]*dfa.Regexp
 }
 
 type regionMatch struct {
@@ -207,8 +199,9 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 	results := make([]types.HighlightedRegion, 0)
 
 	field := doc.Field(contentField)
-	if h.contentRe != nil {
-		for _, region := range match(h.contentRe.Clone(), field.Contents()) {
+	matcher, ok := h.fieldMatchers[contentField]
+	if ok {
+		for _, region := range match(matcher.Clone(), field.Contents()) {
 			region := region
 			results = append(results, types.HighlightedRegion(regionMatch{
 				field:  field,
@@ -220,7 +213,7 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 	// HACK: if there are no matching regions, add a fake one that matches
 	// the first line of the file. This way filter-only queries will be able
 	// to display a highlighted region.
-	if len(results) == 0 && h.contentRe == nil {
+	if len(results) == 0 && h.fieldMatchers[contentField] == nil {
 		field := doc.Field(contentField)
 		results = append(results, types.HighlightedRegion(regionMatch{
 			field: field,
@@ -240,7 +233,7 @@ type ReQuery struct {
 	parsed string
 	squery string
 
-	fieldMatchers map[string]fieldMatcher
+	fieldMatchers map[string]*dfa.Regexp
 }
 
 func expressionToSquery(expr string, fieldName string) (string, error) {
@@ -265,7 +258,7 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 	regexFlags := "m" // always use multiline mode.
 
 	// Regexp matches (for highlighting) by fieldname.
-	fieldMatchers := make(map[string]fieldMatcher)
+	fieldMatchers := make(map[string]*dfa.Regexp)
 
 	q, caseSensitive := filters.ExtractCaseSensitivity(q)
 	if !caseSensitive {
@@ -284,10 +277,7 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 		if err != nil {
 			return nil, status.InvalidArgumentError(err.Error())
 		}
-		fieldMatchers[filenameField] = fieldMatcher{
-			re:       fileMatchRe,
-			required: true,
-		}
+		fieldMatchers[filenameField] = fileMatchRe
 	}
 
 	q, lang := filters.ExtractLanguageFilter(q)
@@ -332,24 +322,7 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 		if err != nil {
 			return nil, status.InvalidArgumentError(err.Error())
 		}
-		fieldMatchers[contentField] = fieldMatcher{
-			re:       re,
-			required: true,
-		}
-
-		// TODO(jdelfino): Is this a no-op?
-		// We would use this when: we have short atoms that aren't looked up in the index...
-		// then we get docs back that don't fully match in content, but do match in the
-		// filename... I don't think this is useful. We're not actually also looking up filenames.
-
-		// If there is a content matcher, and there is not already a
-		// filename matcher, allow filenames that match the query too.
-		if _, ok := fieldMatchers[filenameField]; !ok {
-			fieldMatchers[filenameField] = fieldMatcher{
-				re:       re,
-				required: false,
-			}
-		}
+		fieldMatchers[contentField] = re
 	}
 	subLog.Infof("parsed query: [%s]", q)
 
@@ -400,14 +373,10 @@ func (req *ReQuery) Scorer() types.Scorer {
 }
 
 func (req *ReQuery) Highlighter() types.Highlighter {
-	fm, ok := req.fieldMatchers[contentField]
-	if !ok {
-		return &reHighlighter{}
-	}
-	return &reHighlighter{fm.re}
+	return &reHighlighter{req.fieldMatchers}
 }
 
 // TESTONLY: return field matchers to verify regexp params.
-func (req *ReQuery) TestOnlyFieldMatchers() map[string]fieldMatcher {
+func (req *ReQuery) TestOnlyFieldMatchers() map[string]*dfa.Regexp {
 	return req.fieldMatchers
 }
