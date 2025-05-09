@@ -270,7 +270,7 @@ func (c *collector) DeleteReverseInvocationLinks(ctx context.Context, invocation
 }
 
 func unmarshalStoredInvocationLinks(serializedResults []string) ([]*sipb.StoredInvocationLink, error) {
-	res := make([]*sipb.StoredInvocationLink, 0)
+	res := make([]*sipb.StoredInvocationLink, 0, len(serializedResults))
 	for _, serializedResult := range serializedResults {
 		link := &sipb.StoredInvocationLink{}
 		if err := proto.Unmarshal([]byte(serializedResult), link); err != nil {
