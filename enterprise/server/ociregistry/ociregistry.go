@@ -446,6 +446,32 @@ func fetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	return blobMetadata, nil
 }
 
+func fetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, hash gcr.Hash, contentLength int64) error {
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
+	}
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		cacheDigestFunction,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	counter := &ioutil.Counter{}
+	mw := io.MultiWriter(w, counter)
+	defer func() {
+		metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
+			metrics.CacheTypeLabel: casLabel,
+		}).Observe(float64(counter.Count()))
+	}()
+	if err := cachetools.GetBlob(ctx, bsClient, blobRN, mw); err != nil {
+		updateCacheEventMetric(casLabel, missLabel)
+		return err
+	}
+	updateCacheEventMetric(casLabel, hitLabel)
+	return nil
+}
+
 func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
 	hash, err := gcr.NewHash(ref.Identifier())
 	if err != nil {
@@ -489,29 +515,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	if !writeBody {
 		return nil
 	}
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: blobMetadata.GetContentLength(),
-	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		"",
-		cacheDigestFunction,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	counter := &ioutil.Counter{}
-	mw := io.MultiWriter(w, counter)
-	defer func() {
-		metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
-			metrics.CacheTypeLabel: casLabel,
-		}).Observe(float64(counter.Count()))
-	}()
-	if err := cachetools.GetBlob(ctx, bsClient, blobRN, mw); err != nil {
-		updateCacheEventMetric(casLabel, missLabel)
-		return err
-	}
-	updateCacheEventMetric(casLabel, hitLabel)
-	return nil
+	return fetchBlobFromCache(ctx, w, bsClient, acClient, hash, blobMetadata.GetContentLength())
 }
 
 func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
