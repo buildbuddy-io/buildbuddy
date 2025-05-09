@@ -15,10 +15,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -710,4 +712,80 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUploadWriteCloser_InterleaveWritesReadFrom(t *testing.T) {
+	quarter := (2 * 1024 * 1024) / 4
+	rn, buf := testdigest.RandomCASResourceBuf(t, int64(4*quarter))
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	ctx := context.Background()
+	casrn := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+	uwc, err := cachetools.NewUploadWriteCloser(ctx, te.GetByteStreamClient(), casrn)
+	require.NoError(t, err)
+	{
+		n, err := uwc.Write(buf[:quarter])
+		require.NoError(t, err)
+		require.Equal(t, quarter, n)
+	}
+	{
+		n, err := uwc.ReadFrom(bytes.NewReader(buf[quarter : 2*quarter]))
+		require.NoError(t, err)
+		require.Equal(t, int64(quarter), n)
+	}
+	{
+		n, err := uwc.Write(buf[2*quarter : 3*quarter])
+		require.NoError(t, err)
+		require.Equal(t, quarter, n)
+	}
+	{
+		n, err := uwc.ReadFrom(bytes.NewReader(buf[3*quarter:]))
+		require.NoError(t, err)
+		require.Equal(t, int64(quarter), n)
+	}
+	err = uwc.Close()
+	require.NoError(t, err)
+	{
+		out := &bytes.Buffer{}
+		err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
+		require.NoError(t, err)
+		require.Equal(t, 4*quarter, out.Len())
+		require.Empty(t, cmp.Diff(buf[0:9], out.Bytes()[0:9]))
+		require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[len(buf)-9:]))
+	}
+}
+
+func TestUploadWriteCloser_NoWritesReadFromsAfterClose(t *testing.T) {
+	rn, buf := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	ctx := context.Background()
+	casrn := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+
+	uwc, err := cachetools.NewUploadWriteCloser(ctx, te.GetByteStreamClient(), casrn)
+	require.NoError(t, err)
+	written, err := uwc.Write(buf)
+	require.NoError(t, err)
+	require.Equal(t, len(buf), written)
+	err = uwc.Close()
+	require.NoError(t, err)
+	{
+		out := &bytes.Buffer{}
+		err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
+		require.NoError(t, err)
+		require.Equal(t, len(buf), out.Len())
+		require.Empty(t, cmp.Diff(buf[0:9], out.Bytes()[0:9]))
+		require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[len(buf)-9:]))
+	}
+	written, err = uwc.Write(buf)
+	require.Error(t, err)
+	require.Equal(t, 0, written)
+
+	n, err := uwc.ReadFrom(bytes.NewReader(buf))
+	require.Error(t, err)
+	require.Equal(t, int64(0), n)
 }
