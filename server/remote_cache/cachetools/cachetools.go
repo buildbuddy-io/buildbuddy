@@ -292,7 +292,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
 	resourceName := r.NewUploadString()
 	for {
-		n, err := rc.Read(buf)
+		n, err := ioutil.ReadTryFillBuffer(rc, buf)
 		if err != nil && err != io.EOF {
 			return nil, 0, err
 		}
