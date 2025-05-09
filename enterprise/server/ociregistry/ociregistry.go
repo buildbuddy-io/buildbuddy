@@ -472,6 +472,18 @@ func fetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	return nil
 }
 
+func writeManifestMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash gcr.Hash, mc *ocipb.OCIManifestContent) {
+	w.Header().Add(headerDockerContentDigest, hash.String())
+	w.Header().Add(headerContentLength, strconv.Itoa(len(mc.GetRaw())))
+	w.Header().Add(headerContentType, mc.GetContentType())
+}
+
+func writeBlobMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash gcr.Hash, blobMetadata *ocipb.OCIBlobMetadata) {
+	w.Header().Add(headerDockerContentDigest, hash.String())
+	w.Header().Add(headerContentLength, strconv.FormatInt(blobMetadata.GetContentLength(), 10))
+	w.Header().Add(headerContentType, blobMetadata.GetContentType())
+}
+
 func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
 	hash, err := gcr.NewHash(ref.Identifier())
 	if err != nil {
@@ -483,9 +495,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		if err != nil {
 			return err
 		}
-		w.Header().Add(headerDockerContentDigest, hash.String())
-		w.Header().Add(headerContentLength, strconv.Itoa(len(mc.GetRaw())))
-		w.Header().Add(headerContentType, mc.GetContentType())
+		writeManifestMetadataToResponse(ctx, w, hash, mc)
 		w.WriteHeader(http.StatusOK)
 		if !writeBody {
 			return nil
@@ -507,9 +517,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	if err != nil {
 		return err
 	}
-	w.Header().Add(headerDockerContentDigest, hash.String())
-	w.Header().Add(headerContentLength, strconv.FormatInt(blobMetadata.GetContentLength(), 10))
-	w.Header().Add(headerContentType, blobMetadata.GetContentType())
+	writeBlobMetadataToResponse(ctx, w, hash, blobMetadata)
 	w.WriteHeader(http.StatusOK)
 
 	if !writeBody {
