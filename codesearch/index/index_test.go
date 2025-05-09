@@ -31,27 +31,26 @@ var testSchema = schema.NewDocumentSchema(
 	},
 )
 
-func NewTestDocument(id uint64, fieldMap map[string][]byte) types.Document {
+func newTestDocument(t *testing.T, fieldMap map[string][]byte) types.Document {
 	doc, err := testSchema.MakeDocument(fieldMap)
 	if err != nil {
-		// TODO: better way to handle? hitting this is a bug in the test
-		log.Fatalf("failed to create test document: %v", err)
+		t.Fatalf("failed to create test document: %v", err)
 	}
 	return doc
 }
 
-func docWithID(id uint64) types.Document {
-	return NewTestDocument(
-		id,
+func docWithID(t *testing.T, id uint64) types.Document {
+	return newTestDocument(
+		t,
 		map[string][]byte{
 			"id": []byte(fmt.Sprintf("%d", id)),
 		},
 	)
 }
 
-func docWithIDAndText(id uint64, text string) types.Document {
-	return NewTestDocument(
-		id,
+func docWithIDAndText(t *testing.T, id uint64, text string) types.Document {
+	return newTestDocument(
+		t,
 		map[string][]byte{
 			"id":   []byte(fmt.Sprintf("%d", id)),
 			"text": []byte(text),
@@ -90,9 +89,9 @@ func TestDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithID(1)))
-	require.NoError(t, w.AddDocument(docWithID(2)))
-	require.NoError(t, w.AddDocument(docWithID(3)))
+	require.NoError(t, w.AddDocument(docWithID(t, 1)))
+	require.NoError(t, w.AddDocument(docWithID(t, 2)))
+	require.NoError(t, w.AddDocument(docWithID(t, 3)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
@@ -127,9 +126,9 @@ func TestIncrementalIndexing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(1, `one foo`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(2, `two bar`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(3, `three baz`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
@@ -143,10 +142,10 @@ func TestIncrementalIndexing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc1 := docWithIDAndText(1, `one one one`)
+	doc1 := docWithIDAndText(t, 1, `one one one`)
 	require.NoError(t, w.UpdateDocument(doc1.Field("id"), doc1))
-	require.NoError(t, w.AddDocument(docWithIDAndText(4, `four bap`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(5, `one zip`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 4, `four bap`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 5, `one zip`)))
 	require.NoError(t, w.Flush())
 
 	r = NewReader(ctx, db, "testing-namespace", testSchema)
@@ -242,19 +241,19 @@ func TestNamespaceSeparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(1, `one foo`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(2, `two bar`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(3, `three baz`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
 	w, err = NewWriter(db, "namespace-b")
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(1, `one oof`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(2, `two rab`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(3, `three zab`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(4, `four pab`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one oof`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two rab`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three zab`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 4, `four pab`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "namespace-a", testSchema)
@@ -288,9 +287,9 @@ func TestSQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(1, `one foo`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(2, `two bar`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(3, `three baz`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
