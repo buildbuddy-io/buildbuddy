@@ -42,7 +42,7 @@ func SetHost(ctx context.Context, host string) context.Context {
 			return ctx
 		}
 	}
-	return Context(subdomain, ctx)
+	return Context(ctx, subdomain)
 }
 
 func Context(ctx context.Context, subdomain string) context.Context {
