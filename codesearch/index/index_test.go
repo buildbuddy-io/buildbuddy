@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -23,48 +24,36 @@ func hash(s string) uint64 {
 	return h.Sum64()
 }
 
-type TestDocument struct {
-	id     uint64
-	fields map[string]types.NamedField
-}
+var testSchema = schema.NewDocumentSchema(
+	[]types.FieldSchema{
+		schema.MustFieldSchema(types.KeywordField, "id", true),
+		schema.MustFieldSchema(types.TrigramField, "text", true),
+	},
+)
 
-func (d TestDocument) ID() uint64                    { return d.id }
-func (d TestDocument) Field(name string) types.Field { return d.fields[name] }
-func (d TestDocument) Fields() []string {
-	fieldNames := make([]string, 0, len(d.fields))
-	for name := range d.fields {
-		fieldNames = append(fieldNames, name)
+func newTestDocument(t *testing.T, fieldMap map[string][]byte) types.Document {
+	doc, err := testSchema.MakeDocument(fieldMap)
+	if err != nil {
+		t.Fatalf("failed to create test document: %v", err)
 	}
-	return fieldNames
-}
-func NewTestDocument(id uint64, fieldMap map[string]types.NamedField) types.Document {
-	return types.NewMapDocument(fieldMap)
+	return doc
 }
 
-func docWithName(name string) types.Document {
-	return NewTestDocument(
-		hash(name),
-		map[string]types.NamedField{
-			name: types.NewNamedField(types.TrigramField, name, []byte(name), true /*=stored*/),
+func docWithID(t *testing.T, id uint64) types.Document {
+	return newTestDocument(
+		t,
+		map[string][]byte{
+			"id": []byte(fmt.Sprintf("%d", id)),
 		},
 	)
 }
 
-func docWithID(id uint64) types.Document {
-	return NewTestDocument(
-		id,
-		map[string]types.NamedField{
-			"id": types.NewNamedField(types.KeywordField, "id", []byte(fmt.Sprintf("%d", id)), true /*=stored*/),
-		},
-	)
-}
-
-func docWithIDAndText(id uint64, text string) types.Document {
-	return NewTestDocument(
-		id,
-		map[string]types.NamedField{
-			"id":   types.NewNamedField(types.KeywordField, "id", []byte(fmt.Sprintf("%d", id)), true /*=stored*/),
-			"text": types.NewNamedField(types.TrigramField, "text", []byte(text), true /*=stored*/),
+func docWithIDAndText(t *testing.T, id uint64, text string) types.Document {
+	return newTestDocument(
+		t,
+		map[string][]byte{
+			"id":   []byte(fmt.Sprintf("%d", id)),
+			"text": []byte(text),
 		},
 	)
 }
@@ -88,27 +77,6 @@ func extractFieldMatches(tb testing.TB, r types.IndexReader, docMatches []types.
 	return m
 }
 
-func TestInvalidFieldNames(t *testing.T) {
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assert.Error(t, w.AddDocument(docWithName("_bad_field_name")))
-	assert.Error(t, w.AddDocument(docWithName(".bad_field_name")))
-	assert.Error(t, w.AddDocument(docWithName("bad field name")))
-
-	assert.NoError(t, w.AddDocument(docWithName("good_field_name")))
-	assert.NoError(t, w.AddDocument(docWithName("good_field_name12345")))
-	assert.NoError(t, w.AddDocument(docWithName("1good_field_name")))
-}
-
 func TestDeletes(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
@@ -121,12 +89,12 @@ func TestDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithID(1)))
-	require.NoError(t, w.AddDocument(docWithID(2)))
-	require.NoError(t, w.AddDocument(docWithID(3)))
+	require.NoError(t, w.AddDocument(docWithID(t, 1)))
+	require.NoError(t, w.AddDocument(docWithID(t, 2)))
+	require.NoError(t, w.AddDocument(docWithID(t, 3)))
 	require.NoError(t, w.Flush())
 
-	r := NewReader(ctx, db, "testing-namespace")
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
 	matches, err := r.RawQuery("(:all)")
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"id": {1, 2, 3}}, extractFieldMatches(t, r, matches))
@@ -139,7 +107,7 @@ func TestDeletes(t *testing.T) {
 	w.DeleteDocument(2)
 	require.NoError(t, w.Flush())
 
-	r = NewReader(ctx, db, "testing-namespace")
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
 	matches, err = r.RawQuery("(:all)")
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"id": {1, 3}}, extractFieldMatches(t, r, matches))
@@ -158,12 +126,12 @@ func TestIncrementalIndexing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(1, `one foo`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(2, `two bar`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(3, `three baz`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
-	r := NewReader(ctx, db, "testing-namespace")
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
 	matches, err := r.RawQuery("(:eq text one)")
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"text": {1}}, extractFieldMatches(t, r, matches))
@@ -174,13 +142,13 @@ func TestIncrementalIndexing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc1 := docWithIDAndText(1, `one one one`)
+	doc1 := docWithIDAndText(t, 1, `one one one`)
 	require.NoError(t, w.UpdateDocument(doc1.Field("id"), doc1))
-	require.NoError(t, w.AddDocument(docWithIDAndText(4, `four bap`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(5, `one zip`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 4, `four bap`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 5, `one zip`)))
 	require.NoError(t, w.Flush())
 
-	r = NewReader(ctx, db, "testing-namespace")
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
 	matches, err = r.RawQuery("(:eq text one)")
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"text": {1, 5}}, extractFieldMatches(t, r, matches))
@@ -197,31 +165,10 @@ func TestIncrementalIndexing(t *testing.T) {
 	}
 
 	printDB(t, db)
-	r = NewReader(ctx, db, "testing-namespace")
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
 	matches, err = r.RawQuery("(:eq text one)")
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"text": {1, 5}}, extractFieldMatches(t, r, matches))
-}
-
-func TestUnknownTokenType(t *testing.T) {
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	doc := NewTestDocument(
-		1,
-		map[string]types.NamedField{
-			"name": types.NewNamedField(types.FieldType(99), "name", []byte("name"), true /*=stored*/),
-		},
-	)
-	assert.Error(t, w.AddDocument(doc))
 }
 
 func TestStoredVsUnstoredFields(t *testing.T) {
@@ -232,24 +179,35 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "field_a", true),
+			schema.MustFieldSchema(types.KeywordField, "field_b", false),
+		},
+	)
+	doc, err := docSchema.MakeDocument(
+		map[string][]byte{
+			"id":      []byte("1"),
+			"field_a": []byte("stored"),
+			"field_b": []byte("unstored"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	w, err := NewWriter(db, "testing-namespace")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	doc := NewTestDocument(
-		1,
-		map[string]types.NamedField{
-			"id":      types.NewNamedField(types.KeywordField, "id", []byte("1"), true /*=stored*/),
-			"field_a": types.NewNamedField(types.KeywordField, "field_a", []byte("stored"), true /*=stored*/),
-			"field_b": types.NewNamedField(types.KeywordField, "field_b", []byte("unstored"), false /*=stored*/),
-		},
-	)
 	assert.NoError(t, w.AddDocument(doc))
 	require.NoError(t, w.Flush())
 
 	// docs should be searchable by stored fields
-	r := NewReader(ctx, db, "testing-namespace")
+	r := NewReader(ctx, db, "testing-namespace", docSchema)
 	matches, err := r.RawQuery(`(:eq field_a stored)`)
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"field_a": {1}}, extractFieldMatches(t, r, matches))
@@ -283,22 +241,22 @@ func TestNamespaceSeparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(1, `one foo`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(2, `two bar`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(3, `three baz`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
 	w, err = NewWriter(db, "namespace-b")
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(1, `one oof`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(2, `two rab`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(3, `three zab`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(4, `four pab`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one oof`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two rab`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three zab`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 4, `four pab`)))
 	require.NoError(t, w.Flush())
 
-	r := NewReader(ctx, db, "namespace-a")
+	r := NewReader(ctx, db, "namespace-a", testSchema)
 	matches, err := r.RawQuery("(:all)")
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"id": {1, 2, 3}, "text": {1, 2, 3}}, extractFieldMatches(t, r, matches))
@@ -307,7 +265,7 @@ func TestNamespaceSeparation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"text": {1}}, extractFieldMatches(t, r, matches))
 
-	r = NewReader(ctx, db, "namespace-b")
+	r = NewReader(ctx, db, "namespace-b", testSchema)
 	matches, err = r.RawQuery("(:all)")
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"id": {1, 2, 3, 4}, "text": {1, 2, 3, 4}}, extractFieldMatches(t, r, matches))
@@ -329,12 +287,12 @@ func TestSQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(1, `one foo`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(2, `two bar`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(3, `three baz`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
-	r := NewReader(ctx, db, "testing-namespace")
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
 	matches, err := r.RawQuery("(:all)")
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"id": {1, 2, 3}, "text": {1, 2, 3}}, extractFieldMatches(t, r, matches))
@@ -385,20 +343,31 @@ func TestDBFormat(t *testing.T) {
 	}
 	defer db.Close()
 
-	doc1 := NewTestDocument(
-		1,
-		map[string]types.NamedField{
-			"id":      types.NewNamedField(types.KeywordField, "id", []byte("1"), true /*=stored*/),
-			"content": types.NewNamedField(types.KeywordField, "content", []byte("one"), false /*=stored*/),
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "content", false),
 		},
 	)
-	doc2 := NewTestDocument(
-		2,
-		map[string]types.NamedField{
-			"id":      types.NewNamedField(types.KeywordField, "id", []byte("2"), true /*=stored*/),
-			"content": types.NewNamedField(types.KeywordField, "content", []byte("two"), false /*=stored*/),
+	doc1, err := docSchema.MakeDocument(
+		map[string][]byte{
+			"id":      []byte("1"),
+			"content": []byte("one"),
 		},
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	doc2, err := docSchema.MakeDocument(
+		map[string][]byte{
+			"id":      []byte("2"),
+			"content": []byte("two"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	w, err := NewWriter(db, "testns")
 	if err != nil {
@@ -409,13 +378,16 @@ func TestDBFormat(t *testing.T) {
 	require.NoError(t, w.Flush())
 
 	// Re-add doc1 again.
-	doc1 = NewTestDocument(
-		1,
-		map[string]types.NamedField{
-			"id":      types.NewNamedField(types.KeywordField, "id", []byte("1"), true /*=stored*/),
-			"content": types.NewNamedField(types.KeywordField, "content", []byte("ONE"), false /*=stored*/),
+	doc1, err = docSchema.MakeDocument(
+		map[string][]byte{
+			"id":      []byte("1"),
+			"content": []byte("ONE"),
 		},
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	w, err = NewWriter(db, "testns")
 	if err != nil {
 		t.Fatal(err)

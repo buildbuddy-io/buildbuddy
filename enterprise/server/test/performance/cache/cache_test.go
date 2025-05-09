@@ -3,46 +3,37 @@ package cache_test
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
-	maxSizeBytes = int64(100000000) // 100MB
+	// 100GB should be enough to prevent any eviction
+	maxSizeBytes = int64(100_000_000_000)
 	numDigests   = 100
-)
-
-var (
-	emptyUserMap = testauth.TestUsers()
 )
 
 func init() {
 	*log.LogLevel = "error"
 	*log.IncludeShortFileName = true
 	log.Configure()
-}
-
-func getTestEnv(t testing.TB, users map[string]interfaces.UserInfo) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
-	return te
 }
 
 func getAnonContext(t testing.TB, te *testenv.TestEnv) context.Context {
@@ -95,6 +86,18 @@ func getDiskCache(t testing.TB, env environment.Env) interfaces.Cache {
 	return dc
 }
 
+func getMigrationCache(t testing.TB, env environment.Env, src, dest interfaces.Cache) interfaces.Cache {
+	config := &migration_cache.MigrationConfig{
+		CopyChanBufferSize:             200,
+		MaxCopiesPerSec:                100,
+		NumCopyWorkers:                 1,
+		CopyChanFullWarningIntervalMin: 60,
+		AsyncDestWrites:                false,
+		DoubleReadPercentage:           1,
+	}
+	return migration_cache.NewMigrationCache(env, config, src, dest)
+}
+
 func getDistributedCache(t testing.TB, te *testenv.TestEnv, c interfaces.Cache) interfaces.Cache {
 	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	conf := distributed.CacheConfig{
@@ -115,6 +118,7 @@ func getDistributedCache(t testing.TB, te *testenv.TestEnv, c interfaces.Cache) 
 func getPebbleCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
 	testRootDir := testfs.MakeTempDir(t)
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		Name:          testRootDir,
 		RootDirectory: testRootDir,
 		MaxSizeBytes:  maxSizeBytes,
 	})
@@ -128,13 +132,21 @@ func getPebbleCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
 	return pc
 }
 
-func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B, unique bool) {
+	var digestBufs []*digestBuf
+	if unique {
+		// Create as many digests as benchmark iterations, so the distributed
+		// cache can't benefit from its optimization where it calls FindMissing
+		// before doing writes.
+		digestBufs = makeDigests(b, b.N, digestSizeBytes)
+	} else {
+		digestBufs = makeDigests(b, numDigests, digestSizeBytes)
+	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		dbuf := digestBufs[rand.Intn(len(digestBufs))]
+		dbuf := digestBufs[i%len(digestBufs)]
 		b.SetBytes(dbuf.d.GetDigest().GetSizeBytes())
 		err := c.Set(ctx, dbuf.d, dbuf.buf)
 		if err != nil {
@@ -150,7 +162,7 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		dbuf := digestBufs[rand.Intn(len(digestBufs))]
+		dbuf := digestBufs[i%len(digestBufs)]
 		b.SetBytes(dbuf.d.GetDigest().GetSizeBytes())
 		_, err := c.Get(ctx, dbuf.d)
 		if err != nil {
@@ -205,38 +217,43 @@ type namedCache struct {
 }
 
 func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
-	dc := getDiskCache(b, te)
-	ddc := getDistributedCache(b, te, dc)
+	flags.Set(b, "cache.distributed_cache.consistent_hash_function", "SHA256")
+	// dc := getDiskCache(b, te)
+	// ddc := getDistributedCache(b, te, dc)
 	pc := getPebbleCache(b, te)
 	dpc := getDistributedCache(b, te, pc)
 
 	time.Sleep(100 * time.Millisecond)
 	caches := []*namedCache{
-		{getMemoryCache(b), "Memory"},
-		{getDiskCache(b, te), "Disk"},
-		{ddc, "DistDisk"},
-		{getPebbleCache(b, te), "Pebble"},
+		// {getMemoryCache(b), "LocalMemory"},
+		// {getDiskCache(b, te), "LocalDisk"},
+		// {ddc, "DistDisk"},
+		{getPebbleCache(b, te), "LocalPebble"},
 		{dpc, "DistPebble"},
+		{getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), "LocalMigration"},
+		{getDistributedCache(b, te, getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te))), "DistMigration"},
 	}
 	return caches
 }
 
 func BenchmarkSet(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000}
+	sizes := []int64{10, 100, 1000, 10000, 1_000_000}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
-			name := fmt.Sprintf("%s%d", cache.Name, size)
-			b.Run(name, func(b *testing.B) {
-				benchmarkSet(ctx, cache, size, b)
-			})
+			for _, unique := range []bool{false, true} {
+				name := fmt.Sprintf("%s%d/unique=%v", cache.Name, size, unique)
+				b.Run(name, func(b *testing.B) {
+					benchmarkSet(ctx, cache, size, b, unique)
+				})
+			}
 		}
 	}
 }
 
-func BenchmarkGet(b *testing.B) {
+func BenchmarkGetSingle(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)

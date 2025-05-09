@@ -69,8 +69,8 @@ func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 	return testUsers
 }
 
-type userProvider func(userID string) interfaces.UserInfo
-type apiKeyUserProvider func(apiKey string) interfaces.UserInfo
+type userProvider func(ctx context.Context, userID string) (interfaces.UserInfo, error)
+type apiKeyUserProvider func(ctx context.Context, apiKey string) (interfaces.UserInfo, error)
 
 type TestAuthenticator struct {
 	*nullauth.NullAuthenticator
@@ -82,8 +82,8 @@ type TestAuthenticator struct {
 func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthenticator {
 	return &TestAuthenticator{
 		NullAuthenticator: &nullauth.NullAuthenticator{},
-		UserProvider:      func(userID string) interfaces.UserInfo { return testUsers[userID] },
-		APIKeyProvider:    func(apiKey string) interfaces.UserInfo { return testUsers[apiKey] },
+		UserProvider:      func(ctx context.Context, userID string) (interfaces.UserInfo, error) { return testUsers[userID], nil },
+		APIKeyProvider:    func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) { return testUsers[apiKey], nil },
 	}
 }
 
@@ -122,7 +122,10 @@ func (a *TestAuthenticator) authenticateGRPCRequest(ctx context.Context) (interf
 			log.Warning("Skipping authentication with empty API key.")
 			continue
 		}
-		u := a.APIKeyProvider(apiKey)
+		u, err := a.APIKeyProvider(ctx, apiKey)
+		if err != nil {
+			return nil, err
+		}
 		if u == nil {
 			log.Warningf("Skipping authentication with invalid API key(%s)", apiKey)
 			continue
@@ -173,7 +176,10 @@ func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey st
 	// This function must clear the existing API key from the context so that
 	// it's not used for auth later on.
 	ctx = context.WithValue(ctx, authutil.APIKeyHeader, apiKey)
-	u := a.APIKeyProvider(apiKey)
+	u, err := a.APIKeyProvider(ctx, apiKey)
+	if err != nil {
+		return claims.AuthContextFromClaims(ctx, nil, err)
+	}
 	if u == nil {
 		return claims.AuthContextFromClaims(ctx, nil, status.UnauthenticatedErrorf("API key %s is unknown to TestAuthenticator", apiKey))
 	}
@@ -193,7 +199,10 @@ func (a *TestAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt s
 }
 
 func (a *TestAuthenticator) WithAuthenticatedUser(ctx context.Context, userID string) (context.Context, error) {
-	userInfo := a.UserProvider(userID)
+	userInfo, err := a.UserProvider(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	if userInfo == nil {
 		return nil, status.FailedPreconditionErrorf("User %q unknown to test authenticator.", userID)
 	}
@@ -220,7 +229,10 @@ func WithAuthenticatedUserInfo(ctx context.Context, userInfo interfaces.UserInfo
 }
 
 func (a *TestAuthenticator) TestJWTForUserID(userID string) (string, error) {
-	u := a.UserProvider(userID)
+	u, err := a.UserProvider(context.Background(), userID)
+	if err != nil {
+		return "", err
+	}
 	if u == nil {
 		return "", status.PermissionDeniedErrorf("user %s is unknown to TestAuthenticator", userID)
 	}

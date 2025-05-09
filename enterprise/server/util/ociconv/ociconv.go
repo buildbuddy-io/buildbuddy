@@ -144,22 +144,15 @@ func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, cred
 func authenticateWithRegistry(ctx context.Context, containerImage string, creds oci.Credentials) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	inspectArgs := []string{"inspect", "--raw", fmt.Sprintf("docker://%s", containerImage)}
-	if !creds.IsEmpty() {
-		inspectArgs = append(inspectArgs, "--creds", creds.String())
-	}
-	cmd := exec.CommandContext(ctx, "skopeo", inspectArgs...)
-	b, err := cmd.CombinedOutput()
-	if err != nil {
-		// We don't know whether an authentication error occurred unless we do
-		// brittle parsing of the command output. So for now just return
-		// UnavailableError which is the "least common denominator" of errors.
-		return status.UnavailableErrorf(
-			"Failed to authenticate with container registry for image %q: %s: %s",
-			containerImage, err, string(b),
-		)
-	}
 
+	resolver, err := oci.NewResolver()
+	if err != nil {
+		return status.WrapError(err, "create OCI resolver")
+	}
+	// Resolve the image to ensure that the credentials are valid.
+	if _, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds); err != nil {
+		return status.WrapError(err, "resolve image")
+	}
 	return nil
 }
 

@@ -53,7 +53,7 @@ var (
 // more easily testable in a standalone fashion, IStore mocks out just the
 // necessary methods that a Replica requires a Store to have.
 type IStore interface {
-	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
+	UpdateRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	SnapshotCluster(ctx context.Context, rangeID uint64) error
 	StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error)
@@ -266,17 +266,13 @@ func (sm *Replica) setRange(val []byte) error {
 	}
 
 	sm.rangeMu.Lock()
-	if sm.rangeDescriptor != nil {
-		sm.store.RemoveRange(sm.rangeDescriptor, sm)
-	}
-
 	sm.log.Infof("Range descriptor is changing from %s to %s", rdString(sm.rangeDescriptor), rdString(rangeDescriptor))
 	sm.rangeDescriptor = rangeDescriptor
 	sm.mappedRange = &rangemap.Range{
 		Start: rangeDescriptor.GetStart(),
 		End:   rangeDescriptor.GetEnd(),
 	}
-	sm.store.AddRange(sm.rangeDescriptor, sm)
+	sm.store.UpdateRange(sm.rangeDescriptor, sm)
 	sm.rangeMu.Unlock()
 
 	if usage, err := sm.Usage(); err == nil {
@@ -2050,13 +2046,6 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 	}
 	defer readDB.Close()
 	return sm.loadReplicaState(db)
-}
-
-func (sm *Replica) RangeDescriptor() *rfpb.RangeDescriptor {
-	sm.rangeMu.RLock()
-	rd := sm.rangeDescriptor
-	sm.rangeMu.RUnlock()
-	return rd.CloneVT()
 }
 
 func (sm *Replica) ReplicaID() uint64 {

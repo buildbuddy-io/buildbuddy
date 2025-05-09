@@ -164,6 +164,8 @@ service BuildBuddyService {
   // Note: GitHub account linking is accomplished via HTTP redirect flow
   rpc UnlinkGitHubAccount(github.UnlinkGitHubAccountRequest)
       returns (github.UnlinkGitHubAccountResponse);
+  rpc UnlinkUserGitHubAccount(github.UnlinkUserGitHubAccountRequest)
+      returns (github.UnlinkUserGitHubAccountResponse);
 
   // GitHub app link API
   rpc GetGitHubAppInstallPath(github.GetGithubAppInstallPathRequest)

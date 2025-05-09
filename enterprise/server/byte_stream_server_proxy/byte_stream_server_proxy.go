@@ -276,7 +276,11 @@ func (s *ByteStreamServerProxy) writeRemoteOnly(ctx context.Context, stream bspb
 		if err != nil {
 			return err
 		}
-		if err = remoteStream.Send(req); err != nil {
+		err = remoteStream.Send(req)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
 			return err
 		}
 		if req.GetFinishWrite() {
@@ -310,7 +314,9 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 	if err == nil {
 		defer localWriteStream.Close()
 	} else {
-		log.CtxWarningf(ctx, "Error opening local write stream: %v", err)
+		if !status.IsAlreadyExistsError(err) {
+			log.CtxWarningf(ctx, "Error opening local write stream: %v", err)
+		}
 	}
 
 	remoteWriteStream, err := s.remote.Write(ctx)

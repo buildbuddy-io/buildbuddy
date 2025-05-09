@@ -50,6 +50,7 @@ import (
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 	containerregistry "github.com/google/go-containerregistry/pkg/v1"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 // Set via x_defs in BUILD file.
@@ -1666,4 +1667,52 @@ func TestPullImage(t *testing.T) {
 			require.NotNil(t, img)
 		})
 	}
+}
+
+func TestMounts(t *testing.T) {
+	setupNetworking(t)
+	image := manuallyProvisionedBusyboxImage(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	// Configure a mount
+	mountDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, mountDir, map[string]string{
+		"foo.txt": "bar",
+	})
+	flags.Set(t, "executor.oci.mounts", []specs.Mount{
+		{
+			Type:        "bind",
+			Source:      mountDir,
+			Destination: "/mnt/testmount",
+			Options:     []string{"bind", "ro"},
+		},
+	})
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run
+	cmd := &repb.Command{
+		Arguments: []string{"cat", "/mnt/testmount/foo.txt"},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, "bar", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
 }

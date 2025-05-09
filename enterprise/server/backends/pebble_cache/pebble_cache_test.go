@@ -977,7 +977,9 @@ func TestSizeLimit(t *testing.T) {
 				}
 			}
 
-			pc.TestingWaitForGC()
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			pc.TestingWaitForGC(ctx)
 
 			// Expect the sum of all contained digests be less than or equal to max
 			// size bytes.
@@ -1328,7 +1330,9 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 				err = pc.Set(ctx, rn, blob)
 				require.NoError(t, err)
 			}
-			pc.TestingWaitForGC()
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			pc.TestingWaitForGC(ctx)
 
 			// All reads should succeed. Nothing should've been evicted
 			for d, blob := range digestBlobs {
@@ -1539,8 +1543,9 @@ func TestNoEarlyEviction(t *testing.T) {
 				err := pc.Set(ctx, r, buf)
 				require.NoError(t, err)
 			}
-
-			pc.TestingWaitForGC()
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			pc.TestingWaitForGC(ctx)
 
 			// Verify that nothing was evicted
 			for _, r := range resourceKeys {
@@ -1661,7 +1666,9 @@ func TestLRU(t *testing.T) {
 			err = pc.Start()
 			require.NoError(t, err)
 
-			pc.TestingWaitForGC()
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			pc.TestingWaitForGC(ctx)
 
 			perfectLRUEvictees := make(map[*rspb.ResourceName]struct{})
 			sort.Slice(resourceKeys, func(i, j int) bool {
@@ -1767,7 +1774,9 @@ func TestStartupScan(t *testing.T) {
 			}
 			log.Printf("Wrote %d digests", len(resources))
 
-			pc.TestingWaitForGC()
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			pc.TestingWaitForGC(ctx)
 			pc.Stop()
 
 			pc2, err := pebble_cache.NewPebbleCache(te, options)
@@ -1827,7 +1836,9 @@ func TestDeleteOrphans(t *testing.T) {
 	}
 
 	log.Printf("Wrote %d digests", len(digests))
-	pc.TestingWaitForGC()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	pc.TestingWaitForGC(ctx)
 	pc.Stop()
 
 	// Now open the pebble database directly and delete some entries.
@@ -1941,7 +1952,9 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	}
 
 	log.Printf("Wrote and deleted %d resources", len(resources))
-	pc.TestingWaitForGC()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	pc.TestingWaitForGC(ctx)
 	pc.Stop()
 
 	err = filepath.Walk(rootDir, func(path string, info fs.FileInfo, err error) error {
@@ -2124,7 +2137,9 @@ func TestMigrateVersions(t *testing.T) {
 			digests = append(digests, r.GetDigest())
 		}
 		log.Printf("Wrote %d digests", len(digests))
-		pc.TestingWaitForGC()
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		pc.TestingWaitForGC(ctx)
 		pc.Stop()
 	}
 
@@ -3305,7 +3320,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 				require.NoError(t, pc.Set(ctx, rn, buf))
 			}
 
-			require.NoError(t, pc.TestingWaitForGC())
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			require.NoError(t, pc.TestingWaitForGC(ctx))
 			pc.Stop()
 
 			blobSize, err := dirSizeFiles(filepath.Join(tc.opts.RootDirectory, "blobs"))

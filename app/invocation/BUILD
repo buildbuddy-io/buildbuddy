@@ -343,7 +343,6 @@ ts_library(
         "//app/components/link",
         "//app/format",
         "//app/invocation:invocation_execution_util",
-        "//app/util:cache",
         "//proto:execution_stats_ts_proto",
     ],
 )
@@ -774,6 +773,7 @@ ts_library(
         "//:node_modules/react",
         "//app/components/button",
         "//app/components/select",
+        "//app/errors:error_service",
         "//app/format",
         "//app/invocation:invocation_execution_table",
         "//app/invocation:invocation_execution_util",
@@ -804,6 +804,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/components/button",
+        "//app/components/link",
         "//app/docs:setup_code",
         "//app/errors:error_service",
         "//app/format",

@@ -134,6 +134,12 @@ func (r *Registry) PushNamedImage(t *testing.T, imageName string) (string, gcr.I
 	return r.Push(t, image, imageName), image
 }
 
+func (r *Registry) PushNamedImageWithFiles(t *testing.T, imageName string, files map[string][]byte) (string, gcr.Image) {
+	image, err := crane.Image(files)
+	require.NoError(t, err)
+	return r.Push(t, image, imageName), image
+}
+
 func (r *Registry) Shutdown(ctx context.Context) error {
 	if r.server != nil {
 		return r.server.Shutdown(ctx)

@@ -628,9 +628,9 @@ func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, m
 	missingFromS1 = make([]*repb.Digest, 0)
 	missingFromS2 = make([]*repb.Digest, 0)
 
-	s1Set := make(map[Key]struct{}, len(s1))
+	s1Set := make(map[Key]*repb.Digest, len(s1))
 	for _, d := range s1 {
-		s1Set[NewKey(d)] = struct{}{}
+		s1Set[NewKey(d)] = d
 	}
 
 	s2Set := make(map[Key]struct{}, len(s2))
@@ -639,13 +639,13 @@ func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, m
 		s2Set[k] = struct{}{}
 
 		if _, inS1 := s1Set[k]; !inS1 {
-			missingFromS1 = append(missingFromS1, k.ToDigest())
+			missingFromS1 = append(missingFromS1, d)
 		}
 	}
 
-	for k := range s1Set {
+	for k, d := range s1Set {
 		if _, inS2 := s2Set[k]; !inS2 {
-			missingFromS2 = append(missingFromS2, k.ToDigest())
+			missingFromS2 = append(missingFromS2, d)
 		}
 	}
 
@@ -711,37 +711,29 @@ func UniformRandomGenerator(seed int64) *Generator {
 }
 
 func (g *Generator) RandomDigestReader(sizeBytes int64) (*repb.Digest, io.ReadSeeker, error) {
+	d, buf, err := g.RandomDigestBuf(sizeBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	return d, bytes.NewReader(buf), nil
+}
+
+func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	// Read some random bytes.
-	buf := new(bytes.Buffer)
+	buf := bytes.NewBuffer(make([]byte, 0, sizeBytes))
 	if _, err := io.CopyN(buf, g.randMaker, sizeBytes); err != nil {
 		return nil, nil, err
 	}
-	readSeeker := bytes.NewReader(buf.Bytes())
 
 	// Compute a digest for the random bytes.
-	d, err := Compute(readSeeker, repb.DigestFunction_SHA256)
+	d, err := Compute(bytes.NewReader(buf.Bytes()), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, nil, err
 	}
-	if _, err := readSeeker.Seek(0, 0); err != nil {
-		return nil, nil, err
-	}
-	return d, readSeeker, nil
-}
-
-func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, error) {
-	d, rs, err := g.RandomDigestReader(sizeBytes)
-	if err != nil {
-		return nil, nil, err
-	}
-	buf, err := io.ReadAll(rs)
-	if err != nil {
-		return nil, nil, err
-	}
-	return d, buf, nil
+	return d, buf.Bytes(), nil
 }
 
 // ParseFunction parses a digest function name to a proto.

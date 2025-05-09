@@ -9,13 +9,13 @@ import { OutlinedButton } from "../components/button/button";
 import {
   downloadDuration,
   executionDuration,
-  getActionPageLink,
   getExecutionStatus,
   queuedDuration,
   subtractTimestamp,
   totalDuration,
   uploadDuration,
 } from "./invocation_execution_util";
+import errorService from "../errors/error_service";
 import format from "../format/format";
 
 interface Props {
@@ -66,15 +66,19 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
     request.executionLookup = new execution_stats.ExecutionLookup();
     request.executionLookup.invocationId = this.props.model.getInvocationId();
     let inProgressBeforeRequestWasMade = this.props.model.isInProgress();
-    rpcService.service.getExecution(request).then((response) => {
-      this.setState({ executions: response.execution, loading: false });
+    rpcService.service
+      .getExecution(request)
+      .then((response) => {
+        this.setState({ executions: response.execution, loading: false });
 
-      if (inProgressBeforeRequestWasMade) {
-        this.fetchUpdatedProgress();
-      }
+        if (inProgressBeforeRequestWasMade) {
+          this.fetchUpdatedProgress();
+        }
 
-      console.log(response);
-    });
+        console.log(response);
+      })
+      .catch((e) => errorService.handleError(e))
+      .finally(() => this.setState({ loading: false }));
   }
 
   fetchUpdatedProgress() {

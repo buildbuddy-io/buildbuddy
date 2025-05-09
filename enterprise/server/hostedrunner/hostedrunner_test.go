@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc"
@@ -65,7 +66,7 @@ func getEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	require.NoError(t, err)
 	jwt, err := auth.TestJWTForUserID("US1")
 	require.NoError(t, err)
-	authCtx = metadata.AppendToOutgoingContext(authCtx, "x-buildbuddy-jwt", jwt)
+	authCtx = metadata.AppendToOutgoingContext(authCtx, authutil.ContextTokenStringKey, jwt)
 
 	return te, authCtx
 }

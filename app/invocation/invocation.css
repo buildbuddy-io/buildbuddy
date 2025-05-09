@@ -922,33 +922,50 @@
   animation: rotate 2s linear infinite;
 }
 
-.invocation-execution-row-stats {
-  color: #aaa;
-  font-size: 0.8em;
-  display: flex;
-  flex-wrap: wrap;
-  margin-top: 4px;
-}
-
-.invocation-execution-row-header {
-  margin-bottom: 4px;
-  cursor: pointer;
+.invocation-execution-row .execution-header {
   display: flex;
   gap: 8px;
+  margin-bottom: 4px;
+}
+
+.invocation-execution-row .target-label {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.invocation-execution-row .command-snippet {
+  font-size: 12px;
+  color: #757575;
+  border-radius: 4px;
+  margin-bottom: 8px;
 }
 
 .invocation-execution-row-header-status {
   font-weight: 600;
 }
 
-.invocation-execution-row-status-message {
-  color: #e53935;
-  margin-top: 2px;
-  font-size: 12px;
+.invocation-execution-row .status {
+  color: #000;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 2px;
 }
 
-.invocation-execution-row-stats div {
-  margin-right: 8px;
+.invocation-execution-row .status-name {
+  font-weight: 600;
+}
+
+.invocation-execution-row .status-name.error {
+  color: #f44336;
+}
+
+.invocation-execution-row .invocation-execution-row-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+
+  color: #757575;
+  font-size: 12px;
 }
 
 .invocation-execution-empty-state {

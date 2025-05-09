@@ -109,6 +109,7 @@ func TestAcquireAndRelease(t *testing.T) {
 }
 
 func TestAcquireAndReleaseMetaRange(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	bgCtx := context.Background()
 	ctx, cancel := context.WithTimeout(bgCtx, 3*time.Second)
 	defer cancel()

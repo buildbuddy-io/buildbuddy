@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -57,7 +58,8 @@ import (
 )
 
 const (
-	updateExecutionTimeout = 15 * time.Second
+	updateExecutionTimeout             = 15 * time.Second
+	deletePendingExecutionExtraTimeout = 10 * time.Second
 
 	// When an action finishes, schedule the corresponding pubsub channel to
 	// be discarded after this time. There may be multiple waiters for a single
@@ -600,7 +602,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		RequestMetadata: rmd,
 	}
 	// Allow execution worker to auth to cache (if necessary).
-	if jwt, ok := ctx.Value("x-buildbuddy-jwt").(string); ok {
+	if jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
 		executionTask.Jwt = jwt
 	}
 
@@ -691,7 +693,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
-		ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
+		ctx, cancel := background.ExtendContextForFinalization(ctx, deletePendingExecutionExtraTimeout)
 		defer cancel()
 		if opts.recordActionMergingState {
 			_ = action_merger.DeletePendingExecution(ctx, s.rdb, executionID)
@@ -1069,6 +1071,8 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		if taskID == "" {
 			return
 		}
+		ctx, cancel := background.ExtendContextForFinalization(ctx, deletePendingExecutionExtraTimeout)
+		defer cancel()
 		if err := action_merger.DeletePendingExecution(ctx, s.rdb, taskID); err != nil {
 			log.CtxWarningf(ctx, "could not delete pending execution %q: %s", taskID, err)
 		}

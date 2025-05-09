@@ -1488,16 +1488,28 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 	if err != nil {
 		return nil, err
 	}
-	// Filter to tasks which can fit on the node.
-	//
+
 	// TODO: sample only from tasks that fit. Currently we randomly sample then
 	// do this filtering, which means that even if there are `count` tasks that
 	// can fit, we might wind up returning an empty list here.
 	tasksThatFit := make([]*persistedTask, 0, len(tasks))
 	for _, task := range tasks {
-		if nodeCanFitTask(node, task.metadata.GetTaskSize()) {
-			tasksThatFit = append(tasksThatFit, task)
+		// Filter to tasks which can fit on the node.
+		if !nodeCanFitTask(node, task.metadata.GetTaskSize()) {
+			continue
 		}
+
+		// Don't try to re-assign tasks intended to run on a specific executor.
+		fullTask := &repb.ExecutionTask{}
+		if err := proto.Unmarshal(task.serializedTask, fullTask); err != nil {
+			log.CtxWarningf(ctx, "failed to parse task %s", task.taskID)
+			continue
+		}
+		if id := platform.FindEffectiveValue(fullTask, "debug-executor-id"); id != "" {
+			continue
+		}
+
+		tasksThatFit = append(tasksThatFit, task)
 	}
 	return tasksThatFit, nil
 }
@@ -1808,6 +1820,16 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if isolationType != string(platform.FirecrackerContainerType) {
 		return task
 	}
+	expOptions := make([]any, 0, 2)
+	expOptions = append(expOptions, experiments.WithContext("executor_hostname", executorHostname))
+
+	selfHosted := false
+	if is := s.env.GetClientIdentityService(); is != nil {
+		identity, err := is.IdentityFromContext(ctx)
+		// Client identity is only set on managed executors.
+		selfHosted = err != nil || identity.Client != interfaces.ClientIdentityExecutor
+	}
+	expOptions = append(expOptions, experiments.WithContext("self_hosted_executor", selfHosted))
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until
@@ -1815,7 +1837,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	// with the value in the task.
 	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
 
-	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", experiments.WithContext("executor_hostname", executorHostname))
+	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
 	if skipResavingGroup == "" {
 		return task
 	}

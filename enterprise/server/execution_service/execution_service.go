@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -27,6 +26,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -164,8 +164,15 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		}
 		// group_id ACL check should have been done in LookupInvocation, but
 		// check it again here just to be explicit.
-		if err := authutil.AuthorizeGroupAccess(ctx, es.env, inv.GroupID); err != nil {
-			return err
+		// TODO(bduffany): do this OTHERS_READ check in AuthorizeRead instead.
+		if inv.Perms&perms.OTHERS_READ == 0 {
+			u, err := es.env.GetAuthenticator().AuthenticatedUser(ctx)
+			if err != nil {
+				return err
+			}
+			if err := perms.AuthorizeRead(u, perms.ToACLProto(&uidpb.UserId{Id: inv.UserID}, inv.GroupID, inv.Perms)); err != nil {
+				return err
+			}
 		}
 		// Select only the execution fields that will be shown on the Executions
 		// page.

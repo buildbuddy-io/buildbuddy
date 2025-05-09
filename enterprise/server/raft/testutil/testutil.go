@@ -86,6 +86,7 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 		RaftAddress:    ts.RaftAddress,
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: nrf,
+			LogDB:               dbConfig.GetSmallMemLogDBConfig(),
 		},
 		DefaultNodeRegistryEnabled: false,
 		RaftEventListener:          raftListener,
@@ -285,7 +286,7 @@ func (tp *TestingProposer) StaleRead(rangeID uint64, query interface{}) (interfa
 // FakeStore implements replica.IStore without real functionality.
 type FakeStore struct{}
 
-func (fs *FakeStore) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica)    {}
+func (fs *FakeStore) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {}
 func (fs *FakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {}
 func (fs *FakeStore) Sender() *sender.Sender {
 	return nil

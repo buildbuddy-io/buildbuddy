@@ -108,6 +108,7 @@ export default class TargetTestCoverageCardComponent extends React.Component<Pro
                   return (
                     <div className="coverage-record">
                       <TextLink
+                        plain
                         className="coverage-source"
                         href={
                           repoPath

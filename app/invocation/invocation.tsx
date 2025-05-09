@@ -95,6 +95,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   private logsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
   private runnerExecutionRPC?: CancelablePromise;
+  private cancelGroupIdOverride?: () => void;
 
   private seenChildInvocationConfiguredIds = new Set<string>();
   private seenChildInvocationCompletedIds = new Set<string>();
@@ -198,6 +199,28 @@ export default class InvocationComponent extends React.Component<Props, State> {
     this.logsSubscription?.unsubscribe();
     this.runnerExecutionRPC?.cancel();
     shortcuts.deregister(this.state.keyboardShortcutHandle);
+
+    this.cancelGroupIdOverride?.();
+    this.cancelGroupIdOverride = undefined;
+  }
+
+  /**
+   * Temporarily overrides the requestContext used by the RPC service to set the
+   * preferred group ID to the invocation owner group ID, even if that group is
+   * not currently selected in the group picker. Does nothing if the user does
+   * not have access to the invocation owner group ID.
+   *
+   * This is required since cache artifacts are group-specific, and various
+   * subcomponents of the invocation page will need to fetch cache artifacts
+   * associated with the invocation.
+   */
+  updateGroupIdOverride(model: InvocationModel) {
+    this.cancelGroupIdOverride?.();
+    this.cancelGroupIdOverride = undefined;
+    const invocationGroupId = model.invocation?.acl?.groupId;
+    if (invocationGroupId && this.props.user?.groups?.some((g) => g.id === invocationGroupId)) {
+      this.cancelGroupIdOverride = rpcService.overrideGroupId(invocationGroupId);
+    }
   }
 
   async fetchInvocation() {
@@ -223,6 +246,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
         }
         const inv = response.invocation[0];
         const model = new InvocationModel(inv);
+        this.updateGroupIdOverride(model);
+
         // Only update the child invocations if we've fetched new updates.
         const childInvocations = fetchChildren ? inv.childInvocations : this.state.childInvocations;
         this.setState({

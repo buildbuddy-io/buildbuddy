@@ -89,13 +89,9 @@ export default class UserGitHubLink extends React.Component<Props, State> {
   private onConfirmDelete() {
     this.setState({ isDeleting: true });
     rpcService.service
-      .unlinkGitHubAccount(github.UnlinkGitHubAccountRequest.create({ unlinkUserAccount: true }))
+      .unlinkUserGitHubAccount({})
       .then((response) => {
-        if (response.warning.length) {
-          alertService.warning("Warnings encountered while deleting GitHub account:\n" + response.warning.join("\n"));
-        } else {
-          alertService.success("Successfully unlinked GitHub account");
-        }
+        alertService.success("Successfully unlinked GitHub account");
         this.setState({ deleteModalVisible: false });
         this.refreshUser();
       })

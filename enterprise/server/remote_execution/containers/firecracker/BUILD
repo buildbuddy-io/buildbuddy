@@ -8,19 +8,33 @@ go_library(
         "containeropts.go",
         "firecracker.go",
     ],
-    data = [
-        "//enterprise/vmsupport/bin:initrd.cpio",
-        "//enterprise/vmsupport/bin:vmlinux",
-    ],
+    data = select({
+        "//platforms/configs:linux_x86_64": [
+            "//enterprise/vmsupport/bin:initrd.cpio",
+            "//enterprise/vmsupport/bin:vmlinux",
+            "//enterprise/vmsupport/bin:vmlinux_6.1",
+        ],
+        "//platforms/configs:linux_arm64": [
+            "//enterprise/vmsupport/bin:initrd.cpio",
+            "//enterprise/vmsupport/bin:vmlinux",
+        ],
+    }),
     embedsrcs = ["guest_api_hash.sha256"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker",
     target_compatible_with = [
         "@platforms//os:linux",
     ],
-    x_defs = {
-        "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
-        "vmlinuxRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux)",
-    },
+    x_defs = select({
+        "//platforms/configs:linux_x86_64": {
+            "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
+            "vmlinuxRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux)",
+            "vmlinux6_1RunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux_6.1)",
+        },
+        "//platforms/configs:linux_arm64": {
+            "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
+            "vmlinuxRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:vmlinux)",
+        },
+    }),
     deps = [
         "//enterprise/server/remote_execution/block_io",
         "//enterprise/server/remote_execution/cgroup",
@@ -109,6 +123,7 @@ go_test(
     args = [
         "--executor.enable_local_snapshot_sharing=true",
         "--executor.enable_remote_snapshot_sharing=true",
+        "--executor.firecracker_enable_linux_6_1=true",
     ],
     exec_properties = {
         "test.Pool": "bare",
@@ -156,6 +171,7 @@ go_test(
         "//server/remote_cache/digest",
         "//server/resources",
         "//server/rpc/interceptors",
+        "//server/testutil/quarantine",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",

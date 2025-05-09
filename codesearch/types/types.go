@@ -1,7 +1,6 @@
 package types
 
 import (
-	"fmt"
 	"io"
 )
 
@@ -29,11 +28,26 @@ func (ft FieldType) String() string {
 	}
 }
 
-type Field interface {
+type FieldSchema interface {
 	Type() FieldType
 	Name() string
-	Contents() []byte
 	Stored() bool
+	MakeTokenizer() Tokenizer
+	MakeField([]byte) Field
+	String() string
+}
+
+type DocumentSchema interface {
+	Fields() []FieldSchema
+	Field(name string) FieldSchema
+	MakeDocument(map[string][]byte) (Document, error)
+}
+
+type Field interface {
+	Contents() []byte
+	Type() FieldType
+	Name() string
+	Schema() FieldSchema
 }
 
 type Document interface {
@@ -97,51 +111,4 @@ type Query interface {
 
 type Searcher interface {
 	Search(q Query, numResults, offset int) ([]Document, error)
-}
-
-// TODO(tylerw): move these structs somewhere else. This file should only
-// contain interface definitions.
-type NamedField struct {
-	ftype  FieldType
-	name   string
-	buf    []byte
-	stored bool
-}
-
-func (f NamedField) Type() FieldType  { return f.ftype }
-func (f NamedField) Name() string     { return f.name }
-func (f NamedField) Contents() []byte { return f.buf }
-func (f NamedField) Stored() bool     { return f.stored }
-func (f NamedField) String() string {
-	var snippet string
-	if len(f.buf) < 10 {
-		snippet = string(f.buf)
-	} else {
-		snippet = string(f.buf[:10])
-	}
-	return fmt.Sprintf("field<type: %v, name: %q, buf: %q>", f.ftype, f.name, snippet)
-}
-
-func NewNamedField(ftype FieldType, name string, buf []byte, stored bool) NamedField {
-	return NamedField{
-		ftype:  ftype,
-		name:   name,
-		buf:    buf,
-		stored: stored,
-	}
-}
-
-type MapDocument map[string]NamedField
-
-func (d MapDocument) Field(name string) Field { return d[name] }
-func (d MapDocument) Fields() []string {
-	fieldNames := make([]string, 0, len(d))
-	for name := range d {
-		fieldNames = append(fieldNames, name)
-	}
-	return fieldNames
-}
-
-func NewMapDocument(fieldMap map[string]NamedField) MapDocument {
-	return MapDocument(fieldMap)
 }

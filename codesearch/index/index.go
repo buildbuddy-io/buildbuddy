@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"maps"
-	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -26,7 +24,6 @@ import (
 )
 
 var (
-	fieldNameRegex   = regexp.MustCompile(`^([a-zA-Z0-9][a-zA-Z0-9_]*)$`)
 	nextGenerationMu = sync.Mutex{}
 )
 
@@ -34,6 +31,12 @@ const batchFlushSizeBytes = 1_000_000_000 // flush batch every 1G
 
 type postingLists map[string]posting.List
 
+// Writer is not thread-safe. A single instance should not be used concurrently.
+// Multiple instances can be used concurrently without crashing, however CRUD operations are
+// not atomic, so index corruption can occur if multiple writers are used to modify the same
+// documents at the same time.
+// TODO(jdelfino): The server currently does not guarantee that multiple Writers won't be used to
+// update the same documents at the same time.
 type Writer struct {
 	db  *pebble.DB
 	log log.Logger
@@ -41,10 +44,10 @@ type Writer struct {
 	generation        uint32
 	docIndex          uint32
 	namespace         string
-	tokenizers        map[types.FieldType]types.Tokenizer
 	fieldPostingLists map[string]postingLists
 	deletes           posting.List
 	batch             *pebble.Batch
+	tokenizers        map[string]types.Tokenizer
 }
 
 func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
@@ -60,10 +63,10 @@ func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
 		generation:        generation,
 		docIndex:          0,
 		namespace:         namespace,
-		tokenizers:        make(map[types.FieldType]types.Tokenizer),
 		fieldPostingLists: make(map[string]postingLists),
 		deletes:           posting.NewList(),
 		batch:             db.NewBatch(),
+		tokenizers:        make(map[string]types.Tokenizer),
 	}, nil
 }
 
@@ -283,30 +286,18 @@ func (w *Writer) AddDocument(doc types.Document) error {
 	w.batch.Set(idKey, Uint64ToBytes(docID), nil)
 
 	for _, fieldName := range doc.Fields() {
-		if !fieldNameRegex.MatchString(fieldName) {
-			return status.InvalidArgumentErrorf("Invalid field name %q", fieldName)
-		}
 		field := doc.Field(fieldName)
 		if _, ok := w.fieldPostingLists[field.Name()]; !ok {
 			w.fieldPostingLists[field.Name()] = make(postingLists, 0)
 		}
 		postingLists := w.fieldPostingLists[field.Name()]
 
-		// Lookup the tokenizer to use; if one has not already been
-		// created for this field type then make it.
-		if _, ok := w.tokenizers[field.Type()]; !ok {
-			switch field.Type() {
-			case types.SparseNgramField:
-				w.tokenizers[field.Type()] = token.NewSparseNgramTokenizer(token.WithMaxNgramLength(6))
-			case types.TrigramField:
-				w.tokenizers[field.Type()] = token.NewTrigramTokenizer()
-			case types.KeywordField:
-				w.tokenizers[field.Type()] = token.NewWhitespaceTokenizer()
-			default:
-				return status.InternalErrorf("No tokenizer known for field type: %q", field.Type())
-			}
+		// Tokenizers are not thread-safe, so the writer must create its own instances.
+		if _, ok := w.tokenizers[field.Name()]; !ok {
+			w.tokenizers[field.Name()] = field.Schema().MakeTokenizer()
 		}
-		tokenizer := w.tokenizers[field.Type()]
+		tokenizer := w.tokenizers[field.Name()]
+
 		tokenizer.Reset(bytes.NewReader(field.Contents()))
 
 		for tokenizer.Next() == nil {
@@ -317,7 +308,7 @@ func (w *Writer) AddDocument(doc types.Document) error {
 			postingLists[ngram].Add(docID)
 		}
 
-		if field.Stored() {
+		if field.Schema().Stored() {
 			storedFieldKey := w.storedFieldKey(docID, field.Name())
 			w.batch.Set(storedFieldKey, field.Contents(), nil)
 		}
@@ -394,18 +385,20 @@ func (w *Writer) Flush() error {
 }
 
 type Reader struct {
-	ctx context.Context
-	db  pebble.Reader
-	log log.Logger
+	ctx    context.Context
+	db     pebble.Reader
+	schema types.DocumentSchema // TODO(jdelfino): Could store this in the index, in theory
+	log    log.Logger
 
 	namespace string
 }
 
-func NewReader(ctx context.Context, db pebble.Reader, namespace string) *Reader {
+func NewReader(ctx context.Context, db pebble.Reader, namespace string, schema types.DocumentSchema) *Reader {
 	subLog := log.NamedSubLogger(fmt.Sprintf("reader-%s", namespace))
 	return &Reader{
 		ctx:       ctx,
 		db:        db,
+		schema:    schema,
 		log:       subLog,
 		namespace: namespace,
 	}
@@ -469,7 +462,7 @@ func (r *Reader) recordIterStats(iter *pebble.Iterator, kt indexKeyType) {
 	}
 }
 
-func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string]types.NamedField, error) {
+func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string]types.Field, error) {
 	docIDStart := r.storedFieldKey(docID, "")
 	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: docIDStart,
@@ -495,7 +488,7 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 		return false
 	}
 
-	fields := make(map[string]types.NamedField, 0)
+	fields := make(map[string]types.Field, 0)
 	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
 		if err := k.FromBytes(iter.Key()); err != nil {
@@ -511,7 +504,7 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 		}
 		fieldVal := make([]byte, len(iter.Value()))
 		copy(fieldVal, iter.Value())
-		fields[k.field] = types.NewNamedField(types.TrigramField, k.field, fieldVal, true /*=stored*/)
+		fields[k.field] = r.schema.Field(k.field).MakeField(fieldVal)
 	}
 	return fields, nil
 }
@@ -700,7 +693,7 @@ type lazyDoc struct {
 	r *Reader
 
 	id     uint64
-	fields map[string]types.NamedField
+	fields map[string]types.Field
 }
 
 func (d lazyDoc) ID() uint64 {
@@ -713,7 +706,12 @@ func (d lazyDoc) Field(name string) types.Field {
 	}
 	fm, err := d.r.getStoredFields(d.id, name)
 	if err == nil {
-		d.fields[name] = fm[name]
+		field, ok := fm[name]
+		if !ok {
+			d.fields[name] = d.r.schema.Field(name).MakeField(nil)
+		} else {
+			d.fields[name] = field
+		}
 	}
 	return d.fields[name]
 }
@@ -726,7 +724,7 @@ func (r *Reader) newLazyDoc(docid uint64) *lazyDoc {
 	return &lazyDoc{
 		r:      r,
 		id:     docid,
-		fields: make(map[string]types.NamedField, 0),
+		fields: make(map[string]types.Field, 0),
 	}
 }
 

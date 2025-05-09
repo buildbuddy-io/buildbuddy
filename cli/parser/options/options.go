@@ -357,7 +357,10 @@ func (o *RequiredValueOption) Normalized() Option {
 	}
 }
 
-type Negatable interface {
+type BoolLike interface {
+	AsBool() (bool, error)
+	Cleared() bool
+	Clear()
 	Negated() bool
 	Negate()
 }
@@ -410,6 +413,15 @@ func (o *BoolOrEnumOption) ClearValue() {
 
 func (o *BoolOrEnumOption) SetValue(value string) {
 	o.Value = &value
+}
+
+func (o *BoolOrEnumOption) Cleared() bool {
+	return o.Value == nil && !o.IsNegative
+}
+
+func (o *BoolOrEnumOption) Clear() {
+	o.Value = nil
+	o.IsNegative = false
 }
 
 func (o *BoolOrEnumOption) Negated() bool {
@@ -629,6 +641,11 @@ func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 		return nil, fmt.Errorf("option name '%s' cannot specify an option with definition '%#v'", optName, d)
 	}
 
+	if d.PluginID() == StarlarkBuiltinPluginID {
+		return &starlarkOption{
+			BoolOrEnumOption: BoolOrEnumOption{Definition: d, Value: v, UsesShortName: form == shortForm, IsNegative: form == negativeForm},
+		}, nil
+	}
 	if d.RequiresValue() {
 		return &RequiredValueOption{Definition: d, Value: v, UsesShortName: form == shortForm, Joined: v != nil}, nil
 	}

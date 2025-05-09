@@ -436,6 +436,9 @@ func (s *Store) getMetaRangeBuf() []byte {
 }
 
 func (s *Store) setMetaRangeBuf(buf []byte) {
+	if len(buf) == 0 {
+		return
+	}
 	s.metaRangeMu.Lock()
 	defer s.metaRangeMu.Unlock()
 	new := &rfpb.RangeDescriptor{}
@@ -787,23 +790,19 @@ func (s *Store) GetRange(rangeID uint64) *rfpb.RangeDescriptor {
 	return s.lookupRange(rangeID)
 }
 
-// We need to implement the Add/RemoveRange interface so that stores opened and
-// closed on this node will notify us when their range appears and disappears.
-// We'll use this information to drive the range tags we broadcast.
-func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
-	s.log.Debugf("Adding range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
+func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
+	s.log.Debugf("Update range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
-	if loaded {
-		s.log.Warningf("AddRange stomped on another range. Did you forget to call RemoveRange?")
-	}
 
 	s.rangeMu.Lock()
 	s.openRanges[rd.GetRangeId()] = rd
 	s.rangeMu.Unlock()
 
-	metrics.RaftRanges.With(prometheus.Labels{
-		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-	}).Inc()
+	if !loaded {
+		metrics.RaftRanges.With(prometheus.Labels{
+			metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+		}).Inc()
+	}
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
@@ -2260,7 +2259,7 @@ func newDeleteSessionsWorker(clock clockwork.Clock, store *Store, clientSessionT
 }
 
 func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.Replica) error {
-	rd := repl.RangeDescriptor()
+	rd := w.store.lookupRange(repl.RangeID())
 	lastExecutionTimeI, found := w.lastExecutionTime.Load(rd.GetRangeId())
 	if found {
 		lastExecutionTime, ok := lastExecutionTimeI.(time.Time)
@@ -2726,6 +2725,10 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 			return nil, status.InternalErrorf("AddReplica failed to add range(%d) to node %q: failed to reserve replica IDs: %s", rangeID, node.GetNhid(), err)
 		}
 		newReplicaID = replicaIDs[0]
+		rd, err = s.addStagingReplicaToRangeDescriptor(ctx, rangeID, newReplicaID, node.GetNhid(), rd)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "AddReplica failed to add staging replica c%dn%d on %q: %s", rangeID, newReplicaID, node.GetNhid(), err)
+		}
 	}
 
 	// addReplicaStateAbsent -> addReplicaStateNonVoter
@@ -2745,7 +2748,7 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 
 	// Finally, update the range descriptor information to reflect the
 	// membership of this new node in the range.
-	rd, err = s.addReplicaToRangeDescriptor(ctx, rangeID, newReplicaID, node.GetNhid(), rd)
+	rd, err = s.addReplicaToRangeDescriptor(ctx, rangeID, newReplicaID, rd)
 	if err != nil {
 		return nil, status.InternalErrorf("AddReplica failed to add replica to range descriptor: %s", err)
 	}
@@ -2817,7 +2820,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	}
 
 	if err := s.syncRequestDeleteReplica(ctx, rangeID, req.GetReplicaId()); err != nil {
-		return nil, status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", rangeID, req.GetReplicaId(), err)
+		return rsp, status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", rangeID, req.GetReplicaId(), err)
 	}
 
 	return rsp, nil
@@ -2972,13 +2975,29 @@ func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, 
 	return nil
 }
 
-func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, nhid string, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+func (s *Store) addStagingReplicaToRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, nhid string, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
-	newDescriptor.Replicas = append(newDescriptor.Replicas, &rfpb.ReplicaDescriptor{
+	newDescriptor.Staging = append(newDescriptor.GetStaging(), &rfpb.ReplicaDescriptor{
 		RangeId:   rangeID,
 		ReplicaId: replicaID,
 		Nhid:      proto.String(nhid),
 	})
+	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
+	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+		return nil, err
+	}
+	return newDescriptor, nil
+}
+
+func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
+	for i, replica := range newDescriptor.GetStaging() {
+		if replica.GetReplicaId() == replicaID {
+			newDescriptor.Replicas = append(newDescriptor.GetReplicas(), newDescriptor.Staging[i])
+			newDescriptor.Staging = append(newDescriptor.Staging[:i], newDescriptor.Staging[i+1:]...)
+			break
+		}
+	}
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
 	newDescriptor.LastAddedReplicaId = proto.Uint64(replicaID)
 	newDescriptor.LastReplicaAddedAtUsec = proto.Int64(time.Now().UnixMicro())
@@ -3072,7 +3091,8 @@ func (s *Store) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) 
 			res[r.GetReplicaId()] = constants.ReplicaStateUnknown
 		}
 	}
-	rd = localReplica.RangeDescriptor()
+
+	rd = s.lookupRange(localReplica.RangeID())
 	indicesByReplicaID := s.GetRemoteLastAppliedIndices(ctx, rd, localReplica)
 	for replicaID, index := range indicesByReplicaID {
 		if index >= curIndex {
