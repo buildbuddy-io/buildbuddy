@@ -337,6 +337,11 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			required: true,
 		}
 
+		// TODO(jdelfino): Is this a no-op?
+		// We would use this when: we have short atoms that aren't looked up in the index...
+		// then we get docs back that don't fully match in content, but do match in the
+		// filename... I don't think this is useful. We're not actually also looking up filenames.
+
 		// If there is a content matcher, and there is not already a
 		// filename matcher, allow filenames that match the query too.
 		if _, ok := fieldMatchers[filenameField]; !ok {
