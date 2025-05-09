@@ -935,12 +935,8 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				log.Warnf("The requested snapshot was not found. It may have expired from the cache. Aborting...")
 				return 1, nil
 			} else if error_util.IsRequestedExecutorNotFoundError(latestErr) {
-				log.Warnf("The requested executor ID was not found. The executor may have been killed. Falling back to remote snapshot...")
-				req.ExecProperties = append(req.ExecProperties, &repb.Platform_Property{
-					Name:  "debug-executor-id",
-					Value: "",
-				})
-				continue
+				log.Warnf("The requested executor ID was not found. The executor may have been killed. Aborting...")
+				return 1, nil
 			}
 		}
 
