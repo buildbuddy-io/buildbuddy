@@ -2,11 +2,13 @@ package redis_execution_collector_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
 
@@ -147,4 +149,56 @@ func TestGetInProgressExecutionsIgnoresDeletedExecutions(t *testing.T) {
 	executions, err := collector.GetInProgressExecutions(ctx, invocationID)
 	require.NoError(t, err)
 	require.Empty(t, executions)
+}
+
+func TestMergeExecutionUpdatesWithRepeatedFields(t *testing.T) {
+	rdb := testredis.Start(t)
+	collector := redis_execution_collector.New(rdb.Client())
+
+	executionID := "execution-123"
+	updates := []*repb.StoredExecution{
+		{
+			ExecutionId: executionID,
+			Stage:       int64(repb.ExecutionStage_EXECUTING),
+		},
+		{
+			ExecutionId: executionID,
+			Stage:       int64(repb.ExecutionStage_COMPLETED),
+		},
+	}
+
+	// Iterate over the fields of the StoredExecution proto and look for
+	// slice-valued fields.
+	sliceFields := map[string]struct{}{}
+	val := reflect.ValueOf(updates[0]).Elem()
+	for i := range val.NumField() {
+		field := val.Field(i)
+		if field.Kind() == reflect.Slice && field.CanSet() {
+			sliceFields[val.Type().Field(i).Name] = struct{}{}
+			// Allocate a new slice with the same type as the field, then set
+			// both the initial and updated values to the same slice (containing
+			// a single element with a zero value).
+			slice := reflect.MakeSlice(field.Type(), 1, 1)
+			field.Set(slice)
+			reflect.ValueOf(updates[1]).Elem().Field(i).Set(slice)
+		}
+	}
+
+	// Store all the updates then read them back.
+	ctx := context.Background()
+	for _, update := range updates {
+		err := collector.UpdateInProgressExecution(ctx, update)
+		require.NoError(t, err)
+	}
+	execution, err := collector.GetInProgressExecution(ctx, executionID)
+	require.NoError(t, err)
+
+	// Verify that the slice fields are merged correctly.
+	executionValue := reflect.ValueOf(execution).Elem()
+	for fieldName := range sliceFields {
+		// Make sure the slice has length 1.
+		if executionValue.FieldByName(fieldName).Len() != 1 {
+			assert.Failf(t, "unhandled slice field", "StoredExecution field %q was concatenated instead of overwritten by mergeExecutionUpdates - method needs updating?", fieldName)
+		}
+	}
 }

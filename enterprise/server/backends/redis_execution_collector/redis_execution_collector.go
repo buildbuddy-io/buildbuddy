@@ -270,7 +270,7 @@ func (c *collector) DeleteReverseInvocationLinks(ctx context.Context, invocation
 }
 
 func unmarshalStoredInvocationLinks(serializedResults []string) ([]*sipb.StoredInvocationLink, error) {
-	res := make([]*sipb.StoredInvocationLink, 0)
+	res := make([]*sipb.StoredInvocationLink, 0, len(serializedResults))
 	for _, serializedResult := range serializedResults {
 		link := &sipb.StoredInvocationLink{}
 		if err := proto.Unmarshal([]byte(serializedResult), link); err != nil {
@@ -281,6 +281,13 @@ func unmarshalStoredInvocationLinks(serializedResults []string) ([]*sipb.StoredI
 	return res, nil
 }
 
+// mergeExecutionUpdates merges a list of execution updates into a single proto.
+// For example, in the case of an execution in COMPLETED state, we will usually
+// be combining 3 updates here: an initial metadata update (containing things
+// like the command_snippet), then an update which just sets ExecutionStage to
+// EXECUTING once the execution has started, then a final update which sets
+// ExecutionStage to COMPLETED and also includes the final execution metadata
+// (exit code, stats, etc.)
 func mergeExecutionUpdates(serializedResults []string) (*repb.StoredExecution, error) {
 	out := &repb.StoredExecution{}
 	for _, serializedResult := range serializedResults {
@@ -289,10 +296,12 @@ func mergeExecutionUpdates(serializedResults []string) (*repb.StoredExecution, e
 			return nil, err
 		}
 		// Copy fields from the latest event to the output proto. proto.Merge()
-		// is a convenient way to do this. Note that this will concatenate
-		// repeated fields, which is fine for now since repeated fields are not
-		// currently populated as execution events.
+		// is a convenient way to do this.
 		proto.Merge(out, event)
+		// Slice-valued fields need special handling since they are merged by
+		// concatenating, which may or may not make sense. For now, just have
+		// the last value win.
+		out.Experiments = event.Experiments
 
 		// The scheduler attempts to prevent concurrent execution updates via
 		// task leasing, but this is not currently 100% reliable. So we ignore
