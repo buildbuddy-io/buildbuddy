@@ -53,8 +53,15 @@ type region struct {
 	lineNumber  int
 }
 
+type fieldMatcher struct {
+	re *dfa.Regexp
+	// If true, a failure to match on this field will result in a score of 0 for the
+	// entire document.
+	required bool
+}
+
 type reScorer struct {
-	fieldMatchers map[string]*dfa.Regexp
+	fieldMatchers map[string]fieldMatcher
 	skip          bool
 }
 
@@ -99,24 +106,33 @@ func match(re *dfa.Regexp, buf []byte) []region {
 }
 
 func (s *reScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
+	// Special case: If there are no field matchers, everything matches.
+	// This happens for filter-only queries, like "language:java" where
+	// we know that the index query has already filtered the results precisely.
+	if len(s.fieldMatchers) == 0 {
+		return 1.0
+	}
+
 	docScore := 0.0
 	for fieldName := range s.fieldMatchers {
-		re := s.fieldMatchers[fieldName]
-		field := doc.Field(fieldName)
-		if len(field.Contents()) == 0 {
-			continue
+		fm := s.fieldMatchers[fieldName]
+		contents := doc.Field(fieldName).Contents()
+
+		if len(contents) == 0 {
+			if fm.required {
+				return 0.0
+			} else {
+				continue
+			}
 		}
 
-		matchingRegions := match(re.Clone(), field.Contents())
+		matchingRegions := match(fm.re.Clone(), contents)
 		f_qi_d := float64(len(matchingRegions))
-		if f_qi_d == 0 {
-			// Important note: If any of the field matchers fail entirely, it's not a match.
-			// This is only valid if all the field matchers are required, which was true at the
-			// time this was added.
+		if fm.required && (f_qi_d == 0) {
 			return 0.0
 		}
-		D := float64(len(strings.Fields(string(field.Contents()))))
-		k1, b := bm25Params(field.Name())
+		D := float64(len(strings.Fields(string(contents))))
+		k1, b := bm25Params(fieldName)
 		fieldScore := (f_qi_d * (k1 + 1)) / (f_qi_d + k1*(1-b+b*D))
 		docScore += fieldScore
 	}
@@ -145,7 +161,7 @@ func extractLine(buf []byte, lineNumber int) []byte {
 }
 
 type reHighlighter struct {
-	fieldMatchers map[string]*dfa.Regexp
+	contentRe *dfa.Regexp
 }
 
 type regionMatch struct {
@@ -191,9 +207,8 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 	results := make([]types.HighlightedRegion, 0)
 
 	field := doc.Field(contentField)
-	matcher, ok := h.fieldMatchers[contentField]
-	if ok {
-		for _, region := range match(matcher.Clone(), field.Contents()) {
+	if h.contentRe != nil {
+		for _, region := range match(h.contentRe.Clone(), field.Contents()) {
 			region := region
 			results = append(results, types.HighlightedRegion(regionMatch{
 				field:  field,
@@ -205,7 +220,7 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 	// HACK: if there are no matching regions, add a fake one that matches
 	// the first line of the file. This way filter-only queries will be able
 	// to display a highlighted region.
-	if len(results) == 0 && h.fieldMatchers[contentField] == nil {
+	if len(results) == 0 && h.contentRe == nil {
 		field := doc.Field(contentField)
 		results = append(results, types.HighlightedRegion(regionMatch{
 			field: field,
@@ -225,7 +240,7 @@ type ReQuery struct {
 	parsed string
 	squery string
 
-	fieldMatchers map[string]*dfa.Regexp
+	fieldMatchers map[string]fieldMatcher
 }
 
 func expressionToSquery(expr string, fieldName string) (string, error) {
@@ -250,7 +265,7 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 	regexFlags := "m" // always use multiline mode.
 
 	// Regexp matches (for highlighting) by fieldname.
-	fieldMatchers := make(map[string]*dfa.Regexp)
+	fieldMatchers := make(map[string]fieldMatcher)
 
 	q, caseSensitive := filters.ExtractCaseSensitivity(q)
 	if !caseSensitive {
@@ -269,7 +284,10 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 		if err != nil {
 			return nil, status.InvalidArgumentError(err.Error())
 		}
-		fieldMatchers[filenameField] = fileMatchRe
+		fieldMatchers[filenameField] = fieldMatcher{
+			re:       fileMatchRe,
+			required: true,
+		}
 	}
 
 	q, lang := filters.ExtractLanguageFilter(q)
@@ -314,12 +332,18 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 		if err != nil {
 			return nil, status.InvalidArgumentError(err.Error())
 		}
-		fieldMatchers[contentField] = re
+		fieldMatchers[contentField] = fieldMatcher{
+			re:       re,
+			required: true,
+		}
 
 		// If there is a content matcher, and there is not already a
 		// filename matcher, allow filenames that match the query too.
 		if _, ok := fieldMatchers[filenameField]; !ok {
-			fieldMatchers[filenameField] = re
+			fieldMatchers[filenameField] = fieldMatcher{
+				re:       re,
+				required: false,
+			}
 		}
 	}
 	subLog.Infof("parsed query: [%s]", q)
@@ -371,10 +395,14 @@ func (req *ReQuery) Scorer() types.Scorer {
 }
 
 func (req *ReQuery) Highlighter() types.Highlighter {
-	return &reHighlighter{req.fieldMatchers}
+	fm, ok := req.fieldMatchers[contentField]
+	if !ok {
+		return &reHighlighter{}
+	}
+	return &reHighlighter{fm.re}
 }
 
 // TESTONLY: return field matchers to verify regexp params.
-func (req *ReQuery) TestOnlyFieldMatchers() map[string]*dfa.Regexp {
+func (req *ReQuery) TestOnlyFieldMatchers() map[string]fieldMatcher {
 	return req.fieldMatchers
 }
