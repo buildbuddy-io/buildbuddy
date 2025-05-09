@@ -379,6 +379,73 @@ func updateCacheEventMetric(cacheType, eventType string) {
 	}).Inc()
 }
 
+func fetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference) (*ocipb.OCIBlobMetadata, error) {
+	hash, err := gcr.NewHash(ref.Identifier())
+	if err != nil {
+		updateCacheEventMetric(actionCacheLabel, missLabel)
+		return nil, err
+	}
+
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      ref.Context().RegistryStr(),
+		Repository:    ref.Context().RepositoryStr(),
+		ResourceType:  ocipb.OCIResourceType_BLOB,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		updateCacheEventMetric(actionCacheLabel, missLabel)
+		return nil, err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
+	if err != nil {
+		updateCacheEventMetric(actionCacheLabel, missLabel)
+		return nil, err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		actionResultInstanceName,
+		cacheDigestFunction,
+	)
+	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
+	if err != nil {
+		updateCacheEventMetric(actionCacheLabel, missLabel)
+		return nil, err
+	}
+	updateCacheEventMetric(actionCacheLabel, hitLabel)
+
+	var blobMetadataCASDigest *repb.Digest
+	var blobCASDigest *repb.Digest
+	for _, outputFile := range ar.GetOutputFiles() {
+		switch outputFile.GetPath() {
+		case blobMetadataOutputFilePath:
+			blobMetadataCASDigest = outputFile.GetDigest()
+		case blobOutputFilePath:
+			blobCASDigest = outputFile.GetDigest()
+		default:
+			log.CtxErrorf(ctx, "Unknown output file path %q in ActionResult for %q", outputFile.GetPath(), ref.Context())
+		}
+	}
+	if blobMetadataCASDigest == nil || blobCASDigest == nil {
+		updateCacheEventMetric(casLabel, missLabel)
+		return nil, status.NotFoundErrorf("missing blob metadata digest or blob digest for %s", ref.Context())
+	}
+	blobMetadataRN := digest.NewCASResourceName(
+		blobMetadataCASDigest,
+		"",
+		cacheDigestFunction,
+	)
+	blobMetadata := &ocipb.OCIBlobMetadata{}
+	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
+	if err != nil {
+		updateCacheEventMetric(casLabel, missLabel)
+		return nil, err
+	}
+	updateCacheEventMetric(casLabel, hitLabel)
+	return blobMetadata, nil
+}
+
 func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
 	hash, err := gcr.NewHash(ref.Identifier())
 	if err != nil {
@@ -410,63 +477,10 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 		return nil
 	}
 
-	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
-		ResourceType:  ociResourceType,
-		HashAlgorithm: hash.Algorithm,
-		HashHex:       hash.Hex,
-	}
-	arKeyBytes, err := proto.Marshal(arKey)
+	blobMetadata, err := fetchBlobMetadataFromCache(ctx, bsClient, acClient, ref)
 	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return err
 	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
-	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return err
-	}
-	arRN := digest.NewACResourceName(
-		arDigest,
-		actionResultInstanceName,
-		cacheDigestFunction,
-	)
-	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
-	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return err
-	}
-	updateCacheEventMetric(actionCacheLabel, hitLabel)
-
-	var blobMetadataCASDigest *repb.Digest
-	var blobCASDigest *repb.Digest
-	for _, outputFile := range ar.GetOutputFiles() {
-		switch outputFile.GetPath() {
-		case blobMetadataOutputFilePath:
-			blobMetadataCASDigest = outputFile.GetDigest()
-		case blobOutputFilePath:
-			blobCASDigest = outputFile.GetDigest()
-		default:
-			log.CtxErrorf(ctx, "Unknown output file path %q in ActionResult for %q", outputFile.GetPath(), ref.Context())
-		}
-	}
-	if blobMetadataCASDigest == nil || blobCASDigest == nil {
-		updateCacheEventMetric(casLabel, missLabel)
-		return status.NotFoundErrorf("missing blob metadata digest or blob digest for %s", ref.Context())
-	}
-	blobMetadataRN := digest.NewCASResourceName(
-		blobMetadataCASDigest,
-		"",
-		cacheDigestFunction,
-	)
-	blobMetadata := &ocipb.OCIBlobMetadata{}
-	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
-	if err != nil {
-		updateCacheEventMetric(casLabel, missLabel)
-		return err
-	}
-	updateCacheEventMetric(casLabel, hitLabel)
 	w.Header().Add(headerDockerContentDigest, hash.String())
 	w.Header().Add(headerContentLength, strconv.FormatInt(blobMetadata.GetContentLength(), 10))
 	w.Header().Add(headerContentType, blobMetadata.GetContentType())
@@ -474,6 +488,10 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 
 	if !writeBody {
 		return nil
+	}
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: blobMetadata.GetContentLength(),
 	}
 	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
