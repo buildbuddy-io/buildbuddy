@@ -1147,8 +1147,8 @@ func bufferSize(rn *rspb.ResourceName) int {
 	}
 	// The median and average AC results are less than 4KiB: go/action-result-size
 	return 4 * 1024
-
 }
+
 func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
 	r, err := c.distributedReader(ctx, rn, 0, 0, "Get" /*=metricsLabel*/)
 	if err != nil {
