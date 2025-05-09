@@ -3,8 +3,11 @@ syntax = "proto3";
 
 package auth;
 
-// Authentication information is passed via headers.
-message AuthenticateRequest {}
+// Most Authentication information (API key, source IP) is passed via headers.
+message AuthenticateRequest {
+  // The subdomain to which the request was sent.
+  optional string subdomain = 1;
+}
 
 message AuthenticateResponse {
   // JWT that may be cached short-term for local authentication.

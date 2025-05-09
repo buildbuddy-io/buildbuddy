@@ -12,6 +12,7 @@ go_library(
         "//server/real_environment",
         "//server/util/authutil",
         "//server/util/status",
+        "//server/util/subdomain",
     ],
 )
 
