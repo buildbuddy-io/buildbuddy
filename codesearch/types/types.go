@@ -32,7 +32,7 @@ type FieldSchema interface {
 	Type() FieldType
 	Name() string
 	Stored() bool
-	Tokenizer() Tokenizer
+	MakeTokenizer() Tokenizer
 	MakeField([]byte) Field
 	String() string
 }

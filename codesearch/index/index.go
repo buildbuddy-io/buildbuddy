@@ -31,6 +31,12 @@ const batchFlushSizeBytes = 1_000_000_000 // flush batch every 1G
 
 type postingLists map[string]posting.List
 
+// Writer is not thread-safe. A single instance should not be used concurrently.
+// Multiple instances can be used concurrently without crashing, however CRUD operations are
+// not atomic, so index corruption can occur if multiple writers are used to modify the same
+// documents at the same time.
+// TODO(jdelfino): The server currently does not guarantee that multiple Writers won't be used to
+// update the same documents at the same time.
 type Writer struct {
 	db  *pebble.DB
 	log log.Logger
@@ -41,6 +47,7 @@ type Writer struct {
 	fieldPostingLists map[string]postingLists
 	deletes           posting.List
 	batch             *pebble.Batch
+	tokenizers        map[string]types.Tokenizer
 }
 
 func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
@@ -59,6 +66,7 @@ func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
 		fieldPostingLists: make(map[string]postingLists),
 		deletes:           posting.NewList(),
 		batch:             db.NewBatch(),
+		tokenizers:        make(map[string]types.Tokenizer),
 	}, nil
 }
 
@@ -284,8 +292,12 @@ func (w *Writer) AddDocument(doc types.Document) error {
 		}
 		postingLists := w.fieldPostingLists[field.Name()]
 
-		tokenizer := field.Schema().Tokenizer()
-		// TODO(jdelfino): not threadsafe
+		// Tokenizers are not thread-safe, so the writer must create its own instances.
+		if _, ok := w.tokenizers[field.Name()]; !ok {
+			w.tokenizers[field.Name()] = field.Schema().MakeTokenizer()
+		}
+		tokenizer := w.tokenizers[field.Name()]
+
 		tokenizer.Reset(bytes.NewReader(field.Contents()))
 
 		for tokenizer.Next() == nil {

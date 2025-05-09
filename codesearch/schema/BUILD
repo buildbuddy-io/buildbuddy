@@ -19,5 +19,6 @@ go_test(
         ":schema",
         "//codesearch/token",
         "//codesearch/types",
+        "@com_github_stretchr_testify//assert",
     ],
 )
