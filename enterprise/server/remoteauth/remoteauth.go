@@ -138,7 +138,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 
 	key, err := claimsCacheKey(ctx)
 	if err != nil {
-		return authutil.AuthContextWithError(ctx, status.PermissionDeniedError("Missing API key"))
+		return authutil.AuthContextWithError(ctx, err)
 	}
 
 	// Try to use a locally-cached JWT, if available and valid.
@@ -220,10 +220,6 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 		return "", status.InternalError("Authenticate succeeded with nil jwt")
 	}
 	return *resp.Jwt, nil
-}
-
-func getAPIKey(ctx context.Context) string {
-	return getLastMetadataValue(ctx, authutil.APIKeyHeader)
 }
 
 // Returns:
