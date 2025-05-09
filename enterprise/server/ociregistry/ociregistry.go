@@ -308,7 +308,12 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	// to look up the manifest in the cache.
 	if resolvedRefIsDigest {
 		writeBody := inreq.Method == http.MethodGet
-		err := fetchBlobOrManifestFromCache(ctx, w, bsClient, acClient, resolvedRef, ociResourceType, writeBody)
+		hash, err := gcr.NewHash(resolvedRef.Identifier())
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error parsing resolved digest in %q: %s", resolvedRef.Context(), err), http.StatusInternalServerError)
+			return
+		}
+		err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef, hash, ociResourceType, writeBody)
 		if err == nil {
 			return // Successfully served request from cache.
 		}
@@ -379,53 +384,29 @@ func updateCacheEventMetric(cacheType, eventType string) {
 	}).Inc()
 }
 
-func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
+func fetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference) (*ocipb.OCIBlobMetadata, error) {
 	hash, err := gcr.NewHash(ref.Identifier())
 	if err != nil {
 		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return err
-	}
-	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
-		mc, err := fetchManifestFromAC(ctx, acClient, ref, hash)
-		if err != nil {
-			return err
-		}
-		w.Header().Add(headerDockerContentDigest, hash.String())
-		w.Header().Add(headerContentLength, strconv.Itoa(len(mc.GetRaw())))
-		w.Header().Add(headerContentType, mc.GetContentType())
-		w.WriteHeader(http.StatusOK)
-		if !writeBody {
-			return nil
-		}
-		counter := &ioutil.Counter{}
-		mw := io.MultiWriter(w, counter)
-		defer func() {
-			metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
-				metrics.CacheTypeLabel: actionCacheLabel,
-			}).Observe(float64(counter.Count()))
-		}()
-		if _, err := io.Copy(mw, bytes.NewReader(mc.GetRaw())); err != nil {
-			return err
-		}
-		return nil
+		return nil, err
 	}
 
 	arKey := &ocipb.OCIActionResultKey{
 		Registry:      ref.Context().RegistryStr(),
 		Repository:    ref.Context().RepositoryStr(),
-		ResourceType:  ociResourceType,
+		ResourceType:  ocipb.OCIResourceType_BLOB,
 		HashAlgorithm: hash.Algorithm,
 		HashHex:       hash.Hex,
 	}
 	arKeyBytes, err := proto.Marshal(arKey)
 	if err != nil {
 		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return err
+		return nil, err
 	}
 	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
 	if err != nil {
 		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return err
+		return nil, err
 	}
 	arRN := digest.NewACResourceName(
 		arDigest,
@@ -435,7 +416,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
 		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return err
+		return nil, err
 	}
 	updateCacheEventMetric(actionCacheLabel, hitLabel)
 
@@ -453,7 +434,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	}
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
 		updateCacheEventMetric(casLabel, missLabel)
-		return status.NotFoundErrorf("missing blob metadata digest or blob digest for %s", ref.Context())
+		return nil, status.NotFoundErrorf("missing blob metadata digest or blob digest for %s", ref.Context())
 	}
 	blobMetadataRN := digest.NewCASResourceName(
 		blobMetadataCASDigest,
@@ -464,16 +445,16 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
 	if err != nil {
 		updateCacheEventMetric(casLabel, missLabel)
-		return err
+		return nil, err
 	}
 	updateCacheEventMetric(casLabel, hitLabel)
-	w.Header().Add(headerDockerContentDigest, hash.String())
-	w.Header().Add(headerContentLength, strconv.FormatInt(blobMetadata.GetContentLength(), 10))
-	w.Header().Add(headerContentType, blobMetadata.GetContentType())
-	w.WriteHeader(http.StatusOK)
+	return blobMetadata, nil
+}
 
-	if !writeBody {
-		return nil
+func fetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, hash gcr.Hash, contentLength int64) error {
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
 	}
 	blobRN := digest.NewCASResourceName(
 		blobCASDigest,
@@ -496,22 +477,56 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	return nil
 }
 
-func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
-	r := upstream
+func writeManifestMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash gcr.Hash, mc *ocipb.OCIManifestContent) {
+	w.Header().Add(headerDockerContentDigest, hash.String())
+	w.Header().Add(headerContentLength, strconv.Itoa(len(mc.GetRaw())))
+	w.Header().Add(headerContentType, mc.GetContentType())
+}
+
+func writeBlobMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash gcr.Hash, blobMetadata *ocipb.OCIBlobMetadata) {
+	w.Header().Add(headerDockerContentDigest, hash.String())
+	w.Header().Add(headerContentLength, strconv.FormatInt(blobMetadata.GetContentLength(), 10))
+	w.Header().Add(headerContentType, blobMetadata.GetContentType())
+}
+
+func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
-		if contentLength > maxManifestSize {
-			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
-		}
-		raw, err := io.ReadAll(io.LimitReader(upstream, contentLength))
+		mc, err := fetchManifestFromAC(ctx, acClient, ref, hash)
 		if err != nil {
 			return err
 		}
-		if err := writeManifestToAC(ctx, raw, acClient, ref, hash, contentType); err != nil {
-			log.CtxWarningf(ctx, "Error writing manifest to AC for %q: %s", ref.Context(), err)
+		writeManifestMetadataToResponse(ctx, w, hash, mc)
+		w.WriteHeader(http.StatusOK)
+		if !writeBody {
+			return nil
 		}
-		r = bytes.NewReader(raw)
+		counter := &ioutil.Counter{}
+		mw := io.MultiWriter(w, counter)
+		defer func() {
+			metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
+				metrics.CacheTypeLabel: actionCacheLabel,
+			}).Observe(float64(counter.Count()))
+		}()
+		if _, err := io.Copy(mw, bytes.NewReader(mc.GetRaw())); err != nil {
+			return err
+		}
+		return nil
 	}
 
+	blobMetadata, err := fetchBlobMetadataFromCache(ctx, bsClient, acClient, ref)
+	if err != nil {
+		return err
+	}
+	writeBlobMetadataToResponse(ctx, w, hash, blobMetadata)
+	w.WriteHeader(http.StatusOK)
+
+	if !writeBody {
+		return nil
+	}
+	return fetchBlobFromCache(ctx, w, bsClient, acClient, hash, blobMetadata.GetContentLength())
+}
+
+func writeBlobOrManifestToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -522,9 +537,8 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	tr := io.TeeReader(r, w)
 	updateCacheEventMetric(casLabel, uploadLabel)
-	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, tr)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
 	if err != nil {
 		return err
 	}
@@ -577,6 +591,25 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		return err
 	}
 	return nil
+}
+
+func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
+	r := upstream
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
+		if contentLength > maxManifestSize {
+			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
+		}
+		raw, err := io.ReadAll(io.LimitReader(upstream, contentLength))
+		if err != nil {
+			return err
+		}
+		if err := writeManifestToAC(ctx, raw, acClient, ref, hash, contentType); err != nil {
+			log.CtxWarningf(ctx, "Error writing manifest to AC for %q: %s", ref.Context(), err)
+		}
+		r = bytes.NewReader(raw)
+	}
+	tr := io.TeeReader(r, w)
+	return writeBlobOrManifestToCache(ctx, tr, bsClient, acClient, ref, ociResourceType, hash, contentType, contentLength)
 }
 
 func writeManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string) error {
