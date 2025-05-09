@@ -13,7 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 )
 
-const Key = "subdomain"
+const key = "subdomain"
 
 var (
 	enableSubdomainMatching = flag.Bool("app.enable_subdomain_matching", false, "If true, request subdomain will be taken into account when determining what request restrictions should be applied.")
@@ -42,13 +42,17 @@ func SetHost(ctx context.Context, host string) context.Context {
 			return ctx
 		}
 	}
-	return context.WithValue(ctx, Key, subdomain)
+	return Context(subdomain, ctx)
+}
+
+func Context(subdomain string, ctx context.Context) context.Context {
+	return context.WithValue(ctx, key, subdomain)
 }
 
 // Get returns the subdomain restriction that should be applied or an empty
 // string if no subdomain restrictions should be applied.
 func Get(ctx context.Context) string {
-	v, _ := ctx.Value(Key).(string)
+	v, _ := ctx.Value(key).(string)
 	return v
 }
 
