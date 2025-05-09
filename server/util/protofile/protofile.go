@@ -223,6 +223,9 @@ func (f *fetcher) unmarshalBlob(b []byte) ([]proto.Message, error) {
 		if err != nil {
 			return nil, err
 		}
+		if recordLength < 0 {
+			return nil, status.OutOfRangeError("record length is negative")
+		}
 		recordContent := buf.Next(int(recordLength))
 		msg := f.allocator()
 		if err := proto.Unmarshal(recordContent, msg); err != nil {
