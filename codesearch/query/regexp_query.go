@@ -241,9 +241,7 @@ func expressionToSquery(expr string, fieldName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	r := RegexpQuery(syn)
-	s := r.SQuery(fieldName)
-	return s, nil
+	return RegexpQuery(syn).SQuery(fieldName), nil
 }
 
 func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
