@@ -313,7 +313,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 			http.Error(w, fmt.Sprintf("Error parsing resolved digest in %q: %s", resolvedRef.Context(), err), http.StatusInternalServerError)
 			return
 		}
-		err = fetchBlobOrManifestFromCache(ctx, w, bsClient, acClient, resolvedRef, hash, ociResourceType, writeBody)
+		err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef, hash, ociResourceType, writeBody)
 		if err == nil {
 			return // Successfully served request from cache.
 		}
@@ -489,7 +489,7 @@ func writeBlobMetadataToResponse(ctx context.Context, w http.ResponseWriter, has
 	w.Header().Add(headerContentType, blobMetadata.GetContentType())
 }
 
-func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
+func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
 		mc, err := fetchManifestFromAC(ctx, acClient, ref, hash)
 		if err != nil {
@@ -526,22 +526,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	return fetchBlobFromCache(ctx, w, bsClient, acClient, hash, blobMetadata.GetContentLength())
 }
 
-func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
-	r := upstream
-	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
-		if contentLength > maxManifestSize {
-			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
-		}
-		raw, err := io.ReadAll(io.LimitReader(upstream, contentLength))
-		if err != nil {
-			return err
-		}
-		if err := writeManifestToAC(ctx, raw, acClient, ref, hash, contentType); err != nil {
-			log.CtxWarningf(ctx, "Error writing manifest to AC for %q: %s", ref.Context(), err)
-		}
-		r = bytes.NewReader(raw)
-	}
-
+func writeBlobOrManifestToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -552,9 +537,8 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	tr := io.TeeReader(r, w)
 	updateCacheEventMetric(casLabel, uploadLabel)
-	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, tr)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
 	if err != nil {
 		return err
 	}
@@ -607,6 +591,25 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		return err
 	}
 	return nil
+}
+
+func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
+	r := upstream
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
+		if contentLength > maxManifestSize {
+			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
+		}
+		raw, err := io.ReadAll(io.LimitReader(upstream, contentLength))
+		if err != nil {
+			return err
+		}
+		if err := writeManifestToAC(ctx, raw, acClient, ref, hash, contentType); err != nil {
+			log.CtxWarningf(ctx, "Error writing manifest to AC for %q: %s", ref.Context(), err)
+		}
+		r = bytes.NewReader(raw)
+	}
+	tr := io.TeeReader(r, w)
+	return writeBlobOrManifestToCache(ctx, tr, bsClient, acClient, ref, ociResourceType, hash, contentType, contentLength)
 }
 
 func writeManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string) error {
