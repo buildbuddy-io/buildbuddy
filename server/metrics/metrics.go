@@ -1458,7 +1458,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "cow_snapshot_skipped_remote_bytes",
-		Help:      "The number of compressed bytes that would not be written to the remote cache if stricter remote write logic was applied.",
+		Help:      "The number of uncompressed bytes that were not written to the remote cache due to only writing locally.",
 	}, []string{
 		FileName,
 	})
