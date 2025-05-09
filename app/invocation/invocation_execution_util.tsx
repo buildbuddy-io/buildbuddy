@@ -65,6 +65,13 @@ export function totalDuration(execution: execution_stats.IExecution) {
   );
 }
 
+export function workerDuration(execution: execution_stats.IExecution) {
+  return subtractTimestamp(
+    execution?.executedActionMetadata?.workerCompletedTimestamp,
+    execution?.executedActionMetadata?.workerStartTimestamp
+  );
+}
+
 export function queuedDuration(execution: execution_stats.IExecution) {
   return subtractTimestamp(
     execution?.executedActionMetadata?.workerStartTimestamp,

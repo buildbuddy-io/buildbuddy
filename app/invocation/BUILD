@@ -343,7 +343,6 @@ ts_library(
         "//app/components/link",
         "//app/format",
         "//app/invocation:invocation_execution_util",
-        "//app/util:cache",
         "//proto:execution_stats_ts_proto",
     ],
 )
