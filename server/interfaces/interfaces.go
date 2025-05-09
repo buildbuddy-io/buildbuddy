@@ -1416,6 +1416,12 @@ type SecretService interface {
 
 // ExecutionCollector keeps track of a list of Executions for each invocation ID.
 type ExecutionCollector interface {
+	UpdateInProgressExecution(ctx context.Context, execution *repb.StoredExecution) error
+	GetInProgressExecution(ctx context.Context, executionID string) (*repb.StoredExecution, error)
+	GetInProgressExecutions(ctx context.Context, invocationID string) ([]*repb.StoredExecution, error)
+	DeleteInProgressExecution(ctx context.Context, executionID string) error
+	DeleteReverseInvocationLinks(ctx context.Context, invocationID string) error
+
 	AppendExecution(ctx context.Context, iid string, execution *repb.StoredExecution) error
 	// GetExecutions fetches a range of executions for the given invocation ID.
 	// The range start and stop indexes are both inclusive. If the stop index is out
@@ -1425,9 +1431,9 @@ type ExecutionCollector interface {
 	DeleteExecutions(ctx context.Context, iid string) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
-	AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink) error
-	GetInvocationLinks(ctx context.Context, execution_id string) ([]*sipb.StoredInvocationLink, error)
-	DeleteInvocationLinks(ctx context.Context, execution_id string) error
+	AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, storeReverseLink bool) error
+	GetInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error)
+	DeleteInvocationLinks(ctx context.Context, executionID string) error
 }
 
 // SuggestionService enables fetching of suggestions.
