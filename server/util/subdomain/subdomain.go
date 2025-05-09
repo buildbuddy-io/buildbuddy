@@ -45,7 +45,7 @@ func SetHost(ctx context.Context, host string) context.Context {
 	return Context(subdomain, ctx)
 }
 
-func Context(subdomain string, ctx context.Context) context.Context {
+func Context(ctx context.Context, subdomain string) context.Context {
 	return context.WithValue(ctx, key, subdomain)
 }
 

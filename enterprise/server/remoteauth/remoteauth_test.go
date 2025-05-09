@@ -194,19 +194,19 @@ func TestSubdomains(t *testing.T) {
 
 	// Authenticate at foosub.buildbuddy.io with API key foo
 	fakeAuth.Reset().setNextJwt(t, "foosub", fooJwt)
-	ctx := subdomain.Context("foosub", contextWithApiKey(t, "foo"))
+	ctx := subdomain.Context(contextWithApiKey(t, "foo"), "foosub")
 	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Ensure that JWT is not cached for a different subdomain
 	fakeAuth.Reset().setNextJwt(t, "barsub", barJwt)
-	ctx = subdomain.Context("barsub", contextWithApiKey(t, "foo"))
+	ctx = subdomain.Context(contextWithApiKey(t, "foo"), "barsub")
 	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, barJwt, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Also ensure API key bar doesn't work for foosub.buildbuddy.io
 	fakeAuth.Reset().setNextJwt(t, "foosub", bazJwt)
-	ctx = subdomain.Context("foosub", contextWithApiKey(t, "bar"))
+	ctx = subdomain.Context(contextWithApiKey(t, "bar"), "foosub")
 	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, bazJwt, ctx.Value(authutil.ContextTokenStringKey))
 }
