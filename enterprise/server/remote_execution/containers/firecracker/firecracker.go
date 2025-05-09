@@ -89,6 +89,7 @@ var (
 	netPoolSize                           = flag.Int("executor.firecracker_network_pool_size", 0, "Limit on the number of networks to be reused between VMs. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
+	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -377,8 +378,9 @@ type ExecutorConfig struct {
 
 var (
 	// set by x_defs in BUILD file
-	initrdRunfilePath  string
-	vmlinuxRunfilePath string
+	initrdRunfilePath     string
+	vmlinuxRunfilePath    string
+	vmlinux6_1RunfilePath string
 )
 
 // GetExecutorConfig computes the ExecutorConfig for this executor instance.
@@ -398,9 +400,17 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	if err != nil {
 		return nil, err
 	}
-	vmlinuxRunfileLocation, err := runfiles.Rlocation(vmlinuxRunfilePath)
-	if err != nil {
-		return nil, err
+	var vmlinuxRunfileLocation string
+	if *enableLinux6_1 {
+		vmlinuxRunfileLocation, err = runfiles.Rlocation(vmlinux6_1RunfilePath)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		vmlinuxRunfileLocation, err = runfiles.Rlocation(vmlinuxRunfilePath)
+		if err != nil {
+			return nil, err
+		}
 	}
 	guestKernelPath, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation, buildRootDir, 0755)
 	if err != nil {
