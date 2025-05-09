@@ -19,8 +19,11 @@ func TestCaseSensitive(t *testing.T) {
 	assert.Contains(t, squery, `(:eq content "foo")`)
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
+	assert.Len(t, fieldMatchers, 2)
+
 	require.Contains(t, fieldMatchers, "content")
 	assert.Contains(t, fieldMatchers["content"].re.String(), "foo")
+	assert.True(t, fieldMatchers["content"].required)
 }
 
 func TestCaseInsensitive(t *testing.T) {
@@ -32,10 +35,10 @@ func TestCaseInsensitive(t *testing.T) {
 	assert.Contains(t, squery, `(:eq content "foo")`)
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
-	assert.Len(t, fieldMatchers, 1)
 	require.Contains(t, fieldMatchers, "content")
-	assert.Contains(t, fieldMatchers["content"].String(), "Foo")
-	assert.Contains(t, fieldMatchers["content"].String(), "(?mi)")
+	assert.Contains(t, fieldMatchers["content"].re.String(), "Foo")
+	assert.Contains(t, fieldMatchers["content"].re.String(), "(?mi)")
+	assert.True(t, fieldMatchers["content"].required)
 }
 
 func TestCaseNo(t *testing.T) {
@@ -48,8 +51,28 @@ func TestCaseNo(t *testing.T) {
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
-	assert.Contains(t, fieldMatchers["content"].String(), "fOO")
-	assert.Contains(t, fieldMatchers["content"].String(), "(?mi)")
+	assert.Contains(t, fieldMatchers["content"].re.String(), "fOO")
+	assert.Contains(t, fieldMatchers["content"].re.String(), "(?mi)")
+	assert.True(t, fieldMatchers["content"].required)
+}
+
+func TestOptionalFileMatcher(t *testing.T) {
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "foo")
+	require.NoError(t, err)
+
+	squery := string(q.SQuery())
+	assert.Contains(t, squery, `(:eq content "foo")`)
+
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	assert.Len(t, fieldMatchers, 2)
+	require.Contains(t, fieldMatchers, "content")
+	assert.Contains(t, fieldMatchers["content"].re.String(), "foo")
+	assert.True(t, fieldMatchers["content"].required)
+
+	require.Contains(t, fieldMatchers, "filename")
+	assert.Contains(t, fieldMatchers["filename"].re.String(), "foo")
+	assert.False(t, fieldMatchers["filename"].required)
 }
 
 func TestLangAtom(t *testing.T) {
@@ -59,10 +82,12 @@ func TestLangAtom(t *testing.T) {
 
 	squery := string(q.SQuery())
 	assert.Contains(t, squery, "(:eq language \"java\")")
+	assert.Contains(t, squery, `(:eq content "foo")`)
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
-	assert.Contains(t, fieldMatchers["content"].String(), "foo")
+	assert.Contains(t, fieldMatchers["content"].re.String(), "foo")
+	assert.True(t, fieldMatchers["content"].required)
 }
 
 func TestLangAtomOnly(t *testing.T) {
@@ -75,6 +100,34 @@ func TestLangAtomOnly(t *testing.T) {
 
 	// No field matchers should be created for language filters - the index handles it
 	assert.Empty(t, q.TestOnlyFieldMatchers())
+}
+
+func TestRepoAtom(t *testing.T) {
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "repo:cats foo")
+	require.NoError(t, err)
+
+	squery := string(q.SQuery())
+	assert.Contains(t, squery, `(:eq repo "cats")`)
+	assert.Contains(t, squery, `(:eq content "foo")`)
+
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	require.Contains(t, fieldMatchers, "content")
+	assert.Contains(t, fieldMatchers["content"].re.String(), "foo")
+	assert.True(t, fieldMatchers["content"].required)
+}
+
+func TestRepoAtomOnly(t *testing.T) {
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "repo:cats")
+	require.NoError(t, err)
+
+	squery := string(q.SQuery())
+	assert.Contains(t, squery, `(:and  (:eq repo "cats"))`)
+
+	// No field matchers should be created for repo filters - the index handles it
+	assert.Empty(t, q.TestOnlyFieldMatchers())
+
 }
 
 func TestFileAtom(t *testing.T) {
@@ -93,7 +146,10 @@ func TestFileAtom(t *testing.T) {
 	assert.Contains(t, squery, "(:eq filename \"r/b\")")
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
-	require.NotContains(t, fieldMatchers, "content")
+	require.Len(t, fieldMatchers, 1)
+	require.Contains(t, fieldMatchers, "filename")
+	assert.Contains(t, fieldMatchers["filename"].re.String(), "foo/bar/baz.a")
+	assert.True(t, fieldMatchers["filename"].required)
 }
 
 func TestGroupedTerms(t *testing.T) {
@@ -106,7 +162,9 @@ func TestGroupedTerms(t *testing.T) {
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
-	assert.Contains(t, fieldMatchers["content"].String(), "(grp trm)")
+	assert.Contains(t, fieldMatchers["content"].re.String(), "(grp trm)")
+	assert.True(t, fieldMatchers["content"].required)
+
 }
 
 func TestUngroupedTerms(t *testing.T) {
@@ -119,32 +177,9 @@ func TestUngroupedTerms(t *testing.T) {
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
-	assert.Contains(t, fieldMatchers["content"].String(), "(grp)|(trm)")
-}
+	assert.Contains(t, fieldMatchers["content"].re.String(), "(grp)|(trm)")
+	assert.True(t, fieldMatchers["content"].required)
 
-func TestFilenameFilter(t *testing.T) {
-	ctx := context.Background()
-	q, err := NewReQuery(ctx, "file:index")
-	require.NoError(t, err)
-
-	squery := string(q.SQuery())
-	assert.Contains(t, squery, `(:and (:eq filename "dex") (:eq filename "ind") (:eq filename "nde"))`)
-
-	fieldMatchers := q.TestOnlyFieldMatchers()
-	require.Contains(t, fieldMatchers, "filename")
-	assert.Contains(t, fieldMatchers["filename"].String(), "index")
-}
-
-func TestRepoFilter(t *testing.T) {
-	ctx := context.Background()
-	q, err := NewReQuery(ctx, "repo:cats")
-	require.NoError(t, err)
-
-	squery := string(q.SQuery())
-	assert.Contains(t, squery, `(:and  (:eq repo "cats"))`)
-
-	// No field matchers should be created for repo filters - the index handles it
-	assert.Empty(t, q.TestOnlyFieldMatchers())
 }
 
 // define schema
@@ -156,6 +191,7 @@ var testSchema = schema.NewDocumentSchema(
 		schema.MustFieldSchema(types.KeywordField, "id", true),
 		schema.MustFieldSchema(types.TrigramField, "filename", true),
 		schema.MustFieldSchema(types.SparseNgramField, "content", true),
+		schema.MustFieldSchema(types.KeywordField, "lang", true),
 	},
 )
 
@@ -167,7 +203,7 @@ func newTestDocument(t *testing.T, fieldMap map[string][]byte) types.Document {
 	return doc
 }
 
-func TestScoringSingleMatch(t *testing.T) {
+func TestScoringMatchContentOnly(t *testing.T) {
 	ctx := context.Background()
 	q, err := NewReQuery(ctx, "foo")
 	require.NoError(t, err)
@@ -181,7 +217,93 @@ func TestScoringSingleMatch(t *testing.T) {
 		"content":  []byte("foo"),
 	})
 
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	require.Contains(t, fieldMatchers, "content")
+	require.True(t, fieldMatchers["content"].required)
+	require.Contains(t, fieldMatchers, "filename")
+	require.False(t, fieldMatchers["filename"].required)
+
 	score := scorer.Score(nil, doc)
+	require.NotNil(t, score)
+	assert.Equal(t, 1.0, score)
+}
+
+func TestScoringMatchContentAndFilename(t *testing.T) {
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "foo")
+	require.NoError(t, err)
+
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	doc := newTestDocument(t, map[string][]byte{
+		"id":       []byte("1"),
+		"filename": []byte("foo.txt"),
+		"content":  []byte("foo"),
+	})
+
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	require.Contains(t, fieldMatchers, "content")
+	require.True(t, fieldMatchers["content"].required)
+	require.Contains(t, fieldMatchers, "filename")
+	require.False(t, fieldMatchers["filename"].required)
+
+	score := scorer.Score(nil, doc)
+	require.NotNil(t, score)
+	assert.Equal(t, 2.0, score)
+}
+
+func TestScoringMatchFilenameOnly(t *testing.T) {
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "bar")
+	require.NoError(t, err)
+
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	doc := newTestDocument(t, map[string][]byte{
+		"id":       []byte("1"),
+		"filename": []byte("bar.txt"),
+		"content":  []byte("foo"),
+	})
+
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	require.Contains(t, fieldMatchers, "content")
+	require.True(t, fieldMatchers["content"].required)
+	require.Contains(t, fieldMatchers, "filename")
+	require.False(t, fieldMatchers["filename"].required)
+
+	// TODO(jdelfino): Arg, content is not required in this case according to
+	// current behavior. Figure out how to model this.
+	// Maybe "canExclude" instead of "required"?
+	// Do we even need to zero out scores???
+	// Yes, but not for content + filename match - it's our only disjunction.
+	score := scorer.Score(nil, doc)
+	require.NotNil(t, score)
+	assert.Equal(t, 1.0, score)
+}
+
+func TestScoringMatchExplicitFilename(t *testing.T) {
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "file:bar")
+	require.NoError(t, err)
+
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	doc := newTestDocument(t, map[string][]byte{
+		"id":       []byte("1"),
+		"filename": []byte("bar.txt"),
+		"content":  []byte("foo"),
+	})
+
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	require.Len(t, fieldMatchers, 1)
+	require.Contains(t, fieldMatchers, "filename")
+	require.True(t, fieldMatchers["filename"].required)
+
+	score := scorer.Score(nil, doc)
+	require.NotNil(t, score)
 	assert.Equal(t, 1.0, score)
 }
 
@@ -190,8 +312,67 @@ func TestScorerWithNoMatchers(t *testing.T) {
 	q, err := NewReQuery(ctx, "lang:java")
 	require.NoError(t, err)
 
-	squery := string(q.SQuery())
-	assert.Contains(t, squery, `(:and  (:eq language "java"))`)
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
 
-	// make some docs and assert scores are 1.0
+	doc := newTestDocument(t, map[string][]byte{
+		"id":       []byte("1"),
+		"filename": []byte("bar.txt"),
+		"content":  []byte("foo"),
+		"lang":     []byte("java"),
+	})
+
+	score := scorer.Score(nil, doc)
+	require.NotNil(t, score)
+	assert.Equal(t, 1.0, score)
+}
+
+func TestScorerNonMatch(t *testing.T) {
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "baz")
+	require.NoError(t, err)
+
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	doc := newTestDocument(t, map[string][]byte{
+		"id":       []byte("1"),
+		"filename": []byte("bar.txt"),
+		"content":  []byte("foo"),
+	})
+
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	require.Contains(t, fieldMatchers, "content")
+	require.True(t, fieldMatchers["content"].required)
+	require.Contains(t, fieldMatchers, "filename")
+	require.True(t, fieldMatchers["filename"].required)
+
+	score := scorer.Score(nil, doc)
+	require.NotNil(t, score)
+	assert.Equal(t, 0.0, score)
+}
+
+func TestScorerWithOneRequiredNonMatch(t *testing.T) {
+	ctx := context.Background()
+	q, err := NewReQuery(ctx, "filename:baz foo")
+	require.NoError(t, err)
+
+	scorer := q.Scorer()
+	require.NotNil(t, scorer)
+
+	doc := newTestDocument(t, map[string][]byte{
+		"id":       []byte("1"),
+		"filename": []byte("bar.txt"),
+		"content":  []byte("foo"),
+	})
+
+	fieldMatchers := q.TestOnlyFieldMatchers()
+	require.Contains(t, fieldMatchers, "content")
+	require.True(t, fieldMatchers["content"].required)
+	require.Contains(t, fieldMatchers, "filename")
+	require.True(t, fieldMatchers["filename"].required)
+
+	score := scorer.Score(nil, doc)
+	require.NotNil(t, score)
+	assert.Equal(t, 0.0, score)
 }
