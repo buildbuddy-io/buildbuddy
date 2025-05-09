@@ -444,6 +444,18 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 		return action, action.Priority()
 	}
 
+	if rd.GetRangeId() == constants.MetaRangeID {
+		// Do not try to re-balance meta-range.
+		//
+		// When meta-range is moved onto a different node, range cache has to
+		// update its range descriptor. Before the range descriptor get updated,
+		// SyncPropose to all other ranges can fail temporarily because the range
+		// descriptor is not current. Therefore, we should only move meta-range
+		// when it's absolutely necessary.
+		action = DriverNoop
+		return action, action.Priority()
+	}
+
 	// Do not split if there is a replica is dead or suspect or a replica is
 	// in the middle of a removal.
 	allReady := rq.storeMap.AllAvailableStoresReady()
@@ -463,18 +475,6 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 		}
 	} else {
 		rq.log.Debugf("cannot split range %d: num of suspect replicas: %d, num deadReplicas: %d, num replicas marked for removal: %d, allReady=%t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, len(rd.GetRemoved()), allReady)
-	}
-
-	if rd.GetRangeId() == constants.MetaRangeID {
-		// Do not try to re-balance meta-range.
-		//
-		// When meta-range is moved onto a different node, range cache has to
-		// update its range descriptor. Before the range descriptor get updated,
-		// SyncPropose to all other ranges can fail temporarily because the range
-		// descriptor is not current. Therefore, we should only move meta-range
-		// when it's absolutely necessary.
-		action = DriverNoop
-		return action, action.Priority()
 	}
 
 	// Do not try to rebalance replica or leases if there is a dead or suspect,
