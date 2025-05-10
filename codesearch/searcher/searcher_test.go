@@ -40,7 +40,7 @@ var sampleData = []struct {
 	{"three", "three body problem"},
 	{"four", "four score and"},
 	{"five", "hawaii five-o"},
-	{"six", "pick up sticks"},
+	{"six", "pick up sticks is great"},
 	{"seven", "lucky number seven"},
 	{"eight", "pieces of eight"},
 	{"nine", "nine lives"},
@@ -48,10 +48,22 @@ var sampleData = []struct {
 	{"eleven", "turn it up to 11"},
 }
 
-type zeroScorer struct{}
+type constantScorer struct{}
 
-func (s zeroScorer) Skip() bool                                                     { return false }
-func (s zeroScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 { return 0.0 }
+func (s constantScorer) Skip() bool                                                     { return false }
+func (s constantScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 { return 0.1 }
+
+type explicitScorer struct {
+	scores map[string]float64
+}
+
+func (s explicitScorer) Skip() bool { return false }
+func (s explicitScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
+	if score, ok := s.scores[string(doc.Field("ident").Contents())]; ok {
+		return score
+	}
+	return 0.0
+}
 
 type sQuery struct {
 	s      string
@@ -88,7 +100,7 @@ func TestBasicSearcher(t *testing.T) {
 	ctx := context.Background()
 	db := createSampleIndex(t)
 	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
-	docs, err := s.Search(sQuery{"(:all)", zeroScorer{}}, 100, 0)
+	docs, err := s.Search(sQuery{"(:all)", constantScorer{}}, 100, 0)
 	require.NoError(t, err)
 	require.Equal(t, len(sampleData), len(docs))
 }
@@ -97,11 +109,32 @@ func TestSearcherOffsetAndLimit(t *testing.T) {
 	ctx := context.Background()
 	db := createSampleIndex(t)
 	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
-	docs, err := s.Search(sQuery{"(:all)", zeroScorer{}}, 11, 8)
+	docs, err := s.Search(sQuery{"(:all)", constantScorer{}}, 11, 8)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(docs))
 
 	assert.Equal(t, "nine", string(docs[0].Field("ident").Contents()))
 	assert.Equal(t, "ten", string(docs[1].Field("ident").Contents()))
 	assert.Equal(t, "eleven", string(docs[2].Field("ident").Contents()))
+}
+
+func TestSearcherZeroScoresDropped(t *testing.T) {
+	ctx := context.Background()
+	db := createSampleIndex(t)
+	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", testSchema))
+
+	scorer := explicitScorer{
+		scores: map[string]float64{
+			"one":   1.0,
+			"four":  0.5,
+			"eight": 0.00001,
+		},
+	}
+	docs, err := s.Search(sQuery{"(:all)", scorer}, 100, 0)
+	require.NoError(t, err)
+	require.Equal(t, 3, len(docs))
+
+	assert.Equal(t, "one", string(docs[0].Field("ident").Contents()))
+	assert.Equal(t, "four", string(docs[1].Field("ident").Contents()))
+	assert.Equal(t, "eight", string(docs[2].Field("ident").Contents()))
 }

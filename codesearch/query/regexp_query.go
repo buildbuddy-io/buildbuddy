@@ -99,18 +99,32 @@ func match(re *dfa.Regexp, buf []byte) []region {
 }
 
 func (s *reScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
+	// Special case: If there are no field matchers, everything matches.
+	// This happens for filter-only queries, like "language:java" where
+	// we know that the index query has already filtered the results precisely.
+	if len(s.fieldMatchers) == 0 {
+		return 1.0
+	}
+
 	docScore := 0.0
 	for fieldName := range s.fieldMatchers {
 		re := s.fieldMatchers[fieldName]
-		field := doc.Field(fieldName)
-		if len(field.Contents()) == 0 {
-			continue
+		contents := doc.Field(fieldName).Contents()
+		if len(contents) == 0 {
+			// See note below on returning early.
+			return 0.0
 		}
 
-		matchingRegions := match(re.Clone(), field.Contents())
+		matchingRegions := match(re.Clone(), contents)
 		f_qi_d := float64(len(matchingRegions))
-		D := float64(len(strings.Fields(string(field.Contents()))))
-		k1, b := bm25Params(field.Name())
+		if f_qi_d == 0 {
+			// Important note: If any of the field matchers fail entirely, it's not a match.
+			// This is only valid if all the field matchers are required, which was true at the
+			// time this check was added.
+			return 0.0
+		}
+		D := float64(len(strings.Fields(string(contents))))
+		k1, b := bm25Params(fieldName)
 		fieldScore := (f_qi_d * (k1 + 1)) / (f_qi_d + k1*(1-b+b*D))
 		docScore += fieldScore
 	}
@@ -250,6 +264,7 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 	}
 
 	q, filename := filters.ExtractFilenameFilter(q)
+
 	if len(filename) > 0 {
 		subQ, err := expressionToSquery(filename, filenameField)
 		if err != nil {
@@ -306,14 +321,12 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			return nil, status.InvalidArgumentError(err.Error())
 		}
 		fieldMatchers[contentField] = re
-
-		// If there is a content matcher, and there is not already a
-		// filename matcher, allow filenames that match the query too.
-		if _, ok := fieldMatchers[filenameField]; !ok {
-			fieldMatchers[filenameField] = re
-		}
 	}
 	subLog.Infof("parsed query: [%s]", q)
+
+	// Here we build the squery as a conjunction of all the clauses.
+	// If we ever add support for OR clauses between query terms, the scoring logic will need
+	// to be updated as well. The scorer currently assumes that all fieldMatchers must match.
 
 	squery := ""
 	if len(sQueries) == 1 {
