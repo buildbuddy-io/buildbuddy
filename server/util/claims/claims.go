@@ -303,6 +303,12 @@ func AssembleJWT(c *Claims) (string, error) {
 	return tokenString, err
 }
 
+func AuthContextFromJWT(ctx context.Context, jwt string) context.Context {
+	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+	claims, err := ClaimsFromContext(ctx)
+	return AuthContextFromClaims(ctx, claims, err)
+}
+
 func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Context {
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
