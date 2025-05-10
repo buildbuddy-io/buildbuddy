@@ -38,6 +38,8 @@ const (
 	ExecutionIDKey  = "execution_id"
 	InvocationIDKey = "invocation_id"
 
+	CachePartitionOverrideKey = "cache_partition_id"
+
 	callerSkipFrameCount = 3
 )
 

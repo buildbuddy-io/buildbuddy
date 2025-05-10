@@ -25,6 +25,7 @@ go_library(
         "//server/util/approxlru",
         "//server/util/authutil",
         "//server/util/bytebufferpool",
+        "//server/util/cacheutil",
         "//server/util/compression",
         "//server/util/disk",
         "//server/util/flag",
@@ -70,6 +71,7 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/cacheutil",
         "//server/util/compression",
         "//server/util/disk",
         "//server/util/log",
@@ -83,6 +85,7 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_x_sync//errgroup",
     ],
 )
