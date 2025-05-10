@@ -278,6 +278,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange("capability", [api_key.ApiKey.Capability.ORG_ADMIN_CAPABILITY]);
   }
 
+  private onSelectAuditLogReader(onChange: (name: string, value: any) => any) {
+    onChange("capability", [api_key.ApiKey.Capability.AUDIT_LOG_READ_CAPABILITY]);
+  }
+
   private onChangeVisibility(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
     onChange("visibleToDevelopers", e.target.checked);
   }
@@ -405,6 +409,20 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     </span>
                   </label>
                 </div>
+              )}
+              {capabilities.config.auditLogsUiEnabled && !this.props.userOwnedOnly && (
+                  <div className="field-container">
+                    <label className="checkbox-row">
+                      <input
+                          type="radio"
+                          onChange={this.onSelectAuditLogReader.bind(this, onChange)}
+                          checked={isAuditLogReader(request)}
+                      />
+                      <span>
+                      Audit log reader key <span className="field-description">(for reading audit logs)</span>
+                    </span>
+                    </label>
+                  </div>
               )}
               {/* "Visible to developers" bit does not apply for user-level keys. */}
               {!this.props.userOwnedOnly && (
@@ -593,6 +611,10 @@ function isOrgAdminKey<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.ORG_ADMIN_CAPABILITY]);
 }
 
+function isAuditLogReader<T extends ApiKeyFields>(apiKey: T | null) {
+  return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.AUDIT_LOG_READ_CAPABILITY]);
+}
+
 function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, []);
 }
@@ -607,6 +629,8 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities = "Executor";
   } else if (isOrgAdminKey(apiKey)) {
     capabilities = "Org admin";
+  } else if (isAuditLogReader(apiKey)) {
+    capabilities = "Audit log reader"
   }
   if (apiKey.visibleToDevelopers) {
     capabilities += " (*)";
