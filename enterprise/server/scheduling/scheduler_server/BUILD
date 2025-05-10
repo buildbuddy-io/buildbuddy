@@ -28,6 +28,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
+        "//server/util/error_util",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/perms",

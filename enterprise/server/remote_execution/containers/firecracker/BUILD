@@ -65,6 +65,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/background",
         "//server/util/disk",
+        "//server/util/error_util",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/networking",

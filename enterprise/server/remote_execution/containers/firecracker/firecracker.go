@@ -50,6 +50,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -1113,7 +1114,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
 	if err != nil {
-		return status.WrapError(err, "failed to get snapshot")
+		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
 	}
 
 	// Set unique per-run identifier on the vm metadata so this exact snapshot

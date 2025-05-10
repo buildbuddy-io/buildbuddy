@@ -469,7 +469,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 
 	executionID := op.GetName()
 	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
-		return nil, status.WrapError(err, "wait invocation exists")
+		return nil, err
 	}
 
 	return res, nil
@@ -539,8 +539,8 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			}
 			if stage == repb.ExecutionStage_COMPLETED {
 				if execResponse := operation.ExtractExecuteResponse(op); execResponse != nil {
-					if gstatus.FromProto(execResponse.Status).Err() != nil {
-						return status.InternalErrorf("Failed to create runner invocation (execution ID: %q): %s", executionID, execResponse.GetStatus().GetMessage())
+					if execErr := gstatus.FromProto(execResponse.Status).Err(); execErr != nil {
+						return fmt.Errorf("failed to create runner invocation (execution ID: %q): %w", executionID, execErr)
 					}
 				}
 				return nil
