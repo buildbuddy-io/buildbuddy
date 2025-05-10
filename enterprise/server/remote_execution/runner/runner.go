@@ -513,11 +513,10 @@ func (r *taskRunner) RemoveInBackground(ctx context.Context) {
 func (r *taskRunner) isCIRunner() bool {
 	r.p.mu.RLock()
 	task := r.task
-	props := r.PlatformProperties
 	r.p.mu.RUnlock()
 
 	args := task.GetCommand().GetArguments()
-	return props.WorkflowID != "" && len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
+	return len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
 }
 
 func (r *taskRunner) cleanupCIRunner(ctx context.Context) error {
