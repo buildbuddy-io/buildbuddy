@@ -120,7 +120,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 		return authutil.AuthContextWithError(ctx, err)
 	}
 	if jwt != "" {
-		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+		return claims.AuthContextFromJWT(ctx, jwt)
 	}
 
 	key := getAPIKey(ctx)
@@ -134,7 +134,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	a.mu.RUnlock()
 	if found {
 		if err := jwtIsValid(jwt, a.claimsCache, a.jwtExpirationBuffer); err == nil {
-			return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+			return claims.AuthContextFromJWT(ctx, jwt)
 		}
 		a.mu.Lock()
 		a.cache.Remove(key)
@@ -150,7 +150,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	a.mu.Lock()
 	a.cache.Add(key, jwt)
 	a.mu.Unlock()
-	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+	return claims.AuthContextFromJWT(ctx, jwt)
 }
 
 func (a *RemoteAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
