@@ -255,7 +255,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	}
 
 	if r.GetCompressor() == repb.Compressor_IDENTITY {
-		w, err := newUploadWriteCloser(ctx, bsClient, r)
+		w, err := NewUploadWriter(ctx, bsClient, r)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -1127,7 +1127,7 @@ func maybeSetCompressor(rn *digest.CASResourceName) {
 	}
 }
 
-type uploadWriteCloser struct {
+type UploadWriter struct {
 	ctx          context.Context
 	stream       bspb.ByteStream_WriteClient
 	sender       rpcutil.Sender[*bspb.WriteRequest]
@@ -1143,12 +1143,15 @@ type uploadWriteCloser struct {
 	bytesBuffered int
 }
 
-func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
+// Assert that UploadWriter implements CommittedWriteCloser
+var _ interfaces.CommittedWriteCloser = (*UploadWriter)(nil)
+
+func (uw *UploadWriter) Write(p []byte) (int, error) {
 	written := 0
 	for len(p) > 0 {
-		n := copy(cwc.buf[cwc.bytesBuffered:], p)
-		cwc.bytesBuffered += n
-		if err := cwc.flush(false); err != nil {
+		n := copy(uw.buf[uw.bytesBuffered:], p)
+		uw.bytesBuffered += n
+		if err := uw.flush(false); err != nil {
 			if err == io.EOF {
 				break
 			}
@@ -1160,37 +1163,37 @@ func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 	return written, nil
 }
 
-func (cwc *uploadWriteCloser) flush(finish bool) error {
-	if cwc.committed {
+func (uw *UploadWriter) flush(finish bool) error {
+	if uw.committed {
 		return status.FailedPreconditionError("UploadWriteCloser already committed, cannot flush")
 	}
 	req := &bspb.WriteRequest{
-		Data:         cwc.buf[:cwc.bytesBuffered],
-		ResourceName: cwc.uploadString,
-		WriteOffset:  cwc.bytesUploaded,
+		Data:         uw.buf[:uw.bytesBuffered],
+		ResourceName: uw.uploadString,
+		WriteOffset:  uw.bytesUploaded,
 		FinishWrite:  finish,
 	}
-	err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+	err := uw.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 	if err != nil {
 		return err
 	}
-	cwc.bytesUploaded += int64(cwc.bytesBuffered)
-	cwc.bytesBuffered = 0
-	cwc.committed = finish
+	uw.bytesUploaded += int64(uw.bytesBuffered)
+	uw.bytesBuffered = 0
+	uw.committed = finish
 	return nil
 }
 
-func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
+func (uw *UploadWriter) ReadFrom(r io.Reader) (int64, error) {
 	bytesRead := int64(0)
 	for {
-		n, err := ioutil.ReadTryFillBuffer(r, cwc.buf[cwc.bytesBuffered:])
-		cwc.bytesBuffered += n
+		n, err := ioutil.ReadTryFillBuffer(r, uw.buf[uw.bytesBuffered:])
+		uw.bytesBuffered += n
 		bytesRead += int64(n)
 		done := err == io.EOF
 		if err != nil && !done {
 			return bytesRead, err
 		}
-		if err := cwc.flush(false); err != nil {
+		if err := uw.flush(false); err != nil {
 			return bytesRead, err
 		}
 		if done {
@@ -1200,38 +1203,38 @@ func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
 	return bytesRead, nil
 }
 
-func (cwc *uploadWriteCloser) Commit() error {
-	if cwc.committed {
+func (uw *UploadWriter) Commit() error {
+	if uw.committed {
 		return nil
 	}
-	return cwc.flush(true)
+	return uw.flush(true)
 }
 
-func (cwc *uploadWriteCloser) Close() error {
-	if cwc.closed {
+func (uw *UploadWriter) Close() error {
+	if uw.closed {
 		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot close again")
 	}
-	rsp, err := cwc.stream.CloseAndRecv()
+	rsp, err := uw.stream.CloseAndRecv()
 	if err != nil {
 		return err
 	}
-	cwc.committedSize = rsp.GetCommittedSize()
-	cwc.closed = true
+	uw.committedSize = rsp.GetCommittedSize()
+	uw.closed = true
 	return nil
 }
 
-func (cwc *uploadWriteCloser) GetCommittedSize() (int64, error) {
-	if !cwc.committed || !cwc.closed {
+func (uw *UploadWriter) GetCommittedSize() (int64, error) {
+	if !uw.committed || !uw.closed {
 		return 0, status.FailedPreconditionError("UploadWriteCloser not committed or not closed, cannot get committed size")
 	}
-	return cwc.committedSize, nil
+	return uw.committedSize, nil
 }
 
-func (cwc *uploadWriteCloser) GetBytesUploaded() int64 {
-	return cwc.bytesUploaded
+func (uw *UploadWriter) GetBytesUploaded() int64 {
+	return uw.bytesUploaded
 }
 
-func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*uploadWriteCloser, error) {
+func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*UploadWriter, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -1243,7 +1246,7 @@ func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r
 		return nil, err
 	}
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
-	return &uploadWriteCloser{
+	return &UploadWriter{
 		ctx:          ctx,
 		stream:       stream,
 		sender:       sender,
