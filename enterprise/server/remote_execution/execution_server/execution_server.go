@@ -265,7 +265,7 @@ func (s *ExecutionServer) insertInvocationLinkInRedis(ctx context.Context, execu
 		ExecutionId:  executionID,
 		Type:         linkType,
 	}
-	return s.env.GetExecutionCollector().AddInvocationLink(ctx, link)
+	return s.env.GetExecutionCollector().AddInvocationLink(ctx, link, false /*=storeReverseLink*/)
 }
 
 func trimStatus(statusMessage string) string {
