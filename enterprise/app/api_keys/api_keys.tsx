@@ -411,18 +411,18 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 </div>
               )}
               {capabilities.config.auditLogsUiEnabled && !this.props.userOwnedOnly && (
-                  <div className="field-container">
-                    <label className="checkbox-row">
-                      <input
-                          type="radio"
-                          onChange={this.onSelectAuditLogReader.bind(this, onChange)}
-                          checked={isAuditLogReader(request)}
-                      />
-                      <span>
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectAuditLogReader.bind(this, onChange)}
+                      checked={isAuditLogReader(request)}
+                    />
+                    <span>
                       Audit log reader key <span className="field-description">(for reading audit logs)</span>
                     </span>
-                    </label>
-                  </div>
+                  </label>
+                </div>
               )}
               {/* "Visible to developers" bit does not apply for user-level keys. */}
               {!this.props.userOwnedOnly && (
@@ -630,7 +630,7 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
   } else if (isOrgAdminKey(apiKey)) {
     capabilities = "Org admin";
   } else if (isAuditLogReader(apiKey)) {
-    capabilities = "Audit log reader"
+    capabilities = "Audit log reader";
   }
   if (apiKey.visibleToDevelopers) {
     capabilities += " (*)";
