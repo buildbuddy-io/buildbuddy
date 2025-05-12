@@ -1626,7 +1626,7 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 	// length file, pretend it does not exist.
 	if chunkedMD == nil && md.GetStoredSizeBytes() == 0 {
 		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, md)
-		return status.NotFoundError("object not found (0-length)")
+		return status.NotFoundError("object not found (zero-length)")
 	}
 	// If this is a GCS object, ensure the custom time is relatively recent
 	// so that we avoid saying something exists when it's been deleted by
@@ -2293,8 +2293,8 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 			FileType:           fileType,
 		}
 		if bytesWritten == 0 {
-			log.Infof("Rejecting 0-length write. Key %q, md: %+v", key, md)
-			return status.UnavailableError("0-length writes are not allowed")
+			log.Infof("Rejecting zero-length write. Key %q, md: %+v", key, md)
+			return status.UnavailableError("zero-length writes are not allowed")
 		}
 
 		return p.writeMetadata(ctx, db, key, md)
@@ -3244,6 +3244,13 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		return nil, err
 	}
 
+	// If this object was not chunked, and is somehow stored as a zero-
+	// length file, pretend it does not exist.
+	md := fileMetadata.GetStorageMetadata()
+	if chunkedMD := md.GetChunkedMetadata(); chunkedMD == nil && fileMetadata.GetStoredSizeBytes() == 0 {
+		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, fileMetadata)
+		return nil, status.NotFoundError("object not found (zero-length)")
+	}
 	// If this is a GCS object, ensure the custom time is relatively recent
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
@@ -3286,7 +3293,6 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	shouldDecompress := cachedCompression == repb.Compressor_ZSTD && requestedCompression == repb.Compressor_IDENTITY
 
 	var reader io.ReadCloser
-	md := fileMetadata.GetStorageMetadata()
 	if chunkedMD := md.GetChunkedMetadata(); chunkedMD != nil {
 		reader, err = p.newChunkedReader(ctx, chunkedMD, shouldDecompress)
 	} else {
