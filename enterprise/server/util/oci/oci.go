@@ -614,3 +614,22 @@ func WriteBlobOrManifestToCache(ctx context.Context, r io.Reader, bsClient bspb.
 	}
 	return nil
 }
+
+func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
+	r := upstream
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
+		if contentLength > maxManifestSize {
+			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
+		}
+		raw, err := io.ReadAll(io.LimitReader(upstream, contentLength))
+		if err != nil {
+			return err
+		}
+		if err := WriteManifestToAC(ctx, raw, acClient, ref, hash, contentType); err != nil {
+			log.CtxWarningf(ctx, "Error writing manifest to AC for %q: %s", ref.Context(), err)
+		}
+		r = bytes.NewReader(raw)
+	}
+	tr := io.TeeReader(r, w)
+	return WriteBlobOrManifestToCache(ctx, tr, bsClient, acClient, ref, ociResourceType, hash, contentType, contentLength)
+}

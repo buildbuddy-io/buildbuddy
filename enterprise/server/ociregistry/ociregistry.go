@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -39,21 +38,7 @@ const (
 	headerWWWAuthenticate     = "WWW-Authenticate"
 	headerRange               = "Range"
 
-	blobOutputFilePath          = "_bb_ociregistry_blob_"
-	blobMetadataOutputFilePath  = "_bb_ociregistry_blob_metadata_"
-	actionResultInstanceName    = interfaces.OCIImageInstanceNamePrefix
-	manifestContentInstanceName = interfaces.OCIImageInstanceNamePrefix + "_manifest_content_"
-
-	maxManifestSize = 10000000
-
-	hitLabel    = "hit"
-	missLabel   = "miss"
-	uploadLabel = "upload"
-
 	actionCacheLabel = "action_cache"
-	casLabel         = "cas"
-
-	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
 var (
@@ -368,7 +353,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
-	err = writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, hash, contentType, contentLength)
+	err = oci.WriteBlobOrManifestToCacheAndWriter(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, hash, contentType, contentLength)
 	if err != nil && err != context.Canceled {
 		log.CtxWarningf(ctx, "Error writing response body to cache for %q: %s", resolvedRef.Context(), err)
 	}
@@ -404,6 +389,7 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 		if !writeBody {
 			return nil
 		}
+		// TODO(dan): Move AC byte-counting logic to oci.FetchManifestFromAC.
 		counter := &ioutil.Counter{}
 		mw := io.MultiWriter(w, counter)
 		defer func() {
@@ -428,25 +414,6 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 		return nil
 	}
 	return oci.FetchBlobFromCache(ctx, w, bsClient, acClient, hash, blobMetadata.GetContentLength())
-}
-
-func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
-	r := upstream
-	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
-		if contentLength > maxManifestSize {
-			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
-		}
-		raw, err := io.ReadAll(io.LimitReader(upstream, contentLength))
-		if err != nil {
-			return err
-		}
-		if err := oci.WriteManifestToAC(ctx, raw, acClient, ref, hash, contentType); err != nil {
-			log.CtxWarningf(ctx, "Error writing manifest to AC for %q: %s", ref.Context(), err)
-		}
-		r = bytes.NewReader(raw)
-	}
-	tr := io.TeeReader(r, w)
-	return oci.WriteBlobOrManifestToCache(ctx, tr, bsClient, acClient, ref, ociResourceType, hash, contentType, contentLength)
 }
 
 func isDigest(identifier string) bool {
