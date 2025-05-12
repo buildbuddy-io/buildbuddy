@@ -491,7 +491,7 @@ func writeBlobMetadataToResponse(ctx context.Context, w http.ResponseWriter, has
 
 func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
-		mc, err := fetchManifestFromAC(ctx, acClient, ref, hash)
+		mc, err := oci.FetchManifestFromAC(ctx, acClient, ref, hash)
 		if err != nil {
 			return err
 		}
@@ -610,58 +610,6 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 	}
 	tr := io.TeeReader(r, w)
 	return writeBlobOrManifestToCache(ctx, tr, bsClient, acClient, ref, ociResourceType, hash, contentType, contentLength)
-}
-
-func fetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash) (*ocipb.OCIManifestContent, error) {
-	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
-		ResourceType:  ocipb.OCIResourceType_MANIFEST,
-		HashAlgorithm: hash.Algorithm,
-		HashHex:       hash.Hex,
-	}
-	arKeyBytes, err := proto.Marshal(arKey)
-	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return nil, err
-	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
-	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return nil, err
-	}
-	arRN := digest.NewACResourceName(
-		arDigest,
-		manifestContentInstanceName,
-		cacheDigestFunction,
-	)
-
-	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
-	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return nil, err
-	}
-	meta := ar.GetExecutionMetadata()
-	if meta == nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		log.CtxWarningf(ctx, "Missing execution metadata for manifest in %q", ref.Context())
-		return nil, status.InternalErrorf("missing execution metadata for manifest in %q", ref.Context())
-	}
-	aux := meta.GetAuxiliaryMetadata()
-	if aux == nil || len(aux) != 1 {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest in %q", ref.Context())
-		return nil, status.InternalErrorf("missing auxiliary metadata for manifest in %q", ref.Context())
-	}
-	any := aux[0]
-	var mc ocipb.OCIManifestContent
-	err = any.UnmarshalTo(&mc)
-	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return nil, status.InternalErrorf("could not unmarshal metadata for manifest in %q: %s", ref.Context(), err)
-	}
-	updateCacheEventMetric(actionCacheLabel, hitLabel)
-	return &mc, nil
 }
 
 func isDigest(identifier string) bool {
