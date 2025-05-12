@@ -746,10 +746,6 @@ func TestUploadWriter_InterleaveWritesReadFrom(t *testing.T) {
 		require.Equal(t, int64(quarter), n)
 	}
 	{
-		err := uw.Commit()
-		require.NoError(t, err)
-	}
-	{
 		err := uw.Close()
 		require.NoError(t, err)
 	}
@@ -761,4 +757,37 @@ func TestUploadWriter_InterleaveWritesReadFrom(t *testing.T) {
 		require.Empty(t, cmp.Diff(buf[0:9], out.Bytes()[0:9]))
 		require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[len(buf)-9:]))
 	}
+}
+
+func TestUploadWriteCloser_NoWritesReadFromsAfterClose(t *testing.T) {
+	rn, buf := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	ctx := context.Background()
+	casrn := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+
+	uw, err := cachetools.NewUploadWriter(ctx, te.GetByteStreamClient(), casrn)
+	require.NoError(t, err)
+	written, err := uw.Write(buf)
+	require.NoError(t, err)
+	require.Equal(t, len(buf), written)
+	err = uw.Close()
+	require.NoError(t, err)
+	{
+		out := &bytes.Buffer{}
+		err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
+		require.NoError(t, err)
+		require.Equal(t, len(buf), out.Len())
+		require.Empty(t, cmp.Diff(buf[0:9], out.Bytes()[0:9]))
+		require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[len(buf)-9:]))
+	}
+	written, err = uw.Write(buf)
+	require.Error(t, err)
+	require.Equal(t, 0, written)
+
+	n, err := uw.ReadFrom(bytes.NewReader(buf))
+	require.Error(t, err)
+	require.Equal(t, int64(0), n)
 }

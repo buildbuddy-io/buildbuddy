@@ -264,10 +264,6 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			w.Close()
 			return nil, 0, err
 		}
-		if err := w.Commit(); err != nil {
-			w.Close()
-			return nil, 0, err
-		}
 		if err := w.Close(); err != nil {
 			return nil, 0, err
 		}
@@ -1143,19 +1139,21 @@ type UploadWriter struct {
 	bytesBuffered int
 }
 
-// Assert that UploadWriter implements CommittedWriteCloser
-var _ interfaces.CommittedWriteCloser = (*UploadWriter)(nil)
+// Assert that UploadWriter implements io.WriteCloser
+var _ io.WriteCloser = (*UploadWriter)(nil)
 
 func (uw *UploadWriter) Write(p []byte) (int, error) {
 	written := 0
 	for len(p) > 0 {
 		n := copy(uw.buf[uw.bytesBuffered:], p)
 		uw.bytesBuffered += n
-		if err := uw.flush(false); err != nil {
-			if err == io.EOF {
-				break
+		if uw.bytesBuffered == uploadBufSizeBytes {
+			if err := uw.flush(false); err != nil {
+				if err == io.EOF {
+					break
+				}
+				return written, err
 			}
-			return written, err
 		}
 		written += n
 		p = p[n:]
@@ -1193,8 +1191,10 @@ func (uw *UploadWriter) ReadFrom(r io.Reader) (int64, error) {
 		if err != nil && !done {
 			return bytesRead, err
 		}
-		if err := uw.flush(false); err != nil {
-			return bytesRead, err
+		if uw.bytesBuffered == uploadBufSizeBytes {
+			if err := uw.flush(false); err != nil {
+				return bytesRead, err
+			}
 		}
 		if done {
 			break
@@ -1203,16 +1203,14 @@ func (uw *UploadWriter) ReadFrom(r io.Reader) (int64, error) {
 	return bytesRead, nil
 }
 
-func (uw *UploadWriter) Commit() error {
-	if uw.committed {
-		return nil
-	}
-	return uw.flush(true)
-}
-
 func (uw *UploadWriter) Close() error {
 	if uw.closed {
 		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot close again")
+	}
+	if !uw.committed {
+		if err := uw.flush(true); err != nil {
+			return err
+		}
 	}
 	rsp, err := uw.stream.CloseAndRecv()
 	if err != nil {
