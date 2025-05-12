@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -23,5 +23,24 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_protobuf//types/known/anypb",
+    ],
+)
+
+go_test(
+    name = "ocicache_test",
+    timeout = "short",
+    srcs = ["ocicache_test.go"],
+    deps = [
+        ":ocicache",
+        "//enterprise/server/clientidentity",
+        "//server/interfaces",
+        "//server/testutil/testcache",
+        "//server/testutil/testenv",
+        "//server/util/random",
+        "//server/util/testing/flags",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_containerregistry//pkg/crane",
+        "@com_github_google_go_containerregistry//pkg/name",
+        "@com_github_stretchr_testify//require",
     ],
 )
