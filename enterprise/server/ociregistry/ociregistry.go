@@ -359,13 +359,6 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 }
 
-func updateCacheEventMetric(cacheType, eventType string) {
-	metrics.OCIRegistryCacheEvents.With(prometheus.Labels{
-		metrics.CacheTypeLabel:      cacheType,
-		metrics.CacheEventTypeLabel: eventType,
-	}).Inc()
-}
-
 func writeManifestMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash gcr.Hash, mc *ocipb.OCIManifestContent) {
 	w.Header().Add(headerDockerContentDigest, hash.String())
 	w.Header().Add(headerContentLength, strconv.Itoa(len(mc.GetRaw())))
