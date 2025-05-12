@@ -1066,6 +1066,11 @@ func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, replicaStateMap
 
 	if numUpToDateReplicas > quorum {
 		// Any replica can be removed.
+		replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
+		if suspects := replicasByStatus.SuspectReplicas; len(suspects) > 0 {
+			rq.log.Debugf("there are %d suspects, removing suspects", len(suspects))
+			return suspects
+		}
 		rq.log.Debugf("there are %d up-to-date replicas and quorum is %d, any replicas can be removed", numUpToDateReplicas, quorum)
 		return rd.GetReplicas()
 	}
@@ -1273,7 +1278,7 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action Drive
 	}
 
 	if err != nil {
-		rq.log.Errorf("failed to process replica: %s", err)
+		rq.log.Errorf("failed to process replica (range_id: %d: %s", rangeID, err)
 		return RequeueRetry
 	} else {
 		return RequeueCheckOtherActions
