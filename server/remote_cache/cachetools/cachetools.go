@@ -1131,7 +1131,7 @@ type UploadWriter struct {
 	uploadString string
 
 	bytesUploaded int64
-	committed     bool
+	finished      bool
 	committedSize int64
 	closed        bool
 
@@ -1162,8 +1162,8 @@ func (uw *UploadWriter) Write(p []byte) (int, error) {
 }
 
 func (uw *UploadWriter) flush(finish bool) error {
-	if uw.committed {
-		return status.FailedPreconditionError("UploadWriteCloser already committed, cannot flush")
+	if uw.finished {
+		return status.FailedPreconditionError("UploadWriteCloser already finished, cannot flush")
 	}
 	req := &bspb.WriteRequest{
 		Data:         uw.buf[:uw.bytesBuffered],
@@ -1177,7 +1177,7 @@ func (uw *UploadWriter) flush(finish bool) error {
 	}
 	uw.bytesUploaded += int64(uw.bytesBuffered)
 	uw.bytesBuffered = 0
-	uw.committed = finish
+	uw.finished = finish
 	return nil
 }
 
@@ -1207,7 +1207,7 @@ func (uw *UploadWriter) Close() error {
 	if uw.closed {
 		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot close again")
 	}
-	if !uw.committed {
+	if !uw.finished {
 		if err := uw.flush(true); err != nil {
 			return err
 		}
@@ -1222,8 +1222,8 @@ func (uw *UploadWriter) Close() error {
 }
 
 func (uw *UploadWriter) GetCommittedSize() (int64, error) {
-	if !uw.committed || !uw.closed {
-		return 0, status.FailedPreconditionError("UploadWriteCloser not committed or not closed, cannot get committed size")
+	if !uw.closed {
+		return 0, status.FailedPreconditionError("UploadWriteCloser not closed, cannot get committed size")
 	}
 	return uw.committedSize, nil
 }
