@@ -259,15 +259,29 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		if err != nil {
 			return nil, 0, err
 		}
-		bytesUploaded, err := w.ReadFrom(in)
+		bytesRead, err := w.ReadFrom(in)
 		if err != nil {
+			w.Close()
+			return nil, 0, err
+		}
+		if err := w.Commit(); err != nil {
 			w.Close()
 			return nil, 0, err
 		}
 		if err := w.Close(); err != nil {
 			return nil, 0, err
 		}
-		return r.GetDigest(), bytesUploaded, nil
+		// Either the write succeeded or was short-circuited, but in
+		// either case, the remoteSize for uncompressed uploads should
+		// match the file size.
+		committedSize, err := w.GetCommittedSize()
+		if err != nil {
+			return nil, 0, err
+		}
+		if committedSize != r.GetDigest().GetSizeBytes() {
+			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", committedSize, r.GetDigest().GetSizeBytes())
+		}
+		return r.GetDigest(), bytesRead, nil
 	}
 
 	stream, err := bsClient.Write(ctx)
@@ -323,24 +337,24 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		return nil, 0, err
 	}
 
-	remoteSize := rsp.GetCommittedSize()
+	committedSize := rsp.GetCommittedSize()
 	if r.GetCompressor() == repb.Compressor_IDENTITY {
 		// Either the write succeeded or was short-circuited, but in
 		// either case, the remoteSize for uncompressed uploads should
 		// match the file size.
-		if remoteSize != r.GetDigest().GetSizeBytes() {
-			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+		if committedSize != r.GetDigest().GetSizeBytes() {
+			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", committedSize, r.GetDigest().GetSizeBytes())
 		}
 	} else {
 		// -1 is returned if the blob already exists, otherwise the
 		// remoteSize should agree with what we uploaded.
-		if remoteSize != bytesUploaded && remoteSize != -1 {
-			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+		if committedSize != bytesUploaded && committedSize != -1 {
+			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", committedSize, r.GetDigest().GetSizeBytes())
 		}
 	}
 
 	// At this point, a remote size of -1 means nothing new was uploaded.
-	if remoteSize == -1 {
+	if committedSize == -1 {
 		bytesUploaded = 0
 	}
 
@@ -1121,13 +1135,15 @@ type uploadWriteCloser struct {
 	uploadString string
 
 	bytesUploaded int64
+	committed     bool
+	committedSize int64
+	closed        bool
 
 	buf           []byte
 	bytesBuffered int
 }
 
 func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
-	log.CtxDebugf(cwc.ctx, "WRITE(%d) %d bytesBuffered", len(p), cwc.bytesBuffered)
 	written := 0
 	for len(p) > 0 {
 		n := copy(cwc.buf[cwc.bytesBuffered:], p)
@@ -1145,7 +1161,9 @@ func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 }
 
 func (cwc *uploadWriteCloser) flush(finish bool) error {
-	log.CtxDebugf(cwc.ctx, "FLUSH(%t) %d bytesBuffered", finish, cwc.bytesBuffered)
+	if cwc.committed {
+		return status.FailedPreconditionError("UploadWriteCloser already committed, cannot flush")
+	}
 	req := &bspb.WriteRequest{
 		Data:         cwc.buf[:cwc.bytesBuffered],
 		ResourceName: cwc.uploadString,
@@ -1158,6 +1176,7 @@ func (cwc *uploadWriteCloser) flush(finish bool) error {
 	}
 	cwc.bytesUploaded += int64(cwc.bytesBuffered)
 	cwc.bytesBuffered = 0
+	cwc.committed = finish
 	return nil
 }
 
@@ -1181,24 +1200,35 @@ func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
 	return bytesRead, nil
 }
 
-func (cwc *uploadWriteCloser) Close() error {
-	if err := cwc.flush(true); err != nil {
-		return err
+func (cwc *uploadWriteCloser) Commit() error {
+	if cwc.committed {
+		return nil
 	}
+	return cwc.flush(true)
+}
 
+func (cwc *uploadWriteCloser) Close() error {
+	if cwc.closed {
+		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot close again")
+	}
 	rsp, err := cwc.stream.CloseAndRecv()
 	if err != nil {
 		return err
 	}
-
-	remoteSize := rsp.GetCommittedSize()
-	// Either the write succeeded or was short-circuited, but in
-	// either case, the remoteSize for uncompressed uploads should
-	// match the file size.
-	if remoteSize != cwc.resource.GetDigest().GetSizeBytes() {
-		return status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, cwc.resource.GetDigest().GetSizeBytes())
-	}
+	cwc.committedSize = rsp.GetCommittedSize()
+	cwc.closed = true
 	return nil
+}
+
+func (cwc *uploadWriteCloser) GetCommittedSize() (int64, error) {
+	if !cwc.committed || !cwc.closed {
+		return 0, status.FailedPreconditionError("UploadWriteCloser not committed or not closed, cannot get committed size")
+	}
+	return cwc.committedSize, nil
+}
+
+func (cwc *uploadWriteCloser) GetBytesUploaded() int64 {
+	return cwc.bytesUploaded
 }
 
 func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*uploadWriteCloser, error) {
