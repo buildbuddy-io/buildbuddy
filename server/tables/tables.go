@@ -596,7 +596,7 @@ type GitHubAppInstallation struct {
 	// report commit statuses to GitHub for all builds where role is CI or CI_RUNNER.
 	// Even if enabled, this setting can be overridden by setting
 	// `--build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true` on a build.
-	ReportCommitStatusesForCIBuilds bool `gorm:"not null;default:0"`
+	ReportCommitStatusesForCIBuilds bool `gorm:"not null;default:1"`
 }
 
 func (gh *GitHubAppInstallation) TableName() string {
