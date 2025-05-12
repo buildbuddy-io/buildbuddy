@@ -7,6 +7,7 @@ import { scheduler } from "../../../proto/scheduler_ts_proto";
 import ExecutorCardComponent from "./executor_card";
 import { Subscription } from "rxjs";
 import { api_key } from "../../../proto/api_key_ts_proto";
+import { capability } from "../../../proto/capability_ts_proto";
 import { bazel_config } from "../../../proto/bazel_config_ts_proto";
 import router from "../../../app/router/router";
 import Select, { Option } from "../../../app/components/select/select";
@@ -267,7 +268,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         api_key.GetApiKeysRequest.create({ groupId: this.props.user.selectedGroup.id })
       );
       const executorKeys = response.apiKey.filter((key) =>
-        key.capability.some((cap) => cap == api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY)
+        key.capability.some((cap) => cap == capability.Capability.REGISTER_EXECUTOR)
       );
       this.setState({ executorKeys: executorKeys });
     } catch (e) {

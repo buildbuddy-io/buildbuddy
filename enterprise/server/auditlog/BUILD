@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:api_key_go_proto",
         "//proto:auditlog_go_proto",
+        "//proto:capability_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/real_environment",
@@ -40,8 +40,8 @@ go_test(
     deps = [
         ":auditlog",
         "//enterprise/server/testutil/enterprise_testenv",
-        "//proto:api_key_go_proto",
         "//proto:auditlog_go_proto",
+        "//proto:capability_go_proto",
         "//proto:context_go_proto",
         "//proto:group_go_proto",
         "//proto:user_id_go_proto",

@@ -40,6 +40,7 @@ go_test(
         "//enterprise/server/workflow/service",
         "//proto:api_key_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:capability_go_proto",
         "//proto:context_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",

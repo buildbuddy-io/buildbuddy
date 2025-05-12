@@ -75,8 +75,8 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -258,7 +258,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 	keys, err := testEnv.GetAuthDB().GetAPIKeys(ctxUS1, groupID)
 	require.NoError(t, err)
 	key := keys[0]
-	key.Capabilities |= int32(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY)
+	key.Capabilities |= int32(cappb.Capability_REGISTER_EXECUTOR)
 	err = testEnv.GetAuthDB().UpdateAPIKey(ctxUS1, key)
 	require.NoError(t, err)
 

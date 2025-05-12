@@ -11,6 +11,7 @@ go_library(
         "//proto:bazel_config_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:cache_go_proto",
+        "//proto:capability_go_proto",
         "//proto:encryption_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:execution_stats_go_proto",

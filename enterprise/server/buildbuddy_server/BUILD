@@ -6,7 +6,7 @@ go_test(
     deps = [
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
-        "//proto:api_key_go_proto",
+        "//proto:capability_go_proto",
         "//proto:group_go_proto",
         "//server/buildbuddy_server",
         "//server/environment",

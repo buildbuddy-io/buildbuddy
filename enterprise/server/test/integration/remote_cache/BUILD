@@ -13,6 +13,7 @@ go_test(
         "//proto:api_key_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:cache_go_proto",
+        "//proto:capability_go_proto",
         "//proto:invocation_go_proto",
         "//server/testutil/testbazel",
         "//server/util/authutil",

@@ -23,8 +23,8 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 )
 
 var (
@@ -248,7 +248,7 @@ func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*a
 	if err != nil {
 		return nil, err
 	}
-	if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) && !slices.Contains(caps, akpb.ApiKey_AUDIT_LOG_READ_CAPABILITY) {
+	if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) && !slices.Contains(caps, cappb.Capability_AUDIT_LOG_READ) {
 		return nil, status.PermissionDeniedError("missing required capabilities")
 	}
 

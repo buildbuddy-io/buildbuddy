@@ -14,7 +14,7 @@ go_library(
         "//enterprise/server/remote_execution/action_merger",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize",
-        "//proto:api_key_go_proto",
+        "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:trace_go_proto",

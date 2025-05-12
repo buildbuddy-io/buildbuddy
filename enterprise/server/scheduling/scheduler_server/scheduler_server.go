@@ -39,7 +39,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
@@ -270,7 +270,7 @@ func (h *executorHandle) authorize(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !user.HasCapability(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY) {
+	if !user.HasCapability(cappb.Capability_REGISTER_EXECUTOR) {
 		return "", status.PermissionDeniedError("API key is missing executor registration capability")
 	}
 	return user.GetGroupID(), nil

@@ -9,8 +9,8 @@ go_library(
     deps = [
         "//enterprise/server/backends/prom",
         "//enterprise/server/hostedrunner",
-        "//proto:api_key_go_proto",
         "//proto:build_event_stream_go_proto",
+        "//proto:capability_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:git_go_proto",
         "//proto:remote_execution_go_proto",
@@ -47,9 +47,9 @@ go_test(
     data = glob(["testdata/**"]),
     embed = [":api"],
     deps = [
-        "//proto:api_key_go_proto",
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
+        "//proto:capability_go_proto",
         "//proto:failure_details_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:resource_go_proto",

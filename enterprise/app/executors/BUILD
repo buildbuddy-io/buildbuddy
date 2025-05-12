@@ -23,6 +23,7 @@ ts_library(
         "//enterprise/app/executors:executor_card",
         "//proto:api_key_ts_proto",
         "//proto:bazel_config_ts_proto",
+        "//proto:capability_ts_proto",
         "//proto:scheduler_ts_proto",
     ],
 )

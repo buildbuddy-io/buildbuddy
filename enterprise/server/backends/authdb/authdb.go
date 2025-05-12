@@ -31,7 +31,7 @@ import (
 	"golang.org/x/crypto/chacha20"
 	"gorm.io/gorm/clause"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -236,7 +236,7 @@ func (g *apiKeyGroup) GetCapabilities() int32 {
 	return g.Capabilities
 }
 
-func (g *apiKeyGroup) HasCapability(cap akpb.ApiKey_Capability) bool {
+func (g *apiKeyGroup) HasCapability(cap cappb.Capability) bool {
 	return g.Capabilities&int32(cap) != 0
 }
 
@@ -361,7 +361,7 @@ func (d *AuthDB) fillChildGroupIDs(ctx context.Context, akg *apiKeyGroup) error 
 	if !akg.IsParent {
 		return nil
 	}
-	if !akg.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+	if !akg.HasCapability(cappb.Capability_ORG_ADMIN) {
 		return nil
 	}
 	rq := d.h.NewQuery(ctx, "authdb_get_child_group_ids").Raw(`
@@ -656,7 +656,7 @@ func (d *AuthDB) authorizeGroupAdminRole(ctx context.Context, groupID string) er
 	return authutil.AuthorizeOrgAdmin(u, groupID)
 }
 
-func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
+func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
@@ -708,7 +708,7 @@ func (d *AuthDB) CreateImpersonationAPIKey(ctx context.Context, groupID string) 
 	return d.createAPIKey(ctx, d.h, ak)
 }
 
-func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx interfaces.DB, groupID string, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
+func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx interfaces.DB, groupID string, label string, caps []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
@@ -721,7 +721,7 @@ func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx interfaces
 	return d.createAPIKey(ctx, tx, ak)
 }
 
-func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, groupID string, caps []akpb.ApiKey_Capability) error {
+func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, groupID string, caps []cappb.Capability) error {
 	userCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env.GetAuthenticator(), groupID)
 	if err != nil {
 		return err
@@ -735,7 +735,7 @@ func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, gro
 		// user provisioning agents to assign cache capabilities, without having
 		// to grant those capabilities to the agent.
 		requestedCapabilities := capabilities.ToInt(caps)
-		if requestedCapabilities&capabilities.ToInt(userCapabilities) != requestedCapabilities && !slices.Contains(userCapabilities, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+		if requestedCapabilities&capabilities.ToInt(userCapabilities) != requestedCapabilities && !slices.Contains(userCapabilities, cappb.Capability_ORG_ADMIN) {
 			return status.PermissionDeniedError("user does not have permission to assign these API key capabilities")
 		}
 
@@ -750,7 +750,7 @@ func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, gro
 	return d.authorizeGroupAdminRole(ctx, groupID)
 }
 
-func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label string, caps []akpb.ApiKey_Capability) (*tables.APIKey, error) {
+func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label string, caps []cappb.Capability) (*tables.APIKey, error) {
 	if !*userOwnedKeysEnabled {
 		return nil, status.UnimplementedError("not implemented")
 	}
@@ -777,7 +777,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 		if err != nil {
 			return nil, status.WrapError(err, "get capabilities")
 		}
-		if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+		if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) {
 			return nil, status.PermissionDeniedError("org admin permission is required to create an API key for the requested user")
 		}
 
@@ -872,7 +872,7 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	if err != nil {
 		return nil, status.WrapError(err, "get capabilities")
 	}
-	if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+	if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) {
 		acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
 		if err := perms.AuthorizeRead(user, acl); err != nil {
 			return nil, err
@@ -900,8 +900,8 @@ func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string
 		SELECT
 			*,
 			CASE
-				WHEN capabilities & `+fmt.Sprintf("%d", akpb.ApiKey_CACHE_WRITE_CAPABILITY)+` > 0 THEN 2
-				WHEN capabilities & `+fmt.Sprintf("%d", akpb.ApiKey_CAS_WRITE_CAPABILITY)+` > 0 THEN 1
+				WHEN capabilities & `+fmt.Sprintf("%d", cappb.Capability_CACHE_WRITE)+` > 0 THEN 2
+				WHEN capabilities & `+fmt.Sprintf("%d", cappb.Capability_CAS_WRITE)+` > 0 THEN 1
 				ELSE 0
 			END AS cache_capabilities_rank
 		FROM "APIKeys"
@@ -986,7 +986,7 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiK
 	if err != nil {
 		return nil, status.WrapError(err, "get capabilities")
 	}
-	if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+	if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) {
 		acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
 		if err := perms.AuthorizeWrite(&user, acl); err != nil {
 			return nil, err
@@ -1067,7 +1067,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]
 		if err != nil {
 			return nil, err
 		}
-		if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+		if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) {
 			return nil, status.PermissionDeniedError("missing required capability")
 		}
 		ok, err := d.isGroupMember(ctx, groupID, userID)

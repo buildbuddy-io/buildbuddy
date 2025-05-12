@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:api_key_go_proto",
         "//proto:cache_go_proto",
+        "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
