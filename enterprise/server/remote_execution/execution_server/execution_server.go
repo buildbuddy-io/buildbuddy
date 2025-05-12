@@ -265,7 +265,7 @@ func (s *ExecutionServer) insertInvocationLinkInRedis(ctx context.Context, execu
 		ExecutionId:  executionID,
 		Type:         linkType,
 	}
-	return s.env.GetExecutionCollector().AddInvocationLink(ctx, link, false /*=storeReverseLink*/)
+	return s.env.GetExecutionCollector().AddExecutionInvocationLink(ctx, link, false /*=storeReverseLink*/)
 }
 
 func trimStatus(statusMessage string) string {
@@ -357,12 +357,12 @@ func (s *ExecutionServer) recordExecution(
 	}
 	// Always clean up invocationLinks in Collector because we are not retrying
 	defer func() {
-		err := s.env.GetExecutionCollector().DeleteInvocationLinks(ctx, executionID)
+		err := s.env.GetExecutionCollector().DeleteExecutionInvocationLinks(ctx, executionID)
 		if err != nil {
 			log.CtxErrorf(ctx, "failed to clean up invocation links in collector: %s", err)
 		}
 	}()
-	links, err := s.env.GetExecutionCollector().GetInvocationLinks(ctx, executionID)
+	links, err := s.env.GetExecutionCollector().GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}

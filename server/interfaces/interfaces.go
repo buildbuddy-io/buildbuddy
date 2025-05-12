@@ -1439,9 +1439,9 @@ type ExecutionCollector interface {
 	// behavior, and will not return the deleted execution.
 	DeleteInProgressExecution(ctx context.Context, executionID string) error
 
-	// DeleteReverseInvocationLinks deletes all invocation => []execution links
-	// for the given invocation ID.
-	DeleteReverseInvocationLinks(ctx context.Context, invocationID string) error
+	// DeleteInvocationExecutionLinks deletes all invocation => []execution
+	// links for the given invocation ID.
+	DeleteInvocationExecutionLinks(ctx context.Context, invocationID string) error
 
 	AppendExecution(ctx context.Context, iid string, execution *repb.StoredExecution) error
 	// GetExecutions fetches a range of executions for the given invocation ID.
@@ -1452,9 +1452,9 @@ type ExecutionCollector interface {
 	DeleteExecutions(ctx context.Context, iid string) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
-	AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, storeReverseLink bool) error
-	GetInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error)
-	DeleteInvocationLinks(ctx context.Context, executionID string) error
+	AddExecutionInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, bidirectional bool) error
+	GetExecutionInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error)
+	DeleteExecutionInvocationLinks(ctx context.Context, executionID string) error
 }
 
 // SuggestionService enables fetching of suggestions.

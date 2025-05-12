@@ -22,11 +22,15 @@ const (
 	// metadata.
 	redisInvocationKeyPrefix = "invocation"
 
-	// Redis key prefix for mapping execution ID to invocation-execution links.
-	redisInvocationLinkKeyPrefix = "invocationLink"
+	// Redis key prefix for mapping execution ID to a list of
+	// invocation-execution links.
+	// Note: this would ideally be called "executionInvocationLinks" but is
+	// kept this way for backwards-compatibility.
+	redisExecutionInvocationLinksPrefix = "invocationLink"
 
-	// Redis key prefix for mapping invocation ID to invocation-execution links.
-	redisReverseInvocationLinkKeyPrefix = "reverseInvocationLink"
+	// Redis key prefix for mapping invocation ID to a list of
+	// invocation-execution links.
+	redisInvocationExecutionLinksKeyPrefix = "invocationExecutionLinks"
 
 	// Redis key prefix for mapping execution ID to a list of execution updates,
 	// which are just partial StoredExecution protos. This list will contain the
@@ -36,16 +40,16 @@ const (
 	// is normally moved to the ClickHouse flush queue shortly after completion.
 	redisExecutionUpdatesKeyPrefix = "executionUpdates"
 
-	invocationExpiration            = 24 * time.Hour
-	invocationLinkExpiration        = 24 * time.Hour
-	reverseInvocationLinkExpiration = 24 * time.Hour
-	executionExpiration             = 24 * time.Hour
-	executionUpdatesExpiration      = 24 * time.Hour
+	invocationExpiration              = 24 * time.Hour
+	executionInvocationLinkExpiration = 24 * time.Hour
+	invocationExecutionLinkExpiration = 24 * time.Hour
+	executionExpiration               = 24 * time.Hour
+	executionUpdatesExpiration        = 24 * time.Hour
 )
 
 var (
 	// Whether to write invocation => execution links.
-	writeReverseInvocationLinks bool
+	writeInvocationExecutionLinks bool
 )
 
 type collector struct {
@@ -75,12 +79,12 @@ func getInvocationKey(iid string) string {
 	return strings.Join([]string{redisInvocationKeyPrefix, iid}, "/")
 }
 
-func getInvocationLinkKey(executionID string) string {
-	return strings.Join([]string{redisInvocationLinkKeyPrefix, executionID}, "/")
+func getExecutionInvocationLinksKey(executionID string) string {
+	return strings.Join([]string{redisExecutionInvocationLinksPrefix, executionID}, "/")
 }
 
-func getReverseInvocationLinkKey(invocationID string) string {
-	return strings.Join([]string{redisReverseInvocationLinkKeyPrefix, invocationID}, "/")
+func getInvocationExecutionLinksKey(invocationID string) string {
+	return strings.Join([]string{redisInvocationExecutionLinksKeyPrefix, invocationID}, "/")
 }
 
 func getExecutionUpdatesKey(executionID string) string {
@@ -111,35 +115,35 @@ func (c *collector) GetInvocation(ctx context.Context, iid string) (*sipb.Stored
 	return res, nil
 }
 
-func (c *collector) AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, storeReverseLink bool) error {
+func (c *collector) AddExecutionInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, bidirectional bool) error {
 	b, err := proto.Marshal(link)
 	if err != nil {
 		return err
 	}
-	key := getInvocationLinkKey(link.GetExecutionId())
+	key := getExecutionInvocationLinksKey(link.GetExecutionId())
 	pipe := c.rdb.TxPipeline()
 	s := string(b)
 	pipe.SAdd(ctx, key, s)
-	pipe.Expire(ctx, key, invocationLinkExpiration)
-	if storeReverseLink {
-		key := getReverseInvocationLinkKey(link.GetInvocationId())
+	pipe.Expire(ctx, key, executionInvocationLinkExpiration)
+	if bidirectional {
+		key := getInvocationExecutionLinksKey(link.GetInvocationId())
 		pipe.SAdd(ctx, key, s)
-		pipe.Expire(ctx, key, reverseInvocationLinkExpiration)
+		pipe.Expire(ctx, key, invocationExecutionLinkExpiration)
 	}
 	_, err = pipe.Exec(ctx)
 	return err
 }
 
-func (c *collector) GetInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error) {
-	serializedResults, err := c.rdb.SMembers(ctx, getInvocationLinkKey(executionID)).Result()
+func (c *collector) GetExecutionInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error) {
+	serializedResults, err := c.rdb.SMembers(ctx, getExecutionInvocationLinksKey(executionID)).Result()
 	if err != nil {
 		return nil, err
 	}
 	return unmarshalStoredInvocationLinks(serializedResults)
 }
 
-func (c *collector) getReverseInvocationLinks(ctx context.Context, invocationID string) ([]*sipb.StoredInvocationLink, error) {
-	serializedResults, err := c.rdb.SMembers(ctx, getReverseInvocationLinkKey(invocationID)).Result()
+func (c *collector) getInvocationExecutionLinks(ctx context.Context, invocationID string) ([]*sipb.StoredInvocationLink, error) {
+	serializedResults, err := c.rdb.SMembers(ctx, getInvocationExecutionLinksKey(invocationID)).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +151,7 @@ func (c *collector) getReverseInvocationLinks(ctx context.Context, invocationID 
 }
 
 func (c *collector) GetInProgressExecutions(ctx context.Context, invocationID string) ([]*repb.StoredExecution, error) {
-	links, err := c.getReverseInvocationLinks(ctx, invocationID)
+	links, err := c.getInvocationExecutionLinks(ctx, invocationID)
 	if err != nil {
 		return nil, err
 	}
@@ -261,12 +265,12 @@ func (c *collector) DeleteExecutions(ctx context.Context, iid string) error {
 	return c.rdb.Del(ctx, getExecutionKey(iid)).Err()
 }
 
-func (c *collector) DeleteInvocationLinks(ctx context.Context, executionID string) error {
-	return c.rdb.Del(ctx, getInvocationLinkKey(executionID)).Err()
+func (c *collector) DeleteExecutionInvocationLinks(ctx context.Context, executionID string) error {
+	return c.rdb.Del(ctx, getExecutionInvocationLinksKey(executionID)).Err()
 }
 
-func (c *collector) DeleteReverseInvocationLinks(ctx context.Context, invocationID string) error {
-	return c.rdb.Del(ctx, getReverseInvocationLinkKey(invocationID)).Err()
+func (c *collector) DeleteInvocationExecutionLinks(ctx context.Context, invocationID string) error {
+	return c.rdb.Del(ctx, getInvocationExecutionLinksKey(invocationID)).Err()
 }
 
 func unmarshalStoredInvocationLinks(serializedResults []string) ([]*sipb.StoredInvocationLink, error) {

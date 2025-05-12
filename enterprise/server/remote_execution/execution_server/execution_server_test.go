@@ -423,16 +423,16 @@ type fakeCollector struct {
 	executions      []*repb.StoredExecution
 }
 
-func (fc *fakeCollector) DeleteInvocationLinks(_ context.Context, _ string) error {
+func (fc *fakeCollector) DeleteExecutionInvocationLinks(_ context.Context, _ string) error {
 	return nil
 }
 
-func (fc *fakeCollector) AddInvocationLink(_ context.Context, link *sipb.StoredInvocationLink, _ bool) error {
+func (fc *fakeCollector) AddExecutionInvocationLink(_ context.Context, link *sipb.StoredInvocationLink, _ bool) error {
 	fc.invocationLinks = append(fc.invocationLinks, link)
 	return nil
 }
 
-func (fc *fakeCollector) GetInvocationLinks(_ context.Context, executionID string) ([]*sipb.StoredInvocationLink, error) {
+func (fc *fakeCollector) GetExecutionInvocationLinks(_ context.Context, executionID string) ([]*sipb.StoredInvocationLink, error) {
 	var res []*sipb.StoredInvocationLink
 	for _, link := range fc.invocationLinks {
 		if link.GetExecutionId() == executionID {
