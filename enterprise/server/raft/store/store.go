@@ -791,6 +791,14 @@ func (s *Store) GetRange(rangeID uint64) *rfpb.RangeDescriptor {
 }
 
 func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
+	s.mu.Lock()
+	stopped := s.stopped
+	s.mu.Unlock()
+
+	if stopped {
+		return
+	}
+
 	s.log.Debugf("Update range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
 
@@ -844,6 +852,14 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range descriptor had no replicas yet")
+		return
+	}
+
+	s.mu.Lock()
+	stopped := s.stopped
+	s.mu.Unlock()
+
+	if stopped {
 		return
 	}
 
