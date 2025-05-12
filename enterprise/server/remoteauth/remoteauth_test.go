@@ -171,14 +171,9 @@ func TestJwtExpiry(t *testing.T) {
 	barJwt := validJwt(t, "bar")
 	require.NotEqual(t, fooJwt, barJwt)
 
-	// JWTs received from the remote backend are used directly (no validation)
+	// The JWT minted by the backend should be considered to expire too soon
+	// and should not be used.
 	fakeAuth.Reset().setNextJwt(t, fooJwt)
 	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
-	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
-
-	// fooJwt (which was cached above) should be considered to expire too soon
-	// and should be discarded.
-	fakeAuth.Reset().setNextJwt(t, barJwt)
-	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
-	require.Equal(t, barJwt, ctx.Value(authutil.ContextTokenStringKey))
+	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
 }
