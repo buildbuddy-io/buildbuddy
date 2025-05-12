@@ -108,6 +108,9 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	r := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
 	if err := cachetools.GetBlob(ctx, bsClient, r, f); err != nil {
+		if err := os.Remove(outputPath); err != nil {
+			log.CtxErrorf(ctx, "failed to clean up path %s after failed fetch: %s", outputPath, err)
+		}
 		return 0, status.WrapError(err, "remote fetch snapshot artifact")
 	}
 
