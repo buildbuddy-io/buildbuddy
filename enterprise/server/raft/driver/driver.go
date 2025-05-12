@@ -110,11 +110,11 @@ func (a DriverAction) Priority() float64 {
 		return 700
 	case DriverAddReplica:
 		return 600
-	case DriverRemoveDeadReplica:
-		return 500
-	case DriverRemoveReplica:
-		return 400
 	case DriverFinishReplicaRemoval:
+		return 500
+	case DriverRemoveDeadReplica:
+		return 400
+	case DriverRemoveReplica:
 		return 300
 	case DriverSplitRange:
 		return 200
@@ -360,7 +360,7 @@ type Queue struct {
 }
 
 func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
-	storeMap := storemap.New(gossipManager, clock)
+	storeMap := storemap.New(gossipManager, clock, nhlog)
 	q := &Queue{
 		storeMap:  storeMap,
 		store:     store,
@@ -384,8 +384,13 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 
 	needsRemoveData := false
 	if len(rd.GetRemoved()) > 0 {
-		needsRemoveData = true
-		action = DriverFinishReplicaRemoval
+		// There is no point to call to finish replica removal if the node is
+		// dead.
+		byStatus := rq.storeMap.DivideByStatus(rd.GetRemoved())
+		if len(byStatus.LiveReplicas)+len(byStatus.SuspectReplicas) > 0 {
+			needsRemoveData = true
+			action = DriverFinishReplicaRemoval
+		}
 	}
 
 	if rq.storeMap == nil {
@@ -409,6 +414,15 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 	if curReplicas < minReplicas {
 		action = DriverAddReplica
 		adjustedPriority := action.Priority() + float64(desiredQuorum-curReplicas)
+		change := rq.addReplica(rd)
+		if change == nil {
+			// not able to find target node for allocation; if there is
+			// in-progress replica removal, complete it so this can be a target
+			// for allocation
+			if needsRemoveData {
+				return DriverFinishReplicaRemoval, adjustedPriority
+			}
+		}
 		return action, adjustedPriority
 	}
 	replicasByStatus := rq.storeMap.DivideByStatus(replicas)
@@ -425,6 +439,12 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 
 	if curReplicas <= minReplicas && numDeadReplicas > 0 {
 		action = DriverReplaceDeadReplica
+		// not able to find target node for allocation; if there is
+		// in-progress replica removal, complete it so this can be a target
+		// for allocation
+		if needsRemoveData {
+			return DriverFinishReplicaRemoval, action.Priority()
+		}
 		return action, action.Priority()
 	}
 
