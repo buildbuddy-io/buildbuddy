@@ -1162,24 +1162,23 @@ func (cwc *uploadWriteCloser) flush(finish bool) error {
 }
 
 func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
-	buf := make([]byte, uploadBufSizeBytes)
-	var bytesUploaded int64
+	bytesRead := int64(0)
 	for {
-		n, err := ioutil.ReadTryFillBuffer(r, buf)
+		n, err := ioutil.ReadTryFillBuffer(r, cwc.buf[cwc.bytesBuffered:])
+		cwc.bytesBuffered += n
+		bytesRead += int64(n)
 		done := err == io.EOF
 		if err != nil && !done {
-			return bytesUploaded, err
+			return bytesRead, err
 		}
-		written, err := cwc.Write(buf[:n])
-		if err != nil {
-			return bytesUploaded + int64(written), err
+		if err := cwc.flush(false); err != nil {
+			return bytesRead, err
 		}
-		bytesUploaded += int64(written)
 		if done {
 			break
 		}
 	}
-	return bytesUploaded, nil
+	return bytesRead, nil
 }
 
 func (cwc *uploadWriteCloser) Close() error {
