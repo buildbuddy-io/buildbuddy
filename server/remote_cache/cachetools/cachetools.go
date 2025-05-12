@@ -1127,7 +1127,7 @@ func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 	written := 0
 	for len(p) > 0 {
 		n := min(len(p), uploadBufSizeBytes)
-		if err := cwc.flush(p[:n]); err != nil {
+		if err := cwc.flush(p[:n], false); err != nil {
 			if err == io.EOF {
 				break
 			}
@@ -1139,12 +1139,12 @@ func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 	return written, nil
 }
 
-func (cwc *uploadWriteCloser) flush(data []byte) error {
+func (cwc *uploadWriteCloser) flush(data []byte, finish bool) error {
 	req := &bspb.WriteRequest{
 		Data:         data,
 		ResourceName: cwc.uploadString,
 		WriteOffset:  cwc.bytesUploaded,
-		FinishWrite:  false,
+		FinishWrite:  finish,
 	}
 	err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 	if err != nil {
@@ -1176,14 +1176,7 @@ func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
 }
 
 func (cwc *uploadWriteCloser) Close() error {
-	req := &bspb.WriteRequest{
-		ResourceName: cwc.uploadString,
-		WriteOffset:  cwc.bytesUploaded,
-		FinishWrite:  true,
-	}
-
-	err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
-	if err != nil {
+	if err := cwc.flush([]byte{}, true); err != nil {
 		return err
 	}
 
