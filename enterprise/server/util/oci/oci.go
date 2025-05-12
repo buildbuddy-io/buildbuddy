@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -10,8 +11,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/distribution/reference"
@@ -19,8 +25,12 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/protobuf/types/known/anypb"
 
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -30,6 +40,24 @@ var (
 	mirrors                = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+)
+
+const (
+	blobOutputFilePath          = "_bb_ociregistry_blob_"
+	blobMetadataOutputFilePath  = "_bb_ociregistry_blob_metadata_"
+	actionResultInstanceName    = interfaces.OCIImageInstanceNamePrefix
+	manifestContentInstanceName = interfaces.OCIImageInstanceNamePrefix + "_manifest_content_"
+
+	maxManifestSize = 10000000
+
+	hitLabel    = "hit"
+	missLabel   = "miss"
+	uploadLabel = "upload"
+
+	actionCacheLabel = "action_cache"
+	casLabel         = "cas"
+
+	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
 type MirrorConfig struct {
@@ -322,4 +350,52 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 		}
 	}
 	return t.inner.RoundTrip(in)
+}
+
+func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string) error {
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      ref.Context().RegistryStr(),
+		Repository:    ref.Context().RepositoryStr(),
+		ResourceType:  ocipb.OCIResourceType_MANIFEST,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
+	if err != nil {
+		return err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		manifestContentInstanceName,
+		cacheDigestFunction,
+	)
+
+	m := &ocipb.OCIManifestContent{
+		Raw:         raw,
+		ContentType: contentType,
+	}
+	any, err := anypb.New(m)
+	if err != nil {
+		return err
+	}
+	ar := &repb.ActionResult{
+		ExecutionMetadata: &repb.ExecutedActionMetadata{
+			AuxiliaryMetadata: []*anypb.Any{
+				any,
+			},
+		},
+	}
+	updateCacheEventMetric(actionCacheLabel, uploadLabel)
+	return cachetools.UploadActionResult(ctx, acClient, arRN, ar)
+}
+
+func updateCacheEventMetric(cacheType, eventType string) {
+	metrics.OCIRegistryCacheEvents.With(prometheus.Labels{
+		metrics.CacheTypeLabel:      cacheType,
+		metrics.CacheEventTypeLabel: eventType,
+	}).Inc()
 }

@@ -8,10 +8,17 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci",
     deps = [
         "//enterprise/server/remote_execution/platform",
+        "//proto:ociregistry_go_proto",
         "//proto:registry_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/http/httpclient",
+        "//server/interfaces",
+        "//server/metrics",
+        "//server/remote_cache/cachetools",
+        "//server/remote_cache/digest",
         "//server/util/flag",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_distribution_reference//:reference",
@@ -21,6 +28,8 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
         "@com_github_google_go_containerregistry//pkg/v1/types",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_protobuf//types/known/anypb",
     ],
 )
 

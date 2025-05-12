@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -24,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -603,54 +603,13 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 		if err != nil {
 			return err
 		}
-		if err := writeManifestToAC(ctx, raw, acClient, ref, hash, contentType); err != nil {
+		if err := oci.WriteManifestToAC(ctx, raw, acClient, ref, hash, contentType); err != nil {
 			log.CtxWarningf(ctx, "Error writing manifest to AC for %q: %s", ref.Context(), err)
 		}
 		r = bytes.NewReader(raw)
 	}
 	tr := io.TeeReader(r, w)
 	return writeBlobOrManifestToCache(ctx, tr, bsClient, acClient, ref, ociResourceType, hash, contentType, contentLength)
-}
-
-func writeManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string) error {
-	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
-		ResourceType:  ocipb.OCIResourceType_MANIFEST,
-		HashAlgorithm: hash.Algorithm,
-		HashHex:       hash.Hex,
-	}
-	arKeyBytes, err := proto.Marshal(arKey)
-	if err != nil {
-		return err
-	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
-	if err != nil {
-		return err
-	}
-	arRN := digest.NewACResourceName(
-		arDigest,
-		manifestContentInstanceName,
-		cacheDigestFunction,
-	)
-
-	m := &ocipb.OCIManifestContent{
-		Raw:         raw,
-		ContentType: contentType,
-	}
-	any, err := anypb.New(m)
-	if err != nil {
-		return err
-	}
-	ar := &repb.ActionResult{
-		ExecutionMetadata: &repb.ExecutedActionMetadata{
-			AuxiliaryMetadata: []*anypb.Any{
-				any,
-			},
-		},
-	}
-	updateCacheEventMetric(actionCacheLabel, uploadLabel)
-	return cachetools.UploadActionResult(ctx, acClient, arRN, ar)
 }
 
 func fetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash) (*ocipb.OCIManifestContent, error) {
