@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 )
 

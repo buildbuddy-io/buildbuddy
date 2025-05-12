@@ -269,10 +269,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
 
   private onSelectExecutor(onChange: (name: string, value: any) => any) {
-    onChange("capability", [
-      capability.Capability.CACHE_WRITE,
-      capability.Capability.REGISTER_EXECUTOR,
-    ]);
+    onChange("capability", [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_EXECUTOR]);
   }
 
   private onSelectOrgAdmin(onChange: (name: string, value: any) => any) {
@@ -602,10 +599,7 @@ function isCASOnly<T extends ApiKeyFields>(apiKey: T | null) {
 }
 
 function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {
-  return hasExactCapabilities(apiKey, [
-    capability.Capability.CACHE_WRITE,
-    capability.Capability.REGISTER_EXECUTOR,
-  ]);
+  return hasExactCapabilities(apiKey, [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_EXECUTOR]);
 }
 
 function isOrgAdminKey<T extends ApiKeyFields>(apiKey: T | null) {
