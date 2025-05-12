@@ -547,3 +547,70 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	updateCacheEventMetric(casLabel, hitLabel)
 	return nil
 }
+
+func WriteBlobOrManifestToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
+	}
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		cacheDigestFunction,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	updateCacheEventMetric(casLabel, uploadLabel)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
+	if err != nil {
+		return err
+	}
+
+	blobMetadata := &ocipb.OCIBlobMetadata{
+		ContentLength: contentLength,
+		ContentType:   contentType,
+	}
+	updateCacheEventMetric(casLabel, uploadLabel)
+	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", cacheDigestFunction, blobMetadata)
+	if err != nil {
+		return err
+	}
+
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      ref.Context().RegistryStr(),
+		Repository:    ref.Context().RepositoryStr(),
+		ResourceType:  ociResourceType,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	ar := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{
+				Path:   blobOutputFilePath,
+				Digest: blobCASDigest,
+			},
+			{
+				Path:   blobMetadataOutputFilePath,
+				Digest: blobMetadataCASDigest,
+			},
+		},
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
+	if err != nil {
+		return err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		actionResultInstanceName,
+		cacheDigestFunction,
+	)
+	updateCacheEventMetric(actionCacheLabel, uploadLabel)
+	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
+	if err != nil {
+		return err
+	}
+	return nil
+}
