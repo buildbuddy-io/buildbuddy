@@ -26,7 +26,9 @@ go_test(
     ],
     embed = [":query"],
     deps = [
+        "//codesearch/schema",
         "//codesearch/token",
+        "//codesearch/types",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
