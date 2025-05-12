@@ -123,7 +123,6 @@ func decompressWithNewZstdDecompressingReader(t *testing.T, srclen int, compress
 }
 
 func TestCompressingReader_EmptyReadBuf(t *testing.T) {
-	t.Skip("skipping this test until https://github.com/buildbuddy-io/buildbuddy/pull/9270 lands")
 	_, r := testdigest.NewReader(t, 16)
 	zrc, err := compression.NewZstdCompressingReader(io.NopCloser(r), make([]byte, 0), make([]byte, 16))
 	require.Error(t, err)
@@ -191,7 +190,6 @@ func (er *erroringReader) Read(p []byte) (int, error) {
 // will hold onto any error from its underlying reader until it has exhausted
 // all the successfully-read bytes.
 func TestCompressingReader_HoldErrors(t *testing.T) {
-	t.Skip("skipping this test until https://github.com/buildbuddy-io/buildbuddy/pull/9270 lands")
 	totalBytes := 65
 	bytesToAllow := 33
 	errorToReturn := io.ErrUnexpectedEOF
