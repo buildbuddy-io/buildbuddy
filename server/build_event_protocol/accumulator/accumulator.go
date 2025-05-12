@@ -24,10 +24,10 @@ const (
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
 	disableTargetTrackingFieldName        = "disableTargetTracking"
 
-	// The maximum number of important files and artifacts to possibly copy
+	// The maximum number of important TestRunner artifacts to possibly copy
 	// from cache -> blobstore. If more than this number are present, they
 	// will be dropped.
-	maxPersistableArtifacts = 1000
+	MaxPersistableTestArtifacts = 1000
 
 	// If codesearch is enabled, and an invocation contains a single file with the
 	// following name, attempt to ingest this kythe sstable file in codesearch.
@@ -76,18 +76,18 @@ type Accumulator interface {
 // memory for the life of the stream, so it should not save every single event
 // in full (that data lives in blobstore).
 type BEValues struct {
-	valuesMap                      map[string]string
-	unprocessedMetadataEvents      map[string]struct{}
-	sawStartedEvent                bool
-	sawFinishedEvent               bool
-	buildStartTime                 time.Time
-	buildToolLogURIs               []*url.URL
-	outputFilesMap                 map[string]*build_event_stream.File
-	kytheSSTableResourceName       *rspb.ResourceName
-	profileName                    string
-	hasBytestreamTestActionOutputs bool
+	valuesMap                 map[string]string
+	unprocessedMetadataEvents map[string]struct{}
+	sawStartedEvent           bool
+	sawFinishedEvent          bool
+	buildStartTime            time.Time
+	buildToolLogURIs          []*url.URL
+	outputFilesMap            map[string]*build_event_stream.File
+	kytheSSTableResourceName  *rspb.ResourceName
+	profileName               string
 
-	testOutputURIs []*url.URL
+	failedTestOutputURIs []*url.URL
+	passedTestOutputURIs []*url.URL
 	// TODO(bduffany): Migrate all parser functionality directly into the
 	// accumulator. The parser is a separate entity only for historical reasons.
 	parser *event_parser.StreamingEventParser
@@ -166,7 +166,7 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		v.sawFinishedEvent = true
 	case *build_event_stream.BuildEvent_BuildToolLogs:
 		v.maybeExtractOutputFile(p.BuildToolLogs.GetLog()...)
-		for _, toolLog := range p.BuildToolLogs.Log {
+		for _, toolLog := range p.BuildToolLogs.GetLog() {
 			if uri := toolLog.GetUri(); uri != "" {
 				if url, err := url.Parse(uri); err != nil {
 					log.Warningf("Error parsing uri from BuildToolLogs: %s", uri)
@@ -177,22 +177,23 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		}
 	case *build_event_stream.BuildEvent_TestResult:
 		v.maybeExtractOutputFile(p.TestResult.GetTestActionOutput()...)
-		for _, f := range p.TestResult.TestActionOutput {
+		for _, f := range p.TestResult.GetTestActionOutput() {
 			u, err := url.Parse(f.GetUri())
 			if err != nil {
 				log.Warningf("Error parsing uri from TestResult: %s", f.GetUri())
 				continue
 			}
-			if u.Scheme == "bytestream" {
-				v.hasBytestreamTestActionOutputs = true
-
-				// To protect our backends from thrashing -- stop
-				// copying outputs if there are way too many. This can
-				// happen if a ruleset is buggy.
-				if len(v.testOutputURIs) >= maxPersistableArtifacts {
-					continue
+			if u.Scheme != "bytestream" {
+				continue
+			}
+			if p.TestResult.GetStatus() == build_event_stream.TestStatus_PASSED {
+				if len(v.passedTestOutputURIs) < MaxPersistableTestArtifacts {
+					v.passedTestOutputURIs = append(v.passedTestOutputURIs, u)
 				}
-				v.testOutputURIs = append(v.testOutputURIs, u)
+				continue
+			}
+			if len(v.failedTestOutputURIs) < MaxPersistableTestArtifacts {
+				v.failedTestOutputURIs = append(v.failedTestOutputURIs, u)
 			}
 		}
 	}
@@ -260,12 +261,12 @@ func (v *BEValues) BuildToolLogURIs() []*url.URL {
 	return v.buildToolLogURIs
 }
 
-func (v *BEValues) HasBytestreamTestActionOutputs() bool {
-	return v.hasBytestreamTestActionOutputs
+func (v *BEValues) PassedTestOutputURIs() []*url.URL {
+	return v.passedTestOutputURIs
 }
 
-func (v *BEValues) TestOutputURIs() []*url.URL {
-	return v.testOutputURIs
+func (v *BEValues) FailedTestOutputURIs() []*url.URL {
+	return v.failedTestOutputURIs
 }
 
 func (v *BEValues) getStringValue(fieldName string) string {
