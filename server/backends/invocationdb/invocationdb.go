@@ -21,8 +21,8 @@ import (
 	"gorm.io/gorm/clause"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -99,7 +99,7 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 	caps, err := capabilities.ForAuthenticatedUser(ctx, d.env.GetAuthenticator())
 	if err != nil {
 		// Set empty capabilities by default
-		caps = []akpb.ApiKey_Capability{}
+		caps = []cappb.Capability{}
 	}
 
 	ti.UserID = permissions.UserID

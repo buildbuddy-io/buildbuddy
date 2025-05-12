@@ -18,6 +18,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
@@ -65,7 +66,7 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 	rsp := &akpb.CreateApiKeyResponse{}
 	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
 		RequestContext: webClient.RequestContext,
-		Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+		Capability:     []cappb.Capability{cappb.Capability_CACHE_WRITE},
 	}, rsp)
 	require.NoError(t, err)
 	readWriteKey := rsp.ApiKey.Value
@@ -103,7 +104,7 @@ func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing
 	// Create a new read-only key
 	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
 		RequestContext: webClient.RequestContext,
-		Capability:     []akpb.ApiKey_Capability{},
+		Capability:     []cappb.Capability{},
 	}, rsp)
 	require.NoError(t, err)
 	readOnlyKey := rsp.ApiKey.Value
@@ -141,7 +142,7 @@ func TestBuild_RemoteCacheFlags_CasOnlyApiKey_SecondBuildIsNotCached(t *testing.
 	// Create a new CAS-only key
 	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
 		RequestContext: webClient.RequestContext,
-		Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+		Capability:     []cappb.Capability{cappb.Capability_CAS_WRITE},
 	}, rsp)
 	require.NoError(t, err)
 	readOnlyKey := rsp.ApiKey.Value

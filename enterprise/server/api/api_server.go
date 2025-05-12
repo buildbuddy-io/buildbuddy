@@ -32,8 +32,8 @@ import (
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -66,7 +66,7 @@ func NewAPIServer(env environment.Env) *APIServer {
 }
 
 func (s *APIServer) authorizeWrites(ctx context.Context) error {
-	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
 	if err != nil {
 		return err
 	}

@@ -8,14 +8,15 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
 
 func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID string) context.Context {
@@ -53,7 +54,7 @@ func TestCreateGroup(t *testing.T) {
 
 	adminKey, err := te.GetAuthDB().CreateAPIKey(
 		userCtx, parentGroup.GroupID, "admin",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	adminKeyCtx := te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)

@@ -8,7 +8,6 @@ import (
 	"path"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/failure_details"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -29,6 +28,7 @@ import (
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -395,7 +395,7 @@ func TestDeleteFile_InvalidAuth(t *testing.T) {
 	userWithoutWriteAuth := testauth.TestUser{
 		UserID:       userID,
 		GroupID:      "group",
-		Capabilities: []api_key.ApiKey_Capability{},
+		Capabilities: []cappb.Capability{},
 	}
 
 	env := testenv.GetTestEnv(t)

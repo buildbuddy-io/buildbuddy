@@ -4,7 +4,7 @@ import React from "react";
 import { Subject } from "rxjs";
 import shlex from "shlex";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
-import { api_key } from "../../proto/api_key_ts_proto";
+import { capability } from "../../proto/capability_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
@@ -273,8 +273,8 @@ export default class InvocationModel {
     return Boolean(
       this.invocation.createdWithCapabilities?.some(
         (existingCapability) =>
-          existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY ||
-          existingCapability == api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY
+          existingCapability == capability.Capability.CACHE_WRITE ||
+          existingCapability == capability.Capability.CAS_WRITE
       )
     );
   }

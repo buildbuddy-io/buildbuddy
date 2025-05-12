@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 )
@@ -82,7 +82,7 @@ func TestAllowedRPCs(t *testing.T) {
 		Name               string
 		RPC                string
 		Anonymous          bool
-		Capabilities       []akpb.ApiKey_Capability
+		Capabilities       []cappb.Capability
 		ServerAdminGroupID string
 		Allowed            bool
 	}{
@@ -95,13 +95,13 @@ func TestAllowedRPCs(t *testing.T) {
 		{
 			Name:         "UnrestrictedRPC_NonAdmin_Allowed",
 			RPC:          "/buildbuddy.service.BuildBuddyService/GetInvocation",
-			Capabilities: []akpb.ApiKey_Capability{},
+			Capabilities: []cappb.Capability{},
 			Allowed:      true,
 		},
 		{
 			Name:         "UnrestrictedRPC_Admin_Allowed",
 			RPC:          "/buildbuddy.service.BuildBuddyService/GetInvocation",
-			Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			Allowed:      true,
 		},
 		{
@@ -113,33 +113,33 @@ func TestAllowedRPCs(t *testing.T) {
 		{
 			Name:         "OrgMemberRPC_OrgMember_Allowed",
 			RPC:          "/buildbuddy.service.BuildBuddyService/SearchInvocation",
-			Capabilities: []akpb.ApiKey_Capability{},
+			Capabilities: []cappb.Capability{},
 			Allowed:      true,
 		},
 		{
 			Name:         "AdminOnlyRPC_NonAdmin_NotAllowed",
 			RPC:          "/buildbuddy.service.BuildBuddyService/UpdateGroup",
-			Capabilities: []akpb.ApiKey_Capability{},
+			Capabilities: []cappb.Capability{},
 			Allowed:      false,
 		},
 		{
 			Name:         "AdminOnlyRPC_Admin_Allowed",
 			RPC:          "/buildbuddy.service.BuildBuddyService/UpdateGroup",
-			Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			Allowed:      true,
 		},
 		{
 			Name: "ServerAdminOnly_NonServerAdmin_NotAllowed",
 			RPC:  "/buildbuddy.service.BuildBuddyService/ApplyBucket",
 			// Note: this user is an org admin but not a server admin.
-			Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			Allowed:      false,
 		},
 		{
 			Name:               "ServerAdminOnly_ServerAdmin_Allowed",
 			RPC:                "/buildbuddy.service.BuildBuddyService/ApplyBucket",
 			ServerAdminGroupID: "GR1",
-			Capabilities:       []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+			Capabilities:       []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			Allowed:            true,
 		},
 	} {

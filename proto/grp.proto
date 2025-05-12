@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-import "proto/api_key.proto";
+import "proto/capability.proto";
 import "proto/context.proto";
 import "proto/user_id.proto";
 
@@ -101,7 +101,7 @@ message Group {
   // key created within this group. Note that these are specific to the
   // currently authenticated user, not to
   // the group as a whole.
-  repeated api_key.ApiKey.Capability allowed_user_api_key_capabilities = 18;
+  repeated capability.Capability allowed_user_api_key_capabilities = 18;
 
   // Whether to enable codesearch.
   bool code_search_enabled = 19;

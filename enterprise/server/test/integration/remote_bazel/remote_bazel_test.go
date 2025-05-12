@@ -43,6 +43,7 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -301,10 +302,10 @@ sh_binary(
 	bbClient := env.GetBuildBuddyServiceClient()
 	apiRsp, err := bbClient.CreateApiKey(ctx, &akpb.CreateApiKeyRequest{
 		RequestContext: reqCtx,
-		Capability: []akpb.ApiKey_Capability{
-			akpb.ApiKey_CAS_WRITE_CAPABILITY,
-			akpb.ApiKey_CACHE_WRITE_CAPABILITY,
-			akpb.ApiKey_ORG_ADMIN_CAPABILITY,
+		Capability: []cappb.Capability{
+			cappb.Capability_CAS_WRITE,
+			cappb.Capability_CACHE_WRITE,
+			cappb.Capability_ORG_ADMIN,
 		},
 	})
 	require.NoError(t, err)

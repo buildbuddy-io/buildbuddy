@@ -42,6 +42,7 @@ proto_library(
     name = "api_key_proto",
     srcs = ["api_key.proto"],
     deps = [
+        ":capability_proto",
         ":context_proto",
     ],
 )
@@ -124,6 +125,13 @@ proto_library(
         "@com_google_protobuf//:field_mask_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/rpc:status_proto",
+    ],
+)
+
+proto_library(
+    name = "capability_proto",
+    srcs = [
+        "capability.proto",
     ],
 )
 
@@ -497,9 +505,9 @@ proto_library(
     srcs = ["invocation.proto"],
     deps = [
         ":acl_proto",
-        ":api_key_proto",
         ":build_event_stream_proto",
         ":cache_proto",
+        ":capability_proto",
         ":command_line_proto",
         ":context_proto",
         ":invocation_status_proto",
@@ -546,6 +554,7 @@ proto_library(
     ],
     deps = [
         ":api_key_proto",
+        ":capability_proto",
         ":context_proto",
         ":user_id_proto",
     ],
@@ -898,6 +907,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/api_key",
     proto = ":api_key_proto",
     deps = [
+        ":capability_go_proto",
         ":context_go_proto",
     ],
 )
@@ -1490,9 +1500,9 @@ go_proto_library(
     proto = ":invocation_proto",
     deps = [
         ":acl_go_proto",
-        ":api_key_go_proto",
         ":build_event_stream_go_proto",
         ":cache_go_proto",
+        ":capability_go_proto",
         ":command_line_go_proto",
         ":context_go_proto",
         ":invocation_status_go_proto",
@@ -1671,6 +1681,7 @@ go_proto_library(
     proto = ":group_proto",
     deps = [
         ":api_key_go_proto",
+        ":capability_go_proto",
         ":context_go_proto",
         ":user_id_go_proto",
     ],
@@ -1690,6 +1701,16 @@ go_proto_library(
         ":resource_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
+)
+
+go_proto_library(
+    name = "capability_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/capability",
+    proto = ":capability_proto",
 )
 
 go_proto_library(
@@ -2033,6 +2054,7 @@ ts_proto_library(
     name = "api_key_ts_proto",
     proto = ":api_key_proto",
     deps = [
+        ":capability_ts_proto",
         ":context_ts_proto",
     ],
 )
@@ -2310,9 +2332,9 @@ ts_proto_library(
     proto = ":invocation_proto",
     deps = [
         ":acl_ts_proto",
-        ":api_key_ts_proto",
         ":build_event_stream_ts_proto",
         ":cache_ts_proto",
+        ":capability_ts_proto",
         ":command_line_ts_proto",
         ":context_ts_proto",
         ":duration_ts_proto",
@@ -2369,6 +2391,7 @@ ts_proto_library(
     proto = ":group_proto",
     deps = [
         ":api_key_ts_proto",
+        ":capability_ts_proto",
         ":context_ts_proto",
         ":user_id_ts_proto",
     ],
@@ -2472,6 +2495,11 @@ ts_proto_library(
         ":resource_ts_proto",
         ":timestamp_ts_proto",
     ],
+)
+
+ts_proto_library(
+    name = "capability_ts_proto",
+    proto = ":capability_proto",
 )
 
 ts_proto_library(

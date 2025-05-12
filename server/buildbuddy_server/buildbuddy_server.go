@@ -54,6 +54,7 @@ import (
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -573,7 +574,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	// For groups created using an API Key allow the SAML IDP Metadata URL
 	// to be inherited if the API Key group is marked as a 'parent' group.
 	// This allows the new group to be managed using a parent group API key.
-	if u.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) && u.GetUserID() == "" {
+	if u.HasCapability(cappb.Capability_ORG_ADMIN) && u.GetUserID() == "" {
 		existingGroup, err := userDB.GetGroupByID(ctx, u.GetGroupID())
 		if err != nil {
 			return nil, err

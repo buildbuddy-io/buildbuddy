@@ -21,7 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -192,7 +192,7 @@ func (s *SCIMServer) handleRequest(w http.ResponseWriter, r *http.Request, handl
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
-	if !u.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+	if !u.HasCapability(cappb.Capability_ORG_ADMIN) {
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}

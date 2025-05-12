@@ -21,7 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
@@ -53,8 +53,8 @@ var (
 	groupUrlIdentifierPattern = regexp.MustCompile(`^[a-z0-9\-]+$`)
 
 	// Default capabilities for group-owned API keys.
-	defaultAPIKeyCapabilities = []akpb.ApiKey_Capability{
-		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+	defaultAPIKeyCapabilities = []cappb.Capability{
+		cappb.Capability_CACHE_WRITE,
 	}
 )
 

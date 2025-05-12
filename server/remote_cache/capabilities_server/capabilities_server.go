@@ -9,7 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
@@ -112,5 +112,5 @@ func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context) bool 
 	if err != nil {
 		return true
 	}
-	return u.HasCapability(akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	return u.HasCapability(cappb.Capability_CACHE_WRITE)
 }

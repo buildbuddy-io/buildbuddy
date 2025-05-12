@@ -10,7 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 )
 
 var (
@@ -217,7 +217,7 @@ func AllowedRPCs(ctx context.Context, env environment.Env, groupID string) []str
 	if groupID != "" {
 		userGroupCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, env.GetAuthenticator(), groupID)
 		if err == nil {
-			if slices.Contains(userGroupCapabilities, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+			if slices.Contains(userGroupCapabilities, cappb.Capability_ORG_ADMIN) {
 				out = append(out, getGroupAdminOnlyRPCs()...)
 			}
 			out = append(out, groupMemberRPCs...)
@@ -295,7 +295,7 @@ func authorizeServerAdmin(ctx context.Context, env environment.Env) error {
 		return status.PermissionDeniedError("permission denied")
 	}
 	for _, m := range u.GetGroupMemberships() {
-		if m.GroupID == serverAdminGID && (capabilities.ToInt(m.Capabilities)&int32(akpb.ApiKey_ORG_ADMIN_CAPABILITY) != 0) {
+		if m.GroupID == serverAdminGID && (capabilities.ToInt(m.Capabilities)&int32(cappb.Capability_ORG_ADMIN) != 0) {
 			return nil
 		}
 	}

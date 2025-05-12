@@ -17,8 +17,8 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -57,7 +57,7 @@ func TestGetLogs(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	adminCaps := []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY}
+	adminCaps := []cappb.Capability{cappb.Capability_ORG_ADMIN}
 	adminUser := &testauth.TestUser{
 		UserID:       group1AdminID,
 		GroupID:      group1ID,
@@ -66,7 +66,7 @@ func TestGetLogs(t *testing.T) {
 			{GroupID: group1ID, Capabilities: adminCaps},
 		},
 	}
-	auditCaps := []akpb.ApiKey_Capability{akpb.ApiKey_AUDIT_LOG_READ_CAPABILITY}
+	auditCaps := []cappb.Capability{cappb.Capability_AUDIT_LOG_READ}
 	auditUser := &testauth.TestUser{
 		UserID:       group1AdminID,
 		GroupID:      group1ID,
@@ -75,7 +75,7 @@ func TestGetLogs(t *testing.T) {
 			{GroupID: group1ID, Capabilities: auditCaps},
 		},
 	}
-	cacheCaps := []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}
+	cacheCaps := []cappb.Capability{cappb.Capability_CACHE_WRITE}
 	cacheUser := &testauth.TestUser{
 		UserID:  group1AdminID,
 		GroupID: group1ID,

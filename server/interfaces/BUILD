@@ -7,10 +7,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:acl_go_proto",
-        "//proto:api_key_go_proto",
         "//proto:auditlog_go_proto",
         "//proto:auth_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:capability_go_proto",
         "//proto:encryption_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:firecracker_go_proto",

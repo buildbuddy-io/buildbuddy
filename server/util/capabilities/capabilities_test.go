@@ -11,7 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/stretchr/testify/assert"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 )
 
 var (
@@ -25,15 +25,15 @@ func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.Tes
 }
 
 func TestToInt_NoCapabilities(t *testing.T) {
-	c := capabilities.ToInt([]akpb.ApiKey_Capability{})
+	c := capabilities.ToInt([]cappb.Capability{})
 
 	assert.Equal(t, int32(0), c)
 }
 
 func TestToInt_OneCapability(t *testing.T) {
-	c := capabilities.ToInt([]akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY})
+	c := capabilities.ToInt([]cappb.Capability{cappb.Capability_CACHE_WRITE})
 
-	assert.Equal(t, int32(akpb.ApiKey_CACHE_WRITE_CAPABILITY), c)
+	assert.Equal(t, int32(cappb.Capability_CACHE_WRITE), c)
 }
 
 func TestToInt_MultipleCapabilities(t *testing.T) {
@@ -44,13 +44,13 @@ func TestToInt_MultipleCapabilities(t *testing.T) {
 func TestFromInt_NoCapabilities(t *testing.T) {
 	caps := capabilities.FromInt(0)
 
-	assert.Equal(t, []akpb.ApiKey_Capability{}, caps)
+	assert.Equal(t, []cappb.Capability{}, caps)
 }
 
 func TestFromInt_OneCapability(t *testing.T) {
-	caps := capabilities.FromInt(int32(akpb.ApiKey_CACHE_WRITE_CAPABILITY))
+	caps := capabilities.FromInt(int32(cappb.Capability_CACHE_WRITE))
 
-	assert.Equal(t, []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, caps)
+	assert.Equal(t, []cappb.Capability{cappb.Capability_CACHE_WRITE}, caps)
 }
 
 func TestFromInt_MultipleCapabilities(t *testing.T) {
@@ -62,7 +62,7 @@ func TestIsGranted_AnonymousUsageEnabled_AnonymousUser_True(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	anonCtx := context.Background()
 
-	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
 
 	assert.True(t, canWrite)
 	assert.Nil(t, err)
@@ -73,7 +73,7 @@ func TestIsGranted_NullAuthenticator(t *testing.T) {
 	te.SetAuthenticator(&nullauth.NullAuthenticator{})
 	anonCtx := context.Background()
 
-	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
 
 	assert.True(t, canWrite)
 	assert.Nil(t, err)
@@ -85,7 +85,7 @@ func TestNotGranted_NullAuthenticator_AnonymousUsage_Disabled(t *testing.T) {
 
 	anonCtx := context.Background()
 
-	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(anonCtx, te.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
 
 	assert.False(t, canWrite)
 	assert.Nil(t, err)
@@ -95,12 +95,12 @@ func TestIsGranted_TestUserWithCapability_True(t *testing.T) {
 	user := &testauth.TestUser{
 		UserID:       "US1",
 		GroupID:      "GR1",
-		Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+		Capabilities: []cappb.Capability{cappb.Capability_CACHE_WRITE},
 	}
 	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
 	authCtx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
 
-	canWrite, err := capabilities.IsGranted(authCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(authCtx, te.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
 
 	assert.True(t, canWrite)
 	assert.Nil(t, err)
@@ -110,12 +110,12 @@ func TestIsGranted_TestUserWithoutCapability_False(t *testing.T) {
 	user := &testauth.TestUser{
 		UserID:       "US1",
 		GroupID:      "GR1",
-		Capabilities: []akpb.ApiKey_Capability{},
+		Capabilities: []cappb.Capability{},
 	}
 	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
 	authCtx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
 
-	canWrite, err := capabilities.IsGranted(authCtx, te.GetAuthenticator(), akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(authCtx, te.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
 
 	assert.False(t, canWrite)
 	assert.Nil(t, err)

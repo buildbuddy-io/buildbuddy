@@ -22,10 +22,10 @@ import (
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -83,8 +83,8 @@ type BasicAuthToken interface {
 // GroupMembership represents a user's membership within a group as well as
 // their role within that group.
 type GroupMembership struct {
-	GroupID      string                   `json:"group_id"`
-	Capabilities []akpb.ApiKey_Capability `json:"capabilities"`
+	GroupID      string             `json:"group_id"`
+	Capabilities []cappb.Capability `json:"capabilities"`
 	// DEPRECATED. Check Capabilities instead.
 	Role role.Role `json:"role"`
 }
@@ -111,8 +111,8 @@ type UserInfo interface {
 	// GetGroupMemberships returns the user's group memberships.
 	GetGroupMemberships() []*GroupMembership
 	// GetCapabilities returns the user's capabilities.
-	GetCapabilities() []akpb.ApiKey_Capability
-	HasCapability(akpb.ApiKey_Capability) bool
+	GetCapabilities() []cappb.Capability
+	HasCapability(cappb.Capability) bool
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
@@ -467,12 +467,12 @@ type AuthDB interface {
 	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
 
 	// CreateAPIKey creates a group-level API key.
-	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error)
 
 	// CreateAPIKeyWithoutAuthCheck creates a group-level API key without
 	// checking that the user has admin rights on the group. This should only
 	// be used when a new group is being created.
-	CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx DB, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+	CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx DB, groupID string, label string, capabilities []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error)
 
 	// CreateImpersonationAPIKey creates a short-lived API key for the target
 	// group ID.
@@ -488,7 +488,7 @@ type AuthDB interface {
 	// user must be a member of the group. If the request is not authenticated
 	// as the given user, then the authenticated user or API key must have
 	// ORG_ADMIN capability.
-	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error)
+	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []cappb.Capability) (*tables.APIKey, error)
 
 	// GetAPIKey returns an API key by ID. The key may be user-owned or
 	// group-owned.
