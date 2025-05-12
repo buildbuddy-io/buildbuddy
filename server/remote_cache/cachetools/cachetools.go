@@ -1121,13 +1121,18 @@ type uploadWriteCloser struct {
 	uploadString string
 
 	bytesUploaded int64
+
+	buf           []byte
+	bytesBuffered int
 }
 
 func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
+	log.CtxDebugf(cwc.ctx, "WRITE(%d) %d bytesBuffered", len(p), cwc.bytesBuffered)
 	written := 0
 	for len(p) > 0 {
-		n := min(len(p), uploadBufSizeBytes)
-		if err := cwc.flush(p[:n], false); err != nil {
+		n := copy(cwc.buf[cwc.bytesBuffered:], p)
+		cwc.bytesBuffered += n
+		if err := cwc.flush(false); err != nil {
 			if err == io.EOF {
 				break
 			}
@@ -1139,9 +1144,10 @@ func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 	return written, nil
 }
 
-func (cwc *uploadWriteCloser) flush(data []byte, finish bool) error {
+func (cwc *uploadWriteCloser) flush(finish bool) error {
+	log.CtxDebugf(cwc.ctx, "FLUSH(%t) %d bytesBuffered", finish, cwc.bytesBuffered)
 	req := &bspb.WriteRequest{
-		Data:         data,
+		Data:         cwc.buf[:cwc.bytesBuffered],
 		ResourceName: cwc.uploadString,
 		WriteOffset:  cwc.bytesUploaded,
 		FinishWrite:  finish,
@@ -1150,7 +1156,8 @@ func (cwc *uploadWriteCloser) flush(data []byte, finish bool) error {
 	if err != nil {
 		return err
 	}
-	cwc.bytesUploaded += int64(len(data))
+	cwc.bytesUploaded += int64(cwc.bytesBuffered)
+	cwc.bytesBuffered = 0
 	return nil
 }
 
@@ -1176,7 +1183,7 @@ func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
 }
 
 func (cwc *uploadWriteCloser) Close() error {
-	if err := cwc.flush([]byte{}, true); err != nil {
+	if err := cwc.flush(true); err != nil {
 		return err
 	}
 
@@ -1213,5 +1220,6 @@ func newUploadWriteCloser(ctx context.Context, bsClient bspb.ByteStreamClient, r
 		sender:       sender,
 		resource:     r,
 		uploadString: r.NewUploadString(),
+		buf:          make([]byte, uploadBufSizeBytes),
 	}, nil
 }

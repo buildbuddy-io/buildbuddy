@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"sync"
 	"testing"
@@ -658,6 +659,7 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			log.Println("TEST " + tc.name)
 			te := testenv.GetTestEnv(t)
 			_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 			testcache.Setup(t, te, localGRPClis)
