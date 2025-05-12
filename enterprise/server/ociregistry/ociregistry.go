@@ -384,99 +384,6 @@ func updateCacheEventMetric(cacheType, eventType string) {
 	}).Inc()
 }
 
-func fetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference) (*ocipb.OCIBlobMetadata, error) {
-	hash, err := gcr.NewHash(ref.Identifier())
-	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return nil, err
-	}
-
-	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
-		ResourceType:  ocipb.OCIResourceType_BLOB,
-		HashAlgorithm: hash.Algorithm,
-		HashHex:       hash.Hex,
-	}
-	arKeyBytes, err := proto.Marshal(arKey)
-	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return nil, err
-	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
-	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return nil, err
-	}
-	arRN := digest.NewACResourceName(
-		arDigest,
-		actionResultInstanceName,
-		cacheDigestFunction,
-	)
-	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
-	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return nil, err
-	}
-	updateCacheEventMetric(actionCacheLabel, hitLabel)
-
-	var blobMetadataCASDigest *repb.Digest
-	var blobCASDigest *repb.Digest
-	for _, outputFile := range ar.GetOutputFiles() {
-		switch outputFile.GetPath() {
-		case blobMetadataOutputFilePath:
-			blobMetadataCASDigest = outputFile.GetDigest()
-		case blobOutputFilePath:
-			blobCASDigest = outputFile.GetDigest()
-		default:
-			log.CtxErrorf(ctx, "Unknown output file path %q in ActionResult for %q", outputFile.GetPath(), ref.Context())
-		}
-	}
-	if blobMetadataCASDigest == nil || blobCASDigest == nil {
-		updateCacheEventMetric(casLabel, missLabel)
-		return nil, status.NotFoundErrorf("missing blob metadata digest or blob digest for %s", ref.Context())
-	}
-	blobMetadataRN := digest.NewCASResourceName(
-		blobMetadataCASDigest,
-		"",
-		cacheDigestFunction,
-	)
-	blobMetadata := &ocipb.OCIBlobMetadata{}
-	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
-	if err != nil {
-		updateCacheEventMetric(casLabel, missLabel)
-		return nil, err
-	}
-	updateCacheEventMetric(casLabel, hitLabel)
-	return blobMetadata, nil
-}
-
-func fetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, hash gcr.Hash, contentLength int64) error {
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: contentLength,
-	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		"",
-		cacheDigestFunction,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	counter := &ioutil.Counter{}
-	mw := io.MultiWriter(w, counter)
-	defer func() {
-		metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
-			metrics.CacheTypeLabel: casLabel,
-		}).Observe(float64(counter.Count()))
-	}()
-	if err := cachetools.GetBlob(ctx, bsClient, blobRN, mw); err != nil {
-		updateCacheEventMetric(casLabel, missLabel)
-		return err
-	}
-	updateCacheEventMetric(casLabel, hitLabel)
-	return nil
-}
-
 func writeManifestMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash gcr.Hash, mc *ocipb.OCIManifestContent) {
 	w.Header().Add(headerDockerContentDigest, hash.String())
 	w.Header().Add(headerContentLength, strconv.Itoa(len(mc.GetRaw())))
@@ -513,7 +420,7 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 		return nil
 	}
 
-	blobMetadata, err := fetchBlobMetadataFromCache(ctx, bsClient, acClient, ref)
+	blobMetadata, err := oci.FetchBlobMetadataFromCache(ctx, bsClient, acClient, ref)
 	if err != nil {
 		return err
 	}
@@ -523,7 +430,7 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 	if !writeBody {
 		return nil
 	}
-	return fetchBlobFromCache(ctx, w, bsClient, acClient, hash, blobMetadata.GetContentLength())
+	return oci.FetchBlobFromCache(ctx, w, bsClient, acClient, hash, blobMetadata.GetContentLength())
 }
 
 func writeBlobOrManifestToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
