@@ -1127,26 +1127,31 @@ func (cwc *uploadWriteCloser) Write(p []byte) (int, error) {
 	written := 0
 	for len(p) > 0 {
 		n := min(len(p), uploadBufSizeBytes)
-		req := &bspb.WriteRequest{
-			Data:         p[:n],
-			ResourceName: cwc.uploadString,
-			WriteOffset:  cwc.bytesUploaded + int64(written),
-			FinishWrite:  false,
-		}
-
-		err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
-		if err != nil {
+		if err := cwc.flush(p[:n]); err != nil {
 			if err == io.EOF {
 				break
 			}
-			cwc.bytesUploaded += int64(written)
 			return written, err
 		}
 		written += n
 		p = p[n:]
 	}
-	cwc.bytesUploaded += int64(written)
 	return written, nil
+}
+
+func (cwc *uploadWriteCloser) flush(data []byte) error {
+	req := &bspb.WriteRequest{
+		Data:         data,
+		ResourceName: cwc.uploadString,
+		WriteOffset:  cwc.bytesUploaded,
+		FinishWrite:  false,
+	}
+	err := cwc.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+	if err != nil {
+		return err
+	}
+	cwc.bytesUploaded += int64(len(data))
+	return nil
 }
 
 func (cwc *uploadWriteCloser) ReadFrom(r io.Reader) (int64, error) {
