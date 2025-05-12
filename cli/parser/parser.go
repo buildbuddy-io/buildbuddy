@@ -418,7 +418,11 @@ func (p *Parser) ParseOption(opt string) (option options.Option, err error) {
 func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 	b, err := base64.StdEncoding.DecodeString(protoHelp)
 	if err != nil {
-		return nil, err
+		truncHelp := protoHelp
+		if len(truncHelp) > 100 {
+			truncHelp = truncHelp[:100] + "..."
+		}
+		return nil, fmt.Errorf("failed to decode 'bazel help flags-as-proto' output as base64: %s (attempted to decode %q)", err, truncHelp)
 	}
 	flagCollection := &bfpb.FlagCollection{}
 	if err := proto.Unmarshal(b, flagCollection); err != nil {
