@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "metadata",
-    srcs = ["server.go"],
+    srcs = ["metadata.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata",
     visibility = ["//visibility:public"],
     deps = [
@@ -35,7 +35,7 @@ go_library(
 
 go_test(
     name = "metadata_test",
-    srcs = ["server_test.go"],
+    srcs = ["metadata_test.go"],
     deps = [
         ":metadata",
         "//enterprise/server/filestore",
