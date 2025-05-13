@@ -1915,6 +1915,48 @@ func TestReadThroughLookaside(t *testing.T) {
 	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))
 }
 
+func TestAbandonedReadDoesntWriteToLookaside(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	config := CacheConfig{
+		ReplicationFactor:       1,
+		Nodes:                   []string{peer},
+		DisableLocalLookup:      true,
+		LookasideCacheSizeBytes: 100_000,
+		ListenAddr:              peer,
+	}
+
+	memoryCache := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	dc := startNewDCache(t, env, config, memoryCache)
+	waitForReady(t, config.ListenAddr)
+
+	// Write an entry with 100 bytes
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	if err := dc.Set(ctx, rn, buf); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read just the first 3 bytes
+	r, err := dc.Reader(ctx, rn, 0, 0)
+	require.NoError(t, err)
+	readBuf := make([]byte, 3)
+	n, err := r.Read(readBuf)
+	assert.Equal(t, 3, n)
+	assert.NoError(t, err)
+	assert.Equal(t, buf[:3], readBuf)
+	// closing the reader shouldn't write to the lookaside cache.
+	assert.NoError(t, r.Close())
+
+	// Read the whole thing and make sure we get the whole 100 bytes.
+	data, err := dc.Get(ctx, rn)
+	require.NoError(t, err)
+	assert.Len(t, data, 100)
+	assert.Equal(t, buf, data)
+
+	assert.Equal(t, len(memoryCache.ops), 5, "Ops were %v", memoryCache.ops)
+}
+
 func TestGetMultiLookaside(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
@@ -2195,9 +2237,14 @@ type Op int
 
 const (
 	Read Op = iota
+	Get
+	GetMulti
 	Write
+	Set
+	SetMulti
 	Delete
 	Contains
+	FindMissing
 	Metadata
 )
 
@@ -2205,12 +2252,22 @@ func (o Op) String() string {
 	switch o {
 	case Read:
 		return "READ"
+	case Get:
+		return "GET"
+	case GetMulti:
+		return "GET_MULTI"
 	case Write:
 		return "WRITE"
+	case Set:
+		return "SET"
+	case SetMulti:
+		return "SET_MULTI"
 	case Delete:
 		return "DELETE"
 	case Contains:
 		return "CONTAINS"
+	case FindMissing:
+		return "FIND_MISSING"
 	case Metadata:
 		return "METADATA"
 	default:
@@ -2263,19 +2320,19 @@ func (t *tracedCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	return t.Cache.Metadata(ctx, r)
 }
 func (t *tracedCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	t.addOps(Contains, resources...)
+	t.addOps(FindMissing, resources...)
 	return t.Cache.FindMissing(ctx, resources)
 }
 func (t *tracedCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
-	t.addOps(Read, r)
+	t.addOps(Get, r)
 	return t.Cache.Get(ctx, r)
 }
 func (t *tracedCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	t.addOps(Read, resources...)
+	t.addOps(GetMulti, resources...)
 	return t.Cache.GetMulti(ctx, resources)
 }
 func (t *tracedCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
-	t.addOps(Write, r)
+	t.addOps(Set, r)
 	return t.Cache.Set(ctx, r, data)
 }
 func (t *tracedCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
@@ -2283,7 +2340,7 @@ func (t *tracedCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][
 	for rn := range kvs {
 		resources = append(resources, rn)
 	}
-	t.addOps(Write, resources...)
+	t.addOps(SetMulti, resources...)
 	return t.Cache.SetMulti(ctx, kvs)
 }
 func (t *tracedCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
