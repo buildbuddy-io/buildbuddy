@@ -177,7 +177,7 @@ func TestJwtExpiry(t *testing.T) {
 
 	// The JWT minted by the backend should be considered to expire too soon
 	// and should not be used.
-	fakeAuth.Reset().setNextJwt(t, fooJwt)
+	fakeAuth.Reset().setNextJwt(t, "", fooJwt)
 	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
 	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
 }
