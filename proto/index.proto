@@ -9,7 +9,7 @@ package index;
 enum ReplacementStrategy {
   UNKNOWN_REPLACEMENT_STRATEGY = 0;
   REPLACE_REPO = 1;
-  // TODO(tylerw): support INCREMENTAL
+  INCREMENTAL = 2;
 }
 
 message IndexRequest {
@@ -35,6 +35,8 @@ message IndexRequest {
   // complete. This is useful if you don't care about the results and can
   // tolerate errors.
   bool async = 6;
+
+  Contents contents = 7;
 }
 
 message IndexResponse {
@@ -55,4 +57,18 @@ message IngestAnnotationsRequest {
 
 message IngestAnnotationsResponse {
   context.ResponseContext response_context = 1;
+}
+
+message Contents {
+  repeated Commit commits = 1;
+}
+
+message Commit {
+  string sha = 1;
+  repeated File files = 2;
+}
+
+message File {
+  string filepath = 1;
+  bytes content = 2;
 }
