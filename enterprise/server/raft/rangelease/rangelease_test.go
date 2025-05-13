@@ -87,7 +87,7 @@ func TestAcquireAndRelease(t *testing.T) {
 			{RangeId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep)
+	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd.GetRangeId(), rep)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -128,7 +128,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 			{RangeId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep)
+	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd.GetRangeId(), rep)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -170,7 +170,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	}
 	leaseDuration := 100 * time.Millisecond
 	gracePeriod := 50 * time.Millisecond
-	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep).WithTimeouts(leaseDuration, gracePeriod)
+	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd.GetRangeId(), rep).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)

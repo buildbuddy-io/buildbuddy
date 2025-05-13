@@ -47,16 +47,16 @@ type Lease struct {
 	leaseDuration time.Duration
 	gracePeriod   time.Duration
 
-	rangeDescriptor *rfpb.RangeDescriptor
-	mu              sync.RWMutex
-	leaseRecord     *rfpb.RangeLeaseRecord
+	rangeID     uint64
+	mu          sync.RWMutex
+	leaseRecord *rfpb.RangeLeaseRecord
 
 	timeUntilLeaseRenewal time.Duration
 	stopped               bool
 	quitLease             chan struct{}
 }
 
-func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor, r *replica.Replica) *Lease {
+func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, liveness *nodeliveness.Liveness, rangeID uint64, r *replica.Replica) *Lease {
 	return &Lease{
 		nodeHost:              nodeHost,
 		log:                   log,
@@ -65,7 +65,7 @@ func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, live
 		session:               session,
 		leaseDuration:         defaultLeaseDuration,
 		gracePeriod:           defaultGracePeriod,
-		rangeDescriptor:       rd,
+		rangeID:               rangeID,
 		mu:                    sync.RWMutex{},
 		leaseRecord:           &rfpb.RangeLeaseRecord{},
 		timeUntilLeaseRenewal: time.Duration(math.MaxInt64),
@@ -81,7 +81,7 @@ func (l *Lease) WithTimeouts(leaseDuration, gracePeriod time.Duration) *Lease {
 
 func (l *Lease) Lease(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
-	attr := attribute.Int64("range_id", int64(l.rangeDescriptor.GetRangeId()))
+	attr := attribute.Int64("range_id", int64(l.rangeID))
 	span.SetAttributes(attr)
 	defer span.End()
 	_, err := l.renewLeaseUntilValid(ctx)
@@ -119,8 +119,8 @@ func (l *Lease) dropLease(ctx context.Context) error {
 	return l.clearLeaseValue(ctx)
 }
 
-func (l *Lease) GetRangeDescriptor() *rfpb.RangeDescriptor {
-	return l.rangeDescriptor
+func (l *Lease) GetRangeID() uint64 {
+	return l.rangeID
 }
 
 func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) (returnedErr error) {
@@ -199,7 +199,7 @@ func (l *Lease) assembleLeaseRequest(ctx context.Context) (returnedRecord *rfpb.
 	// any range that includes the metarange will be leased with a
 	// time-based lease, rather than a node epoch based one.
 	leaseRecord := &rfpb.RangeLeaseRecord{}
-	if ContainsMetaRange(l.rangeDescriptor) {
+	if l.rangeID == constants.MetaRangeID {
 		leaseRecord.Value = &rfpb.RangeLeaseRecord_ReplicaExpiration_{
 			ReplicaExpiration: &rfpb.RangeLeaseRecord_ReplicaExpiration{
 				Nhid:       []byte(l.nodeHost.ID()),
@@ -360,9 +360,9 @@ func (l *Lease) Valid(ctx context.Context) bool {
 	return false
 }
 
-func (l *Lease) string(ctx context.Context, rd *rfpb.RangeDescriptor, lr *rfpb.RangeLeaseRecord) string {
+func (l *Lease) string(ctx context.Context, rangeID uint64, lr *rfpb.RangeLeaseRecord) string {
 	// Don't lock here (to avoid recursive locking).
-	leaseName := fmt.Sprintf("RangeLease(%d) [%q, %q)", rd.GetRangeId(), rd.GetStart(), rd.GetEnd())
+	leaseName := fmt.Sprintf("RangeLease(%d)", rangeID)
 	err := l.verifyLease(ctx, lr)
 	if err != nil {
 		return fmt.Sprintf("%s invalid (%s)", leaseName, err)
@@ -377,5 +377,5 @@ func (l *Lease) string(ctx context.Context, rd *rfpb.RangeDescriptor, lr *rfpb.R
 func (l *Lease) Desc(ctx context.Context) string {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	return l.string(ctx, l.rangeDescriptor, l.leaseRecord)
+	return l.string(ctx, l.rangeID, l.leaseRecord)
 }
