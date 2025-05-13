@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -654,18 +655,19 @@ func toNodeInterfaces(nodes []*executionNode) []interfaces.ExecutionNode {
 }
 
 // If the debug-executor-id platform property is set, filters the given nodes
-// to the nodes with that ID. The returned list may be empty.
-func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) []*executionNode {
+// to the nodes with that ID. The returned list may be empty. Also returns the
+// debug-executor-id value.
+func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) (string, []*executionNode) {
 	id := platform.FindEffectiveValue(task, "debug-executor-id")
 	if id == "" {
-		return nodes
+		return "", nodes
 	}
 	for _, n := range nodes {
 		if n.GetExecutorId() == id {
-			return []*executionNode{n}
+			return id, []*executionNode{n}
 		}
 	}
-	return nil
+	return id, nil
 }
 
 type nodePoolKey struct {
@@ -1945,9 +1947,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			if len(candidateNodes) == 0 {
 				return errTaskSizeTooLarge(pool, os, arch, enqueueRequest.GetTaskSize())
 			}
-			candidateNodes = filterToDebugExecutorID(candidateNodes, task)
+			var debugExecutorID string
+			debugExecutorID, candidateNodes = filterToDebugExecutorID(candidateNodes, task)
 			if len(candidateNodes) == 0 {
-				return status.UnavailableErrorf("requested executor ID not found")
+				return status.WrapError(error_util.RequestedExecutorNotFoundError(), fmt.Sprintf("enqueue on debug-executor-id %s", debugExecutorID))
 			}
 			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
 		}
