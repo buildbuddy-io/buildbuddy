@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -112,22 +113,16 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	return &mc, nil
 }
 
-func manifestACKey(ref gcrname.Reference, hash gcr.Hash) (*digest.ACResourceName, error) {
-	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
-		ResourceType:  ocipb.OCIResourceType_MANIFEST,
-		HashAlgorithm: hash.Algorithm,
-		HashHex:       hash.Hex,
-	}
-	if *cacheSecret != "" {
-		arKey.Secret = *cacheSecret
-	}
-	arKeyBytes, err := proto.Marshal(arKey)
-	if err != nil {
-		return nil, err
-	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
+func manifestACKey(ref gcrname.Reference, refhash gcr.Hash) (*digest.ACResourceName, error) {
+	s := hash.Strings(
+		ref.Context().RegistryStr(),
+		ref.Context().RepositoryStr(),
+		ocipb.OCIResourceType_MANIFEST.String(),
+		refhash.Algorithm,
+		refhash.Hex,
+		*cacheSecret,
+	)
+	arDigest, err := digest.Compute(bytes.NewBufferString(s), cacheDigestFunction)
 	if err != nil {
 		return nil, err
 	}
