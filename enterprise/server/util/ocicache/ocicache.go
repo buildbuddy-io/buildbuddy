@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -21,6 +22,10 @@ import (
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+)
+
+var (
+	cacheSecret = flag.String("oci.cache.secret", "", "Secret to add to OCI image cache keys.", flag.Secret)
 )
 
 const (
@@ -42,26 +47,10 @@ const (
 )
 
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string) error {
-	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
-		ResourceType:  ocipb.OCIResourceType_MANIFEST,
-		HashAlgorithm: hash.Algorithm,
-		HashHex:       hash.Hex,
-	}
-	arKeyBytes, err := proto.Marshal(arKey)
+	arRN, err := manifestACKey(ref, hash)
 	if err != nil {
 		return err
 	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
-	if err != nil {
-		return err
-	}
-	arRN := digest.NewACResourceName(
-		arDigest,
-		manifestContentInstanceName,
-		cacheDigestFunction,
-	)
 
 	m := &ocipb.OCIManifestContent{
 		Raw:         raw,
@@ -90,29 +79,11 @@ func updateCacheEventMetric(cacheType, eventType string) {
 }
 
 func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash) (*ocipb.OCIManifestContent, error) {
-	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
-		ResourceType:  ocipb.OCIResourceType_MANIFEST,
-		HashAlgorithm: hash.Algorithm,
-		HashHex:       hash.Hex,
-	}
-	arKeyBytes, err := proto.Marshal(arKey)
+	arRN, err := manifestACKey(ref, hash)
 	if err != nil {
 		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return nil, err
 	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
-	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
-		return nil, err
-	}
-	arRN := digest.NewACResourceName(
-		arDigest,
-		manifestContentInstanceName,
-		cacheDigestFunction,
-	)
-
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
 		updateCacheEventMetric(actionCacheLabel, missLabel)
@@ -139,6 +110,32 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	}
 	updateCacheEventMetric(actionCacheLabel, hitLabel)
 	return &mc, nil
+}
+
+func manifestACKey(ref gcrname.Reference, hash gcr.Hash) (*digest.ACResourceName, error) {
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      ref.Context().RegistryStr(),
+		Repository:    ref.Context().RepositoryStr(),
+		ResourceType:  ocipb.OCIResourceType_MANIFEST,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
+	}
+	if *cacheSecret != "" {
+		arKey.Secret = *cacheSecret
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return nil, err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
+	if err != nil {
+		return nil, err
+	}
+	return digest.NewACResourceName(
+		arDigest,
+		manifestContentInstanceName,
+		cacheDigestFunction,
+	), nil
 }
 
 func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference) (*ocipb.OCIBlobMetadata, error) {

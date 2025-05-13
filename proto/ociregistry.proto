@@ -51,6 +51,9 @@ message OCIActionResultKey {
 
   // Digest as a hex string.
   string hash_hex = 5;
+
+  // Secret to protect against unauthorized lookups.
+  string secret = 6;
 }
 
 message OCIManifestContent {
