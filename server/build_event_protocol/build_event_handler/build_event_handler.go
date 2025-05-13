@@ -188,7 +188,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		collector:      b.env.GetMetricsCollector(),
-		apiTargetMap:   make(api_common.TargetMap),
+		apiTargetMap:   api_common.NewTargetMap(),
 
 		hasReceivedEventWithOptions: false,
 		hasReceivedStartedEvent:     false,
@@ -794,7 +794,7 @@ type EventChannel struct {
 	targetTracker  *target_tracker.TargetTracker
 	statsRecorder  *statsRecorder
 	collector      interfaces.MetricsCollector
-	apiTargetMap   api_common.TargetMap
+	apiTargetMap   *api_common.TargetMap
 
 	startedEvent                     *build_event_stream.BuildEvent_Started
 	bufferedEvents                   []*inpb.InvocationEvent
@@ -1246,7 +1246,7 @@ func (e *EventChannel) flushAPIFacets(iid string) error {
 		return nil
 	}
 
-	for label, target := range e.apiTargetMap {
+	for label, target := range e.apiTargetMap.M {
 		b, err := proto.Marshal(target)
 		if err != nil {
 			return err
