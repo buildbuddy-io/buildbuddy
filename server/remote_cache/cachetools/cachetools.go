@@ -1232,6 +1232,9 @@ func (uw *UploadWriter) GetBytesUploaded() int64 {
 	return uw.bytesUploaded
 }
 
+// NewUploadWriter returns an UploadWriter that writes to the CAS for the specific resource name.
+// The blob is guaranteed to be written to the CAS only if all Write(...) calls and the Close() call succeed.
+// The caller is responsible for checking data integrity using GetCommittedSize() and GetBytesUploaded().
 func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*UploadWriter, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
