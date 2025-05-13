@@ -66,7 +66,7 @@ func TestCollectExecutionUpdates(t *testing.T) {
 	}
 
 	// Also add an invocation link, associating an invocation with the execution.
-	err := collector.AddInvocationLink(ctx, &sipb.StoredInvocationLink{
+	err := collector.AddExecutionInvocationLink(ctx, &sipb.StoredInvocationLink{
 		ExecutionId:  executionID,
 		InvocationId: invocationID,
 	}, true /*=storeReverseLink*/)
@@ -102,7 +102,7 @@ func TestCollectExecutionUpdates(t *testing.T) {
 
 	// Delete reverse invocation links; should no longer be able to look up
 	// in-progress executions by invocation ID.
-	err = collector.DeleteReverseInvocationLinks(ctx, invocationID)
+	err = collector.DeleteInvocationExecutionLinks(ctx, invocationID)
 	require.NoError(t, err)
 	executions, err = collector.GetInProgressExecutions(ctx, invocationID)
 	require.NoError(t, err)
@@ -134,7 +134,7 @@ func TestGetInProgressExecutionsIgnoresDeletedExecutions(t *testing.T) {
 		Stage:          int64(repb.ExecutionStage_COMPLETED),
 	})
 	require.NoError(t, err)
-	err = collector.AddInvocationLink(ctx, &sipb.StoredInvocationLink{
+	err = collector.AddExecutionInvocationLink(ctx, &sipb.StoredInvocationLink{
 		ExecutionId:  executionID,
 		InvocationId: invocationID,
 	}, true /*=storeReverseLink*/)
