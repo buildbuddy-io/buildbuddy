@@ -96,10 +96,6 @@ const (
 	// event stream.
 	firstExpectedSequenceNumber = 1
 
-	// Skip unimportant events if more than this many are received in a
-	// single build event stream.
-	maxEventCount = 100_000
-
 	// Max total pattern length to include in the Expanded event returned to the
 	// UI.
 	maxPatternLengthBytes = 10_000
@@ -111,6 +107,7 @@ var (
 	disablePersistArtifacts = flag.Bool("storage.disable_persist_cache_artifacts", false, "If disabled, buildbuddy will not persist cache artifacts in the blobstore. This may make older invocations not display properly.")
 	writeToOLAPDBEnabled    = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
 
+	eventFilterThreshold        = flag.Int("app.event_filter_threshold", 100_000, "When look up an invocation, start filtering out unimportant events after this threshold.")
 	cacheStatsFinalizationDelay = flag.Duration("cache_stats_finalization_delay", 500*time.Millisecond, "The time allowed for all metrics collectors across all apps to flush their local cache stats to the backing storage, before finalizing stats in the DB.")
 )
 
@@ -124,6 +121,7 @@ type PersistArtifacts struct {
 type BuildEventHandler struct {
 	env              environment.Env
 	statsRecorder    *statsRecorder
+	webhookNotifier  *webhookNotifier
 	openChannels     *sync.WaitGroup
 	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
 
@@ -143,13 +141,12 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	h := &BuildEventHandler{
 		env:              env,
 		statsRecorder:    statsRecorder,
+		webhookNotifier:  webhookNotifier,
 		openChannels:     openChannels,
 		cancelFnsByInvID: sync.Map{},
 	}
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		h.Stop()
-		statsRecorder.Stop()
-		webhookNotifier.Stop()
 		return nil
 	})
 	return h
@@ -189,7 +186,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		collector:      b.env.GetMetricsCollector(),
-		apiTargetMap:   make(api_common.TargetMap),
+		apiTargetMap:   api_common.NewTargetMap(),
 
 		hasReceivedEventWithOptions: false,
 		hasReceivedStartedEvent:     false,
@@ -211,6 +208,8 @@ func (b *BuildEventHandler) Stop() {
 		cancelFn()
 		return true
 	})
+	b.statsRecorder.Stop()
+	b.webhookNotifier.Stop()
 }
 
 // invocationInfo represents an invocation ID as well as the JWT granting access
@@ -805,7 +804,7 @@ type EventChannel struct {
 	targetTracker  *target_tracker.TargetTracker
 	statsRecorder  *statsRecorder
 	collector      interfaces.MetricsCollector
-	apiTargetMap   api_common.TargetMap
+	apiTargetMap   *api_common.TargetMap
 
 	startedEvent                     *build_event_stream.BuildEvent_Started
 	bufferedEvents                   []*inpb.InvocationEvent
@@ -1257,7 +1256,7 @@ func (e *EventChannel) flushAPIFacets(iid string) error {
 		return nil
 	}
 
-	for label, target := range e.apiTargetMap {
+	for label, target := range e.apiTargetMap.Targets {
 		b, err := proto.Marshal(target)
 		if err != nil {
 			return err
@@ -1427,7 +1426,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		// use a ton of memory and are not displayable by the browser. If we
 		// detect a large number of events coming through, begin dropping non-
 		// important events so that this invocation can be displayed.
-		if len(events) >= maxEventCount && !accumulator.IsImportantEvent(event.GetBuildEvent()) {
+		if len(events) >= *eventFilterThreshold && !accumulator.IsImportantEvent(event.GetBuildEvent()) {
 			return nil
 		}
 		events = append(events, event)
