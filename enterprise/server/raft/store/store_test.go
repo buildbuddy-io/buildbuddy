@@ -734,7 +734,6 @@ func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.Te
 }
 
 func TestSplitMetaRange(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
