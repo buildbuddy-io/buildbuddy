@@ -99,7 +99,9 @@ func TestAddGetRemoveRange(t *testing.T) {
 }
 
 func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
-	t.Skip("skipping - wip")
+	// TODO(lulu): the setup of the test is no longer valid with the introduction
+	// of staging replicas.
+	t.Skip("work in progress")
 	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
@@ -1392,7 +1394,6 @@ func TestDownReplicate(t *testing.T) {
 		}
 		iter2.Close()
 		if keysSeen > 0 {
-			log.Infof("see %d keys in range", keysSeen)
 			continue
 		}
 
@@ -1410,7 +1411,6 @@ func TestDownReplicate(t *testing.T) {
 		if localKeysSeen == 0 {
 			break
 		}
-		log.Infof("see %d keys in local range", localKeysSeen)
 		time.Sleep(100 * time.Millisecond)
 	}
 }
