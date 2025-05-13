@@ -814,6 +814,14 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
+	s.mu.Lock()
+	stopped := s.stopped
+	s.mu.Unlock()
+
+	if stopped {
+		return
+	}
+
 	if rangelease.ContainsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
@@ -844,6 +852,14 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range descriptor had no replicas yet")
+		return
+	}
+
+	s.mu.Lock()
+	stopped := s.stopped
+	s.mu.Unlock()
+
+	if stopped {
 		return
 	}
 

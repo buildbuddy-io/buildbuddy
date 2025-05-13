@@ -142,6 +142,15 @@ type leaseAgent struct {
 	updates *boundedstack.BoundedStack[*leaseInstruction]
 }
 
+func (la *leaseAgent) isStopped() bool {
+	select {
+	case <-la.ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
 func (la *leaseAgent) sendRangeEvent(eventType events.EventType) {
 	ev := events.RangeEvent{
 		Type: eventType,
@@ -238,6 +247,9 @@ func (la *leaseAgent) runloop() {
 }
 
 func (la *leaseAgent) queueInstruction(instruction *leaseInstruction) {
+	if la.isStopped() {
+		return
+	}
 	la.once.Do(func() {
 		la.eg.Go(func() error {
 			la.runloop()
@@ -479,20 +491,22 @@ func (lk *LeaseKeeper) HaveLease(ctx context.Context, rid uint64) bool {
 	lk.mu.Unlock()
 
 	shouldHaveLease := leader && open
-	if shouldHaveLease && !valid {
-		lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
-		la.queueInstruction(&leaseInstruction{
-			rangeID: rangeID,
-			reason:  "should have range",
-			action:  Acquire,
-		})
-	} else if !shouldHaveLease && valid {
-		lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
-		la.queueInstruction(&leaseInstruction{
-			rangeID: rangeID,
-			reason:  "should not have range",
-			action:  Drop,
-		})
+	if !lk.isStopped() {
+		if shouldHaveLease && !valid {
+			lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
+			la.queueInstruction(&leaseInstruction{
+				rangeID: rangeID,
+				reason:  "should have range",
+				action:  Acquire,
+			})
+		} else if !shouldHaveLease && valid {
+			lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
+			la.queueInstruction(&leaseInstruction{
+				rangeID: rangeID,
+				reason:  "should not have range",
+				action:  Drop,
+			})
+		}
 	}
 	return valid && shouldHaveLease
 }
