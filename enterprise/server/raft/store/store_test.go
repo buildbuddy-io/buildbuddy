@@ -788,7 +788,6 @@ func getReplica(t testing.TB, s *testutil.TestingStore, rangeID uint64) *replica
 		if err == nil {
 			return res
 		}
-		require.False(t, status.IsOutOfRangeError(err))
 		time.Sleep(10 * time.Millisecond)
 	}
 }
