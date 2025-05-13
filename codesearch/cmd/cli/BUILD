@@ -13,6 +13,7 @@ go_library(
         "//codesearch/schema",
         "//codesearch/searcher",
         "//codesearch/types",
+        "//proto:index_go_proto",
         "//server/util/git",
         "//server/util/log",
         "@com_github_cockroachdb_pebble//:pebble",

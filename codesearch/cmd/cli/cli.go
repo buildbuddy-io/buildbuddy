@@ -22,17 +22,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
+
+	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 )
 
 var (
 	indexCmd  = flag.NewFlagSet("index", flag.ExitOnError)
 	searchCmd = flag.NewFlagSet("search", flag.ExitOnError)
 	squeryCmd = flag.NewFlagSet("squery", flag.ExitOnError)
+	ghCmd     = flag.NewFlagSet("gh", flag.ExitOnError)
 
 	subcommands = map[string]*flag.FlagSet{
 		indexCmd.Name():  indexCmd,
 		searchCmd.Name(): searchCmd,
 		squeryCmd.Name(): squeryCmd,
+		ghCmd.Name():     ghCmd,
 	}
 
 	indexDir    string
@@ -109,6 +113,8 @@ func main() {
 		handleSearch(ctx, cmd.Args())
 	case squeryCmd.Name():
 		handleSquery(ctx, cmd.Args())
+	case ghCmd.Name():
+		handleGithub(ctx, cmd.Args())
 	default:
 		log.Fatalf("no handler for command %q", cmd.Name())
 	}
@@ -315,4 +321,62 @@ func handleSquery(ctx context.Context, args []string) {
 		filename := doc.Field(schema.FilenameField).Contents()
 		fmt.Printf("%d (%q) matched fields: %s\n", docID, filename, strings.Join(docFields[docID], ", "))
 	}
+}
+
+func handleGithub(ctx context.Context, args []string) {
+	if len(args) < 2 {
+		log.Fatal("github command requires at least one argument")
+	}
+	repoDir := args[0]
+	commitRange := args[1]
+
+	cmd := exec.Command("git", "log", "--first-parent", "--format=%H", commitRange)
+	cmd.Dir = repoDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Fatalf("failed to get commit log: %s", err)
+	}
+
+	commits := strings.Split(strings.TrimSpace(string(output)), "\n")
+
+	result := &csinpb.IndexRequest{
+		Contents: &csinpb.Contents{
+			Commits: make([]*csinpb.Commit, len(commits)),
+		},
+	}
+
+	for i, commit := range commits {
+		cmd := exec.Command("git", "diff-tree", "--name-only", "-r", fmt.Sprintf("%s~..%s", commit, commit))
+		cmd.Dir = repoDir
+		filesOutput, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Fatalf("failed to list files for commit %s: %s", commit, err)
+		}
+
+		changedFiles := strings.Split(strings.TrimSpace(string(filesOutput)), "\n")
+		fmt.Printf("Commit %s changed files:\n", commit)
+		for _, file := range changedFiles {
+			fmt.Printf("  %s\n", file)
+		}
+
+		commitPb := &csinpb.Commit{
+			Sha:   commit,
+			Files: make([]*csinpb.File, len(changedFiles)),
+		}
+
+		for j, file := range changedFiles {
+			// read the file content in
+			filePath := filepath.Join(repoDir, file)
+			content, err := os.ReadFile(filePath)
+			if err != nil {
+				log.Fatalf("failed to read file %s: %s", filePath, err)
+			}
+			commitPb.Files[j] = &csinpb.File{
+				Filepath: file,
+				Content:  content,
+			}
+		}
+		result.Contents.Commits[i] = commitPb
+	}
+	fmt.Printf("Result: %+v\n", result)
 }
