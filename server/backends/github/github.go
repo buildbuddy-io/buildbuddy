@@ -757,38 +757,3 @@ func apiEndpoint() string {
 	}
 	return "api.github.com"
 }
-
-func (c *GithubClient) GetChangedFilesInCommitRange(ctx context.Context, ownerRepo, commitRange string) (string, error) {
-	/*
-		token, err := c.getToken(ctx, ownerRepo)
-		if err != nil {
-			return status.WrapErrorf(err, "failed to populate GitHub token")
-		}
-	*/
-	url := fmt.Sprintf("https://%s/repos/%s/compare/%s", apiEndpoint(), ownerRepo, commitRange)
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", status.InternalErrorf("failed to create request: %s", err)
-	}
-
-	log.Infof("GitHub URL: %s", url)
-
-	//req.Header.Set("Authorization", "token "+token)
-	// TODO(jdelfino): changes with binary data don't have patches
-
-	//req.Header.Set("Accept", "application/vnd.github.patch")
-	res, err := c.client.Do(req)
-	if err != nil {
-		return "", status.UnavailableErrorf("failed to send request: %s", err)
-	}
-	defer res.Body.Close()
-
-	b, err := io.ReadAll(res.Body)
-	if res.StatusCode >= 400 {
-		if err != nil {
-			return "", status.UnknownErrorf("HTTP %s: <failed to read response body>", res.Status)
-		}
-	}
-	return string(b), nil
-}
