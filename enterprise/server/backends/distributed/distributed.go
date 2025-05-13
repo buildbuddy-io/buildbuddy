@@ -363,6 +363,10 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 	if r.GetDigest().GetSizeBytes() > *maxLookasideEntryBytes {
 		return
 	}
+	if len(data) == 0 {
+		c.log.Infof("Attempted to set zero-length lookaside entry. Key %q", r)
+		return
+	}
 	k, ok := lookasideKey(r)
 	if !ok {
 		c.log.Debugf("Not setting lookaside entry for resource: %s", r)
