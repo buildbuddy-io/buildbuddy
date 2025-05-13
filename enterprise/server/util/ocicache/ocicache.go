@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	cacheSecret = flag.String("oci.cache.secret", "", "Secret to add to OCI image cache keys.")
+	cacheSecret = flag.String("oci.cache.secret", "", "Secret to add to OCI image cache keys.", flag.Secret)
 )
 
 const (
