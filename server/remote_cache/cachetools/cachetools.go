@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -49,6 +50,8 @@ var (
 	acRPCTimeout                = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
 	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250304", "A salt to invalidate filecache tree hashes, if/when needed.")
 	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", true, "If true, GetTree requests will set send_cached_subtree_digests.")
+
+	uploadBufPool = bytebufferpool.FixedSize(uploadBufSizeBytes)
 )
 
 func retryOptions(name string) *retry.Options {
@@ -1143,12 +1146,15 @@ type UploadWriter struct {
 var _ io.WriteCloser = (*UploadWriter)(nil)
 
 func (uw *UploadWriter) Write(p []byte) (int, error) {
+	if uw.finished || uw.closed {
+		return 0, status.FailedPreconditionError("Cannot write to UploadWriter after it is finished or closed")
+	}
 	written := 0
 	for len(p) > 0 {
 		n := copy(uw.buf[uw.bytesBuffered:], p)
 		uw.bytesBuffered += n
 		if uw.bytesBuffered == uploadBufSizeBytes {
-			if err := uw.flush(false); err != nil {
+			if err := uw.flush(false /* finish */); err != nil {
 				if err == io.EOF {
 					break
 				}
@@ -1162,8 +1168,8 @@ func (uw *UploadWriter) Write(p []byte) (int, error) {
 }
 
 func (uw *UploadWriter) flush(finish bool) error {
-	if uw.finished {
-		return status.FailedPreconditionError("UploadWriteCloser already finished, cannot flush")
+	if uw.finished || uw.closed {
+		return status.FailedPreconditionError("UploadWriteCloser already finished or closed, cannot flush")
 	}
 	req := &bspb.WriteRequest{
 		Data:         uw.buf[:uw.bytesBuffered],
@@ -1182,6 +1188,9 @@ func (uw *UploadWriter) flush(finish bool) error {
 }
 
 func (uw *UploadWriter) ReadFrom(r io.Reader) (int64, error) {
+	if uw.finished || uw.closed {
+		return 0, status.FailedPreconditionError("UploadWriter cannot ReadFrom after it is finished or closed")
+	}
 	bytesRead := int64(0)
 	for {
 		n, err := ioutil.ReadTryFillBuffer(r, uw.buf[uw.bytesBuffered:])
@@ -1192,7 +1201,7 @@ func (uw *UploadWriter) ReadFrom(r io.Reader) (int64, error) {
 			return bytesRead, err
 		}
 		if uw.bytesBuffered == uploadBufSizeBytes {
-			if err := uw.flush(false); err != nil {
+			if err := uw.flush(false /* finish */); err != nil {
 				return bytesRead, err
 			}
 		}
@@ -1208,7 +1217,7 @@ func (uw *UploadWriter) Close() error {
 		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot close again")
 	}
 	if !uw.finished {
-		if err := uw.flush(true); err != nil {
+		if err := uw.flush(true /* finish */); err != nil {
 			return err
 		}
 	}
@@ -1218,6 +1227,7 @@ func (uw *UploadWriter) Close() error {
 	}
 	uw.committedSize = rsp.GetCommittedSize()
 	uw.closed = true
+	uploadBufPool.Put(uw.buf)
 	return nil
 }
 
@@ -1253,6 +1263,6 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		sender:       sender,
 		resource:     r,
 		uploadString: r.NewUploadString(),
-		buf:          make([]byte, uploadBufSizeBytes),
+		buf:          uploadBufPool.Get(),
 	}, nil
 }

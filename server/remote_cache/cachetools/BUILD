@@ -13,6 +13,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/digest",
+        "//server/util/bytebufferpool",
         "//server/util/compression",
         "//server/util/ioutil",
         "//server/util/log",
