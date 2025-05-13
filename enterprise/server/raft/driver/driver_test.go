@@ -21,15 +21,16 @@ import (
 )
 
 type testStoreMap struct {
-	usages map[string]*rfpb.StoreUsage
+	usages           map[string]*rfpb.StoreUsage
+	replicasByStatus *storemap.ReplicasByStatus
 }
 
-func newTestStoreMap(usages []*rfpb.StoreUsage) *testStoreMap {
+func newTestStoreMap(usages []*rfpb.StoreUsage, replicasByStatus *storemap.ReplicasByStatus) *testStoreMap {
 	m := make(map[string]*rfpb.StoreUsage)
 	for _, su := range usages {
 		m[su.GetNode().GetNhid()] = su
 	}
-	return &testStoreMap{usages: m}
+	return &testStoreMap{usages: m, replicasByStatus: replicasByStatus}
 }
 
 func (tsm *testStoreMap) GetStoresWithStats() *storemap.StoresWithStats { return nil }
@@ -45,7 +46,7 @@ func (tsm *testStoreMap) GetStoresWithStatsFromIDs(nhids []string) *storemap.Sto
 }
 
 func (tsm *testStoreMap) DivideByStatus(repls []*rfpb.ReplicaDescriptor) *storemap.ReplicasByStatus {
-	return nil
+	return tsm.replicasByStatus
 }
 
 func (tsm *testStoreMap) AllAvailableStoresReady() bool {
@@ -331,11 +332,12 @@ func TestFindReplicaForRemoval(t *testing.T) {
 	withinGracePeriodTS := now.Add(-3 * time.Minute).UnixMicro()
 	outsideGracePeriodTS := now.Add(-10 * time.Minute).UnixMicro()
 	tests := []struct {
-		desc            string
-		rd              *rfpb.RangeDescriptor
-		replicaStateMap map[uint64]constants.ReplicaState
-		usages          []*rfpb.StoreUsage
-		expected        *rfpb.ReplicaDescriptor
+		desc             string
+		rd               *rfpb.RangeDescriptor
+		replicaStateMap  map[uint64]constants.ReplicaState
+		replicasByStatus *storemap.ReplicasByStatus
+		usages           []*rfpb.StoreUsage
+		expected         *rfpb.ReplicaDescriptor
 	}{
 		{
 			// 4 replicas and 2 of them are current, so we can only delete replicas
@@ -358,6 +360,14 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				2: constants.ReplicaStateCurrent,
 				3: constants.ReplicaStateBehind,
 				4: constants.ReplicaStateBehind,
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+				},
 			},
 			usages: []*rfpb.StoreUsage{
 				{
@@ -413,6 +423,14 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				2: constants.ReplicaStateCurrent,
 				3: constants.ReplicaStateCurrent,
 				4: constants.ReplicaStateCurrent,
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+				},
 			},
 			usages: []*rfpb.StoreUsage{
 				{
@@ -470,6 +488,14 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				3: constants.ReplicaStateBehind,
 				4: constants.ReplicaStateBehind,
 			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+				},
+			},
 			usages: []*rfpb.StoreUsage{
 				{
 					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
@@ -505,7 +531,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			storeMap := newTestStoreMap(tc.usages)
+			storeMap := newTestStoreMap(tc.usages, tc.replicasByStatus)
 			rq := &Queue{
 				storeMap: storeMap,
 			}
@@ -519,16 +545,24 @@ func TestFindReplicaForRemoval(t *testing.T) {
 func TestRebalanceReplica(t *testing.T) {
 	localReplicaID := uint64(1)
 	tests := []struct {
-		desc     string
-		usages   []*rfpb.StoreUsage
-		rd       *rfpb.RangeDescriptor
-		expected *rebalanceOp
+		desc             string
+		usages           []*rfpb.StoreUsage
+		replicasByStatus *storemap.ReplicasByStatus
+		rd               *rfpb.RangeDescriptor
+		expected         *rebalanceOp
 	}{
 		{
 			desc: "move-range-to-new-node",
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
 					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
 					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
 					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
@@ -587,6 +621,13 @@ func TestRebalanceReplica(t *testing.T) {
 					{RangeId: 1, ReplicaId: 5, Nhid: proto.String("nhid-5")},
 				},
 			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
 			usages: []*rfpb.StoreUsage{
 				{
 					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
@@ -629,6 +670,13 @@ func TestRebalanceReplica(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
 					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
 					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
 					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
@@ -686,6 +734,13 @@ func TestRebalanceReplica(t *testing.T) {
 					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
 				},
 			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
 			usages: []*rfpb.StoreUsage{
 				{
 					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
@@ -736,6 +791,13 @@ func TestRebalanceReplica(t *testing.T) {
 					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
 				},
 			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
 			usages: []*rfpb.StoreUsage{
 				{
 					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
@@ -773,7 +835,7 @@ func TestRebalanceReplica(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			storeMap := newTestStoreMap(tc.usages)
+			storeMap := newTestStoreMap(tc.usages, tc.replicasByStatus)
 			rq := &Queue{
 				storeMap: storeMap,
 			}
@@ -805,16 +867,24 @@ func TestRebalanceLeases(t *testing.T) {
 	}
 	ctx := context.Background()
 	tests := []struct {
-		desc     string
-		usages   []*rfpb.StoreUsage
-		rd       *rfpb.RangeDescriptor
-		expected *rebalanceOp
+		desc             string
+		usages           []*rfpb.StoreUsage
+		rd               *rfpb.RangeDescriptor
+		replicasByStatus *storemap.ReplicasByStatus
+		expected         *rebalanceOp
 	}{
 		{
 			desc: "move-lease-to-node-far-below-mean",
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
 					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
 					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
 					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
@@ -853,6 +923,13 @@ func TestRebalanceLeases(t *testing.T) {
 					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
 				},
 			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
 			usages: []*rfpb.StoreUsage{
 				{
 					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-1"},
@@ -886,6 +963,13 @@ func TestRebalanceLeases(t *testing.T) {
 					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
 				},
 			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
 			usages: []*rfpb.StoreUsage{
 				{
 					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-1"},
@@ -907,6 +991,13 @@ func TestRebalanceLeases(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			replicasByStatus: &storemap.ReplicasByStatus{
+				LiveReplicas: []*rfpb.ReplicaDescriptor{
 					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
 					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
 					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
@@ -936,7 +1027,7 @@ func TestRebalanceLeases(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			storeMap := newTestStoreMap(tc.usages)
+			storeMap := newTestStoreMap(tc.usages, tc.replicasByStatus)
 			rq := &Queue{
 				storeMap:  storeMap,
 				apiClient: client,
