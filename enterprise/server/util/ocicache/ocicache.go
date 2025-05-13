@@ -113,21 +113,16 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 }
 
 func manifestACKey(ref gcrname.Reference, hash gcr.Hash) (*digest.ACResourceName, error) {
-	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
-		ResourceType:  ocipb.OCIResourceType_MANIFEST,
-		HashAlgorithm: hash.Algorithm,
-		HashHex:       hash.Hex,
-	}
+	var buf bytes.Buffer
+	buf.Write([]byte(ref.Context().RegistryStr()))
+	buf.Write([]byte(ref.Context().RepositoryStr()))
+	buf.Write([]byte(ocipb.OCIResourceType_MANIFEST.String()))
+	buf.Write([]byte(hash.Algorithm))
+	buf.Write([]byte(hash.Hex))
 	if *cacheSecret != "" {
-		arKey.Secret = *cacheSecret
+		buf.Write([]byte(*cacheSecret))
 	}
-	arKeyBytes, err := proto.Marshal(arKey)
-	if err != nil {
-		return nil, err
-	}
-	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
+	arDigest, err := digest.Compute(&buf, cacheDigestFunction)
 	if err != nil {
 		return nil, err
 	}
