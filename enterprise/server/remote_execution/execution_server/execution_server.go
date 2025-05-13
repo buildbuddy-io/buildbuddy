@@ -302,7 +302,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		execution.DoNotCache = executeResponse.GetResult().GetExecutionMetadata().GetDoNotCache()
 
 		// Update stats if the operation has been completed.
-		if stage == repb.ExecutionStage_COMPLETED {
+		if operation.ExecutionFinished(stage) {
 			md := executeResponse.GetResult().GetExecutionMetadata()
 			// Backwards-compatible fill of the execution with the ExecutionSummary for
 			// now. The ExecutionSummary will be removed completely in the future.
@@ -842,7 +842,7 @@ func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunni
 		log.CtxWarningf(ctx, "Error sending operation to caller: %q: %s", e.opName, err.Error())
 		return true, err // If some other err happened, bail out.
 	}
-	if stage == repb.ExecutionStage_COMPLETED {
+	if operation.ExecutionFinished(stage) {
 		return true, nil // If the operation is complete, bail out.
 	}
 	executeResponse := operation.ExtractExecuteResponse(op)
@@ -953,7 +953,8 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 		done, err := e.processOpUpdate(ctx, op)
 		if done {
 			log.CtxDebugf(ctx, "WaitExecution %q: progress loop exited: err: %v, done: %t", req.GetName(), err, done)
-			if operation.ExtractStage(op) == repb.ExecutionStage_COMPLETED {
+			stage := operation.ExtractStage(op)
+			if operation.ExecutionFinished(stage) {
 				if err := s.streamPubSub.Expire(ctx, subChan, completedPubSubChanExpiration); err != nil {
 					log.CtxWarningf(ctx, "could not expire channel for %q: %s", req.GetName(), err)
 				}
@@ -1079,6 +1080,14 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	})
 	defer deletePendingExecutionOnce()
 
+	finalizeOnce := sync.Once{}
+	var finalizeErr error
+	cacheOnce := sync.Once{}
+
+	var auxMeta *espb.ExecutionAuxiliaryMetadata
+	var properties *platform.Properties
+	var action *repb.Action
+
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
@@ -1120,44 +1129,58 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
 
-		var auxMeta *espb.ExecutionAuxiliaryMetadata
-		var properties *platform.Properties
-		var action *repb.Action
-		if stage == repb.ExecutionStage_COMPLETED && response != nil {
-			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
-			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
-			if err != nil {
-				log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
-			} else if !ok {
-				log.CtxInfof(ctx, "Failed to find ExecutionAuxiliaryMetadata. Executor is probably self-hosted and not updated since 2024-12-13.")
-			}
-			actionCASRN, err := digest.ParseUploadResourceName(taskID)
-			if err != nil {
-				return status.WrapErrorf(err, "Failed to parse taskID")
-			}
-			var cmd *repb.Command
-			action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
-			if err != nil {
-				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
-			}
-			properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
-			if err != nil {
-				return status.InternalErrorf("Failed to parse platform properties: %s", err)
-			}
-			// Keep this close to, but before the cacheActionResult call: Since any action that can merge into this one
-			// may specify skip_cache_lookup, we need to ensure that the result is not visible in the cache before the
-			// action is merged. At the same time, we don't want the window between the calls to be too large to avoid
-			// reducing the effectiveness of merging.
-			deletePendingExecutionOnce()
-			actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
-			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
-				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
-			}
-			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties); err != nil {
-				// Errors updating the router or recording usage are non-fatal.
-				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
+		// If execution has completed, mark the task as complete.
+		if operation.ExecutionFinished(stage) && response != nil {
+			finalizeOnce.Do(func() {
+				auxMeta = new(espb.ExecutionAuxiliaryMetadata)
+				ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
+				if err != nil {
+					log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
+				} else if !ok {
+					log.CtxInfof(ctx, "Failed to find ExecutionAuxiliaryMetadata. Executor is probably self-hosted and not updated since 2024-12-13.")
+				}
+				actionCASRN, err := digest.ParseUploadResourceName(taskID)
+				if err != nil {
+					finalizeErr = status.WrapErrorf(err, "Failed to parse taskID")
+				}
+				var cmd *repb.Command
+				action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
+				if err != nil {
+					finalizeErr = status.UnavailableErrorf("Failed to fetch action and command: %s", err)
+				}
+				properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
+				if err != nil {
+					finalizeErr = status.InternalErrorf("Failed to parse platform properties: %s", err)
+				}
+				// Keep this close to, but before the cacheActionResult call: Since any action that can merge into this one
+				// may specify skip_cache_lookup, we need to ensure that the result is not visible in the cache before the
+				// action is merged. At the same time, we don't want the window between the calls to be too large to avoid
+				// reducing the effectiveness of merging.
+				deletePendingExecutionOnce()
+				actionRN := digest.NewACResourceName(actionCASRN.GetDigest(), actionCASRN.GetInstanceName(), actionCASRN.GetDigestFunction())
+				if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
+					finalizeErr = status.UnavailableErrorf("Error uploading action result: %s", err.Error())
+				}
+				// TODO: This contains the usage update...
+				if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties); err != nil {
+					// Errors updating the router or recording usage are non-fatal.
+					log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
+				}
+			})
+			if finalizeErr != nil {
+				return finalizeErr
 			}
 		}
+
+		// Only update usage after everything, including cleanup, has completed so
+		// cleanup stats are recorded as well.
+		if stage == repb.ExecutionStage_COMPLETED && response != nil {
+			if err := s.updateUsage(ctx, response, properties); err != nil {
+				// TODO(vanja) should this be done when the executor got a cache hit?
+				log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", response, err)
+			}
+		}
+
 		data, err := proto.Marshal(op)
 		if err != nil {
 			return status.InternalErrorf("Failed to marshal Operation: %s", err)
@@ -1167,7 +1190,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 		}
 
-		if stage == repb.ExecutionStage_COMPLETED {
+		if operation.ExecutionFinished(stage) {
 			err := func() error {
 				mu.Lock()
 				defer mu.Unlock()
@@ -1177,9 +1200,15 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
 				lastWrite = time.Now()
-				if err := s.recordExecution(ctx, taskID, action, response.GetResult().GetExecutionMetadata(), auxMeta, properties); err != nil {
-					log.CtxErrorf(ctx, "failed to record execution %q: %s", taskID, err)
+
+				// Only flush the execution to Clickhouse after everything, including cleanup,
+				// has completed so cleanup stats are recorded as well.
+				if stage == repb.ExecutionStage_COMPLETED {
+					if err := s.recordExecution(ctx, taskID, action, response.GetResult().GetExecutionMetadata(), auxMeta, properties); err != nil {
+						log.CtxErrorf(ctx, "failed to record execution %q: %s", taskID, err)
+					}
 				}
+
 				return nil
 			}()
 			if err != nil {
@@ -1187,11 +1216,13 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 
 			if response != nil {
-				// TODO(vanja) should this be done when the executor got a
-				// cache hit?
-				if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {
-					log.CtxErrorf(ctx, "Failed to cache execute response: %s", err)
-				}
+				cacheOnce.Do(func() {
+					// TODO(vanja) should this be done when the executor got a
+					// cache hit?
+					if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {
+						log.CtxErrorf(ctx, "Failed to cache execute response: %s", err)
+					}
+				})
 			}
 		}
 	}
@@ -1257,11 +1288,6 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		if err := sizer.Update(ctx, action, cmd, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
 		}
-	}
-
-	if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
-		// TODO(vanja) should this be done when the executor got a cache hit?
-		log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
 	}
 
 	return nil

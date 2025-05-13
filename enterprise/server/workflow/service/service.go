@@ -700,7 +700,7 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 		case <-time.After(1 * time.Second):
 			// continue with for loop
 		}
-		if stage == repb.ExecutionStage_EXECUTING || stage == repb.ExecutionStage_COMPLETED {
+		if stage == repb.ExecutionStage_EXECUTING || operation.ExecutionFinished(stage) {
 			_, err := indb.LookupInvocation(ctx, invocationID)
 			if err == nil {
 				return nil
@@ -709,7 +709,7 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 				return err
 			}
 		}
-		if stage == repb.ExecutionStage_COMPLETED {
+		if operation.ExecutionFinished(stage) {
 			return status.InternalErrorf("Failed to create workflow invocation (execution ID: %s)", executionID)
 		}
 	}

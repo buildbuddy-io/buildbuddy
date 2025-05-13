@@ -1514,7 +1514,7 @@ message ExecuteResponse {
 
 // The current stage of action execution.
 //
-// Even though these stages are numbered according to the order in which
+// Even though these stages are ordered in this list according to the order in which
 // they generally occur, there is no requirement that the remote
 // execution system reports events along this order. For example, an
 // operation MAY transition from the EXECUTING stage back to QUEUED
@@ -1538,7 +1538,12 @@ message ExecutionStage {
     // Currently being executed by a worker.
     EXECUTING = 3;
 
-    // Finished execution.
+    // TODO: Do I need to update the UI etc.
+    // Execution has been completed and the worker is being cleaned up.
+    CLEANUP = 5;
+
+    // All required work, including cleanup, has completed. At this point, the
+    // executor is no longer spending resources on the task.
     COMPLETED = 4;
   }
 }

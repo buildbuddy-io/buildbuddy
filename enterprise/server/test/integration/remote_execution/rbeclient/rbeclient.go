@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -191,7 +192,7 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 		c.mu.Unlock()
 		status.CommandName = name
 		statusChannel <- status
-		if status.Stage == repb.ExecutionStage_COMPLETED || status.Err != nil {
+		if operation.ExecutionFinished(status.Stage) || status.Err != nil {
 			log.Debugf("Command [%q] finished: [%s]", name, status)
 			close(statusChannel)
 		}

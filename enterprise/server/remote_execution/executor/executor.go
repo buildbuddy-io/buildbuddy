@@ -217,7 +217,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest.GetDigest())
 	stateChangeFn := operation.StateChangeFunc(func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
-		if stage == repb.ExecutionStage_COMPLETED {
+		if operation.ExecutionFinished(stage) {
 			if err := appendAuxiliaryMetadata(execResponse.GetResult().GetExecutionMetadata(), auxMetadata); err != nil {
 				log.CtxWarningf(ctx, "Failed to append ExecutionAuxiliaryMetadata: %s", err)
 			}
@@ -243,14 +243,27 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			}
 			return true, finalErr
 		}
+
 		resp := operation.ErrorResponse(finalErr)
-		md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 		if err := appendAuxiliaryMetadata(md, auxMetadata); err != nil {
 			log.CtxWarningf(ctx, "Failed to append ExecutionAuxiliaryMetadata: %s", err)
 		}
 		resp.Result = &repb.ActionResult{
 			ExecutionMetadata: md,
 		}
+
+		if r != nil {
+			// Note: recycling is done in the foreground here in order to ensure
+			// that the runner is fully cleaned up (if applicable) before its
+			// resource claims are freed up by the priority_task_scheduler.
+			if err := stateChangeFn(repb.ExecutionStage_CLEANUP, resp); err != nil {
+				return true, err
+			}
+			s.runnerPool.TryRecycle(ctx, r, false /* finishedCleanly */)
+		}
+
+		// TODO: Make sure editing at this point will reflect in final usage count
+		md.WorkerCompletedTimestamp = timestamppb.Now()
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest.GetDigest(), resp); err != nil {
 			return true, err
 		}
@@ -449,19 +462,29 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	// Otherwise, send the error back to the client via the ExecuteResponse
 	// status.
-	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, executeResponse); err != nil {
-		log.CtxErrorf(ctx, "Failed to publish ExecuteResponse: %s", err)
-		return finishWithErrFn(err)
-	}
 	finishedCleanly := false
 	if cmdResult.Error == nil && !cmdResult.DoNotRecycle {
 		log.CtxDebugf(ctx, "Task finished cleanly.")
 		finishedCleanly = true
 	}
+
+	// Many clients will only wait for the CLEANUP status, so make sure to send
+	// execution metadata at this point
+	if err := stateChangeFn(repb.ExecutionStage_CLEANUP, executeResponse); err != nil {
+		log.CtxErrorf(ctx, "Failed to publish ExecuteResponse: %s", err)
+		return finishWithErrFn(err)
+	}
 	// Note: recycling is done in the foreground here in order to ensure
 	// that the runner is fully cleaned up (if applicable) before its
 	// resource claims are freed up by the priority_task_scheduler.
 	s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
+
+	md.WorkerCompletedTimestamp = timestamppb.Now()
+	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, executeResponse); err != nil {
+		log.CtxErrorf(ctx, "Failed to publish ExecuteResponse: %s", err)
+		return finishWithErrFn(err)
+	}
+
 	return false, nil
 }
 
