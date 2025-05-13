@@ -1487,7 +1487,6 @@ func TestReplaceDeadReplica(t *testing.T) {
 }
 
 func TestRemoveDeadReplica(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
