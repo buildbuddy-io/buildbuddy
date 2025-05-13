@@ -115,12 +115,14 @@ var bazelCommands = map[string]struct{}{
 	"info":               {},
 	"license":            {},
 	"mobile-install":     {},
+	"mod":                {},
 	"print_action":       {},
 	"query":              {},
 	"run":                {},
 	"shutdown":           {},
 	"sync":               {},
 	"test":               {},
+	"vendor":             {},
 	"version":            {},
 }
 
