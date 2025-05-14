@@ -262,12 +262,12 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		if err != nil {
 			return nil, 0, err
 		}
+		defer w.Close()
 		bytesRead, err := w.ReadFrom(in)
 		if err != nil {
-			w.Close()
 			return nil, 0, err
 		}
-		if err := w.Close(); err != nil {
+		if err := w.Commit(); err != nil {
 			return nil, 0, err
 		}
 		// Either the write succeeded or was short-circuited, but in
@@ -1132,8 +1132,8 @@ type UploadWriter struct {
 	bytesBuffered int
 }
 
-// Assert that UploadWriter implements io.WriteCloser
-var _ io.WriteCloser = (*UploadWriter)(nil)
+// Assert that UploadWriter implements CommittedWriteCloser
+var _ interfaces.CommittedWriteCloser = (*UploadWriter)(nil)
 
 func (uw *UploadWriter) Write(p []byte) (int, error) {
 	if uw.finished || uw.closed {
@@ -1199,28 +1199,41 @@ func (uw *UploadWriter) ReadFrom(r io.Reader) (int64, error) {
 	return bytesRead, nil
 }
 
-func (uw *UploadWriter) Close() error {
+func (uw *UploadWriter) Commit() error {
 	if uw.closed {
-		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot close again")
+		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot commit")
 	}
-	if !uw.finished {
-		if err := uw.flush(true /* finish */); err != nil {
-			return err
-		}
+	if uw.finished {
+		return status.FailedPreconditionError("UploadWriteCloser already committed, cannot commit again")
+	}
+	if err := uw.flush(true /* finish */); err != nil {
+		return err
 	}
 	rsp, err := uw.stream.CloseAndRecv()
 	if err != nil {
 		return err
 	}
 	uw.committedSize = rsp.GetCommittedSize()
-	uw.closed = true
-	uploadBufPool.Put(uw.buf)
+	return nil
+}
+
+func (uw *UploadWriter) Close() error {
+	if uw.closed {
+		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot close again")
+	}
+	defer func() {
+		uploadBufPool.Put(uw.buf)
+		uw.closed = true
+	}()
+	if err := uw.stream.CloseSend(); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (uw *UploadWriter) GetCommittedSize() (int64, error) {
-	if !uw.closed {
-		return 0, status.FailedPreconditionError("UploadWriteCloser not closed, cannot get committed size")
+	if !uw.finished {
+		return 0, status.FailedPreconditionError("UploadWriter not committed, cannot get committed size")
 	}
 	return uw.committedSize, nil
 }

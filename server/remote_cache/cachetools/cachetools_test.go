@@ -745,21 +745,22 @@ func TestUploadWriter_InterleaveWritesReadFrom(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(quarter), n)
 	}
-	{
-		err := uw.Close()
-		require.NoError(t, err)
-	}
-	{
-		out := &bytes.Buffer{}
-		err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
-		require.NoError(t, err)
-		require.Equal(t, 4*quarter, out.Len())
-		require.Empty(t, cmp.Diff(buf[0:9], out.Bytes()[0:9]))
-		require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[len(buf)-9:]))
-	}
+
+	err = uw.Commit()
+	require.NoError(t, err)
+
+	err = uw.Close()
+	require.NoError(t, err)
+
+	out := &bytes.Buffer{}
+	err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
+	require.NoError(t, err)
+	require.Equal(t, 4*quarter, out.Len())
+	require.Empty(t, cmp.Diff(buf[0:9], out.Bytes()[0:9]))
+	require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[len(buf)-9:]))
 }
 
-func TestUploadWriteCloser_NoWritesReadFromsAfterClose(t *testing.T) {
+func TestUploadWriter_NoWritesReadFromsAfterCommit(t *testing.T) {
 	rn, buf := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
 	te := testenv.GetTestEnv(t)
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
@@ -773,21 +774,55 @@ func TestUploadWriteCloser_NoWritesReadFromsAfterClose(t *testing.T) {
 	written, err := uw.Write(buf)
 	require.NoError(t, err)
 	require.Equal(t, len(buf), written)
-	err = uw.Close()
-	require.NoError(t, err)
+
+	// The blob is not available before commit
 	{
 		out := &bytes.Buffer{}
-		err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
+		err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
+		require.Error(t, err)
+	}
+
+	err = uw.Commit()
+	require.NoError(t, err)
+
+	// The blob is available post commit
+	{
+		out := &bytes.Buffer{}
+		err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
 		require.NoError(t, err)
 		require.Equal(t, len(buf), out.Len())
 		require.Empty(t, cmp.Diff(buf[0:9], out.Bytes()[0:9]))
 		require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[len(buf)-9:]))
 	}
+
+	// Cannot Write after commit
 	written, err = uw.Write(buf)
 	require.Error(t, err)
 	require.Equal(t, 0, written)
 
+	// Cannot ReadFrom after commit
 	n, err := uw.ReadFrom(bytes.NewReader(buf))
 	require.Error(t, err)
 	require.Equal(t, int64(0), n)
+
+	// Cannot commit again after commit
+	err = uw.Commit()
+	require.Error(t, err)
+
+	err = uw.Close()
+	require.NoError(t, err)
+
+	// Cannot Write after close
+	written, err = uw.Write(buf)
+	require.Error(t, err)
+	require.Equal(t, 0, written)
+
+	// Cannot ReadFrom after close
+	n, err = uw.ReadFrom(bytes.NewReader(buf))
+	require.Error(t, err)
+	require.Equal(t, int64(0), n)
+
+	// Cannot close again after close
+	err = uw.Close()
+	require.Error(t, err)
 }
