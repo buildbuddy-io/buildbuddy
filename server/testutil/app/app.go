@@ -54,7 +54,7 @@ func createMemoryBackedDB(t testing.TB) *os.File {
 	if _, err := os.Stat("/dev/shm"); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	f, err := os.CreateTemp("/dev/shm", "buildbuddy.db")
+	f, err := os.CreateTemp("/dev/shm", "buildbuddy-test-*.db")
 	require.NoError(t, err)
 	path := f.Name()
 	t.Cleanup(func() {
