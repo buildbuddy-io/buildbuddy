@@ -321,22 +321,34 @@ func (c *Cache) Check(ctx context.Context) error {
 }
 
 type teeReadCloser struct {
-	rc  io.ReadCloser
-	cwc interfaces.CommittedWriteCloser
+	rc          io.ReadCloser
+	cwc         interfaces.CommittedWriteCloser
+	lastReadErr error
+	failedWrite bool
 }
 
-func (t *teeReadCloser) Read(p []byte) (n int, err error) {
-	n, err = t.rc.Read(p)
-	if n > 0 {
-		if n, err := t.cwc.Write(p[:n]); err != nil {
-			return n, err
+func (t *teeReadCloser) Read(p []byte) (int, error) {
+	var read int
+	read, t.lastReadErr = t.rc.Read(p)
+	if read > 0 {
+		written, err := t.cwc.Write(p[:read])
+		if err != nil {
+			t.failedWrite = true
+			return written, err
+		}
+		if written < read {
+			t.failedWrite = true
+			return written, io.ErrShortWrite
 		}
 	}
-	return
+	return read, t.lastReadErr
 }
 func (t *teeReadCloser) Close() error {
 	err := t.rc.Close()
-	if err == nil {
+	if err == nil && t.lastReadErr != nil && t.lastReadErr != io.EOF {
+		log.Warningf("teeReadCloser Close succeeded but Read failed with: %s", t.lastReadErr)
+	}
+	if err == nil && t.lastReadErr == io.EOF && !t.failedWrite {
 		_ = t.cwc.Commit()
 		_ = t.cwc.Close()
 	}
@@ -455,7 +467,7 @@ func (c *Cache) teeReadCloser(r *rspb.ResourceName, rc io.ReadCloser) io.ReadClo
 	if err != nil {
 		return rc
 	}
-	return &teeReadCloser{rc, lwc}
+	return &teeReadCloser{rc: rc, cwc: lwc}
 }
 
 func (c *Cache) recvHeartbeatCallback(ctx context.Context, peer string) {
