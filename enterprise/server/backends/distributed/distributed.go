@@ -327,11 +327,13 @@ func (t *teeReadCloser) Read(p []byte) (int, error) {
 	read, t.lastReadErr = t.rc.Read(p)
 	if read > 0 {
 		written, err := t.cwc.Write(p[:read])
-		if written < read || err != nil {
-			t.failedWrite = true
-		}
 		if err != nil {
+			t.failedWrite = true
 			return written, err
+		}
+		if written < read {
+			t.failedWrite = true
+			return written, io.ErrShortWrite
 		}
 	}
 	return read, t.lastReadErr
