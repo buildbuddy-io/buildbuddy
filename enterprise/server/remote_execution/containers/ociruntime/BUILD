@@ -8,7 +8,7 @@ go_library(
     embedsrcs = [
         "hosts",
         "seccomp.json",
-        ":tini_binary",
+        "tini",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime",
     target_compatible_with = ["@platforms//os:linux"],
