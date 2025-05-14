@@ -1,11 +1,13 @@
 package ocicache_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -48,19 +50,7 @@ func TestCacheSecret(t *testing.T) {
 			raw, err := image.RawManifest()
 			require.NoError(t, err)
 
-			te := testenv.GetTestEnv(t)
-			flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
-			key, err := random.RandomString(16)
-			require.NoError(t, err)
-			flags.Set(t, "app.client_identity.key", string(key))
-			require.NoError(t, err)
-			err = clientidentity.Register(te)
-			require.NoError(t, err)
-			require.NotNil(t, te.GetClientIdentityService())
-
-			_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
-			testcache.Setup(t, te, localGRPClis)
-			go runServer()
+			te := setupTestEnv(t)
 
 			ctx := context.Background()
 			mediaType, err := image.MediaType()
@@ -91,4 +81,70 @@ func TestCacheSecret(t *testing.T) {
 			require.Empty(t, cmp.Diff(raw, mc.Raw))
 		})
 	}
+}
+
+func setupTestEnv(t *testing.T) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	require.NoError(t, err)
+	err = clientidentity.Register(te)
+	require.NoError(t, err)
+	require.NotNil(t, te.GetClientIdentityService())
+
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	return te
+}
+
+// TestManifestWrittenOnlyToAC sets the byte stream server and client to nil,
+// writes a manifest to the AC, and fetches it. If that path were to touch the CAS
+// at all, there would be an error trying to write to a nil client or server.
+func TestManifestWrittenOnlyToAC(t *testing.T) {
+	te := setupTestEnv(t)
+
+	imageName := "test_manifest_written_only_to_ac"
+	image, err := crane.Image(map[string][]byte{
+		"/tmp/" + imageName: []byte(imageName),
+	})
+	require.NoError(t, err)
+	raw, err := image.RawManifest()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	mediaType, err := image.MediaType()
+	require.NoError(t, err)
+	contentType := string(mediaType)
+	hash, err := image.Digest()
+	require.NoError(t, err)
+
+	acClient := te.GetActionCacheClient()
+	ref, err := name.ParseReference("buildbuddy.io/" + imageName)
+	require.NoError(t, err)
+
+	var out bytes.Buffer
+	err = ocicache.WriteBlobOrManifestToCacheAndWriter(ctx,
+		bytes.NewReader(raw),
+		&out,
+		nil, // explicitly pass nil bytestream client
+		acClient,
+		ref,
+		ocipb.OCIResourceType_MANIFEST,
+		hash,
+		contentType,
+		int64(len(raw)),
+	)
+	require.NoError(t, err)
+	require.Equal(t, len(raw), out.Len())
+	require.Empty(t, cmp.Diff(raw, out.Bytes()))
+
+	mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref, hash)
+	require.NoError(t, err)
+	require.NotNil(t, mc)
+
+	require.Equal(t, contentType, mc.ContentType)
+	require.Empty(t, cmp.Diff(raw, mc.Raw))
 }
