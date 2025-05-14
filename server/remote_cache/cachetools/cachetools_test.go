@@ -826,3 +826,27 @@ func TestUploadWriter_NoWritesReadFromsAfterCommit(t *testing.T) {
 	err = uw.Close()
 	require.Error(t, err)
 }
+
+func TestUploadWriter_CanCloseBeforeCommit(t *testing.T) {
+	rn, buf := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	ctx := context.Background()
+	casrn := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+
+	uw, err := cachetools.NewUploadWriter(ctx, te.GetByteStreamClient(), casrn)
+	require.NoError(t, err)
+	written, err := uw.Write(buf)
+	require.NoError(t, err)
+	require.Equal(t, len(buf), written)
+
+	err = uw.Close()
+	require.NoError(t, err)
+
+	// Blob is not available since we did not commit
+	out := &bytes.Buffer{}
+	err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
+	require.Error(t, err)
+}
