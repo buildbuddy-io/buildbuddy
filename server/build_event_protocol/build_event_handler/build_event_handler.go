@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -266,29 +267,11 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStats
 func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEValues) {
 	persist := &PersistArtifacts{}
 	if !*disablePersistArtifacts {
-		buildToolLogs := beValues.BuildToolLogURIs()
-		failedTestOutputs := beValues.FailedTestOutputURIs()
-		passedTestOutputs := beValues.PassedTestOutputURIs()
-
-		capacity := len(buildToolLogs) + len(failedTestOutputs) + len(passedTestOutputs)
-		if capacity > accumulator.MaxPersistableTestArtifacts {
-			capacity = accumulator.MaxPersistableTestArtifacts
-		}
-		persist.URIs = make([]*url.URL, 0, capacity)
-
-		persist.URIs = append(persist.URIs, buildToolLogs...)
-		persist.URIs = append(persist.URIs, failedTestOutputs...)
-		if len(persist.URIs) < accumulator.MaxPersistableTestArtifacts {
-			remain := accumulator.MaxPersistableTestArtifacts - len(persist.URIs)
-			if remain < 0 {
-				remain = 0
-			}
-			if len(passedTestOutputs) <= remain {
-				persist.URIs = append(persist.URIs, passedTestOutputs...)
-			} else {
-				persist.URIs = append(persist.URIs, passedTestOutputs[:remain]...)
-			}
-		}
+		persist.URIs = slices.Concat(
+			beValues.BuildToolLogURIs(),
+			beValues.FailedTestOutputURIs(),
+			beValues.PassedTestOutputURIs(),
+		)
 	}
 
 	invocation := beValues.Invocation()

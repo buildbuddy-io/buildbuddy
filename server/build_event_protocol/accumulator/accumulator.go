@@ -27,7 +27,7 @@ const (
 	// The maximum number of important TestRunner artifacts to possibly copy
 	// from cache -> blobstore. If more than this number are present, they
 	// will be dropped.
-	MaxPersistableTestArtifacts = 1000
+	maxPersistableTestArtifacts = 1000
 
 	// If codesearch is enabled, and an invocation contains a single file with the
 	// following name, attempt to ingest this kythe sstable file in codesearch.
@@ -187,12 +187,12 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 				continue
 			}
 			if p.TestResult.GetStatus() == build_event_stream.TestStatus_PASSED {
-				if len(v.passedTestOutputURIs) < MaxPersistableTestArtifacts {
+				if len(v.passedTestOutputURIs) < maxPersistableTestArtifacts {
 					v.passedTestOutputURIs = append(v.passedTestOutputURIs, u)
 				}
 				continue
 			}
-			if len(v.failedTestOutputURIs) < MaxPersistableTestArtifacts {
+			if len(v.failedTestOutputURIs) < maxPersistableTestArtifacts {
 				v.failedTestOutputURIs = append(v.failedTestOutputURIs, u)
 			}
 		}
