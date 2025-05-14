@@ -1221,14 +1221,9 @@ func (uw *UploadWriter) Close() error {
 	if uw.closed {
 		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot close again")
 	}
-	defer func() {
-		uploadBufPool.Put(uw.buf)
-		uw.closed = true
-	}()
-	if err := uw.stream.CloseSend(); err != nil {
-		return err
-	}
-	return nil
+	uw.closed = true
+	uploadBufPool.Put(uw.buf)
+	return uw.stream.CloseSend()
 }
 
 func (uw *UploadWriter) GetCommittedSize() (int64, error) {
