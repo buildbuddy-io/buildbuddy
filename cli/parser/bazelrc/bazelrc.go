@@ -16,9 +16,8 @@ import (
 
 const (
 	EnablePlatformSpecificConfigFlag = "enable_platform_specific_config"
-	workspacePrefix = `%workspace%/`
+	workspacePrefix                  = `%workspace%/`
 )
-
 
 var (
 	bazelCommands = map[string]struct{}{
@@ -282,8 +281,6 @@ func ParseRCFiles(workspaceDir string, filePaths ...string) ([]*RcRule, error) {
 	}
 	return opts, nil
 }
-
-
 
 // Mirroring the behavior here:
 // https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java#L41
