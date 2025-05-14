@@ -1,7 +1,9 @@
 package app
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -51,7 +53,10 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string, configFilePath string) *App {
 	dataDir := testfs.MakeTempDir(t)
 	app.t = t
-	app.dbFilePath = filepath.Join(dataDir, "buildbuddy.db")
+	app.dbFilePath = "/dev/shm/buildbuddy.db"
+	if _, err := os.Stat("/dev/shm"); errors.Is(err, os.ErrNotExist) {
+		app.dbFilePath = filepath.Join(dataDir, "buildbuddy.db")
+	}
 	args := []string{
 		"--app.log_level=debug",
 		"--app.log_include_short_file_name",
