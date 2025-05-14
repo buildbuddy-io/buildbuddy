@@ -890,7 +890,6 @@ func TestListReplicas(t *testing.T) {
 }
 
 func TestPostFactoSplit(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 2)
 
 	sf := testutil.NewStoreFactory(t)
