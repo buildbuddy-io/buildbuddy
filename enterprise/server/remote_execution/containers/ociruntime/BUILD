@@ -8,7 +8,7 @@ go_library(
     embedsrcs = [
         "hosts",
         "seccomp.json",
-        "tini",
+        ":tini_binary",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime",
     target_compatible_with = ["@platforms//os:linux"],
@@ -41,7 +41,7 @@ go_library(
 )
 
 genrule(
-    name = "tini",
+    name = "tini_binary",
     srcs = ["//enterprise/server/cmd/executor:tini"],
     outs = ["tini"],
     cmd = "cp $(SRCS) $@",
