@@ -69,6 +69,23 @@ func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, 
 	require.FailNowf(t, "timeout", "Timed out waiting for data to be copied to dest cache")
 }
 
+type errorWriter struct {
+	writerErr, commitErr, closeErr error
+}
+
+func (w *errorWriter) Write(b []byte) (int, error) { return len(b), w.writerErr }
+func (w *errorWriter) Commit() error               { return w.commitErr }
+func (w *errorWriter) Close() error                { return w.closeErr }
+
+type errorWriterCache struct {
+	writer *errorWriter
+	interfaces.Cache
+}
+
+func (c *errorWriterCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	return c.writer, nil
+}
+
 // errorCache lets us mock errors to test error handling
 type errorCache struct {
 	interfaces.Cache
@@ -188,7 +205,7 @@ func TestSet_DoubleWrite(t *testing.T) {
 	require.True(t, bytes.Equal(srcData, destData))
 }
 
-func TestSet_DestWriteErr(t *testing.T) {
+func TestSet_DestWriterErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
 	rootDirSrc := testfs.MakeTempDir(t)
@@ -208,13 +225,13 @@ func TestSet_DestWriteErr(t *testing.T) {
 	require.Equal(t, buf, srcData)
 }
 
-func TestSet_SrcWriteErr(t *testing.T) {
+func TestSet_SrcWriterErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache := &errorCache{}
-	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(1000))
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(defaultExt4BlockSize*10))
 	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
@@ -225,6 +242,60 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	// Verify data was deleted from the dest cache
 	destData, err := destCache.Get(ctx, r)
 	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, destData)
+}
+
+func TestSet_SrcWriteErr(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcDC, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(defaultExt4BlockSize*10))
+	require.NoError(t, err)
+	srcCache := &errorWriterCache{
+		writer: &errorWriter{writerErr: errors.New("failed write")},
+		Cache:  srcDC,
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, int64(defaultExt4BlockSize*10))
+	require.NoError(t, err)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	err = mc.Set(ctx, r, buf)
+	require.Error(t, err)
+
+	// Verify data was deleted from the dest cache
+	destData, err := destCache.Get(ctx, r)
+	require.Error(t, err, "Destination cache shouldn't contain entry")
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, destData)
+}
+
+func TestSet_SrcCommitErr(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcDC, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(defaultExt4BlockSize*10))
+	require.NoError(t, err)
+	srcCache := &errorWriterCache{
+		writer: &errorWriter{commitErr: errors.New("failed commit")},
+		Cache:  srcDC,
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, int64(defaultExt4BlockSize*10))
+	require.NoError(t, err)
+	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	err = mc.Set(ctx, r, buf)
+	require.Error(t, err)
+
+	// Verify data was deleted from the dest cache
+	destData, err := destCache.Get(ctx, r)
+	require.Error(t, err, "Destination cache shouldn't contain entry")
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, destData)
 }

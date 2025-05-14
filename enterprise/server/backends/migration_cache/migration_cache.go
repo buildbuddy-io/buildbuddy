@@ -663,22 +663,26 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 type doubleWriter struct {
 	src          interfaces.CommittedWriteCloser
 	dest         *asyncWriter
+	srcFailed    bool
 	destDeleteFn func()
 }
 
 func (d *doubleWriter) Write(data []byte) (int, error) {
-	_, destErr := d.dest.Write(data)
+	d.dest.Write(data)
 	srcN, srcErr := d.src.Write(data)
-	if srcErr != nil && destErr == nil {
-		// If error during write to source cache (source of truth), must delete from destination cache
-		d.destDeleteFn()
+	if srcErr != nil {
+		d.srcFailed = true
 	}
 	return srcN, srcErr
 }
 
 func (d *doubleWriter) Commit() error {
 	d.dest.Commit()
-	return d.src.Commit()
+	err := d.src.Commit()
+	if err != nil {
+		d.srcFailed = true
+	}
+	return err
 }
 
 func (d *doubleWriter) Close() error {
@@ -686,6 +690,9 @@ func (d *doubleWriter) Close() error {
 	// The destination writer might be closing in the background, so close it
 	// second to give it time to finish.
 	d.dest.Close()
+	if err != nil || d.srcFailed {
+		d.destDeleteFn()
+	}
 	return err
 }
 
