@@ -999,9 +999,11 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	}
 
 	// Cancel any ongoing invocations as soon as bazel has finished the build.
-	if f, ok := bazelBuildEvent.GetPayload().(*build_event_stream.BuildEvent_Finished); ok {
-		if err := e.env.GetRemoteExecutionService().Cancel(e.ctx, iid); err != nil {
-			log.CtxWarningf(e.ctx, "Could not cancel executions for invocation %q: %s", iid, err)
+	if _, ok := bazelBuildEvent.GetPayload().(*build_event_stream.BuildEvent_Finished); ok {
+		if executionService := e.env.GetRemoteExecutionService(); executionService != nil {
+			if err := executionService.Cancel(e.ctx, iid); err != nil {
+				log.CtxWarningf(e.ctx, "Could not cancel executions for invocation %q: %s", iid, err)
+			}
 		}
 	}
 	if seqNo == 1 {
