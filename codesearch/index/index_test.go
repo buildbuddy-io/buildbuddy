@@ -397,6 +397,66 @@ func TestMetadataDocs(t *testing.T) {
 	assert.Equal(t, commitSHA, string(readDoc.Field(schema.LatestSHAField).Contents()))
 }
 
+func TestLastIndexedCommitShaMultipleRepos(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	commitSha1 := "abc123"
+	repoUrl1 := "github.com/buildbuddy-io/buildbuddy"
+
+	commitSha2 := "def456"
+	repoUrl2 := "github.com/buildbuddy-io/buildbuddy-internal"
+
+	w, err := NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.SetLastIndexedCommitSha(repoUrl1, commitSha1)
+	w.SetLastIndexedCommitSha(repoUrl2, commitSha2)
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+
+	readCommitSha1, err := r.LastIndexedCommitSha(repoUrl1)
+	require.NoError(t, err)
+	assert.Equal(t, commitSha1, readCommitSha1)
+
+	readCommitSha2, err := r.LastIndexedCommitSha(repoUrl2)
+	require.NoError(t, err)
+	assert.Equal(t, commitSha2, readCommitSha2)
+}
+
+func TestLastIndexedCommitShaUnset(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	commitSha := "abc123"
+	setRepoUrl := "github.com/buildbuddy-io/buildbuddy"
+	unsetRepoUrl := "github.com/buildbuddy-io/buildbuddy-internal"
+
+	w, err := NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.SetLastIndexedCommitSha(setRepoUrl, commitSha)
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	readCommitSha, err := r.LastIndexedCommitSha(unsetRepoUrl)
+	require.NoError(t, err)
+	assert.Empty(t, readCommitSha)
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},
