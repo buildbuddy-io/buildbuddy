@@ -1121,7 +1121,6 @@ type UploadWriter struct {
 	ctx          context.Context
 	stream       bspb.ByteStream_WriteClient
 	sender       rpcutil.Sender[*bspb.WriteRequest]
-	resource     *digest.CASResourceName
 	uploadString string
 
 	bytesUploaded int64
@@ -1146,9 +1145,6 @@ func (uw *UploadWriter) Write(p []byte) (int, error) {
 		uw.bytesBuffered += n
 		if uw.bytesBuffered == uploadBufSizeBytes {
 			if err := uw.flush(false /* finish */); err != nil {
-				if err == io.EOF {
-					break
-				}
 				return written, err
 			}
 		}
@@ -1252,7 +1248,6 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		ctx:          ctx,
 		stream:       stream,
 		sender:       sender,
-		resource:     r,
 		uploadString: r.NewUploadString(),
 		buf:          uploadBufPool.Get(),
 	}, nil
