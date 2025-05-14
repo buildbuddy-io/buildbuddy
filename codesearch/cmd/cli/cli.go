@@ -321,21 +321,64 @@ func handleSquery(ctx context.Context, args []string) {
 	}
 }
 
+func getCommitContents(repoDir, commitSHA, parentSHA string) (*csinpb.Commit, error) {
+	cmd := exec.Command("git", "show", "--pretty=format:%H", "--name-only", commitSHA)
+	cmd.Dir = repoDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit %s: %w", commitSHA, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) < 2 {
+		return nil, fmt.Errorf("commit %s has no files changed", commitSHA)
+	}
+
+	commit := &csinpb.Commit{
+		Sha:       commitSHA,
+		ParentSha: parentSHA,
+		Files:     make([]*csinpb.File, len(lines)-1),
+	}
+
+	for i, file := range lines[1:] {
+		content, err := os.ReadFile(filepath.Join(repoDir, file))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file %s: %w", file, err)
+		}
+		commit.Files[i] = &csinpb.File{
+			Filepath: file,
+			Content:  content,
+		}
+	}
+	return commit, nil
+}
+
+func getCommitShasBetween(repoDir, commitStart, commitEnd string) ([]string, error) {
+	cmd := exec.Command("git", "log", "--first-parent", "--format=%H", fmt.Sprintf("%s^..%s", commitStart, commitEnd))
+	cmd.Dir = repoDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit log: %w", err)
+	}
+
+	return strings.Split(strings.TrimSpace(string(output)), "\n"), nil
+}
+
 func handleGithub(ctx context.Context, args []string) {
 	if len(args) < 2 {
 		log.Fatal("github command requires at least one argument")
 	}
 	repoDir := args[0]
-	commitRange := args[1]
-
-	cmd := exec.Command("git", "log", "--first-parent", "--format=%H", commitRange)
-	cmd.Dir = repoDir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Fatalf("failed to get commit log: %s", err)
+	commitStart := args[1]
+	commitEnd := "HEAD"
+	if len(args) > 2 {
+		commitEnd = args[2]
 	}
 
-	commits := strings.Split(strings.TrimSpace(string(output)), "\n")
+	commits, err := getCommitShasBetween(repoDir, commitStart, commitEnd)
+	if err != nil {
+		log.Fatalf("failed to get commits between %s and %s: %s", commitStart, commitEnd, err)
+	}
 
 	result := &csinpb.IndexRequest{
 		Contents: &csinpb.Contents{
@@ -343,38 +386,12 @@ func handleGithub(ctx context.Context, args []string) {
 		},
 	}
 
-	for i, commit := range commits {
-		cmd := exec.Command("git", "diff-tree", "--name-only", "-r", fmt.Sprintf("%s~..%s", commit, commit))
-		cmd.Dir = repoDir
-		filesOutput, err := cmd.CombinedOutput()
+	for i, commit := range commits[:len(commits)-1] {
+		c, err := getCommitContents(repoDir, commit, commits[i+1])
 		if err != nil {
-			log.Fatalf("failed to list files for commit %s: %s", commit, err)
+			log.Fatalf("failed to get commit %s: %s", commit, err)
 		}
-
-		changedFiles := strings.Split(strings.TrimSpace(string(filesOutput)), "\n")
-		fmt.Printf("Commit %s changed files:\n", commit)
-		for _, file := range changedFiles {
-			fmt.Printf("  %s\n", file)
-		}
-
-		commitPb := &csinpb.Commit{
-			Sha:   commit,
-			Files: make([]*csinpb.File, len(changedFiles)),
-		}
-
-		for j, file := range changedFiles {
-			// read the file content in
-			filePath := filepath.Join(repoDir, file)
-			content, err := os.ReadFile(filePath)
-			if err != nil {
-				log.Fatalf("failed to read file %s: %s", filePath, err)
-			}
-			commitPb.Files[j] = &csinpb.File{
-				Filepath: file,
-				Content:  content,
-			}
-		}
-		result.Contents.Commits[i] = commitPb
+		result.Contents.Commits[i] = c
 	}
 	fmt.Printf("Result: %+v\n", result)
 }
