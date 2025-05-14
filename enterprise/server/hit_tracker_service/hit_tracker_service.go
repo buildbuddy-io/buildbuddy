@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -36,6 +37,7 @@ func (h HitTrackerService) Track(ctx context.Context, req *hitpb.TrackRequest) (
 		} else if hit.GetResource().GetCacheType() == rspb.CacheType_CAS {
 			hitTracker = h.hitTrackerFactory.NewCASHitTracker(ctx, hit.GetRequestMetadata())
 		} else {
+			alert.UnexpectedEvent("invalid_hit_tracker_event", "invalid cache type %s", hit.GetResource().GetCacheType())
 			return nil, status.InvalidArgumentErrorf("invalid cache type %s", hit.GetResource().GetCacheType())
 		}
 		var transferTimer interfaces.TransferTimer
@@ -44,6 +46,7 @@ func (h HitTrackerService) Track(ctx context.Context, req *hitpb.TrackRequest) (
 		} else if hit.GetCacheRequestType() == capb.RequestType_READ {
 			transferTimer = hitTracker.TrackDownload(hit.GetResource().GetDigest())
 		} else {
+			alert.UnexpectedEvent("invalid_hit_tracker_event", "invalid cache request type %s", hit.GetCacheRequestType())
 			return nil, status.InvalidArgumentErrorf("invalid cache request type %s", hit.GetCacheRequestType())
 		}
 		duration := hit.GetDuration().AsDuration()
