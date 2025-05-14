@@ -569,13 +569,6 @@ message SplitRangeResponse {
   RangeDescriptor right = 2;
 }
 
-message ListReplicasRequest {}
-
-message ListReplicasResponse {
-  NodeDescriptor node = 1;
-  repeated ReplicaDescriptor replicas = 2;
-}
-
 message CreateSnapshotRequest {
   Header header = 1;
   bytes start = 2;

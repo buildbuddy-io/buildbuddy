@@ -143,10 +143,9 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 
 	for {
 		clock.Advance(11 * time.Second)
-		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
-		if len(list.GetReplicas()) == 1 {
-			repl := list.GetReplicas()[0]
+		list := s1.ListReplicasForTest()
+		if len(list) == 1 {
+			repl := list[0]
 			// nh1 only has shard 1
 			require.Equal(t, uint64(1), repl.GetRangeId())
 			break
@@ -165,9 +164,8 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	require.True(t, status.IsOutOfRangeError(err))
 	// verify that the shard is not removed from other servers
 	for _, s := range []*testutil.TestingStore{s2, s3, s4} {
-		list, err := s.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err, s.NHID())
-		require.Equal(t, 2, len(list.GetReplicas()), s.NHID())
+		list := s.ListReplicasForTest()
+		require.Equal(t, 2, len(list), s.NHID())
 	}
 }
 
@@ -216,9 +214,8 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 
 	for {
 		clock.Advance(11 * time.Second)
-		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
-		if len(list.GetReplicas()) == 1 {
+		list := s1.ListReplicasForTest()
+		if len(list) == 1 {
 			break
 		}
 	}
@@ -266,30 +263,27 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 
 	for {
 		clock.Advance(11 * time.Second)
-		list1, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
-		if len(list1.GetReplicas()) != 1 {
+		list1 := s1.ListReplicasForTest()
+		if len(list1) != 1 {
 			time.Sleep(10 * time.Millisecond)
 			log.Infof("s1(%s) has more than 1 replica", s1.NHID())
 			continue
 		}
-		list2, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
-		if len(list2.GetReplicas()) != 1 {
+		list2 := s2.ListReplicasForTest()
+		if len(list2) != 1 {
 			time.Sleep(10 * time.Millisecond)
 			log.Infof("s2(%s) has more than 1 replica", s2.NHID())
 			continue
 		}
-		list3, err := s3.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
-		if len(list3.GetReplicas()) != 1 {
+		list3 := s3.ListReplicasForTest()
+		if len(list3) != 1 {
 			time.Sleep(10 * time.Millisecond)
 			log.Infof("s3(%s) has more than 1 replica", s3.NHID())
 			continue
 		}
-		require.Equal(t, uint64(1), list1.GetReplicas()[0].GetRangeId())
-		require.Equal(t, uint64(1), list2.GetReplicas()[0].GetRangeId())
-		require.Equal(t, uint64(1), list3.GetReplicas()[0].GetRangeId())
+		require.Equal(t, uint64(1), list1[0].GetRangeId())
+		require.Equal(t, uint64(1), list2[0].GetRangeId())
+		require.Equal(t, uint64(1), list3[0].GetRangeId())
 		break
 	}
 }
@@ -872,23 +866,6 @@ func TestSplitNonMetaRange(t *testing.T) {
 	}
 }
 
-func TestListReplicas(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
-	sf := testutil.NewStoreFactory(t)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
-	ctx := context.Background()
-
-	stores := []*testutil.TestingStore{s1, s2, s3}
-	sf.StartShard(t, ctx, stores...)
-	testutil.WaitForRangeLease(t, ctx, stores, 2)
-
-	list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-	require.NoError(t, err)
-	require.Equal(t, 2, len(list.GetReplicas()))
-}
-
 func TestPostFactoSplit(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 2)
@@ -980,10 +957,9 @@ func TestManySplits(t *testing.T) {
 
 		var clusters []uint64
 		var seen = make(map[uint64]struct{})
-		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
+		list := s1.ListReplicasForTest()
 
-		for _, replica := range list.GetReplicas() {
+		for _, replica := range list {
 			rangeID := replica.GetRangeId()
 			if _, ok := seen[rangeID]; !ok {
 				clusters = append(clusters, rangeID)
@@ -1245,9 +1221,8 @@ func TestUpReplicate(t *testing.T) {
 		clock.Advance(61 * time.Second)
 		// wait some time to allow let driver queue execute
 		time.Sleep(100 * time.Millisecond)
-		list, err := s3.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
-		if len(list.GetReplicas()) < 2 {
+		list := s3.ListReplicasForTest()
+		if len(list) < 2 {
 			continue
 		}
 
@@ -1460,9 +1435,8 @@ func TestReplaceDeadReplica(t *testing.T) {
 		clock.Advance(61 * time.Second)
 		// wait some time to allow let driver queue execute
 		time.Sleep(100 * time.Millisecond)
-		list, err := s4.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
-		if len(list.GetReplicas()) < 2 {
+		list := s4.ListReplicasForTest()
+		if len(list) < 2 {
 			continue
 		}
 
@@ -1601,22 +1575,18 @@ func TestRebalance(t *testing.T) {
 		clock.Advance(61 * time.Second)
 		// wait some time to allow let driver queue execute
 		time.Sleep(100 * time.Millisecond)
-		l1, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
-		l2, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
-		l3, err := s3.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
-		l4, err := s4.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
-		require.NoError(t, err)
+		l1 := s1.ListReplicasForTest()
+		l2 := s2.ListReplicasForTest()
+		l3 := s3.ListReplicasForTest()
+		l4 := s4.ListReplicasForTest()
 
 		// store 4 should have at least one replica
-		if len(l4.GetReplicas()) == 0 {
+		if len(l4) == 0 {
 			continue
 		}
 
 		size := len(startingRanges)
-		if len(l1.GetReplicas()) < size || len(l2.GetReplicas()) < size || len(l3.GetReplicas()) < size {
+		if len(l1) < size || len(l2) < size || len(l3) < size {
 			break
 		}
 	}
