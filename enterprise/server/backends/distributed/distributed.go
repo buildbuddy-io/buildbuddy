@@ -57,7 +57,7 @@ var (
 	newNodesReadOnly             = flag.Bool("cache.distributed_cache.new_nodes_read_only", false, "If true, only attempt to read from the newNodes set; do not write to them yet")
 
 	lookasideCacheSizeBytes  = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 0, "If > 0 ; lookaside cache will be enabled")
-	lookasideCacheTTL        = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 1*time.Minute, "How long to hold stuff in the lookaside cache. Should be << atime_update_threshold")
+	lookasideCacheTTL        = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 1*time.Minute, "The maximum TTL of items served from the lookaside cache. When this flag is set to a duration >0, items will only be served from the lookaside cache if they were added less than this long ago. If it is set to a duration <=0, no TTL check will occur before serving items from the lookaside cache. This value should be << atime_update_threshold when used in the authoritative cache.")
 	maxLookasideEntryBytes   = flag.Int64("cache.distributed_cache.max_lookaside_entry_bytes", 10_000, "The biggest allowed entry size in the lookaside cache.")
 	maxHintedHandoffsPerPeer = flag.Int64("cache.distributed_cache.max_hinted_handoffs_per_peer", 100_000, "The maximum number of hinted handoffs to keep in memory. Each hinted handoff is a digest (~64 bytes), prefix, and peer (40 bytes). So keeping around 100000 of these means an extra 10MB per peer.")
 )
@@ -242,7 +242,12 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 			return nil, err
 		}
 		dc.lookaside = l
-		log.Printf("Initialized lookaside cache (Size %d, ttl=%s)", config.LookasideCacheSizeBytes, *lookasideCacheTTL)
+
+		lookasideCacheTTLString := "INF"
+		if *lookasideCacheTTL > 0*time.Second {
+			lookasideCacheTTLString = lookasideCacheTTL.String()
+		}
+		log.Printf("Initialized lookaside cache (Size %d, ttl=%s)", config.LookasideCacheSizeBytes, lookasideCacheTTLString)
 	}
 
 	if zone := resources.GetZone(); zone != "" {
@@ -401,7 +406,7 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 	found := false
 	entry, ok := c.lookaside.Get(k)
 	if ok {
-		if time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
+		if *lookasideCacheTTL > 0*time.Second && time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
 			// Remove the item from the LRU if it's expired.
 			c.lookaside.Remove(k)
 		} else {
