@@ -1077,18 +1077,16 @@ func (s *Store) SnapshotCluster(ctx context.Context, rangeID uint64) error {
 	}
 }
 
-func (s *Store) ListReplicas(ctx context.Context, req *rfpb.ListReplicasRequest) (*rfpb.ListReplicasResponse, error) {
-	rsp := &rfpb.ListReplicasResponse{
-		Node: s.NodeDescriptor(),
-	}
+func (s *Store) ListReplicasForTest() []*rfpb.ReplicaDescriptor {
+	replicas := []*rfpb.ReplicaDescriptor{}
 	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.DefaultNodeHostInfoOption)
 	for _, shardInfo := range nhInfo.ShardInfoList {
-		rsp.Replicas = append(rsp.Replicas, &rfpb.ReplicaDescriptor{
+		replicas = append(replicas, &rfpb.ReplicaDescriptor{
 			RangeId:   shardInfo.ShardID,
 			ReplicaId: shardInfo.ReplicaID,
 		})
 	}
-	return rsp, nil
+	return replicas
 }
 
 func (s *Store) getLeasedReplicas(ctx context.Context) []*replica.Replica {
