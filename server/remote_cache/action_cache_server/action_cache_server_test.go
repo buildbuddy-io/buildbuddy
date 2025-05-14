@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -26,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -311,7 +313,7 @@ func TestHitTracking(t *testing.T) {
 			actionResultProtoPresent: true,
 			outputsPresent:           true,
 			expectHit:                true,
-			clientActionResultDigest: &repb.Digest{Hash: "8ffd56793296649f99345bcf689d2a28678ea4745496dd8f4061328ffc0b0fe1", SizeBytes: 142},
+			clientActionResultDigest: &repb.Digest{Hash: "282b248376e4acff972ac4595dd38d8ce4234437f43aee62c726806a797e5eff", SizeBytes: 146},
 			expectCachedDigestMatch:  true,
 		},
 		{
@@ -361,7 +363,8 @@ func TestHitTracking(t *testing.T) {
 					},
 				},
 				ExecutionMetadata: &repb.ExecutedActionMetadata{
-					Worker: "this value doesnt matter, just defining it to be stable",
+					Worker:                  "this value doesnt matter, just defining it to be stable",
+					ExecutionStartTimestamp: timestamppb.New(time.Unix(20, 0)),
 				},
 			}
 			if test.actionResultProtoPresent {
@@ -404,17 +407,20 @@ func TestHitTracking(t *testing.T) {
 			}
 			scorecard := hit_tracker.ScoreCard(ctx, te, invocationID)
 			expectedStatus := &statuspb.Status{Code: int32(gcodes.NotFound)}
+			var startTimestamp *timestamppb.Timestamp = nil
 			if test.expectHit {
 				expectedStatus = &statuspb.Status{Code: int32(gcodes.OK)}
+				startTimestamp = timestamppb.New(time.Unix(20, 0))
 			}
 			expectedResults := []*capb.ScoreCard_Result{
 				{
-					ActionId:             actionDigest.GetHash(),
-					CacheType:            rspb.CacheType_AC,
-					Digest:               actionDigest,
-					RequestType:          capb.RequestType_READ,
-					Status:               expectedStatus,
-					TransferredSizeBytes: int64(expectedTransferSize),
+					ActionId:                actionDigest.GetHash(),
+					CacheType:               rspb.CacheType_AC,
+					Digest:                  actionDigest,
+					RequestType:             capb.RequestType_READ,
+					Status:                  expectedStatus,
+					TransferredSizeBytes:    int64(expectedTransferSize),
+					ExecutionStartTimestamp: startTimestamp,
 				},
 			}
 			assert.Empty(t, cmp.Diff(
