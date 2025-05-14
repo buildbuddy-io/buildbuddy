@@ -913,12 +913,8 @@ func asStartupBoolFlag(arg, name string) (value, ok bool) {
 // that passing `bazel --output_base build test ...` returns "build" as the
 // bazel command, even though "build" is the argument to --output_base.
 func GetBazelCommandAndIndex(args []string) (string, int) {
-	commands, err := bazelrc.BazelCommands()
-	if err != nil {
-		return "", -1
-	}
 	for i, a := range args {
-		if _, ok := commands[a]; ok {
+		if bazelrc.IsBazelCommand(a) {
 			return a, i
 		}
 	}

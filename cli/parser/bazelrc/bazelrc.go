@@ -3,7 +3,6 @@ package bazelrc
 import (
 	"bufio"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -59,24 +58,14 @@ var (
 		"coverage": "test",
 	}
 
-	CommonPhases = map[string]struct{}{
-		"common": {},
-		"always": {},
+	StartupFlagNoRc = map[string]struct{}{
+		"ignore_all_rc_files": {},
+		"home_rc":             {},
+		"workspace_rc":        {},
+		"system_rc":           {},
+		"bazelrc":             {},
 	}
-
-	allPhases = func() map[string]struct{} {
-		v := maps.Clone(bazelCommands)
-		maps.Insert(v, maps.All(CommonPhases))
-		v["startup"] = struct{}{}
-		return v
-	}()
 )
-
-func BazelCommands() (map[string]struct{}, error) {
-	// TODO(zoey): figure out if we can get bazel help output without starting a
-	// bazel server at any point.
-	return bazelCommands, nil
-}
 
 // RcRule is a rule parsed from a bazelrc file.
 type RcRule struct {
@@ -299,6 +288,11 @@ func GetBazelOS() string {
 	default:
 		return runtime.GOOS
 	}
+}
+
+func IsBazelCommand(command string) bool {
+	_, ok := bazelCommands[command]
+	return ok
 }
 
 func Parent(command string) (string, bool) {
