@@ -408,8 +408,6 @@ func TestHitTracking(t *testing.T) {
 				require.True(t, status.IsNotFoundError(err), "expected NotFound, got %T", err)
 			}
 			scorecard := hit_tracker.ScoreCard(ctx, te, invocationID)
-			// assert.Len(t, scorecard.GetResults(), 1)
-			// assert.Equal(t, 20, scorecard.GetResults()[0].GetExecutionStartTimestamp().GetSeconds())
 			expectedStatus := &statuspb.Status{Code: int32(gcodes.NotFound)}
 			var startTimestamp *timestamppb.Timestamp = nil
 			if test.expectHit {
