@@ -2,7 +2,6 @@ package action_cache_server_test
 
 import (
 	"context"
-	"log"
 	"strings"
 	"testing"
 	"time"
@@ -415,12 +414,12 @@ func TestHitTracking(t *testing.T) {
 			}
 			expectedResults := []*capb.ScoreCard_Result{
 				{
-					ActionId:             actionDigest.GetHash(),
-					CacheType:            rspb.CacheType_AC,
-					Digest:               actionDigest,
-					RequestType:          capb.RequestType_READ,
-					Status:               expectedStatus,
-					TransferredSizeBytes: int64(expectedTransferSize),
+					ActionId:                actionDigest.GetHash(),
+					CacheType:               rspb.CacheType_AC,
+					Digest:                  actionDigest,
+					RequestType:             capb.RequestType_READ,
+					Status:                  expectedStatus,
+					TransferredSizeBytes:    int64(expectedTransferSize),
 					ExecutionStartTimestamp: startTimestamp,
 				},
 			}
