@@ -41,7 +41,7 @@ go_library(
 )
 
 genrule(
-    name = "tini",
+    name = "tini_binary",
     srcs = ["//enterprise/server/cmd/executor:tini"],
     outs = ["tini"],
     cmd = "cp $(SRCS) $@",
