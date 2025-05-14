@@ -245,6 +245,10 @@ func lookupDocId(db pebble.Reader, namespace string, matchField types.Field) (ui
 	return postingList.ToArray()[0], nil
 }
 
+func commitShaKey(namespace string) []byte {
+	return []byte(fmt.Sprintf("%s:%s", namespace, revisionPrefix))
+}
+
 func (w *Writer) DeleteDocument(docID uint64) error {
 	fieldsStart := w.storedFieldKey(docID, "")
 	fieldsEnd := w.storedFieldKey(docID, "\xff")
@@ -321,6 +325,17 @@ func (w *Writer) AddDocument(doc types.Document) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func (w *Writer) SetLastIndexedCommitSha(revision string) error {
+	if revision == "" {
+		return status.InvalidArgumentError("revision cannot be empty")
+	}
+	if err := w.db.Set(commitShaKey(w.namespace), []byte(revision), pebble.Sync); err != nil {
+		return err
+	}
+	w.log.Infof("Set last indexed revision to %q", revision)
 	return nil
 }
 
@@ -840,4 +855,17 @@ func (r *Reader) RawQuery(squery string) ([]types.DocumentMatch, error) {
 		i++
 	}
 	return matches, nil
+}
+
+func (r *Reader) LastIndexedCommitSha() (string, error) {
+	value, closer, err := r.db.Get(commitShaKey(r.namespace))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return "", status.NotFoundErrorf("no last indexed revision found")
+		}
+		return "", err
+	}
+	defer closer.Close()
+
+	return string(value), nil
 }
