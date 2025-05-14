@@ -278,6 +278,7 @@ type Option interface {
 	HasValue() bool
 	ExpectsValue() bool
 	ClearValue()
+	SetValue(string)
 	GetDefinition() *Definition
 	UseShortName(bool)
 	Normalized() Option
