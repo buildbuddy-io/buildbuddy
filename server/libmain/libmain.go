@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"runtime"
 	"runtime/debug"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
@@ -85,9 +84,6 @@ var (
 	appDirectory    = flag.String("app_directory", "", "the directory containing app binary files to host")
 
 	exitWhenReady = flag.Bool("exit_when_ready", false, "If set, the app will exit as soon as it becomes ready (useful for migrations)")
-
-	mutexProfileFraction = flag.Int("mutex_profile_fraction", 0, "The fraction of mutex contention events reported. (1/rate, 0 disables)")
-	blockProfileRate     = flag.Int("block_profile_rate", 0, "The fraction of goroutine blocking events reported. (1/rate, 0 disables)")
 
 	// URL path prefixes that should be handled by serving the app's HTML.
 	appRoutes = []string{
@@ -349,8 +345,6 @@ func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 
 func StartMonitoringHandler(env *real_environment.RealEnv) {
 	env.SetListenAddr(*listen)
-	runtime.SetMutexProfileFraction(*mutexProfileFraction)
-	runtime.SetBlockProfileRate(*blockProfileRate)
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 }
 
