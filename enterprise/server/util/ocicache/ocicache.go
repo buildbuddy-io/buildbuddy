@@ -226,7 +226,7 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	return nil
 }
 
-func WriteBlobOrManifestToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
+func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -256,7 +256,7 @@ func WriteBlobOrManifestToCache(ctx context.Context, r io.Reader, bsClient bspb.
 	arKey := &ocipb.OCIActionResultKey{
 		Registry:      ref.Context().RegistryStr(),
 		Repository:    ref.Context().RepositoryStr(),
-		ResourceType:  ociResourceType,
+		ResourceType:  ocipb.OCIResourceType_BLOB,
 		HashAlgorithm: hash.Algorithm,
 		HashHex:       hash.Hex,
 	}
@@ -294,20 +294,21 @@ func WriteBlobOrManifestToCache(ctx context.Context, r io.Reader, bsClient bspb.
 }
 
 func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
-	r := upstream
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
 		if contentLength > maxManifestSize {
 			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
 		}
-		raw, err := io.ReadAll(io.LimitReader(upstream, contentLength))
+		buf := bytes.NewBuffer(make([]byte, 0, contentLength))
+		mw := io.MultiWriter(w, buf)
+		written, err := io.Copy(mw, io.LimitReader(upstream, contentLength))
 		if err != nil {
 			return err
 		}
-		if err := WriteManifestToAC(ctx, raw, acClient, ref, hash, contentType); err != nil {
-			log.CtxWarningf(ctx, "Error writing manifest to AC for %q: %s", ref.Context(), err)
+		if written != contentLength {
+			return status.DataLossErrorf("expected manifest of length %d, only able to write %d bytes", contentLength, written)
 		}
-		r = bytes.NewReader(raw)
+		return WriteManifestToAC(ctx, buf.Bytes(), acClient, ref, hash, contentType)
 	}
-	tr := io.TeeReader(r, w)
-	return WriteBlobOrManifestToCache(ctx, tr, bsClient, acClient, ref, ociResourceType, hash, contentType, contentLength)
+	tr := io.TeeReader(upstream, w)
+	return WriteBlobToCache(ctx, tr, bsClient, acClient, ref, hash, contentType, contentLength)
 }
