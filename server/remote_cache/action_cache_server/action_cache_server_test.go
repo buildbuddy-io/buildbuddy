@@ -2,8 +2,10 @@ package action_cache_server_test
 
 import (
 	"context"
+	"log"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -26,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -361,7 +364,8 @@ func TestHitTracking(t *testing.T) {
 					},
 				},
 				ExecutionMetadata: &repb.ExecutedActionMetadata{
-					Worker: "this value doesnt matter, just defining it to be stable",
+					Worker:                  "this value doesnt matter, just defining it to be stable",
+					ExecutionStartTimestamp: timestamppb.New(time.Unix(20, 0)),
 				},
 			}
 			if test.actionResultProtoPresent {
@@ -394,6 +398,7 @@ func TestHitTracking(t *testing.T) {
 			if test.expectHit {
 				if test.expectCachedDigestMatch {
 					expectedTransferSize = proto.Size(uploadedActionResult)
+					log.Printf("%+v", actionResult)
 					require.True(t, proto.Equal(actionResult, &repb.ActionResult{
 						ActionResultDigest: test.clientActionResultDigest,
 					}))
@@ -403,9 +408,13 @@ func TestHitTracking(t *testing.T) {
 				require.True(t, status.IsNotFoundError(err), "expected NotFound, got %T", err)
 			}
 			scorecard := hit_tracker.ScoreCard(ctx, te, invocationID)
+			// assert.Len(t, scorecard.GetResults(), 1)
+			// assert.Equal(t, 20, scorecard.GetResults()[0].GetExecutionStartTimestamp().GetSeconds())
 			expectedStatus := &statuspb.Status{Code: int32(gcodes.NotFound)}
+			var startTimestamp *timestamppb.Timestamp = nil
 			if test.expectHit {
 				expectedStatus = &statuspb.Status{Code: int32(gcodes.OK)}
+				startTimestamp = timestamppb.New(time.Unix(20, 0))
 			}
 			expectedResults := []*capb.ScoreCard_Result{
 				{
@@ -415,6 +424,7 @@ func TestHitTracking(t *testing.T) {
 					RequestType:          capb.RequestType_READ,
 					Status:               expectedStatus,
 					TransferredSizeBytes: int64(expectedTransferSize),
+					ExecutionStartTimestamp: startTimestamp,
 				},
 			}
 			assert.Empty(t, cmp.Diff(
