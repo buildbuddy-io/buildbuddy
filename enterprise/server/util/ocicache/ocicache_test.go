@@ -105,8 +105,6 @@ func setupTestEnv(t *testing.T) *testenv.TestEnv {
 // at all, there would be an error trying to write to a nil client or server.
 func TestManifestWrittenOnlyToAC(t *testing.T) {
 	te := setupTestEnv(t)
-	te.SetByteStreamServer(nil)
-	te.SetByteStreamClient(nil)
 
 	imageName := "test_manifest_written_only_to_ac"
 	image, err := crane.Image(map[string][]byte{
@@ -128,7 +126,17 @@ func TestManifestWrittenOnlyToAC(t *testing.T) {
 	require.NoError(t, err)
 
 	var out bytes.Buffer
-	err = ocicache.WriteBlobOrManifestToCacheAndWriter(ctx, bytes.NewReader(raw), &out, nil, acClient, ref, ocipb.OCIResourceType_MANIFEST, hash, contentType, int64(len(raw)))
+	err = ocicache.WriteBlobOrManifestToCacheAndWriter(ctx,
+		bytes.NewReader(raw),
+		&out,
+		nil, // explicitly pass nil bytestream client
+		acClient,
+		ref,
+		ocipb.OCIResourceType_MANIFEST,
+		hash,
+		contentType,
+		int64(len(raw)),
+	)
 	require.NoError(t, err)
 	require.Equal(t, len(raw), out.Len())
 	require.Empty(t, cmp.Diff(raw, out.Bytes()))
