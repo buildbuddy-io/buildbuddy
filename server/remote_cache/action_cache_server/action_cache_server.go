@@ -162,20 +162,24 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 	// the full response that we just computed, then we won't bother sending the
 	// data, and instead just tell the caller that their cache is correct.
 	if *checkClientActionResultDigests && req.GetCachedActionResultDigest().GetHash() != "" {
-
+		d, err := digest.ComputeForMessage(rsp, req.GetDigestFunction())
+		if err != nil {
+			return nil, nil, 0, err
+		}
 		// NOTE: To avoid double-counting AC hits, callers that specify a
 		// cached_action_result_digest don't do hit tracking on their own.  This
 		// means we need to track the full response size here instead.
 
 		originalMetadata := rsp.GetExecutionMetadata()
-		rsp.ExecutionMetadata = nil
+		originalResultSize := int64(proto.Size(rsp))
+		// rsp.ExecutionMetadata = nil
 
 		// Deliberately don't count metadata size: we aren't sending it back.
-		originalResultSize := int64(proto.Size(rsp))
-		d, err := digest.ComputeForMessage(rsp, req.GetDigestFunction())
-		if err != nil {
-			return nil, nil, 0, err
-		}
+
+		// d, err := digest.ComputeForMessage(rsp, req.GetDigestFunction())
+		// if err != nil {
+		// 	return nil, nil, 0, err
+		// }
 
 		// Now that we've tracked size, wipe out the response.
 		if proto.Equal(req.GetCachedActionResultDigest(), d) {
