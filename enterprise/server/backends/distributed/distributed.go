@@ -372,6 +372,23 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 		c.log.Debugf("Not setting lookaside entry for resource: %s", r)
 		return
 	}
+	invalid := false
+	if r.GetCacheType() == rspb.CacheType_CAS && r.GetDigest().GetSizeBytes() != int64(len(data)) {
+		invalid = true
+	} else if strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
+		// If this is a TreeCache entry that we wrote; pull the size
+		// from the remote instance name.
+		parts := strings.Split(r.GetInstanceName(), "/")
+		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+			if s != len(data) {
+				invalid = true
+			}
+		}
+	}
+	if invalid {
+		log.Warningf("Resource %v had invalid data length %v. Not adding it to lookaside cache", r, len(data))
+		return
+	}
 	entry := lookasideCacheEntry{
 		createdAtMillis: time.Now().UnixMilli(),
 		data:            data,
@@ -419,28 +436,8 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 	}).Inc()
 
 	if found {
-		invalid := false
-		if r.GetCacheType() == rspb.CacheType_CAS && r.GetDigest().GetSizeBytes() != int64(len(entry.data)) {
-			invalid = true
-		} else if strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
-			// If this is a TreeCache entry that we wrote; pull the size
-			// from the remote instance name.
-			parts := strings.Split(r.GetInstanceName(), "/")
-			if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
-				if s != len(entry.data) {
-					invalid = true
-				}
-			}
-		}
-		if invalid {
-			log.Warningf("Resource %v had invalid entry in lookaside cache with len = %v. Removing it", r, len(entry.data))
-			c.lookasideMu.Lock()
-			c.lookaside.Remove(k)
-			c.lookasideMu.Unlock()
-		} else {
-			c.log.Debugf("Got %q from lookaside cache", k)
-			return entry.data, true
-		}
+		c.log.Debugf("Got %q from lookaside cache", k)
+		return entry.data, true
 	}
 	return nil, false
 }
