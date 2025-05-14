@@ -8,6 +8,7 @@ go_library(
     embedsrcs = [
         "hosts",
         "seccomp.json",
+        "tini",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime",
     target_compatible_with = ["@platforms//os:linux"],
@@ -37,6 +38,13 @@ go_library(
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
     ],
+)
+
+genrule(
+    name = "tini",
+    srcs = ["//enterprise/server/cmd/executor:tini"],
+    outs = ["tini"],
+    cmd = "cp $(SRCS) $@",
 )
 
 go_test(
@@ -73,7 +81,6 @@ go_test(
         "busyboxRlocationpath": "$(rlocationpath :busybox)",
         "ociBusyboxRlocationpath": "$(rlocationpath @busybox)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
-        "tiniRlocationpath": "$(rlocationpath //enterprise/server/cmd/executor:tini)",
     },
     deps = [
         ":ociruntime",

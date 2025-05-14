@@ -61,8 +61,6 @@ var (
 	netPoolSize = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 	capAdd      = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
-	tiniEnabled = flag.Bool("executor.oci.tini_enabled", false, "Run tini as pid 1 for recycling-enabled containers.")
-	tiniPath    = flag.String("executor.oci.tini_path", "", "Path to tini binary to use as pid 1 for recycling-enabled containers. Defaults to PATH lookup if not set.")
 	mounts      = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
@@ -104,6 +102,9 @@ var seccomp specs.LinuxSeccomp
 
 //go:embed hosts
 var hostsFile []byte
+
+//go:embed tini
+var tini []byte
 
 func init() {
 	if err := json.Unmarshal(seccompJSON, &seccomp); err != nil {
@@ -212,17 +213,13 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	}
 
 	// Configure the tini binary path.
-	var tini string
-	if *tiniEnabled {
-		if *tiniPath == "" {
-			p, err := exec.LookPath("tini")
-			if err != nil {
-				return nil, status.FailedPreconditionErrorf("tini not found in PATH")
-			}
-			tini = p
-		} else {
-			tini = *tiniPath
-		}
+	binDir := filepath.Join(buildRoot, "executor", "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return nil, status.FailedPreconditionErrorf("failed to create executor bin directory: %s", err)
+	}
+	tiniPath := filepath.Join(binDir, "tini")
+	if err := os.WriteFile(tiniPath, tini, 0755); err != nil {
+		return nil, status.FailedPreconditionErrorf("failed to write tini binary to %s: %s", tiniPath, err)
 	}
 
 	lxcfsMount := "" // set below if configured.
@@ -303,7 +300,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	return &provider{
 		env:            env,
 		runtime:        rt,
-		tiniPath:       tini,
+		tiniPath:       tiniPath,
 		containersRoot: containersRoot,
 		cgroupPaths:    &cgroup.Paths{},
 		imageCacheRoot: imageCacheRoot,
@@ -330,6 +327,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		cgroupSettings: &scpb.CgroupSettings{},
 		imageRef:       args.Props.ContainerImage,
 		networkEnabled: args.Props.DockerNetwork != "off",
+		tiniEnabled:    args.Props.DockerInit,
 		user:           args.Props.DockerUser,
 		forceRoot:      args.Props.DockerForceRoot,
 
@@ -347,6 +345,7 @@ type ociContainer struct {
 
 	runtime        string
 	tiniPath       string
+	tiniEnabled    bool
 	cgroupPaths    *cgroup.Paths
 	cgroupParent   string
 	cgroupSettings *scpb.CgroupSettings
@@ -503,6 +502,10 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	if err := c.createNetwork(ctx); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("create network: %s", err))
 	}
+	if c.tiniEnabled {
+		cmd = cmd.CloneVT()
+		cmd.Arguments = append([]string{tiniMountPoint, "--"}, cmd.Arguments...)
+	}
 	if err := c.createBundle(ctx, cmd); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("create OCI bundle: %s", err))
 	}
@@ -527,7 +530,7 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 		return status.UnavailableErrorf("create network: %s", err)
 	}
 	pid1 := &repb.Command{Arguments: []string{"sleep", "999999999999"}}
-	if *tiniEnabled {
+	if c.tiniEnabled {
 		pid1.Arguments = append(
 			[]string{tiniMountPoint, "--"},
 			pid1.Arguments...,
@@ -1123,7 +1126,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			})
 		}
 	}
-	if c.tiniPath != "" {
+	if c.tiniEnabled {
 		// Bind-mount tini readonly into the container.
 		spec.Mounts = append(spec.Mounts, specs.Mount{
 			Destination: tiniMountPoint,

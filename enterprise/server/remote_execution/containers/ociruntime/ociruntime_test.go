@@ -59,7 +59,6 @@ var (
 	busyboxRlocationpath    string
 	ociBusyboxRlocationpath string
 	testworkerRlocationpath string
-	tiniRlocationpath       string
 )
 
 func init() {
@@ -463,7 +462,7 @@ func TestCreateExecRemove(t *testing.T) {
 	assert.Equal(t, "buildbuddy was here: /buildbuddy-execroot\n", string(res.Stdout))
 }
 
-func TestTiniProcessReaping(t *testing.T) {
+func TestTini_Run(t *testing.T) {
 	setupNetworking(t)
 
 	image := realBusyboxImage(t)
@@ -471,12 +470,41 @@ func TestTiniProcessReaping(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	tiniPath, err := runfiles.Rlocation(tiniRlocationpath)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
-	flags.Set(t, "executor.oci.tini_enabled", true)
-	flags.Set(t, "executor.oci.tini_path", tiniPath)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		DockerInit:     true, // enable tini
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
 
+	// For now just check that tini is pid 1. It's difficult to write a shell
+	// script that intentionally creates a zombie process, since shells will
+	// handle SIGCHLD and reap processes.
+	cmd := &repb.Command{Arguments: []string{"cat", "/proc/1/stat"}}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Empty(t, string(res.Stderr))
+	assert.True(t, strings.HasPrefix(string(res.Stdout), "1 (tini)"), "tini should be pid 1. /proc/1/stat contents: %q", string(res.Stdout))
+	assert.Equal(t, 0, res.ExitCode)
+}
+
+func TestTini_CreateExec(t *testing.T) {
+	setupNetworking(t)
+
+	image := realBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
@@ -486,6 +514,7 @@ func TestTiniProcessReaping(t *testing.T) {
 
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
 		ContainerImage: image,
+		DockerInit:     true, // enable tini
 	}})
 	require.NoError(t, err)
 
