@@ -244,7 +244,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		dc.lookaside = l
 
 		lookasideCacheTTLString := "INF"
-		if *lookasideCacheTTL > 0*time.Second {
+		if *lookasideCacheTTL > 0 {
 			lookasideCacheTTLString = lookasideCacheTTL.String()
 		}
 		log.Printf("Initialized lookaside cache (Size %d, ttl=%s)", config.LookasideCacheSizeBytes, lookasideCacheTTLString)
@@ -406,7 +406,7 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 	found := false
 	entry, ok := c.lookaside.Get(k)
 	if ok {
-		if *lookasideCacheTTL > 0*time.Second && time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
+		if *lookasideCacheTTL > 0 && time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
 			// Remove the item from the LRU if it's expired.
 			c.lookaside.Remove(k)
 		} else {
