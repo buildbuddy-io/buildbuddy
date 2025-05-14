@@ -825,24 +825,40 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl.Replica)
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("zoo"),
+				Value: []byte("bar"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+
+	// shrink the range descriptor.
 	rd := &rfpb.RangeDescriptor{
 		Start:      keys.Key("a"),
-		End:        keys.Key("z"),
+		End:        keys.Key("g"),
 		RangeId:    1,
 		Generation: 2,
 	}
 	writeLocalRangeDescriptor(t, em, repl.Replica, rd)
 
-	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   []byte("foo"),
-			Value: []byte("bar"),
-		},
-	}))
-	entries := []dbsm.Entry{entry}
-	rsp, err := repl.Update(entries)
-	require.NoError(t, err)
-	require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("foo"),
+				Value: []byte("bar"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
 
 	wb := repl.DB().NewBatch()
 	txid := []byte("TX1")
@@ -880,6 +896,21 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 
 	em2 := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em2, repl2.Replica)
+
+	// write an entry that is in the default range, but not in the updated range
+	// in the snapshot
+	{
+		entry := em2.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("zoo"),
+				Value: []byte("bar"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl2.Update(entries)
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
 
 	// Prepare a transaction before recovering from snapshot
 	wb2 := repl2.DB().NewBatch()
@@ -920,6 +951,21 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	gotIndex := binary.LittleEndian.Uint64(buf)
 	require.Greater(t, gotIndex, uint64(0))
 	closer.Close()
+
+	// Verify that "foo" should exist in repl2; this should be written from snapshot.
+	{
+		buf, closer, err := repl2.DB().Get([]byte("foo"))
+		require.NoError(t, err)
+		closer.Close()
+		require.Equal(t, []byte("bar"), buf)
+	}
+	// Verify that "zoo" is not cleared.
+	{
+		buf, closer, err := repl2.DB().Get([]byte("zoo"))
+		require.NoError(t, err)
+		closer.Close()
+		require.Equal(t, []byte("bar"), buf)
+	}
 
 	// Verify that we should not be able to commit the txn in the snapshot.
 	err = repl2.CommitTransaction(txid)
