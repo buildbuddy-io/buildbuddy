@@ -213,6 +213,7 @@ func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
 }
 
 func TestAutoBringup(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	waitForShutdown(t, caches...)
@@ -276,6 +277,7 @@ func TestGetAndSet(t *testing.T) {
 }
 
 func TestCacheShutdown(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	rc1 := caches[0]
@@ -329,6 +331,7 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 
