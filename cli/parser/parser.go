@@ -3,7 +3,6 @@
 package parser
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/base64"
 	"fmt"
@@ -21,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
@@ -28,56 +28,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/google/shlex"
 
 	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-const (
-	workspacePrefix                  = `%workspace%/`
-	enablePlatformSpecificConfigFlag = "enable_platform_specific_config"
-)
-
 var (
-	bazelCommands = map[string]struct{}{
-		"analyze-profile":    {},
-		"aquery":             {},
-		"build":              {},
-		"canonicalize-flags": {},
-		"clean":              {},
-		"coverage":           {},
-		"cquery":             {},
-		"dump":               {},
-		"fetch":              {},
-		"help":               {},
-		"info":               {},
-		"license":            {},
-		"mobile-install":     {},
-		"print_action":       {},
-		"query":              {},
-		"run":                {},
-		"shutdown":           {},
-		"sync":               {},
-		"test":               {},
-		"version":            {},
-	}
-	// Inheritance hierarchy: https://bazel.build/run/bazelrc#option-defaults
-	// All commands inherit from "common".
-	parentCommand = map[string]string{
-		"test":           "build",
-		"run":            "build",
-		"clean":          "build",
-		"mobile-install": "build",
-		"info":           "build",
-		"print_action":   "build",
-		"config":         "build",
-		"cquery":         "build",
-		"aquery":         "build",
-
-		"coverage": "test",
-	}
-
 	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
 
 	// make this a var so the test can replace it.
@@ -112,6 +68,14 @@ func SetBazelHelpForTesting(encodedProto string) {
 	bazelHelp = func() (string, error) {
 		return encodedProto, nil
 	}
+}
+
+var StartupFlagNoRc = map[string]struct{}{
+	"ignore_all_rc_files": {},
+	"home_rc":             {},
+	"workspace_rc":        {},
+	"system_rc":           {},
+	"bazelrc":             {},
 }
 
 // Parser contains a set of OptionDefinitions (indexed for ease of parsing) and
@@ -314,12 +278,6 @@ func (p *Parser) Next(args []string, start int, startup bool) (option options.Op
 // BazelHelpFunc returns the output of "bazel help flags-as-proto". Passing
 // the help function lets us replace it for testing.
 type BazelHelpFunc func() (string, error)
-
-func BazelCommands() (map[string]struct{}, error) {
-	// TODO(zoey): figure out if we can get bazel help output without starting a
-	// bazel server at any point.
-	return bazelCommands, nil
-}
 
 func (p *Parser) parseLongNameOption(optName string) (options.Option, error) {
 	var v *string
@@ -570,190 +528,6 @@ func runBazelHelpWithCache() (string, error) {
 	return buf.String(), nil
 }
 
-type Rules struct {
-	All              []*RcRule
-	ByPhaseAndConfig map[string]map[string][]*RcRule
-}
-
-func StructureRules(rules []*RcRule) *Rules {
-	r := &Rules{
-		All:              rules,
-		ByPhaseAndConfig: map[string]map[string][]*RcRule{},
-	}
-	for _, rule := range rules {
-		byConfig := r.ByPhaseAndConfig[rule.Phase]
-		if byConfig == nil {
-			byConfig = map[string][]*RcRule{}
-			r.ByPhaseAndConfig[rule.Phase] = byConfig
-		}
-		byConfig[rule.Config] = append(byConfig[rule.Config], rule)
-	}
-	return r
-}
-
-func (r *Rules) ForPhaseAndConfig(phase, config string) []*RcRule {
-	byConfig := r.ByPhaseAndConfig[phase]
-	if byConfig == nil {
-		return nil
-	}
-	return byConfig[config]
-}
-
-// RcRule is a rule parsed from a bazelrc file.
-type RcRule struct {
-	Phase  string
-	Config string
-	// Tokens contains the raw (non-canonicalized) tokens in the rule.
-	Tokens []string
-}
-
-func (r *RcRule) String() string {
-	return fmt.Sprintf("phase=%q,config=%q,tokens=%v", r.Phase, r.Config, r.Tokens)
-}
-
-func appendRcRulesFromImport(workspaceDir, path string, opts []*RcRule, optional bool, importStack []string) ([]*RcRule, error) {
-	if strings.HasPrefix(path, workspacePrefix) {
-		path = filepath.Join(workspaceDir, path[len(workspacePrefix):])
-	}
-
-	file, err := os.Open(path)
-	if err != nil {
-		if optional {
-			return opts, nil
-		}
-		return nil, err
-	}
-	defer file.Close()
-	return appendRcRulesFromFile(workspaceDir, file, opts, importStack)
-}
-
-func appendRcRulesFromFile(workspaceDir string, f *os.File, rules []*RcRule, importStack []string) ([]*RcRule, error) {
-	rpath, err := realpath(f.Name())
-	if err != nil {
-		return nil, fmt.Errorf("could not determine real path of bazelrc file: %s", err)
-	}
-	for _, path := range importStack {
-		if path == rpath {
-			return nil, fmt.Errorf("circular import detected: %s -> %s", strings.Join(importStack, " -> "), rpath)
-		}
-	}
-	importStack = append(importStack, rpath)
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		// Handle line continuations (lines can end with "\" to effectively
-		// continue the same line)
-		for strings.HasSuffix(line, `\`) && scanner.Scan() {
-			line = line[:len(line)-1] + scanner.Text()
-		}
-
-		line = stripCommentsAndWhitespace(line)
-
-		tokens := strings.Fields(line)
-		if len(tokens) == 0 {
-			// blank line
-			continue
-		}
-		if tokens[0] == "import" || tokens[0] == "try-import" {
-			isOptional := tokens[0] == "try-import"
-			path := strings.TrimSpace(strings.TrimPrefix(line, tokens[0]))
-			rules, err = appendRcRulesFromImport(workspaceDir, path, rules, isOptional, importStack)
-			if err != nil {
-				return nil, err
-			}
-			continue
-		}
-
-		rule, err := parseRcRule(line)
-		if err != nil {
-			log.Debugf("Error parsing bazelrc option: %s", err.Error())
-			continue
-		}
-		// Bazel doesn't support configs for startup options and ignores them if
-		// they appear in a bazelrc: https://bazel.build/run/bazelrc#config
-		if rule.Phase == "startup" && rule.Config != "" {
-			continue
-		}
-		rules = append(rules, rule)
-	}
-	log.Debugf("Adding rc rules from %q: %v", rpath, rules)
-	return rules, scanner.Err()
-}
-
-func realpath(path string) (string, error) {
-	directPath, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Abs(directPath)
-}
-
-func stripCommentsAndWhitespace(line string) string {
-	index := strings.Index(line, "#")
-	if index >= 0 {
-		line = line[:index]
-	}
-	return strings.TrimSpace(line)
-}
-
-func parseRcRule(line string) (*RcRule, error) {
-	tokens, err := shlex.Split(line)
-	if err != nil {
-		return nil, err
-	}
-	if len(tokens) == 0 {
-		return nil, fmt.Errorf("unexpected empty line")
-	}
-	if strings.HasPrefix(tokens[0], "-") {
-		return &RcRule{
-			Phase:  "common",
-			Tokens: tokens,
-		}, nil
-	}
-	if !strings.Contains(tokens[0], ":") {
-		return &RcRule{
-			Phase:  tokens[0],
-			Tokens: tokens[1:],
-		}, nil
-	}
-	phaseConfig := strings.Split(tokens[0], ":")
-	if len(phaseConfig) != 2 {
-		return nil, fmt.Errorf("invalid bazelrc syntax: %s", phaseConfig)
-	}
-	return &RcRule{
-		Phase:  phaseConfig[0],
-		Config: phaseConfig[1],
-		Tokens: tokens[1:],
-	}, nil
-}
-
-func ParseRCFiles(workspaceDir string, filePaths ...string) ([]*RcRule, error) {
-	opts := make([]*RcRule, 0)
-	seen := map[string]bool{}
-	for _, filePath := range filePaths {
-		r, err := realpath(filePath)
-		if err != nil {
-			continue
-		}
-		if seen[r] {
-			continue
-		}
-		seen[r] = true
-
-		file, err := os.Open(filePath)
-		if err != nil {
-			continue
-		}
-		defer file.Close()
-		opts, err = appendRcRulesFromFile(workspaceDir, file, opts, nil /*=importStack*/)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return opts, nil
-}
-
 // Convenience function to use the singleton parser's MakeOption function.
 func MakeOption(optionName string, value *string) (option options.Option, err error) {
 	p, err := GetParser()
@@ -837,11 +611,11 @@ func (p *Parser) expandConfigs(workspaceDir string, args []string) ([]string, er
 		return nil, err
 	}
 	log.Debugf("Parsing rc files %s", rcFiles)
-	r, err := ParseRCFiles(workspaceDir, rcFiles...)
+	r, err := bazelrc.ParseRCFiles(workspaceDir, rcFiles...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse bazelrc file: %s", err)
 	}
-	rules := StructureRules(r)
+	rules := bazelrc.StructureRules(r)
 
 	// Expand startup args first, before any other args (including explicit
 	// startup args).
@@ -887,7 +661,7 @@ func (p *Parser) expandConfigs(workspaceDir string, args []string) ([]string, er
 
 	// Replace the last occurrence of `--enable_platform_specific_config` with
 	// `--config=<bazelOS>`, so long as the last occurrence evaluates as true.
-	opts := parsedArgs.RemoveOptions(enablePlatformSpecificConfigFlag)
+	opts := parsedArgs.RemoveOptions(bazelrc.EnablePlatformSpecificConfigFlag)
 	if len(opts) > 0 {
 		enable := opts[len(opts)-1].Option
 		index := opts[len(opts)-1].Index
@@ -944,7 +718,7 @@ func (p *Parser) expandConfigs(workspaceDir string, args []string) ([]string, er
 	return args, nil
 }
 
-func (p *Parser) appendArgsForConfig(command string, rules *Rules, args []string, phase string, phases []string, config string, configStack []string) ([]string, error) {
+func (p *Parser) appendArgsForConfig(command string, rules *bazelrc.Rules, args []string, phase string, phases []string, config string, configStack []string) ([]string, error) {
 	for _, c := range configStack {
 		if c == config {
 			return nil, fmt.Errorf("circular --config reference detected: %s -> %s", strings.Join(configStack, " -> "), config)
@@ -1025,7 +799,7 @@ func (p *Parser) appendArgsForConfig(command string, rules *Rules, args []string
 	return args, nil
 }
 
-func isConfigDefined(rules *Rules, config string, phases []string) bool {
+func isConfigDefined(rules *bazelrc.Rules, config string, phases []string) bool {
 	for _, phase := range phases {
 		if len(rules.ForPhaseAndConfig(phase, config)) > 0 {
 			return true
@@ -1139,7 +913,7 @@ func asStartupBoolFlag(arg, name string) (value, ok bool) {
 // that passing `bazel --output_base build test ...` returns "build" as the
 // bazel command, even though "build" is the argument to --output_base.
 func GetBazelCommandAndIndex(args []string) (string, int) {
-	commands, err := BazelCommands()
+	commands, err := bazelrc.BazelCommands()
 	if err != nil {
 		return "", -1
 	}
@@ -1183,7 +957,7 @@ func getPhases(command string) (out []string) {
 			break
 		}
 		out = append(out, command)
-		command = parentCommand[command]
+		command, _ = bazelrc.Parent(command)
 	}
 	reverse(out)
 	return
