@@ -41,6 +41,15 @@ message IndexResponse {
   context.ResponseContext response_context = 1;
 }
 
+message IndexStatusRequest {
+  string namespace = 1;
+}
+
+message IndexStatusResponse {
+  string last_indexed_commit_sha = 1;
+}
+
+
 message IngestAnnotationsRequest {
   context.RequestContext request_context = 1;
 

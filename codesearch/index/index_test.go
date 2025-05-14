@@ -321,6 +321,31 @@ func TestSQuery(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestLastIndexedCommitSha(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	commitSha := "abc123"
+
+	w, err := NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.SetLastIndexedCommitSha(commitSha)
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	readCommitSha, err := r.LastIndexedCommitSha()
+	require.NoError(t, err)
+
+	assert.Equal(t, commitSha, readCommitSha)
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},

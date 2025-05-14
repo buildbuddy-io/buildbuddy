@@ -231,6 +231,8 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 		}
 	}
 
+	iw.SetLastIndexedCommitSha(commitSHA)
+
 	if err := iw.Flush(); err != nil {
 		return nil, err
 	}
@@ -280,6 +282,25 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		return nil, err
 	}
 	return rsp, nil
+}
+
+func (css *codesearchServer) IndexStatus(ctx context.Context, req *inpb.IndexStatusRequest) (*inpb.IndexStatusResponse, error) {
+	// TODO(jdelfino): where does namespace come from? middleware? It's not set in githubapp.go, but shows up here...
+	namespace, err := css.getUserNamespace(ctx, req.GetNamespace())
+	if err != nil {
+		return nil, err
+	}
+
+	r := index.NewReader(ctx, css.db, namespace, schema.DefaultSchema())
+
+	lastIndexedRevision, err := r.LastIndexedCommitSha()
+	if err != nil {
+		return nil, err
+	}
+
+	return &inpb.IndexStatusResponse{
+		LastIndexedCommitSha: lastIndexedRevision,
+	}, nil
 }
 
 func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {
