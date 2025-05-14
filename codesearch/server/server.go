@@ -3,6 +3,7 @@ package server
 import (
 	"archive/zip"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
@@ -82,6 +84,7 @@ func New(env environment.Env, rootDirectory, scratchDirectory string) (*codesear
 		env:              env,
 		db:               db,
 		scratchDirectory: scratchDirectory,
+		repoLocks:        make(map[string]*sync.Mutex),
 
 		kdb: kdb,
 		xs:  xs,
@@ -95,6 +98,9 @@ type codesearchServer struct {
 	env              environment.Env
 	db               *pebble.DB
 	scratchDirectory string
+
+	lockLock  sync.Mutex // protects repoLocks
+	repoLocks map[string]*sync.Mutex
 
 	// Kythe services.
 	kdb keyvalue.DB
@@ -141,7 +147,28 @@ func (css *codesearchServer) getUserNamespace(ctx context.Context, requestedName
 	return namespace, nil
 }
 
+func (css *codesearchServer) getRepoLock(namespace, repoURL string) *sync.Mutex {
+	css.lockLock.Lock()
+	defer css.lockLock.Unlock()
+
+	key := fmt.Sprintf("%s:%s", namespace, repoURL)
+	lock, ok := css.repoLocks[key]
+	if !ok {
+		log.Infof("Creating new lock for %s:%s", namespace, repoURL)
+		lock = &sync.Mutex{}
+		css.repoLocks[key] = lock
+	}
+	return lock
+}
+
 func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+	// TODO(jdelfino): This implementation does not remove files which have been deleted since the
+	// the previously indexed version of the repository. Note that a namespace can include multiple
+	// repos, so implementing this would require explicit iteration and deletion of each document
+	// tagged with the given repo URL.
+
+	// TODO(jdelfino): This URL should be normalized, here and anywhere else that it makes its
+	// way into the index.
 	repoURLString := req.GetGitRepo().GetRepoUrl()
 	commitSHA := req.GetRepoState().GetCommitSha()
 	username := req.GetGitRepo().GetUsername()
@@ -236,13 +263,27 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 	var rsp *inpb.IndexResponse
 	eg := &errgroup.Group{}
 	eg.Go(func() error {
+		// Only one update at a time is allowed per repo.
+		// If multiple threads update the same repo at the same time, they risk
+		// adding multiple different versions of the same file.
+
+		// Note that, while go Mutexes do guarantee non-starvation, they don't provide FIFO
+		// ordering. So, if multiple repo re-indexes are requested concurrently, it is not
+		// guaranteed that they will be processed in any particular order.
+
+		lock := css.getRepoLock(namespace, req.GetGitRepo().GetRepoUrl())
+		lock.Lock()
+		defer lock.Unlock()
+
+		log.Infof("Starting indexing %s at commit %s", req.GetGitRepo().GetRepoUrl(), req.GetRepoState().GetCommitSha())
+
 		r, err := css.syncIndex(ctx, req)
 		if err != nil {
 			log.Errorf("Failed indexing %q: %s", req.GetGitRepo().GetRepoUrl(), err)
 			return err
 		}
 		rsp = r
-		log.Infof("Finished indexing %s", req.GetGitRepo().GetRepoUrl())
+		log.Infof("Finished indexing %s at commit %s", req.GetGitRepo().GetRepoUrl(), req.GetRepoState().GetCommitSha())
 		return nil
 	})
 	if req.GetAsync() {
