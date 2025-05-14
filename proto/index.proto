@@ -82,7 +82,8 @@ message Contents {
 
 message Commit {
   string sha = 1;
-  repeated File files = 2;
+  string parent_sha = 2;
+  repeated File files = 3;
 }
 
 message File {
