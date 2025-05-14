@@ -195,6 +195,7 @@ func handleIndex(args []string) {
 			}
 			return nil
 		})
+		iw.SetLastIndexedCommitSha(repoURL.String(), commitSHA)
 	}
 
 	if err := iw.Flush(); err != nil {

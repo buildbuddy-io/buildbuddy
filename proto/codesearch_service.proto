@@ -9,7 +9,7 @@ option go_package = "codesearch_service";
 
 service CodesearchService {
   rpc Index(index.IndexRequest) returns (index.IndexResponse);
-  rpc IndexStatus(index.IndexStatusRequest) returns (index.IndexStatusResponse);
+  rpc RepoStatus(index.RepoStatusRequest) returns (index.RepoStatusResponse);
   rpc Search(search.SearchRequest) returns (search.SearchResponse);
   rpc IngestAnnotations(index.IngestAnnotationsRequest)
       returns (index.IngestAnnotationsResponse);

@@ -41,11 +41,12 @@ message IndexResponse {
   context.ResponseContext response_context = 1;
 }
 
-message IndexStatusRequest {
+message RepoStatusRequest {
   string namespace = 1;
+  string repo_url = 2;
 }
 
-message IndexStatusResponse {
+message RepoStatusResponse {
   string last_indexed_commit_sha = 1;
 }
 
