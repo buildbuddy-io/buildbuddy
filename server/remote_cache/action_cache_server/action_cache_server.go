@@ -173,7 +173,7 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 		originalMetadata := rsp.GetExecutionMetadata()
 		originalResultSize := int64(proto.Size(rsp))
 
-		// Now that we've tracked size, wipe out the response.
+		// Now that we've tracked size and metadata, wipe out the response.
 		if proto.Equal(req.GetCachedActionResultDigest(), d) {
 			rsp = &repb.ActionResult{
 				ActionResultDigest: d,

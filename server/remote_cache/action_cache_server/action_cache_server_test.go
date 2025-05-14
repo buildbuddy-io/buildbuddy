@@ -314,7 +314,7 @@ func TestHitTracking(t *testing.T) {
 			actionResultProtoPresent: true,
 			outputsPresent:           true,
 			expectHit:                true,
-			clientActionResultDigest: &repb.Digest{Hash: "8ffd56793296649f99345bcf689d2a28678ea4745496dd8f4061328ffc0b0fe1", SizeBytes: 142},
+			clientActionResultDigest: &repb.Digest{Hash: "282b248376e4acff972ac4595dd38d8ce4234437f43aee62c726806a797e5eff", SizeBytes: 146},
 			expectCachedDigestMatch:  true,
 		},
 		{
