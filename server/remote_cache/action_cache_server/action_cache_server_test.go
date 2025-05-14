@@ -398,7 +398,6 @@ func TestHitTracking(t *testing.T) {
 			if test.expectHit {
 				if test.expectCachedDigestMatch {
 					expectedTransferSize = proto.Size(uploadedActionResult)
-					log.Printf("%+v", actionResult)
 					require.True(t, proto.Equal(actionResult, &repb.ActionResult{
 						ActionResultDigest: test.clientActionResultDigest,
 					}))
