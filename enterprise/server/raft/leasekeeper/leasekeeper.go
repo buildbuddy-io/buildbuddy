@@ -171,7 +171,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 	valid := la.l.Valid(ctx)
 	start := time.Now()
 
-	rangeID := la.l.GetRangeDescriptor().GetRangeId()
+	rangeID := la.l.GetRangeID()
 
 	switch instruction.action {
 	case Acquire:
@@ -194,7 +194,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 		la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.Desc(ctx), dur, instruction)
 		la.sendRangeEvent(events.EventRangeLeaseAcquired)
 		metrics.RaftLeases.With(prometheus.Labels{
-			metrics.RaftRangeIDLabel: strconv.Itoa(int(la.l.GetRangeDescriptor().GetRangeId())),
+			metrics.RaftRangeIDLabel: strconv.Itoa(int(la.l.GetRangeID())),
 		}).Inc()
 		metrics.RaftLeaseActionDurationMsec.With(prometheus.Labels{
 			metrics.RaftLeaseActionLabel: leaseAction,
@@ -269,7 +269,7 @@ func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replic
 	return &leaseAgent{
 		replicaID: r.ReplicaID(),
 		log:       lk.log,
-		l:         rangelease.New(lk.nodeHost, lk.session, lk.log, lk.liveness, rd, r),
+		l:         rangelease.New(lk.nodeHost, lk.session, lk.log, lk.liveness, rd.GetRangeId(), r),
 		ctx:       gctx,
 		cancel:    cancel,
 		eg:        eg,
