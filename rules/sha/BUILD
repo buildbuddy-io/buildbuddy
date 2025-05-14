@@ -4,11 +4,9 @@ sh_test(
     name = "sha_test",
     srcs = ["sha_test.sh"],
     data = [
-        ":testdata_sha.list.sum",
         ":testdata_sha.sum",
     ],
     env = {
-        "TESTDATA_LIST_SUM": "$(location :testdata_sha.list.sum)",
         "TESTDATA_SUM": "$(location :testdata_sha.sum)",
     },
 )
