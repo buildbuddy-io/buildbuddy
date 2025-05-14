@@ -255,19 +255,21 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 	return nil
 }
 
+func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
+	docId, err := lookupDocId(w.db, w.namespace, matchField)
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil // Doc not found, delete is a no-op
+		}
+		return err
+	}
+	return w.DeleteDocument(docId)
+}
+
 func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) error {
 	// Note: This implementation does not handle file renames - clients must explicitly
 	// delete the old file and add (or update) the new file when renames happen.
-
-	oldDocID, err := lookupDocId(w.db, w.namespace, matchField)
-	if err != nil && err != pebble.ErrNotFound {
-		return err
-	} else if err == pebble.ErrNotFound {
-		// No old doc to delete -- add it and we're done.
-		return w.AddDocument(newDoc)
-	}
-
-	err = w.DeleteDocument(oldDocID)
+	err := w.DeleteDocumentByMatchField(matchField)
 	if err != nil {
 		return err
 	}

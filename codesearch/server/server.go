@@ -148,7 +148,77 @@ func (css *codesearchServer) getUserNamespace(ctx context.Context, requestedName
 	return namespace, nil
 }
 
-func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+	repoURLString := req.GetGitRepo().GetRepoUrl()
+	repoURL, err := git.ParseGitHubRepoURL(repoURLString)
+	if err != nil {
+		return nil, err
+	}
+
+	r := index.NewReader(ctx, css.db, req.GetNamespace(), schema.MetadataSchema())
+	lastSHA, err := github.GetLastIndexedCommitSha(r, repoURL)
+	if err != nil {
+		return nil, err
+	}
+
+	firstIndexToProcess := 0
+	for i, commit := range req.GetChanges().GetCommits() {
+		if commit.GetParentSha() == lastSHA {
+			firstIndexToProcess = i
+			break
+		}
+	}
+	commitsToProcess := req.GetChanges().GetCommits()[firstIndexToProcess:]
+
+	iw, err := index.NewWriter(css.db, req.GetNamespace())
+	if err != nil {
+		return nil, err
+	}
+
+	idFieldSchema := schema.CodeSchema().Field(schema.IDField)
+
+	for _, commit := range commitsToProcess {
+		for _, delete := range commit.GetDeleteFilepaths() {
+			idField := idFieldSchema.MakeField(github.MakeDocId(repoURL, delete))
+			err := iw.DeleteDocumentByMatchField(idField)
+			if err != nil {
+				// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
+				return nil, err
+			}
+			log.Infof("Deleting file %v", delete)
+		}
+
+		for _, add := range commit.GetAdds() {
+			fields, err := github.ExtractFields(add.GetFilepath(), commit.GetSha(), repoURL, add.GetContent())
+			if err != nil {
+				// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
+				return nil, err
+			}
+			doc, err := schema.CodeSchema().MakeDocument(fields)
+			if err != nil {
+				// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
+				return nil, err
+			}
+			if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
+				// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
+				return nil, err
+			}
+		}
+	}
+	err = github.SetLastIndexedCommitSha(iw, repoURL, commitsToProcess[len(commitsToProcess)-1].GetSha())
+	if err != nil {
+		// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
+		return nil, err
+	}
+
+	if err := iw.Flush(); err != nil {
+		return nil, err
+	}
+
+	return &inpb.IndexResponse{}, nil
+}
+
+func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
 	// TODO(jdelfino): This implementation does not remove files which have been deleted since the
 	// the previously indexed version of the repository. Note that a namespace can include multiple
 	// repos, so implementing this would require explicit iteration and deletion of each document
@@ -272,13 +342,22 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 
 		log.Infof("Starting indexing %q@%s", repoURL, commitSHA)
 
-		r, err := css.syncIndex(ctx, req)
-		if err != nil {
-			log.Errorf("Failed indexing %q: %s", repoURL, err)
-			return err
+		if req.GetReplacementStrategy() == inpb.ReplacementStrategy_INCREMENTAL {
+			r, err := css.incrementalUpdate(ctx, req)
+			if err != nil {
+				log.Errorf("Failed indexing %q: %s", req.GetGitRepo().GetRepoUrl(), err)
+				return err
+			}
+			rsp = r
+		} else {
+			r, err := css.fullyReindex(ctx, req)
+			if err != nil {
+				log.Errorf("Failed indexing %q: %s", req.GetGitRepo().GetRepoUrl(), err)
+				return err
+			}
+			rsp = r
 		}
-		rsp = r
-		log.Infof("Finished indexing %q@%s", repoURL, commitSHA)
+		log.Infof("Finished indexing %s at commit %s", req.GetGitRepo().GetRepoUrl(), req.GetRepoState().GetCommitSha())
 		return nil
 	})
 	if req.GetAsync() {

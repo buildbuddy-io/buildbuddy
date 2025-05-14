@@ -336,10 +336,11 @@ func getCommitContents(repoDir, commitSHA, parentSHA string) (*csinpb.Commit, er
 		return nil, fmt.Errorf("commit %s has no files changed", commitSHA)
 	}
 
+	// TODO(jdelfino): Doesn't handle deletes/renames yet
 	commit := &csinpb.Commit{
 		Sha:       commitSHA,
 		ParentSha: parentSHA,
-		Files:     make([]*csinpb.File, len(lines)-1),
+		Adds:      make([]*csinpb.File, len(lines)-1),
 	}
 
 	for i, file := range lines[1:] {
@@ -347,7 +348,7 @@ func getCommitContents(repoDir, commitSHA, parentSHA string) (*csinpb.Commit, er
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s: %w", file, err)
 		}
-		commit.Files[i] = &csinpb.File{
+		commit.Adds[i] = &csinpb.File{
 			Filepath: file,
 			Content:  content,
 		}
@@ -383,7 +384,7 @@ func handleGithub(ctx context.Context, args []string) {
 	}
 
 	result := &csinpb.IndexRequest{
-		Contents: &csinpb.Contents{
+		Changes: &csinpb.IncrementalChanges{
 			Commits: make([]*csinpb.Commit, len(commits)),
 		},
 	}
@@ -393,7 +394,7 @@ func handleGithub(ctx context.Context, args []string) {
 		if err != nil {
 			log.Fatalf("failed to get commit %s: %s", commit, err)
 		}
-		result.Contents.Commits[i] = c
+		result.Changes.Commits[i] = c
 	}
 	fmt.Printf("Result: %+v\n", result)
 }

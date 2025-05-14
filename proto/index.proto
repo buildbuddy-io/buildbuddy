@@ -36,7 +36,9 @@ message IndexRequest {
   // tolerate errors.
   bool async = 6;
 
-  Contents contents = 7;
+  // For incremental updates only
+  // TODO(jdelfino): some duplication / conflicts possible with RepoState
+  IncrementalChanges changes = 7;
 }
 
 message IndexResponse {
@@ -76,14 +78,15 @@ message IngestAnnotationsResponse {
   context.ResponseContext response_context = 1;
 }
 
-message Contents {
+message IncrementalChanges {
   repeated Commit commits = 1;
 }
 
 message Commit {
   string sha = 1;
   string parent_sha = 2;
-  repeated File files = 3;
+  repeated File adds = 3;
+  repeated string delete_filepaths = 4;
 }
 
 message File {

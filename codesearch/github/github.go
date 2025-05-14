@@ -82,6 +82,12 @@ func GetLastIndexedCommitSha(r types.IndexReader, repoURL *git.RepoURL) (string,
 	return string(doc.Field(schema.LatestSHAField).Contents()), nil
 }
 
+func MakeDocId(repoURL *git.RepoURL, name string) []byte {
+	uniqueID := xxhash.Sum64String(repoURL.Owner + repoURL.Repo + name)
+	idBytes := []byte(fmt.Sprintf("%d", uniqueID))
+	return idBytes
+}
+
 func ExtractFields(name, commitSha string, repoURL *git.RepoURL, fileContent []byte) (map[string][]byte, error) {
 	// Skip long files.
 	if len(fileContent) > maxFileLen {
@@ -106,13 +112,11 @@ func ExtractFields(name, commitSha string, repoURL *git.RepoURL, fileContent []b
 		return nil, fmt.Errorf("skipping %s (non-utf8 content)", name)
 	}
 
-	uniqueID := xxhash.Sum64String(repoURL.Owner + repoURL.Repo + name)
-	idBytes := []byte(fmt.Sprintf("%d", uniqueID))
 	// Compute filetype
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))
 
 	return (map[string][]byte{
-		schema.IDField:       idBytes,
+		schema.IDField:       MakeDocId(repoURL, name),
 		schema.FilenameField: []byte(name),
 		schema.ContentField:  fileContent,
 		schema.LanguageField: []byte(lang),
