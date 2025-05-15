@@ -5,8 +5,9 @@ import (
 	"time"
 )
 
-type refCountedMutex struct {
+type collectableMutex struct {
 	sync.RWMutex
+	// guarded by the mutex, this mutex is unusable if true
 	collected bool
 }
 
@@ -60,7 +61,7 @@ func (p *perKeyMutex) gc() {
 		case <-t.C:
 		}
 		p.mutexes.Range(func(key, value any) bool {
-			rcm := value.(*refCountedMutex)
+			rcm := value.(*collectableMutex)
 			if !rcm.TryLock() {
 				// The mutex is in use and thus shouldn't be collected.
 				return true
@@ -85,10 +86,10 @@ func (p *perKeyMutex) gc() {
 }
 
 func (p *perKeyMutex) Lock(key string) func() {
-	var rcm *refCountedMutex
+	var rcm *collectableMutex
 	for {
-		val, _ := p.mutexes.LoadOrStore(key, &refCountedMutex{})
-		rcm = val.(*refCountedMutex)
+		val, _ := p.mutexes.LoadOrStore(key, &collectableMutex{})
+		rcm = val.(*collectableMutex)
 		rcm.Lock()
 		if !rcm.collected {
 			break
@@ -101,10 +102,10 @@ func (p *perKeyMutex) Lock(key string) func() {
 }
 
 func (p *perKeyMutex) RLock(key string) func() {
-	var rcm *refCountedMutex
+	var rcm *collectableMutex
 	for {
-		val, _ := p.mutexes.LoadOrStore(key, &refCountedMutex{})
-		rcm = val.(*refCountedMutex)
+		val, _ := p.mutexes.LoadOrStore(key, &collectableMutex{})
+		rcm = val.(*collectableMutex)
 		rcm.RLock()
 		if !rcm.collected {
 			break
