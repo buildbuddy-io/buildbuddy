@@ -677,3 +677,61 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 		}
 	}
 }
+
+func TestUploadReader_BlobExists(t *testing.T) {
+	for _, useZstd := range []bool{false, true} {
+		t.Run(fmt.Sprintf("use_zstd_%t", useZstd), func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+			testcache.Setup(t, te, localGRPClis)
+			go runServer()
+
+			uploadSize := int64(2 * 1024 * 1024)
+			rn, buf := testdigest.RandomCASResourceBuf(t, uploadSize)
+			casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+			if useZstd {
+				casRN.SetCompressor(repb.Compressor_ZSTD)
+			}
+
+			ctx := context.Background()
+			{
+				d, uploadedBytes, err := cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), casRN, bytes.NewReader(buf))
+				require.NoError(t, err)
+				require.NotNil(t, d)
+				require.Empty(t, cmp.Diff(casRN.GetDigest(), d, protocmp.Transform()))
+				require.Greater(t, uploadedBytes, int64(0))
+				require.LessOrEqual(t, uploadedBytes, uploadSize)
+			}
+
+			{
+				out := &bytes.Buffer{}
+				err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
+
+				require.NoError(t, err)
+				require.Equal(t, uploadSize, int64(out.Len()))
+				require.Empty(t, cmp.Diff(buf[:9], out.Bytes()[:9]))
+				require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[out.Len()-9:]))
+			}
+
+			// Second upload succeeds, but does not upload all the bytes
+			{
+				d, uploadedBytes, err := cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), casRN, bytes.NewReader(buf))
+				require.NoError(t, err)
+				require.NotNil(t, d)
+				require.Empty(t, cmp.Diff(casRN.GetDigest(), d, protocmp.Transform()))
+				require.Less(t, uploadedBytes, int64(len(buf)))
+			}
+
+			// The blob is still available in the CAS
+			{
+				out := &bytes.Buffer{}
+				err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
+
+				require.NoError(t, err)
+				require.Equal(t, uploadSize, int64(out.Len()))
+				require.Empty(t, cmp.Diff(buf[:9], out.Bytes()[:9]))
+				require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[out.Len()-9:]))
+			}
+		})
+	}
+}

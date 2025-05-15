@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -319,11 +320,6 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		if remoteSize != bytesUploaded && remoteSize != -1 {
 			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
 		}
-	}
-
-	// At this point, a remote size of -1 means nothing new was uploaded.
-	if remoteSize == -1 {
-		bytesUploaded = 0
 	}
 
 	return r.GetDigest(), bytesUploaded, nil
