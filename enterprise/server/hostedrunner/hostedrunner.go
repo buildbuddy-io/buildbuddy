@@ -534,10 +534,10 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			}
 		case op := <-opCh:
 			stage = operation.ExtractStage(op)
-			if stage == repb.ExecutionStage_EXECUTING || stage == repb.ExecutionStage_COMPLETED {
+			if stage == repb.ExecutionStage_EXECUTING || operation.ExecutionFinished(stage) {
 				executing = true
 			}
-			if stage == repb.ExecutionStage_COMPLETED {
+			if operation.ExecutionFinished(stage) {
 				if execResponse := operation.ExtractExecuteResponse(op); execResponse != nil {
 					if execErr := gstatus.FromProto(execResponse.Status).Err(); execErr != nil {
 						return fmt.Errorf("failed to create runner invocation (execution ID: %q): %w", executionID, execErr)

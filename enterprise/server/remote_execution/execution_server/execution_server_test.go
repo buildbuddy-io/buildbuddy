@@ -399,6 +399,11 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			publishMoreMetadata:    true,
 		},
+		{
+			name:                   "SkipCleanupOperation",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			skipCleanupOperation:   true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			testExecuteAndPublishOperation(t, test)
@@ -415,6 +420,7 @@ type publishTest struct {
 	status                   error
 	exitCode                 int32
 	publishMoreMetadata      bool
+	skipCleanupOperation     bool
 }
 
 type fakeCollector struct {
@@ -508,7 +514,8 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NoError(t, err)
 	queuedTime := time.Unix(100, 0)
 	workerStartTime := queuedTime.Add(1 * time.Second)
-	workerEndTime := workerStartTime.Add(5 * time.Second)
+	cleanupStartTime := workerStartTime.Add(2 * time.Second)
+	workerEndTime := cleanupStartTime.Add(3 * time.Second)
 	aux := &espb.ExecutionAuxiliaryMetadata{PlatformOverrides: &repb.Platform{}}
 	for k, v := range test.platformOverrides {
 		aux.PlatformOverrides.Properties = append(
@@ -571,23 +578,39 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		Result:       actionResult,
 		Status:       gstatus.Convert(test.status).Proto(),
 	}
-	op, err = operation.Assemble(
-		taskID,
-		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
-		expectedExecuteResponse,
-	)
+
+	if test.skipCleanupOperation {
+		// Simulate skipping the cleanup operation, and going straight to completed.
+		actionResult.ExecutionMetadata.WorkerCompletedTimestamp = tspb.New(workerEndTime)
+		op, err = operation.Assemble(
+			taskID,
+			operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+			expectedExecuteResponse,
+		)
+	} else {
+		// Set a random value to WorkerCompletedTimestamp. Because usages data shouldn't
+		// be flushed until after the COMPLETED stage, this shouldn't affect the
+		// linux execution duration.
+		actionResult.ExecutionMetadata.WorkerCompletedTimestamp = tspb.New(cleanupStartTime)
+
+		// Simulate execution has completed, and cleanup has begun.
+		op, err = operation.Assemble(
+			taskID,
+			operation.Metadata(repb.ExecutionStage_CLEANUP, arn.GetDigest()),
+			expectedExecuteResponse,
+		)
+
+	}
 	require.NoError(t, err)
 	err = stream.Send(op)
-	require.NoError(t, err)
-	_, err = stream.CloseAndRecv()
 	require.NoError(t, err)
 
 	trimmedExecuteResponse := expectedExecuteResponse.CloneVT()
 	trimmedExecuteResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
 	trimmedExecuteResponse.GetResult().GetExecutionMetadata().GetUsageStats().Timeline = nil
 
-	// Wait for the execute response to be streamed back on our initial
-	// /Execute stream.
+	// Check that even if cleanup is in progress, the execute response will be
+	// streamed to the client on the original Execute stream.
 	var executeResponse *repb.ExecuteResponse
 	for {
 		op, err = executionClient.Recv()
@@ -596,14 +619,15 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			break
 		}
 		require.NoError(t, err)
-		if stage := operation.ExtractStage(op); stage != repb.ExecutionStage_COMPLETED {
+		if stage := operation.ExtractStage(op); stage != repb.ExecutionStage_COMPLETED && stage != repb.ExecutionStage_CLEANUP {
 			continue
 		}
 		executeResponse = operation.ExtractExecuteResponse(op)
 	}
 	assert.Empty(t, cmp.Diff(trimmedExecuteResponse, executeResponse, protocmp.Transform()))
 
-	// Check that the action cache contains the right entry, if any.
+	// Check that even if cleanup is in progress,  the action cache contains
+	// the right entry, if any.
 	arn.ToProto().CacheType = rspb.CacheType_AC
 	arnAC, err := arn.CheckAC()
 	require.NoError(t, err)
@@ -622,9 +646,37 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NoError(t, err)
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
 
-	// Should also have recorded usage.
 	ut := env.GetUsageTracker().(*fakeUsageTracker)
 	var executionUsages []usage
+	if !test.skipCleanupOperation {
+		// Check that usage hasn't been recorded before the stage is COMPLETED.
+		for _, u := range ut.usages {
+			if u.labels.Client == "executor" && (u.counts.LinuxExecutionDurationUsec > 0 || u.counts.SelfHostedLinuxExecutionDurationUsec > 0) {
+				executionUsages = append(executionUsages, u)
+			}
+		}
+		assert.Equal(t, 0, len(executionUsages))
+
+		// Check that executions haven't been flushed to Clickhouse until
+		// the stage is COMPLETED.
+		assert.Equal(t, 0, len(execCollector.executions))
+
+		// Simulate that all operations, including cleanup, has completed.
+		actionResult.ExecutionMetadata.WorkerCompletedTimestamp = tspb.New(workerEndTime)
+		op, err = operation.Assemble(
+			taskID,
+			operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+			expectedExecuteResponse,
+		)
+		require.NoError(t, err)
+		err = stream.Send(op)
+		require.NoError(t, err)
+	}
+
+	_, err = stream.CloseAndRecv()
+	require.NoError(t, err)
+
+	// Should also have recorded usage.
 	for _, u := range ut.usages {
 		if u.labels.Client == "executor" && (u.counts.LinuxExecutionDurationUsec > 0 || u.counts.SelfHostedLinuxExecutionDurationUsec > 0) {
 			executionUsages = append(executionUsages, u)

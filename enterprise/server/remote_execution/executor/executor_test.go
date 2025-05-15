@@ -121,6 +121,7 @@ func getTask() *repb.ScheduledTask {
 	}
 }
 
+// TODO: If we don't want to charge customers on this, we can look at OutputUploadCompletedTimestamp
 func TestExecuteTaskAndStreamResults(t *testing.T) {
 	ctx := context.Background()
 	exec, execClient, mockServer, mockCounter := getExecutor(t)
@@ -150,8 +151,19 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 
 	require.GreaterOrEqual(t, len(mockServer.operations), 3)
 	require.GreaterOrEqual(t, operationStageCount[repb.ExecutionStage_EXECUTING], 1)
+	require.Equal(t, 1, operationStageCount[repb.ExecutionStage_CLEANUP])
 	require.Equal(t, 1, operationStageCount[repb.ExecutionStage_COMPLETED])
 
+	cleanupOp := mockServer.operations[len(mockServer.operations)-2]
+	require.Equal(t, repb.ExecutionStage_CLEANUP, operation.ExtractStage(cleanupOp))
 	completedOp := mockServer.operations[len(mockServer.operations)-1]
 	require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+
+	// Verify that worker completed timestamp includes cleanup time.
+	// (Cleanup is mocked out to take 1min in `getExecutor`).
+	execResponse := operation.ExtractExecuteResponse(completedOp)
+	metadata := execResponse.GetResult().GetExecutionMetadata()
+	require.NotNil(t, metadata)
+	workerDuration := metadata.WorkerCompletedTimestamp.AsTime().Sub(metadata.WorkerStartTimestamp.AsTime())
+	require.True(t, workerDuration >= 1*time.Minute)
 }

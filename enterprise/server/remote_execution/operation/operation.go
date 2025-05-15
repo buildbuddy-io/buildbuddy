@@ -273,7 +273,7 @@ func Metadata(stage repb.ExecutionStage_Value, d *repb.Digest) *repb.ExecuteOper
 func Assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteResponse) (*longrunning.Operation, error) {
 	op := &longrunning.Operation{
 		Name: name,
-		Done: md.GetStage() == repb.ExecutionStage_COMPLETED,
+		Done: ExecutionFinished(md.GetStage()),
 	}
 	if md != nil {
 		mdAny, err := anypb.New(md)
@@ -308,7 +308,7 @@ type FinishWithErrorFunc func(finalErr error) error
 
 func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *repb.Digest) StateChangeFunc {
 	return func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
-		if stage == repb.ExecutionStage_COMPLETED {
+		if ExecutionFinished(stage) {
 			if target, err := flagutil.GetDereferencedValue[string]("executor.app_target"); err == nil {
 				if u, err := url.Parse(target); err == nil && u.Hostname() == "cloud.buildbuddy.io" {
 					if execResponse.GetMessage() != "" {
@@ -388,6 +388,10 @@ func ExtractStage(op *longrunning.Operation) repb.ExecutionStage_Value {
 		return repb.ExecutionStage_UNKNOWN
 	}
 	return md.GetStage()
+}
+
+func ExecutionFinished(stage repb.ExecutionStage_Value) bool {
+	return stage == repb.ExecutionStage_CLEANUP || stage == repb.ExecutionStage_COMPLETED
 }
 
 func ExtractExecuteResponse(op *longrunning.Operation) *repb.ExecuteResponse {

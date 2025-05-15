@@ -654,6 +654,8 @@ type ExecutorOptions struct {
 	Pool string
 	// Optional interceptor for command execution results.
 	RunInterceptor
+	// Optional interceptor for recycle behavior.
+	RecycleInterceptor
 	priorityTaskSchedulerOptions priority_task_scheduler.Options
 }
 
@@ -1247,6 +1249,14 @@ type RunFunc func(ctx context.Context, ioStats *repb.IOStats) *interfaces.Comman
 // delegating to the real runner implementation to execute the command and get a
 // real result.
 type RunInterceptor func(ctx context.Context, original RunFunc) *interfaces.CommandResult
+
+type TryRecycleFunc func(ctx context.Context, r interfaces.Runner, finishedCleanly bool)
+
+type DownloadInputsFunc func(ctx context.Context, ioStats *repb.IOStats) error
+
+// RecycleInterceptor is an interceptor for recycling a runner, optionally delegating
+// to the real runner::TryRecycle method.
+type RecycleInterceptor func(ctx context.Context, r interfaces.Runner, finishedCleanly bool, original TryRecycleFunc)
 
 // AlwaysReturn returns a RunInterceptor that returns a fixed result on every
 // task attempt.
