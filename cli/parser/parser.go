@@ -698,11 +698,8 @@ func (p *Parser) expandConfigs(workspaceDir string, args []string) ([]string, er
 		configIndex := offset + parsedArgs.Offset(opts[0].Index)
 		length := len(opts[0].Format())
 
-		// If the config isn't defined, leave it as-is, and let bazel return
-		// an error.
 		if !isConfigDefined(rules, config, phases) {
-			offset = configIndex + length
-			continue
+			return nil, fmt.Errorf("config value '%s' is not defined in any .rc file", config)
 		}
 
 		var configArgs []string
