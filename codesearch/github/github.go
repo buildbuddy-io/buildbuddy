@@ -13,9 +13,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"
 
