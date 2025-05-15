@@ -22,21 +22,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
-
-	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 )
 
 var (
 	indexCmd  = flag.NewFlagSet("index", flag.ExitOnError)
 	searchCmd = flag.NewFlagSet("search", flag.ExitOnError)
 	squeryCmd = flag.NewFlagSet("squery", flag.ExitOnError)
-	ghCmd     = flag.NewFlagSet("gh", flag.ExitOnError)
 
 	subcommands = map[string]*flag.FlagSet{
 		indexCmd.Name():  indexCmd,
 		searchCmd.Name(): searchCmd,
 		squeryCmd.Name(): squeryCmd,
-		ghCmd.Name():     ghCmd,
 	}
 
 	indexDir    string
@@ -113,8 +109,6 @@ func main() {
 		handleSearch(ctx, cmd.Args())
 	case squeryCmd.Name():
 		handleSquery(ctx, cmd.Args())
-	case ghCmd.Name():
-		handleGithub(ctx, cmd.Args())
 	default:
 		log.Fatalf("no handler for command %q", cmd.Name())
 	}
@@ -309,80 +303,4 @@ func handleSquery(ctx context.Context, args []string) {
 		filename := doc.Field(schema.FilenameField).Contents()
 		fmt.Printf("%d (%q) matched fields: %s\n", docID, filename, strings.Join(docFields[docID], ", "))
 	}
-}
-
-func getCommitContents(repoDir, commitSHA, parentSHA string) (*csinpb.Commit, error) {
-	cmd := exec.Command("git", "show", "--pretty=format:%H", "--name-only", commitSHA)
-	cmd.Dir = repoDir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get commit %s: %w", commitSHA, err)
-	}
-
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) < 2 {
-		return nil, fmt.Errorf("commit %s has no files changed", commitSHA)
-	}
-
-	// TODO(jdelfino): Doesn't handle deletes/renames yet
-	commit := &csinpb.Commit{
-		Sha:            commitSHA,
-		ParentSha:      parentSHA,
-		AddsAndUpdates: make([]*csinpb.File, len(lines)-1),
-	}
-
-	for i, file := range lines[1:] {
-		content, err := os.ReadFile(filepath.Join(repoDir, file))
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file %s: %w", file, err)
-		}
-		commit.AddsAndUpdates[i] = &csinpb.File{
-			Filepath: file,
-			Content:  content,
-		}
-	}
-	return commit, nil
-}
-
-func getCommitShasBetween(repoDir, commitStart, commitEnd string) ([]string, error) {
-	cmd := exec.Command("git", "log", "--first-parent", "--format=%H", fmt.Sprintf("%s^..%s", commitStart, commitEnd))
-	cmd.Dir = repoDir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get commit log: %w", err)
-	}
-
-	return strings.Split(strings.TrimSpace(string(output)), "\n"), nil
-}
-
-func handleGithub(ctx context.Context, args []string) {
-	if len(args) < 2 {
-		log.Fatal("github command requires at least one argument")
-	}
-	repoDir := args[0]
-	commitStart := args[1]
-	commitEnd := "HEAD"
-	if len(args) > 2 {
-		commitEnd = args[2]
-	}
-
-	commits, err := getCommitShasBetween(repoDir, commitStart, commitEnd)
-	if err != nil {
-		log.Fatalf("failed to get commits between %s and %s: %s", commitStart, commitEnd, err)
-	}
-
-	result := &csinpb.IndexRequest{
-		Update: &csinpb.IncrementalUpdate{
-			Commits: make([]*csinpb.Commit, len(commits)),
-		},
-	}
-
-	for i, commit := range commits[:len(commits)-1] {
-		c, err := getCommitContents(repoDir, commit, commits[i+1])
-		if err != nil {
-			log.Fatalf("failed to get commit %s: %s", commit, err)
-		}
-		result.Update.Commits[i] = c
-	}
-	fmt.Printf("Result: %+v\n", result)
 }
