@@ -324,22 +324,6 @@ func (w *Writer) AddDocument(doc types.Document) error {
 	return nil
 }
 
-/*
-func (w *Writer) SetLastIndexedCommitSha(repoURL, commitSHA string) error {
-	if repoURL == "" {
-		return status.InvalidArgumentError("repoURL cannot be empty")
-	}
-	if commitSHA == "" {
-		return status.InvalidArgumentError("commitSHA cannot be empty")
-	}
-	if err := w.db.Set(commitShaKey(w.namespace, repoURL), []byte(commitSHA), pebble.Sync); err != nil {
-		return err
-	}
-	w.log.Infof("Set last indexed commit to %s for namespace: %s, repo: %s", commitSHA, w.namespace, repoURL)
-	return nil
-}
-*/
-
 func (w *Writer) flushBatch() error {
 	if w.batch.Empty() {
 		return nil
@@ -865,19 +849,3 @@ func (r *Reader) RawQuery(squery string) ([]types.DocumentMatch, error) {
 	}
 	return matches, nil
 }
-
-/*
-func (r *Reader) LastIndexedCommitSha(repoURL string) (string, error) {
-	value, closer, err := r.db.Get(commitShaKey(r.namespace, repoURL))
-	if err != nil {
-		if err == pebble.ErrNotFound {
-			// Unset is not an error
-			return "", nil
-		}
-		return "", err
-	}
-	defer closer.Close()
-
-	return string(value), nil
-}
-*/
