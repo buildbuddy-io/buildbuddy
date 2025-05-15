@@ -1,14 +1,21 @@
 app:
+  log_level: debug
   log_error_stack_traces: true
   streaming_http_enabled: true
   invocation_log_streaming_enabled: true
 storage:
   ttl_seconds: 86400 # One day in seconds.
-  disk:
-    root_directory: /tmp/${USER}_buildbuddy
+  aws_s3:
+    s3_force_path_style: true
+    disable_checksum_validation: true
+    bucket: buildbuddy-local
+    endpoint: http://localhost:8000
+    static_credentials_id: accessKey1
+    static_credentials_secret: verySecretKey1
   enable_chunked_event_logs: true
   tempdir: /tmp/${USER}
 cache:
+  detailed_stats_enabled: true
   max_size_bytes: 1000000000 # 1 GB
   disk:
     root_directory: /tmp/${USER}-buildbuddy-cache

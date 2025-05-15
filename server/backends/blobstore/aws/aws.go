@@ -92,6 +92,7 @@ func NewAwsS3BlobStore(ctx context.Context) (*AwsS3BlobStore, error) {
 	}
 	cfg, err := config.LoadDefaultConfig(ctx, configOptions...)
 	if err != nil {
+		log.Errorf("Failed to load AWS config: %s", err)
 		return nil, err
 	}
 	log.Debug("AWS blobstore config created")

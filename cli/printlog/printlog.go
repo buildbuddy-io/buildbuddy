@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/cache"
 	rlpb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log"
 )
 
@@ -35,6 +36,7 @@ var (
 	flags          = flag.NewFlagSet("print", flag.ContinueOnError)
 	grpcLog        = flags.String("grpc_log", "", "gRPC log path.")
 	compactExecLog = flags.String("compact_execution_log", "", "compact execution log path.")
+	scorecard      = flags.String("scorecard", "", "scorecard path.")
 	sort           = flags.Bool("sort", false, "apply sorting to log output, only applicable with --compact_execution_log")
 	raw            = flags.Bool("raw", false, "don't convert the log entries to Bazel's Spawn, only applicable with --compact_execution_log")
 	maxEntrySizeMB = flags.Int64("max_entry_size_mb", 40, "maximum size in MB of proto log entry that can be unmarshalled")
@@ -60,6 +62,12 @@ func HandlePrint(args []string) (int, error) {
 		}
 		return 0, nil
 	}
+	if *scorecard != "" {
+		if err := printLog(*scorecard, &cache.ScoreCard_Result{}); err != nil {
+			return -1, err
+		}
+		return 0, nil
+	}
 	log.Print(usage)
 	return 1, nil
 }
@@ -78,13 +86,16 @@ func printLog(path string, m proto.Message) error {
 
 func copyUnmarshaled(w io.Writer, grpcLog io.Reader, m proto.Message) error {
 	br := bufio.NewReader(grpcLog)
+	br.ReadRune()
 	for {
-		err := protodelim.UnmarshalOptions{MaxSize: *maxEntrySizeMB << 20}.UnmarshalFrom(br, m)
+		err := protodelim.UnmarshalOptions{MaxSize: -1}.UnmarshalFrom(br, m)
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("failed to read LogEntry: %s", err)
+			br.ReadRune()
+			continue
+			// return fmt.Errorf("failed to read proto message: %s", err)
 		}
 		b, err := protojson.MarshalOptions{Multiline: true}.Marshal(m)
 		if err != nil {
@@ -96,5 +107,6 @@ func copyUnmarshaled(w io.Writer, grpcLog io.Reader, m proto.Message) error {
 		if _, err := w.Write([]byte{'\n'}); err != nil {
 			return err
 		}
+		br.ReadRune()
 	}
 }

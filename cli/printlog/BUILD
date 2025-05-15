@@ -8,6 +8,7 @@ go_library(
         "//cli/arg",
         "//cli/log",
         "//cli/printlog/compact",
+        "//proto:cache_go_proto",
         "//proto:remote_execution_log_go_proto",
         "//server/util/proto",
         "@org_golang_google_protobuf//encoding/protodelim",
