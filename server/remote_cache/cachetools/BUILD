@@ -41,6 +41,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/util/random",
+        "//server/util/rpcutil",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",

@@ -591,6 +591,11 @@ func String(d *repb.Digest) string {
 	return fmt.Sprintf("%s/%d", d.Hash, d.SizeBytes)
 }
 
+// Equal returns whether two digests are exactly equal, including the size.
+func Equal(d1 *repb.Digest, d2 *repb.Digest) bool {
+	return d1.GetHash() == d2.GetHash() && d1.GetSizeBytes() == d2.GetSizeBytes()
+}
+
 // ElementsMatch returns whether two slices contain the same digests, ignoring the order of the elements.
 // If there are duplicate elements, the number of appearances of each of them in both lists should match.
 func ElementsMatch(s1 []*repb.Digest, s2 []*repb.Digest) bool {
