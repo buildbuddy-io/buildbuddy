@@ -30,7 +30,6 @@ var (
 const (
 	batchFlushSizeBytes = 1_000_000_000 // flush batch every 1G
 	generationKey       = "__generation__"
-	revisionPrefix      = "__revision__"
 )
 
 type postingLists map[string]posting.List
