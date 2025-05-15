@@ -227,8 +227,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	md := &repb.ExecutedActionMetadata{
 		Worker:                   s.hostID,
 		QueuedTimestamp:          task.QueuedTimestamp,
-		WorkerStartTimestamp:     timestamppb.Now(),
-		WorkerCompletedTimestamp: timestamppb.Now(),
+		WorkerStartTimestamp:     timestamppb.New(s.env.GetClock().Now()),
+		WorkerCompletedTimestamp: timestamppb.New(s.env.GetClock().Now()),
 		ExecutorId:               s.id,
 		IoStats:                  &repb.IOStats{},
 		EstimatedTaskSize:        st.GetSchedulingMetadata().GetTaskSize(),
@@ -239,7 +239,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			return true, finalErr
 		}
 		resp := operation.ErrorResponse(finalErr)
-		md.WorkerCompletedTimestamp = timestamppb.Now()
+		md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 		if err := appendAuxiliaryMetadata(md, auxMetadata); err != nil {
 			log.CtxWarningf(ctx, "Failed to append ExecutionAuxiliaryMetadata: %s", err)
 		}
@@ -303,7 +303,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(err)
 	}
 
-	md.InputFetchStartTimestamp = timestamppb.Now()
+	md.InputFetchStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 
 	log.CtxDebugf(ctx, "Downloading inputs.")
 	stage.Set("input_fetch")
@@ -312,8 +312,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(err)
 	}
 
-	md.InputFetchCompletedTimestamp = timestamppb.Now()
-	md.ExecutionStartTimestamp = timestamppb.Now()
+	md.InputFetchCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
+	md.ExecutionStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 	execTimeouts, err := parseTimeouts(task)
 	if err != nil {
 		// These errors are failure-specific. Pass through unchanged.
@@ -321,7 +321,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	auxMetadata.Timeout = durationpb.New(execTimeouts.TerminateAfter)
 
-	now := time.Now()
+	now := s.env.GetClock().Now()
 	terminateAt := now.Add(execTimeouts.TerminateAfter)
 	forceShutdownAt := now.Add(execTimeouts.ForceKillAfter)
 
@@ -419,8 +419,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			return finishWithErrFn(status.InternalErrorf("append auxiliary metadata: %s", err))
 		}
 	}
-	md.ExecutionCompletedTimestamp = timestamppb.Now()
-	md.OutputUploadStartTimestamp = timestamppb.Now()
+	md.ExecutionCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
+	md.OutputUploadStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 
 	actionResult := &repb.ActionResult{}
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
@@ -433,8 +433,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	if err := r.UploadOutputs(ctx, md.IoStats, executeResponse, cmdResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
-	md.OutputUploadCompletedTimestamp = timestamppb.Now()
-	md.WorkerCompletedTimestamp = timestamppb.Now()
+	md.OutputUploadCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
+	md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	actionResult.ExecutionMetadata = md
 
 	// If there's an error that we know the client won't retry, return an error

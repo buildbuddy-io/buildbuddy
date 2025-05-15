@@ -827,7 +827,9 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 		executorHostID = options.Name + ".host"
 	}
 
-	runnerPool := NewTestRunnerPool(r.t, env, localCacheDirectory, options.RunInterceptor)
+	runnerPool := NewTestRunnerPool(r.t, env, localCacheDirectory, TestRunnerOverrides{
+		RunInterceptor: options.RunInterceptor,
+	})
 
 	exec, err := executor.NewExecutor(env, executorID, executorHostID, "fake-host-name", runnerPool)
 	if err != nil {
@@ -1267,17 +1269,45 @@ func ReturnForFirstAttempt(result *interfaces.CommandResult) RunInterceptor {
 	}
 }
 
+func RunNoop() RunInterceptor {
+	return AlwaysReturn(&interfaces.CommandResult{})
+}
+
+// TryRecycleFunc is the function signature for runner.pool::TryRecycle().
+type TryRecycleFunc func(ctx context.Context, r interfaces.Runner, finishedCleanly bool)
+
+// RecycleInterceptor is an interceptor for recycling a runner, optionally delegating
+// to the real runner::TryRecycle method.
+type RecycleInterceptor func(ctx context.Context, r interfaces.Runner, finishedCleanly bool, original TryRecycleFunc)
+
+// DownloadInputsFunc is the function signature for runner.Runner::DownloadInputs().
+type DownloadInputsFunc func(ctx context.Context, ioStats *repb.IOStats) error
+
+func DownloadInputsNoop() DownloadInputsFunc {
+	return func(ctx context.Context, ioStats *repb.IOStats) error {
+		return nil
+	}
+}
+
 // testRunnerPool returns runners whose Run() results can be controlled by the
 // test.
 type testRunnerPool struct {
 	interfaces.RunnerPool
-	runInterceptor RunInterceptor
+	runInterceptor            RunInterceptor
+	recycleInterceptor        RecycleInterceptor
+	downloadInputsInterceptor func(ctx context.Context, ioStats *repb.IOStats) error
 }
 
-func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, runInterceptor RunInterceptor) interfaces.RunnerPool {
+type TestRunnerOverrides struct {
+	RunInterceptor     RunInterceptor
+	RecycleInterceptor RecycleInterceptor
+	DownloadInputsMock func(ctx context.Context, ioStats *repb.IOStats) error
+}
+
+func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, opts TestRunnerOverrides) interfaces.RunnerPool {
 	realPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{})
 	require.NoError(t, err)
-	return &testRunnerPool{realPool, runInterceptor}
+	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor, opts.DownloadInputsMock}
 }
 
 func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (interfaces.Runner, error) {
@@ -1285,26 +1315,37 @@ func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (int
 	if err != nil {
 		return nil, err
 	}
-	return &testRunner{realRunner, p.runInterceptor}, nil
+	return &testRunner{realRunner, p.runInterceptor, p.downloadInputsInterceptor}, nil
 }
 
 func (p *testRunnerPool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
 	tr := r.(*testRunner)
-	p.RunnerPool.TryRecycle(ctx, tr.Runner, finishedCleanly)
+	if p.recycleInterceptor == nil {
+		p.RunnerPool.TryRecycle(ctx, tr.Runner, finishedCleanly)
+		return
+	}
+	p.recycleInterceptor(ctx, tr.Runner, finishedCleanly, p.RunnerPool.TryRecycle)
 }
 
-// testRunner is a Runner implementation that allows injecting error results
-// for command execution.
+// testRunner is a Runner implementation that allows mocking out its methods.
 type testRunner struct {
 	interfaces.Runner
-	interceptor RunInterceptor
+	run            RunInterceptor
+	downloadInputs DownloadInputsFunc
 }
 
 func (r *testRunner) Run(ctx context.Context, ioStats *repb.IOStats) *interfaces.CommandResult {
-	if r.interceptor == nil {
+	if r.run == nil {
 		return r.Runner.Run(ctx, ioStats)
 	}
-	return r.interceptor(ctx, r.Runner.Run)
+	return r.run(ctx, r.Runner.Run)
+}
+
+func (r *testRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
+	if r.downloadInputs == nil {
+		return r.Runner.DownloadInputs(ctx, ioStats)
+	}
+	return r.downloadInputs(ctx, ioStats)
 }
 
 type FakeTaskSizer struct {
