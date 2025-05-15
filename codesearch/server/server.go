@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -84,7 +85,7 @@ func New(env environment.Env, rootDirectory, scratchDirectory string) (*codesear
 		env:              env,
 		db:               db,
 		scratchDirectory: scratchDirectory,
-		repoLocks:        make(map[string]*sync.Mutex),
+		repoLocks:        lockmap.New(),
 
 		kdb: kdb,
 		xs:  xs,
@@ -100,7 +101,7 @@ type codesearchServer struct {
 	scratchDirectory string
 
 	lockLock  sync.Mutex // protects repoLocks
-	repoLocks map[string]*sync.Mutex
+	repoLocks lockmap.Locker
 
 	// Kythe services.
 	kdb keyvalue.DB
@@ -145,20 +146,6 @@ func (css *codesearchServer) getUserNamespace(ctx context.Context, requestedName
 	}
 	namespace := filepath.Join(gid, requestedNamespace)
 	return namespace, nil
-}
-
-func (css *codesearchServer) getRepoLock(namespace, repoURL string) *sync.Mutex {
-	css.lockLock.Lock()
-	defer css.lockLock.Unlock()
-
-	key := fmt.Sprintf("%s:%s", namespace, repoURL)
-	lock, ok := css.repoLocks[key]
-	if !ok {
-		log.Infof("Creating new lock for %s:%s", namespace, repoURL)
-		lock = &sync.Mutex{}
-		css.repoLocks[key] = lock
-	}
-	return lock
 }
 
 func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
@@ -271,9 +258,9 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		// ordering. So, if multiple repo re-indexes are requested concurrently, it is not
 		// guaranteed that they will be processed in any particular order.
 
-		lock := css.getRepoLock(namespace, req.GetGitRepo().GetRepoUrl())
-		lock.Lock()
-		defer lock.Unlock()
+		lockKey := fmt.Sprintf("%s-%s", namespace, req.GetGitRepo().GetRepoUrl())
+		unlockFn := css.repoLocks.Lock(lockKey)
+		defer unlockFn()
 
 		log.Infof("Starting indexing %s at commit %s", req.GetGitRepo().GetRepoUrl(), req.GetRepoState().GetCommitSha())
 
