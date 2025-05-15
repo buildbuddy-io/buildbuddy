@@ -223,7 +223,11 @@ def main():
     parser.add_argument('--arch_specific_executor_tag', default=False, action='store_true', help='Suffix the executor image tag with the CPU architecture (amd64 or arm64)')
     parser.add_argument('--version', default='', help='Version tag override, used when pushing docker images. Implies --bump_version_type=none')
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
+    parser.add_argument('--mark_workspace_as_safe', default=False, action='store_true')
     args = parser.parse_args()
+
+    if args.mark_workspace_as_safe:
+        run_or_die('git config --global --add safe.directory .')
 
     if workspace_is_clean():
         print("Workspace is clean!")
