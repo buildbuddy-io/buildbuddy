@@ -5,7 +5,10 @@ package github
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -20,6 +23,8 @@ import (
 	"github.com/go-enry/go-enry/v2"
 
 	xxhash "github.com/cespare/xxhash/v2"
+
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 )
 
 const (
@@ -39,6 +44,12 @@ func lastIndexedDocKey(repoURL *git.RepoURL) []byte {
 	return []byte(fmt.Sprintf("%s/%s/%s", repoURL.Host, repoURL.Owner, repoURL.Repo))
 }
 
+func makeFileId(repoURL *git.RepoURL, name string) []byte {
+	uniqueID := xxhash.Sum64String(repoURL.Owner + repoURL.Repo + name)
+	idBytes := []byte(fmt.Sprintf("%d", uniqueID))
+	return idBytes
+}
+
 func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 	fields := map[string][]byte{
 		schema.IDField:        lastIndexedDocKey(repoURL),
@@ -49,6 +60,74 @@ func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 		log.Fatalf("Failed to make last indexed doc: %s", err)
 	}
 	return doc
+}
+
+func DownloadRepoArchive(archiveURL, scratchDirectory string) (string, func(), error) {
+	httpRsp, err := http.Get(archiveURL)
+	if err != nil {
+		return "", nil, err
+	}
+	defer httpRsp.Body.Close()
+
+	tmpFile, err := os.CreateTemp(scratchDirectory, "archive-*.zip")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanupFn := func() {
+		os.Remove(tmpFile.Name())
+	}
+
+	if _, err := io.Copy(tmpFile, httpRsp.Body); err != nil {
+		cleanupFn()
+		return "", nil, err
+	}
+	return tmpFile.Name(), cleanupFn, nil
+}
+
+func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filepath string, fileContent []byte) error {
+	fields, err := extractFields(filepath, commitSHA, repoURL, fileContent)
+	if err != nil {
+		return err
+	}
+	doc, err := schema.GitHubFileSchema().MakeDocument(fields)
+	if err != nil {
+		return err
+	}
+	if err := w.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ProcessCommit(w types.IndexWriter, repoURL *git.RepoURL, commit *inpb.Commit) error {
+	idFieldSchema := schema.GitHubFileSchema().Field(schema.IDField)
+
+	for _, delete := range commit.GetDeleteFilepaths() {
+		idField := idFieldSchema.MakeField(makeFileId(repoURL, delete))
+		err := w.DeleteDocumentByMatchField(idField)
+		if err != nil {
+			// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
+			return err
+		}
+	}
+
+	for _, add := range commit.GetAdds() {
+		fields, err := extractFields(add.GetFilepath(), commit.GetSha(), repoURL, add.GetContent())
+		if err != nil {
+			// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
+			return err
+		}
+		doc, err := schema.GitHubFileSchema().MakeDocument(fields)
+		if err != nil {
+			// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
+			return err
+		}
+		if err := w.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
+			// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
+			return err
+		}
+	}
+	return nil
 }
 
 func SetLastIndexedCommitSha(w types.IndexWriter, repoURL *git.RepoURL, commitSHA string) error {
@@ -82,13 +161,7 @@ func GetLastIndexedCommitSha(r types.IndexReader, repoURL *git.RepoURL) (string,
 	return string(doc.Field(schema.LatestSHAField).Contents()), nil
 }
 
-func MakeDocId(repoURL *git.RepoURL, name string) []byte {
-	uniqueID := xxhash.Sum64String(repoURL.Owner + repoURL.Repo + name)
-	idBytes := []byte(fmt.Sprintf("%d", uniqueID))
-	return idBytes
-}
-
-func ExtractFields(name, commitSha string, repoURL *git.RepoURL, fileContent []byte) (map[string][]byte, error) {
+func extractFields(name, commitSha string, repoURL *git.RepoURL, fileContent []byte) (map[string][]byte, error) {
 	// Skip long files.
 	if len(fileContent) > maxFileLen {
 		return nil, fmt.Errorf("skipping %s (file too long)", name)
@@ -116,7 +189,7 @@ func ExtractFields(name, commitSha string, repoURL *git.RepoURL, fileContent []b
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))
 
 	return (map[string][]byte{
-		schema.IDField:       MakeDocId(repoURL, name),
+		schema.IDField:       makeFileId(repoURL, name),
 		schema.FilenameField: []byte(name),
 		schema.ContentField:  fileContent,
 		schema.LanguageField: []byte(lang),

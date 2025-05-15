@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -175,36 +174,10 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 		return nil, err
 	}
 
-	idFieldSchema := schema.CodeSchema().Field(schema.IDField)
-
 	for _, commit := range commitsToProcess {
-		for _, delete := range commit.GetDeleteFilepaths() {
-			idField := idFieldSchema.MakeField(github.MakeDocId(repoURL, delete))
-			err := iw.DeleteDocumentByMatchField(idField)
-			if err != nil {
-				// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
-				return nil, err
-			}
-			log.Infof("Deleting file %v", delete)
-		}
-
-		for _, add := range commit.GetAdds() {
-			fields, err := github.ExtractFields(add.GetFilepath(), commit.GetSha(), repoURL, add.GetContent())
-			if err != nil {
-				// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
-				return nil, err
-			}
-			doc, err := schema.CodeSchema().MakeDocument(fields)
-			if err != nil {
-				// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
-				return nil, err
-			}
-			if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
-				// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
-				return nil, err
-			}
-		}
+		github.ProcessCommit(iw, repoURL, commit)
 	}
+
 	err = github.SetLastIndexedCommitSha(iw, repoURL, commitsToProcess[len(commitsToProcess)-1].GetSha())
 	if err != nil {
 		// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
@@ -238,24 +211,14 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 		return nil, err
 	}
 
-	httpRsp, err := http.Get(archiveURL)
+	tmpFileName, cleanupFn, err := github.DownloadRepoArchive(archiveURL, css.scratchDirectory)
 	if err != nil {
 		return nil, err
 	}
-	defer httpRsp.Body.Close()
+	defer cleanupFn()
+	log.Debugf("Copied archive to %q", tmpFileName)
 
-	tmpFile, err := os.CreateTemp(css.scratchDirectory, "archive-*.zip")
-	if err != nil {
-		return nil, err
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := io.Copy(tmpFile, httpRsp.Body); err != nil {
-		return nil, err
-	}
-	log.Debugf("Copied archive to %q", tmpFile.Name())
-
-	zipReader, err := zip.OpenReader(tmpFile.Name())
+	zipReader, err := zip.OpenReader(tmpFileName)
 	if err != nil {
 		return nil, err
 	}
@@ -283,19 +246,7 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 			return nil, err
 		}
 
-		fields, err := github.ExtractFields(filename, commitSHA, repoURL, buf)
-		if err != nil {
-			log.Debug(err.Error())
-			continue
-		}
-		doc, err := schema.GitHubFileSchema().MakeDocument(fields)
-		if err != nil {
-			log.Debug(err.Error())
-			continue
-		}
-		if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
-			return nil, err
-		}
+		github.AddFileToIndex(iw, repoURL, commitSHA, filename, buf)
 	}
 
 	if err := github.SetLastIndexedCommitSha(iw, repoURL, commitSHA); err != nil {

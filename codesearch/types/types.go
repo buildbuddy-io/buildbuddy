@@ -80,6 +80,7 @@ type IndexWriter interface {
 	AddDocument(doc Document) error
 	UpdateDocument(matchField Field, newDoc Document) error
 	DeleteDocument(docID uint64) error
+	DeleteDocumentByMatchField(matchField Field) error
 	Flush() error
 }
 

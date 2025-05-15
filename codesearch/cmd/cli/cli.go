@@ -185,18 +185,9 @@ func handleIndex(args []string) {
 				if err != nil {
 					return err
 				}
-				fields, err := github.ExtractFields(path, commitSHA, repoURL, buf)
-				if err != nil {
-					log.Info(err.Error())
-					return nil
-				}
-				doc, err := schema.GitHubFileSchema().MakeDocument(fields)
-				if err != nil {
-					log.Fatal(err.Error())
-				}
 
-				if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
-					log.Fatal(err.Error())
+				if err := github.AddFileToIndex(iw, repoURL, commitSHA, path, buf); err != nil {
+					log.Fatalf("failed to add file %s: %s", path, err)
 				}
 			}
 			return nil
