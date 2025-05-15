@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 
 	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
 )
@@ -143,8 +144,13 @@ func (d *Definition) SupportedCommands() iter.Seq[string] {
 }
 
 func (d *Definition) Supports(command string) bool {
-	_, ok := d.supportedCommands[command]
-	return ok
+	for cmd, ok := command, true; ok; cmd, ok = bazelrc.Parent(cmd) {
+		if _, ok := d.supportedCommands[cmd]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (d *Definition) AddSupportedCommand(commands ...string) {
