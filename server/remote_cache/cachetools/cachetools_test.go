@@ -3,8 +3,6 @@ package cachetools_test
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -15,13 +13,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -564,150 +564,114 @@ func (b *bsReadStreamer) Trailer() metadata.MD {
 }
 
 func TestUploadReaderAndGetBlob(t *testing.T) {
-	randomStringLargerThan1MB, err := random.RandomString(2 * 1024 * 1024)
-	require.NoError(t, err)
 	for _, tc := range []struct {
-		name              string
-		input             string
-		useZstd           bool
+		name string
+
+		inputSize  int64
+		uploadSize int64
+		getSize    int64
+
 		expectUploadError bool
-		uploadSize        int64
 		expectGetError    bool
-		getSize           int64
 		expectedGetSize   int64
 	}{
 		{
-			name:              "simple upload and get",
-			input:             "simple upload and get",
-			useZstd:           false,
+			name: "simple upload and get",
+
+			inputSize:  128,
+			uploadSize: 128,
+			getSize:    128,
+
 			expectUploadError: false,
-			uploadSize:        int64(len([]byte("simple upload and get"))),
 			expectGetError:    false,
-			getSize:           int64(len([]byte("simple upload and get"))),
-			expectedGetSize:   int64(len([]byte("simple upload and get"))),
+			expectedGetSize:   128,
 		},
 		{
-			name:              "upload with incorrect size fails",
-			input:             "upload with incorrect size fails",
-			useZstd:           false,
+			name: "upload with incorrect size fails",
+
+			inputSize:  128,
+			uploadSize: 120,
+			getSize:    128,
+
 			expectUploadError: true,
-			uploadSize:        int64(len([]byte("upload with incorrect size fails"))) - 4,
 			expectGetError:    true,
-			getSize:           int64(len([]byte("upload with incorrect size fails"))),
-			expectedGetSize:   int64(len([]byte("upload with incorrect size fails"))),
+			expectedGetSize:   128,
 		},
 		{
-			name:              "get with incorrect size still succeeds",
-			input:             "get with incorrect size still succeeds",
-			useZstd:           false,
+			name: "get with incorrect size still succeeds",
+
+			inputSize:  128,
+			uploadSize: 128,
+			getSize:    120,
+
 			expectUploadError: false,
-			uploadSize:        int64(len([]byte("get with incorrect size still succeeds"))),
 			expectGetError:    false,
-			getSize:           int64(len([]byte("get with incorrect size still succeeds"))) - 4,
-			expectedGetSize:   int64(len([]byte("get with incorrect size still succeeds"))),
+			expectedGetSize:   128,
 		},
 		{
-			name:              "zstd simple upload and get",
-			input:             "zstd simple upload and get",
-			useZstd:           true,
+			name: "writing large payload succeeds",
+
+			inputSize:  2 * 1024 * 1024,
+			uploadSize: 2 * 1024 * 1024,
+			getSize:    2 * 1024 * 1024,
+
 			expectUploadError: false,
-			uploadSize:        int64(len([]byte("zstd simple upload and get"))),
 			expectGetError:    false,
-			getSize:           int64(len([]byte("zstd simple upload and get"))),
-			expectedGetSize:   int64(len([]byte("zstd simple upload and get"))),
-		},
-		{
-			name:              "zstd upload with incorrect size fails",
-			input:             "zstd upload with incorrect size fails",
-			useZstd:           true,
-			expectUploadError: true,
-			uploadSize:        int64(len([]byte("zstd upload with incorrect size fails"))) - 4,
-			expectGetError:    true,
-			getSize:           int64(len([]byte("zstd upload with incorrect size fails"))),
-			expectedGetSize:   int64(len([]byte("zstd upload with incorrect size fails"))),
-		},
-		{
-			name:              "zstd get with incorrect size still succeeds",
-			input:             "zstd get with incorrect size still succeeds",
-			useZstd:           true,
-			expectUploadError: false,
-			uploadSize:        int64(len([]byte("zstd get with incorrect size still succeeds"))),
-			expectGetError:    false,
-			getSize:           int64(len([]byte("zstd get with incorrect size still succeeds"))) - 4,
-			expectedGetSize:   int64(len([]byte("zstd get with incorrect size still succeeds"))),
-		},
-		{
-			name:              "writing large payload succeeds",
-			input:             randomStringLargerThan1MB,
-			useZstd:           false,
-			expectUploadError: false,
-			uploadSize:        int64(len(randomStringLargerThan1MB)),
-			expectGetError:    false,
-			getSize:           int64(len(randomStringLargerThan1MB)),
-			expectedGetSize:   int64(len(randomStringLargerThan1MB)),
-		},
-		{
-			name:              "zstd writing large payload succeeds",
-			input:             randomStringLargerThan1MB,
-			useZstd:           true,
-			expectUploadError: false,
-			uploadSize:        int64(len(randomStringLargerThan1MB)),
-			expectGetError:    false,
-			getSize:           int64(len(randomStringLargerThan1MB)),
-			expectedGetSize:   int64(len(randomStringLargerThan1MB)),
+			expectedGetSize:   2 * 1024 * 1024,
 		},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			te := testenv.GetTestEnv(t)
-			_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
-			testcache.Setup(t, te, localGRPClis)
-			go runServer()
+		for _, useZstd := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s_use_zstd_%t", tc.name, useZstd), func(t *testing.T) {
+				te := testenv.GetTestEnv(t)
+				_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+				testcache.Setup(t, te, localGRPClis)
+				go runServer()
 
-			b := []byte(tc.input)
-			buf := bytes.NewBuffer(b)
-			sum := sha256.Sum256(buf.Bytes())
-			hexstring := hex.EncodeToString(sum[:])
-			ctx := context.Background()
-			{
-				upd := &repb.Digest{
-					Hash:      hexstring,
-					SizeBytes: tc.uploadSize,
-				}
-				uprn := digest.NewCASResourceName(upd, "", repb.DigestFunction_SHA256)
-				if tc.useZstd {
-					uprn.SetCompressor(repb.Compressor_ZSTD)
-				}
-				d, _, err := cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), uprn, buf)
-				if tc.expectUploadError {
-					require.Error(t, err)
-					assert.Nil(t, d)
-				} else {
-					require.NoError(t, err)
-					require.NotNil(t, d)
-					assert.Equal(t, hexstring, d.Hash)
-				}
-			}
+				rn, buf := testdigest.RandomCASResourceBuf(t, tc.inputSize)
 
-			{
-				getd := &repb.Digest{
-					Hash:      hexstring,
-					SizeBytes: tc.getSize,
+				ctx := context.Background()
+				{
+					uploadDigest := &repb.Digest{
+						Hash:      rn.Digest.Hash,
+						SizeBytes: tc.uploadSize,
+					}
+					upRN := digest.NewCASResourceName(uploadDigest, rn.InstanceName, rn.DigestFunction)
+					if useZstd {
+						upRN.SetCompressor(repb.Compressor_ZSTD)
+					}
+					d, uploadedBytes, err := cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), upRN, bytes.NewReader(buf))
+					if tc.expectUploadError {
+						require.Error(t, err)
+						require.Nil(t, d)
+						require.Zero(t, uploadedBytes)
+					} else {
+						require.NoError(t, err)
+						require.NotNil(t, d)
+						require.Empty(t, cmp.Diff(upRN.GetDigest(), d, protocmp.Transform()))
+					}
 				}
-				getrn := digest.NewCASResourceName(getd, "", repb.DigestFunction_SHA256)
-				if tc.useZstd {
-					getrn.SetCompressor(repb.Compressor_ZSTD)
+
+				{
+					getDigest := &repb.Digest{
+						Hash:      rn.Digest.Hash,
+						SizeBytes: tc.uploadSize,
+					}
+					getRN := digest.NewCASResourceName(getDigest, rn.InstanceName, rn.DigestFunction)
+					if useZstd {
+						getRN.SetCompressor(repb.Compressor_ZSTD)
+					}
+					out := &bytes.Buffer{}
+					err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), getRN, out)
+					if tc.expectGetError {
+						require.Error(t, err)
+					} else {
+						require.NoError(t, err)
+						require.Equal(t, tc.expectedGetSize, int64(out.Len()))
+						require.Empty(t, cmp.Diff(buf[:9], out.Bytes()[:9]))
+						require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[out.Len()-9:]))
+					}
 				}
-				out := &bytes.Buffer{}
-				err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), getrn, out)
-				if tc.expectGetError {
-					require.Error(t, err)
-				} else {
-					require.NoError(t, err)
-					outb := out.Bytes()
-					assert.Equal(t, tc.expectedGetSize, int64(len(outb)))
-					assert.Equal(t, b, outb)
-				}
-			}
-		})
+			})
+		}
 	}
 }
