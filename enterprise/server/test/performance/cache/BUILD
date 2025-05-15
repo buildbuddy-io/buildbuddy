@@ -1,7 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_test(
     name = "cache_test",
+    timeout = "long",
     srcs = ["cache_test.go"],
     args = [
         "-test.bench=.",
@@ -25,5 +28,3 @@ go_test(
         "//server/util/testing/flags",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
