@@ -9,7 +9,6 @@ package arguments
 // string representation of the arguments.
 type Argument interface {
 	GetValue() string
-	SetValue(value string)
 	Format() []string
 }
 
@@ -19,10 +18,6 @@ type PositionalArgument struct {
 
 func (a *PositionalArgument) GetValue() string {
 	return a.Value
-}
-
-func (a *PositionalArgument) SetValue(value string) {
-	a.Value = value
 }
 
 func (a *PositionalArgument) Format() []string {
