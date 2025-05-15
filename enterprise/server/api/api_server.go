@@ -250,7 +250,7 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 
 	return &apipb.GetTargetResponse{
 		// Collect all the map values into a slice.
-		Target: slices.Collect(maps.Values(targetMap.M)),
+		Target: slices.Collect(maps.Values(targetMap.Targets)),
 	}, nil
 }
 

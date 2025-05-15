@@ -1248,7 +1248,7 @@ func (e *EventChannel) flushAPIFacets(iid string) error {
 		return nil
 	}
 
-	for label, target := range e.apiTargetMap.M {
+	for label, target := range e.apiTargetMap.Targets {
 		b, err := proto.Marshal(target)
 		if err != nil {
 			return err

@@ -146,13 +146,13 @@ func TestStatusToStatus(testStatus bespb.TestStatus) cmnpb.Status {
 }
 
 type TargetMap struct {
-	M        map[string]*apipb.Target
+	Targets  map[string]*apipb.Target
 	selector *apipb.TargetSelector
 }
 
 func NewTargetMap() *TargetMap {
 	return &TargetMap{
-		M: make(map[string]*apipb.Target),
+		Targets: make(map[string]*apipb.Target),
 	}
 }
 
@@ -183,18 +183,18 @@ func (tm *TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 				Tag:      p.Configured.GetTag(),
 			}
 			if tm.selector != nil && TargetMatchesSelector(target, tm.selector) {
-				tm.M[label] = target
+				tm.Targets[label] = target
 			}
 		}
 	case *bespb.BuildEvent_Completed:
 		{
-			if target := tm.M[event.GetId().GetTargetCompleted().GetLabel()]; target != nil {
+			if target := tm.Targets[event.GetId().GetTargetCompleted().GetLabel()]; target != nil {
 				target.Status = cmnpb.Status_BUILT
 			}
 		}
 	case *bespb.BuildEvent_TestSummary:
 		{
-			if target := tm.M[event.GetId().GetTestSummary().GetLabel()]; target != nil {
+			if target := tm.Targets[event.GetId().GetTestSummary().GetLabel()]; target != nil {
 				target.Status = TestStatusToStatus(p.TestSummary.GetOverallStatus())
 				target.Timing = TestTimingFromSummary(p.TestSummary)
 			}
@@ -202,6 +202,7 @@ func (tm *TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 	}
 }
 
+// TargetMatchesSelector checks if the target matches the selector.
 func TargetMatchesSelector(target *apipb.Target, selector *apipb.TargetSelector) bool {
 	if selector.Label != "" {
 		return selector.Label == target.Label
