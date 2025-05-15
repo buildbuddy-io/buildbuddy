@@ -6,10 +6,15 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -172,5 +177,139 @@ func TestGetLogs(t *testing.T) {
 		TimestampBefore: timestamppb.New(time.Now()),
 	})
 	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func newFakeUser(userID, domain string) *tables.User {
+	return &tables.User{
+		UserID:    userID,
+		SubID:     userID + "-SubID",
+		FirstName: userID + "-FirstName",
+		LastName:  userID + "-LastName",
+		Email:     userID + "@" + domain,
+	}
+}
+
+func createUser(t *testing.T, ctx context.Context, env environment.Env, userID, domain string) *tables.User {
+	user := newFakeUser(userID, domain)
+	err := env.GetUserDB().InsertUser(ctx, user)
+	require.NoError(t, err)
+	return user
+}
+
+func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID string) context.Context {
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	ctx, err := auth.WithAuthenticatedUser(ctx, userID)
+	require.NoError(t, err)
+	return ctx
+}
+
+func getGroup(t *testing.T, ctx context.Context, env environment.Env) *tables.GroupRole {
+	tu, err := env.GetUserDB().GetUser(ctx)
+	require.NoError(t, err, "failed to get self-owned group")
+	require.Len(t, tu.Groups, 1, "getGroup: user must be part of exactly one group")
+	return tu.Groups[0]
+}
+
+func TestChildGroupAuth(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "app.audit_logs_enabled", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "testenv.use_clickhouse", true)
+	env := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, env)
+	err := auditlog.Register(env)
+	require.NoError(t, err)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	auth.APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
+		ui, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, apiKey)
+		require.NoError(t, err)
+		return claims.APIKeyGroupClaims(ctx, ui)
+	}
+
+	// Start with two independent groups.
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	us1Group := getGroup(t, ctx1, env).Group
+	grp1AuditKey, err := env.GetAuthDB().CreateAPIKey(
+		ctx1, us1Group.GroupID, "audit",
+		[]cappb.Capability{cappb.Capability_AUDIT_LOG_READ},
+		false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	group1AuditorCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, grp1AuditKey.Value)
+
+	createUser(t, ctx, env, "US2", "org2.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	us2Group := getGroup(t, ctx2, env).Group
+	grp2AuditKey, err := env.GetAuthDB().CreateAPIKey(
+		ctx2, us2Group.GroupID, "audit",
+		[]cappb.Capability{cappb.Capability_AUDIT_LOG_READ},
+		false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+
+	// Key for group1 shouldn't be able to query anything in group2.
+	errCtx := env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), grp1AuditKey.Value)
+	err, _ = authutil.AuthErrorFromContext(errCtx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Key for group1 should be able to query logs for group1.
+	_, err = env.GetAuditLogger().GetLogs(group1AuditorCtx, &alpb.GetAuditLogsRequest{
+		TimestampAfter:  timestamppb.New(time.Time{}),
+		TimestampBefore: timestamppb.New(time.Now()),
+	})
+	require.NoError(t, err, "should be able to query logs for group1")
+
+	// Update the groups to have matching SAML URLs.
+
+	us1Group.SamlIdpMetadataUrl = "https://some/saml/url"
+	us1Group.URLIdentifier = "org1"
+	_, err = udb.UpdateGroup(ctx1, &us1Group)
+	require.NoError(t, err)
+	us2Group.SamlIdpMetadataUrl = us1Group.SamlIdpMetadataUrl
+	us2Group.URLIdentifier = "org2"
+	_, err = udb.UpdateGroup(ctx2, &us2Group)
+	require.NoError(t, err)
+
+	// Re-auth and try again. Key for group1 should still not be able to query the
+	// second group.
+	errCtx = env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), grp1AuditKey.Value)
+	err, _ = authutil.AuthErrorFromContext(errCtx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Now mark the first group as a "parent" organization.
+	// Since they share the same SAML IDP Metadata URL, an audit log key
+	// from the first group should be able to query the child group, but
+	// not vice versa.
+	us1Group.IsParent = true
+	_, err = udb.UpdateGroup(ctx1, &us1Group)
+	require.NoError(t, err)
+	group1AuditorCtx = env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), grp1AuditKey.Value)
+	err, _ = authutil.AuthErrorFromContext(group1AuditorCtx)
+	require.NoError(t, err)
+	_, err = env.GetAuditLogger().GetLogs(group1AuditorCtx, &alpb.GetAuditLogsRequest{
+		RequestContext:  &ctxpb.RequestContext{GroupId: us2Group.GroupID},
+		TimestampAfter:  timestamppb.New(time.Time{}),
+		TimestampBefore: timestamppb.New(time.Now()),
+	})
+	require.NoError(t, err, "should be able to query logs for group2")
+
+	errCtx = env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us1Group.GroupID}), grp2AuditKey.Value)
+	err, _ = authutil.AuthErrorFromContext(errCtx)
+	require.Error(t, err, "should not be able to query audit logs of group1")
 	require.True(t, status.IsPermissionDeniedError(err))
 }
