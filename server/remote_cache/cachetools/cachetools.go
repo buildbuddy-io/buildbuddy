@@ -246,12 +246,6 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
-// uploadFromReader attempts to read all bytes from the `in` `Reader` until encountering an EOF
-// and write all those bytes to the CAS.
-// On success, it returns the digest of the uploaded blob and the number of bytes confirmed uploaded.
-// If the blob already exists, this call will succeed and return the number of bytes uploaded before the server short-circuited the upload.
-// uploadFromReader confirms that the expected number of bytes have been written to the CAS
-// and returns a DataLossError if not.
 func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
 	if bsClient == nil {
 		return nil, 0, status.FailedPreconditionError("ByteStreamClient not configured")
@@ -336,6 +330,15 @@ type uploadRetryResult = struct {
 	uploadedBytes int64
 }
 
+// UploadFromReader attempts to read all bytes from the `in` `Reader` until encountering an EOF
+// and write all those bytes to the CAS.
+// If the input Reader is also a Seeker, UploadFromReader will retry the upload until success.
+//
+// On success, it returns the digest of the uploaded blob and the number of bytes confirmed uploaded.
+// If the blob already exists, this call will succeed and return the number of bytes uploaded before the server short-circuited the upload.
+// On error, it returns the number of bytes uploaded before the error (and the error).
+// UploadFromReader confirms that the expected number of bytes have been written to the CAS
+// and returns a DataLossError if not.
 func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
 	// We can only retry if we can rewind the reader back to the beginning.
 	seeker, retryable := in.(io.Seeker)
