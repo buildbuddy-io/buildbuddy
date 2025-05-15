@@ -184,7 +184,7 @@ func handleIndex(args []string) {
 					log.Info(err.Error())
 					return nil
 				}
-				doc, err := schema.DefaultSchema().MakeDocument(fields)
+				doc, err := schema.CodeSchema().MakeDocument(fields)
 				if err != nil {
 					log.Fatal(err.Error())
 				}
@@ -195,7 +195,7 @@ func handleIndex(args []string) {
 			}
 			return nil
 		})
-		iw.SetLastIndexedCommitSha(repoURL.String(), commitSHA)
+		github.SetLastIndexedCommitSha(iw, repoURL, commitSHA)
 	}
 
 	if err := iw.Flush(); err != nil {
@@ -212,7 +212,7 @@ func handleSearch(ctx context.Context, args []string) {
 	}
 	defer db.Close()
 
-	codesearcher := searcher.New(ctx, index.NewReader(ctx, db, getNamespace(), schema.DefaultSchema()))
+	codesearcher := searcher.New(ctx, index.NewReader(ctx, db, getNamespace(), schema.CodeSchema()))
 	q, err := query.NewReQuery(ctx, pat)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -281,7 +281,7 @@ func handleSquery(ctx context.Context, args []string) {
 	}
 	defer db.Close()
 
-	ir := index.NewReader(ctx, db, getNamespace(), schema.DefaultSchema())
+	ir := index.NewReader(ctx, db, getNamespace(), schema.CodeSchema())
 	matches, err := ir.RawQuery(pat)
 	if err != nil {
 		log.Fatal(err.Error())

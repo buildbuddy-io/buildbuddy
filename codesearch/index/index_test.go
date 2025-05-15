@@ -189,7 +189,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	)
 	doc, err := docSchema.MakeDocument(
 		map[string][]byte{
-			"id":      []byte("1"),
+			"id":      []byte("7"),
 			"field_a": []byte("stored"),
 			"field_b": []byte("unstored"),
 		},
@@ -210,23 +210,107 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	r := NewReader(ctx, db, "testing-namespace", docSchema)
 	matches, err := r.RawQuery(`(:eq field_a stored)`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_a": {1}}, extractFieldMatches(t, r, matches))
+	assert.Equal(t, map[string][]uint64{"field_a": {7}}, extractFieldMatches(t, r, matches))
 
 	// docs should be searchable by non-stored fields
 	matches, err = r.RawQuery(`(:eq field_b unstored)`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_b": {1}}, extractFieldMatches(t, r, matches))
+	assert.Equal(t, map[string][]uint64{"field_b": {7}}, extractFieldMatches(t, r, matches))
 
 	// docs should be searchable by both stored and non-stored fields
 	matches, err = r.RawQuery(`(:or (:eq field_b unstored) (:eq field_a stored))`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_b": {1}, "field_a": {1}}, extractFieldMatches(t, r, matches))
+	assert.Equal(t, map[string][]uint64{"field_b": {7}, "field_a": {7}}, extractFieldMatches(t, r, matches))
 
 	// stored document should only contain stored fields
 	rdoc, err := r.GetStoredDocument(1)
 	require.NoError(t, err)
-	require.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
-	require.Nil(t, rdoc.Field("field_b").Contents())
+	assert.Equal(t, []byte("7"), rdoc.Field("id").Contents())
+	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
+	assert.Nil(t, rdoc.Field("field_b").Contents())
+}
+
+func TestGetStoredDocument(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "field_a", true),
+		},
+	)
+	doc, err := docSchema.MakeDocument(
+		map[string][]byte{
+			"id":      []byte("50"),
+			"field_a": []byte("stored"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", docSchema)
+
+	// stored document should only contain stored fields
+	rdoc, err := r.GetStoredDocument(1)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("50"), rdoc.Field("id").Contents())
+	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
+}
+
+func TestGetStoredDocumentByMatchField(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "field_a", true),
+		},
+	)
+	doc, err := docSchema.MakeDocument(
+		map[string][]byte{
+			"id":      []byte("50"),
+			"field_a": []byte("stored"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", docSchema)
+
+	rdoc, err := r.GetStoredDocumentByMatchField(doc.Field("id"))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("50"), rdoc.Field("id").Contents())
+	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
 }
 
 func TestNamespaceSeparation(t *testing.T) {
@@ -321,7 +405,7 @@ func TestSQuery(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestLastIndexedCommitSha(t *testing.T) {
+func TestMetadataDocs(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(indexDir, nil)
@@ -330,81 +414,31 @@ func TestLastIndexedCommitSha(t *testing.T) {
 	}
 	defer db.Close()
 
-	commitSha := "abc123"
-	repoUrl := "github.com/buildbuddy-io/buildbuddy"
+	commitSHA := "abc123"
+	repoURL := "github.com/buildbuddy-io/buildbuddy"
 
 	w, err := NewWriter(db, "testing-namespace")
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SetLastIndexedCommitSha(repoUrl, commitSha)
+
+	fields := map[string][]byte{
+		schema.RepoField: []byte(repoURL),
+		schema.SHAField:  []byte(commitSHA),
+	}
+	doc, err := schema.MetadataSchema().MakeDocument(fields)
+	if err != nil {
+		log.Fatalf("Failed to make last indexed doc: %s", err)
+	}
+
+	require.NoError(t, w.UpdateDocument(doc.Field(schema.RepoField), doc))
 	require.NoError(t, w.Flush())
 
-	r := NewReader(ctx, db, "testing-namespace", testSchema)
-	readCommitSha, err := r.LastIndexedCommitSha(repoUrl)
+	r := NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
+	readDoc, err := r.GetStoredDocumentByMatchField(doc.Field(schema.RepoField))
 	require.NoError(t, err)
 
-	assert.Equal(t, commitSha, readCommitSha)
-}
-
-func TestLastIndexedCommitShaMultipleRepos(t *testing.T) {
-	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	commitSha1 := "abc123"
-	repoUrl1 := "github.com/buildbuddy-io/buildbuddy"
-
-	commitSha2 := "def456"
-	repoUrl2 := "github.com/buildbuddy-io/buildbuddy-internal"
-
-	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
-	w.SetLastIndexedCommitSha(repoUrl1, commitSha1)
-	w.SetLastIndexedCommitSha(repoUrl2, commitSha2)
-	require.NoError(t, w.Flush())
-
-	r := NewReader(ctx, db, "testing-namespace", testSchema)
-
-	readCommitSha1, err := r.LastIndexedCommitSha(repoUrl1)
-	require.NoError(t, err)
-	assert.Equal(t, commitSha1, readCommitSha1)
-
-	readCommitSha2, err := r.LastIndexedCommitSha(repoUrl2)
-	require.NoError(t, err)
-	assert.Equal(t, commitSha2, readCommitSha2)
-}
-
-func TestLastIndexedCommitShaUnset(t *testing.T) {
-	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	commitSha := "abc123"
-	setRepoUrl := "github.com/buildbuddy-io/buildbuddy"
-	unsetRepoUrl := "github.com/buildbuddy-io/buildbuddy-internal"
-
-	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
-	w.SetLastIndexedCommitSha(setRepoUrl, commitSha)
-	require.NoError(t, w.Flush())
-
-	r := NewReader(ctx, db, "testing-namespace", testSchema)
-	readCommitSha, err := r.LastIndexedCommitSha(unsetRepoUrl)
-	require.NoError(t, err)
-	assert.Empty(t, readCommitSha)
+	assert.Equal(t, commitSHA, string(readDoc.Field(schema.SHAField).Contents()))
 }
 
 func printDB(t testing.TB, db *pebble.DB) {

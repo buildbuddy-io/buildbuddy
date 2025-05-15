@@ -154,14 +154,16 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 	// repos, so implementing this would require explicit iteration and deletion of each document
 	// tagged with the given repo URL.
 
-	// TODO(jdelfino): This URL should be normalized, here and anywhere else that it makes its
-	// way into the index.
-	repoURLString := req.GetGitRepo().GetRepoUrl()
 	commitSHA := req.GetRepoState().GetCommitSha()
 	username := req.GetGitRepo().GetUsername()
 	accessToken := req.GetGitRepo().GetAccessToken()
 
-	archiveURL, err := apiArchiveURL(repoURLString, commitSHA, username, accessToken)
+	repoURL, err := git.ParseGitHubRepoURL(req.GetGitRepo().GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+
+	archiveURL, err := apiArchiveURL(repoURL.String(), commitSHA, username, accessToken)
 	if err != nil {
 		return nil, err
 	}
@@ -194,11 +196,6 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 		return nil, err
 	}
 
-	repoURL, err := git.ParseGitHubRepoURL(repoURLString)
-	if err != nil {
-		return nil, err
-	}
-
 	for _, file := range zipReader.File {
 		parts := strings.Split(file.Name, string(filepath.Separator))
 		if len(parts) == 1 {
@@ -221,7 +218,7 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 			log.Debug(err.Error())
 			continue
 		}
-		doc, err := schema.DefaultSchema().MakeDocument(fields)
+		doc, err := schema.CodeSchema().MakeDocument(fields)
 		if err != nil {
 			log.Debug(err.Error())
 			continue
@@ -231,7 +228,9 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 		}
 	}
 
-	iw.SetLastIndexedCommitSha(repoURLString, commitSHA)
+	if err := github.SetLastIndexedCommitSha(iw, repoURL, commitSHA); err != nil {
+		return nil, err
+	}
 
 	if err := iw.Flush(); err != nil {
 		return nil, err
@@ -241,12 +240,18 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 }
 
 func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+	commitSHA := req.GetRepoState().GetCommitSha()
+
+	repoURL, err := git.ParseGitHubRepoURL(req.GetGitRepo().GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+
 	namespace, err := css.getUserNamespace(ctx, req.GetNamespace())
 	if err != nil {
 		return nil, err
 	}
 
-	// Rewrite the request namespace before passing it to syncIndex.
 	req.Namespace = namespace
 
 	var rsp *inpb.IndexResponse
@@ -264,15 +269,15 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		unlockFn := css.repoLocks.Lock(lockKey)
 		defer unlockFn()
 
-		log.Infof("Starting indexing %s at commit %s", req.GetGitRepo().GetRepoUrl(), req.GetRepoState().GetCommitSha())
+		log.Infof("Starting indexing %q@%s", repoURL, commitSHA)
 
 		r, err := css.syncIndex(ctx, req)
 		if err != nil {
-			log.Errorf("Failed indexing %q: %s", req.GetGitRepo().GetRepoUrl(), err)
+			log.Errorf("Failed indexing %q: %s", repoURL, err)
 			return err
 		}
 		rsp = r
-		log.Infof("Finished indexing %s at commit %s", req.GetGitRepo().GetRepoUrl(), req.GetRepoState().GetCommitSha())
+		log.Infof("Finished indexing %q@%s", repoURL, commitSHA)
 		return nil
 	})
 	if req.GetAsync() {
@@ -285,21 +290,24 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 }
 
 func (css *codesearchServer) RepoStatus(ctx context.Context, req *inpb.RepoStatusRequest) (*inpb.RepoStatusResponse, error) {
-	// TODO(jdelfino): where does namespace come from? middleware? It's not set in githubapp.go, but shows up here...
 	namespace, err := css.getUserNamespace(ctx, req.GetNamespace())
 	if err != nil {
 		return nil, err
 	}
 
-	r := index.NewReader(ctx, css.db, namespace, schema.DefaultSchema())
+	repoURL, err := git.ParseGitHubRepoURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+	r := index.NewReader(ctx, css.db, namespace, schema.CodeSchema())
 
-	lastIndexedRevision, err := r.LastIndexedCommitSha(req.GetRepoUrl())
+	rev, err := github.GetLastIndexedCommitSha(r, repoURL)
 	if err != nil {
 		return nil, err
 	}
 
 	return &inpb.RepoStatusResponse{
-		LastIndexedCommitSha: lastIndexedRevision,
+		LastIndexedCommitSha: rev,
 	}, nil
 }
 
@@ -316,7 +324,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	if req.GetNumResults() > 0 && req.GetNumResults() < maxNumResults {
 		numResults = int(req.GetNumResults())
 	}
-	codesearcher := searcher.New(ctx, index.NewReader(ctx, css.db, namespace, schema.DefaultSchema()))
+	codesearcher := searcher.New(ctx, index.NewReader(ctx, css.db, namespace, schema.CodeSchema()))
 	q, err := query.NewReQuery(ctx, req.GetQuery().GetTerm())
 	if err != nil {
 		return nil, err

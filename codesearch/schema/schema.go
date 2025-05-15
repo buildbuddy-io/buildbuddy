@@ -30,10 +30,20 @@ var (
 		MustFieldSchema(types.KeywordField, RepoField, true),
 		MustFieldSchema(types.KeywordField, SHAField, true),
 	})
+	metadataSchema = NewDocumentSchema([]types.FieldSchema{
+		// Repository URL
+		MustFieldSchema(types.KeywordField, RepoField, true),
+		// Last indexed commit SHA
+		MustFieldSchema(types.KeywordField, SHAField, true),
+	})
 )
 
-func DefaultSchema() types.DocumentSchema {
+func CodeSchema() types.DocumentSchema {
 	return defaultSchema
+}
+
+func MetadataSchema() types.DocumentSchema {
+	return metadataSchema
 }
 
 // Satisfies the types.FieldSchema interface.

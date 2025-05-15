@@ -5,12 +5,15 @@ package github
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -31,6 +34,39 @@ const (
 var (
 	skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
 )
+
+func makeLastIndexedDoc(repoURL, commitSHA string) types.Document {
+	fields := map[string][]byte{
+		schema.RepoField: []byte(repoURL),
+		schema.SHAField:  []byte(commitSHA),
+	}
+	doc, err := schema.MetadataSchema().MakeDocument(fields)
+	if err != nil {
+		log.Fatalf("Failed to make last indexed doc: %s", err)
+	}
+	return doc
+}
+
+func SetLastIndexedCommitSha(w types.IndexWriter, repoURL *git.RepoURL, commitSHA string) error {
+	doc := makeLastIndexedDoc(repoURL.String(), commitSHA)
+	if err := w.UpdateDocument(doc.Field(schema.RepoField), doc); err != nil {
+		return fmt.Errorf("failed to set last indexed commit SHA: %w", err)
+	}
+	return nil
+}
+
+func GetLastIndexedCommitSha(r types.IndexReader, repoURL *git.RepoURL) (string, error) {
+	idField := schema.CodeSchema().Field(schema.RepoField).MakeField([]byte(repoURL.String()))
+	doc, err := r.GetStoredDocumentByMatchField(idField)
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return "", nil
+		}
+		return "", err
+	}
+
+	return string(doc.Field(schema.SHAField).Contents()), nil
+}
 
 func ExtractFields(name, commitSha string, repoURL *git.RepoURL, fileContent []byte) (map[string][]byte, error) {
 	// Skip long files.

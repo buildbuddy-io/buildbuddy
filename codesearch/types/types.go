@@ -85,6 +85,7 @@ type IndexWriter interface {
 
 type IndexReader interface {
 	GetStoredDocument(docID uint64) (Document, error)
+	GetStoredDocumentByMatchField(matchField Field) (Document, error)
 	RawQuery(squery string) ([]DocumentMatch, error)
 }
 
