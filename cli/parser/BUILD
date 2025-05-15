@@ -8,6 +8,7 @@ go_library(
         "//cli/bazelisk",
         "//cli/log",
         "//cli/parser/arguments",
+        "//cli/parser/bazelrc",
         "//cli/parser/options",
         "//cli/parser/parsed",
         "//cli/storage",
@@ -17,7 +18,6 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/disk",
         "//server/util/proto",
-        "@com_github_google_shlex//:shlex",
     ],
 )
 
