@@ -234,8 +234,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		EstimatedTaskSize:        st.GetSchedulingMetadata().GetTaskSize(),
 		DoNotCache:               task.GetAction().GetDoNotCache(),
 	}
+	var r interfaces.Runner
 	finishWithErrFn := func(finalErr error) (retry bool, err error) {
 		if shouldRetry(task, finalErr) {
+			// Make sure to cleanup the runner, even if we're retrying
+			if r != nil {
+				s.runnerPool.TryRecycle(ctx, r, false /* finishedCleanly */)
+			}
 			return true, finalErr
 		}
 		resp := operation.ErrorResponse(finalErr)
@@ -248,6 +253,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		}
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest.GetDigest(), resp); err != nil {
 			return true, err
+		}
+		// TODO(Maggie): Track recycle time for executions.
+		if r != nil {
+			// Note: recycling is done in the foreground here in order to ensure
+			// that the runner is fully cleaned up (if applicable) before its
+			// resource claims are freed up by the priority_task_scheduler.
+			s.runnerPool.TryRecycle(ctx, r, false /* finishedCleanly */)
 		}
 		return false, finalErr
 	}
@@ -277,7 +289,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 
 	log.CtxDebugf(ctx, "Getting a runner for task.")
-	r, err := s.runnerPool.Get(ctx, st)
+	r, err = s.runnerPool.Get(ctx, st)
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
@@ -286,13 +298,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	auxMetadata.IsolationType = r.GetIsolationType()
 	actionMetrics.Isolation = r.GetIsolationType()
-	finishedCleanly := false
-	defer func() {
-		// Note: recycling is done in the foreground here in order to ensure
-		// that the runner is fully cleaned up (if applicable) before its
-		// resource claims are freed up by the priority_task_scheduler.
-		s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
-	}()
 
 	log.CtxDebugf(ctx, "Preparing runner for task.")
 	stage.Set("pull_image")
@@ -448,10 +453,15 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		log.CtxErrorf(ctx, "Failed to publish ExecuteResponse: %s", err)
 		return finishWithErrFn(err)
 	}
+	finishedCleanly := false
 	if cmdResult.Error == nil && !cmdResult.DoNotRecycle {
 		log.CtxDebugf(ctx, "Task finished cleanly.")
 		finishedCleanly = true
 	}
+	// Note: recycling is done in the foreground here in order to ensure
+	// that the runner is fully cleaned up (if applicable) before its
+	// resource claims are freed up by the priority_task_scheduler.
+	s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
 	return false, nil
 }
 
