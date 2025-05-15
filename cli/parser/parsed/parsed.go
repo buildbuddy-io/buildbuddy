@@ -88,7 +88,11 @@ type Args interface {
 
 // Interface for argument classifications to implement
 type Classified interface {
-	arg() arguments.Argument
+	Arg() arguments.Argument
+
+	// lower case method to stop declaration of structs that satisfy Classified
+	// from outside the package.
+	classified()
 }
 
 // Interface for argument classifications to implement if they describe options
@@ -100,33 +104,40 @@ type IsOption interface {
 
 type UnsupportedArgument struct{ arguments.Argument }
 
-func (u *UnsupportedArgument) arg() arguments.Argument { return u.Argument }
+func (u *UnsupportedArgument) Arg() arguments.Argument { return u.Argument }
+func (u *UnsupportedArgument) classified()             {}
 
 type StartupOption struct{ options.Option }
 
-func (s *StartupOption) arg() arguments.Argument  { return s.Option }
+func (s *StartupOption) Arg() arguments.Argument  { return s.Option }
 func (s *StartupOption) AsOption() options.Option { return s.Option }
+func (s *StartupOption) classified()              {}
 
 type Command struct{ *arguments.PositionalArgument }
 
-func (c *Command) arg() arguments.Argument { return c.PositionalArgument }
+func (c *Command) Arg() arguments.Argument { return c.PositionalArgument }
+func (c *Command) classified()             {}
 
 type CommandOption struct{ options.Option }
 
-func (c *CommandOption) arg() arguments.Argument  { return c.Option }
+func (c *CommandOption) Arg() arguments.Argument  { return c.Option }
 func (c *CommandOption) AsOption() options.Option { return c.Option }
+func (c *CommandOption) classified()              {}
 
 type DoubleDash struct{ *arguments.DoubleDash }
 
-func (d *DoubleDash) arg() arguments.Argument { return d.DoubleDash }
+func (d *DoubleDash) Arg() arguments.Argument { return d.DoubleDash }
+func (d *DoubleDash) classified()             {}
 
 type Target struct{ *arguments.PositionalArgument }
 
-func (t *Target) arg() arguments.Argument { return t.PositionalArgument }
+func (t *Target) Arg() arguments.Argument { return t.PositionalArgument }
+func (t *Target) classified()             {}
 
 type ExecArg struct{ *arguments.PositionalArgument }
 
-func (e *ExecArg) arg() arguments.Argument { return e.PositionalArgument }
+func (e *ExecArg) Arg() arguments.Argument { return e.PositionalArgument }
+func (e *ExecArg) classified()             {}
 
 // classifier tracks relevant context while iterating over a slice of
 // Arguments in command-line order. It is primarily intended for use
@@ -362,7 +373,7 @@ func (a *OrderedArgs) SplitExecutableArgs() ([]string, []string) {
 			}
 			bazelArgs = append(bazelArgs, c.Format()...)
 		default:
-			bazelArgs = append(bazelArgs, c.arg().Format()...)
+			bazelArgs = append(bazelArgs, c.Arg().Format()...)
 		}
 	}
 	return bazelArgs, executableArgs
