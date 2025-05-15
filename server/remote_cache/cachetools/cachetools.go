@@ -246,16 +246,23 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
+// uploadFromReader attempts to read all bytes from the `in` `Reader` until encountering an EOF
+// and write all those bytes to the CAS.
+// On success, it returns the digest of the uploaded blob and the number of bytes confirmed uploaded.
+// If the blob already exists, this call will succeed and return the number of bytes uploaded before the server short-circuited the upload.
+// uploadFromReader confirms that the expected number of bytes have been written to the CAS
+// and returns a DataLossError if not.
 func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
+	bytesUploaded := int64(0)
 	if bsClient == nil {
-		return nil, 0, status.FailedPreconditionError("ByteStreamClient not configured")
+		return nil, bytesUploaded, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
 	if r.IsEmpty() {
-		return r.GetDigest(), 0, nil
+		return r.GetDigest(), bytesUploaded, nil
 	}
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, bytesUploaded, err
 	}
 
 	var rc io.ReadCloser = io.NopCloser(in)
@@ -264,20 +271,19 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		cbuf := make([]byte, 0, uploadBufSizeBytes)
 		reader, err := compression.NewZstdCompressingReader(io.NopCloser(in), rbuf[:uploadBufSizeBytes], cbuf[:uploadBufSizeBytes])
 		if err != nil {
-			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
+			return nil, bytesUploaded, status.InternalErrorf("Failed to compress blob: %s", err)
 		}
 		rc = reader
 	}
 	defer rc.Close()
 
 	buf := make([]byte, uploadBufSizeBytes)
-	bytesUploaded := int64(0)
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
 	resourceName := r.NewUploadString()
 	for {
 		n, err := ioutil.ReadTryFillBuffer(rc, buf)
 		if err != nil && err != io.EOF {
-			return nil, 0, err
+			return nil, bytesUploaded, err
 		}
 		readDone := err == io.EOF
 
@@ -293,7 +299,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			if err == io.EOF {
 				break
 			}
-			return nil, 0, err
+			return nil, bytesUploaded, err
 		}
 		bytesUploaded += int64(len(req.Data))
 		if readDone {
@@ -303,7 +309,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	}
 	rsp, err := stream.CloseAndRecv()
 	if err != nil {
-		return nil, 0, err
+		return nil, bytesUploaded, err
 	}
 
 	remoteSize := rsp.GetCommittedSize()
@@ -312,13 +318,13 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		// either case, the remoteSize for uncompressed uploads should
 		// match the file size.
 		if remoteSize != r.GetDigest().GetSizeBytes() {
-			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
 		}
 	} else {
 		// -1 is returned if the blob already exists, otherwise the
 		// remoteSize should agree with what we uploaded.
 		if remoteSize != bytesUploaded && remoteSize != -1 {
-			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
 		}
 	}
 
