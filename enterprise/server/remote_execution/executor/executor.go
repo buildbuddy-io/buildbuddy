@@ -263,7 +263,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		}
 
 		// TODO: Make sure editing at this point will reflect in final usage count
-		md.WorkerCompletedTimestamp = timestamppb.Now()
+		md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest.GetDigest(), resp); err != nil {
 			return true, err
 		}
@@ -452,7 +452,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
-	md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	actionResult.ExecutionMetadata = md
 
 	// If there's an error that we know the client won't retry, return an error
@@ -479,7 +478,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// resource claims are freed up by the priority_task_scheduler.
 	s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
 
-	md.WorkerCompletedTimestamp = timestamppb.Now()
+	md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, executeResponse); err != nil {
 		log.CtxErrorf(ctx, "Failed to publish ExecuteResponse: %s", err)
 		return finishWithErrFn(err)
