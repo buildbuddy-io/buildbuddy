@@ -399,6 +399,25 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			publishMoreMetadata:    true,
 		},
+		{
+			name:                   "PublishMoreMetadata_PrimaryDBAndRedisDoubleWrite",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			publishMoreMetadata:    true,
+			flagOverrides: map[string]any{
+				"remote_execution.write_execution_progress_state_to_redis": true,
+				"remote_execution.write_executions_to_primary_db":          true,
+			},
+		},
+		{
+			name:                   "PublishMoreMetadata_NoPrimaryDB_RedisOnly",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			publishMoreMetadata:    true,
+			flagOverrides: map[string]any{
+				"remote_execution.write_execution_progress_state_to_redis": true,
+				"remote_execution.write_executions_to_primary_db":          false,
+				"remote_execution.read_final_execution_state_from_redis":   true,
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			testExecuteAndPublishOperation(t, test)
@@ -409,6 +428,7 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 type publishTest struct {
 	name                     string
 	platformOverrides        map[string]string
+	flagOverrides            map[string]any
 	expectedSelfHosted       bool
 	expectedExecutionUsage   tables.UsageCounts
 	cachedResult, doNotCache bool
@@ -455,6 +475,9 @@ func (fc *fakeCollector) AppendExecution(_ context.Context, _ string, execution 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	for k, v := range test.flagOverrides {
+		flags.Set(t, k, v)
+	}
 	env, conn := setupEnv(t)
 	execCollector := new(fakeCollector)
 	env.SetExecutionCollector(execCollector)

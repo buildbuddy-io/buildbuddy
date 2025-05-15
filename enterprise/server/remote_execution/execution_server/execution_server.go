@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -48,6 +47,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	executil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -78,6 +78,10 @@ const (
 var (
 	enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
 	sharedExecutorPoolTeeRate         = flag.Float64("remote_execution.shared_executor_pool_tee_rate", 0, "If non-zero, work for the default shared executor pool will be teed to a separate experiment pool at this rate.", flag.Internal)
+
+	writeExecutionProgressStateToRedis = flag.Bool("remote_execution.write_execution_progress_state_to_redis", false, "If enabled, write initial execution metadata and progress updates (stage changes) to redis. This state is cleared when the execution is complete.", flag.Internal)
+	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
+	readFinalExecutionStateFromRedis   = flag.Bool("remote_execution.read_final_execution_state_from_redis", false, "If enabled, read execution metadata and progress state from redis when writing executions to ClickHouse, instead of from the primary DB.", flag.Internal)
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -219,7 +223,20 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	execution.GroupID = permissions.GroupID
 	execution.Perms = execution.Perms | permissions.Perms
 
-	return s.env.GetDBHandle().NewQuery(ctx, "execution_server_create_execution").Create(execution)
+	if *writeExecutionProgressStateToRedis {
+		now := time.Now()
+		execution.Model.CreatedAtUsec = now.UnixMicro()
+		execution.Model.UpdatedAtUsec = now.UnixMicro()
+		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executil.TableExecToProto(execution, nil /*=invocationLink*/)); err != nil {
+			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
+		}
+	}
+
+	if *writeExecutionsToPrimaryDB {
+		return s.env.GetDBHandle().NewQuery(ctx, "execution_server_create_execution").Create(execution)
+	}
+
+	return nil
 }
 
 func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType sipb.StoredInvocationLink_Type) error {
@@ -239,6 +256,10 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 	redisErr := s.insertInvocationLinkInRedis(ctx, executionID, invocationID, linkType)
 	if redisErr != nil {
 		log.CtxWarningf(ctx, "failed to add invocation link(exeuction_id: %q invocation_id: %q, link_type: %d) in redis", executionID, invocationID, linkType)
+	}
+
+	if !*writeExecutionsToPrimaryDB {
+		return nil
 	}
 
 	link := &tables.InvocationExecution{
@@ -265,7 +286,11 @@ func (s *ExecutionServer) insertInvocationLinkInRedis(ctx context.Context, execu
 		ExecutionId:  executionID,
 		Type:         linkType,
 	}
-	return s.env.GetExecutionCollector().AddExecutionInvocationLink(ctx, link, false /*=storeReverseLink*/)
+	// Only store the invocation => execution link if we're also writing
+	// execution progress state to redis, since these links are only used to
+	// list the in-progress state by invocation ID.
+	storeInvocationExecutionLink := *writeExecutionProgressStateToRedis
+	return s.env.GetExecutionCollector().AddExecutionInvocationLink(ctx, link, storeInvocationExecutionLink)
 }
 
 func trimStatus(statusMessage string) string {
@@ -315,6 +340,17 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
+	if *writeExecutionProgressStateToRedis {
+		execution.Model.UpdatedAtUsec = time.Now().UnixMicro()
+		executionProto := executil.TableExecToProto(execution, nil /*=invocationLink*/)
+		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
+			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
+		}
+	}
+
+	if !*writeExecutionsToPrimaryDB {
+		return nil
+	}
 	result := s.env.GetDBHandle().GORM(ctx, "execution_server_update_execution").Where(
 		"execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution)
 	dbErr := result.Error
@@ -349,17 +385,38 @@ func (s *ExecutionServer) recordExecution(
 	if s.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
-	var executionPrimaryDB tables.Execution
-
-	if err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_lookup_execution").Raw(
-		`SELECT * FROM "Executions" WHERE execution_id = ?`, executionID).Take(&executionPrimaryDB); err != nil {
-		return status.InternalErrorf("failed to look up execution %q: %s", executionID, err)
+	var executionProto *repb.StoredExecution
+	// Read final execution details (including the initial metadata and
+	// completed execution result) from either redis or the primary DB. This
+	// state does not have the invocation details populated.
+	if *readFinalExecutionStateFromRedis {
+		ex, err := s.env.GetExecutionCollector().GetInProgressExecution(ctx, executionID)
+		if err != nil {
+			return status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
+		}
+		if ex == nil {
+			return status.NotFoundErrorf("execution %q not found in redis", executionID)
+		}
+		executionProto = ex
+	} else {
+		var executionPrimaryDB tables.Execution
+		if err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_lookup_execution").Raw(
+			`SELECT * FROM "Executions" WHERE execution_id = ?`, executionID).Take(&executionPrimaryDB); err != nil {
+			return status.InternalErrorf("failed to look up execution %q: %s", executionID, err)
+		}
+		executionProto = executil.TableExecToProto(&executionPrimaryDB, nil)
 	}
-	// Always clean up invocationLinks in Collector because we are not retrying
+	// Always clean up invocationLinks and execution updates from the collector.
+	// The execution cannot be retried after this point, so nothing will clean
+	// up this data if we don't do it here.
 	defer func() {
 		err := s.env.GetExecutionCollector().DeleteExecutionInvocationLinks(ctx, executionID)
 		if err != nil {
-			log.CtxErrorf(ctx, "failed to clean up invocation links in collector: %s", err)
+			log.CtxErrorf(ctx, "Failed to clean up invocation links in collector: %s", err)
+		}
+		err = s.env.GetExecutionCollector().DeleteInProgressExecution(ctx, executionID)
+		if err != nil {
+			log.CtxErrorf(ctx, "Failed to clean up in-progress execution in collector: %s", err)
 		}
 	}()
 	links, err := s.env.GetExecutionCollector().GetExecutionInvocationLinks(ctx, executionID)
@@ -368,7 +425,9 @@ func (s *ExecutionServer) recordExecution(
 	}
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	for _, link := range links {
-		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
+		executionProto := executionProto.CloneVT()
+		executil.SetInvocationLink(executionProto, link)
+
 		// Set fields that aren't stored in the primary DB
 		executionProto.TargetLabel = rmd.GetTargetId()
 		executionProto.ActionMnemonic = rmd.GetActionMnemonic()

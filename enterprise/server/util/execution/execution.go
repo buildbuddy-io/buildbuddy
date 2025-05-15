@@ -19,12 +19,10 @@ import (
 )
 
 func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) *repb.StoredExecution {
-	return &repb.StoredExecution{
+	ex := &repb.StoredExecution{
 		GroupId:                            in.GroupID,
 		UpdatedAtUsec:                      in.UpdatedAtUsec,
 		ExecutionId:                        in.ExecutionID,
-		InvocationUuid:                     strings.Replace(invLink.GetInvocationId(), "-", "", -1),
-		InvocationLinkType:                 int32(invLink.GetType()),
 		CreatedAtUsec:                      in.CreatedAtUsec,
 		UserId:                             in.UserID,
 		Worker:                             in.Worker,
@@ -55,6 +53,13 @@ func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) 
 		DoNotCache:                         in.DoNotCache,
 		CommandSnippet:                     in.CommandSnippet,
 	}
+	SetInvocationLink(ex, invLink)
+	return ex
+}
+
+func SetInvocationLink(ex *repb.StoredExecution, invLink *sipb.StoredInvocationLink) {
+	ex.InvocationUuid = strings.Replace(invLink.GetInvocationId(), "-", "", -1)
+	ex.InvocationLinkType = int32(invLink.GetType())
 }
 
 func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
