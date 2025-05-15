@@ -158,10 +158,14 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 	r := index.NewReader(ctx, css.db, req.GetNamespace(), schema.MetadataSchema())
 	lastIndexedSHA, err := github.GetLastIndexedCommitSha(r, repoURL)
 	if err != nil {
-		return nil, err
+		if status.IsNotFoundError(err) {
+			return nil, status.InvalidArgumentError(fmt.Sprintf("No previous indexing found for repo %s. Use FULL_REINDEX instead of INCREMENTAL_REINDEX.", repoURL))
+		} else {
+			return nil, err
+		}
 	}
 
-	firstIndexToProcess := 0
+	firstIndexToProcess := -1
 	commits := req.GetUpdate().GetCommits()
 	for i, commit := range commits {
 		// We currently only support sequential commits, with no gaps.
@@ -173,6 +177,10 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 			firstIndexToProcess = i
 		}
 	}
+	if firstIndexToProcess == -1 {
+		return nil, status.InvalidArgumentError(fmt.Sprintf("Last processed commit was %s; no commits found with this parent", lastIndexedSHA))
+	}
+
 	commits = commits[firstIndexToProcess:]
 
 	iw, err := index.NewWriter(css.db, req.GetNamespace())
@@ -186,8 +194,7 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 
 	err = github.SetLastIndexedCommitSha(iw, repoURL, commits[len(commits)-1].GetSha())
 	if err != nil {
-		// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
-		return nil, err
+		return nil, fmt.Errorf("Failed to finalize update: %w", err)
 	}
 
 	if err := iw.Flush(); err != nil {

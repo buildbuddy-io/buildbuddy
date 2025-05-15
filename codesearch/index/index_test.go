@@ -3,7 +3,6 @@ package index
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"slices"
 	"strconv"
 	"testing"
@@ -17,12 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func hash(s string) uint64 {
-	h := fnv.New64a()
-	h.Write([]byte(s))
-	return h.Sum64()
-}
 
 var testSchema = schema.NewDocumentSchema(
 	[]types.FieldSchema{

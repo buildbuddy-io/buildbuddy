@@ -154,7 +154,6 @@ func mustApplyCommit(t *testing.T, db *pebble.DB, commit *inpb.Commit) {
 	require.NoError(t, w.Flush())
 }
 
-// TODO(jdelfino): review tests
 func TestProcessCommit_AddsOnly(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)

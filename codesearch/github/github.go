@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"
@@ -124,7 +125,7 @@ func GetLastIndexedCommitSha(r types.IndexReader, repoURL *git.RepoURL) (string,
 	}
 
 	if len(results) == 0 {
-		return "", nil
+		return "", status.NotFoundErrorf("no last indexed commit SHA found for %s", repoURL)
 	}
 	if len(results) > 1 {
 		return "", fmt.Errorf("multiple last indexed commit SHAs found for %s", repoURL)
@@ -132,7 +133,12 @@ func GetLastIndexedCommitSha(r types.IndexReader, repoURL *git.RepoURL) (string,
 
 	docMatch := results[0]
 	doc := r.GetStoredDocument(docMatch.Docid())
-	return string(doc.Field(schema.LatestSHAField).Contents()), nil
+	sha := string(doc.Field(schema.LatestSHAField).Contents())
+	if len(sha) == 0 {
+		return "", status.NotFoundErrorf("no last indexed commit SHA found for %s", repoURL)
+	}
+
+	return sha, nil
 }
 
 func detectionBuffer(content []byte) []byte {
