@@ -1,16 +1,17 @@
-package lockmap_test
+package lockmap
 
 import (
 	"testing"
+	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
 
 func TestLock(t *testing.T) {
-	l := lockmap.New()
+	l := New()
+	defer l.Close()
 
 	m := make(map[string]int, 0)
 	eg := errgroup.Group{}
@@ -24,10 +25,15 @@ func TestLock(t *testing.T) {
 	}
 	eg.Wait()
 	require.Equal(t, 100, m["samekey"])
+
+	// Wait for gc
+	time.Sleep(200 * time.Millisecond)
+	require.Equal(t, 0, l.count())
 }
 
 func TestRLock(t *testing.T) {
-	l := lockmap.New()
+	l := New()
+	defer l.Close()
 
 	m := make(map[string]int, 0)
 	eg := errgroup.Group{}
@@ -50,10 +56,16 @@ func TestRLock(t *testing.T) {
 	}
 	eg.Wait()
 	require.Equal(t, 20, m["samekey"])
+
+	// Wait for gc
+	time.Sleep(200 * time.Millisecond)
+	require.Equal(t, 0, l.count())
 }
 
 func BenchmarkLockQPS(b *testing.B) {
-	l := lockmap.New()
+	l := New()
+	defer l.Close()
+
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -66,7 +78,9 @@ func BenchmarkLockQPS(b *testing.B) {
 }
 
 func BenchmarkRLockQPS(b *testing.B) {
-	l := lockmap.New()
+	l := New()
+	defer l.Close()
+
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		r, err := random.RandomString(64)
