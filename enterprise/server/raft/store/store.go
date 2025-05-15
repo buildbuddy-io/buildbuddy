@@ -2273,6 +2273,7 @@ func newDeleteSessionsWorker(clock clockwork.Clock, store *Store, clientSessionT
 }
 
 func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.Replica) error {
+	w.store.log.Infof("delete sessions for range %d", repl.RangeID())
 	rd := w.store.lookupRange(repl.RangeID())
 	lastExecutionTimeI, found := w.lastExecutionTime.Load(rd.GetRangeId())
 	if found {

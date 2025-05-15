@@ -1024,8 +1024,10 @@ func readSessionIDs(t *testing.T, ctx context.Context, rangeID uint64, store *te
 }
 
 func TestCleanupExpiredSessions(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.client_session_ttl", 5*time.Hour)
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1059,23 +1061,29 @@ func TestCleanupExpiredSessions(t *testing.T) {
 	}
 
 	clock.Advance(5*time.Hour + 10*time.Minute)
+	log.Info("++++++set up complete")
 	for {
 		sessionIDsShard1S1After := readSessionIDs(t, ctx, 1, s1)
 		if !containsAny(sessionIDsShard1S1After, sessionIDsShard1S1) {
 			break
 		}
+		log.Info("++++++s1 on store1 contains expired sessions")
 		sessionIDsShard1S2After := readSessionIDs(t, ctx, 1, s2)
 		if !containsAny(sessionIDsShard1S2After, sessionIDsShard1S2) {
 			break
 		}
+		log.Info("++++++s1 on store 2 contains expired sessions")
 		sessionIDsShard2S1After := readSessionIDs(t, ctx, 2, s1)
 		if !containsAny(sessionIDsShard2S1After, sessionIDsShard2S1) {
+			log.Info("++++++s2 on store1 contains expired sessions")
 			break
 		}
+		log.Info("++++++s2 on store1 contains expired sessions")
 		sessionIDsShard2S2After := readSessionIDs(t, ctx, 2, s2)
 		if !containsAny(sessionIDsShard2S2After, sessionIDsShard2S2) {
 			break
 		}
+		log.Info("++++++s2 on store2 contains expired sessions")
 		clock.Advance(65 * time.Second)
 	}
 

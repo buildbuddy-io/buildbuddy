@@ -53,10 +53,12 @@ type Lease struct {
 
 	timeUntilLeaseRenewal time.Duration
 	stopped               bool
-	quitLease             chan struct{}
+	ctx                   context.Context
+	cancel                context.CancelFunc
 }
 
 func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, liveness *nodeliveness.Liveness, rangeID uint64, r *replica.Replica) *Lease {
+	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &Lease{
 		nodeHost:              nodeHost,
 		log:                   log,
@@ -70,6 +72,8 @@ func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, live
 		leaseRecord:           &rfpb.RangeLeaseRecord{},
 		timeUntilLeaseRenewal: time.Duration(math.MaxInt64),
 		stopped:               true,
+		ctx:                   ctx,
+		cancel:                cancelFunc,
 	}
 }
 
@@ -94,13 +98,16 @@ func (l *Lease) Release(ctx context.Context) error {
 }
 
 func (l *Lease) Stop() {
+	l.log.Infof("lease stop started")
 	l.mu.Lock()
+	l.log.Infof("lease stop lock finished")
 	defer l.mu.Unlock()
 	// close the background lease-renewal thread.
 	if !l.stopped {
 		l.stopped = true
-		close(l.quitLease)
+		l.cancel()
 	}
+	l.log.Infof("lease stop finished")
 }
 
 func (l *Lease) dropLease(ctx context.Context) error {
@@ -321,27 +328,29 @@ func (l *Lease) renewLeaseUntilValid(ctx context.Context) (returnedRecord *rfpb.
 	// thread running to keep it renewed, start one now.
 	if l.stopped {
 		l.stopped = false
-		l.quitLease = make(chan struct{})
+		ctx, cancel := context.WithCancel(context.Background())
+		l.ctx = ctx
+		l.cancel = cancel
 		if l.leaseRecord.GetReplicaExpiration().GetExpiration() != 0 {
 			// Only start the renew-goroutine for time-based
 			// leases which need periodic renewal.
-			go l.keepLeaseAlive(l.quitLease)
+			go l.keepLeaseAlive(l.ctx)
 		}
 	}
 	return l.leaseRecord, nil
 }
 
-func (l *Lease) keepLeaseAlive(quit chan struct{}) {
+func (l *Lease) keepLeaseAlive(ctx context.Context) {
 	for {
 		l.mu.RLock()
 		timeUntilRenewal := l.timeUntilLeaseRenewal
 		l.mu.RUnlock()
 
 		select {
-		case <-quit:
+		case <-ctx.Done():
 			return
 		case <-time.After(timeUntilRenewal):
-			ctx, spn := tracing.StartSpan(context.Background())
+			ctx, spn := tracing.StartSpan(ctx)
 			_, err := l.renewLeaseUntilValid(ctx)
 			if err != nil {
 				log.Errorf("failed to ensure valid lease for c%dn%d: %s", l.replica.RangeID(), l.replica.ReplicaID(), err)
