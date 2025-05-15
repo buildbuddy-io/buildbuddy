@@ -253,16 +253,15 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 // uploadFromReader confirms that the expected number of bytes have been written to the CAS
 // and returns a DataLossError if not.
 func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
-	bytesUploaded := int64(0)
 	if bsClient == nil {
-		return nil, bytesUploaded, status.FailedPreconditionError("ByteStreamClient not configured")
+		return nil, 0, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
 	if r.IsEmpty() {
-		return r.GetDigest(), bytesUploaded, nil
+		return r.GetDigest(), 0, nil
 	}
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
-		return nil, bytesUploaded, err
+		return nil, 0, err
 	}
 
 	var rc io.ReadCloser = io.NopCloser(in)
@@ -271,13 +270,14 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		cbuf := make([]byte, 0, uploadBufSizeBytes)
 		reader, err := compression.NewZstdCompressingReader(io.NopCloser(in), rbuf[:uploadBufSizeBytes], cbuf[:uploadBufSizeBytes])
 		if err != nil {
-			return nil, bytesUploaded, status.InternalErrorf("Failed to compress blob: %s", err)
+			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
 		}
 		rc = reader
 	}
 	defer rc.Close()
 
 	buf := make([]byte, uploadBufSizeBytes)
+	bytesUploaded := int64(0)
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
 	resourceName := r.NewUploadString()
 	for {
