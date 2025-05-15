@@ -79,6 +79,7 @@ var (
 	startupWarmupMaxWaitSecs  = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
 	maximumDiskFullness       = flag.Float64("executor.maximum_disk_fullness", 1.01, "Fail health check if device containing executor.local_cache_directory is more than this full")
 	startupCommands           = flag.Slice("executor.startup_commands", []string{}, "Commands to run on startup. These are run sequentially and block executor startup.")
+	clientType                = flag.String("executor.grpc_client_type", "executor", "The client type label for requests from this executor, used to differentiate e.g. workflow executor traffic.")
 
 	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port              = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
@@ -226,8 +227,8 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 		log.Fatal(err.Error())
 	}
 
-	// Identify ourselves as an executor client in gRPC requests to the app.
-	usageutil.SetClientType("executor")
+	// Identify ourselves in gRPC requests to the app.
+	usageutil.SetClientType(*clientType)
 
 	initializeCacheClientsOrDie(*appTarget, *cacheTarget, *cacheTargetTrafficPercent, realEnv)
 
