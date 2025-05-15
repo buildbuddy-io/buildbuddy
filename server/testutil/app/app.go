@@ -50,28 +50,26 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 
 }
 
-func createMemoryBackedDB(t testing.TB) *os.File {
+// createMemoryBackedDB attempts to create a uniquly-named file under /dev/shm and return its full path.
+// If it cannot create the file, returns "".
+func createMemoryBackedDB(t testing.TB) string {
 	if _, err := os.Stat("/dev/shm"); errors.Is(err, os.ErrNotExist) {
-		return nil
+		return ""
 	}
 	f, err := os.CreateTemp("/dev/shm", "buildbuddy-test-*.db")
-	require.NoError(t, err)
-	path := f.Name()
-	t.Cleanup(func() {
-		_ = f.Close()
-		if err := os.RemoveAll(path); err != nil && !os.IsNotExist(err) {
-			require.NoError(t, err, "failed to remove temp file")
-		}
-	})
-	return f
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	return f.Name()
 }
 
 func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string, configFilePath string) *App {
 	dataDir := testfs.MakeTempDir(t)
 	app.t = t
-	app.dbFilePath = filepath.Join(dataDir, "buildbuddy.db")
-	if f := createMemoryBackedDB(t); f != nil {
-		app.dbFilePath = f.Name()
+	app.dbFilePath = createMemoryBackedDB(t)
+	if app.dbFilePath == "" {
+		app.dbFilePath = filepath.Join(dataDir, "buildbuddy.db")
 	}
 	args := []string{
 		"--app.log_level=debug",
