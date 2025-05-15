@@ -5,10 +5,7 @@ package github
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -60,28 +57,6 @@ func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 		log.Fatalf("Failed to make last indexed doc: %s", err)
 	}
 	return doc
-}
-
-func DownloadRepoArchive(archiveURL, scratchDirectory string) (string, func(), error) {
-	httpRsp, err := http.Get(archiveURL)
-	if err != nil {
-		return "", nil, err
-	}
-	defer httpRsp.Body.Close()
-
-	tmpFile, err := os.CreateTemp(scratchDirectory, "archive-*.zip")
-	if err != nil {
-		return "", nil, err
-	}
-	cleanupFn := func() {
-		os.Remove(tmpFile.Name())
-	}
-
-	if _, err := io.Copy(tmpFile, httpRsp.Body); err != nil {
-		cleanupFn()
-		return "", nil, err
-	}
-	return tmpFile.Name(), cleanupFn, nil
 }
 
 func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filepath string, fileContent []byte) error {

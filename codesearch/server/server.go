@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -211,14 +212,23 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 		return nil, err
 	}
 
-	tmpFileName, cleanupFn, err := github.DownloadRepoArchive(archiveURL, css.scratchDirectory)
+	httpRsp, err := http.Get(archiveURL)
 	if err != nil {
 		return nil, err
 	}
-	defer cleanupFn()
-	log.Debugf("Copied archive to %q", tmpFileName)
+	defer httpRsp.Body.Close()
 
-	zipReader, err := zip.OpenReader(tmpFileName)
+	tmpFile, err := os.CreateTemp(css.scratchDirectory, "archive-*.zip")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := io.Copy(tmpFile, httpRsp.Body); err != nil {
+		return nil, err
+	}
+
+	zipReader, err := zip.OpenReader(tmpFile.Name())
 	if err != nil {
 		return nil, err
 	}
