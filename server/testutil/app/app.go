@@ -50,16 +50,18 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 
 }
 
+// createMemoryBackedDB attempts to create a uniquly-named file under /dev/shm and return its full path.
+// If it cannot create the file, returns "".
 func createMemoryBackedDB(t testing.TB) string {
 	if _, err := os.Stat("/dev/shm"); errors.Is(err, os.ErrNotExist) {
 		return ""
 	}
 	f, err := os.CreateTemp("/dev/shm", "buildbuddy-test-*.db")
-	require.NoError(t, err)
-	path := f.Name()
-	err = f.Close()
-	require.NoError(t, err)
-	return path
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	return f.Name()
 }
 
 func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string, configFilePath string) *App {
