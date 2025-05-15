@@ -361,7 +361,7 @@ func (d *AuthDB) fillChildGroupIDs(ctx context.Context, akg *apiKeyGroup) error 
 	if !akg.IsParent {
 		return nil
 	}
-	if !akg.HasCapability(cappb.Capability_ORG_ADMIN) {
+	if !akg.HasCapability(cappb.Capability_ORG_ADMIN) && !akg.HasCapability(cappb.Capability_AUDIT_LOG_READ) {
 		return nil
 	}
 	rq := d.h.NewQuery(ctx, "authdb_get_child_group_ids").Raw(`
