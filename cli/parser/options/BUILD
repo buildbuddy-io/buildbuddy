@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//cli/log",
         "//cli/parser/arguments",
+        "//cli/parser/bazelrc",
         "//proto:bazel_flags_go_proto",
     ],
 )
