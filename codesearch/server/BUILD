@@ -23,6 +23,7 @@ go_library(
         "//server/util/disk",
         "//server/util/flagutil/yaml",
         "//server/util/git",
+        "//server/util/lockmap",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",

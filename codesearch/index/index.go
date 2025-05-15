@@ -35,8 +35,6 @@ type postingLists map[string]posting.List
 // Multiple instances can be used concurrently without crashing, however CRUD operations are
 // not atomic, so index corruption can occur if multiple writers are used to modify the same
 // documents at the same time.
-// TODO(jdelfino): The server currently does not guarantee that multiple Writers won't be used to
-// update the same documents at the same time.
 type Writer struct {
 	db  *pebble.DB
 	log log.Logger
@@ -242,6 +240,9 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 }
 
 func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) error {
+	// Note: This implementation does not handle file renames - clients must explicitly
+	// delete the old file and add (or update) the new file when renames happen.
+
 	if matchField.Type() != types.KeywordField {
 		return status.InternalError("match field must be of keyword type")
 	}
