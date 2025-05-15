@@ -26,9 +26,14 @@ func TestLock(t *testing.T) {
 	eg.Wait()
 	require.Equal(t, 100, m["samekey"])
 
-	// Wait for gc
-	time.Sleep(200 * time.Millisecond)
-	require.Equal(t, 0, l.count())
+	// Wait for gc. This test will time out if the single entry isn't cleaned
+	// up eventually.
+	for {
+		if l.count() == 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func TestRLock(t *testing.T) {
@@ -57,9 +62,14 @@ func TestRLock(t *testing.T) {
 	eg.Wait()
 	require.Equal(t, 20, m["samekey"])
 
-	// Wait for gc
-	time.Sleep(200 * time.Millisecond)
-	require.Equal(t, 0, l.count())
+	// Wait for gc. This test will time out if the single entry isn't cleaned
+	// up eventually.
+	for {
+		if l.count() == 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func BenchmarkLockQPS(b *testing.B) {
