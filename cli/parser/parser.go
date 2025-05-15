@@ -182,7 +182,8 @@ func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.Ord
 				// Bazel does not recognize `--` until the command has been encountered.
 				return nil, fmt.Errorf("unknown startup option '--'.")
 			}
-			parsedArgs.Args = append(parsedArgs.Args, arguments.ToPositionalArguments(next)...)
+			parsedArgs.Args = append(parsedArgs.Args, &arguments.DoubleDash{})
+			parsedArgs.Args = append(parsedArgs.Args, arguments.ToPositionalArguments(next[1:])...)
 			break
 		}
 		if command == "startup" {

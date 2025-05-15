@@ -116,9 +116,9 @@ type CommandOption struct{ options.Option }
 func (c *CommandOption) arg() arguments.Argument  { return c.Option }
 func (c *CommandOption) AsOption() options.Option { return c.Option }
 
-type DoubleDash struct{ *arguments.PositionalArgument }
+type DoubleDash struct{ *arguments.DoubleDash }
 
-func (d *DoubleDash) arg() arguments.Argument { return d.PositionalArgument }
+func (d *DoubleDash) arg() arguments.Argument { return d.DoubleDash }
 
 type Target struct{ *arguments.PositionalArgument }
 
@@ -133,7 +133,6 @@ func (e *ExecArg) arg() arguments.Argument { return e.PositionalArgument }
 // by the `Classify` and `Find` functions.
 type classifier struct {
 	command          *string
-	foundDoubleDash  bool
 	foundFirstTarget bool
 }
 
@@ -148,8 +147,6 @@ func (c *classifier) Accumulate(classified Classified) {
 	case *Command:
 		command := v.Value
 		c.command = &command
-	case *DoubleDash:
-		c.foundDoubleDash = true
 	case *Target:
 		c.foundFirstTarget = true
 	}
@@ -157,19 +154,19 @@ func (c *classifier) Accumulate(classified Classified) {
 
 func (c *classifier) Classify(arg arguments.Argument) Classified {
 	switch arg := arg.(type) {
+	case *arguments.DoubleDash:
+		return &DoubleDash{arg}
 	case *arguments.PositionalArgument:
 		switch {
 		case c.command == nil:
 			return &Command{arg}
-		case !c.foundDoubleDash && arg.Value == "--":
-			return &DoubleDash{arg}
 		case *c.command == "run" && c.foundFirstTarget:
 			return &ExecArg{arg}
 		default:
 			return &Target{arg}
 		}
 	case options.Option:
-		if c.command == nil {
+		if arg.Supports("startup") {
 			return &StartupOption{arg}
 		}
 		return &CommandOption{arg}
@@ -413,6 +410,11 @@ func (a *OrderedArgs) Append(args ...arguments.Argument) error {
 	commandOptionInsertIndex := -1
 	for _, arg := range args {
 		switch arg := arg.(type) {
+		case *arguments.DoubleDash:
+			var err error
+			if startupOptionInsertIndex, commandOptionInsertIndex, err = a.appendDoubleDash(startupOptionInsertIndex, commandOptionInsertIndex); err != nil {
+				return err
+			}
 		case *arguments.PositionalArgument:
 			startupOptionInsertIndex, commandOptionInsertIndex = a.appendPositionalArgument(arg, startupOptionInsertIndex, commandOptionInsertIndex)
 		case options.Option:
@@ -427,6 +429,29 @@ func (a *OrderedArgs) Append(args ...arguments.Argument) error {
 	return nil
 }
 
+func (a *OrderedArgs) appendDoubleDash(startupOptionInsertIndex, commandOptionInsertIndex int) (int, int, error) {
+	if startupOptionInsertIndex == -1 {
+		if startupOptionInsertIndex, _ = Find[*Command](a.Args); startupOptionInsertIndex == -1 {
+			startupOptionInsertIndex = len(a.Args)
+		}
+	}
+	if startupOptionInsertIndex == len(a.Args) {
+		// There is no command; we cannot add a double dash.
+		return startupOptionInsertIndex, commandOptionInsertIndex, fmt.Errorf("Failed to append double-dash: double-dash is not supported when no command is present.")
+	}
+	if commandOptionInsertIndex == -1 {
+		if commandOptionInsertIndex, _ = Find[*DoubleDash](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
+			commandOptionInsertIndex = len(a.Args)
+		}
+	}
+
+	if commandOptionInsertIndex == len(a.Args) {
+		// only append if we don't already have a double-dash
+		a.Args = append(a.Args, &arguments.DoubleDash{})
+	}
+	return startupOptionInsertIndex, commandOptionInsertIndex, nil
+}
+
 func (a *OrderedArgs) appendPositionalArgument(arg *arguments.PositionalArgument, startupOptionInsertIndex, commandOptionInsertIndex int) (int, int) {
 	if startupOptionInsertIndex == -1 {
 		if startupOptionInsertIndex, _ = Find[*Command](a.Args); startupOptionInsertIndex == -1 {
@@ -439,14 +464,13 @@ func (a *OrderedArgs) appendPositionalArgument(arg *arguments.PositionalArgument
 		return startupOptionInsertIndex, len(a.Args)
 	}
 	if commandOptionInsertIndex == -1 {
-		if commandOptionInsertIndex, _ = Find[*Command](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
+		if commandOptionInsertIndex, _ = Find[*DoubleDash](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
 			commandOptionInsertIndex = len(a.Args)
 		}
 	}
-
 	if commandOptionInsertIndex == len(a.Args) {
 		if strings.HasPrefix(arg.GetValue(), "-") {
-			a.Args = append(a.Args, &arguments.PositionalArgument{Value: "--"})
+			a.Args = append(a.Args, &arguments.DoubleDash{})
 		} else {
 			// If there's no double dash, commandOptionInsertIndex needs to be
 			// incremented to still be len(p.Args) afer we append the argument for
@@ -492,7 +516,7 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 					startupOptionInsertIndex = len(a.Args)
 				}
 			}
-			if commandOptionInsertIndex, _ = Find[*Command](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
+			if commandOptionInsertIndex, _ = Find[*DoubleDash](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
 				commandOptionInsertIndex = len(a.Args)
 			}
 		}
