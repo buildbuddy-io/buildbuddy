@@ -24,6 +24,16 @@ func (a *PositionalArgument) Format() []string {
 	return []string{a.Value}
 }
 
+type DoubleDash struct{}
+
+func (a *DoubleDash) GetValue() string {
+	return "--"
+}
+
+func (a *DoubleDash) Format() []string {
+	return []string{a.GetValue()}
+}
+
 func FromConcrete[T Argument](args []T) []Argument {
 	if len(args) == 0 {
 		return nil
