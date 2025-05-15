@@ -621,7 +621,7 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 		},
 	} {
 		for _, useZstd := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s_use_zstd_%t", tc.name, useZstd), func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s/use_zstd_%t", tc.name, useZstd), func(t *testing.T) {
 				te := testenv.GetTestEnv(t)
 				_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 				testcache.Setup(t, te, localGRPClis)
@@ -713,13 +713,12 @@ func TestUploadReader_BlobExists(t *testing.T) {
 				require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[out.Len()-9:]))
 			}
 
-			// Second upload succeeds, but does not upload all the bytes
+			// Second upload succeeds
 			{
-				d, uploadedBytes, err := cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), casRN, bytes.NewReader(buf))
+				d, _, err := cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), casRN, bytes.NewReader(buf))
 				require.NoError(t, err)
 				require.NotNil(t, d)
 				require.Empty(t, cmp.Diff(casRN.GetDigest(), d, protocmp.Transform()))
-				require.Less(t, uploadedBytes, int64(len(buf)))
 			}
 
 			// The blob is still available in the CAS

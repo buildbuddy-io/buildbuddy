@@ -290,6 +290,8 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 		err = sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 		if err != nil {
+			// If the blob already exists in the CAS, the server will respond EOF.
+			// It is safe to stop sending writes.
 			if err == io.EOF {
 				break
 			}
