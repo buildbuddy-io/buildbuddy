@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/open-feature/go-sdk/openfeature"
 
@@ -22,6 +23,40 @@ var (
 	appName      = flag.String("experiments.app_name", "buildbuddy-app", "Client name to use for experiments")
 	flagdBackend = flag.String("experiments.flagd_backend", "", "Flagd backend to use for evaluating flags")
 )
+
+const (
+	// TrialDefaultVariant is the name of the flagd variant meaning that the
+	// evaluation context is excluded from the trial.
+	TrialDefaultVariant = "default"
+
+	// TrialControlArmVariant is the name of the flagd variant meaning that the
+	// evaluation context is in the control group for a trial.
+	TrialControlArmVariant = "control"
+
+	// TrialABTreatmentArmVariant is the name of the flagd variant corresponding
+	// to the single treatment group in an A/B experiment.
+	TrialABTreatmentArmVariant = "treatment"
+
+	// TrialMultiArmTreatmentVariantPrefix is a string prefix used for flagd
+	// variants corresponding to the treatment groups in a 3+ arm trial.
+	TrialMultiArmTreatmentVariantPrefix = "treatment."
+)
+
+// TrialArm represents an arm of a randomized controlled trial.
+//
+// Randomized controlled trials are a special type of experiment where the flag
+// variants are named "control", "treatment", etc. and with equal-sized control
+// and treatment groups.
+type TrialArm struct {
+	flagName string
+	variant  string
+}
+
+// String returns the string representation of the trial arm. This string is
+// suitable for storage in the database in the "trials" column.
+func (a *TrialArm) String() string {
+	return a.flagName + ":" + a.variant
+}
 
 // Register adds a new interfaces.ExperimentFlagProvider to the env. If the
 // `experiments.flagd_backend` is set, this will be a real experiment provider,
@@ -161,3 +196,30 @@ func (fp *FlagProvider) Float64(ctx context.Context, flagName string, defaultVal
 func (fp *FlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
 	return fp.client.Int(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 }
+
+// BooleanTrial returns the experiment arm name and boolean value for a
+// randomized controlled trial.
+//
+// If the returned arm is nil, the evaluation context is not considered to be
+// part of the trial and the default value is used.
+//
+// The "default" variant defined in the configuration takes precedence over the
+// given defaultValue. The provided defaultValue should match the "default" arm
+// in the flagd configuration, otherwise there may be discrepancies in the case
+// where evaluation fails.
+func (fp *FlagProvider) BooleanTrial(ctx context.Context, flagName string, defaultValue bool, opts ...any) (*TrialArm, bool) {
+	value, err := fp.client.BooleanValueDetails(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	if err != nil {
+		log.CtxDebugf(ctx, "Failed to get boolean trial value for %q: %s", flagName, err)
+		return nil, defaultValue
+	}
+	if value.Variant == TrialDefaultVariant {
+		return nil, value.Value
+	}
+	return &TrialArm{
+		flagName: flagName,
+		variant:  value.Variant,
+	}, value.Value
+}
+
+// TODO: StringTrial, Float64Trial, Int64Trial
