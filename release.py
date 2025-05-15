@@ -47,7 +47,7 @@ def workspace_is_clean():
                          shell=True, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT)
     out = [l.decode() for l in p.stdout.readlines()]
-    print('git status output:\n%s', "\n".join(out))
+    print('git status output:\n%s' % "\n".join(out))
     return len(out) == 0
 
 def is_published_release(version_tag):
