@@ -648,6 +648,8 @@ func TestUploadReaderAndGetBlob(t *testing.T) {
 						require.NoError(t, err)
 						require.NotNil(t, d)
 						require.Empty(t, cmp.Diff(upRN.GetDigest(), d, protocmp.Transform()))
+						require.Greater(t, uploadedBytes, int64(0))
+						require.LessOrEqual(t, uploadedBytes, tc.uploadSize)
 					}
 				}
 
