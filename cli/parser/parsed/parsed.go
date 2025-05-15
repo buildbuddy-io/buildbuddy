@@ -439,14 +439,13 @@ func (a *OrderedArgs) appendPositionalArgument(arg *arguments.PositionalArgument
 		return startupOptionInsertIndex, len(a.Args)
 	}
 	if commandOptionInsertIndex == -1 {
-		if commandOptionInsertIndex, _ = Find[*Command](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
+		if commandOptionInsertIndex, _ = Find[*DoubleDash](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
 			commandOptionInsertIndex = len(a.Args)
 		}
 	}
-
 	if commandOptionInsertIndex == len(a.Args) {
 		if strings.HasPrefix(arg.GetValue(), "-") {
-			a.Args = append(a.Args, &arguments.PositionalArgument{Value: "--"})
+			a.Args = append(a.Args, &arguments.DoubleDash{})
 		} else {
 			// If there's no double dash, commandOptionInsertIndex needs to be
 			// incremented to still be len(p.Args) afer we append the argument for
@@ -492,7 +491,7 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 					startupOptionInsertIndex = len(a.Args)
 				}
 			}
-			if commandOptionInsertIndex, _ = Find[*Command](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
+			if commandOptionInsertIndex, _ = Find[*DoubleDash](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
 				commandOptionInsertIndex = len(a.Args)
 			}
 		}
