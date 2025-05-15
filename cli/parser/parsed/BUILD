@@ -6,7 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser/parsed",
     visibility = ["//visibility:public"],
     deps = [
+        "//cli/log",
         "//cli/parser/arguments",
+        "//cli/parser/bazelrc",
         "//cli/parser/options",
     ],
 )

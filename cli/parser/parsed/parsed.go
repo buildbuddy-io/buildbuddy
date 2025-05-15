@@ -10,10 +10,14 @@ package parsed
 import (
 	"fmt"
 	"iter"
+	"os/user"
+	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 )
 
@@ -538,6 +542,64 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 	return startupOptionInsertIndex, commandOptionInsertIndex, fmt.Errorf("Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.", option.Name(), command)
 }
 
+func (parsedArgs *OrderedArgs) ConsumeRCFiles(workspaceDir string) (rcFiles []string, err error) {
+	if rcOptions := parsedArgs.RemoveOptions("ignore_all_rc_files"); len(rcOptions) > 0 {
+		o := rcOptions[len(rcOptions)-1].Option
+		if b, ok := o.(options.BoolLike); !ok {
+			return nil, fmt.Errorf("%s must be a boolean option if it is present, but its type was %T", o.Name(), o)
+		} else if v, err := b.AsBool(); err != nil {
+			return nil, fmt.Errorf("%s must have a boolean value if it is present, but its value was %s", o.Name(), o.GetValue())
+		} else if v {
+			// Before we do anything, check whether --ignore_all_rc_files is already
+			// set. If so, return an empty list of RC files, since bazel will do the
+			// same.
+			parsedArgs.RemoveOptions("system_rc", "workspace_rc", "home_rc")
+			return nil, nil
+		}
+	}
+	// Parse rc files in the order defined here:
+	// https://bazel.build/run/bazelrc#bazelrc-file-locations
+	for _, optName := range []string{"system_rc", "workspace_rc", " home_rc"} {
+		if rcOptions := parsedArgs.RemoveOptions(optName); len(rcOptions) > 0 {
+			o := rcOptions[len(rcOptions)-1].Option
+			if b, ok := o.(options.BoolLike); !ok {
+				return nil, fmt.Errorf("%s must be a boolean option if it is present, but its type was %T", o.Name(), o)
+			} else if v, err := b.AsBool(); err != nil {
+				return nil, fmt.Errorf("%s must have a boolean value if it is present, but its value was %s", o.Name(), o.GetValue())
+			} else if !v {
+				// When these flags are false, they have no effect on the list of
+				// rcFiles we should parse.
+				continue
+			}
+		}
+		switch optName {
+		case "system_rc":
+			rcFiles = append(rcFiles, "/etc/bazel.bazelrc")
+			rcFiles = append(rcFiles, `%ProgramData%\bazel.bazelrc`)
+		case "workspace_rc":
+			if workspaceDir != "" {
+				rcFiles = append(rcFiles, filepath.Join(workspaceDir, ".bazelrc"))
+			}
+		case "home_rc":
+			usr, err := user.Current()
+			if err == nil {
+				rcFiles = append(rcFiles, filepath.Join(usr.HomeDir, ".bazelrc"))
+			}
+		}
+	}
+	for _, indexedOption := range parsedArgs.RemoveOptions("bazelrc") {
+		o := indexedOption.Option
+		if o.GetValue() == "/dev/null" {
+			// if we encounter --bazelrc=/dev/null, that means bazel will ignore
+			// subsequent --bazelrc args, so we ignore them as well.
+			break
+		}
+		rcFiles = append(rcFiles, o.GetValue())
+		continue
+	}
+	return rcFiles, nil
+}
+
 // Offset exists as a temporary hack while we continue to move away from
 // passing arguments around as strings. It returns the offset in the
 // string-based arg slice where the argument at this index is located.
@@ -670,6 +732,8 @@ func (a *PartitionedArgs) RemoveOptions(optionNames ...string) []*IndexedOption 
 func (a *PartitionedArgs) Append(args ...arguments.Argument) error {
 	for _, arg := range args {
 		switch arg := arg.(type) {
+		case *arguments.DoubleDash:
+			// skip
 		case *arguments.PositionalArgument:
 			switch {
 			case a.Command == nil:
@@ -721,4 +785,196 @@ func (a *PartitionedArgs) SplitExecutableArgs() ([]string, []string) {
 	}
 	bazelArgs = append(bazelArgs, arguments.FormatAll(a.Targets)...)
 	return bazelArgs, arguments.FormatAll(a.ExecArgs)
+}
+
+type Config struct {
+	ByPhase map[string][]arguments.Argument
+}
+
+type ExpandedConfig struct {
+	Args []arguments.Argument
+}
+
+func NewConfig() *Config {
+	return &Config{
+		ByPhase: make(map[string][]arguments.Argument),
+	}
+}
+
+func (p *OrderedArgs) ExpandConfigs(
+	namedConfigs map[string]*Config,
+	defaultConfig *Config,
+) (*OrderedArgs, error) {
+	command := p.GetCommand()
+	expanded, err := p.expandConfigs(namedConfigs, defaultConfig)
+	if err != nil {
+		return nil, err
+	}
+	// Replace the last occurrence of `--enable_platform_specific_config` with
+	// `--config=<bazelOS>`, so long as the last occurrence evaluates as true.
+	opts := expanded.RemoveOptions(bazelrc.EnablePlatformSpecificConfigFlag)
+	if len(opts) > 0 {
+		enable := opts[len(opts)-1].Option
+		index := opts[len(opts)-1].Index
+		if b, ok := enable.(options.BoolLike); ok {
+			if v, err := b.AsBool(); err != nil && v {
+				bazelOS := bazelrc.GetBazelOS()
+				if platformConfigs, ok := namedConfigs[bazelOS]; ok {
+					phases := bazelrc.GetPhases(command)
+					expansion, err := appendArgsForConfig(nil, platformConfigs, namedConfigs, phases, []string{bazelOS}, true)
+					if err != nil {
+						return nil, err
+					}
+					expanded.Args = slices.Insert(expanded.Args, index, expansion...)
+					// Remove all occurrences of the enable platform-specific config flag
+					// that may have been added when expanding the platform-specific config.
+					expanded.RemoveOptions(bazelrc.EnablePlatformSpecificConfigFlag)
+				}
+			}
+		}
+	}
+	return expanded, nil
+}
+
+func (p *OrderedArgs) expandConfigs(
+	namedConfigs map[string]*Config,
+	defaultConfig *Config,
+) (*OrderedArgs, error) {
+	// Expand startup args first, before any other args (including explicit
+	// startup args).
+	//
+	// startup config is guaranteed to only be startup options.
+	startupConfig := defaultConfig.ByPhase["startup"]
+
+	commandIndex, command := Find[*Command](p.Args)
+	if commandIndex == -1 {
+		// No command is a help command that does not expand anything but the startup config.
+		return &OrderedArgs{Args: append(p.Args, startupConfig...)}, nil
+	}
+	expanded := slices.Concat(startupConfig, p.Args[:commandIndex])
+	expanded = append(expanded, command.PositionalArgument)
+
+	// Always apply bazelrc rules in order of the precedence hierarchy. For
+	// example, for the "test" command, apply options in order of "always",
+	// then "common", then "build", then "test".
+	phases := bazelrc.GetPhases(command.GetValue())
+	log.Debugf("Bazel command: %q, rc rule classes: %v", command, phases)
+
+	// We'll refer to args in bazelrc which aren't expanded from a --config
+	// option as "default" args, like a .bazelrc line that just says
+	// "common -c dbg" or "build -c dbg" as opposed to something qualified like
+	// "build:dbg -c dbg".
+	//
+	// These default args take lower precedence than explicit command line args
+	// so we expand those first just after the command.
+	log.Debugf("Args before expanding default rc rules: %#v", arguments.FormatAll(expanded))
+	var err error
+	expanded, err = appendArgsForConfig(expanded, defaultConfig, namedConfigs, phases, []string{}, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
+	}
+	log.Debugf("Args after expanding default rc rules: %v", arguments.FormatAll(expanded))
+	expanded, err = appendExpansion(expanded, p.Args[commandIndex+1:], command.Value, namedConfigs, phases, []string{}, false)
+	if err != nil {
+		return nil, err
+	}
+	log.Debugf("Fully expanded args: %+v", arguments.FormatAll(expanded))
+
+	// Append to new OrderedArgs to make sure `--` is handled correctly.
+	expandedArgs := &OrderedArgs{}
+	if err := expandedArgs.Append(expanded...); err != nil {
+		return nil, err
+	}
+	return expandedArgs, err
+}
+
+func appendArgsForConfig(
+	expanded []arguments.Argument,
+	config *Config,
+	namedConfigs map[string]*Config,
+	phases []string,
+	configStack []string,
+	allowEmpty bool,
+) ([]arguments.Argument, error) {
+	empty := true
+	for _, phase := range phases {
+		toExpand, ok := config.ByPhase[phase]
+		if !ok {
+			continue
+		}
+		empty = false
+		var err error
+		expanded, err = appendExpansion(
+			expanded,
+			toExpand,
+			phase,
+			namedConfigs,
+			phases,
+			configStack,
+			true,
+		)
+		if err != nil {
+			return nil, err
+		}
+		log.Debugf("Expanded for phase %s: %#v", phase, arguments.FormatAll(expanded))
+	}
+	if empty && !allowEmpty {
+		// empty config names do not require supported phases
+		return nil, fmt.Errorf("config value not defined in any .rc file")
+	}
+	return expanded, nil
+}
+
+func appendExpansion(
+	expanded []arguments.Argument,
+	toExpand []arguments.Argument,
+	phase string,
+	namedConfigs map[string]*Config,
+	phases []string,
+	configStack []string,
+	removeDoubleDash bool,
+) ([]arguments.Argument, error) {
+	for _, a := range toExpand {
+		log.Debugf("Expanding '%+v'", a.Format())
+		switch a := a.(type) {
+		case *arguments.DoubleDash:
+			if removeDoubleDash {
+				continue
+			}
+			expanded = append(expanded, &arguments.DoubleDash{})
+		case options.Option:
+			// For the common phases, only append the arg if it's supported by
+			// the command.
+			if bazelrc.IsCommonPhase(phase) && !a.Supports(phases[len(phases)-1]) {
+				if phase == "always" {
+					log.Warnf("Inherited 'always' options: %v", arguments.FormatAll(toExpand))
+					return nil, fmt.Errorf("%[1]s :: Unrecognized option %[1]s", a.Format()[0])
+				}
+				log.Debugf("common rc rule: opt %q is unsupported by command %q; skipping", a.Name(), phases[len(phases)-1])
+				continue
+			}
+			if a.Name() != "config" {
+				expanded = append(expanded, a)
+				continue
+			}
+			// This is a config option; expand it.
+			if _, ok := a.(*options.RequiredValueOption); !ok {
+				return nil, fmt.Errorf("config options must be of '*RequiredValueOption', but was of type '%T'.", a)
+			}
+			config, ok := namedConfigs[a.GetValue()]
+			if !ok {
+				return nil, fmt.Errorf("config value '%s' is not defined in any .rc file", a.GetValue())
+			}
+			if slices.Index(configStack, a.GetValue()) != -1 {
+				return nil, fmt.Errorf("circular --config reference detected: %s", strings.Join(append(configStack, a.GetValue()), " -> "))
+			}
+			var err error
+			if expanded, err = appendArgsForConfig(expanded, config, namedConfigs, phases, append(configStack, a.GetValue()), false); err != nil {
+				return nil, fmt.Errorf("error expanding config '%s': %s", a.GetValue(), err)
+			}
+		case *arguments.PositionalArgument:
+			expanded = append(expanded, a)
+		}
+	}
+	return expanded, nil
 }
