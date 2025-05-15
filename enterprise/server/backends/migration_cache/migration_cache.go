@@ -661,19 +661,13 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 }
 
 type doubleWriter struct {
-	src          interfaces.CommittedWriteCloser
-	dest         *asyncWriter
-	destDeleteFn func()
+	src  interfaces.CommittedWriteCloser
+	dest *asyncWriter
 }
 
 func (d *doubleWriter) Write(data []byte) (int, error) {
-	_, destErr := d.dest.Write(data)
-	srcN, srcErr := d.src.Write(data)
-	if srcErr != nil && destErr == nil {
-		// If error during write to source cache (source of truth), must delete from destination cache
-		d.destDeleteFn()
-	}
-	return srcN, srcErr
+	d.dest.Write(data)
+	return d.src.Write(data)
 }
 
 func (d *doubleWriter) Commit() error {
@@ -801,12 +795,6 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 	dw := &doubleWriter{
 		src:  srcWriter,
 		dest: newAsyncWriter(destWriter),
-		destDeleteFn: func() {
-			deleteErr := mc.dest.Delete(ctx, r)
-			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration src write of %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
-			}
-		},
 	}
 	return dw, nil
 }
