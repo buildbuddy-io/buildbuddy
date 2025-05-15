@@ -123,6 +123,7 @@ type PersistArtifacts struct {
 type BuildEventHandler struct {
 	env              environment.Env
 	statsRecorder    *statsRecorder
+	webhookNotifier  *webhookNotifier
 	openChannels     *sync.WaitGroup
 	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
 
@@ -142,13 +143,12 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	h := &BuildEventHandler{
 		env:              env,
 		statsRecorder:    statsRecorder,
+		webhookNotifier:  webhookNotifier,
 		openChannels:     openChannels,
 		cancelFnsByInvID: sync.Map{},
 	}
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		h.Stop()
-		statsRecorder.Stop()
-		webhookNotifier.Stop()
 		return nil
 	})
 	return h
@@ -210,6 +210,8 @@ func (b *BuildEventHandler) Stop() {
 		cancelFn()
 		return true
 	})
+	b.statsRecorder.Stop()
+	b.webhookNotifier.Stop()
 }
 
 // invocationInfo represents an invocation ID as well as the JWT granting access

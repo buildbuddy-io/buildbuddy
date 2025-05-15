@@ -550,7 +550,7 @@ func getEnvAndCtx(t testing.TB, user string) (*testenv.TestEnv, context.Context)
 
 func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, testDataFile string) string {
 	handler := build_event_handler.NewBuildEventHandler(te)
-	var channel interfaces.BuildEventChannel
+	defer handler.Stop()
 
 	var fileReader io.Reader
 	b, err := os.Open(path.Join("testdata", testDataFile))
@@ -570,6 +570,7 @@ func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, testDataFile str
 	_, err = decoder.Token()
 	require.NoError(t, err)
 
+	var channel interfaces.BuildEventChannel
 	var iid string
 	eventId := int64(1)
 	for decoder.More() {
@@ -587,6 +588,7 @@ func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, testDataFile str
 
 			channel, err = handler.OpenChannel(context.Background(), iid)
 			require.NoError(t, err)
+			defer channel.Close()
 		}
 
 		anyEvent := &anypb.Any{}
@@ -606,8 +608,10 @@ func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, testDataFile str
 
 func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
 	handler := build_event_handler.NewBuildEventHandler(te)
+	defer handler.Stop()
 	channel, err := handler.OpenChannel(context.Background(), iid)
 	require.NoError(t, err)
+	defer channel.Close()
 
 	err = channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=user1'"), iid, 1))
 	assert.NoError(t, err)
