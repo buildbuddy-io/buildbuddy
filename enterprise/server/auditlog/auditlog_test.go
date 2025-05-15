@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -27,6 +26,7 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 func TestGetLogs(t *testing.T) {
