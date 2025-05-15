@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"math/rand"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -469,12 +470,11 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 
 	if d.dest != nil {
 		eg.Go(func() error {
-			if d.doubleReadBuf == nil || len(d.doubleReadBuf) != len(p) {
-				d.doubleReadBuf = make([]byte, len(p))
-			}
+			// Grow never changes the length, so it will stay 0.
+			d.doubleReadBuf = slices.Grow(d.doubleReadBuf, len(p))
 
 			var dstN int
-			dstN, dstErr = io.ReadFull(d.dest, d.doubleReadBuf)
+			dstN, dstErr = io.ReadFull(d.dest, d.doubleReadBuf[:len(p)])
 			if dstErr == io.ErrUnexpectedEOF {
 				dstErr = io.EOF
 			}

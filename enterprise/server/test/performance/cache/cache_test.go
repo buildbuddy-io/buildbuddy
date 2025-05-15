@@ -1,6 +1,7 @@
 package cache_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"testing"
@@ -155,6 +156,34 @@ func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 	}
 }
 
+func benchmarkRead(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
+	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+	setDigestsInCache(b, ctx, c, digestBufs)
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	// Using a bytes.Buffer here because it is used in the distributed.Cache.Get
+	// path, which calls Cache.Reader, and this results in Read calls of various
+	// sizes.
+	readBuf := bytes.NewBuffer(make([]byte, 1))
+	for i := 0; i < b.N; i++ {
+		dbuf := digestBufs[i%len(digestBufs)]
+		b.SetBytes(dbuf.d.GetDigest().GetSizeBytes())
+		r, err := c.Reader(ctx, dbuf.d, 0, 0)
+		if err != nil {
+			b.Fatal(err)
+		}
+		n, err := readBuf.ReadFrom(r)
+		r.Close()
+		if err != nil {
+			b.Fatal(err)
+		}
+		if n != digestSizeBytes {
+			b.Fatalf("Wanted %v bytes, got %v", digestSizeBytes, n)
+		}
+	}
+}
+
 func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
@@ -218,16 +247,16 @@ type namedCache struct {
 
 func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 	flags.Set(b, "cache.distributed_cache.consistent_hash_function", "SHA256")
-	// dc := getDiskCache(b, te)
-	// ddc := getDistributedCache(b, te, dc)
+	dc := getDiskCache(b, te)
+	ddc := getDistributedCache(b, te, dc)
 	pc := getPebbleCache(b, te)
 	dpc := getDistributedCache(b, te, pc)
 
 	time.Sleep(100 * time.Millisecond)
 	caches := []*namedCache{
-		// {getMemoryCache(b), "LocalMemory"},
-		// {getDiskCache(b, te), "LocalDisk"},
-		// {ddc, "DistDisk"},
+		{getMemoryCache(b), "LocalMemory"},
+		{getDiskCache(b, te), "LocalDisk"},
+		{ddc, "DistDisk"},
 		{getPebbleCache(b, te), "LocalPebble"},
 		{dpc, "DistPebble"},
 		{getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), "LocalMigration"},
@@ -249,6 +278,21 @@ func BenchmarkSet(b *testing.B) {
 					benchmarkSet(ctx, cache, size, b, unique)
 				})
 			}
+		}
+	}
+}
+
+func BenchmarkRead(b *testing.B) {
+	sizes := []int64{10, 100, 1000, 10000}
+	te := testenv.GetTestEnv(b)
+	ctx := getAnonContext(b, te)
+
+	for _, cache := range getAllCaches(b, te) {
+		for _, size := range sizes {
+			name := fmt.Sprintf("%s%d", cache.Name, size)
+			b.Run(name, func(b *testing.B) {
+				benchmarkRead(ctx, cache, size, b)
+			})
 		}
 	}
 }
