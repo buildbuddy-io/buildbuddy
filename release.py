@@ -42,10 +42,13 @@ def nonempty_lines(text):
     return lines
 
 def workspace_is_clean():
+    print('Checking if workspace is clean.')
     p = subprocess.Popen('git status --untracked-files=no --porcelain',
                          shell=True, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT)
-    return len(p.stdout.readlines()) == 0
+    out = [l.decode() for l in p.stdout.readlines()]
+    print('git status output:\n%s' % "\n".join(out))
+    return len(out) == 0
 
 def is_published_release(version_tag):
     github_token = os.environ.get('GITHUB_TOKEN')
