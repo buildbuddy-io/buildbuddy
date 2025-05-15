@@ -12,7 +12,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -581,25 +580,6 @@ func ExpandConfigs(args []string) ([]string, error) {
 	return p.canonicalizeArgs(args)
 }
 
-// Mirroring the behavior here:
-// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java#L41
-func getBazelOS() string {
-	switch runtime.GOOS {
-	case "linux":
-		return "linux"
-	case "darwin":
-		return "macos"
-	case "windows":
-		return "windows"
-	case "freebsd":
-		return "freebsd"
-	case "openbsd":
-		return "openbsd"
-	default:
-		return runtime.GOOS
-	}
-}
-
 func (p *Parser) expandConfigs(workspaceDir string, args []string) ([]string, error) {
 	bazelCommand, idx := GetBazelCommandAndIndex(args)
 	if idx == -1 {
@@ -634,7 +614,7 @@ func (p *Parser) expandConfigs(workspaceDir string, args []string) ([]string, er
 	// Always apply bazelrc rules in order of the precedence hierarchy. For
 	// example, for the "test" command, apply options in order of "common", then
 	// "build", then "test".
-	phases := getPhases(command)
+	phases := bazelrc.GetPhases(command)
 	log.Debugf("Bazel command: %q, rc rule classes: %v", command, phases)
 
 	// We'll refer to args in bazelrc which aren't expanded from a --config
@@ -668,7 +648,7 @@ func (p *Parser) expandConfigs(workspaceDir string, args []string) ([]string, er
 		index := opts[len(opts)-1].Index
 		if b, ok := enable.(options.BoolLike); ok {
 			if v, err := b.AsBool(); err != nil && v {
-				bazelOS := getBazelOS()
+				bazelOS := bazelrc.GetBazelOS()
 				o, err := p.MakeOption("config", &bazelOS)
 				if err != nil {
 					return nil, err
@@ -938,26 +918,6 @@ func GetFirstTargetPattern(args []string) string {
 		}
 	}
 	return ""
-}
-
-// getPhases returns the command's inheritance hierarchy in increasing order of
-// precedence.
-//
-// Examples:
-//
-//	getPhases("run")      // {"common", "build", "run"}
-//	getPhases("coverage") // {"common", "build", "test", "coverage"}
-func getPhases(command string) (out []string) {
-	for {
-		if command == "" {
-			out = append(out, "common")
-			break
-		}
-		out = append(out, command)
-		command, _ = bazelrc.Parent(command)
-	}
-	reverse(out)
-	return
 }
 
 func reverse(a []string) {
