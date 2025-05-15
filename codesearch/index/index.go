@@ -213,29 +213,42 @@ func (w *Writer) storedFieldKey(docID uint64, field string) []byte {
 
 func (w *Writer) postingListKey(ngram string, field string) []byte {
 	// Example: gr12345:gra:foo:content:1234-asdad-123132-asdasd-123
-	return []byte(fmt.Sprintf("%s:gra:%s:%s", w.namespace, ngram, field))
+	return postingListKey(w.namespace, ngram, field)
 }
 
-func (w *Writer) deleteKey(docID uint64) []byte {
-	return []byte(fmt.Sprintf("%s:del:%d:%s", w.namespace, docID, ""))
+func postingListKey(namespace, ngram, field string) []byte {
+	return []byte(fmt.Sprintf("%s:gra:%s:%s", namespace, ngram, field))
+}
+
+func lookupDocId(db pebble.Reader, namespace string, matchField types.Field) (uint64, error) {
+	if matchField.Type() != types.KeywordField {
+		return 0, status.InternalError("match field must be of keyword type")
+	}
+	key := postingListKey(namespace, string(matchField.Contents()), matchField.Name())
+	value, closer, err := db.Get(key)
+	if err != nil {
+		return 0, err
+	}
+	defer closer.Close()
+
+	postingList, err := posting.Unmarshal(value)
+	if err != nil {
+		return 0, err
+	}
+
+	if postingList.GetCardinality() != 1 {
+		return 0, status.FailedPreconditionErrorf("Update would impact > 1 docs")
+	}
+	return postingList.ToArray()[0], nil
 }
 
 func (w *Writer) DeleteDocument(docID uint64) error {
 	fieldsStart := w.storedFieldKey(docID, "")
 	fieldsEnd := w.storedFieldKey(docID, "\xff")
-	if err := w.db.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {
+	if err := w.batch.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {
 		return err
 	}
-
-	pl := posting.NewList(docID)
-	buf, err := posting.Marshal(pl)
-	if err != nil {
-		return err
-	}
-	plKey := w.postingListKey(types.DeletesField, types.DeletesField)
-	if err := w.db.Merge(plKey, buf, nil); err != nil {
-		return err
-	}
+	w.deletes.Add(docID)
 	return nil
 }
 
@@ -243,36 +256,22 @@ func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) e
 	// Note: This implementation does not handle file renames - clients must explicitly
 	// delete the old file and add (or update) the new file when renames happen.
 
-	if matchField.Type() != types.KeywordField {
-		return status.InternalError("match field must be of keyword type")
-	}
-	key := w.postingListKey(string(matchField.Contents()), matchField.Name())
-	value, closer, err := w.db.Get(key)
+	oldDocID, err := lookupDocId(w.db, w.namespace, matchField)
 	if err != nil && err != pebble.ErrNotFound {
 		return err
 	} else if err == pebble.ErrNotFound {
 		// No old doc to delete -- add it and we're done.
 		return w.AddDocument(newDoc)
 	}
-	defer closer.Close()
 
-	postingList, err := posting.Unmarshal(value)
+	err = w.DeleteDocument(oldDocID)
 	if err != nil {
 		return err
 	}
 
-	if postingList.GetCardinality() != 1 {
-		return status.FailedPreconditionErrorf("Update would impact > 1 docs")
-	}
-	oldDocID := postingList.ToArray()[0]
-
-	// Delete the previous document.
-	fieldsStart := w.storedFieldKey(oldDocID, "")
-	fieldsEnd := w.storedFieldKey(oldDocID, "\xff")
-	w.batch.DeleteRange(fieldsStart, fieldsEnd, nil)
-	w.deletes.Add(oldDocID)
-
-	// Delete key so that AddDocument can rewrite it.
+	key := w.postingListKey(string(matchField.Contents()), matchField.Name())
+	// The key field needs to be explicitly deleted, unlike the other fields, otherwise the old docID
+	// will remain in the posting list for the id field
 	w.batch.Delete(key, nil)
 
 	return w.AddDocument(newDoc)
