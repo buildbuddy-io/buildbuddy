@@ -322,13 +322,15 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 				return err
 			}
 			rsp = r
-		} else {
+		} else if req.GetReplacementStrategy() == inpb.ReplacementStrategy_REPLACE_REPO {
 			r, err := css.fullyReindex(ctx, req)
 			if err != nil {
 				log.Errorf("Failed indexing %q: %s", req.GetGitRepo().GetRepoUrl(), err)
 				return err
 			}
 			rsp = r
+		} else {
+			return status.InvalidArgumentErrorf("Invalid replacement strategy %s", req.GetReplacementStrategy())
 		}
 		log.Infof("Finished indexing %s at commit %s", req.GetGitRepo().GetRepoUrl(), req.GetRepoState().GetCommitSha())
 		return nil

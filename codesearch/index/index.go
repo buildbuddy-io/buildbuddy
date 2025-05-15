@@ -246,6 +246,12 @@ func lookupDocId(db pebble.Reader, namespace string, matchField types.Field) (ui
 }
 
 func (w *Writer) DeleteDocument(docID uint64) error {
+	// TODO(jdelfino): There's an issue with this delete function: it doesn't delete the document's
+	// id field postings. The id field is the field used in UpdateDocument and DeleteDocumentByMatchField
+	// to find the previous version of the document. So if we delete using this method, then later
+	// add a new document with the same external id, future updates to that document will fail
+	// because they will match multiple documents. I think the solution is to honor the deleted doc
+	// id list when looking up by ID, but that's a potential performance issue. d
 	fieldsStart := w.storedFieldKey(docID, "")
 	fieldsEnd := w.storedFieldKey(docID, "\xff")
 	if err := w.batch.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {
@@ -263,6 +269,11 @@ func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
 		}
 		return err
 	}
+	key := w.postingListKey(string(matchField.Contents()), matchField.Name())
+	// The key field needs to be explicitly deleted, unlike the other fields, otherwise the old docID
+	// will remain in the posting list for the id field
+	w.batch.Delete(key, nil)
+
 	return w.DeleteDocument(docId)
 }
 
@@ -273,11 +284,6 @@ func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) e
 	if err != nil {
 		return err
 	}
-
-	key := w.postingListKey(string(matchField.Contents()), matchField.Name())
-	// The key field needs to be explicitly deleted, unlike the other fields, otherwise the old docID
-	// will remain in the posting list for the id field
-	w.batch.Delete(key, nil)
 
 	return w.AddDocument(newDoc)
 }

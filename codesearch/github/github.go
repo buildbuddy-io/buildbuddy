@@ -62,12 +62,9 @@ func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 }
 
 func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filename string, fileContent []byte) error {
-	process, err := validateFile(fileContent)
+	err := validateFile(fileContent)
 	if err != nil {
-		return fmt.Errorf("File can't be indexed %s: %w", filename, err)
-	}
-	if !process {
-		log.Infof("Skipping add of unsupported file %s", filename)
+		log.Infof("File %s can't be indexed, skipping: %v", filename, err)
 	}
 
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(filename), detectionBuffer(fileContent)))
@@ -148,9 +145,9 @@ func detectionBuffer(content []byte) []byte {
 	return content
 }
 
-func validateFile(content []byte) (bool, error) {
+func validateFile(content []byte) error {
 	if len(content) > maxFileLen {
-		return false, fmt.Errorf("File too long")
+		return fmt.Errorf("File too long")
 	}
 
 	shortBuf := detectionBuffer(content)
@@ -158,14 +155,14 @@ func validateFile(content []byte) (bool, error) {
 	// Check the mimetype and skip if not valid for indexing.
 	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
 	if err != nil {
-		return false, fmt.Errorf("Failed to detect mimetype: %w", err)
+		return fmt.Errorf("Failed to detect mimetype: %w", err)
 	}
 	if skipMime.MatchString(mtype.String()) {
-		return false, nil
+		return fmt.Errorf("Mimetype not supported for indexing: %s", mtype)
 	}
 
 	if !utf8.Valid(content) {
-		return false, fmt.Errorf("Non-UTF8 content in file")
+		return fmt.Errorf("Non-UTF8 content in file")
 	}
-	return true, nil
+	return nil
 }
