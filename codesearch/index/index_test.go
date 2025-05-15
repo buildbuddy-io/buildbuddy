@@ -62,8 +62,7 @@ func extractFieldMatches(tb testing.TB, r types.IndexReader, docMatches []types.
 	tb.Helper()
 	m := make(map[string][]uint64)
 	for _, docMatch := range docMatches {
-		storedDoc, err := r.GetStoredDocument(docMatch.Docid())
-		require.NoError(tb, err)
+		storedDoc := r.GetStoredDocument(docMatch.Docid())
 		id, err := strconv.ParseUint(string(storedDoc.Field("id").Contents()), 10, 64)
 		require.NoError(tb, err)
 		for _, fieldName := range docMatch.FieldNames() {
@@ -223,8 +222,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	assert.Equal(t, map[string][]uint64{"field_b": {7}, "field_a": {7}}, extractFieldMatches(t, r, matches))
 
 	// stored document should only contain stored fields
-	rdoc, err := r.GetStoredDocument(1)
-	require.NoError(t, err)
+	rdoc := r.GetStoredDocument(1)
 	assert.Equal(t, []byte("7"), rdoc.Field("id").Contents())
 	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
 	assert.Nil(t, rdoc.Field("field_b").Contents())
@@ -266,8 +264,7 @@ func TestGetStoredDocument(t *testing.T) {
 	r := NewReader(ctx, db, "testing-namespace", docSchema)
 
 	// stored document should only contain stored fields
-	rdoc, err := r.GetStoredDocument(1)
-	require.NoError(t, err)
+	rdoc := r.GetStoredDocument(1)
 	assert.Equal(t, []byte("50"), rdoc.Field("id").Contents())
 	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
 }
@@ -391,9 +388,7 @@ func TestMetadataDocs(t *testing.T) {
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
-	readDoc, err := r.GetStoredDocument(1)
-	require.NoError(t, err)
-
+	readDoc := r.GetStoredDocument(1)
 	assert.Equal(t, commitSHA, string(readDoc.Field(schema.LatestSHAField).Contents()))
 }
 

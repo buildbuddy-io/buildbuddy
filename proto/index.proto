@@ -16,6 +16,8 @@ message IndexRequest {
   context.RequestContext request_context = 1;
 
   git.GitRepo git_repo = 2;
+
+  // Required for, and only used by, REPLACE_REPO replacement_strategy
   git.RepoState repo_state = 3;
 
   // Required. The search namespace to operate in. Namespaces are logically
@@ -36,9 +38,8 @@ message IndexRequest {
   // tolerate errors.
   bool async = 6;
 
-  // For incremental updates only
-  // TODO(jdelfino): some duplication / conflicts possible with RepoState
-  IncrementalChanges changes = 7;
+  // Required for, and only used by, INCREMENTAL_STRATEGY replacement_strategy
+  IncrementalUpdate update = 7;
 }
 
 message IndexResponse {
@@ -78,18 +79,35 @@ message IngestAnnotationsResponse {
   context.ResponseContext response_context = 1;
 }
 
-message IncrementalChanges {
+message IncrementalUpdate {
+  // The list of commits. The changes from the commits will be applied in order, in a single
+  // atomic batch.
+  // The commits must be ordered, with each commit following its direct parent.
   repeated Commit commits = 1;
 }
 
 message Commit {
+  // The SHA of this commit
   string sha = 1;
+  // The SHA of the parent of this commit
   string parent_sha = 2;
-  repeated File adds = 3;
+
+  // The paths, relative to the root of the repo, of the files deleted in this commit.
   repeated string delete_filepaths = 4;
+
+  // The files which were added or updated in this commit.
+  // Currently, a file rename should be represented by an add of the new file and a delete of the
+  // old file.
+  // Deletes are processed before adds, so deleting and adding the same filepath
+  // in a single Commit will result in the added document existing after the update.
+  repeated File adds_and_updates = 3;
+
 }
 
 message File {
+  // The path, relative to the root of the repo, of this file.
   string filepath = 1;
+
+  // The content of the file
   bytes content = 2;
 }

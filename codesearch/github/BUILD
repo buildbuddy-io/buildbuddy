@@ -10,6 +10,7 @@ go_library(
         "//codesearch/types",
         "//proto:index_go_proto",
         "//server/util/git",
+        "//server/util/log",
         "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_gabriel_vasile_mimetype//:mimetype",
         "@com_github_go_enry_go_enry_v2//:go-enry",
@@ -23,6 +24,7 @@ go_test(
     deps = [
         "//codesearch/index",
         "//codesearch/schema",
+        "//proto:index_go_proto",
         "//server/testutil/testfs",
         "//server/util/git",
         "@com_github_cockroachdb_pebble//:pebble",

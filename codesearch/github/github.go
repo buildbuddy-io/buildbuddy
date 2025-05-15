@@ -5,7 +5,6 @@ package github
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"
@@ -54,22 +54,36 @@ func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 	}
 	doc, err := schema.MetadataSchema().MakeDocument(fields)
 	if err != nil {
+		// This indicates a coding error.
 		log.Fatalf("Failed to make last indexed doc: %s", err)
 	}
 	return doc
 }
 
-func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filepath string, fileContent []byte) error {
-	fields, err := extractFields(filepath, commitSHA, repoURL, fileContent)
+func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filename string, fileContent []byte) error {
+	process, err := validateFile(fileContent)
 	if err != nil {
-		return err
+		return fmt.Errorf("File can't be indexed %s: %w", filename, err)
 	}
-	doc, err := schema.GitHubFileSchema().MakeDocument(fields)
-	if err != nil {
-		return err
+	if !process {
+		log.Infof("Skipping add of unsupported file %s", filename)
 	}
+
+	lang := strings.ToLower(enry.GetLanguage(filepath.Base(filename), detectionBuffer(fileContent)))
+	fields := map[string][]byte{
+		schema.IDField:       makeFileId(repoURL, filename),
+		schema.FilenameField: []byte(filename),
+		schema.ContentField:  fileContent,
+		schema.LanguageField: []byte(lang),
+		schema.OwnerField:    []byte(repoURL.Owner),
+		schema.RepoField:     []byte(repoURL.Repo),
+		schema.SHAField:      []byte(commitSHA),
+	}
+
+	doc := schema.GitHubFileSchema().MustMakeDocument(fields)
+
 	if err := w.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
-		return err
+		return fmt.Errorf("Failed to update file %s: %w", filename, err)
 	}
 	return nil
 }
@@ -77,29 +91,18 @@ func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filepa
 func ProcessCommit(w types.IndexWriter, repoURL *git.RepoURL, commit *inpb.Commit) error {
 	idFieldSchema := schema.GitHubFileSchema().Field(schema.IDField)
 
-	for _, delete := range commit.GetDeleteFilepaths() {
-		idField := idFieldSchema.MakeField(makeFileId(repoURL, delete))
+	for _, deletePath := range commit.GetDeleteFilepaths() {
+		idField := idFieldSchema.MakeField(makeFileId(repoURL, deletePath))
 		err := w.DeleteDocumentByMatchField(idField)
 		if err != nil {
-			// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
-			return err
+			return fmt.Errorf("Failed to delete document %s in commit %s: %w", deletePath, commit.GetSha(), err)
 		}
 	}
 
-	for _, add := range commit.GetAdds() {
-		fields, err := extractFields(add.GetFilepath(), commit.GetSha(), repoURL, add.GetContent())
+	for _, add := range commit.GetAddsAndUpdates() {
+		err := AddFileToIndex(w, repoURL, commit.GetSha(), add.GetFilepath(), add.GetContent())
 		if err != nil {
-			// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
-			return err
-		}
-		doc, err := schema.GitHubFileSchema().MakeDocument(fields)
-		if err != nil {
-			// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
-			return err
-		}
-		if err := w.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
-			// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
-			return err
+			return fmt.Errorf("Failed to add document %s in commit %s: %w", add.GetFilepath(), commit.GetSha(), err)
 		}
 	}
 	return nil
@@ -128,48 +131,35 @@ func GetLastIndexedCommitSha(r types.IndexReader, repoURL *git.RepoURL) (string,
 	}
 
 	docMatch := results[0]
-	doc, err := r.GetStoredDocument(docMatch.Docid())
-	if err != nil {
-		return "", fmt.Errorf("failed to get doc for last indexed commit SHA: %w", err)
-	}
-
+	doc := r.GetStoredDocument(docMatch.Docid())
 	return string(doc.Field(schema.LatestSHAField).Contents()), nil
 }
 
-func extractFields(name, commitSha string, repoURL *git.RepoURL, fileContent []byte) (map[string][]byte, error) {
-	// Skip long files.
-	if len(fileContent) > maxFileLen {
-		return nil, fmt.Errorf("skipping %s (file too long)", name)
+func detectionBuffer(content []byte) []byte {
+	if len(content) > detectionBufferSize {
+		return content[:detectionBufferSize]
+	}
+	return content
+}
+
+func validateFile(content []byte) (bool, error) {
+	if len(content) > maxFileLen {
+		return false, fmt.Errorf("File too long")
 	}
 
-	var shortBuf []byte
-	if len(fileContent) > detectionBufferSize {
-		shortBuf = fileContent[:detectionBufferSize]
-	} else {
-		shortBuf = fileContent
-	}
+	shortBuf := detectionBuffer(content)
 
-	// Check the mimetype and skip if bad.
+	// Check the mimetype and skip if not valid for indexing.
 	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
-	if err == nil && skipMime.MatchString(mtype.String()) {
-		return nil, fmt.Errorf("skipping %s (invalid mime type: %q)", name, mtype.String())
+	if err != nil {
+		return false, fmt.Errorf("Failed to detect mimetype: %w", err)
+	}
+	if skipMime.MatchString(mtype.String()) {
+		return false, nil
 	}
 
-	// Skip non-utf8 encoded files.
-	if !utf8.Valid(fileContent) {
-		return nil, fmt.Errorf("skipping %s (non-utf8 content)", name)
+	if !utf8.Valid(content) {
+		return false, fmt.Errorf("Non-UTF8 content in file")
 	}
-
-	// Compute filetype
-	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))
-
-	return (map[string][]byte{
-		schema.IDField:       makeFileId(repoURL, name),
-		schema.FilenameField: []byte(name),
-		schema.ContentField:  fileContent,
-		schema.LanguageField: []byte(lang),
-		schema.OwnerField:    []byte(repoURL.Owner),
-		schema.RepoField:     []byte(repoURL.Repo),
-		schema.SHAField:      []byte(commitSha),
-	}), nil
+	return true, nil
 }

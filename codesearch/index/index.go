@@ -240,7 +240,7 @@ func lookupDocId(db pebble.Reader, namespace string, matchField types.Field) (ui
 	}
 
 	if postingList.GetCardinality() != 1 {
-		return 0, status.FailedPreconditionErrorf("Update would impact > 1 docs")
+		return 0, status.FailedPreconditionErrorf("Match field matches > 1 docs")
 	}
 	return postingList.ToArray()[0], nil
 }
@@ -514,8 +514,12 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 	return fields, nil
 }
 
-func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
-	return r.newLazyDoc(docID), nil
+// TODO(jdelfino): We can't know if the document exists or not until we fetch the fields, but we
+// also want to fetch lazily, to avoid unnecessary fetches. This results in missing document
+// errors surfacing way downstream, in code that probably doesn't expect the document to be able to
+// be empty. Consider at least looking up the id field here to ensure the document exists.
+func (r *Reader) GetStoredDocument(docID uint64) types.Document {
+	return r.newLazyDoc(docID)
 }
 
 // postingList looks up the set of docIDs matching the provided ngram.

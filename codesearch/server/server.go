@@ -156,30 +156,35 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 	}
 
 	r := index.NewReader(ctx, css.db, req.GetNamespace(), schema.MetadataSchema())
-	lastSHA, err := github.GetLastIndexedCommitSha(r, repoURL)
+	lastIndexedSHA, err := github.GetLastIndexedCommitSha(r, repoURL)
 	if err != nil {
 		return nil, err
 	}
 
 	firstIndexToProcess := 0
-	for i, commit := range req.GetChanges().GetCommits() {
-		if commit.GetParentSha() == lastSHA {
+	commits := req.GetUpdate().GetCommits()
+	for i, commit := range commits {
+		// We currently only support sequential commits, with no gaps.
+		// We could do a topological sort, but we just don't need that right now.
+		if i > 1 && commit.GetParentSha() != commits[i-1].GetSha() {
+			return nil, status.InvalidArgumentError(fmt.Sprintf("Commits must be sequential. Commit %s is not preceded by its parent", commit.GetSha()))
+		}
+		if commit.GetParentSha() == lastIndexedSHA {
 			firstIndexToProcess = i
-			break
 		}
 	}
-	commitsToProcess := req.GetChanges().GetCommits()[firstIndexToProcess:]
+	commits = commits[firstIndexToProcess:]
 
 	iw, err := index.NewWriter(css.db, req.GetNamespace())
 	if err != nil {
 		return nil, err
 	}
 
-	for _, commit := range commitsToProcess {
+	for _, commit := range commits {
 		github.ProcessCommit(iw, repoURL, commit)
 	}
 
-	err = github.SetLastIndexedCommitSha(iw, repoURL, commitsToProcess[len(commitsToProcess)-1].GetSha())
+	err = github.SetLastIndexedCommitSha(iw, repoURL, commits[len(commits)-1].GetSha())
 	if err != nil {
 		// TODO(jdelfino): Keep going? Abandon? Should these updates be atomic?
 		return nil, err

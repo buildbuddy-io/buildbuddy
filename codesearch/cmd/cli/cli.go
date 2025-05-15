@@ -305,10 +305,7 @@ func handleSquery(ctx context.Context, args []string) {
 		}
 	}
 	for _, docID := range docIDs {
-		doc, err := ir.GetStoredDocument(docID)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
+		doc := ir.GetStoredDocument(docID)
 		filename := doc.Field(schema.FilenameField).Contents()
 		fmt.Printf("%d (%q) matched fields: %s\n", docID, filename, strings.Join(docFields[docID], ", "))
 	}
@@ -329,9 +326,9 @@ func getCommitContents(repoDir, commitSHA, parentSHA string) (*csinpb.Commit, er
 
 	// TODO(jdelfino): Doesn't handle deletes/renames yet
 	commit := &csinpb.Commit{
-		Sha:       commitSHA,
-		ParentSha: parentSHA,
-		Adds:      make([]*csinpb.File, len(lines)-1),
+		Sha:            commitSHA,
+		ParentSha:      parentSHA,
+		AddsAndUpdates: make([]*csinpb.File, len(lines)-1),
 	}
 
 	for i, file := range lines[1:] {
@@ -339,7 +336,7 @@ func getCommitContents(repoDir, commitSHA, parentSHA string) (*csinpb.Commit, er
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s: %w", file, err)
 		}
-		commit.Adds[i] = &csinpb.File{
+		commit.AddsAndUpdates[i] = &csinpb.File{
 			Filepath: file,
 			Content:  content,
 		}
@@ -375,7 +372,7 @@ func handleGithub(ctx context.Context, args []string) {
 	}
 
 	result := &csinpb.IndexRequest{
-		Changes: &csinpb.IncrementalChanges{
+		Update: &csinpb.IncrementalUpdate{
 			Commits: make([]*csinpb.Commit, len(commits)),
 		},
 	}
@@ -385,7 +382,7 @@ func handleGithub(ctx context.Context, args []string) {
 		if err != nil {
 			log.Fatalf("failed to get commit %s: %s", commit, err)
 		}
-		result.Changes.Commits[i] = c
+		result.Update.Commits[i] = c
 	}
 	fmt.Printf("Result: %+v\n", result)
 }

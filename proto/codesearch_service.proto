@@ -14,5 +14,4 @@ service CodesearchService {
   rpc IngestAnnotations(index.IngestAnnotationsRequest)
       returns (index.IngestAnnotationsResponse);
   rpc KytheProxy(search.KytheRequest) returns (search.KytheResponse);
-
 }
