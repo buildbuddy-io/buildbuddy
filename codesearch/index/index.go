@@ -516,14 +516,6 @@ func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
 	return r.newLazyDoc(docID), nil
 }
 
-func (r *Reader) GetStoredDocumentByMatchField(matchField types.Field) (types.Document, error) {
-	docID, err := lookupDocId(r.db, r.namespace, matchField)
-	if err != nil {
-		return nil, err
-	}
-	return r.GetStoredDocument(docID)
-}
-
 // postingList looks up the set of docIDs matching the provided ngram.
 // If `field` is set to a non-empty value, matches are restricted to just the
 // specified field. Otherwise, all fields are searched.

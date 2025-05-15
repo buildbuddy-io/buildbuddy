@@ -272,47 +272,6 @@ func TestGetStoredDocument(t *testing.T) {
 	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
 }
 
-func TestGetStoredDocumentByMatchField(t *testing.T) {
-	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	docSchema := schema.NewDocumentSchema(
-		[]types.FieldSchema{
-			schema.MustFieldSchema(types.KeywordField, "id", true),
-			schema.MustFieldSchema(types.KeywordField, "field_a", true),
-		},
-	)
-	doc, err := docSchema.MakeDocument(
-		map[string][]byte{
-			"id":      []byte("50"),
-			"field_a": []byte("stored"),
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assert.NoError(t, w.AddDocument(doc))
-	require.NoError(t, w.Flush())
-
-	r := NewReader(ctx, db, "testing-namespace", docSchema)
-
-	rdoc, err := r.GetStoredDocumentByMatchField(doc.Field("id"))
-	require.NoError(t, err)
-	assert.Equal(t, []byte("50"), rdoc.Field("id").Contents())
-	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
-}
-
 func TestNamespaceSeparation(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
@@ -418,27 +377,24 @@ func TestMetadataDocs(t *testing.T) {
 	repoURL := "github.com/buildbuddy-io/buildbuddy"
 
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	fields := map[string][]byte{
-		schema.RepoField: []byte(repoURL),
-		schema.SHAField:  []byte(commitSHA),
-	}
-	doc, err := schema.MetadataSchema().MakeDocument(fields)
-	if err != nil {
-		log.Fatalf("Failed to make last indexed doc: %s", err)
+		schema.IDField:        []byte(repoURL),
+		schema.LatestSHAField: []byte(commitSHA),
 	}
 
-	require.NoError(t, w.UpdateDocument(doc.Field(schema.RepoField), doc))
+	doc, err := schema.MetadataSchema().MakeDocument(fields)
+	require.NoError(t, err)
+
+	require.NoError(t, w.UpdateDocument(doc.Field(schema.IDField), doc))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
-	readDoc, err := r.GetStoredDocumentByMatchField(doc.Field(schema.RepoField))
+	readDoc, err := r.GetStoredDocument(1)
 	require.NoError(t, err)
 
-	assert.Equal(t, commitSHA, string(readDoc.Field(schema.SHAField).Contents()))
+	assert.Equal(t, commitSHA, string(readDoc.Field(schema.LatestSHAField).Contents()))
 }
 
 func printDB(t testing.TB, db *pebble.DB) {

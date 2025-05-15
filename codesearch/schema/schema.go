@@ -13,15 +13,16 @@ var (
 	fieldNameRegex = regexp.MustCompile(`^([a-zA-Z0-9][a-zA-Z0-9_]*)$`)
 
 	// The following field names are used in the indexed docs.
-	IDField       = "id"
-	FilenameField = "filename"
-	ContentField  = "content"
-	LanguageField = "language"
-	OwnerField    = "owner"
-	RepoField     = "repo"
-	SHAField      = "sha"
+	IDField        = "id"
+	FilenameField  = "filename"
+	ContentField   = "content"
+	LanguageField  = "language"
+	OwnerField     = "owner"
+	RepoField      = "repo"
+	SHAField       = "sha"
+	LatestSHAField = "latest_sha"
 
-	defaultSchema = NewDocumentSchema([]types.FieldSchema{
+	gitHubFileSchema = NewDocumentSchema([]types.FieldSchema{
 		MustFieldSchema(types.KeywordField, IDField, false),
 		MustFieldSchema(types.TrigramField, FilenameField, true),
 		MustFieldSchema(types.SparseNgramField, ContentField, true),
@@ -32,14 +33,14 @@ var (
 	})
 	metadataSchema = NewDocumentSchema([]types.FieldSchema{
 		// Repository URL
-		MustFieldSchema(types.KeywordField, RepoField, true),
+		MustFieldSchema(types.KeywordField, IDField, false),
 		// Last indexed commit SHA
-		MustFieldSchema(types.KeywordField, SHAField, true),
+		MustFieldSchema(types.KeywordField, LatestSHAField, true),
 	})
 )
 
-func CodeSchema() types.DocumentSchema {
-	return defaultSchema
+func GitHubFileSchema() types.DocumentSchema {
+	return gitHubFileSchema
 }
 
 func MetadataSchema() types.DocumentSchema {

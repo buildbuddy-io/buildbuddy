@@ -8,6 +8,7 @@ import (
 	"log"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -15,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 
-	"github.com/cockroachdb/pebble"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"
 
@@ -35,10 +35,14 @@ var (
 	skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
 )
 
-func makeLastIndexedDoc(repoURL, commitSHA string) types.Document {
+func lastIndexedDocKey(repoURL *git.RepoURL) []byte {
+	return []byte(fmt.Sprintf("%s/%s/%s", repoURL.Host, repoURL.Owner, repoURL.Repo))
+}
+
+func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 	fields := map[string][]byte{
-		schema.RepoField: []byte(repoURL),
-		schema.SHAField:  []byte(commitSHA),
+		schema.IDField:        lastIndexedDocKey(repoURL),
+		schema.LatestSHAField: []byte(commitSHA),
 	}
 	doc, err := schema.MetadataSchema().MakeDocument(fields)
 	if err != nil {
@@ -48,24 +52,34 @@ func makeLastIndexedDoc(repoURL, commitSHA string) types.Document {
 }
 
 func SetLastIndexedCommitSha(w types.IndexWriter, repoURL *git.RepoURL, commitSHA string) error {
-	doc := makeLastIndexedDoc(repoURL.String(), commitSHA)
-	if err := w.UpdateDocument(doc.Field(schema.RepoField), doc); err != nil {
+	doc := makeLastIndexedDoc(repoURL, commitSHA)
+	if err := w.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
 		return fmt.Errorf("failed to set last indexed commit SHA: %w", err)
 	}
 	return nil
 }
 
 func GetLastIndexedCommitSha(r types.IndexReader, repoURL *git.RepoURL) (string, error) {
-	idField := schema.CodeSchema().Field(schema.RepoField).MakeField([]byte(repoURL.String()))
-	doc, err := r.GetStoredDocumentByMatchField(idField)
+	idString := strconv.Quote(string(lastIndexedDocKey(repoURL)))
+	results, err := r.RawQuery(fmt.Sprintf("(:eq %s %s)", schema.IDField, idString))
 	if err != nil {
-		if err == pebble.ErrNotFound {
-			return "", nil
-		}
-		return "", err
+		return "", fmt.Errorf("failed to query last indexed commit SHA: %w", err)
 	}
 
-	return string(doc.Field(schema.SHAField).Contents()), nil
+	if len(results) == 0 {
+		return "", nil
+	}
+	if len(results) > 1 {
+		return "", fmt.Errorf("multiple last indexed commit SHAs found for %s", repoURL)
+	}
+
+	docMatch := results[0]
+	doc, err := r.GetStoredDocument(docMatch.Docid())
+	if err != nil {
+		return "", fmt.Errorf("failed to get doc for last indexed commit SHA: %w", err)
+	}
+
+	return string(doc.Field(schema.LatestSHAField).Contents()), nil
 }
 
 func ExtractFields(name, commitSha string, repoURL *git.RepoURL, fileContent []byte) (map[string][]byte, error) {
