@@ -2082,6 +2082,7 @@ func (w *updateTagsWorker) processUpdateTags() error {
 		for {
 			select {
 			case <-w.quitChan:
+				w.store.log.Infof("updateTagsWorker received quit chan")
 				return nil
 			case task := <-w.tasks:
 				w.handleTask(task)
@@ -2089,10 +2090,12 @@ func (w *updateTagsWorker) processUpdateTags() error {
 		}
 	})
 	eg.Wait()
+	w.store.log.Infof("updateTagsWorker processUpdateTags wait finished")
 
 	for len(w.tasks) > 0 {
 		<-w.tasks
 	}
+	w.store.log.Infof("updateTagsWorker finished drained tasks")
 	return nil
 
 }
