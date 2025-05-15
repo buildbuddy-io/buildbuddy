@@ -1,7 +1,9 @@
 package app
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -48,10 +50,29 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 
 }
 
+func createMemoryBackedDB(t testing.TB) *os.File {
+	if _, err := os.Stat("/dev/shm"); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	f, err := os.CreateTemp("/dev/shm", "buildbuddy-test-*.db")
+	require.NoError(t, err)
+	path := f.Name()
+	t.Cleanup(func() {
+		_ = f.Close()
+		if err := os.RemoveAll(path); err != nil && !os.IsNotExist(err) {
+			require.NoError(t, err, "failed to remove temp file")
+		}
+	})
+	return f
+}
+
 func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string, configFilePath string) *App {
 	dataDir := testfs.MakeTempDir(t)
 	app.t = t
 	app.dbFilePath = filepath.Join(dataDir, "buildbuddy.db")
+	if f := createMemoryBackedDB(t); f != nil {
+		app.dbFilePath = f.Name()
+	}
 	args := []string{
 		"--app.log_level=debug",
 		"--app.log_include_short_file_name",
