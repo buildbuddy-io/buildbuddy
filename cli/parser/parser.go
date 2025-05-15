@@ -70,14 +70,6 @@ func SetBazelHelpForTesting(encodedProto string) {
 	}
 }
 
-var StartupFlagNoRc = map[string]struct{}{
-	"ignore_all_rc_files": {},
-	"home_rc":             {},
-	"workspace_rc":        {},
-	"system_rc":           {},
-	"bazelrc":             {},
-}
-
 // Parser contains a set of OptionDefinitions (indexed for ease of parsing) and
 // the known bazel commands.
 type Parser struct {
