@@ -281,7 +281,11 @@ func handleSquery(ctx context.Context, args []string) {
 	}
 	defer db.Close()
 
+<<<<<<< HEAD
 	ir := index.NewReader(ctx, db, getNamespace(), schema.GitHubFileSchema())
+=======
+	ir := index.NewReader(ctx, db, getNamespace(), schema.CodeSchema())
+>>>>>>> 88107cb6b4 (store last commit sha in a metadata doc, rather than a special key)
 	matches, err := ir.RawQuery(pat)
 	if err != nil {
 		log.Fatal(err.Error())

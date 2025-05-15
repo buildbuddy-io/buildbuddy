@@ -245,10 +245,6 @@ func lookupDocId(db pebble.Reader, namespace string, matchField types.Field) (ui
 	return postingList.ToArray()[0], nil
 }
 
-func commitShaKey(namespace, repoURL string) []byte {
-	return []byte(fmt.Sprintf("%s:%s:%s", namespace, repoURL, revisionPrefix))
-}
-
 func (w *Writer) DeleteDocument(docID uint64) error {
 	fieldsStart := w.storedFieldKey(docID, "")
 	fieldsEnd := w.storedFieldKey(docID, "\xff")
@@ -328,6 +324,7 @@ func (w *Writer) AddDocument(doc types.Document) error {
 	return nil
 }
 
+/*
 func (w *Writer) SetLastIndexedCommitSha(repoURL, commitSHA string) error {
 	if repoURL == "" {
 		return status.InvalidArgumentError("repoURL cannot be empty")
@@ -341,6 +338,7 @@ func (w *Writer) SetLastIndexedCommitSha(repoURL, commitSHA string) error {
 	w.log.Infof("Set last indexed commit to %s for namespace: %s, repo: %s", commitSHA, w.namespace, repoURL)
 	return nil
 }
+*/
 
 func (w *Writer) flushBatch() error {
 	if w.batch.Empty() {
@@ -532,6 +530,14 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 
 func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
 	return r.newLazyDoc(docID), nil
+}
+
+func (r *Reader) GetStoredDocumentByMatchField(matchField types.Field) (types.Document, error) {
+	docID, err := lookupDocId(r.db, r.namespace, matchField)
+	if err != nil {
+		return nil, err
+	}
+	return r.GetStoredDocument(docID)
 }
 
 // postingList looks up the set of docIDs matching the provided ngram.
@@ -860,6 +866,7 @@ func (r *Reader) RawQuery(squery string) ([]types.DocumentMatch, error) {
 	return matches, nil
 }
 
+/*
 func (r *Reader) LastIndexedCommitSha(repoURL string) (string, error) {
 	value, closer, err := r.db.Get(commitShaKey(r.namespace, repoURL))
 	if err != nil {
@@ -873,3 +880,4 @@ func (r *Reader) LastIndexedCommitSha(repoURL string) (string, error) {
 
 	return string(value), nil
 }
+*/
