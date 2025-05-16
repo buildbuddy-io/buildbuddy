@@ -9,10 +9,7 @@ go_test(
     args = [
         "-test.bench=.",
     ],
-    tags = [
-        "manual",
-        "performance",
-    ],
+    tags = ["performance"],
     deps = [
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/migration_cache",

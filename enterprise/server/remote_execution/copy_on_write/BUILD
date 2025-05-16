@@ -64,10 +64,7 @@ go_test(
         # costs, so run a fixed number instead of using time-based estimation.
         "-test.benchtime=16x",
     ],
-    tags = [
-        "manual",
-        "performance",
-    ],
+    tags = ["performance"],
     deps = [
         ":copy_on_write",
         "//enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil",
