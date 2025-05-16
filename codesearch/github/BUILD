@@ -28,6 +28,7 @@ go_test(
         "//proto:index_go_proto",
         "//server/testutil/testfs",
         "//server/util/git",
+        "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
