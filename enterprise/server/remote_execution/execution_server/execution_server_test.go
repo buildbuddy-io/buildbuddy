@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -45,7 +46,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	gstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -417,47 +417,14 @@ type publishTest struct {
 	publishMoreMetadata      bool
 }
 
-type fakeCollector struct {
-	interfaces.ExecutionCollector
-	invocationLinks []*sipb.StoredInvocationLink
-	executions      []*repb.StoredExecution
-}
-
-func (fc *fakeCollector) DeleteExecutionInvocationLinks(_ context.Context, _ string) error {
-	return nil
-}
-
-func (fc *fakeCollector) AddExecutionInvocationLink(_ context.Context, link *sipb.StoredInvocationLink, _ bool) error {
-	fc.invocationLinks = append(fc.invocationLinks, link)
-	return nil
-}
-
-func (fc *fakeCollector) GetExecutionInvocationLinks(_ context.Context, executionID string) ([]*sipb.StoredInvocationLink, error) {
-	var res []*sipb.StoredInvocationLink
-	for _, link := range fc.invocationLinks {
-		if link.GetExecutionId() == executionID {
-			res = append(res, link)
-		}
-	}
-	return res, nil
-}
-
-func (fc *fakeCollector) GetInvocation(_ context.Context, invocationID string) (*sipb.StoredInvocation, error) {
-	// return nil to always force AppendExecution calls.
-	return nil, nil
-}
-
-func (fc *fakeCollector) AppendExecution(_ context.Context, _ string, execution *repb.StoredExecution) error {
-	fc.executions = append(fc.executions, execution)
-	return nil
-}
-
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	env, conn := setupEnv(t)
-	execCollector := new(fakeCollector)
-	env.SetExecutionCollector(execCollector)
+	redis := testredis.Start(t)
+	env.SetDefaultRedisClient(redis.Client())
+	err := redis_execution_collector.Register(env)
+	require.NoError(t, err)
 	client := repb.NewExecutionClient(conn)
 
 	const instanceName = "test-instance"
@@ -638,7 +605,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}, executionUsages)
 
 	// Check that we recorded the executions
-	assert.Equal(t, 1, len(execCollector.executions))
+	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+	require.NoError(t, err)
+	assert.Equal(t, 1, len(collectedExecutions))
 	expectedExecution := &repb.StoredExecution{
 		ExecutionId:            taskID,
 		InvocationLinkType:     1,
@@ -676,7 +645,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	diff := cmp.Diff(
 		expectedExecution,
-		execCollector.executions[0],
+		collectedExecutions[0],
 		protocmp.Transform(),
 		protocmp.IgnoreFields(
 			&repb.StoredExecution{},
@@ -738,8 +707,9 @@ func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	env, conn := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
-	execCollector := new(fakeCollector)
-	env.SetExecutionCollector(execCollector)
+	redis := testredis.Start(t)
+	env.SetDefaultRedisClient(redis.Client())
+	redis_execution_collector.Register(env)
 
 	// Start an execution with an empty invocation ID.
 	clientCtx := context.Background()
@@ -754,11 +724,13 @@ func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wait for the execution to be accepted by the server.
-	_, err = executionClient.Recv()
+	rsp, err := executionClient.Recv()
 	require.NoError(t, err)
 
 	// No invocation links should be recorded.
-	require.Empty(t, execCollector.invocationLinks)
+	invocationLinks, err := env.GetExecutionCollector().GetExecutionInvocationLinks(clientCtx, rsp.GetName())
+	require.NoError(t, err)
+	require.Empty(t, invocationLinks)
 
 	err = executionClient.CloseSend()
 	require.NoError(t, err)
