@@ -389,6 +389,23 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 		c.log.Debugf("Not setting lookaside entry for resource: %s", r)
 		return
 	}
+	invalid := false
+	if r.GetCacheType() == rspb.CacheType_CAS && r.GetDigest().GetSizeBytes() != int64(len(data)) {
+		invalid = true
+	} else if strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
+		// If this is a TreeCache entry that we wrote; pull the size
+		// from the remote instance name.
+		parts := strings.Split(r.GetInstanceName(), "/")
+		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+			if s != len(data) {
+				invalid = true
+			}
+		}
+	}
+	if invalid {
+		log.Warningf("Resource %v had invalid data length %v. Not adding it to lookaside cache", r, len(data))
+		return
+	}
 	entry := lookasideCacheEntry{
 		createdAtMillis: time.Now().UnixMilli(),
 		data:            data,
