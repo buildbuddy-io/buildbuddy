@@ -245,6 +245,7 @@ func lookupDocId(db pebble.Reader, namespace string, matchField types.Field) (ui
 	return postingList.ToArray()[0], nil
 }
 
+// Deletes the document with the given docID.
 func (w *Writer) DeleteDocument(docID uint64) error {
 	// TODO(jdelfino): There's an issue with this delete function: it doesn't delete the document's
 	// id field postings. The id field is the field used in UpdateDocument and DeleteDocumentByMatchField
@@ -262,6 +263,9 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 	return nil
 }
 
+// Deletes the document matching the provided matchField.
+// The matchField must be a keyword field, and an error is returned if the number of documents
+// matching the matchField is not exactly 1.
 func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
 	docId, err := lookupDocId(w.db, w.namespace, matchField)
 	if err != nil {
@@ -278,9 +282,12 @@ func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
 	return w.DeleteDocument(docId)
 }
 
+// Updates an existing document, or adds it if it doesn't exist. Document identity is determined
+// by the matchField parameter, which must be a keyword field.
+// Returns an error if the number of documents matching the matchField is not exactly 1.
+// Note: This implementation does not handle file renames - clients must explicitly
+// delete the old file and add (or update) the new file when renames happen.
 func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) error {
-	// Note: This implementation does not handle file renames - clients must explicitly
-	// delete the old file and add (or update) the new file when renames happen.
 	err := w.DeleteDocumentByMatchField(matchField)
 	if err != nil {
 		return err

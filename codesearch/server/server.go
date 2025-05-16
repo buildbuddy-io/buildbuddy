@@ -165,8 +165,14 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 		}
 	}
 
-	firstIndexToProcess := -1
 	commits := req.GetUpdate().GetCommits()
+
+	if len(commits) == 0 {
+		// Nothing to do, bye
+		return &inpb.IndexResponse{}, nil
+	}
+
+	firstIndexToProcess := -1
 	for i, commit := range commits {
 		// We currently only support sequential commits, with no gaps.
 		// We could do a topological sort, but we just don't need that right now.
@@ -189,7 +195,9 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 	}
 
 	for _, commit := range commits {
-		github.ProcessCommit(iw, repoURL, commit)
+		if err := github.ProcessCommit(iw, repoURL, commit); err != nil {
+			return nil, status.InternalErrorf("Failed to process commit %s: %v", commit.GetSha(), err)
+		}
 	}
 
 	err = github.SetLastIndexedCommitSha(iw, repoURL, commits[len(commits)-1].GetSha())
@@ -268,7 +276,10 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 			return nil, err
 		}
 
-		github.AddFileToIndex(iw, repoURL, commitSHA, filename, buf)
+		err = github.AddFileToIndex(iw, repoURL, commitSHA, filename, buf)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if err := github.SetLastIndexedCommitSha(iw, repoURL, commitSHA); err != nil {
@@ -315,23 +326,21 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 
 		log.Infof("Starting indexing %q@%s", repoURL, commitSHA)
 
-		if req.GetReplacementStrategy() == inpb.ReplacementStrategy_INCREMENTAL {
-			r, err := css.incrementalUpdate(ctx, req)
-			if err != nil {
-				log.Errorf("Failed indexing %q: %s", req.GetGitRepo().GetRepoUrl(), err)
-				return err
-			}
-			rsp = r
-		} else if req.GetReplacementStrategy() == inpb.ReplacementStrategy_REPLACE_REPO {
-			r, err := css.fullyReindex(ctx, req)
-			if err != nil {
-				log.Errorf("Failed indexing %q: %s", req.GetGitRepo().GetRepoUrl(), err)
-				return err
-			}
-			rsp = r
-		} else {
+		var err error
+		switch req.GetReplacementStrategy() {
+		case inpb.ReplacementStrategy_INCREMENTAL:
+			rsp, err = css.incrementalUpdate(ctx, req)
+		case inpb.ReplacementStrategy_REPLACE_REPO:
+			rsp, err = css.fullyReindex(ctx, req)
+		default:
 			return status.InvalidArgumentErrorf("Invalid replacement strategy %s", req.GetReplacementStrategy())
 		}
+
+		if err != nil {
+			log.Errorf("Failed indexing %q: %s", req.GetGitRepo().GetRepoUrl(), err)
+			return err
+		}
+
 		log.Infof("Finished indexing %s at commit %s", req.GetGitRepo().GetRepoUrl(), req.GetRepoState().GetCommitSha())
 		return nil
 	})
