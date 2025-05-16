@@ -5089,7 +5089,7 @@
         "name": "inventory_hostname_pattern",
         "options": [
           {
-            "selected": true,
+            "selected": false,
             "text": ".*",
             "value": ".*"
           }
