@@ -289,7 +289,11 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err := cleanStaleImageCacheDirs(imageCacheRoot); err != nil {
 		log.Warningf("Failed to clean up old image cache versions: %s", err)
 	}
-	imageStore, err := NewImageStore(imageCacheRoot)
+	resolver, err := oci.NewResolver()
+	if err != nil {
+		return nil, err
+	}
+	imageStore, err := NewImageStore(resolver, imageCacheRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1396,11 +1400,7 @@ type ImageLayer struct {
 	DiffID ctr.Hash
 }
 
-func NewImageStore(layersDir string) (*ImageStore, error) {
-	resolver, err := oci.NewResolver()
-	if err != nil {
-		return nil, err
-	}
+func NewImageStore(resolver *oci.Resolver, layersDir string) (*ImageStore, error) {
 	return &ImageStore{
 		resolver:     resolver,
 		layersDir:    layersDir,
