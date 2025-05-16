@@ -29,6 +29,7 @@ go_test(
     deps = [
         ":ociconv",
         "//enterprise/server/util/oci",
+        "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testregistry",
         "//server/util/testing/flags",

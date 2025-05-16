@@ -1407,11 +1407,15 @@ func TestPathSanitization(t *testing.T) {
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
 			cacheRoot := testfs.MakeTempDir(t)
 			testfs.WriteAllFileContents(t, cacheRoot, map[string]string{
 				"test-link-target": "Hello",
 			})
-			imageStore, err := ociruntime.NewImageStore(cacheRoot)
+			resolver, err := oci.NewResolver(te)
+			require.NoError(t, err)
+			require.NotNil(t, resolver)
+			imageStore, err := ociruntime.NewImageStore(resolver, cacheRoot)
 			require.NoError(t, err)
 			// Load busybox oci image
 			busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
@@ -1686,8 +1690,12 @@ func TestPullImage(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			resolver, err := oci.NewResolver(te)
+			require.NoError(t, err)
+			require.NotNil(t, resolver)
 			layerDir := t.TempDir()
-			imgStore, err := ociruntime.NewImageStore(layerDir)
+			imgStore, err := ociruntime.NewImageStore(resolver, layerDir)
 			require.NoError(t, err)
 
 			ctx := context.Background()

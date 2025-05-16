@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -206,8 +207,8 @@ func TestCredentialsToProto(t *testing.T) {
 			oci.Credentials{Username: "foo", Password: "bar"}.ToProto()))
 }
 
-func newResolver(t *testing.T) *oci.Resolver {
-	r, err := oci.NewResolver()
+func newResolver(t *testing.T, te *testenv.TestEnv) *oci.Resolver {
+	r, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	return r
 }
@@ -331,6 +332,7 @@ func TestResolve(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 			registry := testregistry.Run(t, tc.opts)
 			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
@@ -344,7 +346,7 @@ func TestResolve(t *testing.T) {
 			registry.PushIndex(t, index, tc.imageName+"_index")
 
 			for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
-				pulledImage, err := newResolver(t).Resolve(
+				pulledImage, err := newResolver(t, te).Resolve(
 					context.Background(),
 					registry.ImageAddress(nameToResolve),
 					tc.args.platform,
@@ -386,6 +388,7 @@ func layerFiles(t *testing.T, layer v1.Layer) map[string][]byte {
 }
 
 func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	// Track requests to original and mirror registries.
 	var originalReqCount, mirrorReqCount atomic.Int32
@@ -428,7 +431,7 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	})
 
 	// Resolve the image, which should fall back to the original after mirror fails.
-	img, err := newResolver(t).Resolve(
+	img, err := newResolver(t, te).Resolve(
 		context.Background(),
 		imageName,
 		&rgpb.Platform{
@@ -449,9 +452,9 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	assert.Equal(t, int32(1), originalReqCount.Load(), "original registry should have been queried after mirror failed")
 }
 
-func pushAndFetchRandomImage(t *testing.T, registry *testregistry.Registry) error {
+func pushAndFetchRandomImage(t *testing.T, te *testenv.TestEnv, registry *testregistry.Registry) error {
 	imageName, _ := registry.PushRandomImage(t)
-	_, err := newResolver(t).Resolve(
+	_, err := newResolver(t, te).Resolve(
 		context.Background(),
 		imageName,
 		&rgpb.Platform{
@@ -487,9 +490,11 @@ func TestAllowPrivateIPs(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			flags.Set(t, "http.client.allow_localhost", false)
 			flags.Set(t, "executor.container_registry_allowed_private_ips", tc.allowedIPs)
 			registry := testregistry.Run(t, testregistry.Opts{})
-			err := pushAndFetchRandomImage(t, registry)
+			err := pushAndFetchRandomImage(t, te, registry)
 			if tc.expectError {
 				require.Error(t, err)
 			} else {

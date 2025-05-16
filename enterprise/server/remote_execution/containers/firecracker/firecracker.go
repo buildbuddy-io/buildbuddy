@@ -607,6 +607,7 @@ type FirecrackerContainer struct {
 	machine         *fcclient.Machine    // the firecracker machine object.
 	vmLog           *VMLog
 	env             environment.Env
+	resolver        *oci.Resolver
 
 	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
@@ -654,6 +655,11 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		return nil, err
 	}
 
+	resolver, err := oci.NewResolver(env)
+	if err != nil {
+		return nil, err
+	}
+
 	c := &FirecrackerContainer{
 		vmConfig:         opts.VMConfiguration.CloneVT(),
 		executorConfig:   opts.ExecutorConfig,
@@ -667,6 +673,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		cgroupSettings:   &scpb.CgroupSettings{},
 		blockDevice:      opts.BlockDevice,
 		env:              env,
+		resolver:         resolver,
 		task:             task,
 		loader:           loader,
 		vmLog:            vmLog,
@@ -2410,7 +2417,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.executorConfig.CacheRoot, c.containerImage, creds)
+	_, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}
