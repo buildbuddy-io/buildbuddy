@@ -110,10 +110,11 @@ startup --startup_flag_1
 startup:config --startup_configs_are_not_supported_so_this_flag_should_be_ignored
 
 # continuations are allowed \
---build_metadata=THIS_IS_NOT_A_FLAG_SINCE_IT_IS_PART_OF_THE_PREVIOUS_LINE=1
+common --build_metadata=THIS_IS_NOT_A_FLAG_SINCE_IT_IS_PART_OF_THE_PREVIOUS_LINE=1
 
---invalid_common_flag_1          # trailing comments are allowed
---build_metadata=VALID_COMMON_FLAG=1
+common --invalid_common_flag_1          # trailing comments are allowed
+--build_metadata=INVALID_COMMON_FLAG=1
+common --build_metadata=VALID_COMMON_FLAG=1
 common --invalid_common_flag_2
 common --build_metadata=VALID_COMMON_FLAG=2
 common:foo --build_metadata=COMMON_CONFIG_FOO=1
