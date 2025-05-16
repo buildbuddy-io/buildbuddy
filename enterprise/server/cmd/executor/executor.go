@@ -300,7 +300,7 @@ func main() {
 		cmd.Stdout = log.Writer(fmt.Sprintf("startup_commands[%d]", i))
 		log.Infof("Running startup command %d: %q...", i, startupCommand)
 		if err := cmd.Run(); err != nil {
-			log.Fatalf("Error running startup command %d: %q: %s", i, startupCommand, err)
+			log.Errorf("Error running startup command %d: %q: %s", i, startupCommand, err)
 		}
 		log.Infof("Executed startup command %d: %q in %s", i, startupCommand, time.Since(start))
 	}
