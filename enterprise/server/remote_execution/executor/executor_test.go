@@ -100,7 +100,7 @@ func getExecutor(t *testing.T, runOverride rbetest.RunInterceptor) (*executor.Ex
 	env.SetClock(clock)
 	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
 	testcache.Setup(t, env, lis)
-	mockServer := &mockExecutionServer{operations: make([]*longrunning.Operation, 0), finished: make(chan struct{})}
+	mockServer := &mockExecutionServer{finished: make(chan struct{})}
 	repb.RegisterExecutionServer(env.GetGRPCServer(), mockServer)
 	go runServer()
 
@@ -112,7 +112,7 @@ func getExecutor(t *testing.T, runOverride rbetest.RunInterceptor) (*executor.Ex
 	}
 	runnerPool := rbetest.NewTestRunnerPool(t, env, cacheRoot, rbetest.TestRunnerOverrides{
 		RunInterceptor:     runFunc,
-		DownloadInputsMock: rbetest.DownloadInputsNoop(),
+		DownloadInputsMock: rbetest.DownloadInputsNoop,
 		RecycleInterceptor: func(ctx context.Context, r interfaces.Runner, finishedCleanly bool, original rbetest.TryRecycleFunc) {
 			// Simulate that recycling takes 1min.
 			clock.Advance(1 * time.Minute)
@@ -190,10 +190,7 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 			require.False(t, retry)
 
 			// Wait until all progress updates have finished sending.
-			require.Eventually(t, func() bool {
-				<-mockServer.finished
-				return true
-			}, 15*time.Second, 50*time.Millisecond)
+			<-mockServer.finished
 
 			require.Equal(t, 1, mockCounter.countRecycled)
 			if tc.expectFinishCleanly {
@@ -243,10 +240,7 @@ func TestExecuteTaskAndStreamResults_CacheHit(t *testing.T) {
 	require.False(t, retry)
 
 	// Wait until all progress updates have finished sending.
-	require.Eventually(t, func() bool {
-		<-mockServer.finished
-		return true
-	}, 15*time.Second, 50*time.Millisecond)
+	<-mockServer.finished
 
 	// No runner should've been created.
 	require.Equal(t, 0, mockCounter.countRecycled)

@@ -40,7 +40,6 @@ go_test(
     srcs = ["priority_task_scheduler_test.go"],
     embed = [":priority_task_scheduler"],
     deps = [
-        "//enterprise/server/remote_execution/operation",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/interfaces",

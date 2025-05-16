@@ -1283,10 +1283,8 @@ type RecycleInterceptor func(ctx context.Context, r interfaces.Runner, finishedC
 // DownloadInputsFunc is the function signature for runner.Runner::DownloadInputs().
 type DownloadInputsFunc func(ctx context.Context, ioStats *repb.IOStats) error
 
-func DownloadInputsNoop() DownloadInputsFunc {
-	return func(ctx context.Context, ioStats *repb.IOStats) error {
-		return nil
-	}
+func DownloadInputsNoop(ctx context.Context, ioStats *repb.IOStats) error {
+	return nil
 }
 
 // testRunnerPool returns runners whose Run() results can be controlled by the
@@ -1295,13 +1293,13 @@ type testRunnerPool struct {
 	interfaces.RunnerPool
 	runInterceptor            RunInterceptor
 	recycleInterceptor        RecycleInterceptor
-	downloadInputsInterceptor func(ctx context.Context, ioStats *repb.IOStats) error
+	downloadInputsInterceptor DownloadInputsFunc
 }
 
 type TestRunnerOverrides struct {
 	RunInterceptor     RunInterceptor
 	RecycleInterceptor RecycleInterceptor
-	DownloadInputsMock func(ctx context.Context, ioStats *repb.IOStats) error
+	DownloadInputsMock DownloadInputsFunc
 }
 
 func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, opts TestRunnerOverrides) interfaces.RunnerPool {
