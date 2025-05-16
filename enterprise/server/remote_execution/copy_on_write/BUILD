@@ -17,6 +17,7 @@ go_library(
         "//server/resources",
         "//server/util/alert",
         "//server/util/boundedstack",
+        "//server/util/bytebufferpool",
         "//server/util/flag",
         "//server/util/lockmap",
         "//server/util/log",
@@ -52,6 +53,7 @@ go_test(
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
+        "@org_golang_x_sys//unix",
     ],
 )
 

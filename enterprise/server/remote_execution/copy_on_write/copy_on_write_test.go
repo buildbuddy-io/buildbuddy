@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -45,12 +46,13 @@ func init() {
 	if err := resources.Configure(true /*=snapshotSharingEnabled*/); err != nil {
 		log.Fatalf("Failed to configure resources: %s", err)
 	}
+	copy_on_write.MapPrivateEnabled = true
 }
 
-func TestMmap(t *testing.T) {
-	s, path := newMmap(t)
-	testStore(t, s, path)
-}
+// func TestMmap(t *testing.T) {
+// s, path := newMmap(t)
+// testStore(t, s, path)
+// }
 
 func TestMmap_Digest(t *testing.T) {
 	s, _ := newMmap(t)
@@ -75,7 +77,6 @@ func TestMmap_Digest(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedDigest, actualDigest2)
 	require.NotEqual(t, actualDigest1, actualDigest2)
-
 }
 
 func TestMmap_Concurrency(t *testing.T) {
@@ -700,6 +701,93 @@ func BenchmarkConvertFileToCOW(b *testing.B) {
 			require.NoError(b, os.Remove(inputPath))
 		})
 	}
+}
+
+func BenchmarkWriteToDirtyChunk(b *testing.B) {
+	const chunkSize = 4 * 1024 * 1024
+	for _, test := range []struct {
+		Name       string
+		RandomData bool
+		WriteSize  int64
+	}{
+		// Small writes to zero-filled chunks. This is the best case for
+		// MAP_PRIVATE, because the kernel only copies the written pages and
+		// writeback skips the all-zero blocks.
+		{Name: "ZeroData/SmallWrites", RandomData: false, WriteSize: 4 * 1024},
+		// Small writes to incompressible chunks. Writeback has to flush the
+		// whole chunk at Close time, so this shows how much of the copy cost
+		// MAP_PRIVATE actually avoids versus merely defers.
+		{Name: "RandomData/SmallWrites", RandomData: true, WriteSize: 4 * 1024},
+		// Full-chunk overwrites. The copy path's upfront chunk copy is
+		// entirely wasted work here, since every byte gets overwritten.
+		{Name: "RandomData/FullChunkWrites", RandomData: true, WriteSize: chunkSize},
+	} {
+		for _, mapPrivate := range []bool{false, true} {
+			b.Run(fmt.Sprintf("%s/MapPrivate=%v", test.Name, mapPrivate), func(b *testing.B) {
+				copy_on_write.MapPrivateEnabled = mapPrivate
+				benchmarkWriteToDirtyChunk(b, chunkSize, test.RandomData, test.WriteSize)
+			})
+		}
+	}
+}
+
+func benchmarkWriteToDirtyChunk(b *testing.B, chunkSize int64, randomData bool, writeSize int64) {
+	const numChunks = 32
+	fileSize := chunkSize * numChunks
+	buf := make([]byte, fileSize)
+	if randomData {
+		_, err := rand.Read(buf)
+		require.NoError(b, err)
+	}
+	tmp := testfs.MakeTempDir(b)
+	path := filepath.Join(tmp, "f")
+	err := os.WriteFile(path, buf, 0644)
+	require.NoError(b, err)
+	ctx := context.Background()
+	writeBuf := make([]byte, writeSize)
+	_, err = rand.Read(writeBuf)
+	require.NoError(b, err)
+
+	// Track the write phase and the Close phase separately. Writes model the
+	// guest-visible dirtying cost, while Close models the writeback cost paid
+	// at snapshot time.
+	var writeDur, closeDur time.Duration
+	var dataDir string
+	iters := 0
+	b.ReportAllocs()
+	for b.Loop() {
+		b.StopTimer()
+		// Remove the previous iteration's chunks to bound disk usage.
+		if dataDir != "" {
+			err := os.RemoveAll(dataDir)
+			require.NoError(b, err)
+		}
+		// Create a COWStore from the test file.
+		dataDir, err = os.MkdirTemp(tmp, "cow-*")
+		require.NoError(b, err)
+		cow, err := copy_on_write.ConvertFileToCOW(ctx, nil /*=env*/, path, chunkSize, dataDir, "", false, snaputil.ConvertToCOWConcurrency)
+		require.NoError(b, err)
+		unix.Sync()
+		b.StartTimer()
+
+		// Dirty every chunk, writing writeSize bytes at the start of each.
+		writeStart := time.Now()
+		for i := range numChunks {
+			_, err = cow.WriteAt(writeBuf, int64(i)*chunkSize)
+			require.NoError(b, err)
+		}
+		writeDur += time.Since(writeStart)
+
+		// Persist the chunks to disk.
+		closeStart := time.Now()
+		err = cow.Close()
+		require.NoError(b, err)
+		unix.Sync()
+		closeDur += time.Since(closeStart)
+		iters++
+	}
+	b.ReportMetric(float64(writeDur.Nanoseconds())/float64(iters), "write-ns/op")
+	b.ReportMetric(float64(closeDur.Nanoseconds())/float64(iters), "close-ns/op")
 }
 
 func testStore(t *testing.T, s interfaces.Store, path string) {

@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/boundedstack"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -61,6 +62,11 @@ var (
 	eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 32, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
 
 	debugValidateMmapFileSize = flag.Bool("debug_validate_mmap_file_size", false, "Validate memory-mapped file size when mapping.", flag.Internal)
+)
+
+var (
+	MapPrivateEnabled = false
+	copyBufPool       = bytebufferpool.VariableSize(512 * 1024 * 1024)
 )
 
 // Total number of mmapped bytes by file name. The map value is an int64 pointer
@@ -157,9 +163,6 @@ type COWStore struct {
 	// This is used to serve memory page requests for holes.
 	zeroBuf []byte
 
-	// Concurrency-safe pool of buffers that can be used for copying chunks
-	copyBufPool sync.Pool
-
 	// Chunk offsets to be eagerly fetched. This is using a bounded stack data
 	// structure so that if the buffer is full, a new item can still be appended,
 	// evicting the least recently added chunk.
@@ -245,22 +248,16 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 	}
 
 	s := &COWStore{
-		name:               name,
-		ctx:                ctx,
-		env:                env,
-		remoteInstanceName: opts.RemoteInstanceName,
-		remoteEnabled:      opts.RemoteEnabled,
-		chunkLock:          lockmap.New[int64](),
-		chunks:             chunkMap,
-		dirty:              make(map[int64]bool, 0),
-		partiallyMapped:    make(map[int64]bool, 0),
-		dataDir:            opts.DataDir,
-		copyBufPool: sync.Pool{
-			New: func() any {
-				b := make([]byte, opts.ChunkSizeBytes)
-				return &b
-			},
-		},
+		name:                         name,
+		ctx:                          ctx,
+		env:                          env,
+		remoteInstanceName:           opts.RemoteInstanceName,
+		remoteEnabled:                opts.RemoteEnabled,
+		chunkLock:                    lockmap.New[int64](),
+		chunks:                       chunkMap,
+		dirty:                        make(map[int64]bool, 0),
+		partiallyMapped:              make(map[int64]bool, 0),
+		dataDir:                      opts.DataDir,
 		zeroBuf:                      make([]byte, opts.ChunkSizeBytes),
 		chunkSizeBytes:               opts.ChunkSizeBytes,
 		totalSizeBytes:               opts.TotalSizeBytes,
@@ -739,7 +736,7 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 	dirty := s.dirty[chunkStartOffset]
 	s.storeLock.RUnlock()
 	if dirty {
-		// Chunk is already dirty - no need to copy
+		// Chunk is already dirty
 		return nil
 	}
 
@@ -747,6 +744,84 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 	defer func() {
 		s.updateUsageSummary("CopyChunkIfNotDirty", startTime)
 	}()
+
+	// When using MAP_PRIVATE the kernel provides copy-on-write semantics for
+	// us. We just need to mark the chunk dirty so we know we need to write a
+	// new file back to disk when unmapping the chunk.
+	//
+	// This only works if the chunk is already at its full calculated size.
+	// Resize() is lazy, so the last chunk from before a Resize() can be
+	// smaller, and a private mapping of its file cannot serve accesses past
+	// the file's last page. In that case, skip this fast path and fall
+	// through to the copy path below, which creates a full-size dirty copy.
+	if MapPrivateEnabled {
+		s.storeLock.RLock()
+		c := s.chunks[chunkStartOffset]
+		mmapLRU := s.mmapLRU
+		s.storeLock.RUnlock()
+
+		size := s.calculateChunkSize(chunkStartOffset)
+		fullSize := true
+		if c != nil {
+			actualSize, err := c.SizeBytes()
+			if err != nil {
+				return err
+			}
+			fullSize = actualSize == size
+		}
+		if fullSize {
+			// Create the backing file for writeback.
+			path := filepath.Join(s.dataDir, fmt.Sprintf("%d%s", chunkStartOffset, dirtySuffix))
+			fd, err := syscall.Open(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
+			if err != nil {
+				return err
+			}
+			defer syscall.Close(fd)
+			if err := syscall.Ftruncate(fd, size); err != nil {
+				return err
+			}
+
+			if c == nil {
+				// Hole - create new mmap.
+				c, err = NewMmapFd(
+					s.ctx,
+					s.env,
+					s.DataDir(),
+					true, /*=dirty*/
+					fd,
+					int(size),
+					chunkStartOffset,
+					snaputil.ChunkSourceHole,
+					s.remoteInstanceName,
+					s.remoteEnabled,
+					mmapLRU,
+				)
+				if err != nil {
+					return err
+				}
+			} else {
+				// Subsequent writes are copied on write page-by-page by the
+				// kernel, but we need to mark the chunk for writeback. Map the
+				// chunk before setting the dirty flag, because the dirty flag
+				// switches the chunk path to the writeback file, which is
+				// still empty at this point; mapping it instead of the
+				// original file would lose the chunk contents.
+				c.mu.Lock()
+				if err := c.initMap(); err != nil {
+					c.mu.Unlock()
+					return err
+				}
+				c.dirty = true
+				c.needsWriteback = true
+				c.mu.Unlock()
+			}
+			s.storeLock.Lock()
+			s.chunks[chunkStartOffset] = c
+			s.dirty[chunkStartOffset] = true
+			s.storeLock.Unlock()
+			return nil
+		}
+	}
 
 	dstChunkSize := s.calculateChunkSize(chunkStartOffset)
 	src, dst, err := s.initDirtyChunk(chunkStartOffset, dstChunkSize)
@@ -773,9 +848,9 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 		return status.InternalErrorf("chunk source size %d is greater than dest size %d; this is a bug", srcChunkSize, dstChunkSize)
 	}
 
-	b := s.copyBufPool.Get().(*[]byte)
-	defer s.copyBufPool.Put(b)
-	copyBuf := (*b)[:srcChunkSize]
+	b := copyBufPool.Get(srcChunkSize)
+	defer copyBufPool.Put(b)
+	copyBuf := b[:srcChunkSize]
 
 	// TODO: avoid a full read here in the case where the chunk contains holes.
 	// Can achieve this by having the Mmap keep around the underlying file
@@ -1150,6 +1225,9 @@ type Mmap struct {
 	dataDir string
 	// Whether this is a dirty chunk. Only used to compute the file path.
 	dirty bool
+	// Whether this chunk was newly dirtied and needs to be written back to
+	// disk when unmapped.
+	needsWriteback bool
 	// Size of the underlying data when mapped.
 	sizeBytes int64
 
@@ -1194,7 +1272,7 @@ func NewMmapFd(ctx context.Context, env environment.Env, dataDir string, dirty b
 	if source == snaputil.ChunkSourceUnmapped {
 		return nil, status.InvalidArgumentError("ChunkSourceUnmapped is not a valid source when initializing a chunk from a fd")
 	}
-	data, err := mmapDataFromFd(fd, size, filepath.Base(dataDir))
+	data, err := mmapDataFromFd(fd, size, dirty, filepath.Base(dataDir))
 	if err != nil {
 		return nil, err
 	}
@@ -1238,8 +1316,8 @@ func NewMmapLocalFile(ctx context.Context, env environment.Env, dataDir string, 
 	}, nil
 }
 
-// mmapDataFromPath memory maps a file and returns the data
-func mmapDataFromPath(path string, sizeBytes int64, fileNameLabel string) ([]byte, error) {
+// mmapDataFromPath memory maps a file and returns the data.
+func mmapDataFromPath(path string, sizeBytes int64, dirty bool, fileNameLabel string) ([]byte, error) {
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return nil, err
@@ -1258,12 +1336,21 @@ func mmapDataFromPath(path string, sizeBytes int64, fileNameLabel string) ([]byt
 		}
 	}
 
-	return mmapDataFromFd(int(f.Fd()), int(sizeBytes), fileNameLabel)
+	return mmapDataFromFd(int(f.Fd()), int(sizeBytes), dirty, fileNameLabel)
 }
 
 // mmapDataFromFd memory maps a file descriptor and returns the data
-func mmapDataFromFd(fd, size int, fileNameLabel string) ([]byte, error) {
-	data, err := syscall.Mmap(fd, 0, size, syscall.PROT_WRITE, syscall.MAP_SHARED)
+func mmapDataFromFd(fd, size int, dirty bool, fileNameLabel string) ([]byte, error) {
+	// If this is not a dirty chunk, then use MAP_PRIVATE so that any writes
+	// to the chunk are not written back to the original file. If this is a
+	// dirty chunk, then we've already made a copy of the chunk, and we do
+	// want writes to map back to the original file, so we use MAP_SHARED in
+	// that case.
+	flags := syscall.MAP_SHARED
+	if MapPrivateEnabled && !dirty {
+		flags = syscall.MAP_PRIVATE
+	}
+	data, err := syscall.Mmap(fd, 0, size, syscall.PROT_WRITE, flags)
 	if err != nil {
 		return nil, fmt.Errorf("mmap: %s", err)
 	}
@@ -1285,7 +1372,7 @@ func (m *Mmap) initMap() (err error) {
 			return err
 		}
 	}
-	data, err := mmapDataFromPath(path, m.sizeBytes, filepath.Base(m.dataDir))
+	data, err := mmapDataFromPath(path, m.sizeBytes, m.dirty, filepath.Base(m.dataDir))
 	if err != nil {
 		return status.WrapErrorf(err, "create mmap for path %s", path)
 	}
@@ -1361,6 +1448,12 @@ func (m *Mmap) Sync() error {
 	if m.data == nil {
 		return nil
 	}
+	if m.needsWriteback {
+		// unmap so that we are forced to remap with MAP_SHARED, making
+		// subsequent msync() calls safe.
+		_, err := m.unmap()
+		return err
+	}
 	return unix.Msync(m.data, unix.MS_SYNC)
 }
 
@@ -1398,6 +1491,11 @@ func (m *Mmap) unmap() (unmapped bool, err error) {
 	if m.data == nil {
 		return false, nil
 	}
+	if m.needsWriteback {
+		if err := m.writeback(); err != nil {
+			return false, err
+		}
+	}
 	n := len(m.data)
 	if err := syscall.Munmap(m.data); err != nil {
 		return false, err
@@ -1405,6 +1503,32 @@ func (m *Mmap) unmap() (unmapped bool, err error) {
 	m.data = nil
 	updateMmappedBytesMetric(-int64(n), filepath.Base(m.dataDir))
 	return true, nil
+}
+
+// writeback writes the complete chunk back to disk.
+// This is needed for chunks that are mapped with MAP_PRIVATE, since any changes
+// to the chunk are not written back to the original file.
+func (m *Mmap) writeback() error {
+	f, err := os.OpenFile(m.path(), os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Write back to disk, skipping sparse regions
+	const stride = 4096 // TODO: use ioBlockSize
+	for i := 0; i < len(m.data); i += stride {
+		slice := m.data[i:min(i+stride, len(m.data))]
+		if IsEmptyOrAllZero(slice) {
+			continue
+		}
+		if _, err := f.WriteAt(slice, int64(i)); err != nil {
+			return err
+		}
+	}
+
+	m.needsWriteback = false
+	return nil
 }
 
 func (m *Mmap) Close() error {
