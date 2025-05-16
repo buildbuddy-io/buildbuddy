@@ -9,6 +9,7 @@ import (
 	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -30,6 +31,8 @@ var (
 	mirrors                = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+
+	writeManifestsToCache = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
 )
 
 type MirrorConfig struct {
@@ -253,6 +256,11 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
 		}
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
+	if *writeManifestsToCache {
+		if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, nil, imageRef, remoteDesc.Digest, string(remoteDesc.MediaType)); err != nil {
+			log.CtxWarningf(ctx, "Could not write manifest for %q to the cache: %s", imageRef.Context(), err)
+		}
 	}
 
 	// Image() should resolve both images and image indices to an appropriate image
