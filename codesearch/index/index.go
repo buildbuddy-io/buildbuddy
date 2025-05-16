@@ -251,7 +251,8 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 	// to find the previous version of the document. So if we delete using this method, then later
 	// add a new document with the same external id, future updates to that document will fail
 	// because they will match multiple documents. I think the solution is to honor the deleted doc
-	// id list when looking up by ID, but that's a potential performance issue. d
+	// id list when looking up by ID, but that's a potential performance issue.
+	// As of this writing, DeleteDocument isn't used, so we'll just walk around the landmine for now.
 	fieldsStart := w.storedFieldKey(docID, "")
 	fieldsEnd := w.storedFieldKey(docID, "\xff")
 	if err := w.batch.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {

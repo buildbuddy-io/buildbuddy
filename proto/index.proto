@@ -80,9 +80,9 @@ message IngestAnnotationsResponse {
 }
 
 message IncrementalUpdate {
-  // The list of commits. The changes from the commits will be applied in order, in a single
-  // atomic batch.
-  // The commits must be ordered, with each commit following its direct parent.
+  // The list of commits. The changes from the commits will be applied in order,
+  // in a single atomic batch. The commits must be ordered, with each commit
+  // following its direct parent.
   repeated Commit commits = 1;
 }
 
@@ -92,16 +92,16 @@ message Commit {
   // The SHA of the parent of this commit
   string parent_sha = 2;
 
-  // The paths, relative to the root of the repo, of the files deleted in this commit.
+  // The paths, relative to the root of the repo, of the files deleted in this
+  // commit.
   repeated string delete_filepaths = 4;
 
   // The files which were added or updated in this commit.
-  // Currently, a file rename should be represented by an add of the new file and a delete of the
-  // old file.
-  // Deletes are processed before adds, so deleting and adding the same filepath
-  // in a single Commit will result in the added document existing after the update.
+  // Currently, a file rename should be represented by an add of the new file
+  // and a delete of the old file. Deletes are processed before adds, so
+  // deleting and adding the same filepath in a single Commit will result in the
+  // added document existing after the update.
   repeated File adds_and_updates = 3;
-
 }
 
 message File {

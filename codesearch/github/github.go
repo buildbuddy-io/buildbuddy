@@ -65,6 +65,7 @@ func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filena
 	err := validateFile(fileContent)
 	if err != nil {
 		log.Infof("File %s can't be indexed, skipping: %v", filename, err)
+		return err
 	}
 
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(filename), detectionBuffer(fileContent)))

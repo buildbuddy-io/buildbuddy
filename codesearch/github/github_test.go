@@ -130,9 +130,7 @@ func TestAddFileToIndex(t *testing.T) {
 	fileContent := []byte("package foo\n\nfunc Bar() {}\n")
 
 	err = AddFileToIndex(w, repoURL, commitSHA, filepath, fileContent)
-	if err != nil {
-		t.Fatalf("AddFileToIndex() failed: %v", err)
-	}
+	require.NoError(t, err)
 	require.NoError(t, w.Flush())
 
 	r := index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
@@ -144,6 +142,60 @@ func TestAddFileToIndex(t *testing.T) {
 	assert.Equal(t, "buildbuddy-io", string(doc.Field(schema.OwnerField).Contents()))
 	assert.Equal(t, "buildbuddy", string(doc.Field(schema.RepoField).Contents()))
 	assert.Equal(t, "abc123", string(doc.Field(schema.SHAField).Contents()))
+}
+
+func TestAddFileToIndexWrongMimeType(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	w, err := index.NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	commitSHA := "abc123"
+	filepath := "foo/bar/baz.gif"
+	fileContent := []byte{0x47, 0x49, 0x46, 0x38, 0x39, 0x61} // GIF file
+
+	err = AddFileToIndex(w, repoURL, commitSHA, filepath, fileContent)
+	assert.Error(t, err)
+
+	r := index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
+	doc := r.GetStoredDocument(1)
+
+	assert.Empty(t, string(doc.Field(schema.FilenameField).Contents()))
+}
+
+func TestAddFileToIndexInvalidUTF8(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	w, err := index.NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	commitSHA := "abc123"
+	filepath := "foo/bar/baz.go"
+	fileContent := []byte{0xF0, 0xA4, 0xAD} // invalid UTF-8
+
+	err = AddFileToIndex(w, repoURL, commitSHA, filepath, fileContent)
+	assert.Error(t, err)
+
+	r := index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
+	doc := r.GetStoredDocument(1)
+
+	assert.Empty(t, string(doc.Field(schema.FilenameField).Contents()))
 }
 
 func mustApplyCommit(t *testing.T, db *pebble.DB, commit *inpb.Commit) {
