@@ -1407,11 +1407,12 @@ func TestPathSanitization(t *testing.T) {
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
 			cacheRoot := testfs.MakeTempDir(t)
 			testfs.WriteAllFileContents(t, cacheRoot, map[string]string{
 				"test-link-target": "Hello",
 			})
-			resolver, err := oci.NewResolver()
+			resolver, err := oci.NewResolver(te)
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
 			imageStore, err := ociruntime.NewImageStore(resolver, cacheRoot)
@@ -1689,7 +1690,8 @@ func TestPullImage(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resolver, err := oci.NewResolver()
+			te := testenv.GetTestEnv(t)
+			resolver, err := oci.NewResolver(te)
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
 			layerDir := t.TempDir()

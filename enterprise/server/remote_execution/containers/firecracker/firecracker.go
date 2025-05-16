@@ -655,7 +655,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		return nil, err
 	}
 
-	resolver, err := oci.NewResolver()
+	resolver, err := oci.NewResolver(env)
 	if err != nil {
 		return nil, err
 	}

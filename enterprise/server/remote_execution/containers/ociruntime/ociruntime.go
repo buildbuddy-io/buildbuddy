@@ -289,7 +289,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err := cleanStaleImageCacheDirs(imageCacheRoot); err != nil {
 		log.Warningf("Failed to clean up old image cache versions: %s", err)
 	}
-	resolver, err := oci.NewResolver()
+	resolver, err := oci.NewResolver(env)
 	if err != nil {
 		return nil, err
 	}

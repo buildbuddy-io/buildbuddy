@@ -103,7 +103,7 @@ func newSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
 	if env.GetSingleFlightDeduper() == nil {
 		return status.FailedPreconditionError("soci artifact server requires a single-flight deduper"), nil
 	}
-	resolver, err := oci.NewResolver()
+	resolver, err := oci.NewResolver(env)
 	if err != nil {
 		return err, nil
 	}

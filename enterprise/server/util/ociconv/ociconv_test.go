@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -28,7 +29,8 @@ func TestOciconv(t *testing.T) {
 		"mirror.gcr.io/ubuntu:22.04",
 	} {
 		t.Run("image="+img, func(t *testing.T) {
-			resolver, err := oci.NewResolver()
+			te := testenv.GetTestEnv(t)
+			resolver, err := oci.NewResolver(te)
 			require.NoError(t, err)
 			require.NotNil(t, resolver)
 			_, err = ociconv.CreateDiskImage(ctx, resolver, root, img, oci.Credentials{})
@@ -38,6 +40,7 @@ func TestOciconv(t *testing.T) {
 }
 
 func TestOciconv_ChecksCredentials(t *testing.T) {
+	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
 	ctx := context.Background()
@@ -71,7 +74,7 @@ func TestOciconv_ChecksCredentials(t *testing.T) {
 	ref := reg.Push(t, empty.Image, "test-empty-image")
 	authEnabled = true
 
-	resolver, err := oci.NewResolver()
+	resolver, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	require.NotNil(t, resolver)
 	// This should fail because the credentials are invalid.

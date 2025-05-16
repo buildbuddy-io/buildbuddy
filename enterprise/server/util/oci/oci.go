@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -204,10 +205,12 @@ func (c Credentials) Equals(o Credentials) bool {
 }
 
 type Resolver struct {
+	env environment.Env
+
 	allowedPrivateIPs []*net.IPNet
 }
 
-func NewResolver() (*Resolver, error) {
+func NewResolver(env environment.Env) (*Resolver, error) {
 	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
 	for _, r := range *allowedPrivateIPs {
 		_, ipNet, err := net.ParseCIDR(r)
@@ -216,7 +219,7 @@ func NewResolver() (*Resolver, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
-	return &Resolver{allowedPrivateIPs: allowedPrivateIPNets}, nil
+	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
 }
 
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
@@ -258,7 +261,9 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 	if *writeManifestsToCache {
-		if err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, nil, imageRef, remoteDesc.Digest, string(remoteDesc.MediaType)); err != nil {
+		contentType := string(remoteDesc.MediaType)
+		err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, r.env.GetActionCacheClient(), imageRef, remoteDesc.Digest, contentType)
+		if err != nil {
 			log.CtxWarningf(ctx, "Could not write manifest for %q to the cache: %s", imageRef.Context(), err)
 		}
 	}
