@@ -187,6 +187,9 @@ func appendRcRulesFromFile(workspaceDir string, f *os.File, rules []*RcRule, imp
 			log.Debugf("Error parsing bazelrc option: %s", err.Error())
 			continue
 		}
+		if rule == nil {
+			continue
+		}
 		// Bazel doesn't support configs for startup options and ignores them if
 		// they appear in a bazelrc: https://bazel.build/run/bazelrc#config
 		if rule.Phase == "startup" && rule.Config != "" {
@@ -221,6 +224,10 @@ func parseRcRule(line string) (*RcRule, error) {
 	}
 	if len(tokens) == 0 {
 		return nil, fmt.Errorf("unexpected empty line")
+	}
+	if len(tokens) == 1 {
+		// bazel ignores .bazelrc lines consisting of a single shlex token
+		return nil, nil
 	}
 	if strings.HasPrefix(tokens[0], "-") {
 		return &RcRule{
