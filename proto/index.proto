@@ -41,6 +41,23 @@ message IndexResponse {
   context.ResponseContext response_context = 1;
 }
 
+message RepoStatusRequest {
+  context.RequestContext request_context = 1;
+
+  // Required. See namespace field on IndexRequest above.
+  string namespace = 2;
+
+  // The URL of the repo
+  string repo_url = 3;
+}
+
+message RepoStatusResponse {
+  context.ResponseContext response_context = 1;
+
+  // The SHA of the most recently indexed commit
+  string last_indexed_commit_sha = 2;
+}
+
 message IngestAnnotationsRequest {
   context.RequestContext request_context = 1;
 

@@ -27,7 +27,10 @@ var (
 	nextGenerationMu = sync.Mutex{}
 )
 
-const batchFlushSizeBytes = 1_000_000_000 // flush batch every 1G
+const (
+	batchFlushSizeBytes = 1_000_000_000 // flush batch every 1G
+	generationKey       = "__generation__"
+)
 
 type postingLists map[string]posting.List
 
@@ -95,7 +98,7 @@ func nextGeneration(db *pebble.DB) (uint32, error) {
 	nextGenerationMu.Lock()
 	defer nextGenerationMu.Unlock()
 
-	key := []byte("__generation__")
+	key := []byte(generationKey)
 	var newGeneration uint32
 
 	value, closer, err := db.Get(key)

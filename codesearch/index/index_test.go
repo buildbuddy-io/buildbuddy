@@ -189,7 +189,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	)
 	doc, err := docSchema.MakeDocument(
 		map[string][]byte{
-			"id":      []byte("1"),
+			"id":      []byte("7"),
 			"field_a": []byte("stored"),
 			"field_b": []byte("unstored"),
 		},
@@ -210,23 +210,66 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	r := NewReader(ctx, db, "testing-namespace", docSchema)
 	matches, err := r.RawQuery(`(:eq field_a stored)`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_a": {1}}, extractFieldMatches(t, r, matches))
+	assert.Equal(t, map[string][]uint64{"field_a": {7}}, extractFieldMatches(t, r, matches))
 
 	// docs should be searchable by non-stored fields
 	matches, err = r.RawQuery(`(:eq field_b unstored)`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_b": {1}}, extractFieldMatches(t, r, matches))
+	assert.Equal(t, map[string][]uint64{"field_b": {7}}, extractFieldMatches(t, r, matches))
 
 	// docs should be searchable by both stored and non-stored fields
 	matches, err = r.RawQuery(`(:or (:eq field_b unstored) (:eq field_a stored))`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_b": {1}, "field_a": {1}}, extractFieldMatches(t, r, matches))
+	assert.Equal(t, map[string][]uint64{"field_b": {7}, "field_a": {7}}, extractFieldMatches(t, r, matches))
 
 	// stored document should only contain stored fields
 	rdoc, err := r.GetStoredDocument(1)
 	require.NoError(t, err)
-	require.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
-	require.Nil(t, rdoc.Field("field_b").Contents())
+	assert.Equal(t, []byte("7"), rdoc.Field("id").Contents())
+	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
+	assert.Nil(t, rdoc.Field("field_b").Contents())
+}
+
+func TestGetStoredDocument(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "field_a", true),
+		},
+	)
+	doc, err := docSchema.MakeDocument(
+		map[string][]byte{
+			"id":      []byte("50"),
+			"field_a": []byte("stored"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", docSchema)
+
+	// stored document should only contain stored fields
+	rdoc, err := r.GetStoredDocument(1)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("50"), rdoc.Field("id").Contents())
+	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
 }
 
 func TestNamespaceSeparation(t *testing.T) {
@@ -319,6 +362,39 @@ func TestSQuery(t *testing.T) {
 
 	_, err = r.RawQuery("(:and (:)") // invalid q
 	require.Error(t, err)
+}
+
+func TestMetadataDocs(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	commitSHA := "abc123"
+	repoURL := "github.com/buildbuddy-io/buildbuddy"
+
+	w, err := NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+
+	fields := map[string][]byte{
+		schema.IDField:        []byte(repoURL),
+		schema.LatestSHAField: []byte(commitSHA),
+	}
+
+	doc, err := schema.MetadataSchema().MakeDocument(fields)
+	require.NoError(t, err)
+
+	require.NoError(t, w.UpdateDocument(doc.Field(schema.IDField), doc))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
+	readDoc, err := r.GetStoredDocument(1)
+	require.NoError(t, err)
+
+	assert.Equal(t, commitSHA, string(readDoc.Field(schema.LatestSHAField).Contents()))
 }
 
 func printDB(t testing.TB, db *pebble.DB) {
