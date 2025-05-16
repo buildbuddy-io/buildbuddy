@@ -129,7 +129,7 @@ def push_image_for_project(project, version_tag, bazel_target, skip_update_lates
     version_image = get_image(project, version_tag)
     if version_image is None:
         build_image_with_bazel(bazel_target)
-        tag_and_push_image_with_docker(bazel_target, project, version_tag)
+        # tag_and_push_image_with_docker(bazel_target, project, version_tag)
     else:
         print(f'Image gcr.io/{project}:{version_tag} already exists, skipping bazel build.')
 
@@ -225,6 +225,8 @@ def main():
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
     parser.add_argument('--mark_workspace_as_safe', default='')
     args = parser.parse_args()
+
+    run_or_die('set -x; pwd; uname -a; lsb_release -a; id -a; git status; git log -1')
 
     if args.mark_workspace_as_safe:
         run_or_die('git config --global --add safe.directory %s' % args.mark_workspace_as_safe)

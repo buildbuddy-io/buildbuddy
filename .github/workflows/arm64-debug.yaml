@@ -1,0 +1,108 @@
+name: arm64 debug
+
+on:
+  push:
+    branches:
+      - "*"
+  workflow_dispatch: {}
+jobs:
+  arm64-debug:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # - os: ubuntu-22.04-16cpu
+          #   arch: amd64
+          - os: ubuntu-22.04-16cpu-arm64
+            arch: arm64
+    steps:
+      - name: Checkout /buildbuddy
+        uses: actions/checkout@v3
+        with:
+          repository: buildbuddy-io/buildbuddy
+          ref: ${{ inputs.release_branch }}
+          path: buildbuddy
+          token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+
+      - name: Setup GCloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}"
+
+      - name: Setup GCloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Auth
+        run: |
+          gcloud auth configure-docker
+
+      - name: Install docker and pull builder image (arm64 beta runner only)
+        if: ${{ matrix.arch == 'arm64' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl
+          sudo install -m 0755 -d /etc/apt/keyrings
+          sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+          sudo chmod a+r /etc/apt/keyrings/docker.asc
+          echo \
+            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+            $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+          # The usual "usermod -aG docker" doesn't work because we'd need to log out and log back in,
+          # so instead just make the docker socket writable by anyone.
+          # This is fine since we're on an ephemeral VM.
+          sudo chmod 666 /var/run/docker.sock
+
+          docker pull gcr.io/flame-public/builder-debian11-arm64:latest
+
+      - name: Build docker images
+        run: |
+          cd "${GITHUB_WORKSPACE}/buildbuddy"
+          RELEASE_FLAGS=(
+            --auto
+            --force
+            --version="${{ needs.create_version_tag.outputs.version_tag }}"
+            --update_executor_image
+            --arch_specific_executor_tag
+          )
+          # For now, app image builds are amd64-only.
+          if [[ "${{ matrix.arch }}" == "amd64" ]]; then
+            RELEASE_FLAGS+=(
+              --update_app_image
+              --update_enterprise_app_image
+            )
+          fi
+          if [[ "${{ inputs.skip_latest_tag }}" == "true" ]]; then
+            RELEASE_FLAGS+=(--skip_latest_tag)
+          fi
+          RELEASE_COMMAND=(./release.py "${RELEASE_FLAGS[@]}")
+          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+            # On arm64, run the build in a debian11 container since the runners
+            # beta only supports ubuntu 22.04 which has the wrong glibc version.
+            CONTAINER_USER=buildbuddy
+            CONTAINER_HOME="/home/$CONTAINER_USER"
+            # Create a temp docker config since the container won't have access
+            # to our host auth creds
+            AUTH=$(echo -n "_dcgcr_2_0_0_token:$(gcloud auth print-access-token)" | base64 -w 0)
+            echo >/tmp/docker_config.json '{"auths": {"gcr.io": {"auth": "'"$AUTH"'"}}}'
+
+            RELEASE_COMMAND=(
+              docker run
+              --rm
+              --init
+              --volume="$PWD:/buildbuddy"
+              --volume=/var/run/docker.sock:/var/run/docker.sock
+              --volume="$HOME/.config/gcloud:$CONTAINER_HOME/.config/gcloud"
+              --volume="/tmp/docker_config.json:$CONTAINER_HOME/.docker/config.json"
+              --user="$(id -u):$(id -g)"
+              --env="HOME=$CONTAINER_HOME"
+              --env="USER=$CONTAINER_USER"
+              --env="GITHUB_TOKEN=$GITHUB_TOKEN"
+              --workdir=/buildbuddy
+              gcr.io/flame-public/builder-debian11-arm64:latest
+              "${RELEASE_COMMAND[@]}"
+            )
+          fi
+          "${RELEASE_COMMAND[@]}"
