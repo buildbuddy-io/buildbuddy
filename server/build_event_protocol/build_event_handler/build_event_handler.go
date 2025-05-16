@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -266,10 +267,11 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStats
 func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEValues) {
 	persist := &PersistArtifacts{}
 	if !*disablePersistArtifacts {
-		testOutputURIs := beValues.TestOutputURIs()
-		persist.URIs = make([]*url.URL, 0, len(testOutputURIs))
-		persist.URIs = append(persist.URIs, beValues.BuildToolLogURIs()...)
-		persist.URIs = append(persist.URIs, testOutputURIs...)
+		persist.URIs = slices.Concat(
+			beValues.BuildToolLogURIs(),
+			beValues.FailedTestOutputURIs(),
+			beValues.PassedTestOutputURIs(),
+		)
 	}
 
 	invocation := beValues.Invocation()
