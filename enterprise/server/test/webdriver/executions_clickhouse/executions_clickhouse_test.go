@@ -31,9 +31,15 @@ func TestInvocationWithRemoteExecutionWithClickHouse(t *testing.T) {
 	clickhouseDSN := testclickhouse.Start(t, true /*=reuseServer*/)
 	target := buildbuddy_enterprise.SetupWebTarget(
 		t,
+		"--olap_database.data_source="+clickhouseDSN,
 		"--remote_execution.enable_remote_exec=true",
 		"--remote_execution.olap_reads_enabled=true",
-		"--olap_database.data_source="+clickhouseDSN,
+		// Set up flags to only write partial execution state to redis, and to
+		// not use MySQL at all. XXX: add tests for MySQL reads
+		"--remote_execution.write_execution_progress_state_to_redis=true",
+		"--remote_execution.read_final_execution_state_from_redis=true",
+		"--remote_execution.write_executions_to_primary_db=false",
+		"--remote_execution.read_final_execution_state_from_primary_db=false",
 	)
 	// Register an executor so that we can test RBE end-to-end.
 	_ = testexecutor.Run(t, "--executor.app_target="+target.GRPCAddress())
@@ -165,10 +171,12 @@ func waitForExecutionsToAppear(t *testing.T, wt *webtester.WebTester) {
 
 func waitForExecutionToSucceed(t *testing.T, wt *webtester.WebTester) {
 	require.Eventually(t, func() bool {
-		executions := wt.Find(".invocation-execution-table").FindAll(".invocation-execution-row")
-		require.Len(t, executions, 1)
-		if strings.Contains(executions[0].Text(), "Succeeded") {
-			return true
+		executions := wt.Find(".invocation-execution-table, .invocation-execution-empty-actions").FindAll(".invocation-execution-row")
+		if len(executions) > 0 {
+			require.Len(t, executions, 1)
+			if strings.Contains(executions[0].Text(), "Succeeded") {
+				return true
+			}
 		}
 		wt.Refresh()
 		return false
