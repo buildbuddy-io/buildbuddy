@@ -92,7 +92,7 @@ var Commands = []Command{
 	},
 	{
 		Name:    "search",
-		Help:    "Searches for code in the remote codesearch index..",
+		Help:    "Searches for code in the remote codesearch index.",
 		Handler: search.HandleSearch,
 	},
 	{
