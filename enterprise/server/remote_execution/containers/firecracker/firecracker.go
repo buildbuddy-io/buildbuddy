@@ -607,7 +607,7 @@ type FirecrackerContainer struct {
 	machine         *fcclient.Machine    // the firecracker machine object.
 	vmLog           *VMLog
 	env             environment.Env
-	resolver        oci.Resolver
+	resolver        *oci.Resolver
 
 	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
@@ -673,7 +673,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		cgroupSettings:   &scpb.CgroupSettings{},
 		blockDevice:      opts.BlockDevice,
 		env:              env,
-		resolver:         *resolver,
+		resolver:         resolver,
 		task:             task,
 		loader:           loader,
 		vmLog:            vmLog,

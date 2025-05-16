@@ -105,7 +105,7 @@ func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 // registry, but the credentials are still authenticated with the remote
 // registry to ensure that the image can be accessed. The path to the disk image
 // is returned.
-func CreateDiskImage(ctx context.Context, resolver oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	existingPath, err := CachedDiskImagePath(ctx, cacheRoot, containerImage)
@@ -141,7 +141,7 @@ func CreateDiskImage(ctx context.Context, resolver oci.Resolver, cacheRoot, cont
 	return imageDir, err
 }
 
-func authenticateWithRegistry(ctx context.Context, resolver oci.Resolver, containerImage string, creds oci.Credentials) error {
+func authenticateWithRegistry(ctx context.Context, resolver *oci.Resolver, containerImage string, creds oci.Credentials) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -152,7 +152,7 @@ func authenticateWithRegistry(ctx context.Context, resolver oci.Resolver, contai
 	return nil
 }
 
-func createExt4Image(ctx context.Context, resolver oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
@@ -179,7 +179,7 @@ func createExt4Image(ctx context.Context, resolver oci.Resolver, cacheRoot, cont
 
 // convertContainerToExt4FS generates an ext4 filesystem image from an OCI
 // container image reference.
-func convertContainerToExt4FS(ctx context.Context, resolver oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
+func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
 	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return "", err
