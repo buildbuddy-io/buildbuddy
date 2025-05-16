@@ -65,9 +65,6 @@ func searchCode(args []string) error {
 		return err
 	}
 	for i, res := range rsp.GetResults() {
-		if i == 0 {
-			aurora.Sprintf(aurora.Reset(""))
-		}
 		fmt.Println(aurora.Green(res.GetFilename()))
 		for _, snip := range res.GetSnippets() {
 			fmt.Print(snip.GetLines())
