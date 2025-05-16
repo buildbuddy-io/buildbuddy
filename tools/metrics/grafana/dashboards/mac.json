@@ -235,102 +235,12 @@
             "type": "prometheus",
             "uid": "vm"
           },
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 8,
-            "x": 0,
-            "y": 9
-          },
-          "hiddenSeries": false,
-          "id": 932,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "10.1.0",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "exemplar": true,
-              "expr": "sum(increase(kube_pod_container_status_restarts_total{region=\"${region}\"}[1m])) by (pod, container, exported_namespace) > 0",
-              "interval": "",
-              "legendFormat": "",
-              "queryType": "randomWalk",
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeRegions": [],
-          "title": "Unexpected Restarts",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "mode": "time",
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:137",
-              "format": "short",
-              "logBase": 1,
-              "show": true
-            },
-            {
-              "$$hashKey": "object:138",
-              "format": "short",
-              "logBase": 1,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "collapsed": true,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
           "fill": 0,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
-            "w": 8,
-            "x": 8,
+            "w": 12,
+            "x": 0,
             "y": 9
           },
           "hiddenSeries": false,
@@ -471,8 +381,8 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 8,
-            "x": 16,
+            "w": 12,
+            "x": 12,
             "y": 9
           },
           "id": 5492,
@@ -5179,7 +5089,7 @@
         "name": "inventory_hostname_pattern",
         "options": [
           {
-            "selected": false,
+            "selected": true,
             "text": ".*",
             "value": ".*"
           }
