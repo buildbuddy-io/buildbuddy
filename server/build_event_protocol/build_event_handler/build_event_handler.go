@@ -124,6 +124,7 @@ type PersistArtifacts struct {
 type BuildEventHandler struct {
 	env              environment.Env
 	statsRecorder    *statsRecorder
+	webhookNotifier  *webhookNotifier
 	openChannels     *sync.WaitGroup
 	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
 
@@ -143,13 +144,12 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	h := &BuildEventHandler{
 		env:              env,
 		statsRecorder:    statsRecorder,
+		webhookNotifier:  webhookNotifier,
 		openChannels:     openChannels,
 		cancelFnsByInvID: sync.Map{},
 	}
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		h.Stop()
-		statsRecorder.Stop()
-		webhookNotifier.Stop()
 		return nil
 	})
 	return h
@@ -189,7 +189,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		collector:      b.env.GetMetricsCollector(),
-		apiTargetMap:   make(api_common.TargetMap),
+		apiTargetMap:   api_common.NewTargetMap(),
 
 		hasReceivedEventWithOptions: false,
 		hasReceivedStartedEvent:     false,
@@ -211,6 +211,8 @@ func (b *BuildEventHandler) Stop() {
 		cancelFn()
 		return true
 	})
+	b.statsRecorder.Stop()
+	b.webhookNotifier.Stop()
 }
 
 // invocationInfo represents an invocation ID as well as the JWT granting access
@@ -796,7 +798,7 @@ type EventChannel struct {
 	targetTracker  *target_tracker.TargetTracker
 	statsRecorder  *statsRecorder
 	collector      interfaces.MetricsCollector
-	apiTargetMap   api_common.TargetMap
+	apiTargetMap   *api_common.TargetMap
 
 	startedEvent                     *build_event_stream.BuildEvent_Started
 	bufferedEvents                   []*inpb.InvocationEvent
@@ -1248,7 +1250,7 @@ func (e *EventChannel) flushAPIFacets(iid string) error {
 		return nil
 	}
 
-	for label, target := range e.apiTargetMap {
+	for label, target := range e.apiTargetMap.Targets {
 		b, err := proto.Marshal(target)
 		if err != nil {
 			return err
