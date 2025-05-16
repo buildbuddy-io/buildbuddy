@@ -247,12 +247,13 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		return nil, err
 	}
 
-	namespace, err := css.getUserNamespace(ctx, req.GetNamespace())
+	// Validate namespace against side-channel auth
+	validatedNamespace, err := css.getUserNamespace(ctx, req.GetNamespace())
 	if err != nil {
 		return nil, err
 	}
 
-	req.Namespace = namespace
+	req.Namespace = validatedNamespace
 
 	var rsp *inpb.IndexResponse
 	eg := &errgroup.Group{}
@@ -265,7 +266,7 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		// ordering. So, if multiple repo re-indexes are requested concurrently, it is not
 		// guaranteed that they will be processed in any particular order.
 
-		lockKey := fmt.Sprintf("%s-%s", namespace, req.GetGitRepo().GetRepoUrl())
+		lockKey := fmt.Sprintf("%s-%s", validatedNamespace, req.GetGitRepo().GetRepoUrl())
 		unlockFn := css.repoLocks.Lock(lockKey)
 		defer unlockFn()
 
