@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -94,7 +95,7 @@ func TestLastIndexedCommitUnset(t *testing.T) {
 
 	r := index.NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
 	lastRev, err := GetLastIndexedCommitSha(r, altRepoURL)
-	require.NoError(t, err)
+	assert.True(t, status.IsNotFoundError(err))
 	assert.Empty(t, lastRev)
 
 	// Set a different repo, and make sure we still don't find repo2
@@ -106,7 +107,7 @@ func TestLastIndexedCommitUnset(t *testing.T) {
 
 	r = index.NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
 	lastRev, err = GetLastIndexedCommitSha(r, altRepoURL)
-	require.NoError(t, err)
+	assert.True(t, status.IsNotFoundError(err))
 	assert.Empty(t, lastRev)
 }
 
@@ -230,9 +231,6 @@ func TestProcessCommit_DeleteThenReAdd(t *testing.T) {
 	})
 
 	r = index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
-	// TODO(jdelfino): the doc is still there, this function doesn't respect the delete list
-	// should it? or should it just be deleted?
-	// then GetLastIndexedCommitSha would need to run a real query... which is fine.
 	doc = r.GetStoredDocument(1)
 	assert.Empty(t, doc.Field(schema.ContentField).Contents())
 
@@ -245,7 +243,7 @@ func TestProcessCommit_DeleteThenReAdd(t *testing.T) {
 	})
 
 	r = index.NewReader(ctx, db, "testing-namespace", schema.GitHubFileSchema())
-	doc = r.GetStoredDocument(1)
+	doc = r.GetStoredDocument(2<<32 | 1)
 	assert.Equal(t, "package baz\n\nfunc Beetle() {}\n", string(doc.Field(schema.ContentField).Contents()))
 }
 
@@ -301,7 +299,6 @@ func TestProcessCommit_OverlappingAddsAndDeletes(t *testing.T) {
 	doc = r.GetStoredDocument(1)
 	assert.Empty(t, doc.Field(schema.ContentField).Contents())
 
-	doc = r.GetStoredDocument(2<<32 | 1)
-	require.NoError(t, err)
+	doc = r.GetStoredDocument(1<<32 | 1)
 	assert.Equal(t, "package baz\n\nfunc Beetle() {}\n", string(doc.Field(schema.ContentField).Contents()))
 }
