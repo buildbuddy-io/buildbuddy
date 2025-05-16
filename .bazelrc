@@ -37,7 +37,10 @@ common:target-linux-arm64 --config=workspace-target-linux-arm64
 #
 # Exclude tests which require BuildBuddy Secrets from the default unauthenticated builds
 # These often require "include-secrets: true" exec property in their BUILD file.
-test --test_tag_filters=-docker,-bare,-secrets
+#
+# Don't run benchmarks by default; benchmarks should only run if we are
+# explicitly donig performance testing.
+test --test_tag_filters=-docker,-bare,-secrets,-performance
 
 # CI invocations from public repo should be publicly accessible.
 common:ci-shared --build_metadata=VISIBILITY=PUBLIC
