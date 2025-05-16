@@ -39,7 +39,7 @@ common:target-linux-arm64 --config=workspace-target-linux-arm64
 # These often require "include-secrets: true" exec property in their BUILD file.
 #
 # Don't run benchmarks by default; benchmarks should only run if we are
-# explicitly donig performance testing.
+# explicitly doing performance testing.
 test --test_tag_filters=-docker,-bare,-secrets,-performance
 
 # CI invocations from public repo should be publicly accessible.
