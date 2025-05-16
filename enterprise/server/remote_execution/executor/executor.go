@@ -171,7 +171,7 @@ func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
 	return !isClientBazel(task)
 }
 
-func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream *operation.Publisher) (retry bool, err error) {
+func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream interfaces.Publisher) (retry bool, err error) {
 	// From here on in we use these liberally, so check that they are setup properly
 	// in the environment.
 	if s.env.GetActionCacheClient() == nil || s.env.GetByteStreamClient() == nil || s.env.GetContentAddressableStorageClient() == nil {

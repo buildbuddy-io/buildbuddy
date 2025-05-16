@@ -328,7 +328,7 @@ type Options struct {
 type IExecutor interface {
 	ID() string
 	HostID() string
-	ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream *operation.Publisher) (retry bool, err error)
+	ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream interfaces.Publisher) (retry bool, err error)
 }
 
 type PriorityTaskScheduler struct {
