@@ -105,7 +105,7 @@ func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 // registry, but the credentials are still authenticated with the remote
 // registry to ensure that the image can be accessed. The path to the disk image
 // is returned.
-func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func CreateDiskImage(ctx context.Context, resolver oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	existingPath, err := CachedDiskImagePath(ctx, cacheRoot, containerImage)
@@ -115,7 +115,7 @@ func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, cred
 	if existingPath != "" {
 		// Image is cached. Authenticate with the remote registry to be sure
 		// the credentials are valid.
-		if err := authenticateWithRegistry(ctx, containerImage, creds); err != nil {
+		if err := authenticateWithRegistry(ctx, resolver, containerImage, creds); err != nil {
 			return "", err
 		}
 		return existingPath, nil
@@ -141,14 +141,10 @@ func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, cred
 	return imageDir, err
 }
 
-func authenticateWithRegistry(ctx context.Context, containerImage string, creds oci.Credentials) error {
+func authenticateWithRegistry(ctx context.Context, resolver oci.Resolver, containerImage string, creds oci.Credentials) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	resolver, err := oci.NewResolver()
-	if err != nil {
-		return status.WrapError(err, "create OCI resolver")
-	}
 	// Resolve the image to ensure that the credentials are valid.
 	if _, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds); err != nil {
 		return status.WrapError(err, "resolve image")
