@@ -1093,9 +1093,9 @@ type UploadWriter struct {
 	bytesBuffered int
 }
 
-// Assert that UploadWriter implements CommittedWriteCloser
-var _ interfaces.CommittedWriteCloser = (*UploadWriter)(nil)
-
+// Write copies the input bytes to an internal buffer and may send some or all of the bytes to the CAS.
+// Bytes are not guaranteed to be uploaded to the CAS until a call to Commit() succeeds.
+// Returning EOF indicates that the blob already exists in the CAS and no further writes are necessary.
 func (uw *UploadWriter) Write(p []byte) (int, error) {
 	if uw.finished || uw.closed {
 		return 0, status.FailedPreconditionError("Cannot write to UploadWriter after it is finished or closed")
@@ -1116,7 +1116,10 @@ func (uw *UploadWriter) Write(p []byte) (int, error) {
 }
 
 func (uw *UploadWriter) flush(finish bool) error {
-	if uw.finished || uw.closed {
+	if uw.finished {
+		return nil
+	}
+	if uw.closed {
 		return status.FailedPreconditionError("UploadWriteCloser already finished or closed, cannot flush")
 	}
 	req := &bspb.WriteRequest{
@@ -1127,6 +1130,11 @@ func (uw *UploadWriter) flush(finish bool) error {
 	}
 	err := uw.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 	if err != nil {
+		// If the blob already exists in the CAS, the server will respond EOF
+		// to indicate no further writes are needed.
+		if err == io.EOF {
+			uw.finished = true
+		}
 		return err
 	}
 	uw.bytesUploaded += int64(uw.bytesBuffered)
@@ -1135,6 +1143,10 @@ func (uw *UploadWriter) flush(finish bool) error {
 	return nil
 }
 
+// ReadFrom reads all the bytes from the input Reader until encountering EOF,
+// copies them to an internal buffer, and may send some or all of the bytes to the CAS.
+// The bytes are not guaranteed uploaded to the CAS until Commit is called and returns successfully.
+// ReadFrom returns the number of bytes read from the input reader.
 func (uw *UploadWriter) ReadFrom(r io.Reader) (int64, error) {
 	if uw.finished || uw.closed {
 		return 0, status.FailedPreconditionError("UploadWriter cannot ReadFrom after it is finished or closed")
@@ -1167,12 +1179,11 @@ func (uw *UploadWriter) ReadFrom(r io.Reader) (int64, error) {
 	return bytesRead, nil
 }
 
+// Commit sends any bytes remaining in the internal buffer to the CAS
+// and tells the server that the stream is done sending writes.
 func (uw *UploadWriter) Commit() error {
 	if uw.closed {
 		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot commit")
-	}
-	if uw.finished {
-		return status.FailedPreconditionError("UploadWriteCloser already committed, cannot commit again")
 	}
 	err := uw.flush(true /* finish */)
 	// If the blob already exists in the CAS, the server can respond with an EOF.
@@ -1188,6 +1199,8 @@ func (uw *UploadWriter) Commit() error {
 	return nil
 }
 
+// Close closes the underlying stream and returns an internal buffer to the pool.
+// It is expected (and safe) to call Close even if Commit fails.
 func (uw *UploadWriter) Close() error {
 	if uw.closed {
 		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot close again")
@@ -1204,6 +1217,9 @@ func (uw *UploadWriter) GetCommittedSize() int64 {
 func (uw *UploadWriter) GetBytesUploaded() int64 {
 	return uw.bytesUploaded
 }
+
+// Assert that UploadWriter implements CommittedWriteCloser
+var _ interfaces.CommittedWriteCloser = (*UploadWriter)(nil)
 
 // NewUploadWriter returns an UploadWriter that writes to the CAS for the specific resource name.
 // The blob is guaranteed to be written to the CAS only if all Write(...) calls and the Close() call succeed.
