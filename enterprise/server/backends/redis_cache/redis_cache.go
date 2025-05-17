@@ -373,6 +373,6 @@ func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
 
-func (c *Cache) SupportsEncryption(ctx context.Context) bool {
-	return false
+func (c *Cache) SupportsEncryption(ctx context.Context) (bool, error) {
+	return false, nil
 }
