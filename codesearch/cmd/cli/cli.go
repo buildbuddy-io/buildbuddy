@@ -179,18 +179,9 @@ func handleIndex(args []string) {
 				if err != nil {
 					return err
 				}
-				fields, err := github.ExtractFields(path, commitSHA, repoURL, buf)
-				if err != nil {
-					log.Info(err.Error())
-					return nil
-				}
-				doc, err := schema.GitHubFileSchema().MakeDocument(fields)
-				if err != nil {
-					log.Fatal(err.Error())
-				}
 
-				if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
-					log.Fatal(err.Error())
+				if err := github.AddFileToIndex(iw, repoURL, commitSHA, path, buf); err != nil {
+					log.Fatalf("failed to add file %s: %s", path, err)
 				}
 			}
 			return nil
@@ -282,6 +273,7 @@ func handleSquery(ctx context.Context, args []string) {
 	defer db.Close()
 
 	ir := index.NewReader(ctx, db, getNamespace(), schema.GitHubFileSchema())
+
 	matches, err := ir.RawQuery(pat)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -307,10 +299,7 @@ func handleSquery(ctx context.Context, args []string) {
 		}
 	}
 	for _, docID := range docIDs {
-		doc, err := ir.GetStoredDocument(docID)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
+		doc := ir.GetStoredDocument(docID)
 		filename := doc.Field(schema.FilenameField).Contents()
 		fmt.Printf("%d (%q) matched fields: %s\n", docID, filename, strings.Join(docFields[docID], ", "))
 	}
