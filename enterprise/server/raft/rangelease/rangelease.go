@@ -52,11 +52,15 @@ type Lease struct {
 	leaseRecord *rfpb.RangeLeaseRecord
 
 	timeUntilLeaseRenewal time.Duration
-	stopped               bool
-	quitLease             chan struct{}
+
+	stopMutex sync.Mutex
+	stopped   bool
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, liveness *nodeliveness.Liveness, rangeID uint64, r *replica.Replica) *Lease {
+	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &Lease{
 		nodeHost:              nodeHost,
 		log:                   log,
@@ -70,6 +74,8 @@ func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, live
 		leaseRecord:           &rfpb.RangeLeaseRecord{},
 		timeUntilLeaseRenewal: time.Duration(math.MaxInt64),
 		stopped:               true,
+		ctx:                   ctx,
+		cancel:                cancelFunc,
 	}
 }
 
@@ -94,13 +100,16 @@ func (l *Lease) Release(ctx context.Context) error {
 }
 
 func (l *Lease) Stop() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.log.Infof("lease stop started")
+	l.stopMutex.Lock()
+	l.log.Infof("lease stop lock finished")
+	defer l.stopMutex.Unlock()
 	// close the background lease-renewal thread.
 	if !l.stopped {
 		l.stopped = true
-		close(l.quitLease)
+		l.cancel()
 	}
+	l.log.Infof("lease stop finished")
 }
 
 func (l *Lease) dropLease(ctx context.Context) error {
@@ -298,7 +307,6 @@ func (l *Lease) renewLeaseUntilValid(ctx context.Context) (returnedRecord *rfpb.
 		span.End()
 	}()
 	l.mu.Lock()
-	defer l.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -306,10 +314,13 @@ func (l *Lease) renewLeaseUntilValid(ctx context.Context) (returnedRecord *rfpb.
 	for {
 		select {
 		case <-ctx.Done():
+			l.log.Info("renewLeaseAUntilValid cancelled")
+			l.mu.Unlock()
 			return nil, ctx.Err()
 		default: // continue with for loop
 		}
 		if err := l.renewLease(ctx); err != nil {
+			l.mu.Unlock()
 			return nil, status.InternalErrorf("failed to renew lease: %s", err)
 		}
 		if err := l.verifyLease(ctx, l.leaseRecord); err == nil {
@@ -317,31 +328,40 @@ func (l *Lease) renewLeaseUntilValid(ctx context.Context) (returnedRecord *rfpb.
 		}
 	}
 
+	leaseRecord := l.leaseRecord
+	l.mu.Unlock()
+
+	l.stopMutex.Lock()
+	defer l.stopMutex.Unlock()
+
 	// We just renewed the lease. If there isn't already a background
 	// thread running to keep it renewed, start one now.
 	if l.stopped {
 		l.stopped = false
-		l.quitLease = make(chan struct{})
-		if l.leaseRecord.GetReplicaExpiration().GetExpiration() != 0 {
+		ctx, cancel := context.WithCancel(context.Background())
+		l.ctx = ctx
+		l.cancel = cancel
+		if leaseRecord.GetReplicaExpiration().GetExpiration() != 0 {
 			// Only start the renew-goroutine for time-based
 			// leases which need periodic renewal.
-			go l.keepLeaseAlive(l.quitLease)
+			go l.keepLeaseAlive(l.ctx)
 		}
 	}
-	return l.leaseRecord, nil
+	return leaseRecord, nil
 }
 
-func (l *Lease) keepLeaseAlive(quit chan struct{}) {
+func (l *Lease) keepLeaseAlive(ctx context.Context) {
 	for {
 		l.mu.RLock()
 		timeUntilRenewal := l.timeUntilLeaseRenewal
 		l.mu.RUnlock()
 
 		select {
-		case <-quit:
+		case <-ctx.Done():
+			l.log.Infof("keepLeaseAlive ctx cancelled")
 			return
 		case <-time.After(timeUntilRenewal):
-			ctx, spn := tracing.StartSpan(context.Background())
+			ctx, spn := tracing.StartSpan(ctx)
 			_, err := l.renewLeaseUntilValid(ctx)
 			if err != nil {
 				log.Errorf("failed to ensure valid lease for c%dn%d: %s", l.replica.RangeID(), l.replica.ReplicaID(), err)
