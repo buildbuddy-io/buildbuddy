@@ -3,13 +3,17 @@ package log
 import (
 	"log"
 	"os"
+
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 )
 
 const (
 	verboseEnvVarName = "BB_VERBOSE"
+)
 
-	debugPrefix   = "\x1b[33m[bb-debug]\x1b[m "
-	WarningPrefix = "\x1b[33mWarning:\x1b[m "
+var (
+	debugPrefix   = terminal.Esc(33) + "[bb-debug]" + terminal.Esc() + " "
+	WarningPrefix = terminal.Esc(33) + "Warning:" + terminal.Esc() + " "
 )
 
 var verbose bool

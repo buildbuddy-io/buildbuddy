@@ -887,7 +887,7 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 		// are still writing to a terminal, by setting --color=yes --curses=yes
 		// (with lowest priority, in case the user wants to set those flags
 		// themselves).
-		args = terminal.AddTerminalFlags(args)
+		args = addTerminalFlags(args)
 
 		ptmx, tty, err := pty.Open()
 		if err != nil {
@@ -910,6 +910,19 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 	}
 
 	return bazelisk.Run(args, opts)
+}
+
+func addTerminalFlags(args []string) []string {
+	_, idx := parser.GetBazelCommandAndIndex(args)
+	if idx == -1 {
+		return args
+	}
+	tArgs := []string{"--curses=yes", "--color=yes"}
+	a := make([]string, 0, len(args)+len(tArgs))
+	a = append(a, args[:idx+1]...)
+	a = append(a, tArgs...)
+	a = append(a, args[idx+1:]...)
+	return a
 }
 
 type overrideCloser struct {
