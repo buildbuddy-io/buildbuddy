@@ -3461,13 +3461,3 @@ func (p *PebbleCache) Stop() error {
 
 	return nil
 }
-
-func (p *PebbleCache) SupportsEncryption(ctx context.Context) bool {
-	_, partID := p.lookupGroupAndPartitionID(ctx, "")
-	for _, part := range p.partitions {
-		if part.ID == partID {
-			return part.EncryptionSupported
-		}
-	}
-	return false
-}
