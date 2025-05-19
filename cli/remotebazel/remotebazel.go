@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
@@ -92,6 +93,104 @@ var (
 	runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
 	script          = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
 	disableRetry    = RemoteFlagset.Bool("disable_retry", false, "By default, transient errors are automatically retried. This behavior can be disabled, if a command is non-idempotent for example.")
+	RemoteOptionSet = parser.NewParser(
+		[]*options.Definition{
+			options.NewDefinition(
+				"os",
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// execArch = RemoteFlagset.String("arch", "", "If set, requests execution on a specific CPU architecture.")
+			options.NewDefinition(
+				"arch",
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// containerImage = RemoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
+			options.NewDefinition(
+				"container_image",
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// envInput = bbflag.New(RemoteFlagset, "env", []string{}, "Environment variables to set in the runner environment. Key-value pairs can either be separated by '=' (Ex. --env=k1=val1), or if only a key is specified, the value will be taken from the invocation environment (Ex. --env=k2). To apply multiple env vars, pass the env flag multiple times (Ex. --env=k1=v1 --env=k2). If the same key is given twice, the latest will apply.")
+			options.NewDefinition(
+				"env_input",
+				options.WithMulti(),
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// remoteRunner = RemoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
+			options.NewDefinition(
+				"remote_runner",
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// timeout = RemoteFlagset.Duration("timeout", 0, "If set, requests that have exceeded this timeout will be canceled automatically. (Ex. --timeout=15m; --timeout=2h)")
+			options.NewDefinition(
+				"timeout",
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// execPropsFlag = bbflag.New(RemoteFlagset, "runner_exec_properties", []string{}, "Exec properties that will apply to the *ci runner execution*. Key-value pairs should be separated by '=' (Ex. --runner_exec_properties=NAME=VALUE). Can be specified more than once. NOTE: If you want to apply an exec property to the bazel command that's run on the runner, just pass at the end of the command (Ex. bb remote build //... --remote_default_exec_properties=OSFamily=linux).")
+			options.NewDefinition(
+				"runner_exec_properties",
+				options.WithMulti(),
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// remoteHeaders = bbflag.New(RemoteFlagset, "remote_run_header", []string{}, "Remote headers to be applied to the execution request for the remote run. Can be used to set platform properties containing secrets (Ex. --remote_run_header=x-buildbuddy-platform.SECRET_NAME=SECRET_VALUE). Can be specified more than once.")
+			options.NewDefinition(
+				"remote_run_header",
+				options.WithMulti(),
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// runRemotely = RemoteFlagset.Bool("run_remotely", true, "For `run` commands, whether the target should be run remotely. If false, the target will be built remotely, and then fetched and run locally.")
+			options.NewDefinition(
+				"run_remotely",
+				options.WithNegative(),
+				options.WithSupportFor("remote"),
+			),
+			// useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
+			options.NewDefinition(
+				"use_system_git_credentials",
+				options.WithNegative(),
+				options.WithSupportFor("remote"),
+			),
+			// runFromBranch = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+			options.NewDefinition(
+				"run_from_branch",
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// runFromCommit = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+			options.NewDefinition(
+				"run_from_commit",
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// From a shell, pass the JSON in single quotes.
+			// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
+			// runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
+			options.NewDefinition(
+				"run_from_snapshot",
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// script = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
+			options.NewDefinition(
+				"script",
+				options.WithRequiresValue(),
+				options.WithSupportFor("remote"),
+			),
+			// disableRetry = RemoteFlagset.Bool("disable_retry", false, "By default, transient errors are automatically retried. This behavior can be disabled, if a command is non-idempotent for example.")
+			options.NewDefinition(
+				"disable_retry",
+				options.WithNegative(),
+				options.WithSupportFor("remote"),
+			),
+		},
+	)
 )
 
 func consoleCursorMoveUp(y int) {
