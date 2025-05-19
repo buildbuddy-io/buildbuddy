@@ -294,10 +294,18 @@ func unmarshalStoredInvocationLinks(serializedResults []string) ([]*sipb.StoredI
 // (exit code, stats, etc.)
 func mergeExecutionUpdates(serializedResults []string) (*repb.StoredExecution, error) {
 	out := &repb.StoredExecution{}
+	lastStage := int64(repb.ExecutionStage_UNKNOWN)
 	for _, serializedResult := range serializedResults {
 		event := &repb.StoredExecution{}
 		if err := proto.Unmarshal([]byte(serializedResult), event); err != nil {
 			return nil, err
+		}
+
+		// The scheduler attempts to prevent concurrent execution updates via
+		// task leasing, but this is not currently 100% reliable. If execution
+		// progress appears to restart, ignore any future updates.
+		if lastStage == int64(repb.ExecutionStage_COMPLETED) && event.GetStage() != int64(repb.ExecutionStage_COMPLETED) {
+			break
 		}
 		// Copy fields from the latest event to the output proto. proto.Merge()
 		// is a convenient way to do this.
@@ -307,12 +315,7 @@ func mergeExecutionUpdates(serializedResults []string) (*repb.StoredExecution, e
 		// the last value win.
 		out.Experiments = event.Experiments
 
-		// The scheduler attempts to prevent concurrent execution updates via
-		// task leasing, but this is not currently 100% reliable. So we ignore
-		// updates that happen after the initial attempt.
-		if event.GetStage() == int64(repb.ExecutionStage_COMPLETED) {
-			break
-		}
+		lastStage = event.GetStage()
 	}
 	return out, nil
 }
