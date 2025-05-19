@@ -22,19 +22,47 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func TestInvocationWithRemoteExecutionWithClickHouse(t *testing.T) {
+type executionsClickhouseTest struct {
+	flags []string
+}
+
+func TestInvocationWithRemoteExecutionWithClickHouse_StoreMetadataInRedisAndClickHouse(t *testing.T) {
+	testInvocationWithRemoteExecutionWithClickHouse(t, executionsClickhouseTest{
+		flags: []string{
+			"--remote_execution.write_execution_progress_state_to_redis=true",
+			"--remote_execution.write_executions_to_primary_db=false",
+			"--remote_execution.read_final_execution_state_from_redis=true",
+			"--remote_execution.primary_db_reads_enabled=false",
+			"--remote_execution.olap_reads_enabled=true",
+		},
+	})
+}
+
+func TestInvocationWithRemoteExecutionWithClickHouse_StoreMetadataInPrimaryDBAndClickHouse(t *testing.T) {
+	testInvocationWithRemoteExecutionWithClickHouse(t, executionsClickhouseTest{
+		flags: []string{
+			"--remote_execution.write_execution_progress_state_to_redis=false",
+			"--remote_execution.write_executions_to_primary_db=true",
+			"--remote_execution.read_final_execution_state_from_redis=false",
+			"--remote_execution.primary_db_reads_enabled=true",
+			"--remote_execution.olap_reads_enabled=false",
+		},
+	})
+}
+
+func testInvocationWithRemoteExecutionWithClickHouse(t *testing.T, tc executionsClickhouseTest) {
 	// This test can't run against cloud yet, since we depend on the test
 	// running on the same filesystem as the executor to coordinate action
 	// execution via fifo pipes.
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 	ctx := t.Context()
 	clickhouseDSN := testclickhouse.Start(t, true /*=reuseServer*/)
-	target := buildbuddy_enterprise.SetupWebTarget(
-		t,
+	bbFlags := append([]string{
+		"--olap_database.data_source=" + clickhouseDSN,
 		"--remote_execution.enable_remote_exec=true",
 		"--remote_execution.olap_reads_enabled=true",
-		"--olap_database.data_source="+clickhouseDSN,
-	)
+	}, tc.flags...)
+	target := buildbuddy_enterprise.SetupWebTarget(t, bbFlags...)
 	// Register an executor so that we can test RBE end-to-end.
 	_ = testexecutor.Run(t, "--executor.app_target="+target.GRPCAddress())
 	// Log in and get the flags needed to run an authenticated, RBE-enabled
