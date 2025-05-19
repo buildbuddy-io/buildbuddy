@@ -1,4 +1,15 @@
 actions:
+  - name: Sleeper
+    container_image: ubuntu-20.04
+    triggers:
+      pull_request:
+        branches:
+          - "*"
+    steps:
+      - run: sleep 10
+      - run: "bazel run --config=linux-workflows temp:sleep"
+      - run: sleep 10
+      - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare"
   - name: Test
     container_image: ubuntu-20.04
     triggers:
