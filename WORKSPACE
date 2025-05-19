@@ -2,7 +2,7 @@ workspace(
     name = "buildbuddy",
 )
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # Load core rulesets before invoking any dependency macros to ensure that the
 # versions listed below are actually honored - the last repo from the first
@@ -615,11 +615,11 @@ load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
 
 buildbuddy_deps()
 
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "buildbuddy")
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU22_04_IMAGE", "buildbuddy")
 
 buildbuddy(
     name = "buildbuddy_toolchain",
-    container_image = UBUNTU20_04_IMAGE,
+    container_image = UBUNTU22_04_IMAGE,
     # This is the MSVC available on Github Action win22 image
     # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md
     msvc_edition = "Enterprise",
