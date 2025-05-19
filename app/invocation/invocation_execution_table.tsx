@@ -37,7 +37,7 @@ export default class InvocationExecutionTable extends React.Component<Props> {
               <div>
                 <div className="execution-header">
                   {execution.targetLabel && <span className="target-label">{execution.targetLabel}</span>}
-                  <DigestComponent digest={execution.actionDigest} expanded={execution.targetLabel === ''}/>
+                  <DigestComponent digest={execution.actionDigest} expanded={execution.targetLabel === ""} />
                 </div>
                 <div className="command-snippet">$ {execution.commandSnippet}</div>
                 <div className="status">
