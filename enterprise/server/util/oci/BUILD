@@ -42,7 +42,6 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testregistry",
-        "//server/util/log",
         "//server/util/proto",
         "//server/util/random",
         "//server/util/status",
