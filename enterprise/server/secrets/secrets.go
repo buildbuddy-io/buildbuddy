@@ -49,7 +49,7 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func (s *SecretService) GetPublicKey(ctx context.Context, req *skpb.GetPublicKeyRequest) (*skpb.GetPublicKeyResponse, error) {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (s *SecretService) GetPublicKey(ctx context.Context, req *skpb.GetPublicKey
 }
 
 func (s *SecretService) listSecretsIncludingValues(ctx context.Context) (*skpb.ListSecretsResponse, error) {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (s *SecretService) ListSecrets(ctx context.Context, req *skpb.ListSecretsRe
 // in order, the response proto, whether the secret was newly created or not,
 // and any error encountered.
 func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, bool, error) {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, false, err
 	}
@@ -201,7 +201,7 @@ func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecret
 }
 
 func (s *SecretService) DeleteSecret(ctx context.Context, req *skpb.DeleteSecretRequest) (*skpb.DeleteSecretResponse, error) {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}

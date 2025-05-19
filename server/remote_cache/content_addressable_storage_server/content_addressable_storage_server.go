@@ -154,7 +154,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		return nil, err
 	}
 
-	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	canWrite, err := capabilities.IsGranted(ctx, s.env, cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
 	if err != nil {
 		return nil, err
 	}

@@ -28,6 +28,7 @@ go_library(
 go_test(
     name = "overlayfs_test",
     srcs = ["overlayfs_test.go"],
+    tags = ["manual"],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":overlayfs",
@@ -45,7 +46,6 @@ go_test(
         "-test.bench=.",
         "-test.skip=^Test",
     ],
-    tags = ["manual"],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":overlayfs",

@@ -15,6 +15,7 @@ go_library(
         "//proto:user_id_go_proto",
         "//server/environment",
         "//server/tables",
+        "//server/util/authutil",
         "//server/util/clickhouse",
         "//server/util/clickhouse/schema",
         "//server/util/db",

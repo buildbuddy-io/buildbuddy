@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -184,7 +185,7 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		// check it again here just to be explicit.
 		// TODO(bduffany): do this OTHERS_READ check in AuthorizeRead instead.
 		if inv.Perms&perms.OTHERS_READ == 0 {
-			u, err := es.env.GetAuthenticator().AuthenticatedUser(ctx)
+			u, err := authutil.AuthorizeGroupAccess(ctx, es.env)
 			if err != nil {
 				return err
 			}

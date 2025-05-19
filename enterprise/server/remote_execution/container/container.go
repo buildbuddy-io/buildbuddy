@@ -533,7 +533,7 @@ func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 // same token is always returned.
 func NewImageCacheToken(ctx context.Context, env environment.Env, creds oci.Credentials, imageRef string) (interfaces.ImageCacheToken, error) {
 	groupID := ""
-	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, env)
 	if err != nil {
 		if !authutil.IsAnonymousUserError(err) {
 			return interfaces.ImageCacheToken{}, err

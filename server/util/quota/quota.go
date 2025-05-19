@@ -4,13 +4,14 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 func getGroupID(ctx context.Context, env environment.Env) string {
 	if a := env.GetAuthenticator(); a != nil {
-		user, err := a.AuthenticatedUser(ctx)
+		user, err := authutil.AuthorizeGroupAccess(ctx, env)
 		if err != nil {
 			return ""
 		}

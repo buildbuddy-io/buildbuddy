@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -300,7 +301,7 @@ func getExecProperty(execProps []*repb.Platform_Property, key string) string {
 }
 
 func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.RunRequest) ([]string, error) {
-	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, r.env)
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +362,7 @@ func (r *runnerService) getGitToken(ctx context.Context, repoURL string) (string
 	if err != nil {
 		return "", err
 	}
-	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, r.env)
 	if err != nil {
 		return "", err
 	}

@@ -1146,7 +1146,7 @@ func hashStrings(strs ...string) string {
 
 func groupID(ctx context.Context, env environment.Env) (string, error) {
 	var gid string
-	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, env)
 	if err == nil {
 		gid = u.GetGroupID()
 	} else if !authutil.IsAnonymousUserError(err) && !container.AnonymousRecyclingEnabled() {

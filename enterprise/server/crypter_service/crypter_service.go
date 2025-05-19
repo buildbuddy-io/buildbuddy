@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -345,7 +346,7 @@ func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool)
 }
 
 func (c *keyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*loadedKey, error) {
-	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, c.env)
 	if err != nil {
 		return nil, err
 	}
@@ -657,7 +658,7 @@ func (c *Crypter) ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, erro
 }
 
 func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser) (interfaces.Encryptor, error) {
-	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, c.env)
 	if err != nil {
 		return nil, err
 	}
@@ -683,7 +684,7 @@ func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Di
 }
 
 func (c *Crypter) NewDecryptor(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata) (interfaces.Decryptor, error) {
-	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, c.env)
 	if err != nil {
 		return nil, err
 	}
@@ -896,7 +897,7 @@ func (c *Crypter) enableEncryption(ctx context.Context, kmsConfig *enpb.KMSConfi
 		return err
 	}
 
-	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, c.env)
 	if err != nil {
 		return err
 	}
@@ -975,7 +976,7 @@ func (c *Crypter) enableEncryption(ctx context.Context, kmsConfig *enpb.KMSConfi
 }
 
 func (c *Crypter) disableEncryption(ctx context.Context) error {
-	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, c.env)
 	if err != nil {
 		return err
 	}
@@ -1013,7 +1014,7 @@ func (c *Crypter) SetEncryptionConfig(ctx context.Context, req *enpb.SetEncrypti
 		return nil, status.FailedPreconditionErrorf("KMS service not enabled")
 	}
 
-	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, c.env)
 	if err != nil {
 		return nil, err
 	}
@@ -1039,7 +1040,7 @@ func (c *Crypter) SetEncryptionConfig(ctx context.Context, req *enpb.SetEncrypti
 }
 
 func (c *Crypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error) {
-	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, c.env)
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package perms
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -121,8 +123,8 @@ func AuthorizeRead(u interfaces.UserInfo, acl *aclpb.ACL) error {
 		return nil
 	}
 	if perms&GROUP_READ != 0 {
-		for _, groupID := range u.GetAllowedGroups() {
-			if groupID == acl.GetGroupId() {
+		for _, gm := range u.GetGroupMemberships() {
+			if gm.GroupID == acl.GetGroupId() && slices.Contains(gm.Capabilities, cappb.Capability_GROUP_ACCESS) {
 				return nil
 			}
 		}
@@ -153,8 +155,8 @@ func AuthorizeWrite(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) erro
 		return nil
 	}
 	if perms&GROUP_WRITE != 0 {
-		for _, groupID := range u.GetAllowedGroups() {
-			if groupID == acl.GetGroupId() {
+		for _, gm := range u.GetGroupMemberships() {
+			if gm.GroupID == acl.GetGroupId() && slices.Contains(gm.Capabilities, cappb.Capability_GROUP_ACCESS) {
 				return nil
 			}
 		}
@@ -186,8 +188,7 @@ func GetPermissionsCheckClauses(ctx context.Context, env environment.Env, q *que
 	o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), OTHERS_READ)
 
 	hasUser := false
-	auth := env.GetAuthenticator()
-	if u, err := auth.AuthenticatedUser(ctx); err == nil {
+	if u, err := authutil.AuthorizeGroupAccess(ctx, env); err == nil {
 		hasUser = true
 		if u.GetUserID() != "" {
 			groupArgs := []interface{}{
@@ -202,7 +203,7 @@ func GetPermissionsCheckClauses(ctx context.Context, env environment.Env, q *que
 			groupQueryStr := fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id IN %s)", tablePrefix, tablePrefix, groupParamString)
 			o.AddOr(groupQueryStr, groupArgs...)
 			o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %suser_id = ?)", tablePrefix, tablePrefix), OWNER_READ, u.GetUserID())
-		} else if u.GetGroupID() != "" {
+		} else if u.GetGroupID() != "" && u.HasCapability(cappb.Capability_GROUP_ACCESS) {
 			groupArgs := []interface{}{
 				GROUP_READ,
 				u.GetGroupID(),
@@ -222,7 +223,7 @@ func GetPermissionsCheckClauses(ctx context.Context, env environment.Env, q *que
 // or OTHERS_READ for anonymous users.
 func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroupPerm, error) {
 	auth := env.GetAuthenticator()
-	u, err := auth.AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, env)
 	if err != nil || u.GetGroupID() == "" {
 		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled(ctx) {
 			return AnonymousUserPermissions(), nil

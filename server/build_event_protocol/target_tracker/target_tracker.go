@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -210,7 +211,7 @@ func (t *TargetTracker) testTargetsInAtLeastState(state targetState) bool {
 }
 
 func (t *TargetTracker) permissionsFromContext(ctx context.Context) (*perms.UserGroupPerm, error) {
-	if u, err := t.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
+	if u, err := authutil.AuthorizeGroupAccess(ctx, t.env); err == nil && u.GetGroupID() != "" {
 		return perms.DefaultPermissions(u), nil
 	}
 	return nil, status.UnauthenticatedError("Context did not contain auth information")

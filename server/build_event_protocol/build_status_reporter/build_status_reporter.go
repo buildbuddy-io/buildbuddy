@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
@@ -87,7 +88,7 @@ func (r *BuildStatusReporter) isStatusReportingEnabled(ctx context.Context, repo
 			return
 		}
 
-		userInfo, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+		userInfo, err := authutil.AuthorizeGroupAccess(ctx, r.env)
 		if err != nil {
 			log.CtxInfof(ctx, "Failed to report GitHub status, no authenticated user: %s", err)
 			return

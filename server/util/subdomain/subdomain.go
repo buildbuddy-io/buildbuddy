@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 )
@@ -73,7 +74,7 @@ func ReplaceURLSubdomain(ctx context.Context, env environment.Env, rawURL string
 		return rawURL, nil
 	}
 
-	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, env)
 	if err != nil {
 		return "", err
 	}

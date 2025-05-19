@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -52,7 +53,7 @@ func (s *workspaceService) GetWorkspace(ctx context.Context, req *wspb.GetWorksp
 		return nil, err
 	}
 
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func (s *workspaceService) SaveWorkspace(ctx context.Context, req *wspb.SaveWork
 		return nil, err
 	}
 
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +154,7 @@ func (s *workspaceService) GetWorkspaceFile(ctx context.Context, req *wspb.GetWo
 		return nil, err
 	}
 
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +223,7 @@ func (s *workspaceService) GetWorkspaceDirectory(ctx context.Context, req *wspb.
 		return nil, err
 	}
 
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}

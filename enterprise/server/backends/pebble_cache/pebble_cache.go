@@ -1393,7 +1393,7 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 }
 
 func (p *PebbleCache) userGroupID(ctx context.Context) string {
-	user, err := p.env.GetAuthenticator().AuthenticatedUser(ctx)
+	user, err := authutil.AuthorizeGroupAccess(ctx, p.env)
 	if err != nil {
 		return interfaces.AuthAnonymousUser
 	}

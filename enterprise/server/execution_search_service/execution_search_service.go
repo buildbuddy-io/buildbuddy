@@ -78,7 +78,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	if s.oh == nil {
 		return nil, status.UnavailableError("An OLAP DB is required to search executions.")
 	}
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}

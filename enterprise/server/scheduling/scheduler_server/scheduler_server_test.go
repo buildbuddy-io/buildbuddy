@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -122,7 +123,12 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	env.SetSchedulerClient(sc)
 
 	testUsers := make(map[string]interfaces.UserInfo, 0)
-	testUsers["user1"] = &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
+	testUsers["user1"] = &testauth.TestUser{
+		UserID:                 "user1",
+		GroupID:                "group1",
+		UseGroupOwnedExecutors: opts.groupOwnedEnabled,
+		Capabilities:           []cappb.Capability{cappb.Capability_GROUP_ACCESS},
+	}
 
 	ta := testauth.NewTestAuthenticator(testUsers)
 	env.SetAuthenticator(ta)

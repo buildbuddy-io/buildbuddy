@@ -58,6 +58,7 @@ go_test(
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testredis",
+        "//proto:capability_go_proto",
         "//proto:context_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -33,6 +34,8 @@ import (
 type TestUser = claims.Claims
 
 func User(userID, groupID string) *TestUser {
+	caps := capabilities.DefaultAuthenticatedUserCapabilities
+	caps = append(caps, cappb.Capability_GROUP_ACCESS)
 	return &TestUser{
 		UserID:        userID,
 		GroupID:       groupID,
@@ -40,11 +43,11 @@ func User(userID, groupID string) *TestUser {
 		GroupMemberships: []*interfaces.GroupMembership{
 			{
 				GroupID:      groupID,
-				Capabilities: capabilities.DefaultAuthenticatedUserCapabilities,
+				Capabilities: caps,
 				Role:         role.Admin,
 			},
 		},
-		Capabilities: capabilities.DefaultAuthenticatedUserCapabilities,
+		Capabilities: caps,
 	}
 }
 

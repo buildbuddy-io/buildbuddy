@@ -16,6 +16,7 @@ go_library(
         "//server/build_event_protocol/build_event_handler",
         "//server/build_event_protocol/event_index",
         "//server/environment",
+        "//server/util/authutil",
         "//server/util/db",
         "//server/util/git",
         "//server/util/log",

@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -66,7 +67,7 @@ func NewAPIServer(env environment.Env) *APIServer {
 }
 
 func (s *APIServer) authorizeWrites(ctx context.Context) error {
-	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
+	canWrite, err := capabilities.IsGranted(ctx, s.env, cappb.Capability_CACHE_WRITE)
 	if err != nil {
 		return err
 	}
@@ -77,7 +78,7 @@ func (s *APIServer) authorizeWrites(ctx context.Context) error {
 }
 
 func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationRequest) (*apipb.GetInvocationResponse, error) {
-	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	user, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +206,7 @@ func (s *APIServer) redisCachedTarget(ctx context.Context, userInfo interfaces.U
 }
 
 func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) (*apipb.GetTargetResponse, error) {
-	userInfo, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	userInfo, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +283,7 @@ func (s *APIServer) redisCachedActions(ctx context.Context, userInfo interfaces.
 }
 
 func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) (*apipb.GetActionResponse, error) {
-	userInfo, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	userInfo, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +341,7 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apipb.GetLogResponse, error) {
 	// Check whether the user is authenticated. No need for the returned user
 	// here, because user filters will be applied by LookupInvocation.
-	if _, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+	if _, err := authutil.AuthorizeGroupAccess(ctx, s.env); err != nil {
 		return nil, err
 	}
 
@@ -380,7 +381,7 @@ func (gfs *getFileWriter) Write(data []byte) (int, error) {
 
 func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_GetFileServer) error {
 	ctx := server.Context()
-	if _, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+	if _, err := authutil.AuthorizeGroupAccess(ctx, s.env); err != nil {
 		return err
 	}
 
@@ -403,8 +404,7 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	if err != nil {
 		return nil, err
 	}
-
-	if _, err = s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+	if _, err = authutil.AuthorizeGroupAccess(ctx, s.env); err != nil {
 		return nil, err
 	}
 	if err = s.authorizeWrites(ctx); err != nil {
@@ -448,7 +448,7 @@ func (s *APIServer) GetFileHandler() http.Handler {
 
 // Handle streaming http GetFile request since protolet doesn't handle streaming rpcs yet.
 func (s *APIServer) handleGetFileRequest(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.env.GetAuthenticator().AuthenticatedUser(r.Context()); err != nil {
+	if _, err := authutil.AuthorizeGroupAccess(r.Context(), s.env); err != nil {
 		http.Error(w, "Invalid API key", http.StatusUnauthorized)
 		return
 	}
@@ -477,7 +477,7 @@ func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "API not enabled", http.StatusNotImplemented)
 		return
 	}
-	userInfo, err := s.env.GetAuthenticator().AuthenticatedUser(r.Context())
+	userInfo, err := authutil.AuthorizeGroupAccess(r.Context(), s.env)
 	if err != nil {
 		http.Error(w, "Invalid API key", http.StatusUnauthorized)
 		return
@@ -528,7 +528,7 @@ func actionMatchesActionSelector(action *apipb.Action, selector *apipb.ActionSel
 }
 
 func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkflowRequest) (*apipb.ExecuteWorkflowResponse, error) {
-	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	user, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -334,7 +335,7 @@ func cacheEventTypeLabel(c counterType) string {
 func (t *TransferTimer) emitSizeMetrics(compressor repb.Compressor_Value, ct counterType, cacheTypeLabel, serverLabel string, digestSizeBytes, bytesTransferredCache, bytesTransferredClient float64) {
 	groupID := interfaces.AuthAnonymousUser
 	if a := t.h.env.GetAuthenticator(); a != nil {
-		if u, err := a.AuthenticatedUser(t.h.ctx); err == nil {
+		if u, err := authutil.AuthorizeGroupAccess(t.h.ctx, t.h.env); err == nil {
 			groupID = u.GetGroupID()
 		}
 	}

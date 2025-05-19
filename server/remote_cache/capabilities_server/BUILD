@@ -13,6 +13,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/config",
         "//server/remote_cache/digest",
+        "//server/util/authutil",
         "//server/util/bazel_request",
     ],
 )

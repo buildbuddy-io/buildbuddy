@@ -16,6 +16,7 @@ go_library(
         "//server/interfaces",
         "//server/real_environment",
         "//server/tables",
+        "//server/util/authutil",
         "//server/util/log",
         "//server/util/role",
         "//server/util/status",

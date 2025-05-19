@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -170,7 +171,7 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 		return nil, err
 	}
 	if ti.Perms&perms.OTHERS_READ == 0 {
-		u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+		u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 		if err != nil {
 			return nil, err
 		}
@@ -182,7 +183,7 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 }
 
 func (d *InvocationDB) LookupChildInvocations(ctx context.Context, parentRunID string) ([]string, error) {
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return nil, err
 	}

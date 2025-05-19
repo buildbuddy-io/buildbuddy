@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -307,7 +308,7 @@ func (c *DiskCache) IsV2Layout() bool {
 }
 
 func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string) (*partition, error) {
-	user, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	user, err := authutil.AuthorizeGroupAccess(ctx, c.env)
 	if err != nil {
 		return c.defaultPartition, nil
 	}

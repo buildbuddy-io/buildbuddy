@@ -238,7 +238,7 @@ func NewOAuthHandler(env environment.Env, clientID, clientSecret, path string) *
 }
 
 func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	_, err := c.env.GetAuthenticator().AuthenticatedUser(r.Context())
+	_, err := authutil.AuthorizeGroupAccess(r.Context(), c.env)
 	if err != nil {
 		// If not logged in to the app (e.g. when installing directly from
 		// GitHub), redirect to the account creation flow.
@@ -366,7 +366,7 @@ func (c *OAuthHandler) handleLinkRepoCallback(r *http.Request) error {
 	userID := getState(r, userIDCookieName)
 	groupID := getState(r, groupIDCookieName)
 
-	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, c.env)
 	if err != nil {
 		return err
 	}
@@ -646,7 +646,7 @@ func (c *GithubClient) fetchToken(ctx context.Context, ownerRepo string) error {
 		return nil
 	}
 
-	userInfo, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	userInfo, err := authutil.AuthorizeGroupAccess(ctx, c.env)
 	if userInfo == nil || err != nil {
 		return nil
 	}

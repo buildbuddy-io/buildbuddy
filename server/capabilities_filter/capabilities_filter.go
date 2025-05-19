@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -265,7 +266,7 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 	rpcName = path.Base(rpcName)
 
 	var groupID string
-	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, env)
 	if err == nil {
 		groupID = u.GetGroupID()
 	}
@@ -278,7 +279,7 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 }
 
 func authorizeServerAdmin(ctx context.Context, env environment.Env) error {
-	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, env)
 	if err != nil {
 		return err
 	}

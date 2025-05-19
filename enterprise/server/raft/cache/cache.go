@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -307,7 +308,7 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 }
 
 func (rc *RaftCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
-	user, err := rc.env.GetAuthenticator().AuthenticatedUser(ctx)
+	user, err := authutil.AuthorizeGroupAccess(ctx, rc.env)
 	if err != nil {
 		return interfaces.AuthAnonymousUser, DefaultPartitionID, nil
 	}

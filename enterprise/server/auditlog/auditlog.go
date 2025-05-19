@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
@@ -91,7 +92,7 @@ func clearRequestContext(request proto.Message) proto.Message {
 }
 
 func (l *Logger) insertLog(ctx context.Context, resource *alpb.ResourceID, action alpb.Action, request proto.Message) error {
-	u, err := l.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, l.env)
 	if err != nil {
 		return status.WrapError(err, "auth failed")
 	}
@@ -240,7 +241,7 @@ func (l *Logger) fillIDDescriptors(ctx context.Context, e *alpb.Entry_Request) e
 }
 
 func (l *Logger) GetLogs(ctx context.Context, req *alpb.GetAuditLogsRequest) (*alpb.GetAuditLogsResponse, error) {
-	u, err := l.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, l.env)
 	if err != nil {
 		return nil, err
 	}

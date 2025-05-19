@@ -37,7 +37,6 @@ func Configure(t *testing.T, env *real_environment.RealEnv) *testauth.TestAuthen
 			reqCtx := testauth.RequestContext(u.UserID, u.Groups[0].Group.GroupID)
 			ctx = requestcontext.ContextWithProtoRequestContext(ctx, reqCtx)
 		}
-
 		tu, err := claims.ClaimsFromSubID(ctx, env, u.SubID)
 		require.NoError(t, err, "failed to get claims from subid %q", u.SubID)
 		return tu, nil

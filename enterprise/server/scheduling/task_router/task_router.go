@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -317,7 +318,7 @@ type routingParams struct {
 
 func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Action, cmd *repb.Command, remoteInstanceName string) routingParams {
 	groupID := interfaces.AuthAnonymousUser
-	if u, err := env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
+	if u, err := authutil.AuthorizeGroupAccess(ctx, env); err == nil {
 		groupID = u.GetGroupID()
 	}
 	return routingParams{

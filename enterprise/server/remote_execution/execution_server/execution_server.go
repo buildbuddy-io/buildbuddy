@@ -210,7 +210,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	}
 
 	var permissions *perms.UserGroupPerm
-	if u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
+	if u, err := authutil.AuthorizeGroupAccess(ctx, s.env); err == nil && u.GetGroupID() != "" {
 		permissions = perms.DefaultPermissions(u)
 	}
 
@@ -672,7 +672,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	taskGroupID := interfaces.AuthAnonymousUser
-	if user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
+	if user, err := authutil.AuthorizeGroupAccess(ctx, s.env); err == nil {
 		taskGroupID = user.GetGroupID()
 	}
 
@@ -922,7 +922,7 @@ type waitOpts struct {
 
 func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 	if a := s.env.GetAuthenticator(); a != nil {
-		user, err := a.AuthenticatedUser(ctx)
+		user, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 		if err != nil {
 			return interfaces.AuthAnonymousUser
 		}

@@ -251,7 +251,7 @@ func (ws *workflowService) checkPreconditions(ctx context.Context) error {
 	if ws.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
-	if _, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+	if _, err := authutil.AuthorizeGroupAccess(ctx, ws.env); err != nil {
 		return err
 	}
 
@@ -265,7 +265,7 @@ func (ws *workflowService) DeleteLegacyWorkflow(ctx context.Context, req *wfpb.D
 	if req.GetId() == "" && req.GetRepoUrl() == "" {
 		return nil, status.InvalidArgumentError("An ID or repo_url is required to delete a workflow.")
 	}
-	authenticatedUser, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	authenticatedUser, err := authutil.AuthorizeGroupAccess(ctx, ws.env)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +347,7 @@ func (ws *workflowService) GetLegacyWorkflows(ctx context.Context) (*wfpb.GetWor
 		return nil, err
 	}
 
-	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, ws.env)
 	if err != nil {
 		return nil, err
 	}
@@ -397,7 +397,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	// Authenticate
-	user, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	user, err := authutil.AuthorizeGroupAccess(ctx, ws.env)
 	if err != nil {
 		return nil, err
 	}
@@ -580,7 +580,7 @@ func (ws *workflowService) GetLegacyWorkflowIDForGitRepository(groupID string, r
 // As the instance name suffix is used in the snapshot key, this invalidates
 // all previous workflows.
 func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, repoURL string) error {
-	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, ws.env)
 	if err != nil {
 		return err
 	}
@@ -720,7 +720,7 @@ func (ws *workflowService) buildActionHistoryQuery(ctx context.Context, repoUrl 
 	if err := perms.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
 		return nil, err
 	}
-	authenticatedUser, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	authenticatedUser, err := authutil.AuthorizeGroupAccess(ctx, ws.env)
 	if err != nil {
 		return nil, err
 	}
@@ -774,7 +774,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 		return &wfpb.GetWorkflowHistoryResponse{}, nil
 	}
 
-	authenticatedUser, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	authenticatedUser, err := authutil.AuthorizeGroupAccess(ctx, ws.env)
 	if err != nil {
 		return nil, err
 	}
@@ -924,7 +924,7 @@ func (ws *workflowService) legacyGithubTokenForAuthorizedGroup(ctx context.Conte
 	if d == nil {
 		return "", status.FailedPreconditionError("Missing UserDB")
 	}
-	u, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, ws.env)
 	if err != nil {
 		return "", err
 	}

@@ -1861,7 +1861,7 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			require.NoError(t, err)
 			// Re-authenticate with the new role
 			userCtx = authUserCtx(ctx, env, t, "US1")
-			u, err := env.GetAuthenticator().AuthenticatedUser(userCtx)
+			u, err := authutil.AuthorizeGroupAccess(userCtx, env)
 			require.NoError(t, err)
 
 			require.Equal(t, test.ExpectedCapabilities, u.GetCapabilities())

@@ -649,7 +649,7 @@ func newAPIKeyToken() (string, error) {
 }
 
 func (d *AuthDB) authorizeGroupAdminRole(ctx context.Context, groupID string) error {
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return err
 	}
@@ -681,7 +681,7 @@ func (d *AuthDB) CreateImpersonationAPIKey(ctx context.Context, groupID string) 
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
 
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return nil, err
 	}
@@ -765,7 +765,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 		return nil, err
 	}
 
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return nil, err
 	}
@@ -854,7 +854,7 @@ func (d *AuthDB) getAPIKey(ctx context.Context, h interfaces.DB, apiKeyID string
 }
 
 func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error) {
-	user, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	user, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return nil, err
 	}
@@ -932,7 +932,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return nil, err
 	}
@@ -970,7 +970,7 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiK
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key ID is required")
 	}
-	user, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	user, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return nil, err
 	}
@@ -1052,7 +1052,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return nil, err
 	}

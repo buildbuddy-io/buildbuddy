@@ -264,7 +264,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE)
+	canWrite, err := capabilities.IsGranted(ctx, s.env, cappb.Capability_CACHE_WRITE)
 	if err != nil {
 		return nil, err
 	}

@@ -922,7 +922,7 @@ func invocationStatusLabel(ti *tables.Invocation) string {
 }
 
 func (e *EventChannel) getGroupIDForMetrics() string {
-	userInfo, err := e.env.GetAuthenticator().AuthenticatedUser(e.ctx)
+	userInfo, err := authutil.AuthorizeGroupAccess(e.ctx, e.env)
 	if err != nil {
 		return interfaces.AuthAnonymousUser
 	}
@@ -1148,7 +1148,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.BuildEvent) (bool, error) {
 	auth := e.env.GetAuthenticator()
-	if user, err := auth.AuthenticatedUser(e.ctx); err == nil && user != nil {
+	if user, err := authutil.AuthorizeGroupAccess(e.ctx, e.env); err == nil && user != nil {
 		return true, nil
 	}
 	options, err := extractOptions(bazelBuildEvent)
@@ -1252,7 +1252,7 @@ func (e *EventChannel) flushAPIFacets(iid string) error {
 		return nil
 	}
 
-	userInfo, err := e.env.GetAuthenticator().AuthenticatedUser(e.ctx)
+	userInfo, err := authutil.AuthorizeGroupAccess(e.ctx, e.env)
 	if userInfo == nil || err != nil {
 		return nil
 	}
@@ -1275,7 +1275,7 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 		return nil
 	}
 
-	userInfo, err := e.env.GetAuthenticator().AuthenticatedUser(e.ctx)
+	userInfo, err := authutil.AuthorizeGroupAccess(e.ctx, e.env)
 	if userInfo == nil || err != nil {
 		return nil
 	}

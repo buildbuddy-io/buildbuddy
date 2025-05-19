@@ -143,7 +143,7 @@ func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, h interfaces.DB, u
 }
 
 func (d *UserDB) DeleteUserGitHubToken(ctx context.Context) error {
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func (d *UserDB) DeleteUserGitHubToken(ctx context.Context) error {
 }
 
 func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) error {
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return err
 	}
@@ -232,7 +232,7 @@ func (d *UserDB) validateURLIdentifier(ctx context.Context, groupID string, urlI
 }
 
 func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, error) {
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return "", err
 	}
@@ -304,7 +304,7 @@ func (d *UserDB) createGroup(ctx context.Context, tx interfaces.DB, userID strin
 }
 
 func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, error) {
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return "", err
 	}
@@ -442,7 +442,7 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 }
 
 func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error) {
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return 0, err
 	}
@@ -819,7 +819,7 @@ func (d *UserDB) GetUserByID(ctx context.Context, id string) (*tables.User, erro
 		return nil, err
 	}
 
-	authUser, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	authUser, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return nil, err
 	}
@@ -900,7 +900,7 @@ func (d *UserDB) getUser(ctx context.Context, h interfaces.DB, userID string) (*
 }
 
 func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) {
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, d.env)
 	if err != nil {
 		return nil, err
 	}

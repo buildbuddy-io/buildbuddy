@@ -229,7 +229,7 @@ func (s *Service) authorize(ctx context.Context, groupID string) error {
 }
 
 func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func (s *Service) AuthorizeGroup(ctx context.Context, groupID string) error {
 }
 
 func (s *Service) Authorize(ctx context.Context) error {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		// If auth failed we don't need to (and can't) apply IP rules.
 		return nil
@@ -305,7 +305,7 @@ func (s *Service) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) err
 }
 
 func (s *Service) checkAccess(ctx context.Context, groupID string) error {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return err
 	}

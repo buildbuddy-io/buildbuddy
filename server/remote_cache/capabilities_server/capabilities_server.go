@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -115,7 +116,7 @@ func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context) bool 
 	// making AC write requests that would just be dropped anyway. In other
 	// cases, we return true here and defer any auth error handling to the
 	// action cache server when the update is actually attempted.
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return true
 	}

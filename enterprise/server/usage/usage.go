@@ -193,7 +193,7 @@ func (ut *tracker) emitMetrics(groupID string, uc *tables.UsageCounts) {
 }
 
 func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc *tables.UsageCounts) error {
-	u, err := ut.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, ut.env)
 	if err != nil {
 		if authutil.IsAnonymousUserError(err) && ut.env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
 			// Don't track anonymous usage for now.

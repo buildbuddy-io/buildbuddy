@@ -10,6 +10,7 @@ go_library(
         "//server/environment",
         "//server/tables",
         "//server/util/alert",
+        "//server/util/authutil",
         "//server/util/flag",
         "//server/util/urlutil",
     ],

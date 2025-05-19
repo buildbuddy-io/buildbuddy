@@ -3,6 +3,7 @@ package capabilities
 import (
 	"context"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -54,9 +55,9 @@ func ApplyMask(caps []cappb.Capability, mask int32) []cappb.Capability {
 	return FromInt(ToInt(caps) & mask)
 }
 
-func IsGranted(ctx context.Context, authenticator interfaces.Authenticator, cap cappb.Capability) (bool, error) {
-	authIsRequired := !authenticator.AnonymousUsageEnabled(ctx)
-	user, err := authenticator.AuthenticatedUser(ctx)
+func IsGranted(ctx context.Context, env environment.Env, cap cappb.Capability) (bool, error) {
+	authIsRequired := !env.GetAuthenticator().AnonymousUsageEnabled(ctx)
+	user, err := authutil.AuthorizeGroupAccess(ctx, env)
 	if err != nil {
 		if authutil.IsAnonymousUserError(err) {
 			if authIsRequired {

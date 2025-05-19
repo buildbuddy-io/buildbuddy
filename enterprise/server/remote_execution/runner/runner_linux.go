@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -101,7 +102,7 @@ func (r *taskRunner) hasMaxResourceUtilization(ctx context.Context, usageStats *
 
 		if maxedOutStr != "" {
 			var groupID string
-			u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
+			u, err := authutil.AuthorizeGroupAccess(ctx, r.env)
 			if err == nil {
 				groupID = u.GetGroupID()
 			}

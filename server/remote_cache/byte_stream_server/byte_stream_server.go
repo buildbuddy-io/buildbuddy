@@ -241,7 +241,7 @@ func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteReques
 		resourceName:       r,
 		resourceNameString: req.ResourceName,
 	}
-	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	canWrite, err := capabilities.IsGranted(ctx, s.env, cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
 	if err != nil {
 		return nil, err
 	}

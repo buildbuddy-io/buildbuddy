@@ -243,7 +243,7 @@ func (s *GitHubAppService) InstallPath(ctx context.Context) (string, error) {
 // is still valid. It's possible that access is revoked from GitHub and not reflected
 // in our database.
 func (s *GitHubAppService) GetGitHubAppInstallations(ctx context.Context) ([]*tables.GitHubAppInstallation, error) {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +261,7 @@ func (s *GitHubAppService) GetGitHubAppInstallations(ctx context.Context) ([]*ta
 }
 
 func (s *GitHubAppService) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetLinkedReposResponse, error) {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -643,7 +643,7 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *ta
 // A linked installation existing in the BB doesn't guarantee that the installation
 // is still valid from the GitHub side.
 func (a *GitHubApp) LinkGitHubAppInstallation(ctx context.Context, req *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error) {
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, a.env)
 	if err != nil {
 		return nil, err
 	}
@@ -658,7 +658,7 @@ func (a *GitHubApp) LinkGitHubAppInstallation(ctx context.Context, req *ghpb.Lin
 }
 
 func (a *GitHubApp) linkInstallation(ctx context.Context, installation *github.Installation, groupID string) error {
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, a.env)
 	if err != nil {
 		return err
 	}
@@ -749,7 +749,7 @@ func (a *GitHubApp) createInstallation(ctx context.Context, in *tables.GitHubApp
 }
 
 func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error) {
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, a.env)
 	if err != nil {
 		return nil, err
 	}
@@ -815,7 +815,7 @@ func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.L
 		return nil, err
 	}
 
-	if _, err := a.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+	if _, err := authutil.AuthorizeGroupAccess(ctx, a.env); err != nil {
 		return nil, err
 	}
 	p, err := perms.ForAuthenticatedGroup(ctx, a.env)
@@ -859,7 +859,7 @@ func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRe
 		return nil, status.InvalidArgumentErrorf("failed to parse repo URL: %s", err)
 	}
 	normalizedURL := norm.String()
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, a.env)
 	if err != nil {
 		return nil, err
 	}
@@ -2725,7 +2725,7 @@ func (a *GitHubApp) cached(ctx context.Context, key string, v any, exp time.Dura
 		pr, _, err := fetch()
 		return pr, err
 	}
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, a.env)
 	if err != nil {
 		return nil, err
 	}

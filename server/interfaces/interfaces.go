@@ -185,6 +185,8 @@ type UserAuthenticator interface {
 	// AuthenticatedUser returns the UserInfo stored in the context.
 	//
 	// See AuthenticatedHTTPContext/AuthenticatedGRPCContext for a description of how the context is created.
+	//
+	// For basic authorization checks, use authutil.AuthorizeGroupAccess instead.
 	AuthenticatedUser(ctx context.Context) (UserInfo, error)
 }
 type APIKeyAuthenticator interface {

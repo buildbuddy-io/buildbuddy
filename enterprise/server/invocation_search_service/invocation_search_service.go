@@ -69,7 +69,7 @@ func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, 
 	q := query_builder.NewQuery(`SELECT * FROM "Invocations"`)
 	q.AddWhereClause("invocation_id IN ?", invocationIds)
 	addOrderBy(sort, q)
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +252,7 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	if err := s.checkPreconditions(req); err != nil {
 		return "", nil, err
 	}
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return "", nil, err
 	}

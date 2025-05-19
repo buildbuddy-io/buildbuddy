@@ -1135,7 +1135,7 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 		return sharedPool, nil
 	}
 
-	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	user, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		if s.env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
 			if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
@@ -2224,7 +2224,7 @@ func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueue
 }
 
 func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupID string) ([]*scpb.ExecutionNode, error) {
-	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	user, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -2277,7 +2277,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		userOwnedExecutorsEnabled = false
 	}
 
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	u, err := authutil.AuthorizeGroupAccess(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
