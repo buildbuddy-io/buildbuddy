@@ -538,6 +538,16 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 	return startupOptionInsertIndex, commandOptionInsertIndex, fmt.Errorf("Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.", option.Name(), command)
 }
 
+type Config struct {
+	ByPhase map[string][]arguments.Argument
+}
+
+func NewConfig() *Config {
+	return &Config{
+		ByPhase: make(map[string][]arguments.Argument),
+	}
+}
+
 // Offset exists as a temporary hack while we continue to move away from
 // passing arguments around as strings. It returns the offset in the
 // string-based arg slice where the argument at this index is located.
@@ -670,6 +680,8 @@ func (a *PartitionedArgs) RemoveOptions(optionNames ...string) []*IndexedOption 
 func (a *PartitionedArgs) Append(args ...arguments.Argument) error {
 	for _, arg := range args {
 		switch arg := arg.(type) {
+		case *arguments.DoubleDash:
+			// skip
 		case *arguments.PositionalArgument:
 			switch {
 			case a.Command == nil:

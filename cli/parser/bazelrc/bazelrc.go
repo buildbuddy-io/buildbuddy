@@ -3,6 +3,7 @@ package bazelrc
 import (
 	"bufio"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -58,6 +59,18 @@ var (
 		"coverage": "test",
 	}
 
+	commonPhases = map[string]struct{}{
+		"common": {},
+		"always": {},
+	}
+
+	allPhases = func() map[string]struct{} {
+		v := maps.Clone(bazelCommands)
+		maps.Insert(v, maps.All(commonPhases))
+		v["startup"] = struct{}{}
+		return v
+	}()
+
 	StartupFlagNoRc = map[string]struct{}{
 		"ignore_all_rc_files": {},
 		"home_rc":             {},
@@ -69,43 +82,12 @@ var (
 
 // RcRule is a rule parsed from a bazelrc file.
 type RcRule struct {
-	Phase  string
-	Config string
+	Phase string
+	// Make Config a pointer to a string so we can distinguish default configs
+	// from configs with blank names.
+	Config *string
 	// Tokens contains the raw (non-canonicalized) tokens in the rule.
 	Tokens []string
-}
-
-type Rules struct {
-	All              []*RcRule
-	ByPhaseAndConfig map[string]map[string][]*RcRule
-}
-
-func StructureRules(rules []*RcRule) *Rules {
-	r := &Rules{
-		All:              rules,
-		ByPhaseAndConfig: map[string]map[string][]*RcRule{},
-	}
-	for _, rule := range rules {
-		byConfig := r.ByPhaseAndConfig[rule.Phase]
-		if byConfig == nil {
-			byConfig = map[string][]*RcRule{}
-			r.ByPhaseAndConfig[rule.Phase] = byConfig
-		}
-		byConfig[rule.Config] = append(byConfig[rule.Config], rule)
-	}
-	return r
-}
-
-func (r *Rules) ForPhaseAndConfig(phase, config string) []*RcRule {
-	byConfig := r.ByPhaseAndConfig[phase]
-	if byConfig == nil {
-		return nil
-	}
-	return byConfig[config]
-}
-
-func (r *RcRule) String() string {
-	return fmt.Sprintf("phase=%q,config=%q,tokens=%v", r.Phase, r.Config, r.Tokens)
 }
 
 // getPhases returns the command's inheritance hierarchy in increasing order of
@@ -128,35 +110,42 @@ func GetPhases(command string) (out []string) {
 	return
 }
 
-func appendRcRulesFromImport(workspaceDir, path string, opts []*RcRule, optional bool, importStack []string) ([]*RcRule, error) {
+func appendRcRulesFromImport(workspaceDir, path string, namedConfigs map[string]map[string][]string, defaultConfig map[string][]string, optional bool, importStack []string) error {
 	if strings.HasPrefix(path, workspacePrefix) {
 		path = filepath.Join(workspaceDir, path[len(workspacePrefix):])
 	}
-
-	file, err := os.Open(path)
+	rpath, err := Realpath(path)
 	if err != nil {
 		if optional {
-			return opts, nil
+			return nil
 		}
-		return nil, err
+		return fmt.Errorf("could not determine real path of bazelrc file: %s", err)
 	}
-	defer file.Close()
-	return appendRcRulesFromFile(workspaceDir, file, opts, importStack)
+
+	return AppendRcRulesFromFile(workspaceDir, rpath, namedConfigs, defaultConfig, importStack, optional)
 }
 
-func appendRcRulesFromFile(workspaceDir string, f *os.File, rules []*RcRule, importStack []string) ([]*RcRule, error) {
-	rpath, err := realpath(f.Name())
-	if err != nil {
-		return nil, fmt.Errorf("could not determine real path of bazelrc file: %s", err)
-	}
-	for _, path := range importStack {
-		if path == rpath {
-			return nil, fmt.Errorf("circular import detected: %s -> %s", strings.Join(importStack, " -> "), rpath)
-		}
+// AppendRCRulesFromFile reads and lexes the provided rc file and appends the
+// args to the provided configs based on the detected phase and name.
+//
+// configs is a map keyed by config name where the values are maps keyed by
+// phase name where the values are lists containing all the rules for that
+// config in the order they are encountered.
+func AppendRcRulesFromFile(workspaceDir string, rpath string, namedConfigs map[string]map[string][]string, defaultConfig map[string][]string, importStack []string, optional bool) error {
+	if slices.Contains(importStack, rpath) {
+		return fmt.Errorf("circular import detected: %s -> %s", strings.Join(importStack, " -> "), rpath)
 	}
 	importStack = append(importStack, rpath)
+	file, err := os.Open(rpath)
+	if err != nil {
+		if optional {
+			return nil
+		}
+		return err
+	}
+	defer file.Close()
 
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
 		// Handle line continuations (lines can end with "\" to effectively
@@ -175,9 +164,8 @@ func appendRcRulesFromFile(workspaceDir string, f *os.File, rules []*RcRule, imp
 		if tokens[0] == "import" || tokens[0] == "try-import" {
 			isOptional := tokens[0] == "try-import"
 			path := strings.TrimSpace(strings.TrimPrefix(line, tokens[0]))
-			rules, err = appendRcRulesFromImport(workspaceDir, path, rules, isOptional, importStack)
-			if err != nil {
-				return nil, err
+			if err = appendRcRulesFromImport(workspaceDir, path, namedConfigs, defaultConfig, isOptional, importStack); err != nil {
+				return err
 			}
 			continue
 		}
@@ -190,18 +178,29 @@ func appendRcRulesFromFile(workspaceDir string, f *os.File, rules []*RcRule, imp
 		if rule == nil {
 			continue
 		}
-		// Bazel doesn't support configs for startup options and ignores them if
-		// they appear in a bazelrc: https://bazel.build/run/bazelrc#config
-		if rule.Phase == "startup" && rule.Config != "" {
+		if rule.Config == nil {
+			defaultConfig[rule.Phase] = append(defaultConfig[rule.Phase], rule.Tokens...)
 			continue
 		}
-		rules = append(rules, rule)
+		// Bazel doesn't support named configs for startup options and ignores them
+		// if they appear in a bazelrc: https://bazel.build/run/bazelrc#config
+		if rule.Phase == "startup" {
+			continue
+		}
+		config, ok := namedConfigs[*rule.Config]
+		if !ok {
+			config = make(map[string][]string)
+			namedConfigs[*rule.Config] = config
+		}
+		config[rule.Phase] = append(config[rule.Phase], rule.Tokens...)
 	}
-	log.Debugf("Adding rc rules from %q: %v", rpath, rules)
-	return rules, scanner.Err()
+	log.Debugf("Added rc rules from %q; new configs: %#v", rpath, namedConfigs)
+	return scanner.Err()
 }
 
-func realpath(path string) (string, error) {
+// Realpath evaluates any symlinks in the given path and then returns the
+// absolute path.
+func Realpath(path string) (string, error) {
 	directPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return "", err
@@ -229,55 +228,24 @@ func parseRcRule(line string) (*RcRule, error) {
 		// bazel ignores .bazelrc lines consisting of a single shlex token
 		return nil, nil
 	}
-	if strings.HasPrefix(tokens[0], "-") {
-		return &RcRule{
-			Phase:  "common",
-			Tokens: tokens,
-		}, nil
+	phase := tokens[0]
+	var configName *string
+	if colonIndex := strings.Index(tokens[0], ":"); colonIndex != -1 {
+		phase = tokens[0][:colonIndex]
+		v := tokens[0][colonIndex+1:]
+		configName = &v
 	}
-	if !strings.Contains(tokens[0], ":") {
-		return &RcRule{
-			Phase:  tokens[0],
-			Tokens: tokens[1:],
-		}, nil
-	}
-	phaseConfig := strings.Split(tokens[0], ":")
-	if len(phaseConfig) != 2 {
-		return nil, fmt.Errorf("invalid bazelrc syntax: %s", phaseConfig)
-	}
+
 	return &RcRule{
-		Phase:  phaseConfig[0],
-		Config: phaseConfig[1],
+		Phase:  phase,
+		Config: configName,
 		Tokens: tokens[1:],
 	}, nil
 }
 
-func ParseRCFiles(workspaceDir string, filePaths ...string) ([]*RcRule, error) {
-	opts := make([]*RcRule, 0)
-	seen := map[string]bool{}
-	for _, filePath := range filePaths {
-		r, err := realpath(filePath)
-		if err != nil {
-			continue
-		}
-		if seen[r] {
-			continue
-		}
-		seen[r] = true
-
-		file, err := os.Open(filePath)
-		if err != nil {
-			continue
-		}
-		defer file.Close()
-		opts, err = appendRcRulesFromFile(workspaceDir, file, opts, nil /*=importStack*/)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return opts, nil
-}
-
+// GetBazelOS returns the os string that `enable_platform_specific_config` will
+// expect based on the detected runtime.GOOS.
+//
 // Mirroring the behavior here:
 // https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java#L41
 func GetBazelOS() string {
@@ -297,12 +265,28 @@ func GetBazelOS() string {
 	}
 }
 
+// IsBazelCommand returns whether the given string is recognized as a bazel
+// command.
 func IsBazelCommand(command string) bool {
 	_, ok := bazelCommands[command]
 	return ok
 }
 
+// Parent returns the parent command of the given command, if one exists.
 func Parent(command string) (string, bool) {
 	parent, ok := parentCommand[command]
 	return parent, ok
+}
+
+// IsCommonPhase returns whether or not this is a phase that should always
+// be evaluated, regardless of the command.
+func IsCommonPhase(phase string) bool {
+	_, ok := commonPhases[phase]
+	return ok
+}
+
+// IsPhase returns whether or not this is a valid phase for a bazel rc line.
+func IsPhase(phase string) bool {
+	_, ok := allPhases[phase]
+	return ok
 }

@@ -46,10 +46,12 @@ func TestNegativeStarlarkFlagWithValue(t *testing.T) {
 			p, err := GetParser()
 			require.NoError(t, err)
 			defer delete(p.ByName, "@io_bazel_rules_docker//transitions:enable")
-			expandedArgs, err := p.expandConfigs(ws, test.Args)
+			parsedArgs, err := ParseArgs(test.Args)
+			require.NoError(t, err)
+			expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 			require.NoError(t, err, "error expanding %s", test.Args)
-			assert.Equal(t, test.Expanded, expandedArgs)
+			assert.Equal(t, test.Expanded, expandedArgs.Format())
 		})
 	}
 }
@@ -83,10 +85,12 @@ func TestParseBazelrc_Simple(t *testing.T) {
 			p, err := GetParser()
 			require.NoError(t, err)
 			defer delete(p.ByName, "@io_bazel_rules_docker//transitions:enable")
-			expandedArgs, err := p.expandConfigs(ws, test.Args)
+			parsedArgs, err := ParseArgs(test.Args)
+			require.NoError(t, err)
+			expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 			require.NoError(t, err, "error expanding %s", test.Args)
-			assert.Equal(t, test.Expanded, expandedArgs)
+			assert.Equal(t, test.Expanded, expandedArgs.Format())
 		})
 	}
 }
@@ -349,9 +353,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			p, err := GetParser()
+			parsedArgs, err := ParseArgs(tc.args)
 			require.NoError(t, err)
-			expandedArgs, err := p.expandConfigs(ws, tc.args)
+			expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 			if tc.errorContents != nil {
 				for _, ec := range tc.errorContents {
@@ -361,7 +365,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				require.NoError(t, err, "error expanding %s", tc.args)
 			}
 			if tc.expectedExpandedArgs != nil {
-				assert.Equal(t, tc.expectedExpandedArgs, expandedArgs)
+				assert.Equal(t, tc.expectedExpandedArgs, expandedArgs.Format())
 			}
 		})
 	}
@@ -380,13 +384,15 @@ build:d --config=d
 `,
 	})
 
-	p, err := GetParser()
+	parsedArgs, err := ParseArgs([]string{"build", "--config=a"})
 	require.NoError(t, err)
-	_, err = p.expandConfigs(ws, []string{"build", "--config=a"})
-	require.Error(t, err)
+	_, err = resolveArgs(parsedArgs, ws)
+
 	assert.Contains(t, err.Error(), "circular --config reference detected: a -> b -> c -> a")
 
-	_, err = p.expandConfigs(ws, []string{"build", "--config=d"})
+	parsedArgs, err = ParseArgs([]string{"build", "--config=d"})
+	require.NoError(t, err)
+	_, err = resolveArgs(parsedArgs, ws)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular --config reference detected: d -> d")
 }
@@ -402,11 +408,9 @@ func TestParseBazelrc_CircularImport(t *testing.T) {
 
 	p, err := GetParser()
 	require.NoError(t, err)
-	_, err = p.expandConfigs(ws, []string{"build"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "circular import detected:")
-
-	_, err = p.expandConfigs(ws, []string{"build"})
+	args, err := p.ParseArgs([]string{"build"})
+	require.NoError(t, err)
+	_, _, err = p.consumeAndParseRCFiles(args, ws)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular import detected:")
 }
@@ -473,12 +477,12 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			p, err := GetParser()
+			parsedArgs, err := ParseArgs(test.args)
 			require.NoError(t, err)
-			expandedArgs, err := p.expandConfigs(ws, test.args)
+			expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 			require.NoError(t, err, "error expanding %s", test.args)
-			assert.Equal(t, test.expectedExpandedArgs, expandedArgs)
+			assert.Equal(t, test.expectedExpandedArgs, expandedArgs.Format())
 		})
 	}
 }
@@ -690,15 +694,12 @@ func TestCommonUndocumentedOption(t *testing.T) {
 		"build",
 		"--experimental_skip_ttvs_for_genquery",
 	}
-	p, err := GetParser()
+	parsedArgs, err := ParseArgs(args)
 	require.NoError(t, err)
-	expandedArgs, err := p.expandConfigs(
-		ws,
-		args,
-	)
+	expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 	require.NoError(t, err, "error expanding %s", args)
-	assert.Equal(t, expectedExpandedArgs, expandedArgs)
+	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
 }
 
 func TestCommonPositionalArgument(t *testing.T) {
@@ -717,13 +718,10 @@ func TestCommonPositionalArgument(t *testing.T) {
 		"build",
 		"foo",
 	}
-	p, err := GetParser()
+	parsedArgs, err := ParseArgs(args)
 	require.NoError(t, err)
-	expandedArgs, err := p.expandConfigs(
-		ws,
-		args,
-	)
+	expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 	require.NoError(t, err, "error expanding %s", args)
-	assert.Equal(t, expectedExpandedArgs, expandedArgs)
+	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
 }
