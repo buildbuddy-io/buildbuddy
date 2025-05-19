@@ -23,6 +23,7 @@ go_test(
     srcs = ["mockmetadata_test.go"],
     deps = [
         ":mockmetadata",
+        "//enterprise/server/filestore",
         "//proto:metadata_go_proto",
         "//proto:storage_go_proto",
         "//server/testutil/testdigest",

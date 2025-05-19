@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/mockmetadata"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -38,7 +39,7 @@ func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
 }
 
 func TestBasicOperations(t *testing.T) {
-	mm, err := mockmetadata.NewServer(1024)
+	mm, err := mockmetadata.NewServer(1024, filestore.New())
 	require.NoError(t, err)
 
 	// Generate a random FileMetadata.
