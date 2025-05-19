@@ -1,6 +1,8 @@
 package lockmap
 
 import (
+	"math/rand/v2"
+	"strconv"
 	"testing"
 	"time"
 
@@ -72,19 +74,34 @@ func TestRLock(t *testing.T) {
 	}
 }
 
-func BenchmarkLockQPS(b *testing.B) {
+func benchmarkLock(b *testing.B, keyCount int) {
 	l := New()
 	defer l.Close()
 
+	keys := make([]string, keyCount)
+	var err error
+	for i := range keys {
+		keys[i], err = random.RandomString(64)
+		require.NoError(b, err)
+	}
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
+		i := rand.IntN(len(keys))
 		for pb.Next() {
-			r, err := random.RandomString(64)
-			require.Nil(b, err)
-			unlock := l.Lock(r)
+			unlock := l.Lock(keys[i])
 			unlock()
+			i = (i + 1) % len(keys)
 		}
 	})
+}
+
+func BenchmarkLockQPS(b *testing.B) {
+	// Fewer unique keys should have more contention.
+	for _, keyCount := range []int{1, 10, 1000, 10000} {
+		b.Run(strconv.Itoa(keyCount), func(b *testing.B) {
+			benchmarkLock(b, keyCount)
+		})
+	}
 }
 
 func BenchmarkRLockQPS(b *testing.B) {
@@ -93,6 +110,7 @@ func BenchmarkRLockQPS(b *testing.B) {
 
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
+		// Each goroutine gets a unique key, so there should be no contention.
 		r, err := random.RandomString(64)
 		require.Nil(b, err)
 
