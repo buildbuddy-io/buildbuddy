@@ -373,6 +373,15 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		log.CtxInfo(ctx, "Successfully wrote invocation to redis")
 	}
 
+	// Once we've flushed execution stats to ClickHouse for this invocation,
+	// clean up the invocation => execution links, since these are only needed
+	// for listing in-progress executions linked to an invocation, and this
+	// listing will now be queryable using ClickHouse.
+	defer func() {
+		if err := r.env.GetExecutionCollector().DeleteInvocationExecutionLinks(ctx, inv.InvocationID); err != nil {
+			log.CtxErrorf(ctx, "Failed to clean up reverse invocation links for invocation %q: %s", inv.InvocationID, err)
+		}
+	}()
 	for {
 		endIndex = startIndex + batchSize - 1
 		executions, err := r.env.GetExecutionCollector().GetExecutions(ctx, inv.InvocationID, int64(startIndex), int64(endIndex))
