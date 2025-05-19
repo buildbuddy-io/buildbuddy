@@ -148,7 +148,71 @@ func (css *codesearchServer) getUserNamespace(ctx context.Context, requestedName
 	return namespace, nil
 }
 
-func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+	repoURLString := req.GetGitRepo().GetRepoUrl()
+	repoURL, err := git.ParseGitHubRepoURL(repoURLString)
+	if err != nil {
+		return nil, err
+	}
+
+	r := index.NewReader(ctx, css.db, req.GetNamespace(), schema.MetadataSchema())
+	lastIndexedSHA, err := github.GetLastIndexedCommitSha(r, repoURL)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return nil, status.InvalidArgumentError(fmt.Sprintf("No previous indexing found for repo %s. Use FULL_REINDEX instead of INCREMENTAL_REINDEX.", repoURL))
+		} else {
+			return nil, err
+		}
+	}
+
+	commits := req.GetUpdate().GetCommits()
+
+	if len(commits) == 0 {
+		// Nothing to do, bye
+		return &inpb.IndexResponse{}, nil
+	}
+
+	firstIndexToProcess := -1
+	for i, commit := range commits {
+		// We currently only support sequential commits, with no gaps.
+		// We could do a topological sort, but we just don't need that right now.
+		if i > 1 && commit.GetParentSha() != commits[i-1].GetSha() {
+			return nil, status.InvalidArgumentError(fmt.Sprintf("Commits must be sequential. Commit %s is not preceded by its parent", commit.GetSha()))
+		}
+		if commit.GetParentSha() == lastIndexedSHA {
+			firstIndexToProcess = i
+		}
+	}
+	if firstIndexToProcess == -1 {
+		return nil, status.InvalidArgumentError(fmt.Sprintf("Last processed commit was %s; no commits found with this parent", lastIndexedSHA))
+	}
+
+	commits = commits[firstIndexToProcess:]
+
+	iw, err := index.NewWriter(css.db, req.GetNamespace())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, commit := range commits {
+		if err := github.ProcessCommit(iw, repoURL, commit); err != nil {
+			return nil, status.InternalErrorf("Failed to process commit %s: %v", commit.GetSha(), err)
+		}
+	}
+
+	err = github.SetLastIndexedCommitSha(iw, repoURL, commits[len(commits)-1].GetSha())
+	if err != nil {
+		return nil, fmt.Errorf("Failed to finalize update: %w", err)
+	}
+
+	if err := iw.Flush(); err != nil {
+		return nil, err
+	}
+
+	return &inpb.IndexResponse{}, nil
+}
+
+func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
 	// TODO(jdelfino): This implementation does not remove files which have been deleted since the
 	// the previously indexed version of the repository. Note that a namespace can include multiple
 	// repos, so implementing this would require explicit iteration and deletion of each document
@@ -183,7 +247,6 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 	if _, err := io.Copy(tmpFile, httpRsp.Body); err != nil {
 		return nil, err
 	}
-	log.Debugf("Copied archive to %q", tmpFile.Name())
 
 	zipReader, err := zip.OpenReader(tmpFile.Name())
 	if err != nil {
@@ -213,17 +276,8 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 			return nil, err
 		}
 
-		fields, err := github.ExtractFields(filename, commitSHA, repoURL, buf)
+		err = github.AddFileToIndex(iw, repoURL, commitSHA, filename, buf)
 		if err != nil {
-			log.Debug(err.Error())
-			continue
-		}
-		doc, err := schema.GitHubFileSchema().MakeDocument(fields)
-		if err != nil {
-			log.Debug(err.Error())
-			continue
-		}
-		if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
 			return nil, err
 		}
 	}
@@ -272,13 +326,22 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 
 		log.Infof("Starting indexing %q@%s", repoURL, commitSHA)
 
-		r, err := css.syncIndex(ctx, req)
+		var err error
+		switch req.GetReplacementStrategy() {
+		case inpb.ReplacementStrategy_INCREMENTAL:
+			rsp, err = css.incrementalUpdate(ctx, req)
+		case inpb.ReplacementStrategy_REPLACE_REPO:
+			rsp, err = css.fullyReindex(ctx, req)
+		default:
+			return status.InvalidArgumentErrorf("Invalid replacement strategy %s", req.GetReplacementStrategy())
+		}
+
 		if err != nil {
-			log.Errorf("Failed indexing %q: %s", repoURL, err)
+			log.Errorf("Failed indexing %q: %s", req.GetGitRepo().GetRepoUrl(), err)
 			return err
 		}
-		rsp = r
-		log.Infof("Finished indexing %q@%s", repoURL, commitSHA)
+
+		log.Infof("Finished indexing %s at commit %s", req.GetGitRepo().GetRepoUrl(), req.GetRepoState().GetCommitSha())
 		return nil
 	})
 	if req.GetAsync() {
