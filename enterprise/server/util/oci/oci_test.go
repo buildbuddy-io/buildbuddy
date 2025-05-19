@@ -520,41 +520,44 @@ func TestResolve_WithCache(t *testing.T) {
 					})
 					registry.PushIndex(t, index, tc.imageName+"_index")
 
-					resolveAndCheck := func(imageName string, expectedCount int) {
-						counterBefore := counter.Load()
+					resolveAndCheck := func(imageName string, expectedResolveCount int, expectedLayersCount int) {
+						counterBeforeResolve := counter.Load()
 						pulledImage, err := newResolver(t, te).Resolve(
 							context.Background(),
 							registry.ImageAddress(imageName),
 							tc.args.platform,
 							tc.args.credentials,
 						)
-						counterAfter := counter.Load()
+						counterAfterResolve := counter.Load()
 						if tc.checkError != nil {
 							require.True(t, tc.checkError(err))
 						} else {
 							require.NoError(t, err)
 
-							require.Equal(t, int32(expectedCount), counterAfter-counterBefore)
+							require.Equal(t, int32(expectedResolveCount), counterAfterResolve-counterBeforeResolve)
 
 							layers, err := pulledImage.Layers()
 							require.NoError(t, err)
 							require.Equal(t, 1, len(layers))
 							require.Empty(t, cmp.Diff(tc.imageFiles, layerFiles(t, layers[0])))
+
+							counterAfterLayers := counter.Load()
+							require.Equal(t, int32(expectedLayersCount), counterAfterLayers-counterAfterResolve)
 						}
 					}
 
-					resolveAndCheck(tc.args.imageName+"_image", 1)
-					upstreamGets := 1
+					resolveAndCheck(tc.args.imageName+"_image", 1, 1)
+					resolveGets := 1
 					if readManifests && writeManifests {
-						upstreamGets = 0
+						resolveGets = 0
 					}
-					resolveAndCheck(tc.args.imageName+"_image", upstreamGets)
-					resolveAndCheck(tc.args.imageName+"_index", 2)
-					upstreamGets = 2
+					resolveAndCheck(tc.args.imageName+"_image", resolveGets, 1)
+					resolveAndCheck(tc.args.imageName+"_index", 2, 1)
+					resolveGets = 2
 					if readManifests && writeManifests {
-						upstreamGets = 0
+						resolveGets = 0
 					}
-					resolveAndCheck(tc.args.imageName+"_index", upstreamGets)
+					resolveAndCheck(tc.args.imageName+"_index", resolveGets, 1)
 				})
 			}
 		}
