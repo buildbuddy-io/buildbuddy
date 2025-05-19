@@ -924,13 +924,25 @@
 
 .invocation-execution-row .execution-header {
   display: flex;
+  align-items: baseline;
   gap: 8px;
   margin-bottom: 4px;
+  font-size: 15px;
 }
 
-.invocation-execution-row .target-label {
-  font-size: 15px;
+.invocation-execution-row .execution-label {
   font-weight: 600;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.invocation-execution-row .breadcrumb-separator {
+  /* Use em units to match text size. */
+  width: 1em;
+  height: 1em;
+  /* Offset for optical alignment. */
+  transform: translateY(0.15em);
 }
 
 .invocation-execution-row .command-snippet {

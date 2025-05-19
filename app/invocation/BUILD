@@ -338,11 +338,13 @@ ts_library(
     srcs = ["invocation_execution_table.tsx"],
     deps = [
         "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//app/components/digest",
         "//app/components/link",
         "//app/format",
         "//app/invocation:invocation_execution_util",
+        "//app/util:react",
         "//proto:execution_stats_ts_proto",
     ],
 )
