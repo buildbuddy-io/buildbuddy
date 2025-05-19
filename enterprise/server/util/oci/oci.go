@@ -36,7 +36,8 @@ var (
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
-	writeManifestsToCache = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
+	writeManifestsToCache  = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
+	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from cache before fetching from upstream remote registry.")
 
 	defaultPlatform = gcr.Platform{
 		Architecture: "amd64",
@@ -277,6 +278,8 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		}
 	}
 
+	// Unless the manifest is an index (in which case, we need to fetch the appropriate manifest for the input platform below),
+	// return an Image constructed from this manifest.
 	if manifest.MediaType != types.OCIImageIndex && manifest.MediaType != types.DockerManifestList {
 		image := &imageFromManifest{
 			digest: imageRef.Context().Digest(manifestHash.String()),
@@ -348,12 +351,14 @@ func (r *Resolver) fetchRawManifestFromCacheOrRemote(ctx context.Context, digest
 		return nil, nil, false, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	mc, err := ocicache.FetchManifestFromAC(ctx, r.env.GetActionCacheClient(), digestOrTagRef, headDesc.Digest)
-	if err == nil {
-		return &headDesc.Digest, mc.Raw, true, nil
-	}
-	if !status.IsNotFoundError(err) {
-		log.CtxErrorf(ctx, "error fetching manifest %s from the CAS: %s", digestOrTagRef.Context(), err)
+	if *readManifestsFromCache {
+		mc, err := ocicache.FetchManifestFromAC(ctx, r.env.GetActionCacheClient(), digestOrTagRef, headDesc.Digest)
+		if err == nil {
+			return &headDesc.Digest, mc.Raw, true, nil
+		}
+		if !status.IsNotFoundError(err) {
+			log.CtxErrorf(ctx, "error fetching manifest %s from the CAS: %s", digestOrTagRef.Context(), err)
+		}
 	}
 
 	manifestDigest := digestOrTagRef.Context().Digest(headDesc.Digest.String())
@@ -380,6 +385,8 @@ func (i *imageFromManifest) RawManifest() ([]byte, error) {
 	return i.rawManifest, nil
 }
 
+// RawConfigFile returns the config file data from the parsed manifest if present,
+// otherwise it fetches the config file from the upstream remote registry.
 func (i *imageFromManifest) RawConfigFile() ([]byte, error) {
 	if i.manifest.Config.Data != nil {
 		return i.manifest.Config.Data, nil
@@ -406,6 +413,8 @@ func (i *imageFromManifest) MediaType() (types.MediaType, error) {
 	return i.manifest.MediaType, nil
 }
 
+// LayerByDigest fetches the specified layer from the upstream remote registry
+// or returns a NotFoundError.
 func (i *imageFromManifest) LayerByDigest(hash gcr.Hash) (partial.CompressedLayer, error) {
 	for _, d := range i.manifest.Layers {
 		if d.Digest == hash {
