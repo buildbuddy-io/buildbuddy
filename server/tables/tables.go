@@ -314,7 +314,7 @@ func (u *User) TableName() string {
 func (u *User) ToProto() *uspb.DisplayUser {
 	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
 	// Use the github username as the name, if no name is set.
-	if name == "" && strings.HasPrefix(u.SubID, "https://github.com") {
+	if name == "" && strings.HasPrefix(u.SubID, "https://github.com/") {
 		name = strings.TrimPrefix(u.SubID, "https://github.com/")
 	}
 	return &uspb.DisplayUser{
