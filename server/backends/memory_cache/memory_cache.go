@@ -246,7 +246,3 @@ func (m *MemoryCache) Stop() error {
 func (m *MemoryCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
-
-func (c *MemoryCache) SupportsEncryption(ctx context.Context) bool {
-	return false
-}
