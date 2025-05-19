@@ -97,7 +97,7 @@ func benchmarkLock(b *testing.B, keyCount int) {
 
 func BenchmarkLockQPS(b *testing.B) {
 	// Fewer unique keys should have more contention.
-	for _, keyCount := range []int{1, 10, 1000, 1000000} {
+	for _, keyCount := range []int{1, 10, 1000, 10000} {
 		b.Run(strconv.Itoa(keyCount), func(b *testing.B) {
 			benchmarkLock(b, keyCount)
 		})
