@@ -382,8 +382,8 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		if len(executions) == 0 {
 			break
 		}
-		err = r.env.GetOLAPDBHandle().FlushExecutionStats(ctx, storedInv, executions)
-		if err != nil {
+		if err := r.env.GetOLAPDBHandle().FlushExecutionStats(ctx, storedInv, executions); err != nil {
+			log.CtxErrorf(ctx, "Failed to flush executions to OLAP DB: %s", err)
 			break
 		}
 		log.CtxInfof(ctx, "successfully wrote %d executions", len(executions))
