@@ -800,6 +800,17 @@ func appendExpansion(
 	return expanded, nil
 }
 
+// Offset exists as a temporary hack while we continue to move away from
+// passing arguments around as strings. It returns the offset in the
+// string-based arg slice where the argument at this index is located.
+func (a *OrderedArgs) Offset(index int) int {
+	offset := 0
+	for _, arg := range a.Args[:index] {
+		offset += len(arg.Format())
+	}
+	return offset
+}
+
 func Partition(args []arguments.Argument) *PartitionedArgs {
 	partitioned := &PartitionedArgs{}
 	for _, c := range Classify(args) {

@@ -125,9 +125,6 @@ func appendRcRulesFromImport(workspaceDir, path string, namedConfigs map[string]
 	return AppendRcRulesFromFile(workspaceDir, rpath, namedConfigs, defaultConfig, importStack, optional)
 }
 
-// AppendRCRulesFromFile reads and lexes the provided rc file and appends the
-// args to the provided configs based on the detected phase and name.
-//
 // configs is a map keyed by config name where the values are maps keyed by
 // phase name where the values are lists containing all the rules for that
 // config in the order they are encountered.
@@ -198,8 +195,6 @@ func AppendRcRulesFromFile(workspaceDir string, rpath string, namedConfigs map[s
 	return scanner.Err()
 }
 
-// Realpath evaluates any symlinks in the given path and then returns the
-// absolute path.
 func Realpath(path string) (string, error) {
 	directPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -243,9 +238,6 @@ func parseRcRule(line string) (*RcRule, error) {
 	}, nil
 }
 
-// GetBazelOS returns the os string that `enable_platform_specific_config` will
-// expect based on the detected runtime.GOOS.
-//
 // Mirroring the behavior here:
 // https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/runtime/ConfigExpander.java#L41
 func GetBazelOS() string {
@@ -265,27 +257,21 @@ func GetBazelOS() string {
 	}
 }
 
-// IsBazelCommand returns whether the given string is recognized as a bazel
-// command.
 func IsBazelCommand(command string) bool {
 	_, ok := bazelCommands[command]
 	return ok
 }
 
-// Parent returns the parent command of the given command, if one exists.
 func Parent(command string) (string, bool) {
 	parent, ok := parentCommand[command]
 	return parent, ok
 }
 
-// IsCommonPhase returns whether or not this is a phase that should always
-// be evaluated, regardless of the command.
 func IsCommonPhase(phase string) bool {
 	_, ok := commonPhases[phase]
 	return ok
 }
 
-// IsPhase returns whether or not this is a valid phase for a bazel rc line.
 func IsPhase(phase string) bool {
 	_, ok := allPhases[phase]
 	return ok
