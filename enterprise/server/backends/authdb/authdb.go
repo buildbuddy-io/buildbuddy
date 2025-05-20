@@ -761,7 +761,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 		return nil, status.InvalidArgumentError("missing user ID")
 	}
 
-	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+	if err := authutil.AuthorizeTargetGroupAccess(ctx, d.env, groupID); err != nil {
 		return nil, err
 	}
 
@@ -936,7 +936,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	if err != nil {
 		return nil, err
 	}
-	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+	if err := authutil.AuthorizeTargetGroupAccess(ctx, d.env, groupID); err != nil {
 		return nil, err
 	}
 	q := query_builder.NewQuery(`SELECT * FROM "APIKeys"`)
@@ -1056,7 +1056,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]
 	if err != nil {
 		return nil, err
 	}
-	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+	if err := authutil.AuthorizeTargetGroupAccess(ctx, d.env, groupID); err != nil {
 		return nil, err
 	}
 
