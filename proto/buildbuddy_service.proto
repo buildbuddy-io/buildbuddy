@@ -176,6 +176,8 @@ service BuildBuddyService {
       returns (github.GetAppInstallationsResponse);
   rpc UnlinkGitHubAppInstallation(github.UnlinkAppInstallationRequest)
       returns (github.UnlinkAppInstallationResponse);
+  rpc UpdateGitHubAppInstallation(github.UpdateGitHubAppInstallationRequest)
+      returns (github.UpdateGitHubAppInstallationResponse);
 
   // Linked Git repositories API
   rpc GetLinkedGitHubRepos(github.GetLinkedReposRequest)

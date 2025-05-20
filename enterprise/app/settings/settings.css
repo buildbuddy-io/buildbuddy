@@ -134,9 +134,9 @@
 .settings .github-app-installation {
   padding: 16px;
   box-sizing: border-box;
-  height: 64px;
+  min-height: 64px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
   justify-content: space-between;
 }
@@ -145,8 +145,36 @@
   border-bottom: 1px solid #eee;
 }
 
+.settings .github-app-installation .installation-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+}
+
 .settings .github-app-installation .installation-owner {
   margin-right: auto;
+}
+
+.settings .github-app-installation .installation-settings {
+  display: flex;
+  flex-direction: column;
+  margin-left: 16px;
+}
+
+.settings .github-app-installation .installation-settings .input-row .input-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.settings .github-app-installation .installation-settings .input-row .input-label > * {
+  margin-left: 8px;
+}
+
+.settings .github-app-installation .installation-settings .input-description {
+  font-size: 14px;
+  color: #424242;
 }
 
 /* Medium to small screen */

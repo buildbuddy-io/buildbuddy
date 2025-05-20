@@ -652,6 +652,7 @@ type GitHubApp interface {
 
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
 	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
+	UpdateGitHubAppInstallation(ctx context.Context, req *ghpb.UpdateGitHubAppInstallationRequest) (*ghpb.UpdateGitHubAppInstallationResponse, error)
 
 	LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
