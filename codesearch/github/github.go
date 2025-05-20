@@ -283,9 +283,11 @@ func extractCommitDetails(gc gitClient, sha, parentSha string) (*inpb.Commit, er
 	return result, nil
 }
 
-// TODO(jdelfino): Add unit test coverage
-// TODO(jdelfino): manual integration test with incr updates
-func ExtractCommitRange(gc gitClient, firstSha, lastSha string) (*inpb.IncrementalUpdate, error) {
+// ComputeIncrementalUpdate generates an incremental update payload for the codesearch indexer.
+// The information is extracted using the git command line client on a local clone of a repo.
+// The payload contains a list of commits, the file contents for each added/modified file, and a list
+// of deleted filenames.
+func ComputeIncrementalUpdate(gc gitClient, firstSha, lastSha string) (*inpb.IncrementalUpdate, error) {
 	output, err := gc.ExecuteCommand("git", "log", "--first-parent", "--format=%H", fmt.Sprintf("%s..%s", firstSha, lastSha))
 	if err != nil {
 		return nil, err

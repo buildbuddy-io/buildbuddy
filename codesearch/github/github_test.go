@@ -380,7 +380,7 @@ func (f *fakeGitClient) LoadFileContents(fileToLoad string) ([]byte, error) {
 	return nil, fmt.Errorf("file not found: %s", fileToLoad)
 }
 
-func TestExtractCommitRange_OneCommit(t *testing.T) {
+func TestComputeIncrementalUpdate_OneCommit(t *testing.T) {
 	firstSHA := "abc123"
 	lastSHA := "def456"
 
@@ -410,7 +410,7 @@ func TestExtractCommitRange_OneCommit(t *testing.T) {
 		},
 	}
 
-	result, err := ExtractCommitRange(fakeClient, firstSHA, lastSHA)
+	result, err := ComputeIncrementalUpdate(fakeClient, firstSHA, lastSHA)
 	require.NoError(t, err)
 
 	assert.Equal(t, &inpb.IncrementalUpdate{
@@ -430,7 +430,7 @@ func TestExtractCommitRange_OneCommit(t *testing.T) {
 	}, result)
 }
 
-func TestExtractCommitRange_MultipleCommits(t *testing.T) {
+func TestComputeIncrementalUpdate_MultipleCommits(t *testing.T) {
 	sha1 := "abc123"
 	sha2 := "def456"
 	sha3 := "ghi789"
@@ -451,7 +451,7 @@ func TestExtractCommitRange_MultipleCommits(t *testing.T) {
 		},
 	}
 
-	result, err := ExtractCommitRange(fakeClient, sha1, sha4)
+	result, err := ComputeIncrementalUpdate(fakeClient, sha1, sha4)
 	require.NoError(t, err)
 
 	assert.Equal(t, &inpb.IncrementalUpdate{
@@ -482,7 +482,7 @@ func TestExtractCommitRange_MultipleCommits(t *testing.T) {
 	}, result)
 }
 
-func TestExtractCommitRange_SkipUnindexable(t *testing.T) {
+func TestComputeIncrementalUpdate_SkipUnindexable(t *testing.T) {
 	firstSHA := "abc123"
 	lastSHA := "def456"
 
@@ -499,7 +499,7 @@ func TestExtractCommitRange_SkipUnindexable(t *testing.T) {
 		},
 	}
 
-	result, err := ExtractCommitRange(fakeClient, firstSHA, lastSHA)
+	result, err := ComputeIncrementalUpdate(fakeClient, firstSHA, lastSHA)
 	require.NoError(t, err)
 
 	assert.Equal(t, &inpb.IncrementalUpdate{
