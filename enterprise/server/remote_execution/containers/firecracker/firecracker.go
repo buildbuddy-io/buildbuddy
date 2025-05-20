@@ -1023,7 +1023,7 @@ func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 		return &fcpb.VMMetadata{
 			VmId:        c.id,
 			SnapshotId:  c.snapshotID,
-			SnapshotKey: c.SnapshotKeySet().BranchKey,
+			SnapshotKey: c.SnapshotKeySet().GetBranchKey(),
 		}
 	}
 	return c.snapshot.GetVMMetadata()
