@@ -363,8 +363,8 @@ type fakeGitClient struct {
 	t        *testing.T
 }
 
-func (f *fakeGitClient) ExecuteCommand(cmd string, args ...string) (string, error) {
-	fullCmd := cmd + " " + strings.Join(args, " ")
+func (f *fakeGitClient) ExecuteCommand(args ...string) (string, error) {
+	fullCmd := strings.Join(args, " ")
 	if output, ok := f.commands[fullCmd]; ok {
 		return output, nil
 	}
@@ -387,16 +387,16 @@ func TestComputeIncrementalUpdate_OneCommit(t *testing.T) {
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
-			fmt.Sprintf("git log --first-parent --format=%%H %s..%s", firstSHA, lastSHA): "def456",
+			fmt.Sprintf("log --first-parent --format=%%H %s..%s", firstSHA, lastSHA): "def456",
 			// This sample output is taken directly from the diff-tree documentation, and covers
 			// every modification type.
-			fmt.Sprintf("git diff-tree -r %s..%s", firstSHA, lastSHA): `
-:100644 100644 bcd1234 0123456 M file0
-:100644 100644 abcd123 1234567 C68 file0 file2
-:100644 100644 abcd123 1234567 R86 file1 file3
-:000000 100644 0000000 1234567 A file4
-:100644 000000 1234567 0000000 D file5
-:000000 000000 0000000 0000000 U file6
+			fmt.Sprintf("diff-tree -r %s..%s", firstSHA, lastSHA): `
+:100644 100644 bcd1234 0123456 M	file0
+:100644 100644 abcd123 1234567 C68	file0	file2
+:100644 100644 abcd123 1234567 R86	file1	file3
+:000000 100644 0000000 1234567 A	file4
+:100644 000000 1234567 0000000 D	file5
+:000000 000000 0000000 0000000 U	file6
 `,
 		},
 		files: map[string][]byte{
@@ -439,10 +439,10 @@ func TestComputeIncrementalUpdate_MultipleCommits(t *testing.T) {
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
-			fmt.Sprintf("git log --first-parent --format=%%H %s..%s", sha1, sha4): "def456\nghi789\njkl012",
-			fmt.Sprintf("git diff-tree -r %s..%s", sha1, sha2):                    ":100644 100644 bcd1234 0123456 M file0",
-			fmt.Sprintf("git diff-tree -r %s..%s", sha2, sha3):                    ":000000 100644 0000000 1234567 A file1",
-			fmt.Sprintf("git diff-tree -r %s..%s", sha3, sha4):                    ":100644 100644 abcd123 1234567 R86 file1 file2",
+			fmt.Sprintf("log --first-parent --format=%%H %s..%s", sha1, sha4): "jkl012\nghi789\ndef456\n",
+			fmt.Sprintf("diff-tree -r %s..%s", sha1, sha2):                    ":100644 100644 bcd1234 0123456 M	file0",
+			fmt.Sprintf("diff-tree -r %s..%s", sha2, sha3):                    ":000000 100644 0000000 1234567 A	file1",
+			fmt.Sprintf("diff-tree -r %s..%s", sha3, sha4):                    ":100644 100644 abcd123 1234567 R86	file1	file2",
 		},
 		files: map[string][]byte{
 			"file0": []byte("file0 content"),
@@ -489,10 +489,8 @@ func TestComputeIncrementalUpdate_SkipUnindexable(t *testing.T) {
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
-			fmt.Sprintf("git log --first-parent --format=%%H %s..%s", firstSHA, lastSHA): "def456",
-			// This sample output is taken directly from the diff-tree documentation, and covers
-			// every modification type.
-			fmt.Sprintf("git diff-tree -r %s..%s", firstSHA, lastSHA): ":100644 100644 bcd1234 0123456 M file0",
+			fmt.Sprintf("log --first-parent --format=%%H %s..%s", firstSHA, lastSHA): "def456",
+			fmt.Sprintf("diff-tree -r %s..%s", firstSHA, lastSHA):                    ":100644 100644 bcd1234 0123456 M	file0",
 		},
 		files: map[string][]byte{
 			"file0": []byte{0x47, 0x49, 0x46, 0x38, 0x39, 0x61}, // GIF file

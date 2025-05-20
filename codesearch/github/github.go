@@ -180,7 +180,7 @@ func validateFile(content []byte) error {
 
 // This type exists to enable dependency injection for testing.
 type gitClient interface {
-	ExecuteCommand(cmd string, args ...string) (string, error)
+	ExecuteCommand(args ...string) (string, error)
 	LoadFileContents(fileToLoad string) ([]byte, error)
 }
 
@@ -192,12 +192,12 @@ func NewCommandLineGitClient(repoDir string) gitClient {
 	return &commandLineGitClient{repoDir: repoDir}
 }
 
-func (c *commandLineGitClient) ExecuteCommand(cmd string, args ...string) (string, error) {
-	command := exec.Command(cmd, args...)
+func (c *commandLineGitClient) ExecuteCommand(args ...string) (string, error) {
+	command := exec.Command("git", args...)
 	command.Dir = c.repoDir
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return "", status.InternalErrorf("failed to run git command: %s", err)
+		return "", status.InternalErrorf("failed to run command with args: %v: %v", args, err)
 	}
 	return string(output), nil
 }
@@ -212,19 +212,24 @@ func (c *commandLineGitClient) LoadFileContents(filename string) ([]byte, error)
 }
 
 func processDiffTreeLine(gc gitClient, line string, commit *inpb.Commit) error {
-	// diff-tree lines are in the format "<src mode> <dst mode> <src sha> <dst sha> <status> <src path> <dst path(copy/rename only)>""
+	// diff-tree lines are in the format "<src mode> <dst mode> <src sha> <dst sha> <status>\t<src path>\t<dst path(copy/rename only)>""
 	// Documentation: https://git-scm.com/docs/git-diff-tree
 	parts := strings.Split(line, " ")
-	if len(parts) < 6 {
+	if len(parts) < 5 {
 		return status.InternalErrorf("invalid diff-tree line: %s", line)
 	}
 
-	fileStatus := parts[4]
+	fileParts := strings.Split(parts[4], "\t")
+	if len(fileParts) < 2 {
+		return status.InternalErrorf("invalid diff-tree line: %s", line)
+	}
+
+	fileStatus := fileParts[0]
 	if fileStatus == "U" {
 		return nil // Unmerged file - ignore
 	}
 
-	srcFile := parts[5]
+	srcFile := fileParts[1]
 	if fileStatus == "D" || fileStatus[0] == 'R' {
 		if !slices.Contains(commit.DeleteFilepaths, srcFile) {
 			commit.DeleteFilepaths = append(commit.DeleteFilepaths, srcFile)
@@ -239,10 +244,10 @@ func processDiffTreeLine(gc gitClient, line string, commit *inpb.Commit) error {
 	fileToLoad := srcFile
 	if fileStatus[0] == 'R' || fileStatus[0] == 'C' {
 		// renames and copies have a destination file name in index 6
-		if len(parts) < 7 {
+		if len(fileParts) < 3 {
 			return status.InternalErrorf("invalid diff-tree line, R/C with no dest file: %s", line)
 		}
-		fileToLoad = parts[6]
+		fileToLoad = fileParts[2]
 	}
 
 	content, err := gc.LoadFileContents(fileToLoad)
@@ -263,7 +268,8 @@ func processDiffTreeLine(gc gitClient, line string, commit *inpb.Commit) error {
 }
 
 func extractCommitDetails(gc gitClient, sha, parentSha string) (*inpb.Commit, error) {
-	output, err := gc.ExecuteCommand("git", "diff-tree", "-r", fmt.Sprintf("%s..%s", parentSha, sha))
+	log.Infof("Extracting commit details for %s", sha)
+	output, err := gc.ExecuteCommand("diff-tree", "-r", fmt.Sprintf("%s..%s", parentSha, sha))
 	if err != nil {
 		return nil, status.InternalErrorf("failed to run git diff-tree: %s", err)
 	}
@@ -275,7 +281,7 @@ func extractCommitDetails(gc gitClient, sha, parentSha string) (*inpb.Commit, er
 
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	for _, line := range lines {
-		if err := processDiffTreeLine(gc, line, result); err != nil {
+		if err := processDiffTreeLine(gc, strings.TrimSpace(line), result); err != nil {
 			return nil, err
 		}
 	}
@@ -288,27 +294,31 @@ func extractCommitDetails(gc gitClient, sha, parentSha string) (*inpb.Commit, er
 // The payload contains a list of commits, the file contents for each added/modified file, and a list
 // of deleted filenames.
 func ComputeIncrementalUpdate(gc gitClient, firstSha, lastSha string) (*inpb.IncrementalUpdate, error) {
-	output, err := gc.ExecuteCommand("git", "log", "--first-parent", "--format=%H", fmt.Sprintf("%s..%s", firstSha, lastSha))
+	output, err := gc.ExecuteCommand("log", "--first-parent", "--format=%H", fmt.Sprintf("%s..%s", firstSha, lastSha))
 	if err != nil {
 		return nil, err
 	}
+	trimmedOutput := strings.TrimSpace(output)
+	if len(trimmedOutput) == 0 {
+		return nil, fmt.Errorf("no commits found between %s and %s", firstSha, lastSha)
+	}
 
-	commits := strings.Split(strings.TrimSpace(output), "\n")
+	commits := strings.Split(trimmedOutput, "\n")
 	result := &inpb.IncrementalUpdate{
 		Commits: make([]*inpb.Commit, len(commits)),
 	}
 
-	for i, commitSHA := range commits {
+	for i := len(commits) - 1; i >= 0; i-- {
 		parentSHA := firstSha
-		if i > 0 {
-			parentSHA = commits[i-1]
+		if i < len(commits)-1 {
+			parentSHA = commits[i+1]
 		}
 
-		commit, err := extractCommitDetails(gc, commitSHA, parentSHA)
+		commit, err := extractCommitDetails(gc, commits[i], parentSHA)
 		if err != nil {
 			return nil, err
 		}
-		result.Commits[i] = commit
+		result.Commits[len(commits)-i-1] = commit
 	}
 	return result, nil
 }
