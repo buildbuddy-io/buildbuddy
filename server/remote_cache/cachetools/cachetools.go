@@ -199,16 +199,11 @@ func batchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorag
 			})
 			continue
 		}
-		data := res.Data
 		// TODO: parallel decompression
 		// TODO: accept decompression buffer map as optional arg
-		if res.GetCompressor() == repb.Compressor_ZSTD {
-			buf := make([]byte, 0, res.GetDigest().GetSizeBytes())
-			d, err := compression.DecompressZstd(buf, res.Data)
-			if err != nil {
-				return nil, status.WrapError(err, "decompress blob")
-			}
-			data = d
+		data, err := decompressBytes(res.Data, res.GetDigest(), res.GetCompressor())
+		if err != nil {
+			return nil, status.WrapError(err, "decompress blob")
 		}
 		// Validate digest
 		downloadedContentDigest, err := digest.Compute(bytes.NewReader(data), req.GetDigestFunction())
@@ -305,6 +300,13 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	}
 	rsp, err := stream.CloseAndRecv()
 	if err != nil {
+		// If there is a hash mismatch and the reader supports seeking, re-hash
+		// to check whether a concurrent mutation has occurred.
+		if rs, ok := in.(io.ReadSeeker); ok && status.IsDataLossError(err) {
+			if err := checkConcurrentMutation(r.GetDigest(), r.GetDigestFunction(), rs); err != nil {
+				return nil, 0, retry.NonRetryableError(status.WrapError(err, "check for concurrent mutation during upload"))
+			}
+		}
 		return nil, bytesUploaded, err
 	}
 
@@ -749,7 +751,21 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 		if err != nil {
 			return err
 		}
-		for _, fileResponse := range rsp.GetResponses() {
+		for i, fileResponse := range rsp.GetResponses() {
+			if fileResponse.GetStatus().GetCode() == int32(gcodes.DataLoss) && i < len(req.GetRequests()) {
+				// If there is a hash mismatch, re-hash the uncompressed payload
+				// to check whether a concurrent mutation occurred after we
+				// computed the original digest.
+				ri := req.GetRequests()[i]
+				b, err := decompressBytes(ri.GetData(), ri.GetDigest(), ri.GetCompressor())
+				if err != nil {
+					log.CtxWarningf(ul.ctx, "Error decompressing blob while checking for concurrent mutation: %s", err)
+				} else {
+					if err := checkConcurrentMutation(fileResponse.GetDigest(), ul.digestFunction, bytes.NewReader(b)); err != nil {
+						return status.WrapError(err, "check for concurrent mutation during upload")
+					}
+				}
+			}
 			if fileResponse.GetStatus().GetCode() != int32(gcodes.OK) {
 				return gstatus.Error(gcodes.Code(fileResponse.GetStatus().GetCode()), fmt.Sprintf("Error uploading file: %v", fileResponse.GetDigest()))
 			}
@@ -766,6 +782,31 @@ func (ul *BatchCASUploader) Wait() error {
 		}
 	}
 	return ul.eg.Wait()
+}
+
+func decompressBytes(b []byte, d *repb.Digest, compressor repb.Compressor_Value) ([]byte, error) {
+	if compressor == repb.Compressor_ZSTD {
+		buf := make([]byte, 0, d.GetSizeBytes())
+		return compression.DecompressZstd(buf, b)
+	}
+	return b, nil
+}
+
+// Re-computes the digest for the given reader and compares it to a digest
+// computed previously. Returns an error if the digests do not match or if
+// there is an error re-computing the digest.
+func checkConcurrentMutation(originalDigest *repb.Digest, digestFunction repb.DigestFunction_Value, r io.ReadSeeker) error {
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return status.DataLossErrorf("seek: %s", err)
+	}
+	computedDigest, err := digest.Compute(r, digestFunction)
+	if err != nil {
+		return status.DataLossErrorf("recompute digest: %s", err)
+	}
+	if !digest.Equal(computedDigest, originalDigest) {
+		return status.DataLossErrorf("possible concurrent mutation detected: digest changed from %s to %s", digest.String(originalDigest), digest.String(computedDigest))
+	}
+	return nil
 }
 
 // UploadStats contains the statistics for a batch of uploads.
