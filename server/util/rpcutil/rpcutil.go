@@ -84,7 +84,11 @@ type Sender[T proto.Message] struct {
 // acknowledge individual messages. A timeout wil only occur if the sender
 // exhausts the flow-control window and the receiver does not increase it.
 func (s *Sender[T]) SendWithTimeoutCause(msg T, timeout time.Duration, cause error) error {
-	s.sendChan <- msg
+	select {
+	case s.sendChan <- msg:
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
 
 	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
 	defer cancel()
