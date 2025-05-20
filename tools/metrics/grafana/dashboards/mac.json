@@ -93,7 +93,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(up{region=\"${region}\", job=\"${job}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum(up{region=\"${region}\", job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "up",
               "queryType": "randomWalk",
@@ -185,7 +185,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (version) (buildbuddy_version{region=\"${region}\", job=\"${job}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum by (version) (buildbuddy_version{region=\"${region}\", job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "{{version}}",
               "queryType": "randomWalk",
@@ -277,7 +277,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "1 - (1 - up{region=\"${region}\", job=\"${job}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "1 - (1 - up{region=\"${region}\", job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "{{inventory_hostname}}",
               "queryType": "randomWalk",
@@ -405,7 +405,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(1 - (buildbuddy_health_check_status{region=\"${region}\", inventory_hostname=~\"${inventory_hostname_pattern}\"} == 0)) by (pod_name, health_check_name)",
+              "expr": "sum(1 - (buildbuddy_health_check_status{region=\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"} == 0)) by (pod_name, health_check_name)",
               "legendFormat": "{{pod_name}}",
               "range": true,
               "refId": "A"
@@ -545,7 +545,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 10
+            "y": 18
           },
           "id": 6272,
           "options": {
@@ -567,7 +567,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(node_memory_free_bytes{region=\"global\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "avg(node_memory_free_bytes{region=\"global\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "instant": false,
               "legendFormat": "Free",
               "range": true,
@@ -579,7 +579,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(node_memory_inactive_bytes{region=\"global\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "avg(node_memory_inactive_bytes{region=\"global\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "instant": false,
               "legendFormat": "Inactive",
@@ -592,7 +592,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(node_memory_active_bytes{region=\"global\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "avg(node_memory_active_bytes{region=\"global\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "instant": false,
               "legendFormat": "Active",
@@ -605,7 +605,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(node_memory_compressed_bytes{region=\"global\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "avg(node_memory_compressed_bytes{region=\"global\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "instant": false,
               "legendFormat": "Compressed",
@@ -692,7 +692,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 10
+            "y": 18
           },
           "id": 6273,
           "options": {
@@ -714,7 +714,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (inventory_hostname) (node_memory_inactive_bytes{inventory_hostname=~\"${inventory_hostname_pattern}\"} + node_memory_free_bytes{inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum by (inventory_hostname) (node_memory_inactive_bytes{group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"} + node_memory_free_bytes{group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -785,7 +785,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 18
+            "y": 26
           },
           "id": 6274,
           "options": {
@@ -807,7 +807,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (inventory_hostname) (1 - rate(node_cpu_seconds_total{mode=\"idle\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[5m]))",
+              "expr": "sum by (inventory_hostname) (1 - rate(node_cpu_seconds_total{mode=\"idle\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[5m]))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -878,7 +878,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 18
+            "y": 26
           },
           "id": 6275,
           "options": {
@@ -886,7 +886,7 @@
               "calcs": [],
               "displayMode": "list",
               "placement": "bottom",
-              "showLegend": false
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single",
@@ -900,11 +900,24 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(1 - rate(node_cpu_seconds_total{mode=\"idle\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[5m]))",
+              "expr": "sum(1 - rate(node_cpu_seconds_total{mode=\"idle\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[5m]))",
               "instant": false,
-              "legendFormat": "__auto",
+              "legendFormat": "CPU Used",
               "range": true,
               "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "count(node_cpu_seconds_total{mode=\"idle\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "CPU Capacity",
+              "range": true,
+              "refId": "B"
             }
           ],
           "title": "Total CPU usage (cores)",
@@ -987,7 +1000,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 26
+            "y": 34
           },
           "id": 6276,
           "options": {
@@ -1009,7 +1022,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "quantile(0.25, sum by (inventory_hostname) (buildbuddy_remote_execution_queue_length{inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
+              "expr": "quantile(0.25, sum by (inventory_hostname) (buildbuddy_remote_execution_queue_length{group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
               "instant": false,
               "legendFormat": "p25",
               "range": true,
@@ -1021,7 +1034,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "quantile(0.5, sum by (inventory_hostname) (buildbuddy_remote_execution_queue_length{inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
+              "expr": "quantile(0.5, sum by (inventory_hostname) (buildbuddy_remote_execution_queue_length{group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
               "hide": false,
               "instant": false,
               "legendFormat": "p50",
@@ -1107,7 +1120,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 26
+            "y": 34
           },
           "id": 6277,
           "options": {
@@ -1129,7 +1142,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(node_disk_reads_completed_total{inventory_hostname=~\"${inventory_hostname_pattern}\"}[5m]))",
+              "expr": "sum(rate(node_disk_reads_completed_total{group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[5m]))",
               "instant": false,
               "legendFormat": "Read ops",
               "range": true,
@@ -1141,7 +1154,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(node_disk_writes_completed_total{inventory_hostname=~\"${inventory_hostname_pattern}\"}[5m]))",
+              "expr": "sum(rate(node_disk_writes_completed_total{group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[5m]))",
               "hide": false,
               "instant": false,
               "legendFormat": "Write ops",
@@ -1188,7 +1201,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 58
+            "y": 43
           },
           "hiddenSeries": false,
           "id": 274,
@@ -1209,7 +1222,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -1223,10 +1236,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\"})",
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
-              "legendFormat": "Total",
+              "legendFormat": "Pooled",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             },
             {
@@ -1234,9 +1249,11 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "avg(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\"})",
+              "editorMode": "code",
+              "expr": "avg(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "Average",
+              "range": true,
               "refId": "B"
             },
             {
@@ -1244,9 +1261,11 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
+              "editorMode": "code",
+              "expr": "sum(up{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "Executor count (for comparison)",
+              "range": true,
               "refId": "C"
             }
           ],
@@ -1301,7 +1320,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 58
+            "y": 43
           },
           "hiddenSeries": false,
           "id": 276,
@@ -1321,7 +1340,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -1335,10 +1354,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region=\"${region}\", job=\"${pool}\"}[${window}]))",
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -1392,7 +1413,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 66
+            "y": 51
           },
           "hiddenSeries": false,
           "id": 290,
@@ -1412,7 +1433,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -1426,10 +1447,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region=\"${region}\", job=\"${pool}\"}[${window}]))",
+              "editorMode": "code",
+              "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{reason}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -1483,7 +1506,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 66
+            "y": 51
           },
           "hiddenSeries": false,
           "id": 292,
@@ -1503,7 +1526,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -1517,10 +1540,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"${region}\", job=\"${pool}\"}[${window}]))",
+              "editorMode": "code",
+              "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{status}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -1574,7 +1599,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 74
+            "y": 59
           },
           "hiddenSeries": false,
           "id": 278,
@@ -1594,7 +1619,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -1608,10 +1633,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -1665,7 +1692,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 74
+            "y": 59
           },
           "hiddenSeries": false,
           "id": 280,
@@ -1685,7 +1712,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -1699,10 +1726,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -1785,7 +1814,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 59
+            "y": 68
           },
           "hiddenSeries": false,
           "id": 190,
@@ -1805,7 +1834,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -1819,11 +1848,13 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}))",
+              "expr": "count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
               "interval": "",
               "legendFormat": "Working",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             },
             {
@@ -1831,9 +1862,11 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "1 - count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}))",
+              "editorMode": "code",
+              "expr": "1 - count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
               "interval": "",
               "legendFormat": "Idle",
+              "range": true,
               "refId": "B"
             }
           ],
@@ -1873,126 +1906,6 @@
         },
         {
           "aliasColors": {
-            "Avg executor queue length": "dark-red",
-            "Executor instances": "dark-blue",
-            "Value": "dark-green"
-          },
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "fill": 0,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 59
-          },
-          "hiddenSeries": false,
-          "id": 159,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "rightSide": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "9.3.1",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [
-            {
-              "$$hashKey": "object:421",
-              "alias": "Executor instances",
-              "linewidth": 3
-            }
-          ],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
-              "interval": "",
-              "legendFormat": "Avg executor queue length",
-              "queryType": "randomWalk",
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
-              "interval": "",
-              "legendFormat": "Executor instances",
-              "refId": "B"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=\"${pool}-autoscaler\"}",
-              "interval": "",
-              "legendFormat": "Autoscaler target",
-              "refId": "C"
-            }
-          ],
-          "thresholds": [],
-          "timeRegions": [],
-          "title": "Executor autoscaling",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "mode": "time",
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:428",
-              "format": "short",
-              "logBase": 1,
-              "min": "0",
-              "show": true
-            },
-            {
-              "$$hashKey": "object:429",
-              "format": "short",
-              "logBase": 1,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false
-          }
-        },
-        {
-          "aliasColors": {
             "output_upload": "dark-orange",
             "output_upload stage": "dark-orange",
             "queued": "dark-red",
@@ -2010,8 +1923,8 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 0,
-            "y": 67
+            "x": 12,
+            "y": 68
           },
           "hiddenSeries": false,
           "id": 210,
@@ -2031,7 +1944,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2045,12 +1958,14 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(\n  ${quantile},\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", stage!=\"worker\", job=\"${pool}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  ${quantile},\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", stage!=\"worker\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
               "hide": false,
               "interval": "",
               "legendFormat": "{{stage}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -2111,6 +2026,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -2147,8 +2063,8 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 12,
-            "y": 67
+            "x": 0,
+            "y": 76
           },
           "id": 1209,
           "options": {
@@ -2169,10 +2085,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (stage) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"})",
+              "expr": "sum by (stage) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "{{stage}}",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -2203,6 +2121,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -2240,8 +2159,8 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 0,
-            "y": 75
+            "x": 12,
+            "y": 76
           },
           "id": 31,
           "options": {
@@ -2263,117 +2182,18 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (status) (rate(buildbuddy_remote_execution_count{region=\"${region}\", job=\"${pool}\"}[${window}]))",
+              "expr": "sum by (status) (rate(buildbuddy_remote_execution_count{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{status}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
           "title": "Actions executed per second",
           "type": "timeseries"
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "description": "",
-          "fill": 0,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 75
-          },
-          "hiddenSeries": false,
-          "id": 178,
-          "legend": {
-            "alignAsTable": true,
-            "avg": false,
-            "current": true,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": true
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "9.3.1",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{region=\"${region}\", pod=~\"${pool}-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
-              "interval": "",
-              "legendFormat": "Avg CPU assigned",
-              "queryType": "randomWalk",
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{region=\"${region}\", pod=~\"${pool}-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
-              "interval": "",
-              "legendFormat": "Avg RAM assigned",
-              "refId": "B"
-            }
-          ],
-          "thresholds": [],
-          "timeRegions": [],
-          "title": "Avg resources allocated to tasks",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "mode": "time",
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:582",
-              "format": "percentunit",
-              "logBase": 1,
-              "min": "0",
-              "show": true
-            },
-            {
-              "$$hashKey": "object:583",
-              "format": "short",
-              "logBase": 1,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false
-          }
         },
         {
           "datasource": {
@@ -2400,6 +2220,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -2437,7 +2258,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 83
+            "y": 84
           },
           "id": 1216,
           "options": {
@@ -2458,10 +2279,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_memory_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
+              "expr": "sum(buildbuddy_remote_execution_memory_usage_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "Current memory usage",
+              "range": true,
               "refId": "A"
             },
             {
@@ -2469,11 +2292,13 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_peak_memory_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
+              "expr": "sum(buildbuddy_remote_execution_peak_memory_usage_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "Current peak memory usage",
+              "range": true,
               "refId": "C"
             },
             {
@@ -2481,11 +2306,13 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_assigned_ram_bytes{region=\"${region}\", job=\"${pool}\"})",
+              "expr": "sum(buildbuddy_remote_execution_assigned_ram_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "Estimated memory usage",
+              "range": true,
               "refId": "B"
             },
             {
@@ -2493,11 +2320,13 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_assignable_ram_bytes{region=\"${region}\", job=\"${pool}\"})",
+              "expr": "sum(buildbuddy_remote_execution_assignable_ram_bytes{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "Max assignable memory",
+              "range": true,
               "refId": "D"
             }
           ],
@@ -2528,6 +2357,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -2565,7 +2395,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 83
+            "y": 84
           },
           "id": 1231,
           "options": {
@@ -2586,10 +2416,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_cpu_utilization_milli_cpu{region=\"${region}\",job=\"${pool}\"})/1000",
+              "expr": "sum(buildbuddy_remote_execution_cpu_utilization_milli_cpu{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})/1000",
               "interval": "",
               "legendFormat": "CPU (current, 1s avg)",
+              "range": true,
               "refId": "A"
             },
             {
@@ -2597,11 +2429,13 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(rate(buildbuddy_remote_execution_used_milli_cpu{region=\"${region}\",job=\"${pool}\"}[${window}]))/1000",
+              "expr": "sum(rate(buildbuddy_remote_execution_used_milli_cpu{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))/1000",
               "hide": false,
               "interval": "",
               "legendFormat": "CPU (smoothed, ${window} rate)",
+              "range": true,
               "refId": "B"
             },
             {
@@ -2609,11 +2443,13 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_assigned_milli_cpu{region=\"${region}\",job=\"${pool}\"})/1000",
+              "expr": "sum(buildbuddy_remote_execution_assigned_milli_cpu{region=\"${region}\",job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})/1000",
               "hide": false,
               "interval": "",
               "legendFormat": "Estimated CPU",
+              "range": true,
               "refId": "C"
             },
             {
@@ -2648,7 +2484,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 91
+            "y": 92
           },
           "hiddenSeries": false,
           "id": 33,
@@ -2668,7 +2504,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2682,10 +2518,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -2739,7 +2577,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 91
+            "y": 92
           },
           "hiddenSeries": false,
           "id": 35,
@@ -2759,7 +2597,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2773,10 +2611,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -2828,7 +2668,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 99
+            "y": 100
           },
           "hiddenSeries": false,
           "id": 129,
@@ -2848,7 +2688,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2862,17 +2702,19 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "quantile(0.5, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
+              "expr": "quantile(${quantile}, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
           "thresholds": [],
           "timeRegions": [],
-          "title": "Median executor queue length",
+          "title": "Executor queue length (quantile=${quantile})",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -2920,7 +2762,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 99
+            "y": 100
           },
           "hiddenSeries": false,
           "id": 102,
@@ -2941,7 +2783,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2955,10 +2797,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"})",
+              "editorMode": "code",
+              "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
               "legendFormat": "{{pod_name}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -3022,6 +2866,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -3059,7 +2904,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 107
+            "y": 108
           },
           "id": 1195,
           "options": {
@@ -3080,107 +2925,17 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(rate(buildbuddy_remote_execution_file_cache_requests{status=\"hit\", region=\"${region}\", job=\"${pool}\"}[${window}]))\n  /\nsum(rate(buildbuddy_remote_execution_file_cache_requests{region=\"${region}\", job=\"${pool}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_cache_requests{status=\"hit\", region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n  /\nsum(rate(buildbuddy_remote_execution_file_cache_requests{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))",
               "interval": "",
               "legendFormat": "Hit rate",
+              "range": true,
               "refId": "A"
             }
           ],
           "title": "File cache hit rate",
           "type": "timeseries"
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 107
-          },
-          "hiddenSeries": false,
-          "id": 180,
-          "legend": {
-            "alignAsTable": true,
-            "avg": false,
-            "current": true,
-            "max": false,
-            "min": false,
-            "show": false,
-            "sort": "current",
-            "sortDesc": true,
-            "total": false,
-            "values": true
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "9.3.1",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
-              "interval": "",
-              "legendFormat": "{{pod}}",
-              "queryType": "randomWalk",
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeRegions": [],
-          "title": "Total CPU usage (CPU seconds)",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "mode": "time",
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:1049",
-              "format": "s",
-              "logBase": 1,
-              "min": "0",
-              "show": true
-            },
-            {
-              "$$hashKey": "object:1050",
-              "format": "short",
-              "logBase": 1,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false
-          }
         },
         {
           "datasource": {
@@ -3207,6 +2962,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -3244,8 +3000,8 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 0,
-            "y": 115
+            "x": 12,
+            "y": 108
           },
           "id": 1202,
           "options": {
@@ -3268,10 +3024,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(\n  0.5,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.5,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
               "interval": "",
               "legendFormat": "p50",
+              "range": true,
               "refId": "A"
             },
             {
@@ -3279,11 +3037,13 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(\n  0.9,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.9,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
               "hide": false,
               "interval": "",
               "legendFormat": "p90",
+              "range": true,
               "refId": "B"
             },
             {
@@ -3291,11 +3051,13 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(\n  0.99,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.99,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
               "hide": false,
               "interval": "",
               "legendFormat": "p99",
+              "range": true,
               "refId": "C"
             },
             {
@@ -3303,11 +3065,13 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(\n  0.9999,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.9999,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[${window}]))\n)",
               "hide": false,
               "interval": "",
               "legendFormat": "p99.99",
+              "range": true,
               "refId": "D"
             }
           ],
@@ -3339,6 +3103,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -3401,8 +3166,8 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 12,
-            "y": 115
+            "x": 0,
+            "y": 116
           },
           "id": 1196,
           "options": {
@@ -3425,10 +3190,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "buildbuddy_remote_execution_file_cache_last_eviction_age_usec{region=\"${region}\", job=\"${pool}\"}",
+              "expr": "buildbuddy_remote_execution_file_cache_last_eviction_age_usec{region=\"${region}\", job=\"${pool}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
               "interval": "",
               "legendFormat": "",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -3479,7 +3246,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 60
+            "y": 125
           },
           "hiddenSeries": false,
           "id": 85,
@@ -3502,7 +3269,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -3516,18 +3283,13 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"${job}\"}",
+              "editorMode": "code",
+              "expr": "go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
               "interval": "",
-              "legendFormat": "{{job}} @ {{pod_name}}",
+              "legendFormat": "{{inventory_hostname}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "refId": "B"
             }
           ],
           "thresholds": [],
@@ -3577,7 +3339,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 60
+            "y": 125
           },
           "hiddenSeries": false,
           "id": 87,
@@ -3600,7 +3362,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -3614,10 +3376,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "go_goroutines{region=\"${region}\", job=\"${job}\"}",
+              "editorMode": "code",
+              "expr": "go_goroutines{region=\"${region}\", job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
               "interval": "",
-              "legendFormat": "{{job}} @ {{pod_name}}",
+              "legendFormat": "{{inventory_hostname}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -3668,7 +3432,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 69
+            "y": 134
           },
           "hiddenSeries": false,
           "id": 93,
@@ -3691,7 +3455,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "9.3.1",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -3705,10 +3469,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=\"${job}\"}",
+              "editorMode": "code",
+              "expr": "go_gc_duration_seconds{region=\"${region}\", quantile=\"${quantile}\",job=\"${job}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
               "interval": "",
-              "legendFormat": "{{job}} @ {{pod_name}}",
+              "legendFormat": "{{inventory_hostname}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -3797,6 +3563,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -3835,7 +3602,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 61
+            "y": 143
           },
           "id": 1127,
           "options": {
@@ -3858,7 +3625,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "1 - (avg by(mode,inventory_hostname) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"})))",
+              "expr": "1 - (avg by(mode,inventory_hostname) ((rate(node_cpu_seconds_total{mode=\"idle\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}[1m])) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"})))",
               "hide": false,
               "interval": "",
               "legendFormat": "{{nodename}}",
@@ -3894,6 +3661,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -3931,7 +3699,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 61
+            "y": 143
           },
           "id": 1166,
           "options": {
@@ -3954,7 +3722,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max by (inventory_hostname) (rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"}))",
+              "expr": "max by (inventory_hostname) (rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
               "interval": "",
               "legendFormat": "reads {{inventory_hostname}}",
               "range": true,
@@ -3967,7 +3735,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max by (inventory_hostname) (rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"}))\n",
+              "expr": "max by (inventory_hostname) (rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))\n",
               "hide": false,
               "interval": "",
               "legendFormat": "writes {{inventory_hostname}}",
@@ -4003,6 +3771,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -4040,7 +3809,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 69
+            "y": 151
           },
           "id": 1168,
           "options": {
@@ -4063,7 +3832,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_receive_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"})\n",
+              "expr": "rate(node_network_receive_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})\n",
               "interval": "",
               "legendFormat": "rx {{inventory_hostname}} {{device}}",
               "range": true,
@@ -4076,7 +3845,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_transmit_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\"})\n",
+              "expr": "rate(node_network_transmit_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})\n",
               "hide": false,
               "interval": "",
               "legendFormat": "tx {{inventory_hostname}} {{device}}",
@@ -4099,7 +3868,7 @@
           "refId": "A"
         }
       ],
-      "title": "Nodes Overview",
+      "title": "Nodes overview",
       "type": "row"
     },
     {
@@ -4141,6 +3910,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -4211,9 +3981,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 62
+            "y": 160
           },
           "id": 992,
+          "maxPerRow": 2,
           "options": {
             "legend": {
               "calcs": [],
@@ -4226,7 +3997,7 @@
               "sort": "none"
             }
           },
-          "repeat": "inventory_hostname",
+          "repeat": "group_name",
           "repeatDirection": "h",
           "targets": [
             {
@@ -4236,9 +4007,9 @@
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", inventory_hostname=\"${inventory_hostname}\"})",
+              "expr": "rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
-              "legendFormat": "{{device}} reads",
+              "legendFormat": "{{inventory_hostname}} {{device}} reads",
               "range": true,
               "refId": "A"
             },
@@ -4249,10 +4020,10 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", inventory_hostname=\"${inventory_hostname}\"})",
+              "expr": "rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
-              "legendFormat": "{{device}} writes",
+              "legendFormat": "{{inventory_hostname}} {{device}} writes",
               "range": true,
               "refId": "B"
             },
@@ -4263,10 +4034,10 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_receive_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", inventory_hostname=\"${inventory_hostname}\"})",
+              "expr": "rate(node_network_receive_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
-              "legendFormat": "{{device}} rx",
+              "legendFormat": "{{inventory_hostname}} {{device}} rx",
               "range": true,
               "refId": "C"
             },
@@ -4277,29 +4048,15 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "rate(node_network_transmit_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", inventory_hostname=\"${inventory_hostname}\"})",
+              "expr": "rate(node_network_transmit_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
-              "legendFormat": "{{device}} tx",
+              "legendFormat": "{{inventory_hostname}} {{device}} tx",
               "range": true,
               "refId": "D"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "exemplar": true,
-              "expr": "1 - (avg by(mode) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", inventory_hostname=\"${inventory_hostname}\"})))",
-              "hide": false,
-              "interval": "",
-              "legendFormat": "cpu",
-              "range": true,
-              "refId": "E"
             }
           ],
-          "title": "${inventory_hostname} disk and network IO",
+          "title": "${group_name} disk and network IO",
           "type": "timeseries"
         }
       ],
@@ -4317,6 +4074,131 @@
     },
     {
       "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 6303,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 193
+          },
+          "id": 6304,
+          "maxPerRow": 2,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "repeat": "group_name",
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "node_filesystem_size_bytes{mountpoint=\"/System/Volumes/Data\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"} - node_filesystem_avail_bytes{mountpoint=\"/System/Volumes/Data\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
+              "instant": false,
+              "legendFormat": "{{inventory_hostname}} used",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "node_filesystem_size_bytes{mountpoint=\"/System/Volumes/Data\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "{{inventory_hostname}} capacity",
+              "range": true,
+              "refId": "B"
+            }
+          ],
+          "title": "${group_name} disk use",
+          "type": "timeseries"
+        }
+      ],
+      "title": "Node disk usage",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
       "datasource": {
         "type": "prometheus",
         "uid": "vm"
@@ -4325,7 +4207,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 7
+        "y": 8
       },
       "id": 1975,
       "panels": [
@@ -4346,13 +4228,14 @@
                 "axisPlacement": "auto",
                 "barAlignment": 0,
                 "drawStyle": "line",
-                "fillOpacity": 100,
+                "fillOpacity": 0,
                 "gradientMode": "none",
                 "hideFrom": {
                   "legend": false,
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -4363,7 +4246,7 @@
                 "spanNulls": false,
                 "stacking": {
                   "group": "A",
-                  "mode": "normal"
+                  "mode": "none"
                 },
                 "thresholdsStyle": {
                   "mode": "off"
@@ -4467,7 +4350,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 63
+            "y": 226
           },
           "id": 1257,
           "maxPerRow": 2,
@@ -4485,7 +4368,7 @@
               "sort": "none"
             }
           },
-          "repeat": "inventory_hostname",
+          "repeat": "group_name",
           "repeatDirection": "h",
           "targets": [
             {
@@ -4495,10 +4378,10 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_wired_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", inventory_hostname=\"${inventory_hostname}\"})",
+              "expr": "node_memory_wired_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
-              "legendFormat": "Wired memory",
+              "legendFormat": "{{inventory_hostname}} Wired memory",
               "range": true,
               "refId": "B"
             },
@@ -4509,10 +4392,10 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_compressed_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", inventory_hostname=\"${inventory_hostname}\"})",
+              "expr": "node_memory_compressed_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
-              "legendFormat": "Compressed memory",
+              "legendFormat": "{{inventory_hostname}} Compressed memory",
               "range": true,
               "refId": "D"
             },
@@ -4523,9 +4406,9 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_active_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", inventory_hostname=\"${inventory_hostname}\"})",
+              "expr": "node_memory_active_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
-              "legendFormat": "Active memory",
+              "legendFormat": "{{inventory_hostname}} Active memory",
               "range": true,
               "refId": "A"
             },
@@ -4536,10 +4419,10 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_inactive_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", inventory_hostname=\"${inventory_hostname}\"})",
+              "expr": "node_memory_inactive_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
-              "legendFormat": "Inactive memory",
+              "legendFormat": "{{inventory_hostname}} Inactive memory",
               "range": true,
               "refId": "E"
             },
@@ -4550,15 +4433,15 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_free_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", inventory_hostname=\"${inventory_hostname}\"})",
+              "expr": "node_memory_free_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "hide": false,
               "interval": "",
-              "legendFormat": "Free memory",
+              "legendFormat": "{{inventory_hostname}} Free memory",
               "range": true,
               "refId": "C"
             }
           ],
-          "title": "${inventory_hostname} memory usage",
+          "title": "${group_name} memory usage",
           "type": "timeseries"
         }
       ],
@@ -4584,7 +4467,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 9
       },
       "id": 1988,
       "panels": [
@@ -4612,6 +4495,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -4649,9 +4533,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 64
+            "y": 259
           },
           "id": 1991,
+          "maxPerRow": 2,
           "options": {
             "legend": {
               "calcs": [],
@@ -4664,7 +4549,7 @@
               "sort": "none"
             }
           },
-          "repeat": "inventory_hostname",
+          "repeat": "group_name",
           "repeatDirection": "h",
           "targets": [
             {
@@ -4674,14 +4559,40 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "node_memory_swap_used_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", inventory_hostname=\"${inventory_hostname}\"})",
+              "expr": "node_memory_swap_used_bytes * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
-              "legendFormat": "Swap memory used",
+              "legendFormat": "{{inventory_hostname}} swap memory used",
               "range": true,
               "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "rate(node_memory_swapped_in_bytes_total[${window}]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "{{inventory_hostname}} swap in rate",
+              "range": true,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "rate(node_memory_swapped_out_bytes_total[${window}]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", group_name=\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "{{inventory_hostname}} swap out rate",
+              "range": true,
+              "refId": "C"
             }
           ],
-          "title": "${inventory_hostname} swap usage",
+          "title": "${group_name} swap usage",
           "type": "timeseries"
         }
       ],
@@ -4695,175 +4606,6 @@
         }
       ],
       "title": "Node swap usage",
-      "type": "row"
-    },
-    {
-      "collapsed": true,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "vm"
-      },
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 9
-      },
-      "id": 1983,
-      "panels": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "decbytes"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Swap in rate"
-                },
-                "properties": [
-                  {
-                    "id": "color",
-                    "value": {
-                      "fixedColor": "yellow",
-                      "mode": "fixed"
-                    }
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Swap out rate"
-                },
-                "properties": [
-                  {
-                    "id": "color",
-                    "value": {
-                      "fixedColor": "red",
-                      "mode": "fixed"
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 65
-          },
-          "id": 1261,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "none"
-            }
-          },
-          "repeat": "inventory_hostname",
-          "repeatDirection": "h",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "exemplar": true,
-              "expr": "rate(node_memory_swapped_in_bytes_total[${window}]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", nodename=\"${inventory_hostname}\"})",
-              "interval": "",
-              "legendFormat": "Swap in rate",
-              "range": true,
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "exemplar": true,
-              "expr": "rate(node_memory_swapped_out_bytes_total[${window}]) * on(instance) group_left(inventory_hostname) (node_uname_info{region=\"${region}\", nodename=\"${inventory_hostname}\"})",
-              "hide": false,
-              "interval": "",
-              "legendFormat": "Swap out rate",
-              "range": true,
-              "refId": "B"
-            }
-          ],
-          "title": "${inventory_hostname} Swap rate (${window})",
-          "type": "timeseries"
-        }
-      ],
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "refId": "A"
-        }
-      ],
-      "title": "Node swap rate",
       "type": "row"
     }
   ],
@@ -5061,14 +4803,14 @@
           "type": "prometheus",
           "uid": "vm"
         },
-        "definition": "label_values(node_uname_info{region=\"$region\"}, inventory_hostname)",
+        "definition": "label_values(node_uname_info{region=\"$region\"}, group_name)",
         "hide": 0,
         "includeAll": true,
         "multi": true,
-        "name": "inventory_hostname",
+        "name": "group_name",
         "options": [],
         "query": {
-          "query": "label_values(node_uname_info{region=\"$region\"}, inventory_hostname)",
+          "query": "label_values(node_uname_info{region=\"$region\"}, group_name)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
