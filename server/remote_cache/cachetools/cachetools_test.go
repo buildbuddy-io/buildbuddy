@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -731,6 +732,44 @@ func TestUploadReader_BlobExists(t *testing.T) {
 				require.Empty(t, cmp.Diff(buf[:9], out.Bytes()[:9]))
 				require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[out.Len()-9:]))
 			}
+		})
+	}
+}
+
+func TestConcurrentMutationDuringUpload(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		size int64
+	}{
+		{
+			name: "payload greater than gRPC max size",
+			size: rpcutil.GRPCMaxSizeBytes + 1,
+		},
+		{
+			name: "payload less than gRPC max size",
+			size: 16,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+			testcache.Setup(t, te, localGRPClis)
+			go runServer()
+
+			b := make([]byte, tc.size)
+			df := repb.DigestFunction_SHA256
+			d, err := digest.Compute(bytes.NewReader(b), df)
+			require.NoError(t, err)
+			// Overwrite the first byte after we already computed the digest,
+			// simulating a concurrent mutation.
+			b[0] = 'x'
+			ctx := context.Background()
+			ul := cachetools.NewBatchCASUploader(ctx, te, "", df)
+			_ = ul.Upload(d, cachetools.NewBytesReadSeekCloser(b))
+			err = ul.Wait()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "concurrent mutation detected")
+			assert.True(t, status.IsDataLossError(err), "want DataLossError, got %+#v", err)
 		})
 	}
 }
