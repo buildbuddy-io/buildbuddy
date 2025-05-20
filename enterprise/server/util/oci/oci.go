@@ -29,8 +29,10 @@ import (
 	"golang.org/x/net/publicsuffix"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -41,6 +43,8 @@ var (
 
 	writeManifestsToCache  = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
 	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from cache before fetching from upstream remote registry.")
+
+	readLayersFromCache = flag.Bool("executor.container_registry.read_layers_from_cache", false, "Read image layers from cache before fetching from upstream remote registry.")
 
 	defaultPlatform = gcr.Platform{
 		Architecture: "amd64",
@@ -292,6 +296,9 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 			manifest:    manifest,
 
 			remoteOpts: remoteOpts,
+			ctx:        ctx,
+			acClient:   r.env.GetActionCacheClient(),
+			bsClient:   r.env.GetByteStreamClient(),
 		}
 		return partial.CompressedToImage(image)
 	}
@@ -342,6 +349,9 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		manifest:    childManifest,
 
 		remoteOpts: remoteOpts,
+		ctx:        ctx,
+		acClient:   r.env.GetActionCacheClient(),
+		bsClient:   r.env.GetByteStreamClient(),
 	}
 	return partial.CompressedToImage(image)
 }
@@ -399,6 +409,9 @@ type imageFromManifest struct {
 	manifest    *gcr.Manifest
 
 	remoteOpts []remote.Option
+	ctx        context.Context
+	acClient   repb.ActionCacheClient
+	bsClient   bspb.ByteStreamClient
 }
 
 func (i *imageFromManifest) RawManifest() ([]byte, error) {
@@ -439,7 +452,19 @@ func (i *imageFromManifest) LayerByDigest(hash gcr.Hash) (partial.CompressedLaye
 	for _, d := range i.manifest.Layers {
 		if d.Digest == hash {
 			rlref := i.digest.Context().Digest(hash.String())
-			return remote.Layer(rlref, i.remoteOpts...)
+			remoteLayer, err := remote.Layer(rlref, i.remoteOpts...)
+			if err != nil {
+				return nil, err
+			}
+			return &cacheAwareLayer{
+				hash:      hash,
+				ocidigest: rlref,
+
+				remoteLayer: remoteLayer,
+				ctx:         i.ctx,
+				acClient:    i.acClient,
+				bsClient:    i.bsClient,
+			}, nil
 		}
 	}
 	return nil, status.NotFoundErrorf("could not find layer in image %q", i.digest.Context())
@@ -488,6 +513,58 @@ func isSubset(lst, required []string) bool {
 
 	return true
 }
+
+type cacheAwareLayer struct {
+	hash      gcr.Hash
+	ocidigest gcrname.Digest
+
+	remoteLayer gcr.Layer
+	ctx         context.Context
+	acClient    repb.ActionCacheClient
+	bsClient    bspb.ByteStreamClient
+}
+
+func (l *cacheAwareLayer) Digest() (gcr.Hash, error) {
+	return l.hash, nil
+}
+
+func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
+	if *readLayersFromCache {
+		blobMetadata, err := ocicache.FetchBlobMetadataFromCache(l.ctx, l.bsClient, l.acClient, l.ocidigest)
+		if err != nil && !status.IsNotFoundError(err) {
+			log.CtxErrorf(l.ctx, "Error fetching CAS digest for layer in %q: %s", l.ocidigest.Context(), err)
+		}
+		if err == nil {
+			r, w := io.Pipe()
+			go func() {
+				defer w.Close()
+				err := ocicache.FetchBlobFromCache(
+					l.ctx,
+					w,
+					l.bsClient,
+					l.hash,
+					blobMetadata.ContentLength,
+				)
+				if err != nil {
+					log.Warningf("Error fetching layer from CAS in %q: %s", l.ocidigest.Context(), err)
+					w.CloseWithError(err)
+				}
+			}()
+			return r, nil
+		}
+	}
+	return l.remoteLayer.Compressed()
+}
+
+func (l *cacheAwareLayer) Size() (int64, error) {
+	return l.remoteLayer.Size()
+}
+
+func (l *cacheAwareLayer) MediaType() (types.MediaType, error) {
+	return l.remoteLayer.MediaType()
+}
+
+var _ partial.CompressedLayer = (*cacheAwareLayer)(nil)
 
 // RuntimePlatform returns the platform on which the program is being executed,
 // as reported by the go runtime.
