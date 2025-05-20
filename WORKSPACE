@@ -532,8 +532,8 @@ dockerfile_image(
 )
 
 dockerfile_image(
-    name = "rbe-ubuntu20-04-webtest_image",
-    dockerfile = "//dockerfiles/rbe-ubuntu20-04-webtest:Dockerfile",
+    name = "rbe-ubuntu22-04-webtest_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu22-04-webtest:Dockerfile",
 )
 
 dockerfile_image(

@@ -73,11 +73,11 @@ container_push(
 )
 
 container_push(
-    name = "rbe-ubuntu20-04-webtest",
+    name = "rbe-ubuntu22-04-webtest",
     format = "Docker",
-    image = "@rbe-ubuntu20-04-webtest_image//image:dockerfile_image.tar",
+    image = "@rbe-ubuntu22-04-webtest_image//image:dockerfile_image.tar",
     registry = "gcr.io",
-    repository = "flame-public/rbe-ubuntu20-04-webtest",
+    repository = "flame-public/rbe-ubuntu22-04-webtest",
     # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
     tag_file = "//deployment:image_tag_file",
     tags = ["manual"],
