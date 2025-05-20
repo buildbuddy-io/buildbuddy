@@ -392,7 +392,7 @@ func TestExtractCommitRange_OneCommit(t *testing.T) {
 			// every modification type.
 			fmt.Sprintf("git diff-tree -r %s..%s", firstSHA, lastSHA): `
 :100644 100644 bcd1234 0123456 M file0
-:100644 100644 abcd123 1234567 C68 file1 file2
+:100644 100644 abcd123 1234567 C68 file0 file2
 :100644 100644 abcd123 1234567 R86 file1 file3
 :000000 100644 0000000 1234567 A file4
 :100644 000000 1234567 0000000 D file5
@@ -477,6 +477,37 @@ func TestExtractCommitRange_MultipleCommits(t *testing.T) {
 					{Filepath: "file2", Content: []byte("file2 content")},
 				},
 				DeleteFilepaths: []string{"file1"},
+			},
+		},
+	}, result)
+}
+
+func TestExtractCommitRange_SkipUnindexable(t *testing.T) {
+	firstSHA := "abc123"
+	lastSHA := "def456"
+
+	fakeClient := &fakeGitClient{
+		t: t,
+		commands: map[string]string{
+			fmt.Sprintf("git log --first-parent --format=%%H %s..%s", firstSHA, lastSHA): "def456",
+			// This sample output is taken directly from the diff-tree documentation, and covers
+			// every modification type.
+			fmt.Sprintf("git diff-tree -r %s..%s", firstSHA, lastSHA): ":100644 100644 bcd1234 0123456 M file0",
+		},
+		files: map[string][]byte{
+			"file0": []byte{0x47, 0x49, 0x46, 0x38, 0x39, 0x61}, // GIF file
+		},
+	}
+
+	result, err := ExtractCommitRange(fakeClient, firstSHA, lastSHA)
+	require.NoError(t, err)
+
+	assert.Equal(t, &inpb.IncrementalUpdate{
+		Commits: []*inpb.Commit{
+			{
+				Sha:       "def456",
+				ParentSha: "abc123",
+				// No AddsAndUpdates because the file is unindexable
 			},
 		},
 	}, result)

@@ -225,7 +225,7 @@ func processDiffTreeLine(gc gitClient, line string, commit *inpb.Commit) error {
 	}
 
 	srcFile := parts[5]
-	if fileStatus == "D" || fileStatus[0] == 'R' || fileStatus[0] == 'C' {
+	if fileStatus == "D" || fileStatus[0] == 'R' {
 		if !slices.Contains(commit.DeleteFilepaths, srcFile) {
 			commit.DeleteFilepaths = append(commit.DeleteFilepaths, srcFile)
 		}
@@ -238,6 +238,7 @@ func processDiffTreeLine(gc gitClient, line string, commit *inpb.Commit) error {
 
 	fileToLoad := srcFile
 	if fileStatus[0] == 'R' || fileStatus[0] == 'C' {
+		// renames and copies have a destination file name in index 6
 		if len(parts) < 7 {
 			return status.InternalErrorf("invalid diff-tree line, R/C with no dest file: %s", line)
 		}
