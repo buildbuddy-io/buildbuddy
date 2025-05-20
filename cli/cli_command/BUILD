@@ -12,6 +12,7 @@ go_library(
         "//cli/execute",
         "//cli/explain",
         "//cli/fix",
+        "//cli/index",
         "//cli/login",
         "//cli/plugin",
         "//cli/printlog",

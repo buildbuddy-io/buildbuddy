@@ -22,7 +22,7 @@ import (
 var (
 	flags = flag.NewFlagSet("search", flag.ContinueOnError)
 
-	target     = flags.String("target", login.DefaultApiTarget, "Cache gRPC target")
+	target     = flags.String("target", login.DefaultApiTarget, "Codesearch gRPC target")
 	numResults = flags.Int("results", 10, "Print this many results")
 	offset     = flags.Int("offset", 0, "Start printing results this far in")
 	usage      = `

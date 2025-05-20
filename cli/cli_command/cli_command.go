@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
+	"github.com/buildbuddy-io/buildbuddy/cli/index"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
@@ -94,6 +95,11 @@ var Commands = []Command{
 		Name:    "search",
 		Help:    "Searches for code in the remote codesearch index.",
 		Handler: search.HandleSearch,
+	},
+	{
+		Name:    "search-index",
+		Help:    "Searches for code in the remote codesearch index.",
+		Handler: index.HandleIndex,
 	},
 	{
 		Name:    "update",

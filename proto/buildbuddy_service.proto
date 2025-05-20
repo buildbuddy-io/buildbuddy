@@ -9,6 +9,7 @@ import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
 import "proto/encryption.proto";
 import "proto/grp.proto";
+import "proto/index.proto";
 import "proto/invocation.proto";
 import "proto/iprules.proto";
 import "proto/runner.proto";
@@ -230,6 +231,8 @@ service BuildBuddyService {
   // Codesearch and Kythe API
   rpc Search(search.SearchRequest) returns (search.SearchResponse);
   rpc KytheProxy(search.KytheRequest) returns (search.KytheResponse);
+  rpc Index(index.IndexRequest) returns (index.IndexResponse);
+  rpc RepoStatus(index.RepoStatusRequest) returns (index.RepoStatusResponse);
 
   // Encryption API
   rpc SetEncryptionConfig(encryption.SetEncryptionConfigRequest)

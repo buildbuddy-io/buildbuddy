@@ -61,6 +61,7 @@ import (
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
@@ -1729,6 +1730,20 @@ func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) 
 func (s *BuildBuddyServer) KytheProxy(ctx context.Context, req *srpb.KytheRequest) (*srpb.KytheResponse, error) {
 	if css := s.env.GetCodesearchService(); css != nil {
 		return css.KytheProxy(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) Index(ctx context.Context, req *csinpb.IndexRequest) (*csinpb.IndexResponse, error) {
+	if css := s.env.GetCodesearchService(); css != nil {
+		return css.Index(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) RepoStatus(ctx context.Context, req *csinpb.RepoStatusRequest) (*csinpb.RepoStatusResponse, error) {
+	if css := s.env.GetCodesearchService(); css != nil {
+		return css.RepoStatus(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
