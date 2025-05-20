@@ -2,8 +2,9 @@ package index
 
 import (
 	"context"
-	"errors"
 	"flag"
+	"fmt"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -14,7 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"google.golang.org/grpc/metadata"
 
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 )
@@ -25,27 +26,25 @@ var (
 	target = flags.String("target", login.DefaultApiTarget, "Codesearch gRPC target")
 	// TODO(jdelfino): could maybe get this from `git remote get-url origin`, but who's to say
 	// origin is defined?
-	repoURL = flags.String("repo-url", login.DefaultApiTarget, "URL of the GitHub repo")
+	repoURL = flags.String("repo-url", "", "URL of the GitHub repo")
 
 	usage = `
 usage: bb ` + flags.Name() + `
 
 Triggers an incremental update of the codesearch index.
 
-All unindexed changes in the current repo will be submitted to the indexer for
-asynchronous processing.
+All unindexed changes in the current repo will be submitted to the indexer for asynchronous processing.
 `
 )
 
-func indexRepo(args []string) error {
-	if len(args) == 0 {
-		return errors.New(usage)
-	}
-
+func indexRepo() error {
 	ctx := context.Background()
-	if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil && apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
-	}
+	/*
+		if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil && apiKey != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+		}
+	*/
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", "SsT6W9rm1CRbpRFSdEA5")
 
 	parseRepoURL, err := git.ParseGitHubRepoURL(*repoURL)
 	if err != nil {
@@ -57,7 +56,17 @@ func indexRepo(args []string) error {
 		return err
 	}
 
-	client := bbspb.NewBuildBuddyServiceClient(conn)
+	/*
+		client := bbspb.NewBuildBuddyServiceClient(conn)
+		rsp, err := client.RepoStatus(ctx, &inpb.RepoStatusRequest{
+			RepoUrl: parseRepoURL.String(),
+		})
+		if err != nil {
+			return err
+		}
+	*/
+
+	client := cspb.NewCodesearchServiceClient(conn)
 	rsp, err := client.RepoStatus(ctx, &inpb.RepoStatusRequest{
 		RepoUrl: parseRepoURL.String(),
 	})
@@ -72,17 +81,18 @@ func indexRepo(args []string) error {
 
 	gc := github.NewCommandLineGitClient(repoRoot)
 
-	headSHA, err := gc.ExecuteCommand("rev-parse", "HEAD")
+	headSHA, err := gc.ExecuteCommand("git", "rev-parse", "HEAD")
 	if err != nil {
 		return err
 	}
+	headSHA = strings.TrimSpace(headSHA)
 
 	update, err := github.ComputeIncrementalUpdate(gc, rsp.GetLastIndexedCommitSha(), headSHA)
 	if err != nil {
-		return err
+		return fmt.Errorf("incremental update aborted: %w", err)
 	}
 
-	_, err = client.Index(ctx, &inpb.IndexRequest{
+	req := &inpb.IndexRequest{
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl: parseRepoURL.String(),
 			// TODO(jdelfino): shouldn't be required... reorg the proto?
@@ -92,8 +102,9 @@ func indexRepo(args []string) error {
 		ReplacementStrategy: inpb.ReplacementStrategy_INCREMENTAL,
 		Update:              update,
 		Async:               true,
-	})
+	}
 
+	_, err = client.Index(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -119,7 +130,7 @@ func HandleIndex(args []string) (int, error) {
 		return 1, nil
 	}
 
-	if err := indexRepo(flags.Args()); err != nil {
+	if err := indexRepo(); err != nil {
 		log.Print(err)
 		return 1, nil
 	}

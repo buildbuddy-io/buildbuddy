@@ -55,6 +55,7 @@ func extractFieldMatches(tb testing.TB, r types.IndexReader, docMatches []types.
 	tb.Helper()
 	m := make(map[string][]uint64)
 	for _, docMatch := range docMatches {
+		log.Infof("docMatch: %v", docMatch)
 		storedDoc := r.GetStoredDocument(docMatch.Docid())
 		id, err := strconv.ParseUint(string(storedDoc.Field("id").Contents()), 10, 64)
 		require.NoError(tb, err)

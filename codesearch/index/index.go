@@ -236,6 +236,10 @@ func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 	} else {
 		// If not found, check in the index
 		value, closer, err := w.db.Get(key)
+<<<<<<< HEAD
+=======
+
+>>>>>>> cb7e4f5358 (lots of  changes and bugfixes)
 		if err != nil {
 			return 0, err
 		}

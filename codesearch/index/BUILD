@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//codesearch/performance",
         "//codesearch/posting",
+        "//codesearch/schema",
         "//codesearch/types",
         "//server/util/log",
         "//server/util/status",

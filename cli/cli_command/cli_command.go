@@ -97,8 +97,8 @@ var Commands = []Command{
 		Handler: search.HandleSearch,
 	},
 	{
-		Name:    "search-index",
-		Help:    "Searches for code in the remote codesearch index.",
+		Name:    "index",
+		Help:    "Sends updates to the remote codesearch index.",
 		Handler: index.HandleIndex,
 	},
 	{
