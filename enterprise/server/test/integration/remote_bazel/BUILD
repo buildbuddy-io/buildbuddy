@@ -10,7 +10,7 @@ go_test(
         "test.include-secrets": "true",
         "test.workload-isolation-type": "firecracker",
         # Use an image with bazelisk installed
-        "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:271e5e3704d861159c75b8dd6713dbe5a12272ec8ee73d17f89ed7be8026553f",
+        "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu22-04@sha256:0d84a80bb0fc36ba5381942adcf6493249594dcc9044845c617b78c9b621cae3",
         # The tests clone git repos, so make sure they have enough resources to do so
         "test.EstimatedComputeUnits": "3",
         "test.EstimatedFreeDiskBytes": "4GB",
