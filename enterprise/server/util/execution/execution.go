@@ -163,6 +163,7 @@ func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
 			DoNotCache: in.DoNotCache,
 		},
 		TargetLabel:    in.TargetLabel,
+		ActionMnemonic: in.ActionMnemonic,
 		CommandSnippet: in.CommandSnippet,
 	}
 
@@ -173,7 +174,7 @@ func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
 // the Execution proto returned to the client when listing executions (e.g.
 // Executions tab, Drilldown tab.)
 func ExecutionListingColumns() []string {
-	// NOTE: keep in sync with ClientProtoColumns and OLAPExecToClientProto
+	// NOTE: keep in sync with OLAPExecToClientProto
 	return []string{
 		"execution_id",
 		"status_code",
@@ -201,6 +202,7 @@ func ExecutionListingColumns() []string {
 		"do_not_cache",
 		"command_snippet",
 		"target_label",
+		"action_mnemonic",
 	}
 }
 

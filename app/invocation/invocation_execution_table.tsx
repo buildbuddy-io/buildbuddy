@@ -13,6 +13,8 @@ import {
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
+import { joinReactNodes } from "../util/react";
+import { ChevronRight } from "lucide-react";
 
 interface Props {
   executions: execution_stats.Execution[];
@@ -36,7 +38,7 @@ export default class InvocationExecutionTable extends React.Component<Props> {
               <div className="invocation-execution-row-image">{status.icon}</div>
               <div>
                 <div className="execution-header">
-                  {execution.targetLabel && <span className="target-label">{execution.targetLabel}</span>}
+                  {renderExecutionLabel(execution)}
                   <DigestComponent digest={execution.actionDigest} expanded={execution.targetLabel === ""} />
                 </div>
                 <div className="command-snippet">$ {execution.commandSnippet}</div>
@@ -85,4 +87,18 @@ export default class InvocationExecutionTable extends React.Component<Props> {
       </div>
     );
   }
+}
+
+function renderExecutionLabel(execution: execution_stats.Execution) {
+  return (
+    <span className="execution-label">
+      {joinReactNodes(
+        [
+          execution.targetLabel && <span className="target-label">{execution.targetLabel}</span>,
+          execution.actionMnemonic && <span className="action-mnemonic">{execution.actionMnemonic}</span>,
+        ].filter((node) => node),
+        <ChevronRight className="icon breadcrumb-separator" />
+      )}
+    </span>
+  );
 }

@@ -132,6 +132,10 @@ message Execution {
   // The target label associated with the execution.
   string target_label = 15;
 
+  // The action mnemonic associated with the execution (a short string
+  // describing the action being executed).
+  string action_mnemonic = 17;
+
   // The executor hostname that ran the execution. This is only populated if the
   // user has permission to view the executor metadata.
   string executor_hostname = 16;
