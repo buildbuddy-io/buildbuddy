@@ -30,7 +30,7 @@ var (
 	usage = `
 usage: bb ` + flags.Name() + `
 
-Triggers an incremental update of the codesearch index. 
+Triggers an incremental update of the codesearch index.
 
 All unindexed changes in the current repo will be submitted to the indexer for
 asynchronous processing.
@@ -77,7 +77,7 @@ func indexRepo(args []string) error {
 		return err
 	}
 
-	update, err := github.ExtractCommitRange(gc, rsp.GetLastIndexedCommitSha(), headSHA)
+	update, err := github.ComputeIncrementalUpdate(gc, rsp.GetLastIndexedCommitSha(), headSHA)
 	if err != nil {
 		return err
 	}
