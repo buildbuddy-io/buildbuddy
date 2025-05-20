@@ -1,12 +1,13 @@
-// TODO(jdelfino): Move common github repo extraction code to this file from
-// cli.go and server.go
 package github
 
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -157,7 +158,7 @@ func detectionBuffer(content []byte) []byte {
 
 func validateFile(content []byte) error {
 	if len(content) > maxFileLen {
-		return fmt.Errorf("File too long")
+		return fmt.Errorf("file too long")
 	}
 
 	shortBuf := detectionBuffer(content)
@@ -165,14 +166,159 @@ func validateFile(content []byte) error {
 	// Check the mimetype and skip if not valid for indexing.
 	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
 	if err != nil {
-		return fmt.Errorf("Failed to detect mimetype: %w", err)
+		return fmt.Errorf("failed to detect mimetype: %w", err)
 	}
 	if skipMime.MatchString(mtype.String()) {
-		return fmt.Errorf("Mimetype not supported for indexing: %s", mtype)
+		return fmt.Errorf("mimetype not supported for indexing: %s", mtype)
 	}
 
 	if !utf8.Valid(content) {
 		return fmt.Errorf("Non-UTF8 content in file")
 	}
 	return nil
+}
+
+// This type exists to enable dependency injection for testing.
+type gitClient interface {
+	ExecuteCommand(args ...string) (string, error)
+	LoadFileContents(fileToLoad string) ([]byte, error)
+}
+
+type commandLineGitClient struct {
+	repoDir string
+}
+
+func NewCommandLineGitClient(repoDir string) gitClient {
+	return &commandLineGitClient{repoDir: repoDir}
+}
+
+func (c *commandLineGitClient) ExecuteCommand(args ...string) (string, error) {
+	command := exec.Command("git", args...)
+	command.Dir = c.repoDir
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return "", status.InternalErrorf("failed to run command with args: %v: %v", args, err)
+	}
+	return string(output), nil
+}
+
+func (c *commandLineGitClient) LoadFileContents(filename string) ([]byte, error) {
+	filePath := filepath.Join(c.repoDir, filename)
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to read file %s: %s", filePath, err)
+	}
+	return content, nil
+}
+
+func processDiffTreeLine(gc gitClient, line string, commit *inpb.Commit) error {
+	// diff-tree lines are in the format "<src mode> <dst mode> <src sha> <dst sha> <status>\t<src path>\t<dst path(copy/rename only)>""
+	// Documentation: https://git-scm.com/docs/git-diff-tree
+	parts := strings.Split(line, " ")
+	if len(parts) < 5 {
+		return status.InternalErrorf("invalid diff-tree line: %s", line)
+	}
+
+	fileParts := strings.Split(parts[4], "\t")
+	if len(fileParts) < 2 {
+		return status.InternalErrorf("invalid diff-tree line: %s", line)
+	}
+
+	fileStatus := fileParts[0]
+	if fileStatus == "U" {
+		return nil // Unmerged file - ignore
+	}
+
+	srcFile := fileParts[1]
+	if fileStatus == "D" || fileStatus[0] == 'R' {
+		if !slices.Contains(commit.DeleteFilepaths, srcFile) {
+			commit.DeleteFilepaths = append(commit.DeleteFilepaths, srcFile)
+		}
+	}
+
+	if fileStatus == "D" {
+		// Nothing else to do for deletes
+		return nil
+	}
+
+	fileToLoad := srcFile
+	if fileStatus[0] == 'R' || fileStatus[0] == 'C' {
+		// renames and copies have a destination file name in index 6
+		if len(fileParts) < 3 {
+			return status.InternalErrorf("invalid diff-tree line, R/C with no dest file: %s", line)
+		}
+		fileToLoad = fileParts[2]
+	}
+
+	content, err := gc.LoadFileContents(fileToLoad)
+	if err != nil {
+		return status.InternalErrorf("failed to read file %s: %s", fileToLoad, err)
+	}
+
+	if err := validateFile(content); err != nil {
+		log.Infof("File %s can't be indexed, skipping: %v", fileToLoad, err)
+		return nil
+	}
+
+	commit.AddsAndUpdates = append(commit.AddsAndUpdates, &inpb.File{
+		Filepath: fileToLoad,
+		Content:  content,
+	})
+	return nil
+}
+
+func extractCommitDetails(gc gitClient, sha, parentSha string) (*inpb.Commit, error) {
+	log.Infof("Extracting commit details for %s", sha)
+	output, err := gc.ExecuteCommand("diff-tree", "-r", fmt.Sprintf("%s..%s", parentSha, sha))
+	if err != nil {
+		return nil, status.InternalErrorf("failed to run git diff-tree: %s", err)
+	}
+
+	result := &inpb.Commit{
+		Sha:       sha,
+		ParentSha: parentSha,
+	}
+
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		if err := processDiffTreeLine(gc, strings.TrimSpace(line), result); err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
+}
+
+// ComputeIncrementalUpdate generates an incremental update payload for the codesearch indexer.
+// The information is extracted using the git command line client on a local clone of a repo.
+// The payload contains a list of commits, the file contents for each added/modified file, and a list
+// of deleted filenames.
+func ComputeIncrementalUpdate(gc gitClient, firstSha, lastSha string) (*inpb.IncrementalUpdate, error) {
+	output, err := gc.ExecuteCommand("log", "--first-parent", "--format=%H", fmt.Sprintf("%s..%s", firstSha, lastSha))
+	if err != nil {
+		return nil, err
+	}
+	trimmedOutput := strings.TrimSpace(output)
+	if len(trimmedOutput) == 0 {
+		return nil, fmt.Errorf("no commits found between %s and %s", firstSha, lastSha)
+	}
+
+	commits := strings.Split(trimmedOutput, "\n")
+	result := &inpb.IncrementalUpdate{
+		Commits: make([]*inpb.Commit, len(commits)),
+	}
+
+	for i := len(commits) - 1; i >= 0; i-- {
+		parentSHA := firstSha
+		if i < len(commits)-1 {
+			parentSHA = commits[i+1]
+		}
+
+		commit, err := extractCommitDetails(gc, commits[i], parentSHA)
+		if err != nil {
+			return nil, err
+		}
+		result.Commits[len(commits)-i-1] = commit
+	}
+	return result, nil
 }
