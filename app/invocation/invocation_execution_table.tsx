@@ -30,6 +30,8 @@ export default class InvocationExecutionTable extends React.Component<Props> {
           if (!execution.actionDigest) {
             return;
           }
+          const workerDurationUsec = workerDuration(execution);
+          const durationSuffix = workerDurationUsec ? <> in {format.durationUsec(workerDurationUsec)}</> : null;
           return (
             <Link
               key={index}
@@ -47,13 +49,13 @@ export default class InvocationExecutionTable extends React.Component<Props> {
                     <span>
                       {execution.exitCode ? (
                         <>
-                          <span className="status-name failed">{status.name}</span> in{" "}
-                          {format.durationUsec(workerDuration(execution))} (exit code {execution.exitCode})
+                          <span className="status-name failed">{status.name}</span>
+                          {durationSuffix} (exit code {execution.exitCode})
                         </>
                       ) : (
                         <>
-                          <span className="status-name success">{status.name}</span> in{" "}
-                          {format.durationUsec(workerDuration(execution))}
+                          <span className="status-name success">{status.name}</span>
+                          {durationSuffix}
                         </>
                       )}
                     </span>
@@ -90,15 +92,16 @@ export default class InvocationExecutionTable extends React.Component<Props> {
 }
 
 function renderExecutionLabel(execution: execution_stats.Execution) {
+  const nodes = [
+    execution.targetLabel && <span className="target-label">{execution.targetLabel}</span>,
+    execution.actionMnemonic && <span className="action-mnemonic">{execution.actionMnemonic}</span>,
+  ].filter((node) => node);
+  if (!nodes.length) {
+    return null;
+  }
   return (
     <span className="execution-label">
-      {joinReactNodes(
-        [
-          execution.targetLabel && <span className="target-label">{execution.targetLabel}</span>,
-          execution.actionMnemonic && <span className="action-mnemonic">{execution.actionMnemonic}</span>,
-        ].filter((node) => node),
-        <ChevronRight className="icon breadcrumb-separator" />
-      )}
+      {joinReactNodes(nodes, <ChevronRight className="icon breadcrumb-separator" />)}
     </span>
   );
 }
