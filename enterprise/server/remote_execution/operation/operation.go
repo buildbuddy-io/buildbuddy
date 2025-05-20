@@ -158,7 +158,7 @@ func (c *retryingClient) sendWithRetry(msg *longrunning.Operation) error {
 		if err == nil {
 			return nil
 		}
-		if err != io.EOF {
+		if !isRetryablePublishError(err) {
 			return err
 		}
 		lastErr = err
@@ -217,7 +217,7 @@ func (c *retryingClient) CloseAndRecv() (*repb.PublishOperationResponse, error) 
 		if err == nil {
 			return res, nil
 		}
-		if err != io.EOF {
+		if !isRetryablePublishError(err) {
 			return nil, err
 		}
 		lastErr = err
@@ -249,6 +249,14 @@ func (c *retryingClient) CloseAndRecv() (*repb.PublishOperationResponse, error) 
 	}
 	// Should never happen, but make sure we still return an error in this case.
 	return nil, status.UnknownError("CloseAndRecv: unknown error")
+}
+
+func isRetryablePublishError(err error) bool {
+	// EOF indicates a broken stream since we expect the stream to stay open
+	// until we close it; retry these.
+	// Unavailable and Internal errors likely indicate transient failures; retry
+	// these as well.
+	return err == io.EOF || status.IsUnavailableError(err) || status.IsInternalError(err)
 }
 
 // Metadata creates the ExecuteOperationMetadata object that goes in the

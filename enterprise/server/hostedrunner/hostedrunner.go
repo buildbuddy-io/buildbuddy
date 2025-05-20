@@ -45,6 +45,8 @@ const (
 	// This is used by default.
 	nonRootUser = "buildbuddy"
 	rootUser    = "root"
+
+	timeoutGracePeriod = 10 * time.Second
 )
 
 type runnerService struct {
@@ -129,6 +131,15 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 	serializedAction := base64.StdEncoding.EncodeToString(actionBytes)
 
+	timeout := *ci_runner_util.CIRunnerDefaultTimeout
+	if req.GetTimeout() != "" {
+		d, err := time.ParseDuration(req.GetTimeout())
+		if err != nil {
+			return nil, status.WrapError(err, "parse timeout from request")
+		}
+		timeout = d
+	}
+
 	args := []string{
 		"./" + ci_runner_util.ExecutableName,
 		"--bes_backend=" + events_api_url.String(),
@@ -143,7 +154,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),
 		"--serialized_action=" + serializedAction,
-		"--timeout=" + ci_runner_util.CIRunnerDefaultTimeout.String(),
+		"--timeout=" + timeout.String(),
 	}
 	if !req.GetRunRemotely() {
 		args = append(args, "--record_run_metadata")
@@ -242,6 +253,15 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		})
 	}
 
+	if isolationType != string(platform.FirecrackerContainerType) {
+		// If not running with Firecracker, run an init process so that the
+		// bazel process can be reaped.
+		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+			Name:  platform.DockerInitPropertyName,
+			Value: "true",
+		})
+	}
+
 	cmd.Platform.Properties = append(cmd.Platform.Properties, req.GetExecProperties()...)
 
 	// Normalize to adhere to the REAPI spec.
@@ -251,18 +271,16 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if err != nil {
 		return nil, status.WrapError(err, "upload command")
 	}
+	// Set the action timeout slightly longer than the CI runner timeout, so
+	// that we allow the CI runner to finalize the outer workflow invocation
+	// once the timeout has elapsed, but if the CI runner takes too long to
+	// finalize, we can still kill the action.
+	actionTimeout := timeout + timeoutGracePeriod
 	action := &repb.Action{
 		CommandDigest:   cmdDigest,
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
-	}
-
-	if req.GetTimeout() != "" {
-		d, err := time.ParseDuration(req.GetTimeout())
-		if err != nil {
-			return nil, status.WrapError(err, "parse timeout from request")
-		}
-		action.Timeout = durationpb.New(d)
+		Timeout:         durationpb.New(actionTimeout),
 	}
 
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, action)
@@ -451,7 +469,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 
 	executionID := op.GetName()
 	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
-		return nil, status.WrapError(err, "wait invocation exists")
+		return nil, err
 	}
 
 	return res, nil
@@ -521,8 +539,8 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			}
 			if stage == repb.ExecutionStage_COMPLETED {
 				if execResponse := operation.ExtractExecuteResponse(op); execResponse != nil {
-					if gstatus.FromProto(execResponse.Status).Err() != nil {
-						return status.InternalErrorf("Failed to create runner invocation (execution ID: %q): %s", executionID, execResponse.GetStatus().GetMessage())
+					if execErr := gstatus.FromProto(execResponse.Status).Err(); execErr != nil {
+						return fmt.Errorf("failed to create runner invocation (execution ID: %q): %w", executionID, execErr)
 					}
 				}
 				return nil

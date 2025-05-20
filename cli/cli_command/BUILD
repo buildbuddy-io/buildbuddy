@@ -17,6 +17,7 @@ go_library(
         "//cli/printlog",
         "//cli/remote_download",
         "//cli/remotebazel",
+        "//cli/search",
         "//cli/update",
         "//cli/upload",
         "//cli/versioncmd",

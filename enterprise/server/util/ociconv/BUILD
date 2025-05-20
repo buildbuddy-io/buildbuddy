@@ -22,18 +22,19 @@ go_library(
 go_test(
     name = "ociconv_test",
     srcs = ["ociconv_test.go"],
-    # TODO: remove skopeo dep and run on default pool.
     exec_properties = {
-        "test.Pool": "bare",
-        "test.use-self-hosted-executors": "true",
-        "test.container-image": "none",
+        "test.dockerNetwork": "bridge",
     },
-    tags = ["bare"],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         ":ociconv",
         "//enterprise/server/util/oci",
+        "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/testutil/testregistry",
+        "//server/util/testing/flags",
+        "@com_github_google_go_containerregistry//pkg/v1/empty",
+        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )

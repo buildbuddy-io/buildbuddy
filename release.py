@@ -42,10 +42,13 @@ def nonempty_lines(text):
     return lines
 
 def workspace_is_clean():
+    print('Checking if workspace is clean.')
     p = subprocess.Popen('git status --untracked-files=no --porcelain',
                          shell=True, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT)
-    return len(p.stdout.readlines()) == 0
+    out = [l.decode() for l in p.stdout.readlines()]
+    print('git status output:\n%s' % "\n".join(out))
+    return len(out) == 0
 
 def is_published_release(version_tag):
     github_token = os.environ.get('GITHUB_TOKEN')
@@ -220,7 +223,11 @@ def main():
     parser.add_argument('--arch_specific_executor_tag', default=False, action='store_true', help='Suffix the executor image tag with the CPU architecture (amd64 or arm64)')
     parser.add_argument('--version', default='', help='Version tag override, used when pushing docker images. Implies --bump_version_type=none')
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
+    parser.add_argument('--mark_workspace_as_safe', default='')
     args = parser.parse_args()
+
+    if args.mark_workspace_as_safe:
+        run_or_die('git config --global --add safe.directory %s' % args.mark_workspace_as_safe)
 
     if workspace_is_clean():
         print("Workspace is clean!")

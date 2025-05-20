@@ -28,3 +28,11 @@ genrule(
     outs = ["vmlinux"],
     cmd = "cp $(SRCS) $@",
 )
+
+genrule(
+    name = "vmlinux_6.1_copy",
+    srcs = ["@org_kernel_git_linux_kernel-vmlinux-6.1//file:downloaded"],
+    outs = ["vmlinux_6.1"],
+    cmd = "cp $(SRCS) $@",
+    target_compatible_with = ["@platforms//cpu:x86_64"],
+)

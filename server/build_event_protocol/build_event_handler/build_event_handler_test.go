@@ -1522,12 +1522,16 @@ func TestBuildStatusReportingDisabled(t *testing.T) {
 			dbh := te.GetDBHandle()
 			require.NotNil(t, dbh)
 			gh := &tables.GitHubAppInstallation{
-				GroupID:                         "GROUP1",
-				Owner:                           "testowner",
-				ReportCommitStatusesForCIBuilds: test.enableReportingForRepo,
+				GroupID: "GROUP1",
+				Owner:   "testowner",
 			}
 			err = dbh.NewQuery(context.Background(), "create_github_app_installation_for_test").Create(gh)
 			require.NoError(t, err)
+			// Gorm `Create` will ignore the value of `report_commit_statuses_for_ci_builds`
+			// if it is set to false in the struct. To override its default value of true,
+			// you have to explicitly update the value of the field.
+			rsp := dbh.NewQuery(context.Background(), "create_github_app_installation_for_test").Raw(`UPDATE "GitHubAppInstallations" SET report_commit_statuses_for_ci_builds = ?`, test.enableReportingForRepo).Exec()
+			require.NoError(t, rsp.Error)
 
 			buildEvents := []*bspb.BuildEvent{
 				{

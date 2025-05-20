@@ -3,8 +3,8 @@ package priority_task_scheduler
 import (
 	"context"
 	"testing"
+	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -36,7 +37,7 @@ func newTaskReservationRequest(taskID, taskGroupID string, priority int32) *scpb
 }
 
 func TestTaskQueue_SingleGroup(t *testing.T) {
-	q := newTaskQueue()
+	q := newTaskQueue(clockwork.NewRealClock())
 	require.Equal(t, 0, q.Len())
 	require.Nil(t, q.Peek())
 
@@ -71,7 +72,7 @@ func TestTaskQueue_SingleGroup(t *testing.T) {
 }
 
 func TestTaskQueue_MultipleGroups(t *testing.T) {
-	q := newTaskQueue()
+	q := newTaskQueue(clockwork.NewRealClock())
 
 	// First group has 3 task reservations.
 	q.Enqueue(newTaskReservationRequest("group1Task1", testGroupID1, 0))
@@ -95,7 +96,7 @@ func TestTaskQueue_MultipleGroups(t *testing.T) {
 }
 
 func TestTaskQueue_DedupesTasks(t *testing.T) {
-	q := newTaskQueue()
+	q := newTaskQueue(clockwork.NewRealClock())
 
 	require.True(t, q.Enqueue(newTaskReservationRequest("1", testGroupID1, 0)))
 	require.False(t, q.Enqueue(newTaskReservationRequest("1", testGroupID1, 0)))
@@ -263,6 +264,34 @@ func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 	}
 }
 
+func TestLocalEnqueueTimestamp(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	startTime := time.Now().UTC()
+	clock := clockwork.NewFakeClockAt(startTime)
+	env.SetClock(clock)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+	scheduler := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	scheduler.Start()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+	})
+
+	// Start a task.
+	reservation := &scpb.EnqueueTaskReservationRequest{TaskId: fakeTaskID("task1")}
+	_, err := scheduler.EnqueueTaskReservation(ctx, reservation)
+	require.NoError(t, err)
+	task := <-executor.StartedExecutions
+	task.Complete()
+
+	// Make sure the local enqueue timestamp looks correct.
+	require.Equal(t, startTime, task.ScheduledTask.GetWorkerQueuedTimestamp().AsTime())
+}
+
 func fakeTaskID(label string) string {
 	return label + "/uploads/" + uuid.New() + "/blobs/2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae/3"
 }
@@ -302,7 +331,7 @@ func (e *FakeExecutor) HostID() string {
 	return "fake-host-id"
 }
 
-func (e *FakeExecutor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream *operation.Publisher) (retry bool, err error) {
+func (e *FakeExecutor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream interfaces.Publisher) (retry bool, err error) {
 	log.Debugf("FakeExecutor: starting task %q", st.GetExecutionTask().GetExecutionId())
 	fe := &FakeExecution{
 		ScheduledTask: st,

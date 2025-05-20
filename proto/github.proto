@@ -4,13 +4,25 @@ import "proto/context.proto";
 
 package github;
 
+// UnlinkUserGitHubAccountRequest is a request to unlink the GitHub account
+// associated with the authenticated user.
+message UnlinkUserGitHubAccountRequest {
+  context.RequestContext request_context = 1;
+}
+
+message UnlinkUserGitHubAccountResponse {
+  context.ResponseContext response_context = 1;
+}
+
 // UnlinkGitHubAccountRequest is a request to unlink the GitHub account
 // associated with the group selected in the request context.
 message UnlinkGitHubAccountRequest {
   context.RequestContext request_context = 1;
 
   // Whether to unlink the user-level account.
-  bool unlink_user_account = 2;
+  // DEPRECATED: use UnlinkUserGitHubAccount RPC instead.
+  // TODO(bduffany): delete this after next rollout.
+  bool unlink_user_account = 2 [deprecated = true];
 }
 
 message UnlinkGitHubAccountResponse {

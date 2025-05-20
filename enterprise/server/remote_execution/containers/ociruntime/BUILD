@@ -8,6 +8,7 @@ go_library(
     embedsrcs = [
         "hosts",
         "seccomp.json",
+        "tini",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime",
     target_compatible_with = ["@platforms//os:linux"],
@@ -37,6 +38,13 @@ go_library(
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
     ],
+)
+
+genrule(
+    name = "tini_binary",
+    srcs = ["//enterprise/server/cmd/executor:tini"],
+    outs = ["tini"],
+    cmd = "cp $(SRCS) $@",
 )
 
 go_test(
@@ -73,11 +81,9 @@ go_test(
         "busyboxRlocationpath": "$(rlocationpath :busybox)",
         "ociBusyboxRlocationpath": "$(rlocationpath @busybox)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
-        "tiniRlocationpath": "$(rlocationpath //enterprise/server/cmd/executor:tini)",
     },
     deps = [
         ":ociruntime",
-        "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/persistentworker",
         "//enterprise/server/remote_execution/platform",
@@ -89,6 +95,7 @@ go_test(
         "//proto:worker_go_proto",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/testutil/quarantine",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testnetworking",
@@ -104,6 +111,7 @@ go_test(
         "@com_github_google_go_containerregistry//pkg/crane",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_google_go_containerregistry//pkg/v1/mutate",
+        "@com_github_opencontainers_runtime_spec//specs-go",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles",

@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -15,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -131,7 +129,7 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 		if err == nil {
 			break
 		}
-		if !*enableReconnect || !status.IsUnavailableError(err) {
+		if !*enableReconnect || !(status.IsUnavailableError(err) || status.IsInternalError(err)) {
 			return nil, err
 		}
 		originalErr := err
@@ -166,9 +164,6 @@ func (t *TaskLease) reEnqueueTask(ctx context.Context, reason string) error {
 		LeaseId: t.leaseID,
 		Reason:  reason,
 	}
-	if apiKey := executor_auth.APIKey(); apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
-	}
 	_, err := t.env.GetSchedulerClient().ReEnqueueTask(ctx, req)
 	return err
 }
@@ -181,7 +176,7 @@ func (t *TaskLease) keepLease(ctx context.Context) {
 				return
 			case <-time.After(t.ttl):
 				if _, err := t.pingServer(ctx); err != nil {
-					log.CtxWarningf(ctx, "Error updating lease for task: %q: %s", t.taskID, err.Error())
+					log.CtxErrorf(ctx, "Error updating lease for task: %q: %s", t.taskID, err)
 					t.cancelFunc()
 					return
 				}
@@ -194,18 +189,14 @@ func (t *TaskLease) claim(ctx context.Context) (context.Context, []byte, error) 
 	if t.env.GetSchedulerClient() == nil {
 		return nil, nil, status.FailedPreconditionError("Scheduler client not configured")
 	}
-	leaseTaskCtx := ctx
-	if apiKey := executor_auth.APIKey(); apiKey != "" {
-		leaseTaskCtx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
-	}
-	stream, err := t.env.GetSchedulerClient().LeaseTask(leaseTaskCtx)
+	stream, err := t.env.GetSchedulerClient().LeaseTask(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	t.stream = stream
-	serializedTask, err := t.pingServer(leaseTaskCtx)
+	serializedTask, err := t.pingServer(ctx)
 	if err == nil {
-		defer t.keepLease(leaseTaskCtx)
+		defer t.keepLease(ctx)
 		log.CtxInfof(ctx, "Worker leased task: %q", t.taskID)
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -249,7 +240,7 @@ func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 		req.ReEnqueueReason = s.Proto()
 	}
 	if err := t.stream.Send(req); err != nil {
-		log.CtxWarningf(ctx, "Could not send request: %s", err)
+		log.CtxWarningf(ctx, "Failed to send final message on task lease stream: %s", err)
 	}
 	closedCleanly := false
 	for {
@@ -270,7 +261,11 @@ func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 		if taskErr != nil {
 			reason = taskErr.Error()
 		}
-		if err := t.reEnqueueTask(context.Background(), reason); err != nil {
+		ctx := context.Background()
+		if jwt := t.ctx.Value(authutil.ContextTokenStringKey); jwt != nil {
+			ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+		}
+		if err := t.reEnqueueTask(ctx, reason); err != nil {
 			log.CtxWarningf(ctx, "TaskLeaser %q: error re-enqueueing task: %s", t.taskID, err.Error())
 		} else {
 			log.CtxInfof(ctx, "TaskLeaser %q: Successfully re-enqueued.", t.taskID)

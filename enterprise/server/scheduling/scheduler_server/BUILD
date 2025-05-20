@@ -14,7 +14,7 @@ go_library(
         "//enterprise/server/remote_execution/action_merger",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize",
-        "//proto:api_key_go_proto",
+        "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:trace_go_proto",
@@ -25,8 +25,10 @@ go_library(
         "//server/remote_execution/config",
         "//server/resources",
         "//server/scheduling/scheduler_server/config",
+        "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
+        "//server/util/error_util",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/perms",
@@ -46,7 +48,7 @@ go_library(
 
 go_test(
     name = "scheduler_server_test",
-    size = "small",
+    size = "medium",
     srcs = ["scheduler_server_test.go"],
     embed = [":scheduler_server"],
     deps = [

@@ -21,8 +21,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -38,7 +40,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
@@ -269,7 +271,7 @@ func (h *executorHandle) authorize(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !user.HasCapability(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY) {
+	if !user.HasCapability(cappb.Capability_REGISTER_EXECUTOR) {
 		return "", status.PermissionDeniedError("API key is missing executor registration capability")
 	}
 	return user.GetGroupID(), nil
@@ -432,6 +434,10 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	// We also clone to avoid mutating the proto in adjustTaskSize below.
 	req = req.CloneVT()
 	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
+
+	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
+		req.Jwt = tokenString
+	}
 
 	if req.GetSchedulingMetadata() == nil {
 		return status.InvalidArgumentError("request is missing scheduling metadata")
@@ -649,18 +655,19 @@ func toNodeInterfaces(nodes []*executionNode) []interfaces.ExecutionNode {
 }
 
 // If the debug-executor-id platform property is set, filters the given nodes
-// to the nodes with that ID. The returned list may be empty.
-func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) []*executionNode {
+// to the nodes with that ID. The returned list may be empty. Also returns the
+// debug-executor-id value.
+func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) (string, []*executionNode) {
 	id := platform.FindEffectiveValue(task, "debug-executor-id")
 	if id == "" {
-		return nodes
+		return "", nodes
 	}
 	for _, n := range nodes {
 		if n.GetExecutorId() == id {
-			return []*executionNode{n}
+			return id, []*executionNode{n}
 		}
 	}
-	return nil
+	return id, nil
 }
 
 type nodePoolKey struct {
@@ -1483,16 +1490,28 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 	if err != nil {
 		return nil, err
 	}
-	// Filter to tasks which can fit on the node.
-	//
+
 	// TODO: sample only from tasks that fit. Currently we randomly sample then
 	// do this filtering, which means that even if there are `count` tasks that
 	// can fit, we might wind up returning an empty list here.
 	tasksThatFit := make([]*persistedTask, 0, len(tasks))
 	for _, task := range tasks {
-		if nodeCanFitTask(node, task.metadata.GetTaskSize()) {
-			tasksThatFit = append(tasksThatFit, task)
+		// Filter to tasks which can fit on the node.
+		if !nodeCanFitTask(node, task.metadata.GetTaskSize()) {
+			continue
 		}
+
+		// Don't try to re-assign tasks intended to run on a specific executor.
+		fullTask := &repb.ExecutionTask{}
+		if err := proto.Unmarshal(task.serializedTask, fullTask); err != nil {
+			log.CtxWarningf(ctx, "failed to parse task %s", task.taskID)
+			continue
+		}
+		if id := platform.FindEffectiveValue(fullTask, "debug-executor-id"); id != "" {
+			continue
+		}
+
+		tasksThatFit = append(tasksThatFit, task)
 	}
 	return tasksThatFit, nil
 }
@@ -1803,6 +1822,16 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if isolationType != string(platform.FirecrackerContainerType) {
 		return task
 	}
+	expOptions := make([]any, 0, 2)
+	expOptions = append(expOptions, experiments.WithContext("executor_hostname", executorHostname))
+
+	selfHosted := false
+	if is := s.env.GetClientIdentityService(); is != nil {
+		identity, err := is.IdentityFromContext(ctx)
+		// Client identity is only set on managed executors.
+		selfHosted = err != nil || identity.Client != interfaces.ClientIdentityExecutor
+	}
+	expOptions = append(expOptions, experiments.WithContext("self_hosted_executor", selfHosted))
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until
@@ -1810,7 +1839,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	// with the value in the task.
 	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
 
-	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", experiments.WithContext("executor_hostname", executorHostname))
+	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
 	if skipResavingGroup == "" {
 		return task
 	}
@@ -1918,9 +1947,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			if len(candidateNodes) == 0 {
 				return errTaskSizeTooLarge(pool, os, arch, enqueueRequest.GetTaskSize())
 			}
-			candidateNodes = filterToDebugExecutorID(candidateNodes, task)
+			var debugExecutorID string
+			debugExecutorID, candidateNodes = filterToDebugExecutorID(candidateNodes, task)
 			if len(candidateNodes) == 0 {
-				return status.UnavailableErrorf("requested executor ID not found")
+				return status.WrapError(error_util.RequestedExecutorNotFoundError(), fmt.Sprintf("enqueue on debug-executor-id %s", debugExecutorID))
 			}
 			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
 		}

@@ -1,9 +1,9 @@
 syntax = "proto3";
 
 import "proto/acl.proto";
-import "proto/api_key.proto";
 import "proto/build_event_stream.proto";
 import "proto/cache.proto";
+import "proto/capability.proto";
 import "proto/command_line.proto";
 import "proto/context.proto";
 import "proto/invocation_status.proto";
@@ -119,7 +119,7 @@ message Invocation {
   string bazel_exit_code = 26;
 
   // The capabilities of the user who created the invocation
-  repeated api_key.ApiKey.Capability created_with_capabilities = 27;
+  repeated capability.Capability created_with_capabilities = 27;
 
   // The user's setting of how to download outputs from remote cache.
   DownloadOutputsOption download_outputs_option = 28;

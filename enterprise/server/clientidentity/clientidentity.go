@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc/metadata"
@@ -91,6 +92,10 @@ func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, er
 }
 
 func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {
+	// Don't save the trace context so that this isn't a parent of the calls
+	// that use the returned context.
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
 	vals := metadata.ValueFromIncomingContext(ctx, authutil.ClientIdentityHeaderName)
 	if len(vals) == 0 {
 		if !*required {

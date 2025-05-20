@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -67,6 +68,7 @@ func newTestingProposerAndSenderAndReplica(t testing.TB) (*testutil.TestingPropo
 }
 
 func TestAcquireAndRelease(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	bgCtx := context.Background()
 	ctx, cancel := context.WithTimeout(bgCtx, 3*time.Second)
 	defer cancel()
@@ -85,7 +87,7 @@ func TestAcquireAndRelease(t *testing.T) {
 			{RangeId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep)
+	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd.GetRangeId(), rep)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -107,6 +109,7 @@ func TestAcquireAndRelease(t *testing.T) {
 }
 
 func TestAcquireAndReleaseMetaRange(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	bgCtx := context.Background()
 	ctx, cancel := context.WithTimeout(bgCtx, 3*time.Second)
 	defer cancel()
@@ -125,7 +128,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 			{RangeId: 1, ReplicaId: 3},
 		},
 	}
-	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep)
+	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd.GetRangeId(), rep)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)
@@ -167,7 +170,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	}
 	leaseDuration := 100 * time.Millisecond
 	gracePeriod := 50 * time.Millisecond
-	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep).WithTimeouts(leaseDuration, gracePeriod)
+	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd.GetRangeId(), rep).WithTimeouts(leaseDuration, gracePeriod)
 
 	// Should be able to get a rangelease.
 	err := l.Lease(ctx)

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -266,10 +267,11 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStats
 func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEValues) {
 	persist := &PersistArtifacts{}
 	if !*disablePersistArtifacts {
-		testOutputURIs := beValues.TestOutputURIs()
-		persist.URIs = make([]*url.URL, 0, len(testOutputURIs))
-		persist.URIs = append(persist.URIs, beValues.BuildToolLogURIs()...)
-		persist.URIs = append(persist.URIs, testOutputURIs...)
+		persist.URIs = slices.Concat(
+			beValues.BuildToolLogURIs(),
+			beValues.FailedTestOutputURIs(),
+			beValues.PassedTestOutputURIs(),
+		)
 	}
 
 	invocation := beValues.Invocation()
@@ -371,6 +373,15 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		log.CtxInfo(ctx, "Successfully wrote invocation to redis")
 	}
 
+	// Once we've flushed execution stats to ClickHouse for this invocation,
+	// clean up the invocation => execution links, since these are only needed
+	// for listing in-progress executions linked to an invocation, and this
+	// listing will now be queryable using ClickHouse.
+	defer func() {
+		if err := r.env.GetExecutionCollector().DeleteInvocationExecutionLinks(ctx, inv.InvocationID); err != nil {
+			log.CtxErrorf(ctx, "Failed to clean up reverse invocation links for invocation %q: %s", inv.InvocationID, err)
+		}
+	}()
 	for {
 		endIndex = startIndex + batchSize - 1
 		executions, err := r.env.GetExecutionCollector().GetExecutions(ctx, inv.InvocationID, int64(startIndex), int64(endIndex))
@@ -380,8 +391,8 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		if len(executions) == 0 {
 			break
 		}
-		err = r.env.GetOLAPDBHandle().FlushExecutionStats(ctx, storedInv, executions)
-		if err != nil {
+		if err := r.env.GetOLAPDBHandle().FlushExecutionStats(ctx, storedInv, executions); err != nil {
+			log.CtxErrorf(ctx, "Failed to flush executions to OLAP DB: %s", err)
 			break
 		}
 		log.CtxInfof(ctx, "successfully wrote %d executions", len(executions))

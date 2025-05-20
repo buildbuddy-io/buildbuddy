@@ -101,11 +101,6 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 		targetingKey: interfaces.AuthAnonymousUser,
 		attributes:   make(map[string]interface{}, 0),
 	}
-	for _, optI := range opts {
-		if opt, ok := optI.(Option); ok {
-			opt(options)
-		}
-	}
 
 	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
 		options.targetingKey = claims.GetGroupID()
@@ -118,6 +113,11 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	}
 	if aid := rmd.GetActionId(); len(aid) > 0 {
 		options.attributes["action_id"] = aid
+	}
+	for _, optI := range opts {
+		if opt, ok := optI.(Option); ok {
+			opt(options)
+		}
 	}
 
 	evalContext := openfeature.NewEvaluationContext(options.targetingKey, options.attributes)

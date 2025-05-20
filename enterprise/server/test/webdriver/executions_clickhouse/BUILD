@@ -10,7 +10,7 @@ go_web_test_suite(
         "test.init-dockerd": "true",
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "clickhouse",
-        "test.EstimatedComputeUnits": "4",
+        "test.EstimatedComputeUnits": "8",
     },
     shard_count = 1,
     tags = ["docker"],

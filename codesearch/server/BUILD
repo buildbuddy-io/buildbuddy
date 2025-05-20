@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/server",
     visibility = ["//visibility:public"],
     deps = [
+        "//codesearch/github",
         "//codesearch/index",
         "//codesearch/kythestorage",
         "//codesearch/performance",
@@ -22,6 +23,7 @@ go_library(
         "//server/util/disk",
         "//server/util/flagutil/yaml",
         "//server/util/git",
+        "//server/util/lockmap",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",

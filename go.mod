@@ -1,6 +1,6 @@
 module github.com/buildbuddy-io/buildbuddy
 
-go 1.24.2
+go 1.24.3
 
 replace (
 	github.com/awslabs/soci-snapshotter => github.com/buildbuddy-io/soci-snapshotter v0.9.0-buildbuddy // keep in sync with buildpatches/com_github_awslabs_soci_snapshotter.patch
@@ -37,7 +37,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.17
 	github.com/aws/smithy-go v1.22.2
 	github.com/awslabs/soci-snapshotter v0.1.0
-	github.com/bazelbuild/bazel-gazelle v0.42.0
+	github.com/bazelbuild/bazel-gazelle v0.43.0
 	github.com/bazelbuild/bazelisk v1.25.1-0.20250219134847-cdb99bfb1b7d
 	github.com/bazelbuild/buildtools v0.0.0-20240918101019-be1c24cc9a44
 	github.com/bazelbuild/rules_go v0.53.0

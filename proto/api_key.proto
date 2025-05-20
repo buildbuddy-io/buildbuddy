@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "proto/capability.proto";
 import "proto/context.proto";
 
 package api_key;
@@ -17,25 +18,8 @@ message ApiKey {
   // remember what it's for.
   string label = 3;
 
-  // A capability associated with an API key.
-  //
-  // Values are powers of 2 so that bitmask operations can be used
-  // to check capabilities.
-  enum Capability {
-    UNKNOWN_CAPABILITY = 0;
-    // Allows writing to the content-addressable store and action cache.
-    CACHE_WRITE_CAPABILITY = 1;  // 2^0
-    // Allows registering an executor with the scheduler.
-    REGISTER_EXECUTOR_CAPABILITY = 2;  // 2^1
-    // Allows writing to the content-addressable store only.
-    CAS_WRITE_CAPABILITY = 4;  // 2^2
-    // Allows changing org-level settings and managing org users, such as via
-    // the settings UI or via the SCIM API.
-    ORG_ADMIN_CAPABILITY = 8;  // 2^3
-  }
-
   // Capabilities associated with this API key.
-  repeated Capability capability = 4;
+  repeated capability.Capability capability = 4;
 
   // True if this API key is visible to developers.
   bool visible_to_developers = 5;
@@ -74,7 +58,7 @@ message CreateApiKeyRequest {
   string label = 3;
 
   // Optional. Capabilities granted to this API key.
-  repeated ApiKey.Capability capability = 4;
+  repeated capability.Capability capability = 4;
 
   // True if this API key should be visible to developers.
   bool visible_to_developers = 5;
@@ -140,7 +124,7 @@ message UpdateApiKeyRequest {
   //
   // NOTE: If this is empty, all capabilities will be removed as part of
   // this update.
-  repeated ApiKey.Capability capability = 4;
+  repeated capability.Capability capability = 4;
 
   // True if this API key should be visible to developers.
   bool visible_to_developers = 5;

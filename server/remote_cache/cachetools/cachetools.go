@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -274,9 +275,9 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
 	resourceName := r.NewUploadString()
 	for {
-		n, err := rc.Read(buf)
+		n, err := ioutil.ReadTryFillBuffer(rc, buf)
 		if err != nil && err != io.EOF {
-			return nil, 0, err
+			return nil, bytesUploaded, err
 		}
 		readDone := err == io.EOF
 
@@ -289,10 +290,12 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 
 		err = sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
 		if err != nil {
+			// If the blob already exists in the CAS, the server will respond EOF.
+			// It is safe to stop sending writes.
 			if err == io.EOF {
 				break
 			}
-			return nil, 0, err
+			return nil, bytesUploaded, err
 		}
 		bytesUploaded += int64(len(req.Data))
 		if readDone {
@@ -302,7 +305,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	}
 	rsp, err := stream.CloseAndRecv()
 	if err != nil {
-		return nil, 0, err
+		return nil, bytesUploaded, err
 	}
 
 	remoteSize := rsp.GetCommittedSize()
@@ -311,19 +314,14 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		// either case, the remoteSize for uncompressed uploads should
 		// match the file size.
 		if remoteSize != r.GetDigest().GetSizeBytes() {
-			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
 		}
 	} else {
 		// -1 is returned if the blob already exists, otherwise the
 		// remoteSize should agree with what we uploaded.
 		if remoteSize != bytesUploaded && remoteSize != -1 {
-			return nil, 0, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
 		}
-	}
-
-	// At this point, a remote size of -1 means nothing new was uploaded.
-	if remoteSize == -1 {
-		bytesUploaded = 0
 	}
 
 	return r.GetDigest(), bytesUploaded, nil
@@ -334,6 +332,15 @@ type uploadRetryResult = struct {
 	uploadedBytes int64
 }
 
+// UploadFromReader attempts to read all bytes from the `in` `Reader` until encountering an EOF
+// and write all those bytes to the CAS.
+// If the input Reader is also a Seeker, UploadFromReader will retry the upload until success.
+//
+// On success, it returns the digest of the uploaded blob and the number of bytes confirmed uploaded.
+// If the blob already exists, this call will succeed and return the number of bytes uploaded before the server short-circuited the upload.
+// On error, it returns the number of bytes uploaded before the error (and the error).
+// UploadFromReader confirms that the expected number of bytes have been written to the CAS
+// and returns a DataLossError if not.
 func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
 	// We can only retry if we can rewind the reader back to the beginning.
 	seeker, retryable := in.(io.Seeker)
@@ -445,12 +452,27 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	return result, err
 }
 
+// byteWriteSeeker implements an io.WriterAt with a []byte array. In turn, this
+// allows using io.OffsetWriter to implement a Writer + Seeker that can be
+// passed to GetBlob, which allows retrying failed downloads. We don't use a
+// bytes.Buffer because it does not implement the io.Seeker interface.
+type byteWriteSeeker []byte
+
+func (ws byteWriteSeeker) WriteAt(p []byte, off int64) (int, error) {
+	if len(p)+int(off) > len(ws) {
+		return 0, status.FailedPreconditionError("Write off end of byte array")
+	}
+	return copy(ws[off:], p), nil
+}
+
 func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, out proto.Message) error {
-	buf := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
-	if err := GetBlob(ctx, bsClient, r, buf); err != nil {
+	buf := byteWriteSeeker(make([]byte, r.GetDigest().GetSizeBytes()))
+	bufWriter := io.NewOffsetWriter(buf, 0)
+
+	if err := GetBlob(ctx, bsClient, r, bufWriter); err != nil {
 		return err
 	}
-	return proto.Unmarshal(buf.Bytes(), out)
+	return proto.Unmarshal([]byte(buf), out)
 }
 
 func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *rspb.ResourceName, out proto.Message) error {

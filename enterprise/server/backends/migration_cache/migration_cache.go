@@ -4,7 +4,9 @@ import (
 	"context"
 	"io"
 	"math/rand"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
@@ -47,7 +49,7 @@ type MigrationCache struct {
 	numCopyWorkers              int
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
-	numCopiesDropped            *int64
+	numCopiesDropped            *atomic.Int64
 	asyncDestWrites             bool
 }
 
@@ -83,7 +85,6 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
-	zero := int64(0)
 	return &MigrationCache{
 		env:                         env,
 		src:                         srcCache,
@@ -95,7 +96,7 @@ func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, sr
 		maxCopiesPerSec:             migrationConfig.MaxCopiesPerSec,
 		eg:                          &errgroup.Group{},
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
-		numCopiesDropped:            &zero,
+		numCopiesDropped:            &atomic.Int64{},
 		numCopyWorkers:              migrationConfig.NumCopyWorkers,
 		asyncDestWrites:             migrationConfig.AsyncDestWrites,
 	}
@@ -179,52 +180,30 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 	return c, nil
 }
 
-func (mc *MigrationCache) checkSafeToMigrate(ctx context.Context) error {
-	u, err := mc.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		// This is an anon user which is ok.
-		return nil
-	}
-	if !u.GetCacheEncryptionEnabled() {
-		return nil
-	}
-	if mc.src.SupportsEncryption(ctx) && !mc.dest.SupportsEncryption(ctx) {
-		return status.FailedPreconditionError("not safe to copy from encrypted cache to unencrypted cache")
-	}
-	return nil
+func (mc *MigrationCache) doubleRead() bool {
+	return mc.doubleReadPercentage > 0 && rand.Float64() < mc.doubleReadPercentage
 }
 
 func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	eg, gctx := errgroup.WithContext(ctx)
-	var srcErr, dstErr error
-	var srcContains, dstContains bool
+	srcContains, srcErr := mc.src.Contains(ctx, r)
 
-	eg.Go(func() error {
-		srcContains, srcErr = mc.src.Contains(gctx, r)
-		return srcErr
-	})
-
-	doubleRead := rand.Float64() <= mc.doubleReadPercentage
-	if doubleRead {
-		eg.Go(func() error {
-			dstContains, dstErr = mc.dest.Contains(gctx, r)
-			return nil // we don't care about the return error from this cache
-		})
-	}
-
-	if err := eg.Wait(); err != nil {
-		return false, err
-	}
-
-	if dstErr != nil {
-		log.Warningf("Migration dest %v contains failed: %s", r.GetDigest(), dstErr)
-	} else if doubleRead && srcContains && !dstContains {
-		metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "contains"}).Inc()
-		if mc.logNotFoundErrors {
-			log.Warningf("Migration digest %v src contains, dest does not", r.GetDigest())
-		}
-	} else if doubleRead && srcContains && dstContains {
-		metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "contains"}).Inc()
+	if mc.doubleRead() {
+		go func() {
+			// Timeout is slightly larger than p99.9 latency.
+			ctx, cancel := background.ExtendContextForFinalization(ctx, 2*time.Second)
+			defer cancel()
+			dstContains, dstErr := mc.dest.Contains(ctx, r)
+			if dstErr != nil {
+				log.Warningf("Migration dest %v contains failed: %s", r.GetDigest(), dstErr)
+			} else if srcContains && !dstContains {
+				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "contains"}).Inc()
+				if mc.logNotFoundErrors {
+					log.Warningf("Migration digest %v src contains, dest does not", r.GetDigest())
+				}
+			} else if srcContains && dstContains {
+				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "contains"}).Inc()
+			}
+		}()
 	}
 
 	return srcContains, srcErr
@@ -240,7 +219,7 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 		return srcErr
 	})
 
-	doubleRead := rand.Float64() <= mc.doubleReadPercentage
+	doubleRead := mc.doubleRead()
 	if doubleRead {
 		eg.Go(func() error {
 			_, dstErr = mc.dest.Metadata(gctx, r)
@@ -269,121 +248,84 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 }
 
 func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return nil, err
-	}
+	srcMissing, srcErr := mc.src.FindMissing(ctx, resources)
 
-	eg, gctx := errgroup.WithContext(ctx)
-	var srcErr, dstErr error
-	var srcMissing, dstMissing []*repb.Digest
-	doubleRead := rand.Float64() <= mc.doubleReadPercentage
-
-	// Some implementations of FindMissing sort the resources slice, which can cause a race condition if both
-	// the src and dest cache try to sort at the same time. Copy the slice to prevent this
-	var resourcesCopy []*rspb.ResourceName
-	var hashToResource map[string]*rspb.ResourceName
-	if doubleRead {
-		resourcesCopy = make([]*rspb.ResourceName, len(resources))
-		copy(resourcesCopy, resources)
-
-		hashToResource = make(map[string]*rspb.ResourceName)
-		for _, r := range resources {
-			hashToResource[r.GetDigest().GetHash()] = r
-		}
-	}
-
-	eg.Go(func() error {
-		srcMissing, srcErr = mc.src.FindMissing(gctx, resources)
-		return srcErr
-	})
-
-	if doubleRead {
-		eg.Go(func() error {
-			dstMissing, dstErr = mc.dest.FindMissing(gctx, resourcesCopy)
-			return nil // we don't care about the return error from this cache
-		})
-	}
-
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	if dstErr != nil {
-		log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
-	}
-	if doubleRead {
-		missingOnlyInDest, _ := digest.Diff(srcMissing, dstMissing)
-
-		if len(missingOnlyInDest) == 0 {
-			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
-		} else if len(missingOnlyInDest) > 0 {
-			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
-			if mc.logNotFoundErrors {
-				log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
+	if mc.doubleRead() {
+		go func() {
+			// Timeout is slightly larger than p99.9 latency.
+			ctx, cancel := background.ExtendContextForFinalization(ctx, 2*time.Second)
+			defer cancel()
+			dstMissing, dstErr := mc.dest.FindMissing(ctx, resources)
+			if dstErr != nil {
+				log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
 			}
-
-			for _, d := range missingOnlyInDest {
-				r := hashToResource[d.GetHash()]
-				mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
+			missingOnlyInDest, _ := digest.Diff(srcMissing, dstMissing)
+			if len(missingOnlyInDest) == 0 {
+				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
+			} else if len(missingOnlyInDest) > 0 {
+				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
+				if mc.logNotFoundErrors {
+					log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
+				}
+				missingSet := make(map[string]struct{}, len(missingOnlyInDest))
+				for _, d := range missingOnlyInDest {
+					missingSet[d.GetHash()] = struct{}{}
+				}
+				for _, r := range resources {
+					if _, missing := missingSet[r.GetDigest().GetHash()]; missing {
+						mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
+					}
+				}
 			}
-		}
+		}()
 	}
-
 	return srcMissing, srcErr
 }
 
 func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return nil, err
-	}
+	srcData, srcErr := mc.src.GetMulti(ctx, resources)
 
-	eg, gctx := errgroup.WithContext(ctx)
-	var srcErr, dstErr error
-	var srcData map[*repb.Digest][]byte
-
-	eg.Go(func() error {
-		srcData, srcErr = mc.src.GetMulti(gctx, resources)
-		return srcErr
-	})
-
-	doubleRead := rand.Float64() <= mc.doubleReadPercentage
-	if doubleRead {
-		eg.Go(func() error {
-			_, dstErr = mc.dest.GetMulti(gctx, resources)
-			return nil
-		})
-	}
-
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	if doubleRead {
-		if dstErr != nil {
-			if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
-				log.Warningf("Migration dest GetMulti of %v failed: %s", resources, dstErr)
+	go func() {
+		// Timeout is slightly larger than p99.9 latency.
+		ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
+		defer cancel()
+		doubleRead := mc.doubleRead()
+		var dstErr error
+		var dstData map[*repb.Digest][]byte
+		if doubleRead {
+			dstData, dstErr = mc.dest.GetMulti(ctx, resources)
+			if dstErr != nil {
+				if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
+					log.Warningf("Migration dest GetMulti of %v failed: %s", resources, dstErr)
+				}
+				if status.IsNotFoundError(dstErr) {
+					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
+				}
+			} else {
+				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
 			}
-			if status.IsNotFoundError(dstErr) {
-				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
+		}
+		if doubleRead && dstErr == nil {
+			for _, r := range resources {
+				if _, inDest := dstData[r.GetDigest()]; !inDest {
+					if srcErr != nil {
+						mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
+					} else if _, inSrc := srcData[r.GetDigest()]; inSrc {
+						mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
+					}
+				}
 			}
 		} else {
-			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
+			for _, r := range resources {
+				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
+			}
 		}
-	}
-
-	for _, r := range resources {
-		mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
-	}
-
+	}()
 	// Return data from source cache
 	return srcData, srcErr
 }
 
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return err
-	}
-
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
@@ -503,12 +445,11 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 
 	if d.dest != nil {
 		eg.Go(func() error {
-			if d.doubleReadBuf == nil || len(d.doubleReadBuf) != len(p) {
-				d.doubleReadBuf = make([]byte, len(p))
-			}
+			// Grow never changes the length, so it will stay 0.
+			d.doubleReadBuf = slices.Grow(d.doubleReadBuf, len(p))
 
 			var dstN int
-			dstN, dstErr = io.ReadFull(d.dest, d.doubleReadBuf)
+			dstN, dstErr = io.ReadFull(d.dest, d.doubleReadBuf[:len(p)])
 			if dstErr == io.ErrUnexpectedEOF {
 				dstErr = io.EOF
 			}
@@ -595,17 +536,13 @@ func (d *doubleReader) Close() error {
 }
 
 func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return nil, err
-	}
-
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
 	var decompressor io.WriteCloser
 	pr, pw := io.Pipe()
 
-	doubleRead := rand.Float64() <= mc.doubleReadPercentage
+	doubleRead := mc.doubleRead()
 
 	shouldDecompressAndVerify := false
 	if doubleRead && r.GetCompressor() == repb.Compressor_ZSTD {
@@ -695,160 +632,168 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 }
 
 type doubleWriter struct {
-	src          interfaces.CommittedWriteCloser
-	dest         interfaces.CommittedWriteCloser
-	destDeleteFn func()
+	src  interfaces.CommittedWriteCloser
+	dest *asyncWriter
 }
 
 func (d *doubleWriter) Write(data []byte) (int, error) {
-	eg := &errgroup.Group{}
-	if d.dest != nil {
-		eg.Go(func() error {
-			_, dstErr := d.dest.Write(data)
-			if dstErr != nil {
-				log.Warningf("Migration failure writing digest to dest cache: %s", dstErr)
-			}
-			return dstErr
-		})
-	}
-
-	srcN, srcErr := d.src.Write(data)
-
-	destErr := eg.Wait()
-	if srcErr != nil && destErr == nil {
-		// If error during write to source cache (source of truth), must delete from destination cache
-		d.destDeleteFn()
-	}
-
-	return srcN, srcErr
+	d.dest.Write(data)
+	return d.src.Write(data)
 }
 
 func (d *doubleWriter) Commit() error {
-	eg := &errgroup.Group{}
-	if d.dest != nil {
-		eg.Go(func() error {
-			dstErr := d.dest.Commit()
-			if dstErr != nil {
-				log.Warningf("Migration writer commit err: %s", dstErr)
-			}
-			return nil
-		})
-	}
-
-	srcErr := d.src.Commit()
-	eg.Wait()
-
-	return srcErr
+	d.dest.Commit()
+	return d.src.Commit()
 }
 
 func (d *doubleWriter) Close() error {
-	eg := &errgroup.Group{}
-	if d.dest != nil {
-		eg.Go(func() error {
-			dstErr := d.dest.Close()
-			if dstErr != nil {
-				log.Warningf("Migration writer close err: %s", dstErr)
-			}
-			return nil
-		})
+	err := d.src.Close()
+	// The destination writer might be closing in the background, so close it
+	// second to give it time to finish.
+	d.dest.Close()
+	return err
+}
+
+// asyncWriter is an interfaces.CommittedWriteCloser which doesn't block on
+// Write and Commit calls. Upon Close, it blocks until all pending writes and a
+// possible commit have completed. Its methods never return errors, so it's
+// only suitable for use when writing to a destination cache.
+type asyncWriter struct {
+	ops      chan asyncOp
+	done     chan struct{}
+	finished bool
+}
+
+type asyncOp struct {
+	data          []byte
+	commit, close bool
+}
+
+func newAsyncWriter(cwc interfaces.CommittedWriteCloser) *asyncWriter {
+	aw := &asyncWriter{
+		// Small buffer to avoid total stalls
+		ops:  make(chan asyncOp, 10),
+		done: make(chan struct{}),
 	}
+	go aw.run(cwc)
+	return aw
+}
 
-	srcErr := d.src.Close()
-	eg.Wait()
+func (aw *asyncWriter) run(cwc interfaces.CommittedWriteCloser) {
+	defer close(aw.done)
+	var writeErr error
+	for op := range aw.ops {
+		if op.commit {
+			if writeErr == nil {
+				if err := cwc.Commit(); err != nil {
+					log.Warningf("Migration writer commit err: %s", err)
+				}
+			} else {
+				log.Warningf("Migration writer not committing because of write error: %s", writeErr)
+			}
+		}
+		if op.close || op.commit {
+			// Close even on commits, because close always comes after commit.
+			if err := cwc.Close(); err != nil {
+				log.Warningf("Migration writer close err: %s", err)
+			}
+			return
+		}
+		if writeErr != nil {
+			// ignore writes after an error
+			continue
+		}
+		n, err := cwc.Write(op.data)
+		if err != nil {
+			writeErr = err
+		}
+		if n != len(op.data) {
+			writeErr = io.ErrShortWrite
+		}
+	}
+}
 
-	return srcErr
+func (aw *asyncWriter) Write(data []byte) (int, error) {
+	if aw.finished {
+		log.Warning("asyncWriter attempting writes after commit or close")
+		return 0, io.ErrClosedPipe
+	}
+	aw.ops <- asyncOp{data: data}
+	return len(data), nil
+}
+
+func (aw *asyncWriter) finish(op asyncOp) {
+	if !aw.finished {
+		aw.finished = true
+		aw.ops <- op
+		close(aw.ops)
+	}
+}
+
+func (aw *asyncWriter) Commit() error {
+	aw.finish(asyncOp{commit: true})
+	return nil
+}
+
+func (aw *asyncWriter) Close() error {
+	aw.finish(asyncOp{close: true})
+	// wait for all the ops to be done, so clients can read their writes
+	<-aw.done
+	return nil
 }
 
 func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return nil, err
-	}
-
 	if mc.asyncDestWrites {
 		// We will write to the destination cache in the background.
 		mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
 		return mc.src.Writer(ctx, r)
 	}
 
-	eg := &errgroup.Group{}
-	var dstErr error
-	var destWriter interfaces.CommittedWriteCloser
-
-	eg.Go(func() error {
-		destWriter, dstErr = mc.dest.Writer(ctx, r)
-		return nil
-	})
-
 	srcWriter, srcErr := mc.src.Writer(ctx, r)
-	eg.Wait()
-
 	if srcErr != nil {
-		if destWriter != nil {
-			err := destWriter.Close()
-			if err != nil {
-				log.Warningf("Migration dest writer close err: %s", err)
-			}
-		}
 		return nil, srcErr
 	}
+	destWriter, dstErr := mc.dest.Writer(ctx, r)
 	if dstErr != nil {
 		log.Warningf("Migration failure creating dest %v writer: %s", r.GetDigest(), dstErr)
+		return srcWriter, nil
 	}
 
 	dw := &doubleWriter{
 		src:  srcWriter,
-		dest: destWriter,
-		destDeleteFn: func() {
-			deleteErr := mc.dest.Delete(ctx, r)
-			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration src write of %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
-			}
-		},
+		dest: newAsyncWriter(destWriter),
 	}
 	return dw, nil
 }
 
 func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return nil, err
-	}
+	srcBuf, srcErr := mc.src.Get(ctx, r)
 
-	eg, gctx := errgroup.WithContext(ctx)
-	var srcErr, dstErr error
-	var srcBuf []byte
-
-	eg.Go(func() error {
-		srcBuf, srcErr = mc.src.Get(gctx, r)
-		return srcErr
-	})
-
-	// Double read some proportion to guarantee that data is consistent between caches
-	doubleRead := rand.Float64() <= mc.doubleReadPercentage
-	if doubleRead {
-		eg.Go(func() error {
-			_, dstErr = mc.dest.Get(gctx, r)
-			return nil // we don't care about the return error from this cache
-		})
-	}
-
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	if doubleRead {
-		if dstErr != nil {
-			if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
-				log.Warningf("Double read of %q failed. src err %s, dest err %s", r, srcErr, dstErr)
-			}
-			if status.IsNotFoundError(dstErr) {
-				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
+	go func() {
+		// Timeout is slightly larger than p99.9 latency.
+		ctx, cancel := background.ExtendContextForFinalization(ctx, 5*time.Second)
+		defer cancel()
+		// Double read some proportion to guarantee that data is consistent between caches
+		doubleRead := mc.doubleRead()
+		if doubleRead {
+			_, dstErr := mc.dest.Get(ctx, r)
+			if dstErr != nil {
+				if status.IsNotFoundError(dstErr) {
+					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
+					mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
+				} else {
+					if mc.logNotFoundErrors {
+						log.Warningf("Double read of %q failed. src err %s, dest err %s", r, srcErr, dstErr)
+					}
+					mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
+				}
+			} else {
+				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
 			}
 		} else {
-			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
+			mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 		}
-	}
-
-	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
+	}()
 
 	// Return data from source cache
 	return srcBuf, srcErr
@@ -876,7 +821,7 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.Resou
 	}:
 	default:
 		log.Debugf("Migration dropping copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
-		*mc.numCopiesDropped++
+		mc.numCopiesDropped.Add(1)
 	}
 }
 
@@ -939,10 +884,9 @@ func (mc *MigrationCache) monitorCopyChanFullness() {
 		case <-mc.quitChan:
 			return
 		case <-copyChanFullTicker.C:
-			if *mc.numCopiesDropped != 0 {
-				log.Warningf("Migration copy chan was full and dropped %d copies in %v. May need to increase buffer size", *mc.numCopiesDropped, mc.copyChanFullWarningInterval)
-				zero := int64(0)
-				mc.numCopiesDropped = &zero
+			dropped := mc.numCopiesDropped.Swap(0)
+			if dropped != 0 {
+				log.Warningf("Migration copy chan was full and dropped %d copies in %v. May need to increase buffer size", dropped, mc.copyChanFullWarningInterval)
 			}
 		case <-metricTicker.C:
 			copyChanSize := len(mc.copyChan)
@@ -1072,8 +1016,4 @@ func (mc *MigrationCache) Stop() error {
 // decompressed bytes to another
 func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return mc.src.SupportsCompressor(compressor) && mc.dest.SupportsCompressor(compressor)
-}
-
-func (mc *MigrationCache) SupportsEncryption(ctx context.Context) bool {
-	return mc.src.SupportsEncryption(ctx) && mc.dest.SupportsEncryption(ctx)
 }

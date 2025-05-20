@@ -142,6 +142,15 @@ type leaseAgent struct {
 	updates *boundedstack.BoundedStack[*leaseInstruction]
 }
 
+func (la *leaseAgent) isStopped() bool {
+	select {
+	case <-la.ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
 func (la *leaseAgent) sendRangeEvent(eventType events.EventType) {
 	ev := events.RangeEvent{
 		Type: eventType,
@@ -162,7 +171,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 	valid := la.l.Valid(ctx)
 	start := time.Now()
 
-	rangeID := la.l.GetRangeDescriptor().GetRangeId()
+	rangeID := la.l.GetRangeID()
 
 	switch instruction.action {
 	case Acquire:
@@ -185,7 +194,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 		la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.Desc(ctx), dur, instruction)
 		la.sendRangeEvent(events.EventRangeLeaseAcquired)
 		metrics.RaftLeases.With(prometheus.Labels{
-			metrics.RaftRangeIDLabel: strconv.Itoa(int(la.l.GetRangeDescriptor().GetRangeId())),
+			metrics.RaftRangeIDLabel: strconv.Itoa(int(la.l.GetRangeID())),
 		}).Inc()
 		metrics.RaftLeaseActionDurationMsec.With(prometheus.Labels{
 			metrics.RaftLeaseActionLabel: leaseAction,
@@ -238,6 +247,9 @@ func (la *leaseAgent) runloop() {
 }
 
 func (la *leaseAgent) queueInstruction(instruction *leaseInstruction) {
+	if la.isStopped() {
+		return
+	}
 	la.once.Do(func() {
 		la.eg.Go(func() error {
 			la.runloop()
@@ -257,7 +269,7 @@ func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replic
 	return &leaseAgent{
 		replicaID: r.ReplicaID(),
 		log:       lk.log,
-		l:         rangelease.New(lk.nodeHost, lk.session, lk.log, lk.liveness, rd, r),
+		l:         rangelease.New(lk.nodeHost, lk.session, lk.log, lk.liveness, rd.GetRangeId(), r),
 		ctx:       gctx,
 		cancel:    cancel,
 		eg:        eg,
@@ -479,20 +491,22 @@ func (lk *LeaseKeeper) HaveLease(ctx context.Context, rid uint64) bool {
 	lk.mu.Unlock()
 
 	shouldHaveLease := leader && open
-	if shouldHaveLease && !valid {
-		lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
-		la.queueInstruction(&leaseInstruction{
-			rangeID: rangeID,
-			reason:  "should have range",
-			action:  Acquire,
-		})
-	} else if !shouldHaveLease && valid {
-		lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
-		la.queueInstruction(&leaseInstruction{
-			rangeID: rangeID,
-			reason:  "should not have range",
-			action:  Drop,
-		})
+	if !lk.isStopped() {
+		if shouldHaveLease && !valid {
+			lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
+			la.queueInstruction(&leaseInstruction{
+				rangeID: rangeID,
+				reason:  "should have range",
+				action:  Acquire,
+			})
+		} else if !shouldHaveLease && valid {
+			lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
+			la.queueInstruction(&leaseInstruction{
+				rangeID: rangeID,
+				reason:  "should not have range",
+				action:  Drop,
+			})
+		}
 	}
-	return valid
+	return valid && shouldHaveLease
 }

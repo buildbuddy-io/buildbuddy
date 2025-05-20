@@ -16,7 +16,7 @@ func ConfigureToolTag(args []string) []string {
 		v = version.String()
 	}
 	if arg.GetCommand(args) != "" && !arg.Has(args, "tool_tag") {
-		return append(args, "--tool_tag=buildbuddy-cli-"+v)
+		return arg.Append(args, "--tool_tag=buildbuddy-cli-"+v)
 	}
 	return args
 }

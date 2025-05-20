@@ -12,6 +12,7 @@ go_library(
         "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/util/alert",
         "//server/util/log",
         "//server/util/status",
     ],

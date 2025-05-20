@@ -9,9 +9,6 @@ RUN apt-get update && \
     # FUSE support, used by vbd and vfs packages.
     # TODO: probably not needed since we use DirectMountStrict now?
     fuse \
-    # OCI image tools used by ociconv package.
-    # TODO: remove umoci; no longer used.
-    skopeo umoci \
     # Networking tools used by networking package.
     # iproute2 provides the "ip" command.
     iproute2 conntrack \

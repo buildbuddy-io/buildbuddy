@@ -50,6 +50,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -89,6 +90,7 @@ var (
 	netPoolSize                           = flag.Int("executor.firecracker_network_pool_size", 0, "Limit on the number of networks to be reused between VMs. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
+	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -377,8 +379,9 @@ type ExecutorConfig struct {
 
 var (
 	// set by x_defs in BUILD file
-	initrdRunfilePath  string
-	vmlinuxRunfilePath string
+	initrdRunfilePath     string
+	vmlinuxRunfilePath    string
+	vmlinux6_1RunfilePath string
 )
 
 // GetExecutorConfig computes the ExecutorConfig for this executor instance.
@@ -398,9 +401,17 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 	if err != nil {
 		return nil, err
 	}
-	vmlinuxRunfileLocation, err := runfiles.Rlocation(vmlinuxRunfilePath)
-	if err != nil {
-		return nil, err
+	var vmlinuxRunfileLocation string
+	if *enableLinux6_1 {
+		vmlinuxRunfileLocation, err = runfiles.Rlocation(vmlinux6_1RunfilePath)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		vmlinuxRunfileLocation, err = runfiles.Rlocation(vmlinuxRunfilePath)
+		if err != nil {
+			return nil, err
+		}
 	}
 	guestKernelPath, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation, buildRootDir, 0755)
 	if err != nil {
@@ -596,6 +607,7 @@ type FirecrackerContainer struct {
 	machine         *fcclient.Machine    // the firecracker machine object.
 	vmLog           *VMLog
 	env             environment.Env
+	resolver        *oci.Resolver
 
 	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
@@ -643,6 +655,11 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		return nil, err
 	}
 
+	resolver, err := oci.NewResolver(env)
+	if err != nil {
+		return nil, err
+	}
+
 	c := &FirecrackerContainer{
 		vmConfig:         opts.VMConfiguration.CloneVT(),
 		executorConfig:   opts.ExecutorConfig,
@@ -656,6 +673,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		cgroupSettings:   &scpb.CgroupSettings{},
 		blockDevice:      opts.BlockDevice,
 		env:              env,
+		resolver:         resolver,
 		task:             task,
 		loader:           loader,
 		vmLog:            vmLog,
@@ -945,15 +963,37 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 
 	vmd := c.getVMMetadata().CloneVT()
 	vmd.LastExecutedTask = c.getVMTask()
+
+	shouldCacheRemotely := false
+	if c.supportsRemoteSnapshots {
+		// Only save a remote snapshot if a remote snapshot for the primary git branch key
+		// doesn't already exist. Otherwise, only save a local snapshot. Workloads
+		// should hit an executor with a local snapshot due to affinity routing on
+		// the git branch key.
+		//
+		// We want to always save the master snapshot remotely, because it is used as
+		// a fallback for runs on other branches, and we want the latest master snapshot available
+		// to all executors. `!c.hasFallbackKeys()` is a good proxy for whether we're
+		// running on the master snapshot.
+		hasRemoteSnapshotForBranchKey := c.hasRemoteSnapshotForBranchKey(ctx)
+		shouldCacheRemotely = !c.hasFallbackKeys() || !hasRemoteSnapshotForBranchKey || !*snaputil.EnableLocalSnapshotSharing
+		if !shouldCacheRemotely {
+			log.CtxInfof(ctx, "Not saving remote snapshot")
+		} else if hasRemoteSnapshotForBranchKey {
+			log.CtxInfof(ctx, "Saving remote snapshot even though one already exists. Snapshot keys: %v", c.snapshotKeySet)
+		}
+	}
+
 	opts := &snaploader.CacheSnapshotOptions{
-		VMMetadata:          vmd,
-		VMConfiguration:     c.vmConfig,
-		VMStateSnapshotPath: filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:     c.executorConfig.GuestKernelImagePath,
-		InitrdImagePath:     c.executorConfig.InitrdImagePath,
-		ChunkedFiles:        map[string]*copy_on_write.COWStore{},
-		Recycled:            c.recycled,
-		Remote:              c.supportsRemoteSnapshots,
+		VMMetadata:           vmd,
+		VMConfiguration:      c.vmConfig,
+		VMStateSnapshotPath:  filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
+		KernelImagePath:      c.executorConfig.GuestKernelImagePath,
+		InitrdImagePath:      c.executorConfig.InitrdImagePath,
+		ChunkedFiles:         map[string]*copy_on_write.COWStore{},
+		Recycled:             c.recycled,
+		Remote:               shouldCacheRemotely,
+		SkippedCacheRemotely: c.supportsRemoteSnapshots && !shouldCacheRemotely,
 	}
 	if snapshotSharingEnabled {
 		if c.rootStore != nil {
@@ -983,7 +1023,7 @@ func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 		return &fcpb.VMMetadata{
 			VmId:        c.id,
 			SnapshotId:  c.snapshotID,
-			SnapshotKey: c.SnapshotKeySet().BranchKey,
+			SnapshotKey: c.SnapshotKeySet().GetBranchKey(),
 		}
 	}
 	return c.snapshot.GetVMMetadata()
@@ -1081,7 +1121,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
 	if err != nil {
-		return status.WrapError(err, "failed to get snapshot")
+		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
 	}
 
 	// Set unique per-run identifier on the vm metadata so this exact snapshot
@@ -2377,7 +2417,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.executorConfig.CacheRoot, c.containerImage, creds)
+	_, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}
@@ -2968,6 +3008,33 @@ func (c *FirecrackerContainer) machineHasBalloon(ctx context.Context) bool {
 	}
 	_, err := c.machine.GetBalloonConfig(ctx)
 	return err == nil
+}
+
+// hasRemoteSnapshotForBranchKey returns whether a remote snapshot exists for the current
+// `snapshotKeySet.BranchKey`.
+//
+// This function does not consider fallback snapshot keys, because snapshots
+// for the branch key are assumed to be the most up-to-date.
+func (c *FirecrackerContainer) hasRemoteSnapshotForBranchKey(ctx context.Context) bool {
+	if !c.supportsRemoteSnapshots {
+		return false
+	}
+	loader, err := snaploader.New(c.env)
+	if err != nil {
+		log.Warningf("Could not initialize snaploader when checking for remote snapshot: %s", err)
+		return false
+	}
+	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: c.SnapshotKeySet().GetBranchKey()}, c.supportsRemoteSnapshots)
+	return err == nil
+}
+
+// hasFallbackKeys reports whether there are fallback snapshot keys.
+//
+// If none are present, it's likely this run is for the master snapshot
+// (i.e. the default branch), which typically serves as the fallback for runs
+// on other branches.
+func (c *FirecrackerContainer) hasFallbackKeys() bool {
+	return len(c.snapshotKeySet.GetFallbackKeys()) > 0
 }
 
 func isExitErrorSIGTERM(err error) bool {

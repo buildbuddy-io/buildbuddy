@@ -41,19 +41,21 @@ jobs:
           GO_REPOSITORY_USE_HOST_CACHE: 1
           GOMODCACHE: /home/runner/go-mod-cache
         run: |
-          BUILD_FLAGS=(
-            --config=cache
-            --repository_cache=~/repo-cache
-            --bes_backend=remote.buildbuddy.io
-            --bes_results_url=https://app.buildbuddy.io/invocation/
-            --remote_cache=remote.buildbuddy.io
-            --flaky_test_attempts=3
-            --local_test_jobs=1
-            --build_metadata=ROLE=CI
-            --color=yes
-            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
-          )
-          bazel test "${BUILD_FLAGS[@]}" --test_tag_filters=-performance,-docker \
+          echo > user.bazelrc "
+          common --config=cache
+          common --repository_cache=~/repo-cache
+          common --bes_backend=remote.buildbuddy.io
+          common --bes_results_url=https://app.buildbuddy.io/invocation/
+          common --remote_cache=remote.buildbuddy.io
+          common --flaky_test_attempts=3
+          common --local_test_jobs=1
+          common --build_metadata=ROLE=CI
+          common --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true
+          common --color=yes
+          common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
+          "
+
+          bazel test --test_tag_filters=-performance,-docker \
             -- \
             //enterprise/server/remote_execution/... \
             //enterprise/server/test/integration/remote_execution/... \
@@ -63,8 +65,11 @@ jobs:
           # Run a separate bazel invocation to invoke tests with the "docker" tag.
           # TODO: improve platform setup so that we can run this whenever the
           # host has podman available.
-          bazel test "${BUILD_FLAGS[@]}" --test_tag_filters=+docker \
+          bazel test --test_tag_filters=+docker \
             //enterprise/server/test/integration/podman:podman_test
+
+          # Make sure the executor binary builds.
+          bazel build //enterprise/server/cmd/executor
 
       - name: Save caches
         uses: ./.github/actions/cache-save

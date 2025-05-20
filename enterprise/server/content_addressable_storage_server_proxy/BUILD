@@ -34,6 +34,7 @@ go_test(
     deps = [
         "//enterprise/server/atime_updater",
         "//enterprise/server/byte_stream_server_proxy",
+        "//enterprise/server/util/proxy_util",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/cachetools",

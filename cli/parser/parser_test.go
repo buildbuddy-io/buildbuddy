@@ -18,6 +18,42 @@ func init() {
 	SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
 }
 
+func TestNegativeStarlarkFlagWithValue(t *testing.T) {
+	for _, test := range []struct {
+		Name     string
+		Bazelrc  string
+		Args     []string
+		Expanded []string
+	}{
+		{
+			Name: "ExpandStarlarkFlagsFromCommonConfig",
+			Args: []string{"build", "--no@io_bazel_rules_docker//transitions:enable=foo"},
+			Expanded: []string{
+				"--ignore_all_rc_files",
+				"build",
+				"--no@io_bazel_rules_docker//transitions:enable=foo",
+			},
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			ws := testfs.MakeTempDir(t)
+			testfs.WriteAllFileContents(t, ws, map[string]string{
+				"WORKSPACE": "",
+				"BUILD":     "",
+				".bazelrc":  test.Bazelrc,
+			})
+
+			p, err := GetParser()
+			require.NoError(t, err)
+			defer delete(p.ByName, "@io_bazel_rules_docker//transitions:enable")
+			expandedArgs, err := p.expandConfigs(ws, test.Args)
+
+			require.NoError(t, err, "error expanding %s", test.Args)
+			assert.Equal(t, test.Expanded, expandedArgs)
+		})
+	}
+}
+
 func TestParseBazelrc_Simple(t *testing.T) {
 	for _, test := range []struct {
 		Name     string
@@ -62,8 +98,8 @@ func TestParseBazelrc_Complex(t *testing.T) {
 		"import.bazelrc": `
 common:import --build_metadata=IMPORTED_FLAG=1
 `,
-		"explicit_import_1.bazelrc": "--build_metadata=EXPLICIT_IMPORT_1=1",
-		"explicit_import_2.bazelrc": "--build_metadata=EXPLICIT_IMPORT_2=1",
+		"explicit_import_1.bazelrc": "common --build_metadata=EXPLICIT_IMPORT_1=1",
+		"explicit_import_2.bazelrc": "common --build_metadata=EXPLICIT_IMPORT_2=1",
 		".bazelrc": `
 
 # COMMENT
@@ -74,10 +110,11 @@ startup --startup_flag_1
 startup:config --startup_configs_are_not_supported_so_this_flag_should_be_ignored
 
 # continuations are allowed \
---build_metadata=THIS_IS_NOT_A_FLAG_SINCE_IT_IS_PART_OF_THE_PREVIOUS_LINE=1
+common --build_metadata=THIS_IS_NOT_A_FLAG_SINCE_IT_IS_PART_OF_THE_PREVIOUS_LINE=1
 
---invalid_common_flag_1          # trailing comments are allowed
---build_metadata=VALID_COMMON_FLAG=1
+common --invalid_common_flag_1          # trailing comments are allowed
+--build_metadata=INVALID_COMMON_FLAG=1
+common --build_metadata=VALID_COMMON_FLAG=1
 common --invalid_common_flag_2
 common --build_metadata=VALID_COMMON_FLAG=2
 common:foo --build_metadata=COMMON_CONFIG_FOO=1
@@ -110,11 +147,12 @@ try-import %workspace%/NONEXISTENT.bazelrc
 
 	for _, tc := range []struct {
 		args                 []string
+		errorContents        []string
 		expectedExpandedArgs []string
 	}{
 		{
-			[]string{"query"},
-			[]string{
+			args: []string{"query"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
@@ -123,11 +161,11 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{
+			args: []string{
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
 				"query",
 			},
-			[]string{
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
@@ -137,12 +175,12 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{
+			args: []string{
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_2.bazelrc"),
 				"query",
 			},
-			[]string{
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
@@ -153,7 +191,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{
+			args: []string{
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
 				// Passing --bazelrc=/dev/null causes subsequent --bazelrc args
 				// to be ignored.
@@ -161,7 +199,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_2.bazelrc"),
 				"query",
 			},
-			[]string{
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
@@ -171,27 +209,19 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{
+			args: []string{
 				"--ignore_all_rc_files",
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
 				"build",
 				"--config=foo",
 			},
-			[]string{
-				"--ignore_all_rc_files",
-				// Note: when `--ignore_all_rc_files` is set, it's OK to leave
-				// --bazelrc flags as-is, since Bazel will ignore these when it
-				// actually gets invoked. We also don't expand --config args,
-				// since bazel will fail anyway due to configs being effectively
-				// disabled when --ignore_all_rc_files is set.
-				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
-				"build",
-				"--config=foo",
+			errorContents: []string{
+				"config value 'foo' is not defined in any .rc file",
 			},
 		},
 		{
-			[]string{"--explicit_startup_flag", "query"},
-			[]string{
+			args: []string{"--explicit_startup_flag", "query"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--explicit_startup_flag",
 				"--ignore_all_rc_files",
@@ -201,8 +231,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"build"},
-			[]string{
+			args: []string{"build"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -212,8 +242,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"build", "--explicit_flag"},
-			[]string{
+			args: []string{"build", "--explicit_flag"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -224,8 +254,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"build", "--config=foo"},
-			[]string{
+			args: []string{"build", "--config=foo"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -240,8 +270,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"build", "--config=foo", "--config", "bar"},
-			[]string{
+			args: []string{"build", "--config=foo", "--config", "bar"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -258,8 +288,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"test"},
-			[]string{
+			args: []string{"test"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"test",
@@ -272,8 +302,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"build", "--config=workspace_status_with_space"},
-			[]string{
+			args: []string{"build", "--config=workspace_status_with_space"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -286,11 +316,11 @@ try-import %workspace%/NONEXISTENT.bazelrc
 		// Test parsing flags that do not require a value to be set, like
 		// --remote_download_minimal or --java_debug
 		{
-			[]string{
+			args: []string{
 				"build",
 				"--config=no_value_flag",
 			},
-			[]string{
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -303,11 +333,11 @@ try-import %workspace%/NONEXISTENT.bazelrc
 		// Test parsing a config that should have been imported with
 		// try-import %workspace%/<import_name>.bazelrc
 		{
-			[]string{
+			args: []string{
 				"build",
 				"--config=import",
 			},
-			[]string{
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -318,12 +348,22 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 	} {
-		p, err := GetParser()
-		require.NoError(t, err)
-		expandedArgs, err := p.expandConfigs(ws, tc.args)
+		t.Run("", func(t *testing.T) {
+			p, err := GetParser()
+			require.NoError(t, err)
+			expandedArgs, err := p.expandConfigs(ws, tc.args)
 
-		require.NoError(t, err, "error expanding %s", tc.args)
-		assert.Equal(t, tc.expectedExpandedArgs, expandedArgs)
+			if tc.errorContents != nil {
+				for _, ec := range tc.errorContents {
+					require.ErrorContains(t, err, ec)
+				}
+			} else {
+				require.NoError(t, err, "error expanding %s", tc.args)
+			}
+			if tc.expectedExpandedArgs != nil {
+				assert.Equal(t, tc.expectedExpandedArgs, expandedArgs)
+			}
+		})
 	}
 }
 
@@ -446,127 +486,158 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 func TestCanonicalizeArgs(t *testing.T) {
 	// Use some args that look like bazel commands but are actually
 	// specifying flag values.
-	args := []string{
-		"--output_base", "build",
-		"--host_jvm_args", "query",
-		"--unknown_plugin_flag", "unknown_plugin_flag_value",
-		"--ignore_all_rc_files",
-		"test",
-		"-c", "opt",
-		"--another_unknown_plugin_flag",
-		"--cache_test_results",
-		"--nocache_test_results",
-		"--bes_backend", "remote.buildbuddy.io",
-		"--bes_backend=",
-		"--remote_header", "x-buildbuddy-foo=1",
-		"--remote_header", "x-buildbuddy-bar=2",
-		"--remote_download_minimal=value",
-		"--noexperimental_convenience_symlinks",
-		"--subcommands=pretty_print",
+	testcases := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name: "Test canonicalize command options",
+			input: []string{
+				"--output_base", "build",
+				"--host_jvm_args", "query",
+				"--unknown_plugin_flag", "unknown_plugin_flag_value",
+				"--ignore_all_rc_files",
+				"test",
+				"-c", "opt",
+				"--another_unknown_plugin_flag",
+				"--cache_test_results",
+				"--nocache_test_results",
+				"--bes_backend", "remote.buildbuddy.io",
+				"--bes_backend=",
+				"--remote_header", "x-buildbuddy-foo=1",
+				"--remote_header", "x-buildbuddy-bar=2",
+				"--remote_download_minimal=value",
+				"--noexperimental_convenience_symlinks",
+				"--subcommands=pretty_print",
+			},
+			expected: []string{
+				"--output_base=build",
+				"--host_jvm_args=query",
+				"--unknown_plugin_flag",
+				"unknown_plugin_flag_value",
+				"--ignore_all_rc_files",
+				"test",
+				"--compilation_mode=opt",
+				"--another_unknown_plugin_flag",
+				"--nocache_test_results",
+				"--bes_backend=",
+				"--remote_header=x-buildbuddy-foo=1",
+				"--remote_header=x-buildbuddy-bar=2",
+				"--remote_download_minimal",
+				"--noexperimental_convenience_symlinks",
+				"--subcommands=pretty_print",
+			},
+		},
+		{
+			name: "Test canonicalize startup options",
+			input: []string{
+				"--output_base", "build",
+				"--host_jvm_args", "query",
+				"--host_jvm_args=another_arg",
+				"--unknown_plugin_flag", "unknown_plugin_flag_value",
+				"--ignore_all_rc_files",
+				"--bazelrc", "/tmp/bazelrc_1",
+				"--bazelrc=/tmp/bazelrc_2",
+				"--host_jvm_debug",
+				"test",
+				"-c", "opt",
+				"--another_unknown_plugin_flag",
+				"--cache_test_results",
+				"--nocache_test_results",
+				"--bes_backend", "remote.buildbuddy.io",
+				"--bes_backend=",
+				"--remote_header", "x-buildbuddy-foo=1",
+				"--remote_header", "x-buildbuddy-bar=2",
+				"--", "hello",
+			},
+			expected: []string{
+				"--output_base=build",
+				"--host_jvm_args=query",
+				"--host_jvm_args=another_arg",
+				"--unknown_plugin_flag",
+				"unknown_plugin_flag_value",
+				"--ignore_all_rc_files",
+				"--bazelrc=/tmp/bazelrc_1",
+				"--bazelrc=/tmp/bazelrc_2",
+				"--host_jvm_debug",
+				"test",
+				"--compilation_mode=opt",
+				"--another_unknown_plugin_flag",
+				"--nocache_test_results",
+				"--bes_backend=",
+				"--remote_header=x-buildbuddy-foo=1",
+				"--remote_header=x-buildbuddy-bar=2",
+				"hello",
+			},
+		},
+		{
+			name: "Test canonicalize exec args",
+			input: []string{
+				"--output_base", "build",
+				"run",
+				"//:some_target",
+				"--",
+				"cmd",
+				"-foo=bar",
+			},
+			expected: []string{
+				"--output_base=build",
+				"run",
+				"//:some_target",
+				"--",
+				"cmd",
+				"-foo=bar",
+			},
+		},
+		{
+			name: "Test canonicalize negative target",
+			input: []string{
+				"--output_base", "query",
+				"build",
+				"//...",
+				"--",
+				"-//:some_target",
+			},
+			expected: []string{
+				"--output_base=query",
+				"build",
+				"--",
+				"//...",
+				"-//:some_target",
+			},
+		},
+		{
+			name: "Test canonicalize negative target and exec args",
+			input: []string{
+				"--output_base", "build",
+				"run",
+				"--",
+				"-//:some_target",
+				"cmd",
+				"-foo=bar",
+			},
+			expected: []string{
+				"--output_base=build",
+				"run",
+				"--",
+				"-//:some_target",
+				"cmd",
+				"-foo=bar",
+			},
+		},
 	}
 
-	p, err := GetParser()
-	require.NoError(t, err)
-	canonicalArgs, err := p.canonicalizeArgs(args, false)
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := GetParser()
+			require.NoError(t, err)
+			canonicalArgs, err := p.canonicalizeArgs(tc.input)
 
-	require.NoError(t, err)
-	expectedCanonicalArgs := []string{
-		"--output_base=build",
-		"--host_jvm_args=query",
-		"--unknown_plugin_flag",
-		"unknown_plugin_flag_value",
-		"--ignore_all_rc_files",
-		"test",
-		"--compilation_mode=opt",
-		"--another_unknown_plugin_flag",
-		"--nocache_test_results",
-		"--bes_backend=",
-		"--remote_header=x-buildbuddy-foo=1",
-		"--remote_header=x-buildbuddy-bar=2",
-		"--remote_download_minimal",
-		"--noexperimental_convenience_symlinks",
-		"--subcommands=pretty_print",
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, canonicalArgs)
+		})
 	}
-	assert.Equal(t, expectedCanonicalArgs, canonicalArgs)
-}
-
-func TestCanonicalizeStartupArgs(t *testing.T) {
-	// Use some args that look like bazel commands but are actually
-	// specifying flag values.
-	args := []string{
-		"--output_base", "build",
-		"--host_jvm_args", "query",
-		"--host_jvm_args=another_arg",
-		"--unknown_plugin_flag", "unknown_plugin_flag_value",
-		"--ignore_all_rc_files",
-		"--bazelrc", "/tmp/bazelrc_1",
-		"--bazelrc=/tmp/bazelrc_2",
-		"--host_jvm_debug",
-		"test",
-		"-c", "opt",
-		"--another_unknown_plugin_flag",
-		"--cache_test_results",
-		"--nocache_test_results",
-		"--bes_backend", "remote.buildbuddy.io",
-		"--bes_backend=",
-		"--remote_header", "x-buildbuddy-foo=1",
-		"--remote_header", "x-buildbuddy-bar=2",
-		"--", "hello",
-	}
-
-	p, err := GetParser()
-	require.NoError(t, err)
-	canonicalArgs, err := p.canonicalizeArgs(args, true)
-
-	require.NoError(t, err)
-	expectedCanonicalArgs := []string{
-		"--output_base=build",
-		"--host_jvm_args=query",
-		"--host_jvm_args=another_arg",
-		"--unknown_plugin_flag",
-		"unknown_plugin_flag_value",
-		"--ignore_all_rc_files",
-		"--bazelrc=/tmp/bazelrc_1",
-		"--bazelrc=/tmp/bazelrc_2",
-		"--host_jvm_debug",
-		"test",
-		"-c", "opt",
-		"--another_unknown_plugin_flag",
-		"--cache_test_results",
-		"--nocache_test_results",
-		"--bes_backend", "remote.buildbuddy.io",
-		"--bes_backend=",
-		"--remote_header", "x-buildbuddy-foo=1",
-		"--remote_header", "x-buildbuddy-bar=2",
-		"--", "hello",
-	}
-	assert.Equal(t, expectedCanonicalArgs, canonicalArgs)
-}
-
-func TestCanonicalizeArgs_Passthrough(t *testing.T) {
-	args := []string{
-		"--output_base", "build",
-		"test",
-		"//:some_target",
-		"--",
-		"cmd",
-		"-foo=bar",
-	}
-
-	p, err := GetParser()
-	require.NoError(t, err)
-	canonicalArgs, err := p.canonicalizeArgs(args, false)
-
-	require.NoError(t, err)
-	expectedCanonicalArgs := []string{
-		"--output_base=build",
-		"test",
-		"//:some_target",
-		"--",
-		"cmd",
-		"-foo=bar",
-	}
-	assert.Equal(t, expectedCanonicalArgs, canonicalArgs)
 }
 
 func TestGetFirstTargetPattern(t *testing.T) {

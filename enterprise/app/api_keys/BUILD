@@ -25,5 +25,6 @@ ts_library(
         "//app/util:clipboard",
         "//app/util:errors",
         "//proto:api_key_ts_proto",
+        "//proto:capability_ts_proto",
     ],
 )

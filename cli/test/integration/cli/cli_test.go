@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
@@ -105,6 +106,7 @@ func TestBazelHelp(t *testing.T) {
 }
 
 func TestBazelBuildWithLocalPlugin(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"plugins/test/pre_bazel.sh": `
@@ -380,6 +382,21 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 	b, err := testcli.CombinedOutput(cmd)
 	require.NoErrorf(t, err, "output: %s", string(b))
 	require.NotContains(t, string(b), "Running Bazel server needs to be killed")
+}
+
+func TestHelpWithBazelWrapper(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD": "",
+		"tools/bazel": `#!/usr/bin/env bash
+echo "A message from ./tools/bazel that tries to break bb's parsing logic!"
+"$BAZEL_REAL" "$@"
+`,
+	})
+	testfs.MakeExecutable(t, ws, "tools/bazel")
+	cmd := testcli.BazelCommand(t, ws, "build", "//...")
+	b, err := testcli.CombinedOutput(cmd)
+	require.NoErrorf(t, err, "output: %s", string(b))
 }
 
 func retryUntilSuccess(t *testing.T, f func() error) {

@@ -23,11 +23,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/metric/noop"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
@@ -42,7 +41,6 @@ const (
 
 var (
 	headerContextKeys map[string]string
-	once              sync.Once
 
 	enableGRPCMetricsByGroupID = flag.Bool("app.enable_grpc_metrics_by_group_id", false, "If enabled, grpc metrics by group ID will be recorded")
 )
@@ -94,6 +92,10 @@ func contextReplacingUnaryClientInterceptor(ctxFn func(ctx context.Context) cont
 }
 
 func AddAuthToContext(env environment.Env, ctx context.Context) context.Context {
+	// Don't save the trace context so that this isn't a parent of the calls
+	// that use the returned context.
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
 	ctx = env.GetAuthenticator().AuthenticatedGRPCContext(ctx)
 	if c, err := claims.ClaimsFromContext(ctx); err == nil {
 		ctx = log.EnrichContext(ctx, "group_id", c.GetGroupID())
@@ -536,9 +538,8 @@ var Metrics = sync.OnceValue(func() *grpc_prometheus.ClientMetrics {
 
 func GetUnaryClientInterceptor() grpc.DialOption {
 	return grpc.WithChainUnaryInterceptor(
-		otelgrpc.UnaryClientInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())),
-		Metrics().UnaryClientInterceptor(),
 		setHeadersUnaryClientInterceptor(),
+		Metrics().UnaryClientInterceptor(), // last so it's as close to the RPC as possible
 	)
 }
 
@@ -548,9 +549,8 @@ func GetUnaryClientIdentityInterceptor(env environment.Env) grpc.DialOption {
 
 func GetStreamClientInterceptor() grpc.DialOption {
 	return grpc.WithChainStreamInterceptor(
-		otelgrpc.StreamClientInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())),
-		Metrics().StreamClientInterceptor(),
 		setHeadersStreamClientInterceptor(),
+		Metrics().StreamClientInterceptor(), // last so it's as close to the RPC as possible
 	)
 }
 

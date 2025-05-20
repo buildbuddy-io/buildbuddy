@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/pprof"
+	"runtime"
 
 	"github.com/VictoriaMetrics/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -21,6 +22,9 @@ import (
 )
 
 var (
+	mutexProfileFraction = flag.Int("mutex_profile_fraction", 0, "The fraction of mutex contention events reported. (1/rate, 0 disables)")
+	blockProfileRate     = flag.Int("block_profile_rate", 0, "The fraction of goroutine blocking events reported. (1/rate, 0 disables)")
+
 	basicAuthUser = flag.String("monitoring.basic_auth.username", "", "Optional username for basic auth on the monitoring port.")
 	basicAuthPass = flag.String("monitoring.basic_auth.password", "", "Optional password for basic auth on the monitoring port.", flag.Secret)
 )
@@ -67,6 +71,9 @@ func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
 // in the same mux on the specified host and port, which should not have
 // anything else running on it.
 func StartMonitoringHandler(env environment.Env, hostPort string) {
+	runtime.SetMutexProfileFraction(*mutexProfileFraction)
+	runtime.SetBlockProfileRate(*blockProfileRate)
+
 	mux := http.NewServeMux()
 	RegisterMonitoringHandlers(env, mux)
 	s := &http.Server{

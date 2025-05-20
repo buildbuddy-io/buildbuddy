@@ -35,6 +35,7 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -186,7 +187,8 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 			assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
 
 			// Converting to Claims should produce the expected value
-			c := claims.APIKeyGroupClaims(akg)
+			c, err := claims.APIKeyGroupClaims(ctx, akg)
+			require.NoError(t, err)
 			assert.Equal(t, randKey.GroupID, c.GetGroupID())
 			assert.Equal(t, capabilities.FromInt(randKey.Capabilities), c.GetCapabilities())
 			require.Len(t, c.GetGroupMemberships(), 1)
@@ -496,7 +498,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		req := &akpb.CreateApiKeyRequest{
 			RequestContext:      &ctxpb.RequestContext{GroupId: groupID},
 			Label:               "my key",
-			Capability:          []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+			Capability:          []cappb.Capability{cappb.Capability_CAS_WRITE},
 			VisibleToDevelopers: true,
 		}
 		resp, err := env.GetBuildBuddyServer().CreateApiKey(adminCtx, req)
@@ -527,7 +529,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		req := &akpb.UpdateApiKeyRequest{
 			Id:                  key.Id,
 			Label:               "new label",
-			Capability:          []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY},
+			Capability:          []cappb.Capability{cappb.Capability_REGISTER_EXECUTOR},
 			VisibleToDevelopers: false,
 		}
 		_, err = env.GetBuildBuddyServer().UpdateApiKey(adminCtx, req)
@@ -562,7 +564,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		req := &akpb.CreateApiKeyRequest{
 			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 			Label:          "my key",
-			Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+			Capability:     []cappb.Capability{cappb.Capability_CACHE_WRITE},
 		}
 		resp, err := env.GetBuildBuddyServer().CreateUserApiKey(adminCtx, req)
 		require.NoError(t, err)
@@ -592,7 +594,7 @@ func TestAPIKeyAuditLogs(t *testing.T) {
 		req := &akpb.UpdateApiKeyRequest{
 			Id:         key.Id,
 			Label:      "new label",
-			Capability: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+			Capability: []cappb.Capability{cappb.Capability_CAS_WRITE},
 		}
 		_, err = env.GetBuildBuddyServer().UpdateUserApiKey(adminCtx, req)
 		require.NoError(t, err)

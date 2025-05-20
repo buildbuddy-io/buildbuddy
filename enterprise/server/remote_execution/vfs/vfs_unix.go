@@ -338,6 +338,25 @@ func (vfs *VFS) startOP(pathFn func() string, op string) {
 	stats[op]++
 }
 
+func (vfs *VFS) getattr(inode uint64) (*vfspb.Attrs, error) {
+	attrs, ok := vfs.inodeCache.getCachedAttrs(inode)
+
+	if !ok {
+		rsp, err := vfs.vfsClient.GetAttr(vfs.getRPCContext(), &vfspb.GetAttrRequest{Id: inode})
+		if err != nil {
+			return nil, err
+		}
+		attrs = rsp.GetAttrs()
+		vfs.inodeCache.cacheAttrs(inode, attrs)
+	} else {
+		if vfs.verbose {
+			log.CtxInfof(vfs.getRPCContext(), "using cached attributes for inode %d", inode)
+		}
+	}
+
+	return attrs, nil
+}
+
 type Node struct {
 	fs.Inode
 
@@ -412,12 +431,23 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (nod
 		return nil, rpcErrToSyscallErrno(err)
 	}
 
+	n.vfs.inodeCache.cacheAttrs(rsp.Id, rsp.Attrs)
+	// getAttr takes care of refreshing the attributes if there are currently
+	// any open file handles.
+	// For performance reasons, Lookup does not refresh attributes on every call as it's
+	// a very frequently performed operation. If a file has been modified
+	// but not yet closed it may return stale attributes. We defer to getAttr to trigger
+	// a refresh if necessary as it already handles this case for the GetAttr call.
+	attrs, err := n.vfs.getattr(rsp.Id)
+	if err != nil {
+		return nil, rpcErrToSyscallErrno(err)
+	}
+	fillFuseAttr(&out.Attr, attrs)
+
 	child := &Node{
 		vfs:           n.vfs,
 		symlinkTarget: rsp.SymlinkTarget,
 	}
-	n.vfs.inodeCache.cacheAttrs(rsp.Id, rsp.Attrs)
-	fillFuseAttr(&out.Attr, rsp.GetAttrs())
 	return n.NewInode(ctx, child, fs.StableAttr{Mode: rsp.Mode, Ino: rsp.Id}), 0
 }
 
@@ -878,25 +908,6 @@ func modeDebugString(mode uint32) string {
 	return fmt.Sprintf("%s %#o", typ, mode & ^uint32(unix.S_IFMT))
 }
 
-func (n *Node) getattr() (*vfspb.Attrs, error) {
-	attrs, ok := n.vfs.inodeCache.getCachedAttrs(n.StableAttr().Ino)
-
-	if !ok {
-		rsp, err := n.vfs.vfsClient.GetAttr(n.vfs.getRPCContext(), &vfspb.GetAttrRequest{Id: n.StableAttr().Ino})
-		if err != nil {
-			return nil, err
-		}
-		attrs = rsp.GetAttrs()
-		n.vfs.inodeCache.cacheAttrs(n.StableAttr().Ino, attrs)
-	} else {
-		if n.vfs.verbose {
-			log.CtxInfof(n.vfs.getRPCContext(), "using cached attributes for inode %d", n.StableAttr().Ino)
-		}
-	}
-
-	return attrs, nil
-}
-
 func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) (errno syscall.Errno) {
 	n.startOP("Getattr")
 	if n.vfs.verbose {
@@ -910,7 +921,7 @@ func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) 
 		}()
 	}
 
-	attrs, err := n.getattr()
+	attrs, err := n.vfs.getattr(n.StableAttr().Ino)
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
@@ -970,7 +981,7 @@ func (n *Node) Getxattr(ctx context.Context, attr string, dest []byte) (uint32, 
 		log.CtxDebugf(n.vfs.rpcCtx, "Getxattr %q", n.relativePath())
 	}
 
-	attrs, err := n.getattr()
+	attrs, err := n.vfs.getattr(n.StableAttr().Ino)
 	if err != nil {
 		return 0, rpcErrToSyscallErrno(err)
 	}
@@ -994,7 +1005,7 @@ func (n *Node) Getxattr(ctx context.Context, attr string, dest []byte) (uint32, 
 }
 
 func (n *Node) Listxattr(ctx context.Context, dest []byte) (uint32, syscall.Errno) {
-	attrs, err := n.getattr()
+	attrs, err := n.vfs.getattr(n.StableAttr().Ino)
 	if err != nil {
 		return 0, rpcErrToSyscallErrno(err)
 	}

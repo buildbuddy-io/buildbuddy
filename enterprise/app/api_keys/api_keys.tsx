@@ -19,6 +19,7 @@ import errorService from "../../../app/errors/error_service";
 import { UnaryRpcMethod } from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
+import { capability } from "../../../proto/capability_ts_proto";
 import rpcService from "../../../app/service/rpc_service";
 
 export interface ApiKeysComponentProps {
@@ -106,24 +107,24 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     }
   }
 
-  private defaultCapabilities(): api_key.ApiKey.Capability[] {
+  private defaultCapabilities(): capability.Capability[] {
     // For org-level keys, default to CACHE_WRITE.
     if (!this.props.userOwnedOnly) {
-      return [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY];
+      return [capability.Capability.CACHE_WRITE];
     }
 
     // If the new roles are not yet enabled, default to just CAS_WRITE.
     if (!capabilities.config.readerWriterRolesEnabled) {
-      return [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY];
+      return [capability.Capability.CAS_WRITE];
     }
 
     // For user-owned keys, default to the highest allowed capability.
     const allowList = this.props.user.selectedGroup.allowedUserApiKeyCapabilities ?? [];
-    if (allowList.includes(api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY)) {
-      return [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY];
+    if (allowList.includes(capability.Capability.CACHE_WRITE)) {
+      return [capability.Capability.CACHE_WRITE];
     }
-    if (allowList.includes(api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY)) {
-      return [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY];
+    if (allowList.includes(capability.Capability.CAS_WRITE)) {
+      return [capability.Capability.CAS_WRITE];
     }
     return [];
   }
@@ -260,29 +261,30 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
 
   private onSelectCASOnly(onChange: (name: string, value: any) => any) {
-    onChange("capability", [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY]);
+    onChange("capability", [capability.Capability.CAS_WRITE]);
   }
 
   private onSelectReadWrite(onChange: (name: string, value: any) => any) {
-    onChange("capability", [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY]);
+    onChange("capability", [capability.Capability.CACHE_WRITE]);
   }
 
   private onSelectExecutor(onChange: (name: string, value: any) => any) {
-    onChange("capability", [
-      api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY,
-      api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY,
-    ]);
+    onChange("capability", [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_EXECUTOR]);
   }
 
   private onSelectOrgAdmin(onChange: (name: string, value: any) => any) {
-    onChange("capability", [api_key.ApiKey.Capability.ORG_ADMIN_CAPABILITY]);
+    onChange("capability", [capability.Capability.ORG_ADMIN]);
+  }
+
+  private onSelectAuditLogReader(onChange: (name: string, value: any) => any) {
+    onChange("capability", [capability.Capability.AUDIT_LOG_READ]);
   }
 
   private onChangeVisibility(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
     onChange("visibleToDevelopers", e.target.checked);
   }
 
-  private canSetCapabilities(caps: api_key.ApiKey.Capability[]): boolean {
+  private canSetCapabilities(caps: capability.Capability[]): boolean {
     // Org-level keys do not have capability restrictions.
     if (!this.props.userOwnedOnly) return true;
 
@@ -354,7 +356,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     type="radio"
                     onChange={this.onSelectCASOnly.bind(this, onChange)}
                     checked={isCASOnly(request)}
-                    disabled={!this.canSetCapabilities([api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY])}
+                    disabled={!this.canSetCapabilities([capability.Capability.CAS_WRITE])}
                     debug-id="cas-only-radio-button"
                   />
                   <span>
@@ -368,7 +370,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     type="radio"
                     onChange={this.onSelectReadWrite.bind(this, onChange)}
                     checked={isReadWrite(request)}
-                    disabled={!this.canSetCapabilities([api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY])}
+                    disabled={!this.canSetCapabilities([capability.Capability.CACHE_WRITE])}
                   />
                   <span>
                     Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
@@ -402,6 +404,20 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     />
                     <span>
                       Org admin key <span className="field-description">(for external user management)</span>
+                    </span>
+                  </label>
+                </div>
+              )}
+              {capabilities.config.auditLogsUiEnabled && !this.props.userOwnedOnly && (
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectAuditLogReader.bind(this, onChange)}
+                      checked={isAuditLogReader(request)}
+                    />
+                    <span>
+                      Audit log reader key <span className="field-description">(for reading audit logs)</span>
                     </span>
                   </label>
                 </div>
@@ -562,7 +578,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
 }
 
-function capabilitiesToInt(capabilities: api_key.ApiKey.Capability[]): number {
+function capabilitiesToInt(capabilities: capability.Capability[]): number {
   let out = 0;
   for (const capability of capabilities) {
     out |= capability;
@@ -570,27 +586,28 @@ function capabilitiesToInt(capabilities: api_key.ApiKey.Capability[]): number {
   return out;
 }
 
-function hasExactCapabilities<T extends ApiKeyFields>(apiKey: T | null, capabilities: api_key.ApiKey.Capability[]) {
+function hasExactCapabilities<T extends ApiKeyFields>(apiKey: T | null, capabilities: capability.Capability[]) {
   return capabilitiesToInt(apiKey?.capability || []) === capabilitiesToInt(capabilities);
 }
 
 function isReadWrite<T extends ApiKeyFields>(apiKey: T | null) {
-  return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY]);
+  return hasExactCapabilities(apiKey, [capability.Capability.CACHE_WRITE]);
 }
 
 function isCASOnly<T extends ApiKeyFields>(apiKey: T | null) {
-  return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY]);
+  return hasExactCapabilities(apiKey, [capability.Capability.CAS_WRITE]);
 }
 
 function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {
-  return hasExactCapabilities(apiKey, [
-    api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY,
-    api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY,
-  ]);
+  return hasExactCapabilities(apiKey, [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_EXECUTOR]);
 }
 
 function isOrgAdminKey<T extends ApiKeyFields>(apiKey: T | null) {
-  return hasExactCapabilities(apiKey, [api_key.ApiKey.Capability.ORG_ADMIN_CAPABILITY]);
+  return hasExactCapabilities(apiKey, [capability.Capability.ORG_ADMIN]);
+}
+
+function isAuditLogReader<T extends ApiKeyFields>(apiKey: T | null) {
+  return hasExactCapabilities(apiKey, [capability.Capability.AUDIT_LOG_READ]);
 }
 
 function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {
@@ -607,6 +624,8 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities = "Executor";
   } else if (isOrgAdminKey(apiKey)) {
     capabilities = "Org admin";
+  } else if (isAuditLogReader(apiKey)) {
+    capabilities = "Audit log reader";
   }
   if (apiKey.visibleToDevelopers) {
     capabilities += " (*)";

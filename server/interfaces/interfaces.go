@@ -22,10 +22,10 @@ import (
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -54,6 +54,8 @@ import (
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/genproto/googleapis/longrunning"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -82,8 +84,8 @@ type BasicAuthToken interface {
 // GroupMembership represents a user's membership within a group as well as
 // their role within that group.
 type GroupMembership struct {
-	GroupID      string                   `json:"group_id"`
-	Capabilities []akpb.ApiKey_Capability `json:"capabilities"`
+	GroupID      string             `json:"group_id"`
+	Capabilities []cappb.Capability `json:"capabilities"`
 	// DEPRECATED. Check Capabilities instead.
 	Role role.Role `json:"role"`
 }
@@ -110,8 +112,8 @@ type UserInfo interface {
 	// GetGroupMemberships returns the user's group memberships.
 	GetGroupMemberships() []*GroupMembership
 	// GetCapabilities returns the user's capabilities.
-	GetCapabilities() []akpb.ApiKey_Capability
-	HasCapability(akpb.ApiKey_Capability) bool
+	GetCapabilities() []cappb.Capability
+	HasCapability(cappb.Capability) bool
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
@@ -285,7 +287,6 @@ type Cache interface {
 
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
-	SupportsEncryption(ctx context.Context) bool
 }
 
 type StoppableCache interface {
@@ -466,12 +467,12 @@ type AuthDB interface {
 	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
 
 	// CreateAPIKey creates a group-level API key.
-	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error)
 
 	// CreateAPIKeyWithoutAuthCheck creates a group-level API key without
 	// checking that the user has admin rights on the group. This should only
 	// be used when a new group is being created.
-	CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx DB, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+	CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx DB, groupID string, label string, capabilities []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error)
 
 	// CreateImpersonationAPIKey creates a short-lived API key for the target
 	// group ID.
@@ -487,7 +488,7 @@ type AuthDB interface {
 	// user must be a member of the group. If the request is not authenticated
 	// as the given user, then the authenticated user or API key must have
 	// ORG_ADMIN capability.
-	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error)
+	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []cappb.Capability) (*tables.APIKey, error)
 
 	// GetAPIKey returns an API key by ID. The key may be user-owned or
 	// group-owned.
@@ -840,7 +841,7 @@ type SplashPrinter interface {
 }
 
 type RemoteExecutionService interface {
-	Dispatch(ctx context.Context, req *repb.ExecuteRequest) (string, error)
+	Dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action) (string, error)
 	Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error
 	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
 	PublishOperation(stream repb.Execution_PublishOperationServer) error
@@ -937,6 +938,14 @@ type ExecutionNode interface {
 	GetExecutorHostId() string
 
 	GetAssignableMilliCpu() int64
+}
+
+type Publisher interface {
+	Context() context.Context
+	Send(op *longrunning.Operation) error
+	Ping() error
+	SetState(state repb.ExecutionProgress_ExecutionState) error
+	CloseAndRecv() (*repb.PublishOperationResponse, error)
 }
 
 type ExecutionSearchService interface {
@@ -1415,6 +1424,33 @@ type SecretService interface {
 
 // ExecutionCollector keeps track of a list of Executions for each invocation ID.
 type ExecutionCollector interface {
+	// UpdateInProgressExecution updates the given in-progress execution state.
+	// Any zero-valued fields are not updated.
+	//
+	// This method is also called to write the final COMPLETED execution state.
+	// After writing the COMPLETED execution state, the execution server should
+	// read back the execution details using GetInProgressExecution, then create
+	// a pending OLAP Execution row by calling AppendExecution for each linked
+	// invocation ID.
+	UpdateInProgressExecution(ctx context.Context, execution *repb.StoredExecution) error
+
+	// GetInProgressExecution fetches the given in-progress execution.
+	GetInProgressExecution(ctx context.Context, executionID string) (*repb.StoredExecution, error)
+
+	// GetInProgressExecutions fetches all in-progress executions for the given
+	// invocation ID.
+	GetInProgressExecutions(ctx context.Context, invocationID string) ([]*repb.StoredExecution, error)
+
+	// DeleteInProgressExecution deletes the given in-progress execution state.
+	// It does not (currently) automatically clean up the invocation =>
+	// execution link. However, GetInProgressExecutions is aware of this
+	// behavior, and will not return the deleted execution.
+	DeleteInProgressExecution(ctx context.Context, executionID string) error
+
+	// DeleteInvocationExecutionLinks deletes all invocation => []execution
+	// links for the given invocation ID.
+	DeleteInvocationExecutionLinks(ctx context.Context, invocationID string) error
+
 	AppendExecution(ctx context.Context, iid string, execution *repb.StoredExecution) error
 	// GetExecutions fetches a range of executions for the given invocation ID.
 	// The range start and stop indexes are both inclusive. If the stop index is out
@@ -1424,9 +1460,9 @@ type ExecutionCollector interface {
 	DeleteExecutions(ctx context.Context, iid string) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
-	AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink) error
-	GetInvocationLinks(ctx context.Context, execution_id string) ([]*sipb.StoredInvocationLink, error)
-	DeleteInvocationLinks(ctx context.Context, execution_id string) error
+	AddExecutionInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, bidirectional bool) error
+	GetExecutionInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error)
+	DeleteExecutionInvocationLinks(ctx context.Context, executionID string) error
 }
 
 // SuggestionService enables fetching of suggestions.
@@ -1719,4 +1755,31 @@ type ExperimentFlagProvider interface {
 	String(ctx context.Context, flagName string, defaultValue string, opts ...any) string
 	Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64
 	Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64
+}
+
+// ByteStreamWriteHandler enapsulates an on-going ByteStream write to a cache,
+// freeing the caller of having to manage writing and committing-to the cache
+// tracking cache hits, verifying checksums, etc. Here is how it must be used:
+//   - A new WriteHandler may be obtained by providing the first frame of the
+//     stream to the ByteStreamServer.BeginWrite() function. This function will
+//     return a new ByteStreamWriteHandler, or an error.
+//   - If a ByteStreamWriteHandler is returned from BeginWrite(),
+//     ByteStreamWriteHandler.Close() must be called to free system resources
+//     when the write is finished.
+//   - Each subsequent frame should be passed to
+//     ByteStreamWriteHandler.Write(), which will return an error on error
+//     (note: io.EOF indicates the cache believes the write is finished), or an
+//     optional WriteResponse that should be sent to the client if the client
+//     indicated the write is finished. This function will return (nil, nil) if
+//     the frame was processed successfully, but the write is not finished yet.
+type ByteStreamWriteHandler interface {
+	Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error)
+	Close() error
+}
+
+// Wrapper around a bspb.ByteStreamServer that exposes a ByteStreamWriteHandler
+// in addition to the gRPC streaming interfaces.
+type ByteStreamServer interface {
+	bspb.ByteStreamServer
+	BeginWrite(ctx context.Context, req *bspb.WriteRequest) (ByteStreamWriteHandler, error)
 }

@@ -312,12 +312,17 @@ func (u *User) TableName() string {
 }
 
 func (u *User) ToProto() *uspb.DisplayUser {
+	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
+	// Use the github username as the name, if no name is set.
+	if name == "" && strings.HasPrefix(u.SubID, "https://github.com/") {
+		name = strings.TrimPrefix(u.SubID, "https://github.com/")
+	}
 	return &uspb.DisplayUser{
 		UserId: &uspb.UserId{
 			Id: u.UserID,
 		},
 		Name: &uspb.Name{
-			Full:  strings.TrimSpace(u.FirstName + " " + u.LastName),
+			Full:  name,
 			First: u.FirstName,
 			Last:  u.LastName,
 		},
@@ -596,7 +601,7 @@ type GitHubAppInstallation struct {
 	// report commit statuses to GitHub for all builds where role is CI or CI_RUNNER.
 	// Even if enabled, this setting can be overridden by setting
 	// `--build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true` on a build.
-	ReportCommitStatusesForCIBuilds bool `gorm:"not null;default:0"`
+	ReportCommitStatusesForCIBuilds bool `gorm:"not null;default:1"`
 }
 
 func (gh *GitHubAppInstallation) TableName() string {

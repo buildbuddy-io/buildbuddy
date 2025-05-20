@@ -28,6 +28,7 @@ go_test(
     deps = [
         ":gossip",
         "//server/interfaces",
+        "//server/testutil/quarantine",
         "//server/testutil/testport",
         "//server/util/testing/flags",
         "@com_github_hashicorp_serf//serf",

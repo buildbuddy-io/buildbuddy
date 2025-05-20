@@ -7,21 +7,20 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
+	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 
 	expb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 )
 
 const (
@@ -48,44 +47,19 @@ func (s *ExecutionSearchService) rawQueryExecutions(ctx context.Context, query s
 	return db.ScanAll(rq, &schema.Execution{})
 }
 
-type ExecutionWithInvocationId struct {
-	execution    *expb.Execution
-	invocationID string
-}
-
-func (s *ExecutionSearchService) fetchExecutionData(ctx context.Context, groupId string, execIds []string) (map[string]*ExecutionWithInvocationId, error) {
-	q := query_builder.NewQuery(`SELECT * FROM "Executions"`)
-	q.AddWhereClause("execution_id IN ?", execIds)
-	q.AddWhereClause("group_id = ?", groupId)
-	if err := perms.AddPermissionsCheckToQuery(ctx, s.env, q); err != nil {
-		return nil, err
-	}
-	qString, qArgs := q.Build()
-
-	rq := s.h.NewQuery(ctx, "fetch_executions").Raw(qString, qArgs...)
-	executions := make(map[string]*ExecutionWithInvocationId, 0)
-	err := db.ScanEach(rq, func(ctx context.Context, r *tables.Execution) error {
-		exec, err := execution.TableExecToClientProto(r)
-		if err != nil {
-			return err
-		}
-		executions[r.ExecutionID] = &ExecutionWithInvocationId{execution: exec, invocationID: r.InvocationID}
-		return nil
-	})
+func clickhouseExecutionToProto(in *schema.Execution) (*expb.ExecutionWithInvocationMetadata, error) {
+	ex, err := execution.OLAPExecToClientProto(in)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "convert clickhouse execution to proto")
 	}
-	return executions, nil
-}
-
-func clickhouseExecutionToProto(in *schema.Execution, ex *ExecutionWithInvocationId) (*expb.ExecutionWithInvocationMetadata, error) {
-	if in == nil || ex == nil {
-		return nil, status.InternalErrorf("Execution not found or not accessible.")
+	invocationID, err := uuid.Base64StringToString(in.InvocationUUID)
+	if err != nil {
+		return nil, status.WrapError(err, "parse invocation UUID")
 	}
 	return &expb.ExecutionWithInvocationMetadata{
-		Execution: ex.execution,
+		Execution: ex,
 		InvocationMetadata: &expb.InvocationMetadata{
-			Id:               ex.invocationID,
+			Id:               invocationID,
 			User:             in.User,
 			Host:             in.Host,
 			Pattern:          in.Pattern,
@@ -116,7 +90,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	}
 
 	q := query_builder.NewQuery(`
-		SELECT ` + strings.Join(execution.ExecutionListingColumns(), ", ") + `
+		SELECT invocation_uuid, ` + strings.Join(execution.ExecutionListingColumns(), ", ") + `
 		FROM "Executions"
 	`)
 
@@ -231,30 +205,20 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	q.SetOffset(offset)
 
 	qString, qArgs := q.Build()
-	tableExecutions, err := s.rawQueryExecutions(ctx, qString, qArgs...)
-	if err != nil {
-		return nil, err
-	}
-	execIds := make([]string, len(tableExecutions))
-	for i, e := range tableExecutions {
-		execIds[i] = e.ExecutionID
-	}
-
-	// TODO(bduffany): the OLAP Executions table now has a superset of the data
-	// that is stored in the primary DB, so we can remove this primary DB query
-	// once some time has passed.
-	fullExecutions, err := s.fetchExecutionData(ctx, u.GetGroupID(), execIds)
+	olapExecutions, err := s.rawQueryExecutions(ctx, qString, qArgs...)
 	if err != nil {
 		return nil, err
 	}
 
-	rsp := &expb.SearchExecutionResponse{}
-	for _, te := range tableExecutions {
-		ex, err := clickhouseExecutionToProto(te, fullExecutions[te.ExecutionID])
+	rsp := &expb.SearchExecutionResponse{
+		Execution: make([]*expb.ExecutionWithInvocationMetadata, len(olapExecutions)),
+	}
+	for i, ex := range olapExecutions {
+		ex, err := clickhouseExecutionToProto(ex)
 		if err != nil {
-			return nil, err
+			return nil, status.WrapError(err, "convert clickhouse execution to proto")
 		}
-		rsp.Execution = append(rsp.Execution, ex)
+		rsp.Execution[i] = ex
 	}
 	if int64(len(rsp.Execution)) == limitSize {
 		rsp.NextPageToken = pageSizeOffsetPrefix + strconv.FormatInt(offset+limitSize, 10)

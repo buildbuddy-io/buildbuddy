@@ -53,7 +53,7 @@ var (
 // more easily testable in a standalone fashion, IStore mocks out just the
 // necessary methods that a Replica requires a Store to have.
 type IStore interface {
-	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
+	UpdateRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	SnapshotCluster(ctx context.Context, rangeID uint64) error
 	StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error)
@@ -266,17 +266,13 @@ func (sm *Replica) setRange(val []byte) error {
 	}
 
 	sm.rangeMu.Lock()
-	if sm.rangeDescriptor != nil {
-		sm.store.RemoveRange(sm.rangeDescriptor, sm)
-	}
-
 	sm.log.Infof("Range descriptor is changing from %s to %s", rdString(sm.rangeDescriptor), rdString(rangeDescriptor))
 	sm.rangeDescriptor = rangeDescriptor
 	sm.mappedRange = &rangemap.Range{
 		Start: rangeDescriptor.GetStart(),
 		End:   rangeDescriptor.GetEnd(),
 	}
-	sm.store.AddRange(sm.rangeDescriptor, sm)
+	sm.store.UpdateRange(sm.rangeDescriptor, sm)
 	sm.rangeMu.Unlock()
 
 	if usage, err := sm.Usage(); err == nil {
@@ -712,29 +708,27 @@ func (sm *Replica) clearInMemoryReplicaState() {
 	sm.partitionMetadataMu.Unlock()
 }
 
-// clearReplica clears in-memory replica state, and data (both in local range and
-// in the range specified by range descriptor) on the disk.
-func (sm *Replica) clearReplica(db ReplicaWriter) error {
-	// Remove range from the store
-	sm.rangeMu.Lock()
-	rangeDescriptor := sm.rangeDescriptor
-	sm.rangeMu.Unlock()
-
-	if sm.store != nil && rangeDescriptor != nil {
-		sm.store.RemoveRange(rangeDescriptor, sm)
+// clearRangeData clears data in range [start, end).
+func (sm *Replica) clearRangeData(db ReplicaWriter, rd *rfpb.RangeDescriptor) error {
+	wb := db.NewBatch()
+	if rd.GetStart() != nil && rd.GetEnd() != nil {
+		if err := wb.DeleteRange(rd.GetStart(), rd.GetEnd(), nil /*ignored write options*/); err != nil {
+			return err
+		}
 	}
+	if err := wb.Commit(pebble.Sync); err != nil {
+		return err
+	}
+	return nil
+}
 
-	wb := db.NewIndexedBatch()
+// clearReplica clears in-memory replica state, and local range data on the disk.
+func (sm *Replica) clearReplica(db ReplicaWriter) error {
+	wb := db.NewBatch()
 
 	start, end := keys.Range(sm.replicaPrefix())
 	if err := wb.DeleteRange(start, end, nil /*ignored write options*/); err != nil {
 		return err
-	}
-	if rangeDescriptor != nil && rangeDescriptor.GetStart() != nil && rangeDescriptor.GetEnd() != nil {
-
-		if err := wb.DeleteRange(rangeDescriptor.GetStart(), rangeDescriptor.GetEnd(), nil /*ignored write options*/); err != nil {
-			return err
-		}
 	}
 	if err := wb.Commit(pebble.Sync); err != nil {
 		return err
@@ -1913,11 +1907,13 @@ func flushBatch(wb pebble.Batch) error {
 	return nil
 }
 
-func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
+func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
 	wb := db.NewBatch()
 	defer wb.Close()
 
 	readBuf := bufio.NewReader(r)
+
+	inLocalRangeSection := true
 	for {
 		r, count, err := readDataFromReader(readBuf)
 		if err != nil {
@@ -1938,21 +1934,38 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		if err := proto.Unmarshal(protoBytes, kv); err != nil {
 			return err
 		}
-		if isLocalKey(kv.Key) {
-			kv.Key = sm.replicaLocalKey(kv.Key)
+		if inLocalRangeSection {
+			if isLocalKey(kv.Key) {
+				if bytes.Equal(kv.Key, constants.LocalRangeKey) {
+					rangeDescriptor := &rfpb.RangeDescriptor{}
+					if err := proto.Unmarshal(kv.Value, rangeDescriptor); err != nil {
+						return err
+					}
+					if err := sm.clearRangeData(db, rangeDescriptor); err != nil {
+						return err
+					}
+				}
+				kv.Key = sm.replicaLocalKey(kv.Key)
+			} else {
+				inLocalRangeSection = false
+			}
+		} else {
+			if isLocalKey(kv.Key) {
+				return status.InvalidArgumentErrorf("failed to apply snapshot: the snapshot contains non-continuous local range section")
+			}
 		}
 		if err := wb.Set(kv.Key, kv.Value, nil); err != nil {
 			return err
 		}
 		if wb.Len() > 1*gb {
 			// Pebble panics when the batch is greater than ~4GB (or 2GB on 32-bit systems)
-			sm.log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
+			sm.log.Debugf("applySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
 			if err = flushBatch(wb); err != nil {
 				return err
 			}
 		}
 	}
-	sm.log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
+	sm.log.Debugf("applySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
 	return flushBatch(wb)
 }
 
@@ -1992,6 +2005,8 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 // errors, the IOnDiskStateMachine implementation should only return a non-nil
 // error when the system need to be immediately halted for critical errors,
 // e.g. disk error preventing you from saving the snapshot.
+//
+// Note: we assume that local range will be saved before data in the [start, end).
 func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-chan struct{}) error {
 	snap, ok := preparedSnap.(*pebble.Snapshot)
 	if !ok {
@@ -2039,7 +2054,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 	}
 
 	sm.clearReplica(db)
-	err = sm.ApplySnapshotFromReader(r, db)
+	err = sm.applySnapshotFromReader(r, db)
 	db.Close() // close the DB before handling errors or checking keys.
 	if err != nil {
 		return err
@@ -2050,13 +2065,6 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 	}
 	defer readDB.Close()
 	return sm.loadReplicaState(db)
-}
-
-func (sm *Replica) RangeDescriptor() *rfpb.RangeDescriptor {
-	sm.rangeMu.RLock()
-	rd := sm.rangeDescriptor
-	sm.rangeMu.RUnlock()
-	return rd.CloneVT()
 }
 
 func (sm *Replica) ReplicaID() uint64 {

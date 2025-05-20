@@ -476,7 +476,8 @@ export default class CodeComponent extends React.Component<Props, State> {
       .then((treeResponse) => {
         console.log(treeResponse);
         this.updateState({ repoResponse: repoResponse, treeResponse: treeResponse, commitSHA: treeResponse.sha });
-      });
+      })
+      .catch((e) => error_service.handleError(e));
   }
 
   isNewFile(node: github.TreeNode) {

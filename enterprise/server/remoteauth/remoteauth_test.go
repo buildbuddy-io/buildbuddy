@@ -14,13 +14,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"google.golang.org/grpc/metadata"
 )
 
 type fakeAuthService struct {
-	nextJwt string
-	nextErr error
+	nextJwt map[string]string
+	nextErr map[string]error
 
 	mu sync.Mutex
 }
@@ -28,35 +29,35 @@ type fakeAuthService struct {
 func (a *fakeAuthService) Reset() *fakeAuthService {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.nextErr = nil
-	a.nextJwt = ""
+	a.nextErr = map[string]error{}
+	a.nextJwt = map[string]string{}
 	return a
 }
 
-func (a *fakeAuthService) setNextJwt(t *testing.T, jwt string) {
+func (a *fakeAuthService) setNextJwt(t *testing.T, sub, jwt string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	require.NoError(t, a.nextErr)
-	a.nextJwt = jwt
+	require.NoError(t, a.nextErr[sub])
+	a.nextJwt[sub] = jwt
 }
 
-func (a *fakeAuthService) setNextErr(t *testing.T, err error) {
+func (a *fakeAuthService) setNextErr(t *testing.T, sub string, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	require.Equal(t, "", a.nextJwt)
-	a.nextErr = err
+	require.Equal(t, "", a.nextJwt[sub])
+	a.nextErr[sub] = err
 }
 
 func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.nextErr != nil {
-		err := a.nextErr
-		a.nextErr = nil
+	if a.nextErr[req.GetSubdomain()] != nil {
+		err := a.nextErr[req.GetSubdomain()]
+		a.nextErr[req.GetSubdomain()] = nil
 		return nil, err
 	}
-	jwt := a.nextJwt
-	a.nextJwt = ""
+	jwt := a.nextJwt[req.GetSubdomain()]
+	a.nextJwt[req.GetSubdomain()] = ""
 	return &authpb.AuthenticateResponse{Jwt: &jwt}, nil
 }
 
@@ -65,7 +66,10 @@ func (a *fakeAuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPubl
 }
 
 func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
-	fakeAuthService := fakeAuthService{}
+	fakeAuthService := fakeAuthService{
+		nextErr: map[string]error{},
+		nextJwt: map[string]string{},
+	}
 	te := testenv.GetTestEnv(t)
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	authpb.RegisterAuthServiceServer(grpcServer, &fakeAuthService)
@@ -114,49 +118,49 @@ func TestAuthenticatedGRPCContext(t *testing.T) {
 	require.NotEqual(t, barJwt, bazJwt)
 
 	// Fail if there are no auth headers.
-	fakeAuth.setNextJwt(t, validJwt(t, "nothing"))
+	fakeAuth.setNextJwt(t, "", validJwt(t, "nothing"))
 	ctx := authenticator.AuthenticatedGRPCContext(context.Background())
 	require.Equal(t, nil, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Don't cache responses for missing auth headers.
-	fakeAuth.Reset().setNextJwt(t, validJwt(t, "nothing"))
+	fakeAuth.Reset().setNextJwt(t, "", validJwt(t, "nothing"))
 	ctx = authenticator.AuthenticatedGRPCContext(context.Background())
 	require.Equal(t, nil, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Error case.
-	fakeAuth.Reset().setNextErr(t, status.InternalError("error"))
+	fakeAuth.Reset().setNextErr(t, "", status.InternalError("error"))
 	ctx = authenticator.AuthenticatedGRPCContext(context.Background())
 	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Error case with API Key.
-	fakeAuth.Reset().setNextErr(t, status.InternalError("error"))
+	fakeAuth.Reset().setNextErr(t, "", status.InternalError("error"))
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
 	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
 	err, _ := authutil.AuthErrorFromContext(ctx)
 	require.True(t, status.IsInternalError(err))
 
 	// Don't cache errors.
-	fakeAuth.Reset().setNextJwt(t, fooJwt)
+	fakeAuth.Reset().setNextJwt(t, "", fooJwt)
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
 	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
 
 	// The next auth attempt should be cached.
-	fakeAuth.Reset().setNextJwt(t, barJwt)
+	fakeAuth.Reset().setNextJwt(t, "", barJwt)
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
 	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
 
 	// But a different API Key should re-remotely-auth
-	fakeAuth.Reset().setNextJwt(t, barJwt)
+	fakeAuth.Reset().setNextJwt(t, "", barJwt)
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bar"))
 	require.Equal(t, barJwt, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Valid JWTs should be passed through
-	fakeAuth.Reset().setNextJwt(t, bazJwt)
+	fakeAuth.Reset().setNextJwt(t, "", bazJwt)
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, bazJwt))
 	require.Equal(t, bazJwt, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Invalid JWTs should return an error
-	fakeAuth.Reset().setNextJwt(t, "invalid")
+	fakeAuth.Reset().setNextJwt(t, "", "invalid")
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, "baz"))
 	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
 	err, _ = authutil.AuthErrorFromContext(ctx)
@@ -171,14 +175,38 @@ func TestJwtExpiry(t *testing.T) {
 	barJwt := validJwt(t, "bar")
 	require.NotEqual(t, fooJwt, barJwt)
 
-	// JWTs received from the remote backend are used directly (no validation)
-	fakeAuth.Reset().setNextJwt(t, fooJwt)
+	// The JWT minted by the backend should be considered to expire too soon
+	// and should not be used.
+	fakeAuth.Reset().setNextJwt(t, "", fooJwt)
 	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
+}
+
+func TestSubdomains(t *testing.T) {
+	authenticator, fakeAuth := setup(t)
+
+	fooJwt := validJwt(t, "foo")
+	barJwt := validJwt(t, "bar")
+	bazJwt := validJwt(t, "baz")
+	require.NotEqual(t, fooJwt, barJwt)
+	require.NotEqual(t, fooJwt, bazJwt)
+	require.NotEqual(t, barJwt, bazJwt)
+
+	// Authenticate at foosub.buildbuddy.io with API key foo
+	fakeAuth.Reset().setNextJwt(t, "foosub", fooJwt)
+	ctx := subdomain.Context(contextWithApiKey(t, "foo"), "foosub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
 
-	// fooJwt (which was cached above) should be considered to expire too soon
-	// and should be discarded.
-	fakeAuth.Reset().setNextJwt(t, barJwt)
-	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
+	// Ensure that JWT is not cached for a different subdomain
+	fakeAuth.Reset().setNextJwt(t, "barsub", barJwt)
+	ctx = subdomain.Context(contextWithApiKey(t, "foo"), "barsub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
 	require.Equal(t, barJwt, ctx.Value(authutil.ContextTokenStringKey))
+
+	// Also ensure API key bar doesn't work for foosub.buildbuddy.io
+	fakeAuth.Reset().setNextJwt(t, "foosub", bazJwt)
+	ctx = subdomain.Context(contextWithApiKey(t, "bar"), "foosub")
+	ctx = authenticator.AuthenticatedGRPCContext(ctx)
+	require.Equal(t, bazJwt, ctx.Value(authutil.ContextTokenStringKey))
 }

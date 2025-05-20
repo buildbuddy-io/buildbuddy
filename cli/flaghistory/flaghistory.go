@@ -70,7 +70,7 @@ func saveFlag(args []string, flag, backup string, maxValues int) []string {
 	if value == "" {
 		value = backup
 	}
-	args = append(args, "--"+flag+"="+value)
+	args = arg.Append(args, "--"+flag+"="+value)
 	path := getPreviousFlagPath(flag)
 	if path == "" {
 		log.Debugf("Failed to get path for flag %q", flag)

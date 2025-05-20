@@ -7,6 +7,7 @@ DASHBOARD_NAMES = [
     "globalstatus",
     "jaeger",
     "mac",
+    "node-exporter-full",
     "nodes",
     "raft",
     "rbeperf",

@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 const (
@@ -20,7 +20,7 @@ const (
 	// readyCheckTimeout determines how long to wait until giving up on waiting for
 	// BuildBuddy server to become ready. If this timeout is reached, the test case
 	// running the server will fail with a timeout error.
-	readyCheckTimeout = 30 * time.Second
+	readyCheckTimeout = 60 * time.Second
 )
 
 type Server struct {
@@ -54,8 +54,8 @@ func Run(t *testing.T, opts *Opts) *Server {
 	}
 
 	cmd := exec.Command(runfile(t, opts.BinaryRunfilePath), opts.Args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = log.Writer("[testserver] ")
+	cmd.Stderr = log.Writer("[testserver] ")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,8 @@ func isOK(resp *http.Response) (bool, error) {
 
 func (s *Server) waitForReady() error {
 	start := time.Now()
-	for {
+	log.Debug("testserver waitForReady start")
+	for i := 0; ; i++ {
 		s.mu.Lock()
 		exited := s.exited
 		err := s.err
@@ -109,7 +110,7 @@ func (s *Server) waitForReady() error {
 			} else {
 				errMsg = fmt.Sprintf("/readyz err: %s", err)
 			}
-			return fmt.Errorf("binary failed to start within %s: %s", readyCheckTimeout, errMsg)
+			return fmt.Errorf("binary failed to start within %s (%d requests): %s", readyCheckTimeout, i, errMsg)
 		}
 		time.Sleep(readyCheckPollInterval)
 	}

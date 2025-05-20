@@ -367,7 +367,7 @@ func TestPull(t *testing.T) {
 					if tc.method == http.MethodGet {
 						contentLength, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 						require.NoError(t, err)
-						require.Equal(t, expectedContentLength, contentLength)
+						require.Equalf(t, expectedContentLength, contentLength, "content length %d (expected %d) for %q", contentLength, expectedContentLength, path)
 
 						respBody, err := io.ReadAll(resp.Body)
 						require.NoError(t, err)

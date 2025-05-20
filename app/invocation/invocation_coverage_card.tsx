@@ -6,16 +6,17 @@ import Button from "../components/button/button";
 import { ListChecks } from "lucide-react";
 import errorService from "../errors/error_service";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { parseLcov } from "../util/lcov";
+import { LcovItem, parseLcov } from "../util/lcov";
 import format from "../format/format";
 import { percentageColor } from "../util/color";
+import { TextLink } from "../components/link/link";
 
 interface Props {
   model: InvocationModel;
 }
 
 interface State {
-  report: any[] | null;
+  report: Array<LcovItem> | null;
   loading: boolean;
   sort: "file" | "most" | "least";
 }
@@ -127,12 +128,14 @@ export default class InvocationCoverageCardComponent extends React.Component<Pro
     this.setState({ sort: sort });
   }
 
-  sort(a: any, b: any) {
+  sort(a: LcovItem, b: LcovItem) {
+    let aratio = a.numLinesFound === 0 ? 0 : a.numLinesHit / a.numLinesFound;
+    let bratio = b.numLinesFound === 0 ? 0 : b.numLinesHit / b.numLinesFound;
     if (this.state.sort == "most") {
-      return b.numLinesHit / b.numLinesFound - a.numLinesHit / a.numLinesFound;
+      return bratio - aratio;
     }
     if (this.state.sort == "least") {
-      return a.numLinesHit / a.numLinesFound - b.numLinesHit / b.numLinesFound;
+      return aratio - bratio;
     }
 
     return a.sourceFile.localeCompare(b.sourceFile);
@@ -225,29 +228,31 @@ export default class InvocationCoverageCardComponent extends React.Component<Pro
                     const percent = (record.numLinesHit * 1.0) / record.numLinesFound;
                     return (
                       <div className="coverage-record">
-                        <a
+                        <TextLink
+                          plain
                           href={
                             repoPath
                               ? `${repoPath}${
                                   record.sourceFile
                                 }?lcov=${testCoverageUrl}&invocation_id=${this.props.model.getInvocationId()}&commit=${this.props.model.getCommit()}`
                               : "#"
-                          }>
-                          <span className="coverage-source">{record.sourceFile}</span>:{" "}
-                          <span className="coverage-percent" style={{ color: percentageColor(percent) }}>
-                            {format.percent(percent)}%
-                          </span>{" "}
-                          <span className="coverage-details">
-                            ({format.formatWithCommas(record.numLinesHit)} hits /{" "}
-                            {format.formatWithCommas(record.numLinesFound)} lines)
-                          </span>
-                        </a>
+                          }
+                          className="coverage-source">
+                          {record.sourceFile}
+                        </TextLink>{" "}
+                        <span className="coverage-percent" style={{ color: percentageColor(percent) }}>
+                          {format.percent(percent)}%
+                        </span>{" "}
+                        <span className="coverage-details">
+                          ({format.formatWithCommas(record.numLinesHit)} hits /{" "}
+                          {format.formatWithCommas(record.numLinesFound)} lines)
+                        </span>
                       </div>
                     );
                   })}
             </div>
             <div className="coverage-record coverage-record-total">
-              <span className="coverage-source">Total</span>{" "}
+              <span className="coverage-total-label">Total</span>{" "}
               <span className="coverage-percent" style={{ color: percentageColor(totalPercent) }}>
                 {format.percent(totalPercent)}%
               </span>{" "}

@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/claims",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:api_key_go_proto",
+        "//proto:capability_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
@@ -28,7 +28,13 @@ go_test(
     srcs = ["claims_test.go"],
     deps = [
         ":claims",
+        "//proto:context_go_proto",
+        "//server/interfaces",
         "//server/util/authutil",
+        "//server/util/capabilities",
+        "//server/util/request_context",
+        "//server/util/role",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],

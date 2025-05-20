@@ -61,8 +61,7 @@ var (
 	netPoolSize = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 	capAdd      = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
-	tiniEnabled = flag.Bool("executor.oci.tini_enabled", false, "Run tini as pid 1 for recycling-enabled containers.")
-	tiniPath    = flag.String("executor.oci.tini_path", "", "Path to tini binary to use as pid 1 for recycling-enabled containers. Defaults to PATH lookup if not set.")
+	mounts      = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -103,6 +102,9 @@ var seccomp specs.LinuxSeccomp
 
 //go:embed hosts
 var hostsFile []byte
+
+//go:embed tini
+var tini []byte
 
 func init() {
 	if err := json.Unmarshal(seccompJSON, &seccomp); err != nil {
@@ -211,17 +213,13 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	}
 
 	// Configure the tini binary path.
-	var tini string
-	if *tiniEnabled {
-		if *tiniPath == "" {
-			p, err := exec.LookPath("tini")
-			if err != nil {
-				return nil, status.FailedPreconditionErrorf("tini not found in PATH")
-			}
-			tini = p
-		} else {
-			tini = *tiniPath
-		}
+	binDir := filepath.Join(buildRoot, "executor", "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return nil, status.FailedPreconditionErrorf("failed to create executor bin directory: %s", err)
+	}
+	tiniPath := filepath.Join(binDir, "tini")
+	if err := os.WriteFile(tiniPath, tini, 0755); err != nil {
+		return nil, status.FailedPreconditionErrorf("failed to write tini binary to %s: %s", tiniPath, err)
 	}
 
 	lxcfsMount := "" // set below if configured.
@@ -291,7 +289,11 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err := cleanStaleImageCacheDirs(imageCacheRoot); err != nil {
 		log.Warningf("Failed to clean up old image cache versions: %s", err)
 	}
-	imageStore, err := NewImageStore(imageCacheRoot)
+	resolver, err := oci.NewResolver(env)
+	if err != nil {
+		return nil, err
+	}
+	imageStore, err := NewImageStore(resolver, imageCacheRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +304,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	return &provider{
 		env:            env,
 		runtime:        rt,
-		tiniPath:       tini,
+		tiniPath:       tiniPath,
 		containersRoot: containersRoot,
 		cgroupPaths:    &cgroup.Paths{},
 		imageCacheRoot: imageCacheRoot,
@@ -329,6 +331,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		cgroupSettings: &scpb.CgroupSettings{},
 		imageRef:       args.Props.ContainerImage,
 		networkEnabled: args.Props.DockerNetwork != "off",
+		tiniEnabled:    args.Props.DockerInit,
 		user:           args.Props.DockerUser,
 		forceRoot:      args.Props.DockerForceRoot,
 
@@ -346,6 +349,7 @@ type ociContainer struct {
 
 	runtime        string
 	tiniPath       string
+	tiniEnabled    bool
 	cgroupPaths    *cgroup.Paths
 	cgroupParent   string
 	cgroupSettings *scpb.CgroupSettings
@@ -383,11 +387,7 @@ func (c *ociContainer) rootfsPath() string {
 }
 
 func (c *ociContainer) cgroupRootRelativePath() string {
-	// Each container gets 2 cgroups: a parent cgroup and a child cgroup. We do
-	// this to work around crun deleting the container cgroup after the
-	// containerized process has run, which is inconvenient because we still
-	// want to read from the cgroup after the process has exited.
-	return filepath.Join(c.cgroupParent, c.cid+"_parent", c.cid)
+	return filepath.Join(c.cgroupParent, c.cid)
 }
 
 func (c *ociContainer) cgroupPath() string {
@@ -506,12 +506,19 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	if err := c.createNetwork(ctx); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("create network: %s", err))
 	}
+	if c.tiniEnabled {
+		cmd = cmd.CloneVT()
+		cmd.Arguments = append([]string{tiniMountPoint, "--"}, cmd.Arguments...)
+	}
 	if err := c.createBundle(ctx, cmd); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("create OCI bundle: %s", err))
 	}
 
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
-		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
+		// Use --keep to prevent the cgroup from being deleted when the
+		// container exits, since we still want to be able to look at stats,
+		// events, etc. after completion.
+		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--keep", "--bundle="+c.bundlePath(), c.cid)
 	})
 }
 
@@ -527,7 +534,7 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 		return status.UnavailableErrorf("create network: %s", err)
 	}
 	pid1 := &repb.Command{Arguments: []string{"sleep", "999999999999"}}
-	if *tiniEnabled {
+	if c.tiniEnabled {
 		pid1.Arguments = append(
 			[]string{tiniMountPoint, "--"},
 			pid1.Arguments...,
@@ -646,13 +653,9 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 		firstErr = status.UnavailableErrorf("remove bundle: %s", err)
 	}
 
-	// Remove child cgroup if crun hasn't deleted it already
+	// Remove the cgroup in case the delete command didn't work as expected.
 	if err := os.Remove(c.cgroupPath()); err != nil && firstErr == nil && !os.IsNotExist(err) {
 		firstErr = status.UnavailableErrorf("remove container cgroup: %s", err)
-	}
-	// Remove parent cgroup
-	if err := os.Remove(filepath.Dir(c.cgroupPath())); err != nil && firstErr == nil && !os.IsNotExist(err) {
-		firstErr = status.UnavailableErrorf("remove parent cgroup: %s", err)
 	}
 
 	if c.releaseCPUs != nil {
@@ -729,24 +732,57 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	}
 	res.UsageStats = combinedStats
 
-	// Check for oom_kill memory events in the cgroup and return a
-	// ResourceExhausted error if found. We read this from the parent cgroup,
-	// because at this point, crun will have deleted the child cgroup.
-	memoryEvents, err := cgroup.ReadMemoryEvents(filepath.Dir(c.cgroupPath()))
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to get memory events: %s", err)
-	} else if memoryEvents["oom_kill"] > 0 {
-		if res.ExitCode == 0 {
-			// TODO: look into any logs that happen here, and consider whether
-			// it makes sense to make these failures.
-			log.CtxWarningf(ctx, "Task succeeded, but cgroup reported oom_kill events.")
-		} else {
-			res.ExitCode = commandutil.KilledExitCode
-			res.Error = status.UnavailableError("task process or child process killed by oom killer")
-		}
+	// If there was an oom_kill event, return an error instead of a normal exit
+	// status.
+	if err := c.checkOOMKill(ctx, res); err != nil {
+		res.ExitCode = commandutil.KilledExitCode
+		res.Error = err
+		return res
+	}
+
+	// Check whether the pid limit was exceeded, and just log it for now so that
+	// it can be diagnosed.
+	if err := c.checkPIDLimitExceeded(ctx, res); err != nil {
+		log.CtxWarning(ctx, status.Message(err))
 	}
 
 	return res
+}
+
+// checkOOMKill checks for oom_kill memory events in the cgroup and returns an
+// Unavailable error if found.
+func (c *ociContainer) checkOOMKill(ctx context.Context, res *interfaces.CommandResult) error {
+	memoryEvents, err := cgroup.ReadMemoryEvents(c.cgroupPath())
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get memory events: %s", err)
+		return nil
+	}
+	if memoryEvents["oom_kill"] == 0 {
+		return nil
+	}
+	if res.ExitCode == 0 {
+		log.CtxWarningf(ctx, "Task succeeded, but cgroup reported oom_kill events.")
+		return nil
+	}
+	return status.UnavailableError("task process or child process killed by oom killer")
+}
+
+// checkPIDLimitExceeded checks for pid limit exceeded events in the cgroup and
+// returns an Unavailable error if found.
+func (c *ociContainer) checkPIDLimitExceeded(ctx context.Context, res *interfaces.CommandResult) error {
+	pidsEvents, err := cgroup.ReadPidsEvents(c.cgroupPath())
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get pids events: %s", err)
+		return nil
+	}
+	if pidsEvents["max"] == 0 {
+		return nil
+	}
+	if res.ExitCode == 0 {
+		log.CtxWarningf(ctx, "Task succeeded, but cgroup reported pid limit exceeded events.")
+		return nil
+	}
+	return status.UnavailableErrorf("pid limit exceeded (maximum number of pids allowed is %d)", c.cgroupSettings.GetPidsMax())
 }
 
 func (c *ociContainer) setupCgroup(ctx context.Context) error {
@@ -761,11 +797,6 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	path := c.cgroupPath()
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create cgroup: %w", err)
-	}
-	// Propagate enabled controllers to the child cgroup before performing
-	// cgroup setup.
-	if err := cgroup.DelegateControllers(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("delegate controllers: %w", err)
 	}
 	if err := cgroup.Setup(ctx, path, c.cgroupSettings, c.blockDevice); err != nil {
 		return fmt.Errorf("configure cgroup: %w", err)
@@ -1099,7 +1130,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			})
 		}
 	}
-	if c.tiniPath != "" {
+	if c.tiniEnabled {
 		// Bind-mount tini readonly into the container.
 		spec.Mounts = append(spec.Mounts, specs.Mount{
 			Destination: tiniMountPoint,
@@ -1108,6 +1139,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Options:     []string{"bind", "rprivate", "ro"},
 		})
 	}
+	spec.Mounts = append(spec.Mounts, *mounts...)
 	return &spec, nil
 }
 
@@ -1368,11 +1400,7 @@ type ImageLayer struct {
 	DiffID ctr.Hash
 }
 
-func NewImageStore(layersDir string) (*ImageStore, error) {
-	resolver, err := oci.NewResolver()
-	if err != nil {
-		return nil, err
-	}
+func NewImageStore(resolver *oci.Resolver, layersDir string) (*ImageStore, error) {
 	return &ImageStore{
 		resolver:     resolver,
 		layersDir:    layersDir,

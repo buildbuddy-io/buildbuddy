@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
@@ -26,11 +27,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -710,12 +712,12 @@ func TestGetAPIKeyForInternalUseOnly_PrefersCacheWritePermissions(t *testing.T) 
 	env := newTestEnv(t)
 	adb := env.GetAuthDB()
 
-	allCapabilities := []akpb.ApiKey_Capability{
-		akpb.ApiKey_UNKNOWN_CAPABILITY,
-		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
-		akpb.ApiKey_CAS_WRITE_CAPABILITY,
-		akpb.ApiKey_ORG_ADMIN_CAPABILITY,
-		akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY,
+	allCapabilities := []cappb.Capability{
+		cappb.Capability_UNKNOWN_CAPABILITY,
+		cappb.Capability_CACHE_WRITE,
+		cappb.Capability_CAS_WRITE,
+		cappb.Capability_ORG_ADMIN,
+		cappb.Capability_REGISTER_EXECUTOR,
 	}
 	// Repeat for a few trials
 	for i := range 8 {
@@ -729,11 +731,11 @@ func TestGetAPIKeyForInternalUseOnly_PrefersCacheWritePermissions(t *testing.T) 
 
 		// Create a few keys with random capabilities.
 		keyIDs := map[string]struct{}{}
-		var capChoices []akpb.ApiKey_Capability
+		var capChoices []cappb.Capability
 		for range 4 {
 			c := allCapabilities[rand.Intn(len(allCapabilities))]
 			capChoices = append(capChoices, c)
-			key, err := adb.CreateAPIKey(authCtx, gid, "", []akpb.ApiKey_Capability{c}, false /*=visibleToDevelopers*/)
+			key, err := adb.CreateAPIKey(authCtx, gid, "", []cappb.Capability{c}, false /*=visibleToDevelopers*/)
 			require.NoError(t, err)
 			keyIDs[key.APIKeyID] = struct{}{}
 		}
@@ -753,11 +755,11 @@ func TestGetAPIKeyForInternalUseOnly_PrefersCacheWritePermissions(t *testing.T) 
 
 		// The key we retrieved should have the highest cache capabilities out
 		// of the ones we created.
-		keyCapabilities := akpb.ApiKey_Capability(key.Capabilities)
-		if slices.Contains(capChoices, akpb.ApiKey_CACHE_WRITE_CAPABILITY) {
-			require.Equal(t, akpb.ApiKey_CACHE_WRITE_CAPABILITY, keyCapabilities)
-		} else if slices.Contains(capChoices, akpb.ApiKey_CAS_WRITE_CAPABILITY) {
-			require.Equal(t, akpb.ApiKey_CAS_WRITE_CAPABILITY, keyCapabilities)
+		keyCapabilities := cappb.Capability(key.Capabilities)
+		if slices.Contains(capChoices, cappb.Capability_CACHE_WRITE) {
+			require.Equal(t, cappb.Capability_CACHE_WRITE, keyCapabilities)
+		} else if slices.Contains(capChoices, cappb.Capability_CAS_WRITE) {
+			require.Equal(t, cappb.Capability_CAS_WRITE, keyCapabilities)
 		}
 	}
 }
@@ -778,12 +780,12 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	// US1 be able to create keys in their self-owned group.
 	adminOnlyKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Admin-only key",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	developerKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Developer key",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+		[]cappb.Capability{cappb.Capability_CAS_WRITE},
 		true /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 
@@ -829,7 +831,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	// Attempt to create a key in GR1 as US2 (a developer); should fail.
 	_, err = adb.CreateAPIKey(
 		ctx2, groupID1, "test-label-2",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
 		false /*=visibleToDevelopers*/)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -838,7 +840,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	// Attempt to create a key in GR1 as US3 (a non-member); should fail.
 	_, err = adb.CreateAPIKey(
 		ctx3, groupID1, "test-label-3",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
 		false /*=visibleToDevelopers*/)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -923,7 +925,7 @@ func TestDeleteAPIKey(t *testing.T) {
 
 	uk3, err := adb.CreateUserAPIKey(
 		ctx3, gr1.Group.GroupID, "US3", "US3's Key",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
+		[]cappb.Capability{cappb.Capability_CAS_WRITE})
 	require.NoError(t, err, "create a US3-owned key in org1")
 
 	err = adb.DeleteAPIKey(ctx1, uk3.APIKeyID)
@@ -980,7 +982,7 @@ func TestUserOwnedKeys_GetUpdateDeletePermissions(t *testing.T) {
 			ownerGroup := getGroup(t, ownerCtx, env).Group
 			ownerKey, err := adb.CreateUserAPIKey(
 				ownerCtx, ownerGroup.GroupID, test.Owner, test.Owner+"'s key",
-				[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+				[]cappb.Capability{cappb.Capability_CAS_WRITE},
 			)
 			require.NoError(t, err)
 			var groupAdminID string
@@ -1069,7 +1071,7 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 	// Try to create a user-owned key; should fail by default.
 	_, err := adb.CreateUserAPIKey(
 		ctx1, gr1.GroupID, "US1", "US1's key",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
+		[]cappb.Capability{cappb.Capability_CAS_WRITE})
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
 		"expected PermissionDenied since user-owned keys are not enabled; got: %v",
@@ -1080,7 +1082,7 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 
 	key1, err := adb.CreateUserAPIKey(
 		ctx1, gr1.GroupID, "US1", "US1's key",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
+		[]cappb.Capability{cappb.Capability_CAS_WRITE})
 	require.NoError(
 		t, err,
 		"should be able to create a user-owned key after enabling the setting")
@@ -1100,10 +1102,10 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 	// Need to temporarily instruct the test authenticator to not fail the test
 	// when it sees invalid API keys.
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
-	auth.APIKeyProvider = func(apiKey string) interfaces.UserInfo {
-		_, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(context.Background(), apiKey)
+	auth.APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
+		_, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, apiKey)
 		require.Error(t, err)
-		return nil
+		return nil, nil
 	}
 	key1Ctx = env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
 
@@ -1148,7 +1150,7 @@ func TestUserOwnedKeys_RemoveUserFromGroup_KeyNoLongerWorks(t *testing.T) {
 
 	us2Key, err := adb.CreateUserAPIKey(
 		ctx2, gr1.GroupID, "US2", "US2's key",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
+		[]cappb.Capability{cappb.Capability_CAS_WRITE})
 	require.NoError(t, err, "US2 should be able to create a user-owned key")
 
 	_, err = env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
@@ -1187,7 +1189,7 @@ func TestUserOwnedKeys_ChangeRole_UpdatesCapabilities(t *testing.T) {
 	require.NoError(t, err)
 	us1Key, err := adb.CreateUserAPIKey(
 		ctx1, gr1.GroupID, "US1", "",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY})
+		[]cappb.Capability{cappb.Capability_CACHE_WRITE})
 	require.NoError(t, err, "US1 should be able to create a user-owned key")
 
 	_, err = env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, us1Key.Value)
@@ -1202,9 +1204,9 @@ func TestUserOwnedKeys_ChangeRole_UpdatesCapabilities(t *testing.T) {
 
 	akg, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, us1Key.Value)
 	require.NoError(t, err)
-	assert.Equal(t, capabilities.ToInt([]akpb.ApiKey_Capability{
+	assert.Equal(t, capabilities.ToInt([]cappb.Capability{
 		// CACHE_WRITE should have been demoted to CAS_WRITE.
-		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+		cappb.Capability_CAS_WRITE,
 	}), akg.GetCapabilities())
 }
 
@@ -1212,27 +1214,27 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 	for _, test := range []struct {
 		Name         string
 		Role         role.Role
-		Capabilities []akpb.ApiKey_Capability
+		Capabilities []cappb.Capability
 		OK           bool
 	}{
-		{Name: "Admin_CASWrite_OK", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: true},
-		{Name: "Developer_CASWrite_OK", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: true},
-		{Name: "Admin_ACWrite_OK", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: true},
-		{Name: "Developer_ACWrite_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
-		{Name: "Admin_Executor_Fail", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: false},
-		{Name: "Developer_Executor_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: false},
+		{Name: "Admin_CASWrite_OK", Role: role.Admin, Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE}, OK: true},
+		{Name: "Developer_CASWrite_OK", Role: role.Developer, Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE}, OK: true},
+		{Name: "Admin_ACWrite_OK", Role: role.Admin, Capabilities: []cappb.Capability{cappb.Capability_CACHE_WRITE}, OK: true},
+		{Name: "Developer_ACWrite_Fail", Role: role.Developer, Capabilities: []cappb.Capability{cappb.Capability_CACHE_WRITE}, OK: false},
+		{Name: "Admin_Executor_Fail", Role: role.Admin, Capabilities: []cappb.Capability{cappb.Capability_REGISTER_EXECUTOR}, OK: false},
+		{Name: "Developer_Executor_Fail", Role: role.Developer, Capabilities: []cappb.Capability{cappb.Capability_REGISTER_EXECUTOR}, OK: false},
 		// Even admins should not be able to attach ORG_ADMIN capabilities to
 		// user-owned keys (for now, we only support setting cache capabilities
 		// on user-owned keys)
-		{Name: "Admin_OrgAdmin_Fail", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY}, OK: false},
+		{Name: "Admin_OrgAdmin_Fail", Role: role.Admin, Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN}, OK: false},
 		// Readers and writers should be able to assign any capabilities
 		// within the max limits allowed by their role.
 		{Name: "Writer_NoCapabilities_OK", Role: role.Writer, Capabilities: nil, OK: true},
-		{Name: "Writer_CASWrite_OK", Role: role.Writer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: true},
-		{Name: "Writer_ACWrite_OK", Role: role.Writer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: true},
+		{Name: "Writer_CASWrite_OK", Role: role.Writer, Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE}, OK: true},
+		{Name: "Writer_ACWrite_OK", Role: role.Writer, Capabilities: []cappb.Capability{cappb.Capability_CACHE_WRITE}, OK: true},
 		{Name: "Reader_NoCapabilities_OK", Role: role.Reader, Capabilities: nil, OK: true},
-		{Name: "Reader_CASWrite_Fail", Role: role.Reader, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: false},
-		{Name: "Reader_ACWrite_Fail", Role: role.Reader, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
+		{Name: "Reader_CASWrite_Fail", Role: role.Reader, Capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE}, OK: false},
+		{Name: "Reader_ACWrite_Fail", Role: role.Reader, Capabilities: []cappb.Capability{cappb.Capability_CACHE_WRITE}, OK: false},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			ctx := context.Background()
@@ -1274,7 +1276,7 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 
 			key, err = adb.CreateUserAPIKey(
 				ctx1, g.GroupID, "US1", "US1's key",
-				[]akpb.ApiKey_Capability{})
+				[]cappb.Capability{})
 			require.NoError(t, err)
 			key.Capabilities = capabilities.ToInt(test.Capabilities)
 			err = adb.UpdateAPIKey(ctx1, key)
@@ -1332,39 +1334,39 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 
 	for _, test := range []struct {
 		Name        string
-		AuthUserID  string                   // set if authenticating as user
-		AuthKeyCaps []akpb.ApiKey_Capability // set if authenticating as API key
+		AuthUserID  string             // set if authenticating as user
+		AuthKeyCaps []cappb.Capability // set if authenticating as API key
 		AuthGroupID string
 		KeyGroupID  string
 		KeyUserID   string
-		KeyCaps     []akpb.ApiKey_Capability
+		KeyCaps     []cappb.Capability
 		Code        codes.Code
 	}{
 		{
 			Name:        "AuthAsOrgAdminAPIKey_CreateForUserInAuthenticatedGroup_OK",
 			AuthGroupID: "GR1",
-			AuthKeyCaps: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+			AuthKeyCaps: []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			KeyGroupID:  "GR1",
 			KeyUserID:   "US1",
-			KeyCaps:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+			KeyCaps:     []cappb.Capability{cappb.Capability_CACHE_WRITE},
 			Code:        codes.OK,
 		},
 		{
 			Name:        "AuthAsRegularAPIKey_CreateForUserInAuthenticatedGroup_PermissionDenied",
 			AuthGroupID: "GR1",
-			AuthKeyCaps: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+			AuthKeyCaps: []cappb.Capability{cappb.Capability_CAS_WRITE},
 			KeyGroupID:  "GR1",
 			KeyUserID:   "US1",
-			KeyCaps:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+			KeyCaps:     []cappb.Capability{cappb.Capability_CACHE_WRITE},
 			Code:        codes.PermissionDenied,
 		},
 		{
 			Name:        "AuthAsOrgAdminAPIKey_CreateForUserInOtherGroup_PermissionDenied",
 			AuthGroupID: "GR1",
-			AuthKeyCaps: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+			AuthKeyCaps: []cappb.Capability{cappb.Capability_ORG_ADMIN},
 			KeyGroupID:  "GR1",
 			KeyUserID:   "US2",
-			KeyCaps:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+			KeyCaps:     []cappb.Capability{cappb.Capability_CACHE_WRITE},
 			Code:        codes.PermissionDenied,
 		},
 		{
@@ -1373,7 +1375,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			AuthGroupID: "GR2",
 			KeyGroupID:  "GR2",
 			KeyUserID:   "US3",
-			KeyCaps:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+			KeyCaps:     []cappb.Capability{cappb.Capability_CACHE_WRITE},
 			Code:        codes.OK,
 		},
 		{
@@ -1382,7 +1384,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			AuthGroupID: "GR2",
 			KeyGroupID:  "GR2",
 			KeyUserID:   "US2",
-			KeyCaps:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+			KeyCaps:     []cappb.Capability{cappb.Capability_CACHE_WRITE},
 			Code:        codes.PermissionDenied,
 		},
 	} {
@@ -1508,10 +1510,14 @@ func TestRequestToJoinGroup_NoAutoJoinForSAMLUser(t *testing.T) {
 	// Have US2 be a user using SAML login.
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
 	p := auth.UserProvider
-	auth.UserProvider = func(userID string) interfaces.UserInfo {
-		c := p(userID).(*claims.Claims)
+	auth.UserProvider = func(ctx context.Context, userID string) (interfaces.UserInfo, error) {
+		ui, err := p(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		c := ui.(*claims.Claims)
 		c.SAML = true
-		return c
+		return c, nil
 	}
 	createUser(t, ctx, env, "US2", "org1.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
@@ -1795,30 +1801,30 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 	for _, test := range []struct {
 		Name                 string
 		UserRole             role.Role
-		ExpectedCapabilities []akpb.ApiKey_Capability
+		ExpectedCapabilities []cappb.Capability
 	}{
 		{
 			Name:     "Developer",
 			UserRole: role.Developer,
-			ExpectedCapabilities: []akpb.ApiKey_Capability{
-				akpb.ApiKey_CAS_WRITE_CAPABILITY,
+			ExpectedCapabilities: []cappb.Capability{
+				cappb.Capability_CAS_WRITE,
 			},
 		},
 		{
 			Name:     "Admin",
 			UserRole: role.Admin,
-			ExpectedCapabilities: []akpb.ApiKey_Capability{
-				akpb.ApiKey_CAS_WRITE_CAPABILITY,
-				akpb.ApiKey_CACHE_WRITE_CAPABILITY,
-				akpb.ApiKey_ORG_ADMIN_CAPABILITY,
+			ExpectedCapabilities: []cappb.Capability{
+				cappb.Capability_CAS_WRITE,
+				cappb.Capability_CACHE_WRITE,
+				cappb.Capability_ORG_ADMIN,
 			},
 		},
 		{
 			Name:     "Writer",
 			UserRole: role.Writer,
-			ExpectedCapabilities: []akpb.ApiKey_Capability{
-				akpb.ApiKey_CAS_WRITE_CAPABILITY,
-				akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+			ExpectedCapabilities: []cappb.Capability{
+				cappb.Capability_CAS_WRITE,
+				cappb.Capability_CACHE_WRITE,
 			},
 		},
 		{
@@ -1867,10 +1873,10 @@ func TestChildGroupAuth(t *testing.T) {
 	ctx := context.Background()
 
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
-	auth.APIKeyProvider = func(apiKey string) interfaces.UserInfo {
-		ui, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(context.Background(), apiKey)
+	auth.APIKeyProvider = func(ctx context.Context, apiKey string) (interfaces.UserInfo, error) {
+		ui, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, apiKey)
 		require.NoError(t, err)
-		return claims.APIKeyGroupClaims(ui)
+		return claims.APIKeyGroupClaims(ctx, ui)
 	}
 
 	// Start with two independent groups.
@@ -1879,7 +1885,7 @@ func TestChildGroupAuth(t *testing.T) {
 	us1Group := getGroup(t, ctx1, env).Group
 	key1, err := env.GetAuthDB().CreateAPIKey(
 		ctx1, us1Group.GroupID, "admin",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	adminCtx1 := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
@@ -1889,10 +1895,9 @@ func TestChildGroupAuth(t *testing.T) {
 	us2Group := getGroup(t, ctx2, env).Group
 	key2, err := env.GetAuthDB().CreateAPIKey(
 		ctx2, us2Group.GroupID, "admin",
-		[]akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
-	//adminCtx2 := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key2.Value)
 
 	// Admin key for group1 shouldn't be able to affect anything in group2.
 	err = udb.UpdateGroupUsers(adminCtx1, us2Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
@@ -1906,6 +1911,14 @@ func TestChildGroupAuth(t *testing.T) {
 		Role:   grpb.Group_DEVELOPER_ROLE,
 	}})
 	require.NoError(t, err, "should be able to update role of US2")
+
+	// Admin key for group1 shouldn't be able to set the effective group to group2 via RequestContext.
+	errCtx := env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
+	err, _ = authutil.AuthErrorFromContext(errCtx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
 
 	us1Group.SamlIdpMetadataUrl = "https://some/saml/url"
 	us1Group.URLIdentifier = "org1"
@@ -1924,6 +1937,13 @@ func TestChildGroupAuth(t *testing.T) {
 		Role:   grpb.Group_DEVELOPER_ROLE,
 	}})
 	require.Error(t, err, "should not be able to update role of US2")
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	errCtx = env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
+	err, _ = authutil.AuthErrorFromContext(errCtx)
+	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
 
 	// Now mark the first group as a "parent" organization.
@@ -1947,4 +1967,12 @@ func TestChildGroupAuth(t *testing.T) {
 	}})
 	require.Error(t, err, "should not be able to update role of US1")
 	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Should be able to change the effective group to group2 via the Request
+	gr2Ctx := env.GetAuthenticator().AuthContextFromAPIKey(
+		requestcontext.ContextWithProtoRequestContext(
+			ctx, &ctxpb.RequestContext{GroupId: us2Group.GroupID}), key1.Value)
+	cl, err := claims.ClaimsFromContext(gr2Ctx)
+	require.NoError(t, err)
+	require.Equal(t, us2Group.GroupID, cl.GetGroupID())
 }

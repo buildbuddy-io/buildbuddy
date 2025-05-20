@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -27,6 +26,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -101,11 +101,29 @@ func (es *ExecutionService) getInvocationExecutionsFromPrimaryDB(ctx context.Con
 func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Context, invocationID, actionDigestHash string) ([]*olaptables.Execution, error) {
 	var eg errgroup.Group
 
-	// If the invocation is still in progress, completed executions will be
+	// If executions.write_execution_progress_state_to_redis is enabled,
+	// executions that are still in progress will be buffered in Redis.
+	//
+	// If the invocation is still in progress, completed executions will also be
 	// buffered, waiting to be flushed to the OLAP database as part of a batch
-	// of writes. So we read both buffered and flushed executions here.
+	// of writes. So, we read both buffered and flushed executions here.
+	var inProgressExecutions []*olaptables.Execution
 	var bufferedExecutions []*olaptables.Execution
 	var flushedExecutions []*olaptables.Execution
+	eg.Go(func() error {
+		ex, err := es.env.GetExecutionCollector().GetInProgressExecutions(ctx, invocationID)
+		if err != nil {
+			return err
+		}
+		// Convert buffered representation to OLAP table representation.
+		inProgressExecutions = make([]*olaptables.Execution, len(ex))
+		for i, e := range ex {
+			// Note: invocation metadata is not needed in this case (since this
+			// RPC only returns the execution metadata).
+			inProgressExecutions[i] = clickhouse.ExecutionFromProto(e, nil /*=invocation*/)
+		}
+		return nil
+	})
 	eg.Go(func() error {
 		ex, err := es.env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 		if err != nil {
@@ -118,7 +136,7 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 				return len(parts) < 2 || parts[len(parts)-2] != actionDigestHash
 			})
 		}
-		// Converted buffered representation to OLAP table representation.
+		// Convert buffered representation to OLAP table representation.
 		bufferedExecutions = make([]*olaptables.Execution, len(ex))
 		for i, e := range ex {
 			// Note: invocation metadata is not needed in this case (since this
@@ -164,8 +182,15 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		}
 		// group_id ACL check should have been done in LookupInvocation, but
 		// check it again here just to be explicit.
-		if err := authutil.AuthorizeGroupAccess(ctx, es.env, inv.GroupID); err != nil {
-			return err
+		// TODO(bduffany): do this OTHERS_READ check in AuthorizeRead instead.
+		if inv.Perms&perms.OTHERS_READ == 0 {
+			u, err := es.env.GetAuthenticator().AuthenticatedUser(ctx)
+			if err != nil {
+				return err
+			}
+			if err := perms.AuthorizeRead(u, perms.ToACLProto(&uidpb.UserId{Id: inv.UserID}, inv.GroupID, inv.Perms)); err != nil {
+				return err
+			}
 		}
 		// Select only the execution fields that will be shown on the Executions
 		// page.
@@ -193,11 +218,10 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		return nil, err
 	}
 
-	// Combine the buffered and flushed executions. Dedupe by execution ID,
-	// since the concurrent reads from Redis and OLAP might occur during an
-	// in-progress flush, in which case the Redis executions might not've been
-	// cleaned up yet.
-	executions := append(flushedExecutions, bufferedExecutions...)
+	// Combine the in-progress, buffered and flushed executions. Dedupe by
+	// execution ID, since an execution's transitions between these lists are
+	// not atomic. Prefer flushed executions, then buffered, then in-progress.
+	executions := slices.Concat(flushedExecutions, bufferedExecutions, inProgressExecutions)
 	executionIDs := make(map[string]bool)
 	dedupedExecutions := make([]*olaptables.Execution, 0, len(executions))
 	for _, e := range executions {

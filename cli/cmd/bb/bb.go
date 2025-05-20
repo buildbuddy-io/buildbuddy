@@ -78,7 +78,7 @@ func run() (exitCode int, err error) {
 	args = shortcuts.HandleShortcuts(args)
 
 	// Make sure startup args are always in the format --foo=bar.
-	args, err = parser.CanonicalizeStartupArgs(args)
+	args, err = parser.CanonicalizeArgs(args)
 	if err != nil {
 		return -1, err
 	}
@@ -126,11 +126,7 @@ func handleGlobalCliFlags(args []string) []string {
 			log.Configure(flagVal)
 		}
 	}
-	if len(residual) > 0 {
-		args = append(args, "--")
-		args = append(args, residual...)
-	}
-	return args
+	return arg.JoinExecutableArgs(args, residual)
 }
 
 // handleBazelCommand handles a native bazel command (i.e. commands that are

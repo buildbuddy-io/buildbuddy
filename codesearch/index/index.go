@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"maps"
-	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -26,14 +24,20 @@ import (
 )
 
 var (
-	fieldNameRegex   = regexp.MustCompile(`^([a-zA-Z0-9][a-zA-Z0-9_]*)$`)
 	nextGenerationMu = sync.Mutex{}
 )
 
-const batchFlushSizeBytes = 1_000_000_000 // flush batch every 1G
+const (
+	batchFlushSizeBytes = 1_000_000_000 // flush batch every 1G
+	generationKey       = "__generation__"
+)
 
 type postingLists map[string]posting.List
 
+// Writer is not thread-safe. A single instance should not be used concurrently.
+// Multiple instances can be used concurrently without crashing, however CRUD operations are
+// not atomic, so index corruption can occur if multiple writers are used to modify the same
+// documents at the same time.
 type Writer struct {
 	db  *pebble.DB
 	log log.Logger
@@ -41,10 +45,10 @@ type Writer struct {
 	generation        uint32
 	docIndex          uint32
 	namespace         string
-	tokenizers        map[types.FieldType]types.Tokenizer
 	fieldPostingLists map[string]postingLists
 	deletes           posting.List
 	batch             *pebble.Batch
+	tokenizers        map[string]types.Tokenizer
 }
 
 func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
@@ -60,10 +64,10 @@ func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
 		generation:        generation,
 		docIndex:          0,
 		namespace:         namespace,
-		tokenizers:        make(map[types.FieldType]types.Tokenizer),
 		fieldPostingLists: make(map[string]postingLists),
 		deletes:           posting.NewList(),
 		batch:             db.NewBatch(),
+		tokenizers:        make(map[string]types.Tokenizer),
 	}, nil
 }
 
@@ -94,7 +98,7 @@ func nextGeneration(db *pebble.DB) (uint32, error) {
 	nextGenerationMu.Lock()
 	defer nextGenerationMu.Unlock()
 
-	key := []byte("__generation__")
+	key := []byte(generationKey)
 	var newGeneration uint32
 
 	value, closer, err := db.Get(key)
@@ -212,64 +216,82 @@ func (w *Writer) storedFieldKey(docID uint64, field string) []byte {
 
 func (w *Writer) postingListKey(ngram string, field string) []byte {
 	// Example: gr12345:gra:foo:content:1234-asdad-123132-asdasd-123
-	return []byte(fmt.Sprintf("%s:gra:%s:%s", w.namespace, ngram, field))
+	return postingListKey(w.namespace, ngram, field)
 }
 
-func (w *Writer) deleteKey(docID uint64) []byte {
-	return []byte(fmt.Sprintf("%s:del:%d:%s", w.namespace, docID, ""))
+func postingListKey(namespace, ngram, field string) []byte {
+	return []byte(fmt.Sprintf("%s:gra:%s:%s", namespace, ngram, field))
 }
 
-func (w *Writer) DeleteDocument(docID uint64) error {
-	fieldsStart := w.storedFieldKey(docID, "")
-	fieldsEnd := w.storedFieldKey(docID, "\xff")
-	if err := w.db.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {
-		return err
-	}
-
-	pl := posting.NewList(docID)
-	buf, err := posting.Marshal(pl)
-	if err != nil {
-		return err
-	}
-	plKey := w.postingListKey(types.DeletesField, types.DeletesField)
-	if err := w.db.Merge(plKey, buf, nil); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) error {
+func lookupDocId(db pebble.Reader, namespace string, matchField types.Field) (uint64, error) {
 	if matchField.Type() != types.KeywordField {
-		return status.InternalError("match field must be of keyword type")
+		return 0, status.InternalError("match field must be of keyword type")
 	}
-	key := w.postingListKey(string(matchField.Contents()), matchField.Name())
-	value, closer, err := w.db.Get(key)
-	if err != nil && err != pebble.ErrNotFound {
-		return err
-	} else if err == pebble.ErrNotFound {
-		// No old doc to delete -- add it and we're done.
-		return w.AddDocument(newDoc)
+	key := postingListKey(namespace, string(matchField.Contents()), matchField.Name())
+	value, closer, err := db.Get(key)
+	if err != nil {
+		return 0, err
 	}
 	defer closer.Close()
 
 	postingList, err := posting.Unmarshal(value)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if postingList.GetCardinality() != 1 {
-		return status.FailedPreconditionErrorf("Update would impact > 1 docs")
+		return 0, status.FailedPreconditionErrorf("Match field matches > 1 docs")
 	}
-	oldDocID := postingList.ToArray()[0]
+	return postingList.ToArray()[0], nil
+}
 
-	// Delete the previous document.
-	fieldsStart := w.storedFieldKey(oldDocID, "")
-	fieldsEnd := w.storedFieldKey(oldDocID, "\xff")
-	w.batch.DeleteRange(fieldsStart, fieldsEnd, nil)
-	w.deletes.Add(oldDocID)
+// Deletes the document with the given docID.
+func (w *Writer) DeleteDocument(docID uint64) error {
+	// TODO(jdelfino): There's an issue with this delete function: it doesn't delete the document's
+	// id field postings. The id field is the field used in UpdateDocument and DeleteDocumentByMatchField
+	// to find the previous version of the document. So if we delete using this method, then later
+	// add a new document with the same external id, future updates to that document will fail
+	// because they will match multiple documents. I think the solution is to honor the deleted doc
+	// id list when looking up by ID, but that's a potential performance issue.
+	// As of this writing, DeleteDocument isn't used, so we'll just walk around the landmine for now.
+	fieldsStart := w.storedFieldKey(docID, "")
+	fieldsEnd := w.storedFieldKey(docID, "\xff")
+	if err := w.batch.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {
+		return err
+	}
+	w.deletes.Add(docID)
+	return nil
+}
 
-	// Delete key so that AddDocument can rewrite it.
+// Deletes the document matching the provided matchField.
+// The matchField must be a keyword field, and an error is returned if the number of documents
+// matching the matchField is not exactly 1.
+func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
+	docId, err := lookupDocId(w.db, w.namespace, matchField)
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil // Doc not found, delete is a no-op
+		}
+		return err
+	}
+	key := w.postingListKey(string(matchField.Contents()), matchField.Name())
+	// The key field needs to be explicitly deleted, unlike the other fields, otherwise the old docID
+	// will remain in the posting list for the id field
 	w.batch.Delete(key, nil)
+
+	return w.DeleteDocument(docId)
+}
+
+// Updates an existing document, or adds it if it doesn't exist. Document identity is determined
+// by the matchField parameter, which must be a keyword field.
+// Returns an error if the number of documents matching the matchField is not exactly 1.
+// Note: This implementation does not handle file renames - clients must explicitly
+// delete the old file and add (or update) the new file when renames happen.
+func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) error {
+	err := w.DeleteDocumentByMatchField(matchField)
+	if err != nil {
+		return err
+	}
 
 	return w.AddDocument(newDoc)
 }
@@ -283,30 +305,18 @@ func (w *Writer) AddDocument(doc types.Document) error {
 	w.batch.Set(idKey, Uint64ToBytes(docID), nil)
 
 	for _, fieldName := range doc.Fields() {
-		if !fieldNameRegex.MatchString(fieldName) {
-			return status.InvalidArgumentErrorf("Invalid field name %q", fieldName)
-		}
 		field := doc.Field(fieldName)
 		if _, ok := w.fieldPostingLists[field.Name()]; !ok {
 			w.fieldPostingLists[field.Name()] = make(postingLists, 0)
 		}
 		postingLists := w.fieldPostingLists[field.Name()]
 
-		// Lookup the tokenizer to use; if one has not already been
-		// created for this field type then make it.
-		if _, ok := w.tokenizers[field.Type()]; !ok {
-			switch field.Type() {
-			case types.SparseNgramField:
-				w.tokenizers[field.Type()] = token.NewSparseNgramTokenizer(token.WithMaxNgramLength(6))
-			case types.TrigramField:
-				w.tokenizers[field.Type()] = token.NewTrigramTokenizer()
-			case types.KeywordField:
-				w.tokenizers[field.Type()] = token.NewWhitespaceTokenizer()
-			default:
-				return status.InternalErrorf("No tokenizer known for field type: %q", field.Type())
-			}
+		// Tokenizers are not thread-safe, so the writer must create its own instances.
+		if _, ok := w.tokenizers[field.Name()]; !ok {
+			w.tokenizers[field.Name()] = field.Schema().MakeTokenizer()
 		}
-		tokenizer := w.tokenizers[field.Type()]
+		tokenizer := w.tokenizers[field.Name()]
+
 		tokenizer.Reset(bytes.NewReader(field.Contents()))
 
 		for tokenizer.Next() == nil {
@@ -317,7 +327,7 @@ func (w *Writer) AddDocument(doc types.Document) error {
 			postingLists[ngram].Add(docID)
 		}
 
-		if field.Stored() {
+		if field.Schema().Stored() {
 			storedFieldKey := w.storedFieldKey(docID, field.Name())
 			w.batch.Set(storedFieldKey, field.Contents(), nil)
 		}
@@ -394,18 +404,20 @@ func (w *Writer) Flush() error {
 }
 
 type Reader struct {
-	ctx context.Context
-	db  pebble.Reader
-	log log.Logger
+	ctx    context.Context
+	db     pebble.Reader
+	schema types.DocumentSchema // TODO(jdelfino): Could store this in the index, in theory
+	log    log.Logger
 
 	namespace string
 }
 
-func NewReader(ctx context.Context, db pebble.Reader, namespace string) *Reader {
+func NewReader(ctx context.Context, db pebble.Reader, namespace string, schema types.DocumentSchema) *Reader {
 	subLog := log.NamedSubLogger(fmt.Sprintf("reader-%s", namespace))
 	return &Reader{
 		ctx:       ctx,
 		db:        db,
+		schema:    schema,
 		log:       subLog,
 		namespace: namespace,
 	}
@@ -469,7 +481,7 @@ func (r *Reader) recordIterStats(iter *pebble.Iterator, kt indexKeyType) {
 	}
 }
 
-func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string]types.NamedField, error) {
+func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string]types.Field, error) {
 	docIDStart := r.storedFieldKey(docID, "")
 	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: docIDStart,
@@ -495,7 +507,7 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 		return false
 	}
 
-	fields := make(map[string]types.NamedField, 0)
+	fields := make(map[string]types.Field, 0)
 	k := key{}
 	for iter.First(); iter.Valid(); iter.Next() {
 		if err := k.FromBytes(iter.Key()); err != nil {
@@ -511,13 +523,17 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 		}
 		fieldVal := make([]byte, len(iter.Value()))
 		copy(fieldVal, iter.Value())
-		fields[k.field] = types.NewNamedField(types.TrigramField, k.field, fieldVal, true /*=stored*/)
+		fields[k.field] = r.schema.Field(k.field).MakeField(fieldVal)
 	}
 	return fields, nil
 }
 
-func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
-	return r.newLazyDoc(docID), nil
+// TODO(jdelfino): We can't know if the document exists or not until we fetch the fields, but we
+// also want to fetch lazily, to avoid unnecessary fetches. This results in missing document
+// errors surfacing way downstream, in code that probably doesn't expect the document to be able to
+// be empty. Consider at least looking up the id field here to ensure the document exists.
+func (r *Reader) GetStoredDocument(docID uint64) types.Document {
+	return r.newLazyDoc(docID)
 }
 
 // postingList looks up the set of docIDs matching the provided ngram.
@@ -700,7 +716,7 @@ type lazyDoc struct {
 	r *Reader
 
 	id     uint64
-	fields map[string]types.NamedField
+	fields map[string]types.Field
 }
 
 func (d lazyDoc) ID() uint64 {
@@ -713,7 +729,12 @@ func (d lazyDoc) Field(name string) types.Field {
 	}
 	fm, err := d.r.getStoredFields(d.id, name)
 	if err == nil {
-		d.fields[name] = fm[name]
+		field, ok := fm[name]
+		if !ok {
+			d.fields[name] = d.r.schema.Field(name).MakeField(nil)
+		} else {
+			d.fields[name] = field
+		}
 	}
 	return d.fields[name]
 }
@@ -726,7 +747,7 @@ func (r *Reader) newLazyDoc(docid uint64) *lazyDoc {
 	return &lazyDoc{
 		r:      r,
 		id:     docid,
-		fields: make(map[string]types.NamedField, 0),
+		fields: make(map[string]types.Field, 0),
 	}
 }
 

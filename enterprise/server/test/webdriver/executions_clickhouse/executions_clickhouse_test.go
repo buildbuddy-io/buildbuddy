@@ -22,19 +22,47 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func TestInvocationWithRemoteExecutionWithClickHouse(t *testing.T) {
+type executionsClickhouseTest struct {
+	flags []string
+}
+
+func TestInvocationWithRemoteExecutionWithClickHouse_StoreMetadataInRedisAndClickHouse(t *testing.T) {
+	testInvocationWithRemoteExecutionWithClickHouse(t, executionsClickhouseTest{
+		flags: []string{
+			"--remote_execution.write_execution_progress_state_to_redis=true",
+			"--remote_execution.write_executions_to_primary_db=false",
+			"--remote_execution.read_final_execution_state_from_redis=true",
+			"--remote_execution.primary_db_reads_enabled=false",
+			"--remote_execution.olap_reads_enabled=true",
+		},
+	})
+}
+
+func TestInvocationWithRemoteExecutionWithClickHouse_StoreMetadataInPrimaryDBAndClickHouse(t *testing.T) {
+	testInvocationWithRemoteExecutionWithClickHouse(t, executionsClickhouseTest{
+		flags: []string{
+			"--remote_execution.write_execution_progress_state_to_redis=false",
+			"--remote_execution.write_executions_to_primary_db=true",
+			"--remote_execution.read_final_execution_state_from_redis=false",
+			"--remote_execution.primary_db_reads_enabled=true",
+			"--remote_execution.olap_reads_enabled=false",
+		},
+	})
+}
+
+func testInvocationWithRemoteExecutionWithClickHouse(t *testing.T, tc executionsClickhouseTest) {
 	// This test can't run against cloud yet, since we depend on the test
 	// running on the same filesystem as the executor to coordinate action
 	// execution via fifo pipes.
 	buildbuddy_enterprise.MarkTestLocalOnly(t)
 	ctx := t.Context()
 	clickhouseDSN := testclickhouse.Start(t, true /*=reuseServer*/)
-	target := buildbuddy_enterprise.SetupWebTarget(
-		t,
+	bbFlags := append([]string{
+		"--olap_database.data_source=" + clickhouseDSN,
 		"--remote_execution.enable_remote_exec=true",
 		"--remote_execution.olap_reads_enabled=true",
-		"--olap_database.data_source="+clickhouseDSN,
-	)
+	}, tc.flags...)
+	target := buildbuddy_enterprise.SetupWebTarget(t, bbFlags...)
 	// Register an executor so that we can test RBE end-to-end.
 	_ = testexecutor.Run(t, "--executor.app_target="+target.GRPCAddress())
 	// Log in and get the flags needed to run an authenticated, RBE-enabled
@@ -66,10 +94,12 @@ common --incompatible_strict_action_env=true
 	// Start the invocation in the background. It won't complete until we
 	// signal the genrule to exit.
 	var eg errgroup.Group
-	t.Cleanup(func() {
+	defer func() {
+		// Wait for bazel invocations to finish running (in defer rather than
+		// cleanup, so that ctx is still valid).
 		err := eg.Wait()
 		require.NoError(t, err)
-	})
+	}()
 	eg.Go(func() error {
 		t.Log("Starting invocation " + iid1)
 		return testbazel.Invoke(ctx, t, workspace1Path, "build", buildArgs...).Error
@@ -140,6 +170,8 @@ common --incompatible_strict_action_env=true
 	executions := wt.FindAll(".invocation-execution-row")
 	require.Len(t, executions, 2)
 	require.Equal(t, executions[0].Text(), executions[1].Text())
+	require.Contains(t, executions[0].Text(), "Succeeded")
+	require.Contains(t, executions[0].Text(), "genrule-setup.sh")
 }
 
 func goToInvocationPage(t *testing.T, wt *webtester.WebTester, baseURL, iid string) {
@@ -154,7 +186,7 @@ func goToInvocationPage(t *testing.T, wt *webtester.WebTester, baseURL, iid stri
 
 func waitForExecutionsToAppear(t *testing.T, wt *webtester.WebTester) {
 	require.Eventually(t, func() bool {
-		executions := wt.Find(".invocation-execution-table, .invocation-execution-empty-actions").FindAll(".invocation-execution-row")
+		executions := wt.FindAll(".invocation-execution-row")
 		return len(executions) > 0
 	}, 1*time.Minute, 500*time.Millisecond, "wait for executions to appear")
 }

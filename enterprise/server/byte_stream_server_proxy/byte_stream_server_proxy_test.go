@@ -12,9 +12,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -98,24 +100,14 @@ func runRemoteServices(ctx context.Context, env *testenv.TestEnv, t testing.TB) 
 	return bspb.NewByteStreamClient(conn), repb.NewContentAddressableStorageClient(conn), &unaryRequestCounter, &streamRequestCounter
 }
 
-func runLocalBSS(ctx context.Context, env *testenv.TestEnv, t testing.TB) bspb.ByteStreamClient {
-	server, err := byte_stream_server.NewByteStreamServer(env)
-	require.NoError(t, err)
-	grpcServer, runFunc, lis := testenv.RegisterLocalInternalGRPCServer(t, env)
-	bspb.RegisterByteStreamServer(grpcServer, server)
-	go runFunc()
-	conn, err := testenv.LocalInternalGRPCConn(ctx, lis)
-	require.NoError(t, err)
-	t.Cleanup(func() { conn.Close() })
-	return bspb.NewByteStreamClient(conn)
-}
-
 func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.TestEnv, t testing.TB) bspb.ByteStreamClient {
 	if env.GetAtimeUpdater() == nil {
 		env.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	}
 	env.SetByteStreamClient(client)
-	env.SetLocalByteStreamClient(runLocalBSS(ctx, env, t))
+	bss, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+	env.SetLocalByteStreamServer(bss)
 	byteStreamServer, err := New(env)
 	require.NoError(t, err)
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
@@ -154,65 +146,92 @@ func TestRead(t *testing.T) {
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
+	userWithEncryption := testauth.User("user", "group")
+	userWithEncryption.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{"user": userWithEncryption}
+	ta := testauth.NewTestAuthenticator(users)
+	proxyEnv.SetAuthenticator(ta)
 	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
 	proxy := runBSProxy(ctx, bs, proxyEnv, t)
 
+	anonCtx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	require.NoError(t, err)
+	encryptedUserCtx, err := ta.WithAuthenticatedUser(anonCtx, "user")
+	require.NoError(t, err)
+
 	cases := []struct {
-		wantError error
-		size      int64
-		offset    int64
-		remotes   remoteReadExpectation
+		ctx              context.Context
+		wantError        error
+		size             int64
+		offset           int64
+		remotes          remoteReadExpectation
+		proxyShouldCache bool
 	}{
 		{ // Simple Read
-			wantError: nil,
-			size:      1234,
-			offset:    0,
-			remotes:   once,
+			ctx:              anonCtx,
+			wantError:        nil,
+			size:             1234,
+			offset:           0,
+			remotes:          once,
+			proxyShouldCache: true,
+		},
+		{
+			// Encrypted Read -- contents for users/organizations with
+			// encryption enabled should not be cached in the proxy.
+			ctx:              encryptedUserCtx,
+			wantError:        nil,
+			size:             1234,
+			offset:           0,
+			remotes:          always,
+			proxyShouldCache: false,
 		},
 		{ // Large Read
-			wantError: nil,
-			size:      1000 * 1000 * 100,
-			offset:    0,
-			remotes:   once,
+			ctx:              anonCtx,
+			wantError:        nil,
+			size:             1000 * 1000 * 100,
+			offset:           0,
+			remotes:          once,
+			proxyShouldCache: true,
 		},
 		{ // 0 length read
-			wantError: nil,
-			size:      0,
-			offset:    0,
-			remotes:   never,
+			ctx:              anonCtx,
+			wantError:        nil,
+			size:             0,
+			offset:           0,
+			remotes:          never,
+			proxyShouldCache: false,
 		},
 		{ // Offset
-			wantError: nil,
-			size:      1234,
-			offset:    1,
-			remotes:   always,
+			ctx:              anonCtx,
+			wantError:        nil,
+			size:             1234,
+			offset:           1,
+			remotes:          always,
+			proxyShouldCache: false,
 		},
 		{ // Max offset
-			wantError: nil,
-			size:      1234,
-			offset:    1234,
-			remotes:   always,
+			ctx:              anonCtx,
+			wantError:        nil,
+			size:             1234,
+			offset:           1234,
+			remotes:          always,
+			proxyShouldCache: false,
 		},
-	}
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
 	}
 
 	for _, tc := range cases {
 		rn, data := testdigest.NewRandomResourceAndBuf(t, tc.size, rspb.CacheType_CAS, "")
 		// Set the value in the remote cache.
-		err := remoteEnv.GetCache().Set(ctx, rn, data)
+		err := remoteEnv.GetCache().Set(tc.ctx, rn, data)
 		require.NoError(t, err)
 
 		// Read it through the proxied bytestream API several times, ensuring
-		// it's only read from the remote byestream server the first time.
+		// it's only read from the remote byestream server when expected.
 		for i := 1; i < 4; i++ {
 			var buf bytes.Buffer
 			r, err := digest.CASResourceNameFromProto(rn)
 			require.NoError(t, err)
-			gotErr := byte_stream.ReadBlob(ctx, proxy, r, &buf, tc.offset)
+			gotErr := byte_stream.ReadBlob(tc.ctx, proxy, r, &buf, tc.offset)
 			if gstatus.Code(gotErr) != gstatus.Code(tc.wantError) {
 				t.Errorf("got %v; want %v", gotErr, tc.wantError)
 			}
@@ -230,9 +249,8 @@ func TestRead(t *testing.T) {
 				require.Equal(t, int32(i), requestCounter.Load())
 			}
 
-			// offset and 0-sized reads are not cached in the proxy.
-			if tc.offset == 0 && tc.size > 0 {
-				require.NoError(t, waitContains(ctx, proxyEnv, rn))
+			if tc.proxyShouldCache {
+				require.NoError(t, waitContains(tc.ctx, proxyEnv, rn))
 			}
 		}
 		requestCounter.Store(0)
@@ -351,7 +369,14 @@ func TestWrite(t *testing.T) {
 			flags.Set(t, "cache.zstd_transcoding_enabled", true)
 			proxyEnv.SetCache(&testcompression.CompressionCache{Cache: proxyEnv.GetCache()})
 
-			ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+			userWithEncryption := testauth.User("user", "group")
+			userWithEncryption.CacheEncryptionEnabled = true
+			users := map[string]interfaces.UserInfo{"user": userWithEncryption}
+			ta := testauth.NewTestAuthenticator(users)
+			proxyEnv.SetAuthenticator(ta)
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, ta)
+			require.NoError(t, err)
+			encryptedUserCtx, err := ta.WithAuthenticatedUser(ctx, "user")
 			require.NoError(t, err)
 			remote, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
 			proxy := runBSProxy(ctx, remote, proxyEnv, t)
@@ -404,6 +429,11 @@ func TestWrite(t *testing.T) {
 			// Now try uploading a duplicate to the proxy. The duplicate upload
 			// shouldn't fail and we should still be able to read the blob.
 			byte_stream.MustUploadChunked(t, ctx, proxy, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, false)
+			requestCounter.Store(0)
+
+			// Uploading the same blob via the remote-only path should succeed.
+			byte_stream.MustUploadChunked(t, encryptedUserCtx, proxy, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, false)
+			require.Equal(t, int32(1), requestCounter.Load())
 			requestCounter.Store(0)
 
 			for _, source := range sources {

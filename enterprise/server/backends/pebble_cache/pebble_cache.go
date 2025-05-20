@@ -71,6 +71,7 @@ var (
 	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
 	atimeUpdateThresholdFlag  = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
 	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	numAtimeUpdateWorkers     = flag.Int("cache.pebble.num_atime_update_workers", DefaultNumAtimeUpdateWorkers, "How many threads to use to update atimes")
 	sampleBufferSize          = flag.Int("cache.pebble.sample_buffer_size", DefaultSampleBufferSize, "Buffer up to this many samples for eviction sampling")
 	deleteBufferSize          = flag.Int("cache.pebble.delete_buffer_size", DefaultDeleteBufferSize, "Buffer up to this many samples for eviction eviction")
 	numDeleteWorkers          = flag.Int("cache.pebble.num_delete_workers", DefaultNumDeleteWorkers, "Number of deletes in parallel")
@@ -110,11 +111,12 @@ var (
 	// Their defaults must be vars so we can take their addresses)
 	DefaultAtimeUpdateThreshold     = 10 * time.Minute
 	DefaultAtimeBufferSize          = 100000
+	DefaultNumAtimeUpdateWorkers    = 5
 	DefaultSampleBufferSize         = 8000
 	DefaultSamplesPerBatch          = 10000
 	DefaultSamplerIterRefreshPeriod = 5 * time.Minute
 	DefaultDeleteBufferSize         = 20
-	DefaultNumDeleteWorkers         = 4
+	DefaultNumDeleteWorkers         = 16
 	DefaultMinEvictionAge           = 6 * time.Hour
 
 	DefaultName         = "pebble_cache"
@@ -179,6 +181,7 @@ type Options struct {
 
 	AtimeUpdateThreshold     *time.Duration
 	AtimeBufferSize          *int
+	NumAtimeUpdateWorkers    *int
 	MinEvictionAge           *time.Duration
 	SampleBufferSize         *int
 	SamplesPerBatch          *int
@@ -229,9 +232,10 @@ type PebbleCache struct {
 
 	includeMetadataSize bool
 
-	atimeUpdateThreshold time.Duration
-	atimeBufferSize      int
-	minEvictionAge       time.Duration
+	atimeUpdateThreshold  time.Duration
+	atimeBufferSize       int
+	numAtimeUpdateWorkers int
+	minEvictionAge        time.Duration
 
 	activeKeyVersion int64
 	minDBVersion     filestore.PebbleKeyVersion
@@ -335,6 +339,7 @@ func Register(env *real_environment.RealEnv) error {
 		MinBytesAutoZstdCompression: *minBytesAutoZstdCompression,
 		AtimeUpdateThreshold:        atimeUpdateThresholdFlag,
 		AtimeBufferSize:             atimeBufferSizeFlag,
+		NumAtimeUpdateWorkers:       numAtimeUpdateWorkers,
 		SampleBufferSize:            sampleBufferSize,
 		DeleteBufferSize:            deleteBufferSize,
 		NumDeleteWorkers:            numDeleteWorkers,
@@ -422,6 +427,9 @@ func SetOptionDefaults(opts *Options) {
 	}
 	if opts.AtimeBufferSize == nil {
 		opts.AtimeBufferSize = &DefaultAtimeBufferSize
+	}
+	if opts.NumAtimeUpdateWorkers == nil {
+		opts.NumAtimeUpdateWorkers = &DefaultNumAtimeUpdateWorkers
 	}
 	if opts.MinEvictionAge == nil {
 		opts.MinEvictionAge = &DefaultMinEvictionAge
@@ -606,6 +614,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		averageChunkSizeBytes:       opts.AverageChunkSizeBytes,
 		atimeUpdateThreshold:        *opts.AtimeUpdateThreshold,
 		atimeBufferSize:             *opts.AtimeBufferSize,
+		numAtimeUpdateWorkers:       *opts.NumAtimeUpdateWorkers,
 		minEvictionAge:              *opts.MinEvictionAge,
 		activeKeyVersion:            *opts.ActiveKeyVersion,
 		env:                         env,
@@ -1573,6 +1582,8 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 	}
 	defer db.Close()
 
+	metrics.PebbleCacheFindMissingDigestCount.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Add(float64(len(resources)))
+
 	var missing []*repb.Digest
 	for _, r := range resources {
 		err = p.findMissing(ctx, db, r)
@@ -1611,6 +1622,12 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 		}
 	}
 
+	// If this object was not chunked, and is somehow stored as a zero-
+	// length file, pretend it does not exist.
+	if chunkedMD == nil && md.GetStoredSizeBytes() == 0 {
+		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, md)
+		return status.NotFoundError("object not found (zero-length)")
+	}
 	// If this is a GCS object, ensure the custom time is relatively recent
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
@@ -2275,6 +2292,11 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 			LastModifyUsec:     now,
 			FileType:           fileType,
 		}
+		if bytesWritten == 0 {
+			log.Infof("Rejecting zero-length write. Key %q, md: %+v", key, md)
+			return status.UnavailableError("zero-length writes are not allowed")
+		}
+
 		return p.writeMetadata(ctx, db, key, md)
 	}
 
@@ -2396,7 +2418,7 @@ type watermark struct {
 
 // TestingWaitForGC should be used by tests only.
 // This function waits until any active file deletion has finished.
-func (p *PebbleCache) TestingWaitForGC() error {
+func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 	lastSize := make(map[string]watermark)
 	for {
 		p.statusMu.Lock()
@@ -2416,11 +2438,6 @@ func (p *PebbleCache) TestingWaitForGC() error {
 					timestamp: time.Now(),
 					sizeBytes: totalSizeBytes,
 				}
-			} else {
-				// Are we still making progress? If not, bail.
-				if lastSize[e.part.ID].sizeBytes > 0 && time.Since(lastSize[e.part.ID].timestamp) > 3*time.Second {
-					return status.FailedPreconditionError("LRU not making progress")
-				}
 			}
 			if totalSizeBytes <= maxAllowedSize {
 				done += 1
@@ -2428,6 +2445,12 @@ func (p *PebbleCache) TestingWaitForGC() error {
 		}
 		if done == len(evictors) {
 			break
+		}
+		select {
+		case <-ctx.Done():
+			return status.CanceledError("context canceled waiting for GC")
+		default:
+			continue
 		}
 	}
 	return nil
@@ -3221,6 +3244,13 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		return nil, err
 	}
 
+	// If this object was not chunked, and is somehow stored as a zero-
+	// length file, pretend it does not exist.
+	md := fileMetadata.GetStorageMetadata()
+	if chunkedMD := md.GetChunkedMetadata(); chunkedMD == nil && fileMetadata.GetStoredSizeBytes() == 0 {
+		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, fileMetadata)
+		return nil, status.NotFoundError("object not found (zero-length)")
+	}
 	// If this is a GCS object, ensure the custom time is relatively recent
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
@@ -3263,7 +3293,6 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	shouldDecompress := cachedCompression == repb.Compressor_ZSTD && requestedCompression == repb.Compressor_IDENTITY
 
 	var reader io.ReadCloser
-	md := fileMetadata.GetStorageMetadata()
 	if chunkedMD := md.GetChunkedMetadata(); chunkedMD != nil {
 		reader, err = p.newChunkedReader(ctx, chunkedMD, shouldDecompress)
 	} else {
@@ -3358,9 +3387,11 @@ func (p *PebbleCache) Start() error {
 		p.processSizeUpdates()
 		return nil
 	})
-	p.eg.Go(func() error {
-		return p.processAccessTimeUpdates(p.quitChan)
-	})
+	for range p.numAtimeUpdateWorkers {
+		p.eg.Go(func() error {
+			return p.processAccessTimeUpdates(p.quitChan)
+		})
+	}
 	p.eg.Go(func() error {
 		return p.backgroundRepair(p.quitChan)
 	})
@@ -3429,14 +3460,4 @@ func (p *PebbleCache) Stop() error {
 	}
 
 	return nil
-}
-
-func (p *PebbleCache) SupportsEncryption(ctx context.Context) bool {
-	_, partID := p.lookupGroupAndPartitionID(ctx, "")
-	for _, part := range p.partitions {
-		if part.ID == partID {
-			return part.EncryptionSupported
-		}
-	}
-	return false
 }

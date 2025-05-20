@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -212,12 +213,14 @@ func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
 }
 
 func TestAutoBringup(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	waitForShutdown(t, caches...)
 }
 
 func TestGetAndSet(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	rc1 := caches[0]
@@ -274,6 +277,7 @@ func TestGetAndSet(t *testing.T) {
 }
 
 func TestCacheShutdown(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	rc1 := caches[0]
@@ -327,6 +331,7 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 

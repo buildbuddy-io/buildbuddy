@@ -5,11 +5,12 @@ go_library(
     srcs = ["parser.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser",
     deps = [
-        "//cli/arg",
         "//cli/bazelisk",
         "//cli/log",
         "//cli/parser/arguments",
+        "//cli/parser/bazelrc",
         "//cli/parser/options",
+        "//cli/parser/parsed",
         "//cli/storage",
         "//cli/workspace",
         "//proto:bazel_flags_go_proto",
@@ -17,7 +18,6 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/disk",
         "//server/util/proto",
-        "@com_github_google_shlex//:shlex",
     ],
 )
 

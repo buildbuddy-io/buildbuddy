@@ -977,7 +977,9 @@ func TestSizeLimit(t *testing.T) {
 				}
 			}
 
-			pc.TestingWaitForGC()
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			pc.TestingWaitForGC(ctx)
 
 			// Expect the sum of all contained digests be less than or equal to max
 			// size bytes.
@@ -1328,7 +1330,9 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 				err = pc.Set(ctx, rn, blob)
 				require.NoError(t, err)
 			}
-			pc.TestingWaitForGC()
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			pc.TestingWaitForGC(ctx)
 
 			// All reads should succeed. Nothing should've been evicted
 			for d, blob := range digestBlobs {
@@ -1539,8 +1543,9 @@ func TestNoEarlyEviction(t *testing.T) {
 				err := pc.Set(ctx, r, buf)
 				require.NoError(t, err)
 			}
-
-			pc.TestingWaitForGC()
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			pc.TestingWaitForGC(ctx)
 
 			// Verify that nothing was evicted
 			for _, r := range resourceKeys {
@@ -1661,7 +1666,9 @@ func TestLRU(t *testing.T) {
 			err = pc.Start()
 			require.NoError(t, err)
 
-			pc.TestingWaitForGC()
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			pc.TestingWaitForGC(ctx)
 
 			perfectLRUEvictees := make(map[*rspb.ResourceName]struct{})
 			sort.Slice(resourceKeys, func(i, j int) bool {
@@ -1767,7 +1774,9 @@ func TestStartupScan(t *testing.T) {
 			}
 			log.Printf("Wrote %d digests", len(resources))
 
-			pc.TestingWaitForGC()
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			pc.TestingWaitForGC(ctx)
 			pc.Stop()
 
 			pc2, err := pebble_cache.NewPebbleCache(te, options)
@@ -1827,7 +1836,9 @@ func TestDeleteOrphans(t *testing.T) {
 	}
 
 	log.Printf("Wrote %d digests", len(digests))
-	pc.TestingWaitForGC()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	pc.TestingWaitForGC(ctx)
 	pc.Stop()
 
 	// Now open the pebble database directly and delete some entries.
@@ -1941,7 +1952,9 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	}
 
 	log.Printf("Wrote and deleted %d resources", len(resources))
-	pc.TestingWaitForGC()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	pc.TestingWaitForGC(ctx)
 	pc.Stop()
 
 	err = filepath.Walk(rootDir, func(path string, info fs.FileInfo, err error) error {
@@ -2124,7 +2137,9 @@ func TestMigrateVersions(t *testing.T) {
 			digests = append(digests, r.GetDigest())
 		}
 		log.Printf("Wrote %d digests", len(digests))
-		pc.TestingWaitForGC()
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		pc.TestingWaitForGC(ctx)
 		pc.Stop()
 	}
 
@@ -2846,70 +2861,6 @@ func BenchmarkSet(b *testing.B) {
 	}
 }
 
-func TestSupportsEncryption(t *testing.T) {
-	te := testenv.GetTestEnv(t)
-	apiKey1 := "AK2222"
-	group1 := "GR7890"
-	apiKey2 := "AK3333"
-	group2 := "GR1111"
-	testUsers := testauth.TestUsers(apiKey1, group1, apiKey2, group2)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
-
-	maxSizeBytes := int64(1_000_000_000) // 1GB
-	rootDir := testfs.MakeTempDir(t)
-	group1PartitionID := "user1part"
-	group2PartitionID := "user2part"
-	opts := &pebble_cache.Options{
-		RootDirectory:          rootDir,
-		MaxSizeBytes:           maxSizeBytes,
-		MaxInlineFileSizeBytes: 100,
-		Partitions: []disk.Partition{
-			{
-				ID:           pebble_cache.DefaultPartitionID,
-				MaxSizeBytes: maxSizeBytes,
-			},
-			{
-				ID:           group1PartitionID,
-				MaxSizeBytes: maxSizeBytes,
-			},
-			{
-				ID:                  group2PartitionID,
-				MaxSizeBytes:        maxSizeBytes,
-				EncryptionSupported: true,
-			},
-		},
-		PartitionMappings: []disk.PartitionMapping{
-			{
-				GroupID:     group1,
-				PartitionID: group1PartitionID,
-			},
-			{
-				GroupID:     group2,
-				PartitionID: group2PartitionID,
-			},
-		},
-	}
-
-	pc, err := pebble_cache.NewPebbleCache(te, opts)
-	require.NoError(t, err)
-	err = pc.Start()
-	require.NoError(t, err)
-
-	// Anon write should go to the default partition which doesn't support
-	// encryption.
-	ctx := getAnonContext(t, te)
-	require.False(t, pc.SupportsEncryption(ctx))
-
-	// First group is mapped to a partition that does not have encryption
-	// support.
-	ctx = te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), apiKey1)
-	require.False(t, pc.SupportsEncryption(ctx))
-
-	// Second user should be able to use encryption.
-	ctx = te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), apiKey2)
-	require.True(t, pc.SupportsEncryption(ctx))
-}
-
 func TestSampling(t *testing.T) {
 	activeKeyVersion := int64(4)
 
@@ -3305,7 +3256,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 				require.NoError(t, pc.Set(ctx, rn, buf))
 			}
 
-			require.NoError(t, pc.TestingWaitForGC())
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			require.NoError(t, pc.TestingWaitForGC(ctx))
 			pc.Stop()
 
 			blobSize, err := dirSizeFiles(filepath.Join(tc.opts.RootDirectory, "blobs"))

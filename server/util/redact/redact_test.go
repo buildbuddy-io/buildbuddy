@@ -390,6 +390,10 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
 		{"host_platform", "@buildbuddy_toolchain//:platform", "@buildbuddy_toolchain//:platform"},
+		{"action_env", "AWS_ACCESS_KEY_ID=super_secret_access_key_id", "AWS_ACCESS_KEY_ID=<REDACTED>"},
+		{"action_env", "AWS_SECRET_ACCESS_KEY=super_secret_access_key", "AWS_SECRET_ACCESS_KEY=<REDACTED>"},
+		{"host_action_env", "AWS_ACCESS_KEY_ID=super_secret_access_key_id", "AWS_ACCESS_KEY_ID=<REDACTED>"},
+		{"host_action_env", "AWS_SECRET_ACCESS_KEY=super_secret_access_key", "AWS_SECRET_ACCESS_KEY=<REDACTED>"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,

@@ -52,15 +52,17 @@ type StoreMap struct {
 
 	startTime time.Time
 	clock     clockwork.Clock
+	log       log.Logger
 }
 
-func New(gossipManager interfaces.GossipService, clock clockwork.Clock) IStoreMap {
+func New(gossipManager interfaces.GossipService, clock clockwork.Clock, nhLogger log.Logger) IStoreMap {
 	sm := &StoreMap{
 		mu:            &sync.RWMutex{},
 		startTime:     time.Now(),
 		storeDetails:  make(map[string]*StoreDetail),
 		gossipManager: gossipManager,
 		clock:         clock,
+		log:           nhLogger,
 	}
 	gossipManager.AddListener(sm)
 	return sm
@@ -150,21 +152,21 @@ func (sm *StoreMap) OnEvent(updateType serf.EventType, event serf.Event) {
 		var usage *rfpb.StoreUsage
 		usageTag := member.Tags[constants.StoreUsageTag]
 		if len(usageTag) == 0 {
-			log.Debugf("member %q did not have usage tag yet", member.Name)
+			sm.log.Debugf("member %q did not have usage tag yet", member.Name)
 		}
 		usageBuf, err := base64.StdEncoding.DecodeString(usageTag)
 		if err != nil {
-			log.Warningf("error b64 decoding usage tag: %s", err)
+			sm.log.Warningf("error b64 decoding usage tag: %s", err)
 		}
 		usage = &rfpb.StoreUsage{}
 		if err := proto.Unmarshal(usageBuf, usage); err != nil {
-			log.Warningf("error unmarshaling usage buf: %s", err)
+			sm.log.Warningf("error unmarshaling usage buf: %s", err)
 			usage = nil
 		}
 		if err := sm.updateStoreDetail(usage.GetNode().GetNhid(), usage, member.Status); err != nil {
-			log.Errorf("Error observing cluster change for node %+v: %s", usage.GetNode(), err)
+			sm.log.Errorf("Error observing cluster change for node %+v: %s", usage.GetNode(), err)
 		}
-		log.Debugf("Successfuly observed cluster change for node %+v", usage.GetNode())
+		sm.log.Debugf("Successfuly observed cluster change for node %+v", usage.GetNode())
 	}
 }
 

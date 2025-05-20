@@ -110,11 +110,11 @@ func (a DriverAction) Priority() float64 {
 		return 700
 	case DriverAddReplica:
 		return 600
-	case DriverRemoveDeadReplica:
-		return 500
-	case DriverRemoveReplica:
-		return 400
 	case DriverFinishReplicaRemoval:
+		return 500
+	case DriverRemoveDeadReplica:
+		return 400
+	case DriverRemoveReplica:
 		return 300
 	case DriverSplitRange:
 		return 200
@@ -152,7 +152,6 @@ func (a DriverAction) String() string {
 }
 
 type IReplica interface {
-	RangeDescriptor() *rfpb.RangeDescriptor
 	ReplicaID() uint64
 	RangeID() uint64
 	Usage() (*rfpb.ReplicaUsage, error)
@@ -160,6 +159,7 @@ type IReplica interface {
 
 type IStore interface {
 	GetReplica(rangeID uint64) (*replica.Replica, error)
+	GetRange(rangeID uint64) *rfpb.RangeDescriptor
 	HaveLease(ctx context.Context, rangeID uint64) bool
 	AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error)
 	RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error)
@@ -360,7 +360,7 @@ type Queue struct {
 }
 
 func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
-	storeMap := storemap.New(gossipManager, clock)
+	storeMap := storemap.New(gossipManager, clock, nhlog)
 	q := &Queue{
 		storeMap:  storeMap,
 		store:     store,
@@ -376,16 +376,21 @@ func (rq *Queue) getReplica(rangeID uint64) (IReplica, error) {
 
 // computeAction computes the action needed and its priority.
 func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction, float64) {
-	rd := repl.RangeDescriptor()
+	rd := rq.store.GetRange(repl.RangeID())
 	action := DriverNoop
-	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
+	if rd == nil || !rq.store.HaveLease(ctx, rd.GetRangeId()) {
 		return action, action.Priority()
 	}
 
 	needsRemoveData := false
 	if len(rd.GetRemoved()) > 0 {
-		needsRemoveData = true
-		action = DriverFinishReplicaRemoval
+		// There is no point to call to finish replica removal if the node is
+		// dead.
+		byStatus := rq.storeMap.DivideByStatus(rd.GetRemoved())
+		if len(byStatus.LiveReplicas)+len(byStatus.SuspectReplicas) > 0 {
+			needsRemoveData = true
+			action = DriverFinishReplicaRemoval
+		}
 	}
 
 	if rq.storeMap == nil {
@@ -409,6 +414,15 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 	if curReplicas < minReplicas {
 		action = DriverAddReplica
 		adjustedPriority := action.Priority() + float64(desiredQuorum-curReplicas)
+		change := rq.addReplica(rd)
+		if change == nil {
+			// not able to find target node for allocation; if there is
+			// in-progress replica removal, complete it so this can be a target
+			// for allocation
+			if needsRemoveData {
+				return DriverFinishReplicaRemoval, adjustedPriority
+			}
+		}
 		return action, adjustedPriority
 	}
 	replicasByStatus := rq.storeMap.DivideByStatus(replicas)
@@ -425,6 +439,12 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 
 	if curReplicas <= minReplicas && numDeadReplicas > 0 {
 		action = DriverReplaceDeadReplica
+		// not able to find target node for allocation; if there is
+		// in-progress replica removal, complete it so this can be a target
+		// for allocation
+		if needsRemoveData {
+			return DriverFinishReplicaRemoval, action.Priority()
+		}
 		return action, action.Priority()
 	}
 
@@ -441,6 +461,18 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 
 	if needsRemoveData {
 		action = DriverFinishReplicaRemoval
+		return action, action.Priority()
+	}
+
+	if rd.GetRangeId() == constants.MetaRangeID {
+		// Do not try to re-balance meta-range.
+		//
+		// When meta-range is moved onto a different node, range cache has to
+		// update its range descriptor. Before the range descriptor get updated,
+		// SyncPropose to all other ranges can fail temporarily because the range
+		// descriptor is not current. Therefore, we should only move meta-range
+		// when it's absolutely necessary.
+		action = DriverNoop
 		return action, action.Priority()
 	}
 
@@ -463,18 +495,6 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 		}
 	} else {
 		rq.log.Debugf("cannot split range %d: num of suspect replicas: %d, num deadReplicas: %d, num replicas marked for removal: %d, allReady=%t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, len(rd.GetRemoved()), allReady)
-	}
-
-	if rd.GetRangeId() == constants.MetaRangeID {
-		// Do not try to re-balance meta-range.
-		//
-		// When meta-range is moved onto a different node, range cache has to
-		// update its range descriptor. Before the range descriptor get updated,
-		// SyncPropose to all other ranges can fail temporarily because the range
-		// descriptor is not current. Therefore, we should only move meta-range
-		// when it's absolutely necessary.
-		action = DriverNoop
-		return action, action.Priority()
 	}
 
 	// Do not try to rebalance replica or leases if there is a dead or suspect,
@@ -675,7 +695,7 @@ func (rq *Queue) finishReplicaRemoval(rd *rfpb.RangeDescriptor) *change {
 func (rq *Queue) splitRange(rd *rfpb.RangeDescriptor) *change {
 	return &change{
 		splitOp: &rfpb.SplitRangeRequest{
-			Header: header.New(rd, 0, rfpb.Header_LINEARIZABLE),
+			Header: header.New(rd, rd.GetReplicas()[0], rfpb.Header_LINEARIZABLE),
 			Range:  rd,
 		},
 	}
@@ -1066,6 +1086,11 @@ func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, replicaStateMap
 
 	if numUpToDateReplicas > quorum {
 		// Any replica can be removed.
+		replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
+		if suspects := replicasByStatus.SuspectReplicas; len(suspects) > 0 {
+			rq.log.Debugf("there are %d suspects, removing suspects", len(suspects))
+			return suspects
+		}
 		rq.log.Debugf("there are %d up-to-date replicas and quorum is %d, any replicas can be removed", numUpToDateReplicas, quorum)
 		return rd.GetReplicas()
 	}
@@ -1223,8 +1248,12 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 
 func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action DriverAction) RequeueType {
 	var change *change
-	rd := repl.RangeDescriptor()
 	rangeID := repl.RangeID()
+	rd := rq.store.GetRange(rangeID)
+	if rd == nil {
+		// We might be calling GetRange in the small window between RemoveRange and AddRange
+		return RequeueCheckOtherActions
+	}
 
 	switch action {
 	case DriverNoop:
@@ -1269,7 +1298,7 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action Drive
 	}
 
 	if err != nil {
-		rq.log.Errorf("failed to process replica: %s", err)
+		rq.log.Errorf("failed to process replica (range_id: %d: %s", rangeID, err)
 		return RequeueRetry
 	} else {
 		return RequeueCheckOtherActions

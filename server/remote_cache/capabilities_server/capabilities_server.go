@@ -2,17 +2,21 @@ package capabilities_server
 
 import (
 	"context"
-	"math"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
+)
+
+const (
+	MinExecutionPriority = -1000
+	MaxExecutionPriority = 1000
 )
 
 var (
@@ -84,7 +88,10 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			ExecEnabled:    true,
 			ExecutionPriorityCapabilities: &repb.PriorityCapabilities{
 				Priorities: []*repb.PriorityCapabilities_PriorityRange{
-					{MinPriority: math.MinInt32, MaxPriority: math.MaxInt32},
+					{
+						MinPriority: MinExecutionPriority,
+						MaxPriority: MaxExecutionPriority,
+					},
 				},
 			},
 			DigestFunctions: digest.SupportedDigestFunctions(),
@@ -112,5 +119,5 @@ func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context) bool 
 	if err != nil {
 		return true
 	}
-	return u.HasCapability(akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	return u.HasCapability(cappb.Capability_CACHE_WRITE)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -67,6 +68,18 @@ func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator
 	}, nil
 }
 
+// The claims cache must be keyed by subdomain and API key to avoid keys
+// leaking across subdomain boundaries. This function extracts an API key and
+// subdomain from a context and builds a claims cache key with them.
+func claimsCacheKey(ctx context.Context) (string, error) {
+	key := getLastMetadataValue(ctx, authutil.APIKeyHeader)
+	if key == "" {
+		return "", status.PermissionDeniedError("Missing API key")
+	}
+	sub := subdomain.Get(ctx)
+	return sub + ":" + key, nil
+}
+
 type RemoteAuthenticator struct {
 	authClient          authpb.AuthServiceClient
 	cache               interfaces.LRU[string]
@@ -115,17 +128,17 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	defer spn.End()
 
 	// If a JWT was provided, check if it's valid and use it if so.
-	jwt, err := getValidJwtFromContext(ctx, a.claimsCache, a.jwtExpirationBuffer)
+	jwt, c, err := getValidJwtFromContext(ctx, a.claimsCache, a.jwtExpirationBuffer)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
 	if jwt != "" {
-		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+		return authContext(ctx, jwt, c)
 	}
 
-	key := getAPIKey(ctx)
-	if key == "" {
-		return authutil.AuthContextWithError(ctx, status.PermissionDeniedError("Missing API key"))
+	key, err := claimsCacheKey(ctx)
+	if err != nil {
+		return authutil.AuthContextWithError(ctx, err)
 	}
 
 	// Try to use a locally-cached JWT, if available and valid.
@@ -133,8 +146,8 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	jwt, found := a.cache.Get(key)
 	a.mu.RUnlock()
 	if found {
-		if err := jwtIsValid(jwt, a.claimsCache, a.jwtExpirationBuffer); err == nil {
-			return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+		if c, err := jwtIsValid(jwt, a.claimsCache, a.jwtExpirationBuffer); err == nil {
+			return authContext(ctx, jwt, c)
 		}
 		a.mu.Lock()
 		a.cache.Remove(key)
@@ -150,7 +163,11 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	a.mu.Lock()
 	a.cache.Add(key, jwt)
 	a.mu.Unlock()
-	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+	c, err = jwtIsValid(jwt, a.claimsCache, a.jwtExpirationBuffer)
+	if err != nil {
+		return authutil.AuthContextWithError(ctx, err)
+	}
+	return authContext(ctx, jwt, c)
 }
 
 func (a *RemoteAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
@@ -191,7 +208,8 @@ func (a *RemoteAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt
 }
 
 func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) {
-	resp, err := a.authClient.Authenticate(ctx, &authpb.AuthenticateRequest{})
+	sd := subdomain.Get(ctx)
+	resp, err := a.authClient.Authenticate(ctx, &authpb.AuthenticateRequest{Subdomain: &sd})
 	if err != nil {
 		return "", err
 	}
@@ -204,38 +222,35 @@ func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) 
 	return *resp.Jwt, nil
 }
 
-func getAPIKey(ctx context.Context) string {
-	return getLastMetadataValue(ctx, authutil.APIKeyHeader)
-}
-
 // Returns:
 // - A valid JWT from the incoming RPC metadata or
 // - An error if an invalid JWT is present or
 // - An empty string and no error if no JWT is present
-func getValidJwtFromContext(ctx context.Context, claimsCache *claims.ClaimsCache, jwtExpirationTimeBuffer time.Duration) (string, error) {
+func getValidJwtFromContext(ctx context.Context, claimsCache *claims.ClaimsCache, jwtExpirationTimeBuffer time.Duration) (string, *claims.Claims, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
 	jwt := getLastMetadataValue(ctx, authutil.ContextTokenStringKey)
 	if jwt == "" {
-		return "", nil
+		return "", nil, nil
 	}
-	if err := jwtIsValid(jwt, claimsCache, jwtExpirationTimeBuffer); err != nil {
-		return "", err
+	claims, err := jwtIsValid(jwt, claimsCache, jwtExpirationTimeBuffer)
+	if err != nil {
+		return "", nil, err
 	}
-	return jwt, nil
+	return jwt, claims, nil
 }
 
-func jwtIsValid(jwt string, claimsCache *claims.ClaimsCache, jwtExpirationBuffer time.Duration) error {
+func jwtIsValid(jwt string, claimsCache *claims.ClaimsCache, jwtExpirationBuffer time.Duration) (*claims.Claims, error) {
 	// N.B. the ClaimsCache validates JWTs before returning them.
 	claims, err := claimsCache.Get(jwt)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if claims.ExpiresAt < time.Now().Add(jwtExpirationBuffer).Unix() {
-		return status.NotFoundError("JWT will expire soon")
+		return nil, status.NotFoundError("JWT will expire soon")
 	}
-	return nil
+	return claims, nil
 }
 
 func getLastMetadataValue(ctx context.Context, key string) string {
@@ -244,4 +259,9 @@ func getLastMetadataValue(ctx context.Context, key string) string {
 		return values[len(values)-1]
 	}
 	return ""
+}
+
+func authContext(ctx context.Context, jwt string, c *claims.Claims) context.Context {
+	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+	return claims.AuthContextFromClaims(ctx, c, nil)
 }

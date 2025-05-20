@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -58,7 +58,7 @@ func AuthorizeOrgAdmin(u interfaces.UserInfo, groupID string) error {
 		if m.GroupID != groupID {
 			continue
 		}
-		if slices.Contains(m.Capabilities, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+		if slices.Contains(m.Capabilities, cappb.Capability_ORG_ADMIN) {
 			return nil
 		} else {
 			return status.PermissionDeniedError("missing required capabilities")

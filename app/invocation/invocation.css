@@ -219,6 +219,11 @@
   margin-top: 24px;
 }
 
+.cache-requests-card.card {
+  /* 'overflow: hidden' styling prevents sticky spinner from working properly. */
+  overflow: initial;
+}
+
 .cache-requests-card .action-id {
   font-weight: 600;
 }
@@ -317,6 +322,28 @@
 .cache-requests-card .results-table {
   border: 1px solid #eee;
   border-radius: 4px;
+  position: relative;
+}
+
+.cache-requests-card .loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: grayscale(100%);
+}
+
+.cache-requests-card .loading.results-updating {
+  position: sticky;
+  top: 0;
+  height: 0;
+  overflow: visible;
+  z-index: 1;
+  transform: translateY(32px);
 }
 
 .cache-requests-card .column-headers {
@@ -895,33 +922,62 @@
   animation: rotate 2s linear infinite;
 }
 
-.invocation-execution-row-stats {
-  color: #aaa;
-  font-size: 0.8em;
+.invocation-execution-row .execution-header {
   display: flex;
-  flex-wrap: wrap;
-  margin-top: 4px;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 15px;
 }
 
-.invocation-execution-row-header {
-  margin-bottom: 4px;
-  cursor: pointer;
-  display: flex;
-  gap: 8px;
+.invocation-execution-row .execution-label {
+  font-weight: 600;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.invocation-execution-row .breadcrumb-separator {
+  /* Use em units to match text size. */
+  width: 1em;
+  height: 1em;
+  /* Offset for optical alignment. */
+  transform: translateY(0.15em);
+}
+
+.invocation-execution-row .command-snippet {
+  font-size: 12px;
+  color: #757575;
+  border-radius: 4px;
+  margin-bottom: 8px;
 }
 
 .invocation-execution-row-header-status {
   font-weight: 600;
 }
 
-.invocation-execution-row-status-message {
-  color: #e53935;
-  margin-top: 2px;
-  font-size: 12px;
+.invocation-execution-row .status {
+  color: #000;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 2px;
 }
 
-.invocation-execution-row-stats div {
-  margin-right: 8px;
+.invocation-execution-row .status-name {
+  font-weight: 600;
+}
+
+.invocation-execution-row .status-name.error {
+  color: #f44336;
+}
+
+.invocation-execution-row .invocation-execution-row-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+
+  color: #757575;
+  font-size: 12px;
 }
 
 .invocation-execution-empty-state {

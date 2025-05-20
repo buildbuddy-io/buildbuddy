@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/capabilities",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:api_key_go_proto",
+        "//proto:capability_go_proto",
         "//server/interfaces",
         "//server/util/authutil",
         "//server/util/status",
@@ -19,7 +19,7 @@ go_test(
     srcs = ["capabilities_test.go"],
     deps = [
         ":capabilities",
-        "//proto:api_key_go_proto",
+        "//proto:capability_go_proto",
         "//server/interfaces",
         "//server/nullauth",
         "//server/testutil/testauth",

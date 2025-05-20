@@ -57,7 +57,7 @@ var (
 	newNodesReadOnly             = flag.Bool("cache.distributed_cache.new_nodes_read_only", false, "If true, only attempt to read from the newNodes set; do not write to them yet")
 
 	lookasideCacheSizeBytes  = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 0, "If > 0 ; lookaside cache will be enabled")
-	lookasideCacheTTL        = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 1*time.Minute, "How long to hold stuff in the lookaside cache. Should be << atime_update_threshold")
+	lookasideCacheTTL        = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 1*time.Minute, "The maximum TTL of items served from the lookaside cache. When this flag is set to a duration >0, items will only be served from the lookaside cache if they were added less than this long ago. If it is set to a duration <=0, no TTL check will occur before serving items from the lookaside cache. This value should be << atime_update_threshold when used in the authoritative cache.")
 	maxLookasideEntryBytes   = flag.Int64("cache.distributed_cache.max_lookaside_entry_bytes", 10_000, "The biggest allowed entry size in the lookaside cache.")
 	maxHintedHandoffsPerPeer = flag.Int64("cache.distributed_cache.max_hinted_handoffs_per_peer", 100_000, "The maximum number of hinted handoffs to keep in memory. Each hinted handoff is a digest (~64 bytes), prefix, and peer (40 bytes). So keeping around 100000 of these means an extra 10MB per peer.")
 )
@@ -242,7 +242,12 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 			return nil, err
 		}
 		dc.lookaside = l
-		log.Printf("Initialized lookaside cache (Size %d, ttl=%s)", config.LookasideCacheSizeBytes, *lookasideCacheTTL)
+
+		lookasideCacheTTLString := "INF"
+		if *lookasideCacheTTL > 0 {
+			lookasideCacheTTLString = lookasideCacheTTL.String()
+		}
+		log.Printf("Initialized lookaside cache (Size %d, ttl=%s)", config.LookasideCacheSizeBytes, lookasideCacheTTLString)
 	}
 
 	if zone := resources.GetZone(); zone != "" {
@@ -316,23 +321,35 @@ func (c *Cache) Check(ctx context.Context) error {
 }
 
 type teeReadCloser struct {
-	rc  io.ReadCloser
-	cwc interfaces.CommittedWriteCloser
+	rc          io.ReadCloser
+	cwc         interfaces.CommittedWriteCloser
+	lastReadErr error
+	failedWrite bool
 }
 
-func (t *teeReadCloser) Read(p []byte) (n int, err error) {
-	n, err = t.rc.Read(p)
-	if n > 0 {
-		if n, err := t.cwc.Write(p[:n]); err != nil {
-			return n, err
+func (t *teeReadCloser) Read(p []byte) (int, error) {
+	var read int
+	read, t.lastReadErr = t.rc.Read(p)
+	if read > 0 {
+		written, err := t.cwc.Write(p[:read])
+		if err != nil {
+			t.failedWrite = true
+			return written, err
+		}
+		if written < read {
+			t.failedWrite = true
+			return written, io.ErrShortWrite
 		}
 	}
-	return
+	return read, t.lastReadErr
 }
 
 func (t *teeReadCloser) Close() error {
 	err := t.rc.Close()
-	if err == nil {
+	if err == nil && t.lastReadErr != nil && t.lastReadErr != io.EOF {
+		log.Warningf("teeReadCloser Close succeeded but Read failed with: %s", t.lastReadErr)
+	}
+	if err == nil && t.lastReadErr == io.EOF && !t.failedWrite {
 		_ = t.cwc.Commit()
 		_ = t.cwc.Close()
 	}
@@ -385,6 +402,10 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 	if r.GetDigest().GetSizeBytes() > *maxLookasideEntryBytes {
 		return
 	}
+	if len(data) == 0 {
+		c.log.Infof("Attempted to set zero-length lookaside entry. Key %q", r)
+		return
+	}
 	k, ok := lookasideKey(r)
 	if !ok {
 		c.log.Debugf("Not setting lookaside entry for resource: %s", r)
@@ -423,7 +444,7 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 	found := false
 	entry, ok := c.lookaside.Get(k)
 	if ok {
-		if time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
+		if *lookasideCacheTTL > 0 && time.Since(time.UnixMilli(entry.createdAtMillis)) > *lookasideCacheTTL {
 			// Remove the item from the LRU if it's expired.
 			c.lookaside.Remove(k)
 		} else {
@@ -476,7 +497,7 @@ func (c *Cache) teeReadCloser(r *rspb.ResourceName, rc io.ReadCloser) io.ReadClo
 	if err != nil {
 		return rc
 	}
-	res := teeReadCloser{rc, lwc}
+	res := teeReadCloser{rc: rc, cwc: lwc}
 	if wt, ok := rc.(io.WriterTo); ok {
 		return &teeReadCloseWriterTo{res, wt}
 	}
@@ -775,6 +796,7 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 	}
 	return c.distributedProxy.RemoteWriter(ctx, peer, handoffPeer, r)
 }
+
 func (c *Cache) remoteDelete(ctx context.Context, peer string, r *rspb.ResourceName) error {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Delete(ctx, r)
@@ -1348,7 +1370,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
 		log:         c.log,
-		peerClosers: make(map[string]interfaces.CommittedWriteCloser, 0),
+		peerClosers: make(map[string]interfaces.CommittedWriteCloser, c.config.ReplicationFactor),
 		mu:          &sync.Mutex{},
 		listenAddr:  c.config.ListenAddr,
 		r:           r,
@@ -1450,8 +1472,4 @@ func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 		return c.local.SupportsCompressor(compressor)
 	}
 	return false
-}
-
-func (c *Cache) SupportsEncryption(ctx context.Context) bool {
-	return c.local.SupportsEncryption(ctx)
 }

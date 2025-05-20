@@ -1453,6 +1453,16 @@ var (
 		ChunkSource,
 	})
 
+	// TODO(Maggie): Delete after evaluating the results
+	COWSnapshotSkippedRemoteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_skipped_remote_bytes",
+		Help:      "The number of uncompressed bytes that were not written to the remote cache due to only writing locally.",
+	}, []string{
+		FileName,
+	})
+
 	COWSnapshotMemoryMappedBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
@@ -3056,6 +3066,15 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheFindMissingDigestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_find_missing_digest_count",
+		Help:      "Count of digests within FindMissing requests.",
+	}, []string{
+		CacheNameLabel,
+	})
+
 	// ## Podman metrics
 
 	PodmanSociStoreCrashes = promauto.NewCounter(prometheus.CounterOpts{
@@ -3276,6 +3295,16 @@ var (
 		Help:      "Number of bytes downloaded from the cache by the OCI registry mirror (only tracking CAS currently)",
 	}, []string{
 		CacheTypeLabel,
+	})
+
+	OCIRegistryCacheEvents = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ociregistry",
+		Name:      "cache_events",
+		Help:      "Number of cache events handled.",
+	}, []string{
+		CacheTypeLabel,
+		CacheEventTypeLabel,
 	})
 )
 

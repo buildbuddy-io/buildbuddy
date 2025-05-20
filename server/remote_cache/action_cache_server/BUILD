@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:api_key_go_proto",
+        "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
@@ -58,5 +58,6 @@ go_test(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

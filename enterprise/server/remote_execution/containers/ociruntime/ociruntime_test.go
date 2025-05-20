@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
@@ -29,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
@@ -50,6 +50,7 @@ import (
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 	containerregistry "github.com/google/go-containerregistry/pkg/v1"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 // Set via x_defs in BUILD file.
@@ -58,7 +59,6 @@ var (
 	busyboxRlocationpath    string
 	ociBusyboxRlocationpath string
 	testworkerRlocationpath string
-	tiniRlocationpath       string
 )
 
 func init() {
@@ -197,14 +197,6 @@ func TestCgroupSettings(t *testing.T) {
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
-
-	// Enable the cgroup controllers that we're going to test (this test is run
-	// in a firecracker VM which doesn't enable any controllers by default)
-	err = cgroup.WriteSubtreeControl(cgroup.RootPath, map[string]bool{
-		"cpu":  true,
-		"pids": true,
-	})
-	require.NoError(t, err)
 
 	c, err := provider.New(ctx, &container.Init{
 		Task: &repb.ScheduledTask{
@@ -357,10 +349,6 @@ func TestRunOOM(t *testing.T) {
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
-	// Make sure the memory controller is enabled in the root cgroup; we need it
-	// for this test.
-	err = cgroup.WriteSubtreeControl(cgroup.RootPath, map[string]bool{"memory": true})
-	require.NoError(t, err, "enable memory controller")
 	c, err := provider.New(ctx, &container.Init{
 		Task: &repb.ScheduledTask{
 			SchedulingMetadata: &scpb.SchedulingMetadata{
@@ -474,7 +462,7 @@ func TestCreateExecRemove(t *testing.T) {
 	assert.Equal(t, "buildbuddy was here: /buildbuddy-execroot\n", string(res.Stdout))
 }
 
-func TestTiniProcessReaping(t *testing.T) {
+func TestTini_Run(t *testing.T) {
 	setupNetworking(t)
 
 	image := realBusyboxImage(t)
@@ -482,12 +470,41 @@ func TestTiniProcessReaping(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	installLeaserInEnv(t, env)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	tiniPath, err := runfiles.Rlocation(tiniRlocationpath)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
-	flags.Set(t, "executor.oci.tini_enabled", true)
-	flags.Set(t, "executor.oci.tini_path", tiniPath)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		DockerInit:     true, // enable tini
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
 
+	// For now just check that tini is pid 1. It's difficult to write a shell
+	// script that intentionally creates a zombie process, since shells will
+	// handle SIGCHLD and reap processes.
+	cmd := &repb.Command{Arguments: []string{"cat", "/proc/1/stat"}}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Empty(t, string(res.Stderr))
+	assert.True(t, strings.HasPrefix(string(res.Stdout), "1 (tini)"), "tini should be pid 1. /proc/1/stat contents: %q", string(res.Stdout))
+	assert.Equal(t, 0, res.ExitCode)
+}
+
+func TestTini_CreateExec(t *testing.T) {
+	setupNetworking(t)
+
+	image := realBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 
@@ -497,6 +514,7 @@ func TestTiniProcessReaping(t *testing.T) {
 
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
 		ContainerImage: image,
+		DockerInit:     true, // enable tini
 	}})
 	require.NoError(t, err)
 
@@ -775,6 +793,7 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 }
 
 func TestCreateFailureHasStderr(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
@@ -865,6 +884,7 @@ func TestDevices(t *testing.T) {
 }
 
 func TestSignal(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
@@ -914,6 +934,7 @@ func TestSignal(t *testing.T) {
 }
 
 func TestNetwork_Enabled(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
@@ -1386,11 +1407,15 @@ func TestPathSanitization(t *testing.T) {
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
 			cacheRoot := testfs.MakeTempDir(t)
 			testfs.WriteAllFileContents(t, cacheRoot, map[string]string{
 				"test-link-target": "Hello",
 			})
-			imageStore, err := ociruntime.NewImageStore(cacheRoot)
+			resolver, err := oci.NewResolver(te)
+			require.NoError(t, err)
+			require.NotNil(t, resolver)
+			imageStore, err := ociruntime.NewImageStore(resolver, cacheRoot)
 			require.NoError(t, err)
 			// Load busybox oci image
 			busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
@@ -1665,8 +1690,12 @@ func TestPullImage(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			resolver, err := oci.NewResolver(te)
+			require.NoError(t, err)
+			require.NotNil(t, resolver)
 			layerDir := t.TempDir()
-			imgStore, err := ociruntime.NewImageStore(layerDir)
+			imgStore, err := ociruntime.NewImageStore(resolver, layerDir)
 			require.NoError(t, err)
 
 			ctx := context.Background()
@@ -1675,4 +1704,52 @@ func TestPullImage(t *testing.T) {
 			require.NotNil(t, img)
 		})
 	}
+}
+
+func TestMounts(t *testing.T) {
+	setupNetworking(t)
+	image := manuallyProvisionedBusyboxImage(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	// Configure a mount
+	mountDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, mountDir, map[string]string{
+		"foo.txt": "bar",
+	})
+	flags.Set(t, "executor.oci.mounts", []specs.Mount{
+		{
+			Type:        "bind",
+			Source:      mountDir,
+			Destination: "/mnt/testmount",
+			Options:     []string{"bind", "ro"},
+		},
+	})
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run
+	cmd := &repb.Command{
+		Arguments: []string{"cat", "/mnt/testmount/foo.txt"},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, "bar", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
 }

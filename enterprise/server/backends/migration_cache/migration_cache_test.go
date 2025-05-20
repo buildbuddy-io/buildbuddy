@@ -222,7 +222,7 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	err = mc.Set(ctx, r, buf)
 	require.Error(t, err)
 
-	// Verify data was deleted from the dest cache
+	// Verify data wasn't committed to the dest cache.
 	destData, err := destCache.Get(ctx, r)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))

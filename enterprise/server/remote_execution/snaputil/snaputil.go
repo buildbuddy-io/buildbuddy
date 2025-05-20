@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -98,9 +99,18 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 		return 0, err
 	}
 	defer f.Close()
+
+	// If the proxy is enabled, snapshots are not saved to the remote cache to minimize
+	// high network transfer. Snapshots can't be shared across different machine
+	// types, so there's no reason to support snapshot sharing across clusters.
+	ctx = proxy_util.SetSkipRemote(ctx)
+
 	r := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
 	if err := cachetools.GetBlob(ctx, bsClient, r, f); err != nil {
+		if err := os.Remove(outputPath); err != nil {
+			log.CtxErrorf(ctx, "failed to clean up path %s after failed fetch: %s", outputPath, err)
+		}
 		return 0, status.WrapError(err, "remote fetch snapshot artifact")
 	}
 
@@ -136,8 +146,7 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled.
 //
-// Returns the number of compressed bytes written to the remote cache (i.e.
-// if the data already exists in the cache, will be 0).
+// Returns the number of bytes written to the remote cache (including short-circuited or failed uploads).
 func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string) (int64, error) {
 	if !*EnableLocalSnapshotSharing && !*EnableRemoteSnapshotSharing {
 		return 0, status.UnimplementedError("Snapshot sharing not enabled")
@@ -163,6 +172,12 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 		return 0, err
 	}
 	defer file.Close()
+
+	// If the proxy is enabled, skip writing snapshots to the remote cache to minimize
+	// high network transfer. Snapshots can't be shared across different machine
+	// types, so there's no reason to support snapshot sharing across clusters.
+	ctx = proxy_util.SetSkipRemote(ctx)
+
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
 	if err == nil && bytesUploaded > 0 {
 		metrics.SnapshotRemoteCacheUploadSizeBytes.With(prometheus.Labels{

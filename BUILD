@@ -166,30 +166,36 @@ gazelle_binary(
     languages = DEFAULT_LANGUAGES + ["@bazel_gazelle//language/bazel/visibility"],
 )
 
-# Ignore the node_modules dir
-# gazelle:exclude node_modules
-# Ignore generated proto files
+## Ignore generated proto files
 # gazelle:exclude **/*.pb.go
 # gazelle:exclude bundle.go
 # gazelle:exclude enterprise/bundle.go
-# Prefer generated BUILD files to be called BUILD over BUILD.bazel
+#
+## Ignore website dir
+# TODO(siggisim): remove once we support .css imports properly
+# gazelle:exclude website/**
+#
+## Prefer generated BUILD files to be called BUILD over BUILD.bazel
 # gazelle:build_file_name BUILD,BUILD.bazel
 # gazelle:prefix github.com/buildbuddy-io/buildbuddy
 # gazelle:proto disable
 # gazelle:map_kind ts_project ts_library //rules/typescript:index.bzl
-# gazelle:exclude **/node_modules/**
-# TODO(siggisim): remove once we support .css imports properly
-# gazelle:exclude website/**
+#
+## VTProtobuf
+# gazelle:resolve go github.com/prometheus/client_model/go @com_github_prometheus_client_model//io/prometheus/client:go
+#
+## Kythe protobufs
+#
 # gazelle:resolve go kythe.io/kythe/proto/common_go_proto @io_kythe//kythe/proto:common_go_proto
 # gazelle:resolve go kythe.io/kythe/proto/filetree_go_proto @io_kythe//kythe/proto:filetree_go_proto
 # gazelle:resolve go kythe.io/kythe/proto/graph_go_proto @io_kythe//kythe/proto:graph_go_proto
 # gazelle:resolve go kythe.io/kythe/proto/xref_go_proto @io_kythe//kythe/proto:xref_go_proto
 #
-# This is a list of default when using Gazelle from BzlMod.
-# We force these mapping manually so that we do not oscillate during migrating to BzlMod
-# (and potentially any revert back to WORKSPACE mode).
+## This is a list of default when using Gazelle from BzlMod.
+## We force these mapping manually so that we do not oscillate during migrating to BzlMod
+## (and potentially any revert back to WORKSPACE mode).
+## TODO(sluongng): remove these once we deem BzlMod stable enough
 #
-# TODO(sluongng): remove these once we deem BzlMod stable enough
 # gazelle:resolve go github.com/bazelbuild/bazel-gazelle/config @bazel_gazelle//config
 # gazelle:resolve go github.com/bazelbuild/bazel-gazelle/label @bazel_gazelle//label
 # gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language @bazel_gazelle//language
@@ -201,10 +207,6 @@ gazelle_binary(
 # gazelle:resolve go github.com/bazelbuild/bazel-gazelle/rule @bazel_gazelle//rule
 # gazelle:resolve go github.com/bazelbuild/rules_go/go/runfiles @io_bazel_rules_go//go/runfiles
 # gazelle:resolve go github.com/bazelbuild/rules_go/go/tools/bazel @io_bazel_rules_go//go/tools/bazel
-#
-# Make these the default compilers for proto rules.
-# See https://github.com/bazelbuild/rules_go/pull/3761 for more details
-# gazelle:go_proto_compilers	@io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2
 gazelle(
     name = "gazelle",
     gazelle = ":bb_gazelle_binary",

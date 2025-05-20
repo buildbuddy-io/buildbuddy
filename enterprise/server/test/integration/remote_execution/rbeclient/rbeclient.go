@@ -287,7 +287,7 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 	}
 }
 
-func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name string, inputRootDigest *repb.Digest, commandProto *repb.Command, timeout time.Duration) (*Command, error) {
+func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name string, inputRootDigest *repb.Digest, commandProto *repb.Command, timeout time.Duration, doNotCache bool) (*Command, error) {
 	commandProto = commandProto.CloneVT()
 	// Remove the platform from the command and set it in the action since that
 	// is new since RE API v2.2. This lets us test the new path.
@@ -302,6 +302,7 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 		CommandDigest:   commandDigest,
 		InputRootDigest: inputRootDigest,
 		Platform:        plat,
+		DoNotCache:      doNotCache,
 	}
 	if timeout != 0 {
 		action.Timeout = durationpb.New(timeout)

@@ -27,7 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -50,7 +50,7 @@ func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) (strin
 	require.NoError(t, err)
 	g := u.Groups[0].Group
 
-	apiKey, err := env.GetAuthDB().CreateAPIKey(ctx, g.GroupID, "SCIM", []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY}, false)
+	apiKey, err := env.GetAuthDB().CreateAPIKey(ctx, g.GroupID, "SCIM", []cappb.Capability{cappb.Capability_ORG_ADMIN}, false)
 	require.NoError(t, err)
 
 	g.SamlIdpMetadataUrl = "foo"

@@ -105,7 +105,7 @@ func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 // registry, but the credentials are still authenticated with the remote
 // registry to ensure that the image can be accessed. The path to the disk image
 // is returned.
-func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	existingPath, err := CachedDiskImagePath(ctx, cacheRoot, containerImage)
@@ -115,7 +115,7 @@ func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, cred
 	if existingPath != "" {
 		// Image is cached. Authenticate with the remote registry to be sure
 		// the credentials are valid.
-		if err := authenticateWithRegistry(ctx, containerImage, creds); err != nil {
+		if err := authenticateWithRegistry(ctx, resolver, containerImage, creds); err != nil {
 			return "", err
 		}
 		return existingPath, nil
@@ -136,39 +136,28 @@ func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, cred
 		defer cancel()
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKey above (if applicable).
-		return createExt4Image(ctx, cacheRoot, containerImage, creds)
+		return createExt4Image(ctx, resolver, cacheRoot, containerImage, creds)
 	})
 	return imageDir, err
 }
 
-func authenticateWithRegistry(ctx context.Context, containerImage string, creds oci.Credentials) error {
+func authenticateWithRegistry(ctx context.Context, resolver *oci.Resolver, containerImage string, creds oci.Credentials) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	inspectArgs := []string{"inspect", "--raw", fmt.Sprintf("docker://%s", containerImage)}
-	if !creds.IsEmpty() {
-		inspectArgs = append(inspectArgs, "--creds", creds.String())
-	}
-	cmd := exec.CommandContext(ctx, "skopeo", inspectArgs...)
-	b, err := cmd.CombinedOutput()
-	if err != nil {
-		// We don't know whether an authentication error occurred unless we do
-		// brittle parsing of the command output. So for now just return
-		// UnavailableError which is the "least common denominator" of errors.
-		return status.UnavailableErrorf(
-			"Failed to authenticate with container registry for image %q: %s: %s",
-			containerImage, err, string(b),
-		)
-	}
 
+	// Resolve the image to ensure that the credentials are valid.
+	if _, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds); err != nil {
+		return status.WrapError(err, "resolve image")
+	}
 	return nil
 }
 
-func createExt4Image(ctx context.Context, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
 	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, cacheRoot, containerImage, creds)
+	tmpImagePath, err := convertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds)
 	if err != nil {
 		return "", err
 	}
@@ -190,11 +179,7 @@ func createExt4Image(ctx context.Context, cacheRoot, containerImage string, cred
 
 // convertContainerToExt4FS generates an ext4 filesystem image from an OCI
 // container image reference.
-func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	resolver, err := oci.NewResolver()
-	if err != nil {
-		return "", err
-	}
+func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
 	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return "", err

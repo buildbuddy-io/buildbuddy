@@ -36,6 +36,7 @@ go_test(
         "//enterprise/server/raft/sender",
         "//enterprise/server/raft/testutil",
         "//proto:raft_go_proto",
+        "//server/testutil/quarantine",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/random",

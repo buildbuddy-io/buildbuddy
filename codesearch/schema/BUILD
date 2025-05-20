@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "schema",
@@ -6,10 +6,19 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/schema",
     visibility = ["//visibility:public"],
     deps = [
+        "//codesearch/token",
         "//codesearch/types",
-        "//server/util/git",
-        "@com_github_cespare_xxhash_v2//:xxhash",
-        "@com_github_gabriel_vasile_mimetype//:mimetype",
-        "@com_github_go_enry_go_enry_v2//:go-enry",
+        "//server/util/status",
+    ],
+)
+
+go_test(
+    name = "schema_test",
+    srcs = ["schema_test.go"],
+    deps = [
+        ":schema",
+        "//codesearch/token",
+        "//codesearch/types",
+        "@com_github_stretchr_testify//assert",
     ],
 )

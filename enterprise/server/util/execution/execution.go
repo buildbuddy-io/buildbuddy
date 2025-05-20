@@ -19,12 +19,10 @@ import (
 )
 
 func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) *repb.StoredExecution {
-	return &repb.StoredExecution{
+	ex := &repb.StoredExecution{
 		GroupId:                            in.GroupID,
 		UpdatedAtUsec:                      in.UpdatedAtUsec,
 		ExecutionId:                        in.ExecutionID,
-		InvocationUuid:                     strings.Replace(invLink.GetInvocationId(), "-", "", -1),
-		InvocationLinkType:                 int32(invLink.GetType()),
 		CreatedAtUsec:                      in.CreatedAtUsec,
 		UserId:                             in.UserID,
 		Worker:                             in.Worker,
@@ -55,6 +53,13 @@ func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) 
 		DoNotCache:                         in.DoNotCache,
 		CommandSnippet:                     in.CommandSnippet,
 	}
+	SetInvocationLink(ex, invLink)
+	return ex
+}
+
+func SetInvocationLink(ex *repb.StoredExecution, invLink *sipb.StoredInvocationLink) {
+	ex.InvocationUuid = strings.Replace(invLink.GetInvocationId(), "-", "", -1)
+	ex.InvocationLinkType = int32(invLink.GetType())
 }
 
 func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
@@ -157,6 +162,8 @@ func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
 			},
 			DoNotCache: in.DoNotCache,
 		},
+		TargetLabel:    in.TargetLabel,
+		ActionMnemonic: in.ActionMnemonic,
 		CommandSnippet: in.CommandSnippet,
 	}
 
@@ -167,7 +174,7 @@ func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
 // the Execution proto returned to the client when listing executions (e.g.
 // Executions tab, Drilldown tab.)
 func ExecutionListingColumns() []string {
-	// NOTE: keep in sync with ClientProtoColumns and OLAPExecToClientProto
+	// NOTE: keep in sync with OLAPExecToClientProto
 	return []string{
 		"execution_id",
 		"status_code",
@@ -194,6 +201,8 @@ func ExecutionListingColumns() []string {
 		"peak_memory_bytes",
 		"do_not_cache",
 		"command_snippet",
+		"target_label",
+		"action_mnemonic",
 	}
 }
 

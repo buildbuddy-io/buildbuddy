@@ -10,6 +10,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
+// Create these once so they don't show up in benchmarks that use null auth
+var (
+	anonymouseUserError = authutil.AnonymousUserError("Auth not implemented")
+	unimplementedError  = status.UnimplementedError("Auth not implemented")
+)
+
 func NewNullAuthenticator(anonymousUsageEnabled bool, adminGroupID string) *NullAuthenticator {
 	return &NullAuthenticator{
 		adminGroupID:           adminGroupID,
@@ -47,7 +53,7 @@ func (a *NullAuthenticator) AuthenticatedGRPCContext(ctx context.Context) contex
 }
 
 func (a *NullAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
-	return nil, authutil.AnonymousUserError("Auth not implemented")
+	return nil, anonymouseUserError
 }
 
 func (a *NullAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
@@ -55,15 +61,15 @@ func (a *NullAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 }
 
 func (a *NullAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
-	return status.UnimplementedError("Auth not implemented")
+	return unimplementedError
 }
 
 func (a *NullAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
-	return status.UnimplementedError("Auth not implemented")
+	return unimplementedError
 }
 
 func (a *NullAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
-	return status.UnimplementedError("Auth not implemented")
+	return unimplementedError
 }
 
 func (a *NullAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {

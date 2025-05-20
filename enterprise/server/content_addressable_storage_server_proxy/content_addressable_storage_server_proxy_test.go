@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -85,26 +86,20 @@ func runRemoteCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*gr
 	return conn, &unaryRequestCounter, &streamRequestCounter
 }
 
-func runLocalCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (bspb.ByteStreamClient, repb.ContentAddressableStorageServer) {
-	bs, err := byte_stream_server.NewByteStreamServer(env)
-	require.NoError(t, err)
+func runLocalCASS(ctx context.Context, env *testenv.TestEnv, t testing.TB) repb.ContentAddressableStorageServer {
 	cas, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	require.NoError(t, err)
-	grpcServer, runFunc, lis := testenv.RegisterLocalInternalGRPCServer(t, env)
-	repb.RegisterContentAddressableStorageServer(grpcServer, cas)
-	bspb.RegisterByteStreamServer(grpcServer, bs)
-	go runFunc()
-	conn, err := testenv.LocalInternalGRPCConn(ctx, lis)
-	require.NoError(t, err)
-	t.Cleanup(func() { conn.Close() })
-	return bspb.NewByteStreamClient(conn), cas
+	return cas
 }
 
 func runCASProxy(ctx context.Context, clientConn *grpc.ClientConn, env *testenv.TestEnv, t testing.TB) *grpc.ClientConn {
 	env.SetByteStreamClient(bspb.NewByteStreamClient(clientConn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(clientConn))
-	bs, cas := runLocalCASS(ctx, env, t)
-	env.SetLocalByteStreamClient(bs)
+	bss, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+	env.SetLocalByteStreamServer(bss)
+	cas, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
+	require.NoError(t, err)
 	env.SetLocalCASServer(cas)
 	casServer, err := New(env)
 	require.NoError(t, err)
@@ -263,6 +258,44 @@ func TestFindMissingBlobs(t *testing.T) {
 		require.Equal(t, int32(i), requestCount.Load())
 	}
 	expectNoAtimeUpdate(t, clock, requestCount)
+}
+
+func TestFindMissingBlobs_SkipRemote(t *testing.T) {
+	ctx := testContext()
+	remoteConn, _, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(remoteConn))
+	require.NoError(t, atime_updater.Register(proxyEnv))
+	proxyConn := runCASProxy(ctx, remoteConn, proxyEnv, t)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	digestA := digestProto(fooDigest, 3)
+	digestB := digestProto(foofDigest, 4)
+	digestC := digestProto(barDigest, 3)
+
+	// Write digests A and B to the remote cache
+	remote := proxyEnv.GetContentAddressableStorageClient()
+	_, err := remote.BatchUpdateBlobs(ctx, updateBlobsRequest(map[*repb.Digest]string{digestA: "foo", digestB: "foof"}))
+	require.NoError(t, err)
+
+	// Write digests B and C to the local cache
+	local := proxyEnv.GetLocalCASServer()
+	_, err = local.BatchUpdateBlobs(ctx, updateBlobsRequest(map[*repb.Digest]string{digestB: "foof", digestC: "bar"}))
+	require.NoError(t, err)
+
+	// If hitting the remote cache, FindMissing(A, C) should return digest C
+	req := findMissingBlobsRequest([]*repb.Digest{digestA, digestC})
+	rsp, err := proxy.FindMissingBlobs(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rsp.MissingBlobDigests))
+	require.Equal(t, digestC.GetHash(), rsp.MissingBlobDigests[0].Hash)
+
+	// If only hitting the local proxy cache, FindMissing(A, C) should return digest A
+	skipRemoteCtx := metadata.AppendToOutgoingContext(ctx, proxy_util.SkipRemoteKey, "true")
+	rsp, err = proxy.FindMissingBlobs(skipRemoteCtx, req)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rsp.MissingBlobDigests))
+	require.Equal(t, digestA.GetHash(), rsp.MissingBlobDigests[0].Hash)
 }
 
 func TestReadUpdateBlobs(t *testing.T) {

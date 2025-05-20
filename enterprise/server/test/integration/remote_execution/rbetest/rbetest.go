@@ -75,8 +75,8 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -258,7 +258,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 	keys, err := testEnv.GetAuthDB().GetAPIKeys(ctxUS1, groupID)
 	require.NoError(t, err)
 	key := keys[0]
-	key.Capabilities |= int32(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY)
+	key.Capabilities |= int32(cappb.Capability_REGISTER_EXECUTOR)
 	err = testEnv.GetAuthDB().UpdateAPIKey(ctxUS1, key)
 	require.NoError(t, err)
 
@@ -827,7 +827,9 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 		executorHostID = options.Name + ".host"
 	}
 
-	runnerPool := NewTestRunnerPool(r.t, env, localCacheDirectory, options.RunInterceptor)
+	runnerPool := NewTestRunnerPool(r.t, env, localCacheDirectory, TestRunnerOverrides{
+		RunInterceptor: options.RunInterceptor,
+	})
 
 	exec, err := executor.NewExecutor(env, executorID, executorHostID, "fake-host-name", runnerPool)
 	if err != nil {
@@ -1146,7 +1148,7 @@ func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts)
 
 	inputRootDigest := r.setupRootDirectoryWithTestCommandBinary(ctx)
 
-	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, command, 0 /*=timeout*/)
+	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, command, 0, false)
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("Could not prepare command %q", name), err.Error())
 	}
@@ -1195,6 +1197,8 @@ type ExecuteOpts struct {
 	// Whether action cache should be checked for existing results. By default,
 	// we skip the action cache check for tests.
 	CheckCache bool
+	// Whether to set the Action.DoNotCache field.
+	DoNotCacheAction bool
 }
 
 func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
@@ -1224,7 +1228,7 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	}
 
 	name := strings.Join(command.GetArguments(), " ")
-	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, command, opts.ActionTimeout)
+	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, command, opts.ActionTimeout, opts.DoNotCacheAction)
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("unable to request action execution for command %q", name), err.Error())
 	}
@@ -1265,17 +1269,43 @@ func ReturnForFirstAttempt(result *interfaces.CommandResult) RunInterceptor {
 	}
 }
 
+func RunNoop() RunInterceptor {
+	return AlwaysReturn(&interfaces.CommandResult{})
+}
+
+// TryRecycleFunc is the function signature for runner.pool::TryRecycle().
+type TryRecycleFunc func(ctx context.Context, r interfaces.Runner, finishedCleanly bool)
+
+// RecycleInterceptor is an interceptor for recycling a runner, optionally delegating
+// to the real runner::TryRecycle method.
+type RecycleInterceptor func(ctx context.Context, r interfaces.Runner, finishedCleanly bool, original TryRecycleFunc)
+
+// DownloadInputsFunc is the function signature for runner.Runner::DownloadInputs().
+type DownloadInputsFunc func(ctx context.Context, ioStats *repb.IOStats) error
+
+func DownloadInputsNoop(ctx context.Context, ioStats *repb.IOStats) error {
+	return nil
+}
+
 // testRunnerPool returns runners whose Run() results can be controlled by the
 // test.
 type testRunnerPool struct {
 	interfaces.RunnerPool
-	runInterceptor RunInterceptor
+	runInterceptor            RunInterceptor
+	recycleInterceptor        RecycleInterceptor
+	downloadInputsInterceptor DownloadInputsFunc
 }
 
-func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, runInterceptor RunInterceptor) interfaces.RunnerPool {
+type TestRunnerOverrides struct {
+	RunInterceptor     RunInterceptor
+	RecycleInterceptor RecycleInterceptor
+	DownloadInputsMock DownloadInputsFunc
+}
+
+func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, opts TestRunnerOverrides) interfaces.RunnerPool {
 	realPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{})
 	require.NoError(t, err)
-	return &testRunnerPool{realPool, runInterceptor}
+	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor, opts.DownloadInputsMock}
 }
 
 func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (interfaces.Runner, error) {
@@ -1283,26 +1313,37 @@ func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (int
 	if err != nil {
 		return nil, err
 	}
-	return &testRunner{realRunner, p.runInterceptor}, nil
+	return &testRunner{realRunner, p.runInterceptor, p.downloadInputsInterceptor}, nil
 }
 
 func (p *testRunnerPool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
 	tr := r.(*testRunner)
-	p.RunnerPool.TryRecycle(ctx, tr.Runner, finishedCleanly)
+	if p.recycleInterceptor == nil {
+		p.RunnerPool.TryRecycle(ctx, tr.Runner, finishedCleanly)
+		return
+	}
+	p.recycleInterceptor(ctx, tr.Runner, finishedCleanly, p.RunnerPool.TryRecycle)
 }
 
-// testRunner is a Runner implementation that allows injecting error results
-// for command execution.
+// testRunner is a Runner implementation that allows mocking out its methods.
 type testRunner struct {
 	interfaces.Runner
-	interceptor RunInterceptor
+	run            RunInterceptor
+	downloadInputs DownloadInputsFunc
 }
 
 func (r *testRunner) Run(ctx context.Context, ioStats *repb.IOStats) *interfaces.CommandResult {
-	if r.interceptor == nil {
+	if r.run == nil {
 		return r.Runner.Run(ctx, ioStats)
 	}
-	return r.interceptor(ctx, r.Runner.Run)
+	return r.run(ctx, r.Runner.Run)
+}
+
+func (r *testRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
+	if r.downloadInputs == nil {
+		return r.Runner.DownloadInputs(ctx, ioStats)
+	}
+	return r.downloadInputs(ctx, ioStats)
 }
 
 type FakeTaskSizer struct {

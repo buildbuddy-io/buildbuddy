@@ -85,13 +85,18 @@ common:race --@io_bazel_rules_go//go/config:race
 
 common:performance --compilation_mode=opt
 
+# Configurations used to debug flaky tests
+common:quarantine --config=remote-minimal
+test:quarantine --config=race
+test:quarantine --test_env=RUN_QUARANTINED_TESTS=true
+
 # Configuration used to deflake tests
 common:deflake --config=remote-minimal
 test:deflake --runs_per_test=100
 test:deflake --test_output=errors
 test:deflake --test_runner_fail_fast
 test:deflake --notest_keep_going
-test:deflake --config=race
+test:deflake --config=quarantine
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
@@ -207,20 +212,12 @@ common:remote-shared --verbose_failures
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared
 common:remote-prod-shared --remote_executor=grpcs://buildbuddy.buildbuddy.io
-# Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
-# but performance tests should not be run remotely since the environment
-# is not consistent or stable.
-common:remote-prod-shared --test_tag_filters=-performance
 
 # Flags shared for dev BES, RBE and cache
 # Note: Dev BES needed to override the default prod BES urls.
 common:remote-dev-shared --config=dev
 common:remote-dev-shared --config=remote-shared
 common:remote-dev-shared --remote_executor=grpcs://buildbuddy.buildbuddy.dev
-# Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
-# but performance tests should not be run remotely since the environment
-# is not consistent or stable.
-common:remote-dev-shared --test_tag_filters=-performance
 
 # Build with --config=remote to use BuildBuddy RBE, generally as a human from
 # the command line. Other configs shoudn't embed this.

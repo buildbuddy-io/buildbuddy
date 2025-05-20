@@ -3,6 +3,7 @@ package claims
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -19,7 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/golang-jwt/jwt/v4"
 
-	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
@@ -49,7 +50,7 @@ type Claims struct {
 	// TODO(bduffany): remove this field
 	AllowedGroups          []string                      `json:"allowed_groups"`
 	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
-	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
+	Capabilities           []cappb.Capability            `json:"capabilities"`
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
@@ -80,11 +81,11 @@ func (c *Claims) GetGroupMemberships() []*interfaces.GroupMembership {
 	return c.GroupMemberships
 }
 
-func (c *Claims) GetCapabilities() []akpb.ApiKey_Capability {
+func (c *Claims) GetCapabilities() []cappb.Capability {
 	return c.Capabilities
 }
 
-func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
+func (c *Claims) HasCapability(cap cappb.Capability) bool {
 	for _, cc := range c.Capabilities {
 		if cap&cc > 0 {
 			return true
@@ -136,10 +137,10 @@ func ParseClaims(token string) (*Claims, error) {
 	return nil, lastErr
 }
 
-func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
+func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims, error) {
 	keyRole := role.Default
 	// User management through SCIM requires Admin access.
-	if akg.GetCapabilities()&int32(akpb.ApiKey_ORG_ADMIN_CAPABILITY) > 0 {
+	if akg.GetCapabilities()&int32(cappb.Capability_ORG_ADMIN) > 0 {
 		keyRole = role.Admin
 	}
 	allowedGroups := []string{akg.GetGroupID()}
@@ -156,17 +157,28 @@ func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 			Role:         keyRole,
 		})
 	}
+
+	requestContext := requestcontext.ProtoRequestContextFromContext(ctx)
+	effectiveGroup := akg.GetGroupID()
+	if requestContext.GetGroupId() != "" {
+		if slices.Contains(allowedGroups, requestContext.GetGroupId()) {
+			effectiveGroup = requestContext.GetGroupId()
+		} else {
+			return nil, status.PermissionDeniedErrorf("invalid group id %s", requestContext.GetGroupId())
+		}
+	}
+
 	return &Claims{
 		APIKeyID:               akg.GetAPIKeyID(),
 		UserID:                 akg.GetUserID(),
-		GroupID:                akg.GetGroupID(),
+		GroupID:                effectiveGroup,
 		AllowedGroups:          allowedGroups,
 		GroupMemberships:       groupMemberships,
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
 		EnforceIPRules:         akg.GetEnforceIPRules(),
-	}
+	}, nil
 }
 
 func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*Claims, error) {
@@ -245,7 +257,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
 	enforceIPRules := false
-	var capabilities []akpb.ApiKey_Capability
+	var capabilities []cappb.Capability
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
 		c, err := role.ToCapabilities(role.Role(g.Role))
