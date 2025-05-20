@@ -1,4 +1,4 @@
-FROM mirror.gcr.io/ubuntu:20.04
+FROM marketplace.gcr.io/google/ubuntu2204@sha256:b70be2d80535d3fe99e2bc484133da588728add8fc15956d124c478b42e61f2c
 
 RUN apt-get update && \
     apt-get install -y \
