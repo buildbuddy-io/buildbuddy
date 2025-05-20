@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -766,8 +767,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
 	// Enforce a priority range of -1000 to 1000 for now so that we have some
 	// flexibility to assign different meanings to priority values later on.
-	if req.GetExecutionPolicy().GetPriority() > 1000 || req.GetExecutionPolicy().GetPriority() < -1000 {
-		return status.InvalidArgumentErrorf("invalid execution priority %d; priority values must be between -1000 and 1000 (inclusive)", req.GetExecutionPolicy().GetPriority())
+	if req.GetExecutionPolicy().GetPriority() > capabilities_server.MaxExecutionPriority || req.GetExecutionPolicy().GetPriority() < capabilities_server.MinExecutionPriority {
+		return status.InvalidArgumentErrorf("invalid execution priority %d; priority values must be between %d and %d (inclusive)", req.GetExecutionPolicy().GetPriority(), capabilities_server.MinExecutionPriority, capabilities_server.MaxExecutionPriority)
 	}
 
 	adInstanceDigest := digest.NewCASResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
