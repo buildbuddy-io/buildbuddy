@@ -27,7 +27,7 @@ go_test(
     srcs = ["networking_test.go"],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
-        "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:e904e2149194b94f4504fdfb3c7b2b71afa130708feb482fe9a9d557453fa8fd",
+        "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:6c8de32a87e012d9d8be531158f3d64220b925d0ceb9022e159a657b519f3ca9",
         "test.EstimatedComputeUnits": "2",
     },
     tags = [
