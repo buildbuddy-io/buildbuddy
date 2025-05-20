@@ -2,6 +2,8 @@ package github
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
@@ -353,4 +355,129 @@ func TestProcessCommit_OverlappingAddsAndDeletes(t *testing.T) {
 
 	doc = r.GetStoredDocument(1<<32 | 1)
 	assert.Equal(t, "package baz\n\nfunc Beetle() {}\n", string(doc.Field(schema.ContentField).Contents()))
+}
+
+type fakeGitClient struct {
+	commands map[string]string
+	files    map[string][]byte
+	t        *testing.T
+}
+
+func (f *fakeGitClient) ExecuteCommand(cmd string, args ...string) (string, error) {
+	fullCmd := cmd + " " + strings.Join(args, " ")
+	if output, ok := f.commands[fullCmd]; ok {
+		return output, nil
+	}
+	require.FailNow(f.t, "command not found", "cmd: %s", fullCmd)
+	return "", fmt.Errorf("command not found: %s", fullCmd)
+}
+
+func (f *fakeGitClient) LoadFileContents(fileToLoad string) ([]byte, error) {
+	if contents, ok := f.files[fileToLoad]; ok {
+		return contents, nil
+	}
+	require.FailNow(f.t, "file not found", "file: %s", fileToLoad)
+	return nil, fmt.Errorf("file not found: %s", fileToLoad)
+}
+
+func TestExtractCommitRange_OneCommit(t *testing.T) {
+	firstSHA := "abc123"
+	lastSHA := "def456"
+
+	fakeClient := &fakeGitClient{
+		t: t,
+		commands: map[string]string{
+			fmt.Sprintf("git log --first-parent --format=%%H %s..%s", firstSHA, lastSHA): "def456",
+			// This sample output is taken directly from the diff-tree documentation, and covers
+			// every modification type.
+			fmt.Sprintf("git diff-tree -r %s..%s", firstSHA, lastSHA): `
+:100644 100644 bcd1234 0123456 M file0
+:100644 100644 abcd123 1234567 C68 file1 file2
+:100644 100644 abcd123 1234567 R86 file1 file3
+:000000 100644 0000000 1234567 A file4
+:100644 000000 1234567 0000000 D file5
+:000000 000000 0000000 0000000 U file6
+`,
+		},
+		files: map[string][]byte{
+			"file0": []byte("file0 content"),
+			// file1 renamed to file2
+			"file2": []byte("file2 content"),
+			"file3": []byte("file3 content"),
+			"file4": []byte("file4 content"),
+			// file5 deleted
+			// file6 unmerged, should be ignored
+		},
+	}
+
+	result, err := ExtractCommitRange(fakeClient, firstSHA, lastSHA)
+	require.NoError(t, err)
+
+	assert.Equal(t, &inpb.IncrementalUpdate{
+		Commits: []*inpb.Commit{
+			{
+				Sha:       "def456",
+				ParentSha: "abc123",
+				AddsAndUpdates: []*inpb.File{
+					{Filepath: "file0", Content: []byte("file0 content")},
+					{Filepath: "file2", Content: []byte("file2 content")},
+					{Filepath: "file3", Content: []byte("file3 content")},
+					{Filepath: "file4", Content: []byte("file4 content")},
+				},
+				DeleteFilepaths: []string{"file1", "file5"},
+			},
+		},
+	}, result)
+}
+
+func TestExtractCommitRange_MultipleCommits(t *testing.T) {
+	sha1 := "abc123"
+	sha2 := "def456"
+	sha3 := "ghi789"
+	sha4 := "jkl012"
+
+	fakeClient := &fakeGitClient{
+		t: t,
+		commands: map[string]string{
+			fmt.Sprintf("git log --first-parent --format=%%H %s..%s", sha1, sha4): "def456\nghi789\njkl012",
+			fmt.Sprintf("git diff-tree -r %s..%s", sha1, sha2):                    ":100644 100644 bcd1234 0123456 M file0",
+			fmt.Sprintf("git diff-tree -r %s..%s", sha2, sha3):                    ":000000 100644 0000000 1234567 A file1",
+			fmt.Sprintf("git diff-tree -r %s..%s", sha3, sha4):                    ":100644 100644 abcd123 1234567 R86 file1 file2",
+		},
+		files: map[string][]byte{
+			"file0": []byte("file0 content"),
+			"file1": []byte("file1 content"),
+			"file2": []byte("file2 content"),
+		},
+	}
+
+	result, err := ExtractCommitRange(fakeClient, sha1, sha4)
+	require.NoError(t, err)
+
+	assert.Equal(t, &inpb.IncrementalUpdate{
+		Commits: []*inpb.Commit{
+			{
+				Sha:       "def456",
+				ParentSha: "abc123",
+				AddsAndUpdates: []*inpb.File{
+					{Filepath: "file0", Content: []byte("file0 content")},
+				},
+			},
+			{
+				Sha:       "ghi789",
+				ParentSha: "def456",
+				AddsAndUpdates: []*inpb.File{
+					{Filepath: "file1", Content: []byte("file1 content")},
+				},
+			},
+			{
+				Sha:       "jkl012",
+				ParentSha: "ghi789",
+				AddsAndUpdates: []*inpb.File{
+					{Filepath: "file2", Content: []byte("file2 content")},
+				},
+				DeleteFilepaths: []string{"file1"},
+			},
+		},
+	}, result)
 }
