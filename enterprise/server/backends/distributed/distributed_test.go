@@ -985,6 +985,10 @@ func TestGetMulti(t *testing.T) {
 }
 
 func TestHintedHandoff(t *testing.T) {
+	// TestHintedHandoff has flaked multiple times recently:
+	//   https://app.buildbuddy.io/invocation/831b22ac-123b-4190-9a32-d9f06a2719b9
+	//   https://app.buildbuddy.io/invocation/be67e9bc-5104-4538-a86c-86656f8af43d
+	//   https://app.buildbuddy.io/invocation/010bd6d5-eae4-4a02-a1ad-b81311c3a461
 	quarantine.SkipQuarantinedTest(t)
 	env, authenticator, ctx := getEnvAuthAndCtx(t)
 
