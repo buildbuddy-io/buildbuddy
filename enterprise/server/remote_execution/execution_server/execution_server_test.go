@@ -93,8 +93,11 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn) {
 
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
-	redisTarget := testredis.Start(t).Target
-	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
+	r := testredis.Start(t)
+	rdb := redis.NewClient(redisutil.TargetToOptions(r.Target))
+	env.SetDefaultRedisClient(r.Client())
+	err := redis_execution_collector.Register(env)
+	require.NoError(t, err)
 	env.SetRemoteExecutionRedisClient(rdb)
 	env.SetRemoteExecutionRedisPubSubClient(rdb)
 
@@ -440,14 +443,11 @@ type publishTest struct {
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	for k, v := range test.flagOverrides {
 		flags.Set(t, k, v)
 	}
 	env, conn := setupEnv(t)
-	redis := testredis.Start(t)
-	env.SetDefaultRedisClient(redis.Client())
-	err := redis_execution_collector.Register(env)
-	require.NoError(t, err)
 	client := repb.NewExecutionClient(conn)
 
 	const instanceName = "test-instance"
