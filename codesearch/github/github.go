@@ -33,6 +33,8 @@ const (
 	// mimetype detection.
 	detectionBufferSize = 1000
 
+	// The maximum number of changes to process in a single incremental update.
+	// 1000 was an arbitrary choice, and could be adjusted if needed.
 	maxAllowedChanges = 1000
 )
 
