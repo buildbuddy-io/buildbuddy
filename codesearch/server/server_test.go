@@ -74,15 +74,15 @@ func TestIncrementalIndex(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rsp)
 
-	repoStatus, err := server.RepoStatus(context.Background(), &inpb.RepoStatusRequest{
+	repoStatus, err := server.RepoStatus(ctx, &inpb.RepoStatusRequest{
 		RepoUrl: "github.com/buildbuddy-io/buildbuddy",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, repoStatus, &inpb.RepoStatusResponse{
+	assert.Equal(t, &inpb.RepoStatusResponse{
 		LastIndexedCommitSha: newSha,
-	})
+	}, repoStatus)
 
-	searchRsp, err := server.Search(context.Background(), &spb.SearchRequest{
+	searchRsp, err := server.Search(ctx, &spb.SearchRequest{
 		Query: &spb.Query{
 			Term: "doo",
 		},
@@ -94,17 +94,13 @@ func TestIncrementalIndex(t *testing.T) {
 	assert.Len(t, searchRsp.Results, 1)
 	search := searchRsp.Results[0]
 	search.Snippets = nil // clear out snippets to allow for easier comparison
-	assert.Equal(t, search, &spb.Result{
+	assert.Equal(t, &spb.Result{
 		Owner:      "buildbuddy-io",
 		Repo:       "buildbuddy",
 		Sha:        newSha,
 		Filename:   "foo/bar/baz.txt",
 		MatchCount: 1,
-	})
-}
-
-func TestIndexFull(t *testing.T) {
-	t.Skip("This operation downloads a github repo, and requires refactoring to unit test.")
+	}, search)
 }
 
 func TestRepoStatus_NoStatus(t *testing.T) {
@@ -113,7 +109,7 @@ func TestRepoStatus_NoStatus(t *testing.T) {
 	response, err := server.RepoStatus(context.Background(), &inpb.RepoStatusRequest{
 		RepoUrl: "github.com/buildbuddy-io/buildbuddy",
 	})
-	assert.True(t, status.IsNotFoundError(err))
+	assert.True(t, status.IsNotFoundError(err), "expected status.NotFoundError, got: %v", err)
 	assert.Nil(t, response)
 }
 
