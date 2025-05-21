@@ -107,8 +107,8 @@ var (
 	disablePersistArtifacts = flag.Bool("storage.disable_persist_cache_artifacts", false, "If disabled, buildbuddy will not persist cache artifacts in the blobstore. This may make older invocations not display properly.")
 	writeToOLAPDBEnabled    = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
 
-	eventFilterThreshold        = flag.Int("app.event_filter_threshold", 100_000, "When look up an invocation, start filtering out unimportant events after this threshold.")
-	cacheStatsFinalizationDelay = flag.Duration("cache_stats_finalization_delay", 500*time.Millisecond, "The time allowed for all metrics collectors across all apps to flush their local cache stats to the backing storage, before finalizing stats in the DB.")
+	buildEventFilterStartThreshold = flag.Int("app.build_event_filter_start_threshold", 100_000, "When looking up an invocation, start filtering out unimportant events after this many events have been processed.")
+	cacheStatsFinalizationDelay    = flag.Duration("cache_stats_finalization_delay", 500*time.Millisecond, "The time allowed for all metrics collectors across all apps to flush their local cache stats to the backing storage, before finalizing stats in the DB.")
 )
 
 var cacheArtifactsBlobstorePath = path.Join("artifacts", "cache")
@@ -186,7 +186,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		collector:      b.env.GetMetricsCollector(),
-		apiTargetMap:   api_common.NewTargetMap(),
+		apiTargetMap:   api_common.NewTargetMap( /* TargetSelector */ nil),
 
 		hasReceivedEventWithOptions: false,
 		hasReceivedStartedEvent:     false,
@@ -1426,7 +1426,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		// use a ton of memory and are not displayable by the browser. If we
 		// detect a large number of events coming through, begin dropping non-
 		// important events so that this invocation can be displayed.
-		if len(events) >= *eventFilterThreshold && !accumulator.IsImportantEvent(event.GetBuildEvent()) {
+		if len(events) >= *buildEventFilterStartThreshold && !accumulator.IsImportantEvent(event.GetBuildEvent()) {
 			return nil
 		}
 		events = append(events, event)

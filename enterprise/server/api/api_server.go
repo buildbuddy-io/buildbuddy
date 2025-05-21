@@ -239,7 +239,7 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 		return rsp, nil
 	}
 
-	targetMap := api_common.NewTargetMap().WithSelector(req.GetSelector())
+	targetMap := api_common.NewTargetMap(req.GetSelector())
 	_, err = build_event_handler.LookupInvocationWithCallback(ctx, s.env, req.GetSelector().GetInvocationId(), func(event *inpb.InvocationEvent) error {
 		targetMap.ProcessEvent(req.GetSelector().GetInvocationId(), event.GetBuildEvent())
 		return nil

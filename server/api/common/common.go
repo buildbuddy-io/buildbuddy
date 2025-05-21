@@ -150,15 +150,11 @@ type TargetMap struct {
 	selector *apipb.TargetSelector
 }
 
-func NewTargetMap() *TargetMap {
+func NewTargetMap(selector *apipb.TargetSelector) *TargetMap {
 	return &TargetMap{
-		Targets: make(map[string]*apipb.Target),
+		Targets:  make(map[string]*apipb.Target),
+		selector: selector,
 	}
-}
-
-func (tm *TargetMap) WithSelector(selector *apipb.TargetSelector) *TargetMap {
-	tm.selector = selector
-	return tm
 }
 
 func (tm *TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
@@ -204,19 +200,19 @@ func (tm *TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 
 // TargetMatchesSelector checks if the target matches the selector.
 func TargetMatchesSelector(target *apipb.Target, selector *apipb.TargetSelector) bool {
-	if selector.Label != "" {
-		return selector.Label == target.Label
+	if selector.GetLabel() != "" {
+		return selector.GetLabel() == target.GetLabel()
 	}
 
-	if selector.Tag != "" {
+	if selector.GetTag() != "" {
 		for _, tag := range target.GetTag() {
-			if tag == selector.Tag {
+			if tag == selector.GetTag() {
 				return true
 			}
 		}
 		return false
 	}
-	return selector.TargetId == "" || selector.TargetId == target.GetId().TargetId
+	return selector.GetTargetId() == "" || selector.GetTargetId() == target.GetId().GetTargetId()
 }
 
 func TestTimingFromSummary(testSummary *bespb.TestSummary) *cmnpb.Timing {
