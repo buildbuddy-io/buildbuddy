@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -772,4 +773,173 @@ func TestConcurrentMutationDuringUpload(t *testing.T) {
 			assert.True(t, status.IsDataLossError(err), "want DataLossError, got %+#v", err)
 		})
 	}
+}
+
+func TestCancelSend(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1024)
+	casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+	uploadString := casRN.NewUploadString()
+	bsClient := te.GetByteStreamClient()
+	ctx, cancel := context.WithCancel(context.Background())
+	stream, err := bsClient.Write(ctx)
+	require.NoError(t, err)
+	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+
+	req := &bspb.WriteRequest{
+		Data:         buf[:512],
+		ResourceName: uploadString,
+		WriteOffset:  0,
+		FinishWrite:  false,
+	}
+	err = sender.SendWithTimeoutCause(req, 1*time.Minute, status.DeadlineExceededError("first write timed out"))
+	require.NoError(t, err)
+
+	cancel()
+
+	req = &bspb.WriteRequest{
+		Data:         buf[512:],
+		ResourceName: uploadString,
+		WriteOffset:  512,
+		FinishWrite:  false,
+	}
+	err = sender.SendWithTimeoutCause(req, 1*time.Minute, status.DeadlineExceededError("second write timed out"))
+	require.Error(t, err)
+	require.ErrorContains(t, err, "context canceled")
+
+	// req = &bspb.WriteRequest{
+	// 	Data:         []byte{},
+	// 	ResourceName: uploadString,
+	// 	WriteOffset:  1024,
+	// 	FinishWrite:  true,
+	// }
+	// err = sender.SendWithTimeoutCause(req, 1*time.Minute, status.DeadlineExceededError("last write timed out"))
+	// require.NoError(t, err)
+
+	// resp, err := stream.CloseAndRecv()
+	// require.NoError(t, err)
+	// require.Equal(t, int64(1024), resp.CommittedSize)
+
+	// {
+	// 	out := &bytes.Buffer{}
+	// 	err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
+
+	// 	require.NoError(t, err)
+	// 	require.Equal(t, len(buf), out.Len())
+	// 	require.Empty(t, cmp.Diff(buf[:9], out.Bytes()[:9]))
+	// 	require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[out.Len()-9:]))
+	// }
+
+}
+
+func TestUploadWriter_NoWritesAfterCommit(t *testing.T) {
+	rn, buf := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	ctx := context.Background()
+	casrn := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+
+	uw, err := cachetools.NewUploadWriter(ctx, te.GetByteStreamClient(), casrn)
+	require.NoError(t, err)
+	written, err := uw.Write(buf)
+	require.NoError(t, err)
+	require.Equal(t, len(buf), written)
+
+	// The blob is not available before commit
+	{
+		out := &bytes.Buffer{}
+		err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
+		require.Error(t, err)
+	}
+
+	err = uw.Commit()
+	require.NoError(t, err)
+
+	// The blob is available post commit
+	{
+		out := &bytes.Buffer{}
+		err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
+		require.NoError(t, err)
+		require.Equal(t, len(buf), out.Len())
+		require.Empty(t, cmp.Diff(buf[0:9], out.Bytes()[0:9]))
+		require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[len(buf)-9:]))
+	}
+
+	// Cannot Write after commit
+	written, err = uw.Write(buf)
+	require.Error(t, err)
+	require.Equal(t, 0, written)
+
+	// Cannot commit again after commit
+	err = uw.Commit()
+	require.Error(t, err)
+
+	err = uw.Close()
+	require.NoError(t, err)
+
+	// Cannot Write after close
+	written, err = uw.Write(buf)
+	require.Error(t, err)
+	require.Equal(t, 0, written)
+
+	// Cannot close again after close
+	err = uw.Close()
+	require.Error(t, err)
+}
+
+func TestUploadWriter_CanCloseBeforeCommit(t *testing.T) {
+	rn, buf := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	ctx := context.Background()
+	casrn := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+
+	uw, err := cachetools.NewUploadWriter(ctx, te.GetByteStreamClient(), casrn)
+	require.NoError(t, err)
+	written, err := uw.Write(buf)
+	require.NoError(t, err)
+	require.Equal(t, len(buf), written)
+
+	err = uw.Close()
+	require.NoError(t, err)
+
+	// Blob is not available since we did not commit
+	out := &bytes.Buffer{}
+	err = cachetools.GetBlob(ctx, te.GetByteStreamClient(), casrn, out)
+	require.Error(t, err)
+}
+
+func TestUploadWriter_CancelContext(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	half := 1 * 1024 * 1024
+	full := 2 * 1024 * 1024
+	rn, buf := testdigest.RandomCASResourceBuf(t, int64(full))
+	casRN := digest.NewCASResourceName(rn.Digest, rn.InstanceName, rn.DigestFunction)
+	bsClient := te.GetByteStreamClient()
+	ctx, cancel := context.WithCancel(context.Background())
+	uw, err := cachetools.NewUploadWriter(ctx, bsClient, casRN)
+	require.NoError(t, err)
+
+	written, err := uw.Write(buf[:half])
+	require.NoError(t, err)
+	require.Equal(t, half, written)
+
+	cancel()
+
+	written, err = uw.Write(buf[half:])
+	require.Error(t, err)
+	require.ErrorContains(t, err, "context canceled")
+	require.Zero(t, written)
 }
