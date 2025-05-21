@@ -129,6 +129,8 @@ var (
 		// Codesearch and Kythe
 		"Search",
 		"KytheProxy",
+		"Index",
+		"RepoStatus",
 		// Workspace management
 		"GetWorkspace",
 		"SaveWorkspace",

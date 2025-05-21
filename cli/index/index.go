@@ -15,7 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"google.golang.org/grpc/metadata"
 
-	cspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 )
@@ -23,10 +23,8 @@ import (
 var (
 	flags = flag.NewFlagSet("index", flag.ContinueOnError)
 
-	target = flags.String("target", login.DefaultApiTarget, "Codesearch gRPC target")
-	// TODO(jdelfino): could maybe get this from `git remote get-url origin`, but who's to say
-	// origin is defined?
-	repoURL = flags.String("repo-url", "", "URL of the GitHub repo")
+	target  = flags.String("target", login.DefaultApiTarget, "Codesearch gRPC target")
+	repoURL = flags.String("repo-url", "", "URL of the GitHub repo. Defaults to remote named 'origin' in the current repo.")
 
 	usage = `
 usage: bb ` + flags.Name() + `
@@ -37,18 +35,57 @@ All unindexed changes in the current repo will be submitted to the indexer for a
 `
 )
 
+func makeGitClient() (github.GitClient, error) {
+	repoRoot, err := storage.RepoRootPath()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Repo root: %s", repoRoot)
+
+	return github.NewCommandLineGitClient(repoRoot), nil
+}
+
+func getRepoInfo(gc github.GitClient) (*git.RepoURL, string, error) {
+	headSHA, err := gc.ExecuteCommand("rev-parse", "HEAD")
+	if err != nil {
+		return nil, "", err
+	}
+	headSHA = strings.TrimSpace(headSHA)
+
+	var ru string
+	if *repoURL == "" {
+		result, err := gc.ExecuteCommand("remote", "get-url", "origin")
+		if err != nil {
+			return nil, "", fmt.Errorf("repo-url not provided, and could not get URL of 'origin' remote: %w", err)
+		}
+		ru = result
+	} else {
+		ru = *repoURL
+	}
+
+	parseRepoURL, err := git.ParseGitHubRepoURL(ru)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return parseRepoURL, headSHA, nil
+}
+
 func indexRepo() error {
 	ctx := context.Background()
-	/*
-		if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil && apiKey != "" {
-			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
-		}
-	*/
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", "SsT6W9rm1CRbpRFSdEA5")
 
-	parseRepoURL, err := git.ParseGitHubRepoURL(*repoURL)
+	gc, err := makeGitClient()
 	if err != nil {
 		return err
+	}
+
+	parsedRepoURL, headSHA, err := getRepoInfo(gc)
+	if err != nil {
+		return err
+	}
+
+	if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil && apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
 	conn, err := grpc_client.DialSimple(*target)
@@ -56,36 +93,13 @@ func indexRepo() error {
 		return err
 	}
 
-	/*
-		client := bbspb.NewBuildBuddyServiceClient(conn)
-		rsp, err := client.RepoStatus(ctx, &inpb.RepoStatusRequest{
-			RepoUrl: parseRepoURL.String(),
-		})
-		if err != nil {
-			return err
-		}
-	*/
-
-	client := cspb.NewCodesearchServiceClient(conn)
+	client := bbspb.NewBuildBuddyServiceClient(conn)
 	rsp, err := client.RepoStatus(ctx, &inpb.RepoStatusRequest{
-		RepoUrl: parseRepoURL.String(),
+		RepoUrl: parsedRepoURL.String(),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get repo status: %w", err)
 	}
-
-	repoRoot, err := storage.RepoRootPath()
-	if err != nil {
-		return err
-	}
-
-	gc := github.NewCommandLineGitClient(repoRoot)
-
-	headSHA, err := gc.ExecuteCommand("git", "rev-parse", "HEAD")
-	if err != nil {
-		return err
-	}
-	headSHA = strings.TrimSpace(headSHA)
 
 	update, err := github.ComputeIncrementalUpdate(gc, rsp.GetLastIndexedCommitSha(), headSHA)
 	if err != nil {
@@ -94,10 +108,10 @@ func indexRepo() error {
 
 	req := &inpb.IndexRequest{
 		GitRepo: &gitpb.GitRepo{
-			RepoUrl: parseRepoURL.String(),
+			RepoUrl: parsedRepoURL.String(),
 			// TODO(jdelfino): shouldn't be required... reorg the proto?
 			AccessToken: "",
-			Username:    parseRepoURL.Owner,
+			Username:    parsedRepoURL.Owner,
 		},
 		ReplacementStrategy: inpb.ReplacementStrategy_INCREMENTAL,
 		Update:              update,
@@ -122,11 +136,6 @@ func HandleIndex(args []string) (int, error) {
 
 	if *target == "" {
 		log.Printf("A non-empty --target must be specified")
-		return 1, nil
-	}
-
-	if *repoURL == "" {
-		log.Printf("A non-empty --repo-url must be specified")
 		return 1, nil
 	}
 

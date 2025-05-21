@@ -11,7 +11,7 @@ go_library(
         "//cli/login",
         "//cli/storage",
         "//codesearch/github",
-        "//proto:codesearch_service_go_proto",
+        "//proto:buildbuddy_service_go_proto",
         "//proto:git_go_proto",
         "//proto:index_go_proto",
         "//server/util/git",
