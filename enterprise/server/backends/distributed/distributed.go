@@ -356,27 +356,6 @@ func (t *teeReadCloser) Close() error {
 	return err
 }
 
-type teeReadCloseWriterTo struct {
-	teeReadCloser
-	src io.WriterTo
-}
-
-func (t *teeReadCloseWriterTo) WriteTo(w io.Writer) (int64, error) {
-	return t.src.WriteTo(teeWriter{w, t.cwc})
-}
-
-type teeWriter struct {
-	a, b io.Writer
-}
-
-func (w teeWriter) Write(b []byte) (int, error) {
-	n, err := w.a.Write(b)
-	if err != nil {
-		return n, err
-	}
-	return w.b.Write(b[:n])
-}
-
 // lookasideKey returns the resource's key in the lookaside cache and true,
 // or "" and false if the resource shouldn't be stored in the lookaside cache.
 func lookasideKey(r *rspb.ResourceName) (key string, ok bool) {
@@ -469,7 +448,7 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 }
 
 func (c *Cache) lookasideWriter(r *rspb.ResourceName, lookasideKey string) (interfaces.CommittedWriteCloser, error) {
-	buffer := bytes.NewBuffer(make([]byte, 0, bufferSize(r)))
+	buffer := new(bytes.Buffer)
 	wc := ioutil.NewCustomCommitWriteCloser(buffer)
 	wc.CommitFn = func(int64) error {
 		c.setLookasideEntry(lookasideKey, buffer.Bytes())
@@ -497,11 +476,7 @@ func (c *Cache) teeReadCloser(r *rspb.ResourceName, rc io.ReadCloser) io.ReadClo
 	if err != nil {
 		return rc
 	}
-	res := teeReadCloser{rc: rc, cwc: lwc}
-	if wt, ok := rc.(io.WriterTo); ok {
-		return &teeReadCloseWriterTo{res, wt}
-	}
-	return &res
+	return &teeReadCloser{rc: rc, cwc: lwc}
 }
 
 func (c *Cache) recvHeartbeatCallback(ctx context.Context, peer string) {
@@ -1149,27 +1124,10 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
-func bufferSize(rn *rspb.ResourceName) int {
-	if rn.GetCacheType() == rspb.CacheType_CAS {
-		// If this is a CAS object, size the buffer to fit exactly.
-		// Clamp the size between 0 and 10MB, to protect from invalid and
-		// malicious requests.
-		return min(10_000_000, max(0, int(rn.GetDigest().GetSizeBytes())))
-	} else if strings.HasPrefix(rn.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
-		// If this is a TreeCache entry that we wrote; pull the size
-		// from the remote instance name.
-		parts := strings.Split(rn.GetInstanceName(), "/")
-		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
-			// Limit this to 4MiB so that we're not DOSed by someone crafting
-			// remote_instance_names that match this just to use memory.
-			return min(1024*1024*4, s)
-		} else {
-			return 0
-		}
-	}
-	// The median and average AC results are less than 4KiB: go/action-result-size
-	return 4 * 1024
-}
+// Below, in Get(), this value is the max initial allocatable buffer size.
+// Set it somewhat conservatively so that we're not DOSed by someone crafting
+// remote_instance_names that match this just to use memory.
+const maxInitialByteBufferSize = (1024 * 1024 * 4)
 
 func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
 	r, err := c.distributedReader(ctx, rn, 0, 0, "Get" /*=metricsLabel*/)
@@ -1177,7 +1135,23 @@ func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) 
 		return nil, err
 	}
 	defer r.Close()
-	buf := bytes.NewBuffer(make([]byte, 0, bufferSize(rn)))
+
+	var buf *bytes.Buffer
+	if rn.GetCacheType() == rspb.CacheType_CAS {
+		// If this is a CAS object, size the buffer to fit exactly.
+		buf = bytes.NewBuffer(make([]byte, 0, int(rn.GetDigest().GetSizeBytes())))
+	} else if strings.HasPrefix(rn.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
+		// If this is a TreeCache entry that we wrote; pull the size
+		// from the remote instance name.
+		parts := strings.Split(rn.GetInstanceName(), "/")
+		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+			buf = bytes.NewBuffer(make([]byte, 0, min(s, maxInitialByteBufferSize)))
+		} else {
+			buf = new(bytes.Buffer)
+		}
+	} else {
+		buf = new(bytes.Buffer)
+	}
 	_, err = io.Copy(buf, r)
 	return buf.Bytes(), err
 }

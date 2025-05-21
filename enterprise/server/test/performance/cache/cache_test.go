@@ -180,8 +180,8 @@ func benchmarkRead(ctx context.Context, c interfaces.Cache, digestSizeBytes int6
 	}
 }
 
-func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes, rspb.CacheType_CAS)
+func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B, cacheType rspb.CacheType) {
+	digestBufs := makeDigests(b, numDigests, digestSizeBytes, cacheType)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	b.ReportAllocs()
 	b.SetBytes(digestSizeBytes)
@@ -256,7 +256,7 @@ func getAllCaches(b *testing.B, te environment.Env) []*namedCache {
 		{dpc, "DistPebble"},
 		{lpc, "LookasideDistPebble"},
 		{getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), "LocalMigration"},
-		{getDistributedCache(b, te, getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te))), "DistMigration"},
+		{getDistributedCache(b, te, getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), 0), "DistMigration"},
 	}
 	return caches
 }
@@ -298,15 +298,18 @@ func BenchmarkRead(b *testing.B) {
 
 func BenchmarkGetSingle(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
+	// sizes := []int64{10}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
-			name := fmt.Sprintf("%s%d", cache.Name, size)
-			b.Run(name, func(b *testing.B) {
-				benchmarkGet(ctx, cache, size, b)
-			})
+			for _, cacheType := range []rspb.CacheType{rspb.CacheType_AC, rspb.CacheType_CAS} {
+				name := fmt.Sprintf("%s%d/%s", cache.Name, size, cacheType)
+				b.Run(name, func(b *testing.B) {
+					benchmarkGet(ctx, cache, size, b, cacheType)
+				})
+			}
 		}
 	}
 }
