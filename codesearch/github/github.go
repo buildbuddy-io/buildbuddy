@@ -304,7 +304,7 @@ func ComputeIncrementalUpdate(gc gitClient, firstSha, lastSha string) (*inpb.Inc
 		}
 
 		if line[0] != ':' {
-			// This is a commit line, not a diff line.
+			// Commit line
 			currentCommit = &inpb.Commit{
 				Sha:       line,
 				ParentSha: sha,
@@ -312,7 +312,7 @@ func ComputeIncrementalUpdate(gc gitClient, firstSha, lastSha string) (*inpb.Inc
 			result.Commits = append(result.Commits, currentCommit)
 			sha = line
 		} else {
-			// This is a diff line.
+			// Diff line
 			processDiffTreeLine(gc, line, currentCommit)
 		}
 	}
