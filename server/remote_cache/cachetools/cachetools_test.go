@@ -810,30 +810,6 @@ func TestCancelSend(t *testing.T) {
 	err = sender.SendWithTimeoutCause(req, 1*time.Minute, status.DeadlineExceededError("second write timed out"))
 	require.Error(t, err)
 	require.ErrorContains(t, err, "context canceled")
-
-	// req = &bspb.WriteRequest{
-	// 	Data:         []byte{},
-	// 	ResourceName: uploadString,
-	// 	WriteOffset:  1024,
-	// 	FinishWrite:  true,
-	// }
-	// err = sender.SendWithTimeoutCause(req, 1*time.Minute, status.DeadlineExceededError("last write timed out"))
-	// require.NoError(t, err)
-
-	// resp, err := stream.CloseAndRecv()
-	// require.NoError(t, err)
-	// require.Equal(t, int64(1024), resp.CommittedSize)
-
-	// {
-	// 	out := &bytes.Buffer{}
-	// 	err := cachetools.GetBlob(ctx, te.GetByteStreamClient(), casRN, out)
-
-	// 	require.NoError(t, err)
-	// 	require.Equal(t, len(buf), out.Len())
-	// 	require.Empty(t, cmp.Diff(buf[:9], out.Bytes()[:9]))
-	// 	require.Empty(t, cmp.Diff(buf[len(buf)-9:], out.Bytes()[out.Len()-9:]))
-	// }
-
 }
 
 func TestUploadWriter_NoWritesAfterCommit(t *testing.T) {
