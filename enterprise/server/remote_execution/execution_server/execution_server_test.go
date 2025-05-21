@@ -722,7 +722,7 @@ func TestMarkFailed(t *testing.T) {
 
 	require.Equal(t, int64(repb.ExecutionStage_COMPLETED), ex.Stage)
 
-	err = s.MarkExecutionFailed(ctx, "blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1", status.InternalError("It didn't work"))
+	err = s.MarkExecutionFailed(ctx, "uploads/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1", status.InternalError("It didn't work"))
 	require.True(t, status.IsNotFoundError(err), "error should be NotFoundError, but was %s", err)
 }
 
