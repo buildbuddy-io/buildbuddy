@@ -109,19 +109,19 @@ func indexRepo() error {
 	req := &inpb.IndexRequest{
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl: parsedRepoURL.String(),
-			// TODO(jdelfino): shouldn't be required... reorg the proto?
-			AccessToken: "",
-			Username:    parsedRepoURL.Owner,
 		},
 		ReplacementStrategy: inpb.ReplacementStrategy_INCREMENTAL,
 		Update:              update,
-		Async:               true,
 	}
 
 	_, err = client.Index(ctx, req)
 	if err != nil {
 		return err
 	}
+
+	firstSha := update.Commits[0].GetSha()
+	lastSha := update.Commits[len(update.Commits)-1].GetSha()
+	log.Printf("Completed incremental update for %s, %s..%s", parsedRepoURL.String(), firstSha, lastSha)
 	return nil
 }
 
