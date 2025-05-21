@@ -90,9 +90,21 @@ func TestParseDownloadResourceName(t *testing.T) {
 			resourceName: "my_instance_name/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			wantDRN:      newCompressedCASRN(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "my_instance_name", repb.DigestFunction_SHA256),
 		},
-		{ // BLAKE3 with tricky instance name
-			resourceName: "//8/compressed-blobs//lol/deadbeaf/zstd/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		{ // BLAKE3 and compressed with tricky instance name
+			resourceName: "//8/compressed-blobs//lol/deadbeaf/zstd/compressed-blobs/zstd/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			wantDRN:      newCompressedCASRN(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "//8/compressed-blobs//lol/deadbeaf/zstd", repb.DigestFunction_BLAKE3),
+		},
+		{ // SHA256 with no leading '/'
+			resourceName: "blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "", repb.DigestFunction_SHA256),
+		},
+		{ // ZSTD compression with no leading '/'
+			resourceName: "compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			wantDRN:      newCompressedCASRN(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "", repb.DigestFunction_SHA256),
+		},
+		{ // BLAKE3 & ZSTD compression with no leading '/'
+			resourceName: "compressed-blobs/zstd/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			wantDRN:      newCompressedCASRN(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "", repb.DigestFunction_BLAKE3),
 		},
 	}
 	for _, tc := range cases {
@@ -278,6 +290,10 @@ func TestParseActionCacheResourceName(t *testing.T) {
 			resourceName: "/a/b/c/d/e/f/g/h/i/j/k/l/m/compressed-blobs/zstd/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			wantACRN:     newCompressedACRN(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "/a/b/c/d/e/f/g/h/i/j/k/l/m", repb.DigestFunction_BLAKE3),
 		},
+		{ // Compressed Blake3 AC resource name with no leading '/'
+			resourceName: "compressed-blobs/zstd/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			wantACRN:     newCompressedACRN(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "", repb.DigestFunction_BLAKE3),
+		},
 	}
 	for _, tc := range cases {
 		arn, err := digest.ParseActionCacheResourceName(tc.resourceName)
@@ -448,7 +464,10 @@ func BenchmarkParseDownloadString(b *testing.B) {
 		"/blobs/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 		"/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 		"my_instance_name/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
-		"//8/compressed-blobs//lol/deadbeaf/zstd/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"//8/compressed-blobs//lol/deadbeaf/zstd/compressed-blobs/zstd/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"compressed-blobs/zstd/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 	}
 	b.ReportAllocs()
 	for b.Loop() {
