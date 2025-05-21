@@ -684,6 +684,17 @@ var (
 		CacheNameLabel,
 	})
 
+	DiskCachePartitionGroupSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_partition_group_size_bytes",
+		Help:      "Number of bytes in the partition, by group ID.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+		GroupID,
+	})
+
 	DiskCachePartitionCapacityBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",

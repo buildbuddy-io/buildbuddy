@@ -108,6 +108,7 @@ message PartitionMetadata {
   int64 ac_count = 3;
   int64 total_count = 4;
   string partition_id = 5;
+  map<string, int64> size_by_group = 6;
 }
 
 message PartitionMetadatas {

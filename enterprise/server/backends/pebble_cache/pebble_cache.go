@@ -1375,14 +1375,21 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 		buf += fmt.Sprintf("Estimated pebble DB disk usage: %d bytes\n", diskEstimateBytes)
 	}
 	var totalSizeBytes, totalCASCount, totalACCount int64
+	sizeByGroup := make(map[string]int64)
 	for _, e := range evictors {
-		sizeBytes, casCount, acCount := e.Counts()
+		sizeBytes, sbg, casCount, acCount := e.Counts()
+		for g, s := range sbg {
+			sizeByGroup[g] += s
+		}
 		totalSizeBytes += sizeBytes
 		totalCASCount += casCount
 		totalACCount += acCount
 	}
 	buf += fmt.Sprintf("Min DB version: %d, Max DB version: %d, Active version: %d\n", p.minDatabaseVersion(), p.maxDatabaseVersion(), p.activeDatabaseVersion())
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
+	for g, s := range sizeByGroup {
+		buf += fmt.Sprintf("[All Partitions] %s: %d bytes\n", g, s)
+	}
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
 	buf += "</pre>"
@@ -2484,10 +2491,11 @@ type partitionEvictor struct {
 	rng           *rand.Rand
 	clock         clockwork.Clock
 
-	lru       *approxlru.LRU[*evictionKey]
-	sizeBytes int64
-	casCount  int64
-	acCount   int64
+	lru         *approxlru.LRU[*evictionKey]
+	sizeBytes   int64
+	sizeByGroup map[string]int64
+	casCount    int64
+	acCount     int64
 
 	atimeBufferSize  int
 	minEvictionAge   time.Duration
@@ -2525,6 +2533,7 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 		deletes:                  make(chan *approxlru.Sample[*evictionKey], deleteBufferSize),
 		numDeleteWorkers:         numDeleteWorkers,
 		includeMetadataSize:      includeMetadataSize,
+		sizeByGroup:              make(map[string]int64),
 	}
 	metricLbls := prometheus.Labels{
 		metrics.PartitionID:    part.ID,
@@ -2553,13 +2562,14 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 
 	start := time.Now()
 	log.Infof("Pebble Cache [%s]: Initializing cache partition %q...", pe.cacheName, part.ID)
-	sizeBytes, casCount, acCount, err := pe.computeSize()
+	sizeBytes, sizeByGroup, casCount, acCount, err := pe.computeSize()
 	if err != nil {
 		return nil, err
 	}
 	pe.sizeBytes = sizeBytes
 	pe.casCount = casCount
 	pe.acCount = acCount
+	pe.sizeByGroup = sizeByGroup
 	pe.lru.UpdateSizeBytes(sizeBytes)
 
 	log.Infof("Pebble Cache [%s]: Initialized cache partition %q AC: %d, CAS: %d, Size: %d [bytes] in %s", pe.cacheName, part.ID, pe.acCount, pe.casCount, pe.sizeBytes, time.Since(start))
@@ -2704,6 +2714,8 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		}
 
 		e.maybeAddToSampleChan(iter, fileMetadata, quitChan, timer)
+		fileMetadata.GetFileRecord().GetIsolation().GetGroupId()
+
 
 		iter.Next()
 		fileMetadata.ResetVT()
@@ -2756,6 +2768,12 @@ func (e *partitionEvictor) updateMetrics() {
 		metrics.PartitionID:    e.part.ID,
 		metrics.CacheNameLabel: e.cacheName,
 		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
+	for g, sizeBytes := range e.sizeByGroup {
+		metrics.DiskCachePartitionSizeBytes.With(prometheus.Labels{
+			metrics.PartitionID: e.part.ID,
+			metrics.CacheNameLabel: e.cacheName,
+			metrics.GroupID: g}).Set(float64(sizeBytes))
+	}
 }
 
 func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, deltaSize int64) {
@@ -2779,10 +2797,10 @@ func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, deltaSize int64)
 	e.lru.UpdateSizeBytes(e.sizeBytes)
 }
 
-func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, int64, error) {
+func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, map[string]int64, int64, int64, error) {
 	db, err := e.dbGetter.DB()
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, nil, 0, 0, err
 	}
 	defer db.Close()
 	iter, err := db.NewIter(&pebble.IterOptions{
@@ -2790,7 +2808,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		UpperBound: end,
 	})
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, nil, 0, 0, err
 	}
 	defer iter.Close()
 	iter.SeekLT(start)
@@ -2798,15 +2816,18 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 	casCount := int64(0)
 	acCount := int64(0)
 	totalSizeBytes := int64(0)
+	totalSizeByGroup := make(map[string]int64)
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
 	for iter.Next() {
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-			return 0, 0, 0, err
+			return 0, nil, 0, 0, err
 		}
-
-		totalSizeBytes += getSizeOnLocalDisk(iter.Key(), fileMetadata, true)
+		
+		sizeBytes := getSizeOnLocalDisk(iter.Key(), fileMetadata, true)
+		totalSizeBytes += sizeBytes
+		totalSizeByGroup[fileMetadata.GetFileRecord().GetIsolation().GetGroupId()] += sizeBytes
 
 		// identify and count CAS vs AC files.
 		if bytes.Contains(iter.Key(), casDir) {
@@ -2819,7 +2840,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		fileMetadata.ResetVT()
 	}
 
-	return totalSizeBytes, casCount, acCount, nil
+	return totalSizeBytes, totalSizeByGroup, casCount, acCount, nil
 }
 
 func partitionMetadataKey(partID string) []byte {
@@ -2857,30 +2878,31 @@ func (e *partitionEvictor) writePartitionMetadata(db pebble.IPebbleDB, md *sgpb.
 }
 
 func (e *partitionEvictor) flushPartitionMetadata(db pebble.IPebbleDB) error {
-	sizeBytes, casCount, acCount := e.Counts()
+	sizeBytes, sizeByGroup, casCount, acCount := e.Counts()
 	return e.writePartitionMetadata(db, &sgpb.PartitionMetadata{
 		SizeBytes: sizeBytes,
+		SizeByGroup: sizeByGroup,
 		CasCount:  casCount,
 		AcCount:   acCount,
 	})
 }
 
-func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
+func (e *partitionEvictor) computeSize() (int64, map[string]int64, int64, int64, error) {
 	if !*forceCalculateMetadata {
 		partitionMD, err := e.lookupPartitionMetadata()
 		if err == nil {
 			log.Infof("[%s] Loaded partition %q metadata from cache: %+v", e.cacheName, e.part.ID, partitionMD)
-			return partitionMD.GetSizeBytes(), partitionMD.GetCasCount(), partitionMD.GetAcCount(), nil
+			return partitionMD.GetSizeBytes(), partitionMD.GetSizeByGroup(), partitionMD.GetCasCount(), partitionMD.GetAcCount(), nil
 		} else if !status.IsNotFoundError(err) {
-			return 0, 0, 0, err
+			return 0, nil, 0, 0, err
 		}
 	}
 
 	start := append([]byte(e.partitionKeyPrefix()+"/"), keys.MinByte...)
 	end := append([]byte(e.partitionKeyPrefix()+"/"), keys.MaxByte...)
-	totalSizeBytes, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
+	totalSizeBytes, totalSizeByGroup, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, nil, 0, 0, err
 	}
 
 	partitionMD := &sgpb.PartitionMetadata{
@@ -2893,20 +2915,20 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 
 	db, err := e.dbGetter.DB()
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, nil, 0, 0, err
 	}
 	defer db.Close()
 	if err := e.writePartitionMetadata(db, partitionMD); err != nil {
-		return 0, 0, 0, err
+		return 0, nil, 0, 0, err
 	}
 
-	return totalSizeBytes, totalCasCount, totalAcCount, nil
+	return totalSizeBytes, totalSizeByGroup, totalCasCount, totalAcCount, nil
 }
 
-func (e *partitionEvictor) Counts() (int64, int64, int64) {
+func (e *partitionEvictor) Counts() (int64, map[string]int64, int64, int64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.sizeBytes, e.casCount, e.acCount
+	return e.sizeBytes, e.sizeByGroup, e.casCount, e.acCount
 }
 
 func (e *partitionEvictor) Statusz(ctx context.Context) string {
