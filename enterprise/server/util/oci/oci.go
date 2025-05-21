@@ -45,6 +45,7 @@ var (
 	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from cache before fetching from upstream remote registry.")
 
 	readLayersFromCache = flag.Bool("executor.container_registry.read_layers_from_cache", false, "Read image layers from cache before fetching from upstream remote registry.")
+	writeLayersToCache  = flag.Bool("executor.container_registry.write_layers_to_cache", false, "Read manifests from cache before fetching from upstream remote registry.")
 
 	defaultPlatform = gcr.Platform{
 		Architecture: "amd64",
@@ -544,30 +545,55 @@ func (l *cacheAwareLayer) Digest() (gcr.Hash, error) {
 
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	if *readLayersFromCache {
-		blobMetadata, err := ocicache.FetchBlobMetadataFromCache(l.ctx, l.bsClient, l.acClient, l.ocidigest)
-		if err != nil && !status.IsNotFoundError(err) {
-			log.CtxErrorf(l.ctx, "Error fetching CAS digest for layer in %q: %s", l.ocidigest.Context(), err)
+		// TODO(dan): make an explicit HEAD request to the upstream registry to make sure we have authorization
+		contentLength, err := l.remoteLayer.Size()
+		if err != nil {
+			log.CtxWarningf(l.ctx, "Could not fetch layer size from upstream remote registry: %s", err)
+			return l.remoteLayer.Compressed()
 		}
-		if err == nil {
-			r, w := io.Pipe()
-			go func() {
-				defer w.Close()
-				err := ocicache.FetchBlobFromCache(
-					l.ctx,
-					w,
-					l.bsClient,
-					l.hash,
-					blobMetadata.ContentLength,
-				)
-				if err != nil {
-					log.Warningf("Error fetching layer from CAS in %q: %s", l.ocidigest.Context(), err)
-					w.CloseWithError(err)
-				}
-			}()
-			return r, nil
+		if _, err := ocicache.FetchBlobMetadataFromCache(l.ctx, l.bsClient, l.acClient, l.ocidigest); err != nil {
+			return l.remoteLayer.Compressed()
 		}
+		r, w := io.Pipe()
+		go func() {
+			defer w.Close()
+			err := ocicache.FetchBlobFromCache(
+				l.ctx,
+				w,
+				l.bsClient,
+				l.hash,
+				contentLength,
+			)
+			if err != nil {
+				log.Warningf("Error fetching layer from CAS in %q: %s", l.ocidigest.Context(), err)
+				w.CloseWithError(err)
+			}
+		}()
+		return r, nil
 	}
-	return l.remoteLayer.Compressed()
+	upstream, err := l.remoteLayer.Compressed()
+	if err != nil {
+		return nil, err
+	}
+	if *writeLayersToCache {
+		mediaType, err := l.remoteLayer.MediaType()
+		if err != nil {
+			log.CtxWarningf(l.ctx, "Could not fetch media type for layer in %q: %s", l.ocidigest.Context(), err)
+			return upstream, nil
+		}
+		contentType := string(mediaType)
+		contentLength, err := l.remoteLayer.Size()
+		if err != nil {
+			log.CtxWarningf(l.ctx, "Could not fetch size for layer in %q: %s", l.ocidigest.Context(), err)
+			return upstream, nil
+		}
+		rc, err := ocicache.NewCachingReadCloser(l.ctx, upstream, l.bsClient, l.acClient, l.ocidigest, l.hash, contentType, contentLength)
+		if err != nil {
+			log.CtxWarningf(l.ctx, "Could not start cache upload for layer in %q: %s", l.ocidigest.Context(), err)
+		}
+		return rc, nil
+	}
+	return upstream, nil
 }
 
 func (l *cacheAwareLayer) Size() (int64, error) {
