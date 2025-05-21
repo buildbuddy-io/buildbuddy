@@ -2714,7 +2714,6 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		}
 
 		e.maybeAddToSampleChan(iter, fileMetadata, quitChan, timer)
-		fileMetadata.GetFileRecord().GetIsolation().GetGroupId()
 
 		iter.Next()
 		fileMetadata.ResetVT()
