@@ -53,10 +53,9 @@ type Lease struct {
 
 	timeUntilLeaseRenewal time.Duration
 
-	stopMutex sync.Mutex
-	stopped   bool
-	ctx       context.Context
-	cancel    context.CancelFunc
+	ctxMutex sync.Mutex
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, liveness *nodeliveness.Liveness, rangeID uint64, r *replica.Replica) *Lease {
@@ -73,7 +72,6 @@ func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, live
 		mu:                    sync.RWMutex{},
 		leaseRecord:           &rfpb.RangeLeaseRecord{},
 		timeUntilLeaseRenewal: time.Duration(math.MaxInt64),
-		stopped:               true,
 		ctx:                   ctx,
 		cancel:                cancelFunc,
 	}
@@ -99,14 +97,22 @@ func (l *Lease) Release(ctx context.Context) error {
 	return err
 }
 
+func (l *Lease) isStopped() bool {
+	select {
+	case <-l.ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
 func (l *Lease) Stop() {
 	l.log.Infof("lease stop started")
-	l.stopMutex.Lock()
+	l.ctxMutex.Lock()
 	l.log.Infof("lease stop lock finished")
-	defer l.stopMutex.Unlock()
+	defer l.ctxMutex.Unlock()
 	// close the background lease-renewal thread.
-	if !l.stopped {
-		l.stopped = true
+	if !l.isStopped() {
 		l.cancel()
 	}
 	l.log.Infof("lease stop finished")
@@ -331,13 +337,12 @@ func (l *Lease) renewLeaseUntilValid(ctx context.Context) (returnedRecord *rfpb.
 	leaseRecord := l.leaseRecord
 	l.mu.Unlock()
 
-	l.stopMutex.Lock()
-	defer l.stopMutex.Unlock()
+	l.ctxMutex.Lock()
+	defer l.ctxMutex.Unlock()
 
 	// We just renewed the lease. If there isn't already a background
 	// thread running to keep it renewed, start one now.
-	if l.stopped {
-		l.stopped = false
+	if l.isStopped() {
 		ctx, cancel := context.WithCancel(context.Background())
 		l.ctx = ctx
 		l.cancel = cancel
