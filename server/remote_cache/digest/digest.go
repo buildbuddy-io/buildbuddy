@@ -475,17 +475,18 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 	// The next piece may be the digest function
 	pieceIdx--
 	piece := pieces[pieceIdx]
-	if piece == "blake3" {
+	switch piece {
+	case "blake3":
 		digestFunction = repb.DigestFunction_BLAKE3
-	} else if piece == "sha1" {
+	case "sha1":
 		digestFunction = repb.DigestFunction_SHA1
-	} else if piece == "sha512" {
+	case "sha512":
 		digestFunction = repb.DigestFunction_SHA512
-	} else if piece == "sha384" {
+	case "sha384":
 		digestFunction = repb.DigestFunction_SHA384
-	} else if piece == "sha256" {
+	case "sha256":
 		digestFunction = repb.DigestFunction_SHA256
-	} else {
+	default:
 		pieceIdx++
 	}
 	if len(hash) != hashLength(digestFunction) {
