@@ -118,6 +118,22 @@ func TestParseDownloadResourceName(t *testing.T) {
 	}
 }
 
+func FuzzParseDownloadResourceName(f *testing.F) {
+	f.Add("blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac/1234")
+	f.Add("/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234")
+	f.Add("//8/compressed-blobs//lol/deadbeaf/zstd/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234")
+	f.Fuzz(func(t *testing.T, resourceName string) {
+		// Log the problematic input instead of making the user try to find it
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("digest.ParseDownloadResourceName(\"%s\") panicked", resourceName)
+			}
+		}()
+
+		digest.ParseDownloadResourceName(resourceName)
+	})
+}
+
 func TestParseUploadResourceName(t *testing.T) {
 	cases := []struct {
 		resourceName string
@@ -203,6 +219,22 @@ func TestParseUploadResourceName(t *testing.T) {
 			t.Errorf("parseResourceName(%q): got %s; want %s", tc.resourceName, urn.DownloadString(), tc.wantURN.DownloadString())
 		}
 	}
+}
+
+func FuzzParseUploadResourceName(f *testing.F) {
+	f.Add("instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/da39a3ee5e6b4b0d3255bfef95601890afd80709/1234")
+	f.Add("instance/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234")
+	f.Add("/blake3/zstd/blake3/zstd/this-is-the-instance-name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/compressed-blobs/zstd/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234")
+	f.Fuzz(func(t *testing.T, resourceName string) {
+		// Log the problematic input instead of making the user try to find it
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("digest.ParseUploadResourceName(\"%s\") panicked", resourceName)
+			}
+		}()
+
+		digest.ParseUploadResourceName(resourceName)
+	})
 }
 
 func casrnsEqual(first *digest.CASResourceName, second *digest.CASResourceName) bool {
@@ -304,6 +336,22 @@ func TestParseActionCacheResourceName(t *testing.T) {
 			t.Errorf("ParseActionCacheResourceName(%q): got %s; want %s", tc.resourceName, arn.ActionCacheString(), tc.wantACRN.ActionCacheString())
 		}
 	}
+}
+
+func FuzzParseActionCacheResourceName(f *testing.F) {
+	f.Add("compressed-blobs/zstd/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234")
+	f.Add("instance_name/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234")
+	f.Add("/a/b/c/d/e/f/g/h/i/j/k/l/m/compressed-blobs/zstd/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234")
+	f.Fuzz(func(t *testing.T, resourceName string) {
+		// Log the problematic input instead of making the user try to find it
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("digest.ParseActionCacheResourceName(\"%s\") panicked", resourceName)
+			}
+		}()
+
+		digest.ParseActionCacheResourceName(resourceName)
+	})
 }
 
 func acrnsEqual(first *digest.ACResourceName, second *digest.ACResourceName) bool {
