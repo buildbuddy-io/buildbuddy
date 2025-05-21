@@ -57,6 +57,10 @@ func TestParseDownloadResourceName(t *testing.T) {
 			resourceName: "/compressed-blobs/unknownCompressionType/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			wantError:    status.InvalidArgumentError(""),
 		},
+		{ // SHA1 no leading '/'
+			resourceName: "blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac/1234",
+			wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac", SizeBytes: 1234}, "", repb.DigestFunction_SHA1),
+		},
 		{ // SHA1
 			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac/1234",
 			wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac", SizeBytes: 1234}, "", repb.DigestFunction_SHA1),
@@ -94,6 +98,14 @@ func TestParseDownloadResourceName(t *testing.T) {
 			resourceName: "//8/compressed-blobs//lol/deadbeaf/zstd/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			wantDRN:      newCompressedCASRN(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "//8/compressed-blobs//lol/deadbeaf/zstd", repb.DigestFunction_BLAKE3),
 		},
+		{ // No leading '/'
+			resourceName: "blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "", repb.DigestFunction_SHA256),
+		},
+		{ // No leading '/', compressed
+			resourceName: "compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			wantDRN:      newCompressedCASRN(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "", repb.DigestFunction_SHA256),
+		},
 	}
 	for _, tc := range cases {
 		drn, err := digest.ParseDownloadResourceName(tc.resourceName)
@@ -104,6 +116,25 @@ func TestParseDownloadResourceName(t *testing.T) {
 			t.Errorf("parseResourceName(%q): got %v+; want %v+", tc.resourceName, drn.DownloadString(), tc.wantDRN.DownloadString())
 		}
 	}
+}
+
+func FuzzParseDownloadResourceName(f *testing.F) {
+	seeds := []string{
+		"/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234////////",
+		"/compressed-blobs/unknownCompressionType/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac/1234",
+		"/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac/1234",
+		"/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d8d5a2729eb7c46628cf8f765ad7626bc072d9dd55aacaa82ad7626bccc9ec8c4/1234",
+		"/blobs/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"//8/compressed-blobs//lol/deadbeaf/zstd/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+	}
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, resourceName string) {
+		digest.ParseDownloadResourceName(resourceName)
+	})
 }
 
 func TestParseUploadResourceName(t *testing.T) {
@@ -156,6 +187,10 @@ func TestParseUploadResourceName(t *testing.T) {
 			resourceName: strings.Repeat("/", 256),
 			wantError:    status.InvalidArgumentError(""),
 		},
+		{ // SHA1 upload no instance name
+			resourceName: "/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/da39a3ee5e6b4b0d3255bfef95601890afd80709/1234",
+			wantURN:      digest.NewCASResourceName(&repb.Digest{Hash: "da39a3ee5e6b4b0d3255bfef95601890afd80709", SizeBytes: 1234}, "", repb.DigestFunction_SHA1),
+		},
 		{ // SHA1 upload
 			resourceName: "instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/da39a3ee5e6b4b0d3255bfef95601890afd80709/1234",
 			wantURN:      digest.NewCASResourceName(&repb.Digest{Hash: "da39a3ee5e6b4b0d3255bfef95601890afd80709", SizeBytes: 1234}, "instance_name", repb.DigestFunction_SHA1),
@@ -191,6 +226,22 @@ func TestParseUploadResourceName(t *testing.T) {
 			t.Errorf("parseResourceName(%q): got %s; want %s", tc.resourceName, urn.DownloadString(), tc.wantURN.DownloadString())
 		}
 	}
+}
+
+func FuzzParseUploadResourceName(f *testing.F) {
+	seeds := []string{
+		"instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/072d9dd55aacaa829d7d1cc9ec8c4bz180ef49acac4a3c2f3ca16a3db134982d/1234/",
+		"/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/da39a3ee5e6b4b0d3255bfef95601890afd80709/1234",
+		"instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/da39a3ee5e6b4b0d3255bfef95601890afd80709/1234",
+		"instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"/blake3/zstd/blake3/zstd/this-is-the-instance-name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+	}
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, resourceName string) {
+		digest.ParseUploadResourceName(resourceName)
+	})
 }
 
 func casrnsEqual(first *digest.CASResourceName, second *digest.CASResourceName) bool {
@@ -288,6 +339,24 @@ func TestParseActionCacheResourceName(t *testing.T) {
 			t.Errorf("ParseActionCacheResourceName(%q): got %s; want %s", tc.resourceName, arn.ActionCacheString(), tc.wantACRN.ActionCacheString())
 		}
 	}
+}
+
+func FuzzParseActionCacheResourceName(f *testing.F) {
+	seeds := []string{
+		"instance_name/blobs/notac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"instance_name/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"instance_name/compressed-blobs/zstd/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"instance_name/blobs/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"/sha256/deadbeef////blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"/a/b/c/d/e/f/g/h/i/j/k/l/m/compressed-blobs/zstd/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+	}
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, resourceName string) {
+		digest.ParseActionCacheResourceName(resourceName)
+	})
 }
 
 func acrnsEqual(first *digest.ACResourceName, second *digest.ACResourceName) bool {
@@ -449,11 +518,49 @@ func BenchmarkParseDownloadString(b *testing.B) {
 		"/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 		"my_instance_name/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 		"//8/compressed-blobs//lol/deadbeaf/zstd/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 	}
 	b.ReportAllocs()
 	for b.Loop() {
 		for _, rn := range rns {
 			digest.ParseDownloadResourceName(rn)
+		}
+	}
+}
+
+func BenchmarkParseUploadString(b *testing.B) {
+	rns := []string{
+		"/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/da39a3ee5e6b4b0d3255bfef95601890afd80709/1234",
+		"instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/da39a3ee5e6b4b0d3255bfef95601890afd80709/1234",
+		"instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/d41d8cd98f00b204e9800998ecf8427e/1234",
+		"instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"/blake3/zstd/blake3/zstd/this-is-the-instance-name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"/blake3/zstd/blake3/zstd/this-is-the-instance-name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/compressed-blobs/zstd/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		for _, rn := range rns {
+			digest.ParseUploadResourceName(rn)
+		}
+	}
+}
+
+func BenchmarkParseActionCacheString(b *testing.B) {
+	rns := []string{
+		"instance_name/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"instance_name/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"instance_name/compressed-blobs/zstd/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"instance_name/blobs/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"/sha256/deadbeef////blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+		"/a/b/c/d/e/f/g/h/i/j/k/l/m/compressed-blobs/zstd/ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		for _, rn := range rns {
+			digest.ParseActionCacheResourceName(rn)
 		}
 	}
 }
