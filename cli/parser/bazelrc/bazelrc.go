@@ -164,7 +164,7 @@ func AppendRcRulesFromFile(workspaceDir string, rpath string, namedConfigs map[s
 		if tokens[0] == "import" || tokens[0] == "try-import" {
 			isOptional := tokens[0] == "try-import"
 			path := strings.TrimSpace(strings.TrimPrefix(line, tokens[0]))
-			if err = appendRcRulesFromImport(workspaceDir, path, namedConfigs, defaultConfig, isOptional, importStack); err != nil {
+			if err := appendRcRulesFromImport(workspaceDir, path, namedConfigs, defaultConfig, isOptional, importStack); err != nil {
 				return err
 			}
 			continue
