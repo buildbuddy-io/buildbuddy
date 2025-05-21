@@ -418,20 +418,16 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	urlStr := strings.TrimPrefix(parsedURL.RequestURI(), "/")
 
 	var resourceName *rspb.ResourceName
-	if digest.IsActionCacheResourceName(urlStr) {
-		parsedRN, err := digest.ParseActionCacheResourceName(urlStr)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err)
-		}
-		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_AC, parsedRN.GetDigestFunction()).ToProto()
-	} else if digest.IsDownloadResourceName(urlStr) {
-		parsedRN, err := digest.ParseDownloadResourceName(urlStr)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err)
-		}
-		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_CAS, parsedRN.GetDigestFunction()).ToProto()
+
+	parsedACRN, err := digest.ParseActionCacheResourceName(urlStr)
+	if err == nil {
+		resourceName = digest.NewResourceName(parsedACRN.GetDigest(), parsedACRN.GetInstanceName(), rspb.CacheType_AC, parsedACRN.GetDigestFunction()).ToProto()
 	} else {
-		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
+		parsedCASRN, err := digest.ParseDownloadResourceName(urlStr)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
+		}
+		resourceName = digest.NewResourceName(parsedCASRN.GetDigest(), parsedCASRN.GetInstanceName(), rspb.CacheType_CAS, parsedCASRN.GetDigestFunction()).ToProto()
 	}
 
 	err = s.env.GetCache().Delete(ctx, resourceName)

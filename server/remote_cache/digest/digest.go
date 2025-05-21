@@ -454,10 +454,6 @@ func ComputeForFile(path string, digestType repb.DigestFunction_Value) (*repb.Di
 	return Compute(f, digestType)
 }
 
-func isResourceName(url string, matcher *regexp.Regexp) bool {
-	return matcher.MatchString(url)
-}
-
 func parseResourceName(resourceName string, matcher *regexp.Regexp, cacheType rspb.CacheType) (*ResourceName, error) {
 	match := matcher.FindStringSubmatch(resourceName)
 	result := make(map[string]string, len(match))
@@ -535,14 +531,6 @@ func ParseActionCacheResourceName(resourceName string) (*ACResourceName, error) 
 		return nil, err
 	}
 	return rn.CheckAC()
-}
-
-func IsDownloadResourceName(url string) bool {
-	return isResourceName(url, downloadRegex)
-}
-
-func IsActionCacheResourceName(url string) bool {
-	return isResourceName(url, actionCacheRegex)
 }
 
 func blobTypeSegment(compressor repb.Compressor_Value) string {
