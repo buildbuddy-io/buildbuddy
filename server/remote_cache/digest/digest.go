@@ -439,7 +439,6 @@ func ComputeForFile(path string, digestType repb.DigestFunction_Value) (*repb.Di
 }
 
 func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceType resourceNameType) (*ResourceName, error) {
-
 	pieces := strings.Split(resourceName, "/")
 
 	// Need at least 2 slashes for CAS: blobs/hash/size
@@ -477,11 +476,23 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 	pieceIdx--
 	piece := pieces[pieceIdx]
 	if piece == "blake3" {
-		if len(hash) != 64 {
-			return nil, status.InvalidArgumentErrorf("Unparseable resource name, invalid BLAKE3 hash (wrong length): %s", resourceName)
-		}
 		digestFunction = repb.DigestFunction_BLAKE3
-		pieceIdx--
+	} else if piece == "sha1" {
+		digestFunction = repb.DigestFunction_SHA1
+	} else if piece == "sha512" {
+		digestFunction = repb.DigestFunction_SHA512
+	} else if piece == "sha384" {
+		digestFunction = repb.DigestFunction_SHA384
+	} else if piece == "sha256" {
+		digestFunction = repb.DigestFunction_SHA256
+	} else {
+		pieceIdx++
+	}
+	if len(hash) != hashLength(digestFunction) {
+		return nil, status.InvalidArgumentErrorf("Unparseable resource name, invalid hash (wrong length): %s", resourceName)
+	}
+	pieceIdx--
+	if pieceIdx >= 0 {
 		piece = pieces[pieceIdx]
 	}
 
@@ -491,7 +502,9 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 			return nil, status.InvalidArgumentErrorf("Unparseable Action Cache resource name, missing 'ac' blob type: %s", resourceName)
 		}
 		pieceIdx--
-		piece = pieces[pieceIdx]
+		if pieceIdx >= 0 {
+			piece = pieces[pieceIdx]
+		}
 	}
 
 	// The next piece must be "blobs" or "zstd"
