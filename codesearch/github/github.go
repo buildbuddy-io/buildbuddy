@@ -32,6 +32,8 @@ const (
 	// The maximum amount of bytes from a file to use for language and
 	// mimetype detection.
 	detectionBufferSize = 1000
+
+	maxAllowedChanges = 1000
 )
 
 // TODO(tylerw): this should come from a flag?
@@ -267,58 +269,50 @@ func processDiffTreeLine(gc gitClient, line string, commit *inpb.Commit) error {
 	return nil
 }
 
-func extractCommitDetails(gc gitClient, sha, parentSha string) (*inpb.Commit, error) {
-	log.Infof("Extracting commit details for %s", sha)
-	output, err := gc.ExecuteCommand("diff-tree", "-r", fmt.Sprintf("%s..%s", parentSha, sha))
-	if err != nil {
-		return nil, status.InternalErrorf("failed to run git diff-tree: %s", err)
-	}
-
-	result := &inpb.Commit{
-		Sha:       sha,
-		ParentSha: parentSha,
-	}
-
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	for _, line := range lines {
-		if err := processDiffTreeLine(gc, strings.TrimSpace(line), result); err != nil {
-			return nil, err
-		}
-	}
-
-	return result, nil
-}
-
 // ComputeIncrementalUpdate generates an incremental update payload for the codesearch indexer.
 // The information is extracted using the git command line client on a local clone of a repo.
 // The payload contains a list of commits, the file contents for each added/modified file, and a list
 // of deleted filenames.
 func ComputeIncrementalUpdate(gc gitClient, firstSha, lastSha string) (*inpb.IncrementalUpdate, error) {
-	output, err := gc.ExecuteCommand("log", "--first-parent", "--format=%H", fmt.Sprintf("%s..%s", firstSha, lastSha))
+	commitRange := fmt.Sprintf("%s..%s", firstSha, lastSha)
+
+	changesStr, err := gc.ExecuteCommand("whatchanged", "--first-parent", "--format=%H", "--reverse", commitRange)
 	if err != nil {
 		return nil, err
 	}
-	trimmedOutput := strings.TrimSpace(output)
-	if len(trimmedOutput) == 0 {
+	changes := strings.Split(strings.TrimSpace(changesStr), "\n")
+
+	if len(changes) > maxAllowedChanges {
+		return nil, fmt.Errorf("too many changes in commit range %s..%s: %d", firstSha, lastSha, len(changes))
+	}
+	if len(changes) == 0 {
 		return nil, fmt.Errorf("no commits found between %s and %s", firstSha, lastSha)
 	}
 
-	commits := strings.Split(trimmedOutput, "\n")
 	result := &inpb.IncrementalUpdate{
-		Commits: make([]*inpb.Commit, len(commits)),
+		Commits: make([]*inpb.Commit, 0),
 	}
+	var currentCommit *inpb.Commit
+	sha := firstSha
 
-	for i := len(commits) - 1; i >= 0; i-- {
-		parentSHA := firstSha
-		if i < len(commits)-1 {
-			parentSHA = commits[i+1]
+	for _, line := range changes {
+		line := strings.TrimSpace(line)
+		if len(line) == 0 {
+			continue
 		}
 
-		commit, err := extractCommitDetails(gc, commits[i], parentSHA)
-		if err != nil {
-			return nil, err
+		if line[0] != ':' {
+			// This is a commit line, not a diff line.
+			currentCommit = &inpb.Commit{
+				Sha:       line,
+				ParentSha: sha,
+			}
+			result.Commits = append(result.Commits, currentCommit)
+			sha = line
+		} else {
+			// This is a diff line.
+			processDiffTreeLine(gc, line, currentCommit)
 		}
-		result.Commits[len(commits)-i-1] = commit
 	}
 	return result, nil
 }
