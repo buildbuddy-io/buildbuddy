@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
@@ -100,7 +99,6 @@ type codesearchServer struct {
 	db               *pebble.DB
 	scratchDirectory string
 
-	lockLock  sync.Mutex // protects repoLocks
 	repoLocks lockmap.Locker
 
 	// Kythe services.
@@ -177,14 +175,14 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 		// We currently only support sequential commits, with no gaps.
 		// We could do a topological sort, but we just don't need that right now.
 		if i > 1 && commit.GetParentSha() != commits[i-1].GetSha() {
-			return nil, status.InvalidArgumentError(fmt.Sprintf("Commits must be sequential. Commit %s is not preceded by its parent", commit.GetSha()))
+			return nil, status.InvalidArgumentErrorf("commits must be sequential. Commit %s is not preceded by its parent", commit.GetSha())
 		}
 		if commit.GetParentSha() == lastIndexedSHA {
 			firstIndexToProcess = i
 		}
 	}
 	if firstIndexToProcess == -1 {
-		return nil, status.InvalidArgumentError(fmt.Sprintf("Last processed commit was %s; no commits found with this parent", lastIndexedSHA))
+		return nil, status.InvalidArgumentErrorf("last processed commit was %s; no commits found with this parent", lastIndexedSHA)
 	}
 
 	commits = commits[firstIndexToProcess:]
@@ -196,18 +194,20 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 
 	for _, commit := range commits {
 		if err := github.ProcessCommit(iw, repoURL, commit); err != nil {
-			return nil, status.InternalErrorf("Failed to process commit %s: %v", commit.GetSha(), err)
+			return nil, status.InternalErrorf("failed to process commit %s: %v", commit.GetSha(), err)
 		}
 	}
 
 	err = github.SetLastIndexedCommitSha(iw, repoURL, commits[len(commits)-1].GetSha())
 	if err != nil {
-		return nil, fmt.Errorf("Failed to finalize update: %w", err)
+		return nil, fmt.Errorf("failed to finalize update: %w", err)
 	}
 
 	if err := iw.Flush(); err != nil {
 		return nil, err
 	}
+
+	log.Infof("finished incremental update on %s from %s to %s", repoURL, commits[0].GetSha(), commits[len(commits)-1].GetSha())
 
 	return &inpb.IndexResponse{}, nil
 }
@@ -278,7 +278,8 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 
 		err = github.AddFileToIndex(iw, repoURL, commitSHA, filename, buf)
 		if err != nil {
-			return nil, err
+			log.Infof("File %s can't be indexed, skipping: %v", filename, err)
+			continue
 		}
 	}
 
@@ -289,6 +290,8 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 	if err := iw.Flush(); err != nil {
 		return nil, err
 	}
+
+	log.Infof("Finished indexing %s at commit %s", req.GetGitRepo().GetRepoUrl(), req.GetRepoState().GetCommitSha())
 
 	return &inpb.IndexResponse{}, nil
 }
@@ -341,7 +344,6 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 			return err
 		}
 
-		log.Infof("Finished indexing %s at commit %s", req.GetGitRepo().GetRepoUrl(), req.GetRepoState().GetCommitSha())
 		return nil
 	})
 	if req.GetAsync() {
@@ -363,7 +365,7 @@ func (css *codesearchServer) RepoStatus(ctx context.Context, req *inpb.RepoStatu
 	if err != nil {
 		return nil, err
 	}
-	r := index.NewReader(ctx, css.db, namespace, schema.GitHubFileSchema())
+	r := index.NewReader(ctx, css.db, namespace, schema.MetadataSchema())
 
 	rev, err := github.GetLastIndexedCommitSha(r, repoURL)
 	if err != nil {

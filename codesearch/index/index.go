@@ -223,24 +223,32 @@ func postingListKey(namespace, ngram, field string) []byte {
 	return []byte(fmt.Sprintf("%s:gra:%s:%s", namespace, ngram, field))
 }
 
-func lookupDocId(db pebble.Reader, namespace string, matchField types.Field) (uint64, error) {
+func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 	if matchField.Type() != types.KeywordField {
 		return 0, status.InternalError("match field must be of keyword type")
 	}
-	key := postingListKey(namespace, string(matchField.Contents()), matchField.Name())
-	value, closer, err := db.Get(key)
-	if err != nil {
-		return 0, err
-	}
-	defer closer.Close()
+	key := postingListKey(w.namespace, string(matchField.Contents()), matchField.Name())
 
-	postingList, err := posting.Unmarshal(value)
-	if err != nil {
-		return 0, err
+	var postingList posting.List
+	// First, check in the current batch
+	if pl, ok := w.fieldPostingLists[matchField.Name()][string(matchField.Contents())]; ok {
+		postingList = pl
+	} else {
+		// If not found, check in the index
+		value, closer, err := w.db.Get(key)
+		if err != nil {
+			return 0, err
+		}
+		defer closer.Close()
+
+		postingList, err = posting.Unmarshal(value)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	if postingList.GetCardinality() != 1 {
-		return 0, status.FailedPreconditionErrorf("Match field matches > 1 docs")
+		return 0, status.FailedPreconditionErrorf("Match field matches > 1 docs: %v", matchField)
 	}
 	return postingList.ToArray()[0], nil
 }
@@ -267,7 +275,7 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 // The matchField must be a keyword field, and an error is returned if the number of documents
 // matching the matchField is not exactly 1.
 func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
-	docId, err := lookupDocId(w.db, w.namespace, matchField)
+	docId, err := w.lookupDocId(matchField)
 	if err != nil {
 		if err == pebble.ErrNotFound {
 			return nil // Doc not found, delete is a no-op
@@ -278,6 +286,14 @@ func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
 	// The key field needs to be explicitly deleted, unlike the other fields, otherwise the old docID
 	// will remain in the posting list for the id field
 	w.batch.Delete(key, nil)
+
+	// The key field must also be removed from any pending updates, in case this document was
+	// already added previously in this batch.
+	if fpl, ok := w.fieldPostingLists[matchField.Name()]; ok {
+		if pl, ok := fpl[string(matchField.Contents())]; ok {
+			pl.Remove(docId)
+		}
+	}
 
 	return w.DeleteDocument(docId)
 }
