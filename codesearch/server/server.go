@@ -327,7 +327,7 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		unlockFn := css.repoLocks.Lock(lockKey)
 		defer unlockFn()
 
-		log.Infof("Starting indexing %q@%s", repoURL, commitSHA)
+		log.Infof("Starting indexing %s@%s", repoURL, commitSHA)
 
 		var err error
 		switch req.GetReplacementStrategy() {

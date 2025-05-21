@@ -182,8 +182,7 @@ func validateFile(content []byte) error {
 	return nil
 }
 
-// This type exists to enable dependency injection for testing.
-type gitClient interface {
+type GitClient interface {
 	ExecuteCommand(args ...string) (string, error)
 	LoadFileContents(fileToLoad string) ([]byte, error)
 }
@@ -192,7 +191,7 @@ type commandLineGitClient struct {
 	repoDir string
 }
 
-func NewCommandLineGitClient(repoDir string) gitClient {
+func NewCommandLineGitClient(repoDir string) GitClient {
 	return &commandLineGitClient{repoDir: repoDir}
 }
 
@@ -215,7 +214,7 @@ func (c *commandLineGitClient) LoadFileContents(filename string) ([]byte, error)
 	return content, nil
 }
 
-func processDiffTreeLine(gc gitClient, line string, commit *inpb.Commit) error {
+func processDiffTreeLine(gc GitClient, line string, commit *inpb.Commit) error {
 	// diff-tree lines are in the format "<src mode> <dst mode> <src sha> <dst sha> <status>\t<src path>\t<dst path(copy/rename only)>""
 	// Documentation: https://git-scm.com/docs/git-diff-tree
 	parts := strings.Split(line, " ")
@@ -275,7 +274,7 @@ func processDiffTreeLine(gc gitClient, line string, commit *inpb.Commit) error {
 // The information is extracted using the git command line client on a local clone of a repo.
 // The payload contains a list of commits, the file contents for each added/modified file, and a list
 // of deleted filenames.
-func ComputeIncrementalUpdate(gc gitClient, firstSha, lastSha string) (*inpb.IncrementalUpdate, error) {
+func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.IncrementalUpdate, error) {
 	commitRange := fmt.Sprintf("%s..%s", firstSha, lastSha)
 
 	changesStr, err := gc.ExecuteCommand("whatchanged", "--first-parent", "--format=%H", "--reverse", commitRange)
@@ -287,7 +286,7 @@ func ComputeIncrementalUpdate(gc gitClient, firstSha, lastSha string) (*inpb.Inc
 	if len(changes) > maxAllowedChanges {
 		return nil, fmt.Errorf("too many changes in commit range %s..%s: %d", firstSha, lastSha, len(changes))
 	}
-	if len(changes) == 0 {
+	if len(changes) == 0 || (len(changes) == 1 && len(changes[0]) == 0) {
 		return nil, fmt.Errorf("no commits found between %s and %s", firstSha, lastSha)
 	}
 

@@ -519,3 +519,20 @@ def456
 		},
 	}, result)
 }
+
+func TestComputeIncrementalUpdate_NoChanges(t *testing.T) {
+	firstSHA := "abc123"
+	lastSHA := "def456"
+
+	fakeClient := &fakeGitClient{
+		t: t,
+		commands: map[string]string{
+			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", firstSHA, lastSHA): "\n",
+		},
+		files: map[string][]byte{},
+	}
+
+	result, err := ComputeIncrementalUpdate(fakeClient, firstSHA, lastSHA)
+	assert.Error(t, err)
+	assert.Nil(t, result)
+}

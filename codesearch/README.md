@@ -68,7 +68,7 @@ Some example queries:
   $ grpc_cli call --metadata x-buildbuddy-api-key:YOUR_DEV_API_KEY localhost:2633 codesearch.service.CodesearchService.Index 'git_repo:<repo_url:"https://github.com/buildbuddy-io/buildbuddy"> repo_state:<commit_sha:"master">'
   #
   # grpcurl version:
-  $ grpcurl -plaintext -H "x-buildbuddy-api-key:YOUR_DEV_API_KEY" -d '{"git_repo": {"repo_url":"https://github.com/buildbuddy-io/buildbuddy"}, "repo_state": {"commit_sha":"master"}}' localhost:2633 codesearch.service.CodesearchService.Index
+  $ grpcurl -plaintext -H "x-buildbuddy-api-key:YOUR_DEV_API_KEY" -d '{"git_repo": {"repo_url":"https://github.com/buildbuddy-io/buildbuddy"}, "repo_state": {"commit_sha":"master"}, "replacement_strategy": 1}' localhost:2633 codesearch.service.CodesearchService.Index
 ```
 
 ## Perform a Search (server)

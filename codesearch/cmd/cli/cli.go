@@ -181,7 +181,7 @@ func handleIndex(args []string) {
 				}
 
 				if err := github.AddFileToIndex(iw, repoURL, commitSHA, path, buf); err != nil {
-					log.Fatalf("failed to add file %s: %s", path, err)
+					log.Infof("Skipping file %s: %s", path, err)
 				}
 			}
 			return nil
