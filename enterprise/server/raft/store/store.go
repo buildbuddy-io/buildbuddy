@@ -2082,7 +2082,6 @@ func (w *updateTagsWorker) processUpdateTags() error {
 		for {
 			select {
 			case <-w.quitChan:
-				w.store.log.Infof("updateTagsWorker received quit chan")
 				return nil
 			case task := <-w.tasks:
 				w.handleTask(task)
@@ -2090,12 +2089,10 @@ func (w *updateTagsWorker) processUpdateTags() error {
 		}
 	})
 	eg.Wait()
-	w.store.log.Infof("updateTagsWorker processUpdateTags wait finished")
 
 	for len(w.tasks) > 0 {
 		<-w.tasks
 	}
-	w.store.log.Infof("updateTagsWorker finished drained tasks")
 	return nil
 
 }
@@ -2276,7 +2273,6 @@ func newDeleteSessionsWorker(clock clockwork.Clock, store *Store, clientSessionT
 }
 
 func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.Replica) error {
-	w.store.log.Infof("delete sessions for range %d", repl.RangeID())
 	rd := w.store.lookupRange(repl.RangeID())
 	lastExecutionTimeI, found := w.lastExecutionTime.Load(rd.GetRangeId())
 	if found {

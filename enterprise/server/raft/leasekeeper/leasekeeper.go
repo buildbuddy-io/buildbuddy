@@ -229,20 +229,16 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 }
 
 func (la *leaseAgent) stop() {
-	la.log.Infof("stop lease agent c%dn%d started", la.l.GetRangeID(), la.replicaID)
 	la.cancel()
 	la.eg.Wait()
-	la.log.Infof("stop lease agent c%dn%d eg wait finished", la.l.GetRangeID(), la.replicaID)
 
 	la.l.Stop()
-	la.log.Infof("stop lease agent c%dn%d finished", la.l.GetRangeID(), la.replicaID)
 }
 
 func (la *leaseAgent) runloop() {
 	for {
 		instruction, err := la.updates.Recv(la.ctx)
 		if err != nil {
-			la.log.Info("lease agent run loop ctx cancelled")
 			// context cancelled
 			return
 		}
@@ -323,7 +319,6 @@ func (lk *LeaseKeeper) watchLeases() {
 				action:  action,
 			})
 		case <-lk.egCtx.Done():
-			lk.log.Infof("leasekeeper ctx cancelled")
 			lk.mu.Lock()
 			leases := make([]*leaseAgent, 0, len(lk.leases))
 			for _, la := range lk.leases {
@@ -335,7 +330,6 @@ func (lk *LeaseKeeper) watchLeases() {
 			}
 			lk.listener.RemoveLeaderChangeListener(listenerID)
 			lk.listener.RemoveNodeUnloadedListener(listenerID)
-			lk.log.Infof("leasekeeper ctx cancelled finished")
 			return
 		case <-lk.nodeLivenessUpdates:
 			lk.mu.Lock()

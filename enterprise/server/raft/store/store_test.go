@@ -1061,29 +1061,23 @@ func TestCleanupExpiredSessions(t *testing.T) {
 	}
 
 	clock.Advance(5*time.Hour + 10*time.Minute)
-	log.Info("++++++set up complete")
 	for {
 		sessionIDsShard1S1After := readSessionIDs(t, ctx, 1, s1)
 		if !containsAny(sessionIDsShard1S1After, sessionIDsShard1S1) {
 			break
 		}
-		log.Info("++++++s1 on store1 contains expired sessions")
 		sessionIDsShard1S2After := readSessionIDs(t, ctx, 1, s2)
 		if !containsAny(sessionIDsShard1S2After, sessionIDsShard1S2) {
 			break
 		}
-		log.Info("++++++s1 on store 2 contains expired sessions")
 		sessionIDsShard2S1After := readSessionIDs(t, ctx, 2, s1)
 		if !containsAny(sessionIDsShard2S1After, sessionIDsShard2S1) {
-			log.Info("++++++s2 on store1 contains expired sessions")
 			break
 		}
-		log.Info("++++++s2 on store1 contains expired sessions")
 		sessionIDsShard2S2After := readSessionIDs(t, ctx, 2, s2)
 		if !containsAny(sessionIDsShard2S2After, sessionIDsShard2S2) {
 			break
 		}
-		log.Info("++++++s2 on store2 contains expired sessions")
 		clock.Advance(65 * time.Second)
 	}
 

@@ -107,15 +107,12 @@ func (l *Lease) isStopped() bool {
 }
 
 func (l *Lease) Stop() {
-	l.log.Infof("lease stop started")
 	l.ctxMutex.Lock()
-	l.log.Infof("lease stop lock finished")
 	defer l.ctxMutex.Unlock()
 	// close the background lease-renewal thread.
 	if !l.isStopped() {
 		l.cancel()
 	}
-	l.log.Infof("lease stop finished")
 }
 
 func (l *Lease) dropLease(ctx context.Context) error {
@@ -320,7 +317,6 @@ func (l *Lease) renewLeaseUntilValid(ctx context.Context) (returnedRecord *rfpb.
 	for {
 		select {
 		case <-ctx.Done():
-			l.log.Info("renewLeaseAUntilValid cancelled")
 			l.mu.Unlock()
 			return nil, ctx.Err()
 		default: // continue with for loop
@@ -363,7 +359,6 @@ func (l *Lease) keepLeaseAlive(ctx context.Context) {
 
 		select {
 		case <-ctx.Done():
-			l.log.Infof("keepLeaseAlive ctx cancelled")
 			return
 		case <-time.After(timeUntilRenewal):
 			ctx, spn := tracing.StartSpan(ctx)
