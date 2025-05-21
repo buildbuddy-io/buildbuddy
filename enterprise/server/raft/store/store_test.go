@@ -1023,8 +1023,10 @@ func readSessionIDs(t *testing.T, ctx context.Context, rangeID uint64, store *te
 }
 
 func TestCleanupExpiredSessions(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.client_session_ttl", 5*time.Hour)
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
