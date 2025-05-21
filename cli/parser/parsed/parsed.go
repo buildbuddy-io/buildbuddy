@@ -538,15 +538,14 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 	return startupOptionInsertIndex, commandOptionInsertIndex, fmt.Errorf("Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.", option.Name(), command)
 }
 
-// Offset exists as a temporary hack while we continue to move away from
-// passing arguments around as strings. It returns the offset in the
-// string-based arg slice where the argument at this index is located.
-func (a *OrderedArgs) Offset(index int) int {
-	offset := 0
-	for _, arg := range a.Args[:index] {
-		offset += len(arg.Format())
+type Config struct {
+	ByPhase map[string][]arguments.Argument
+}
+
+func NewConfig() *Config {
+	return &Config{
+		ByPhase: make(map[string][]arguments.Argument),
 	}
-	return offset
 }
 
 func Partition(args []arguments.Argument) *PartitionedArgs {
@@ -670,6 +669,8 @@ func (a *PartitionedArgs) RemoveOptions(optionNames ...string) []*IndexedOption 
 func (a *PartitionedArgs) Append(args ...arguments.Argument) error {
 	for _, arg := range args {
 		switch arg := arg.(type) {
+		case *arguments.DoubleDash:
+			// skip
 		case *arguments.PositionalArgument:
 			switch {
 			case a.Command == nil:
