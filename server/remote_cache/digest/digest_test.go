@@ -71,9 +71,9 @@ func TestParseDownloadResourceName(t *testing.T) {
 			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac/1234",
 			wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac", SizeBytes: 1234}, "", repb.DigestFunction_SHA1),
 		},
-		{ // MD5
-			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b51/1234",
-			wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b51", SizeBytes: 1234}, "", repb.DigestFunction_MD5),
+		{ // MD5 -- shortest possible resource name
+			resourceName: "blobs/072d9dd55aacaa829d7d1cc9ec8c4b51/1",
+			wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b51", SizeBytes: 1}, "", repb.DigestFunction_MD5),
 		},
 		{ // SHA256
 			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
