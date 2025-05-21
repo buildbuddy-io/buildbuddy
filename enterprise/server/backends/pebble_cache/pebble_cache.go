@@ -2716,7 +2716,6 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		e.maybeAddToSampleChan(iter, fileMetadata, quitChan, timer)
 		fileMetadata.GetFileRecord().GetIsolation().GetGroupId()
 
-
 		iter.Next()
 		fileMetadata.ResetVT()
 	}
@@ -2770,9 +2769,9 @@ func (e *partitionEvictor) updateMetrics() {
 		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
 	for g, sizeBytes := range e.sizeByGroup {
 		metrics.DiskCachePartitionSizeBytes.With(prometheus.Labels{
-			metrics.PartitionID: e.part.ID,
+			metrics.PartitionID:    e.part.ID,
 			metrics.CacheNameLabel: e.cacheName,
-			metrics.GroupID: g}).Set(float64(sizeBytes))
+			metrics.GroupID:        g}).Set(float64(sizeBytes))
 	}
 }
 
@@ -2824,7 +2823,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, map[str
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return 0, nil, 0, 0, err
 		}
-		
+
 		sizeBytes := getSizeOnLocalDisk(iter.Key(), fileMetadata, true)
 		totalSizeBytes += sizeBytes
 		totalSizeByGroup[fileMetadata.GetFileRecord().GetIsolation().GetGroupId()] += sizeBytes
@@ -2880,10 +2879,10 @@ func (e *partitionEvictor) writePartitionMetadata(db pebble.IPebbleDB, md *sgpb.
 func (e *partitionEvictor) flushPartitionMetadata(db pebble.IPebbleDB) error {
 	sizeBytes, sizeByGroup, casCount, acCount := e.Counts()
 	return e.writePartitionMetadata(db, &sgpb.PartitionMetadata{
-		SizeBytes: sizeBytes,
+		SizeBytes:   sizeBytes,
 		SizeByGroup: sizeByGroup,
-		CasCount:  casCount,
-		AcCount:   acCount,
+		CasCount:    casCount,
+		AcCount:     acCount,
 	})
 }
 
