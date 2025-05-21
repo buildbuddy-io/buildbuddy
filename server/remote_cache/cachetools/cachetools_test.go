@@ -876,9 +876,9 @@ func TestUploadWriter_NoWritesAfterCommit(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, 0, written)
 
-	// Cannot commit again after commit
+	// Committing after commit is a no-op
 	err = uw.Commit()
-	require.Error(t, err)
+	require.NoError(t, err)
 
 	err = uw.Close()
 	require.NoError(t, err)
@@ -938,8 +938,7 @@ func TestUploadWriter_CancelContext(t *testing.T) {
 
 	cancel()
 
-	written, err = uw.Write(buf[half:])
+	_, err = uw.Write(buf[half:])
 	require.Error(t, err)
 	require.ErrorContains(t, err, "context canceled")
-	require.Zero(t, written)
 }

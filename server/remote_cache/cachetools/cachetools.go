@@ -1155,8 +1155,9 @@ type UploadWriter struct {
 	bytesUploaded int64
 	committedSize int64
 
-	finished bool
-	closed   bool
+	sendErr   error
+	committed bool
+	closed    bool
 
 	buf           []byte
 	bytesBuffered int
@@ -1166,30 +1167,33 @@ type UploadWriter struct {
 // Bytes are not guaranteed to be uploaded to the CAS until a call to Commit() succeeds.
 // Returning EOF indicates that the blob already exists in the CAS and no further writes are necessary.
 func (uw *UploadWriter) Write(p []byte) (int, error) {
-	if uw.finished || uw.closed {
-		return 0, status.FailedPreconditionError("Cannot write to UploadWriter after it is finished or closed")
+	if uw.closed {
+		return 0, status.FailedPreconditionError("Cannot write to UploadWriter after it is closed")
+	}
+	if uw.committed {
+		return 0, status.FailedPreconditionError("Cannot write to UploadWriter after it is committed")
+	}
+	if uw.sendErr != nil {
+		return 0, status.WrapError(uw.sendErr, "UploadWriter already encountered send error, cannot write")
 	}
 	written := 0
 	for len(p) > 0 {
 		n := copy(uw.buf[uw.bytesBuffered:], p)
 		uw.bytesBuffered += n
-		if uw.bytesBuffered == uploadBufSizeBytes {
-			if err := uw.flush(false /* finish */); err != nil {
-				return written, err
-			}
-		}
 		written += n
+		if err := uw.flush(false /* finish */); err != nil {
+			return written, err
+		}
 		p = p[n:]
 	}
 	return written, nil
 }
 
+// flush sends a WriteRequest to the CAS if the internal buffer is full
+// or if this is the last write (finish=true).
 func (uw *UploadWriter) flush(finish bool) error {
-	if uw.finished {
+	if !finish && uw.bytesBuffered < uploadBufSizeBytes {
 		return nil
-	}
-	if uw.closed {
-		return status.FailedPreconditionError("UploadWriteCloser already finished or closed, cannot flush")
 	}
 	req := &bspb.WriteRequest{
 		Data:         uw.buf[:uw.bytesBuffered],
@@ -1197,18 +1201,12 @@ func (uw *UploadWriter) flush(finish bool) error {
 		WriteOffset:  uw.bytesUploaded,
 		FinishWrite:  finish,
 	}
-	err := uw.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
-	if err != nil {
-		// If the blob already exists in the CAS, the server will respond EOF
-		// to indicate no further writes are needed.
-		if err == io.EOF {
-			uw.finished = true
-		}
-		return err
+	uw.sendErr = uw.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+	if uw.sendErr != nil {
+		return uw.sendErr
 	}
 	uw.bytesUploaded += int64(uw.bytesBuffered)
 	uw.bytesBuffered = 0
-	uw.finished = finish
 	return nil
 }
 
@@ -1218,6 +1216,14 @@ func (uw *UploadWriter) Commit() error {
 	if uw.closed {
 		return status.FailedPreconditionError("UploadWriter already closed, cannot commit")
 	}
+	if uw.committed {
+		return nil
+	}
+	if uw.sendErr != nil {
+		return status.WrapError(uw.sendErr, "UploadWriter already encountered send error, cannot commit")
+	}
+
+	uw.committed = true
 	err := uw.flush(true /* finish */)
 	// If the blob already exists in the CAS, the server can respond with an EOF.
 	// The blob exists, it is safe to finish committing.
