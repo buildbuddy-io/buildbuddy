@@ -301,7 +301,7 @@ func trimStatus(statusMessage string) string {
 	return statusMessage
 }
 
-func (s *ExecutionServer) updateExecutionInDB(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, executeResponse *repb.ExecuteResponse) error {
+func (s *ExecutionServer) updateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, executeResponse *repb.ExecuteResponse) error {
 	if s.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
@@ -383,6 +383,10 @@ func (s *ExecutionServer) updateExecutionForOLAP(
 		return status.FailedPreconditionError("database not configured")
 	}
 	var executionProto *repb.StoredExecution
+
+	// TODO(Maggie): Once we're reading all executions data from Redis,
+	// inline this logic into `updateExecution` when stage=COMPLETED
+
 	// Read final execution details (including the initial metadata and
 	// completed execution result) from either redis or the primary DB. This
 	// state does not have the invocation details populated.
@@ -403,63 +407,54 @@ func (s *ExecutionServer) updateExecutionForOLAP(
 		}
 		executionProto = executil.TableExecToProto(&executionPrimaryDB, nil)
 	}
-	links, err := s.env.GetExecutionCollector().GetExecutionInvocationLinks(ctx, executionID)
-	if err != nil {
-		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
-	}
+
+	// Set fields that aren't stored in the primary DB
 	rmd := bazel_request.GetRequestMetadata(ctx)
-	for _, link := range links {
-		executionProto := executionProto.CloneVT()
-		executil.SetInvocationLink(executionProto, link)
+	executionProto.TargetLabel = rmd.GetTargetId()
+	executionProto.ActionMnemonic = rmd.GetActionMnemonic()
+	executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
+	executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
+	executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
+	executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
 
-		// Set fields that aren't stored in the primary DB
-		executionProto.TargetLabel = rmd.GetTargetId()
-		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
-		executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
-		executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
-		executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
-		executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
+	executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
+	executionProto.Experiments = auxMeta.GetExperiments()
 
-		executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
-		executionProto.Experiments = auxMeta.GetExperiments()
+	executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
+	executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
 
-		executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
-		executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
+	executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
+	executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
 
-		executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
-		executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
+	executionProto.RequestedComputeUnits = properties.EstimatedComputeUnits
+	executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
+	executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
+	executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
 
-		executionProto.RequestedComputeUnits = properties.EstimatedComputeUnits
-		executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
-		executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
-		executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
+	schedulingMeta := auxMeta.GetSchedulingMetadata()
+	executionProto.EstimatedFreeDiskBytes = schedulingMeta.GetTaskSize().GetEstimatedFreeDiskBytes()
+	executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
+	executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
+	executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
+	executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
+	executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
+	executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
+	executionProto.SelfHosted = schedulingMeta == nil || (schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID())
 
-		schedulingMeta := auxMeta.GetSchedulingMetadata()
-		executionProto.EstimatedFreeDiskBytes = schedulingMeta.GetTaskSize().GetEstimatedFreeDiskBytes()
-		executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
-		executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
-		executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
-		executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
-		executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
-		executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
-		executionProto.SelfHosted = schedulingMeta == nil || (schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID())
+	request := auxMeta.GetExecuteRequest()
+	executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
+	executionProto.ExecutionPriority = request.GetExecutionPolicy().GetPriority()
 
-		request := auxMeta.GetExecuteRequest()
-		executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
-		executionProto.ExecutionPriority = request.GetExecutionPolicy().GetPriority()
-
-		regionHeaderValues := metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-executor-region")
-		if len(regionHeaderValues) > 0 {
-			executionProto.Region = regionHeaderValues[len(regionHeaderValues)-1]
-		}
-
-		executionProto.UpdatedAtUsec = time.Now().UnixMicro()
-		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
-			log.CtxErrorf(ctx, "failed to update in-progress execution %q for invocation %q: %s", executionID, link.GetInvocationId(), err)
-		} else {
-			log.CtxDebugf(ctx, "updated in-progress execution %q for invocation %q in redis", executionID, link.GetInvocationId())
-		}
+	regionHeaderValues := metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-executor-region")
+	if len(regionHeaderValues) > 0 {
+		executionProto.Region = regionHeaderValues[len(regionHeaderValues)-1]
 	}
+
+	executionProto.UpdatedAtUsec = time.Now().UnixMicro()
+	if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
+		return status.InternalErrorf("failed to update in-progress execution %q: %s", executionID, err)
+	}
+
 	return nil
 }
 
@@ -485,16 +480,18 @@ func (s *ExecutionServer) flushExecutionToOLAP(
 		}
 	}()
 
+	executionProto, err := s.env.GetExecutionCollector().GetInProgressExecution(ctx, executionID)
+	if err != nil {
+		return status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
+	}
+
 	links, err := s.env.GetExecutionCollector().GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
 	for _, link := range links {
-		executionProto, err := s.env.GetExecutionCollector().GetInProgressExecution(ctx, executionID)
-		if err != nil {
-			log.CtxErrorf(ctx, "failed to read in progress execution %q from ExecutionCollector: %s", executionID, err)
-			continue
-		}
+		executionProto := executionProto.CloneVT()
+		executil.SetInvocationLink(executionProto, link)
 
 		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.GetInvocationId())
 		if err != nil {
@@ -502,18 +499,18 @@ func (s *ExecutionServer) flushExecutionToOLAP(
 			continue
 		}
 		if inv == nil {
-			// The invocation hasn't finished yet. Add the execution to ExecutionCollector,
-			// and flush it in the build event handler after
-			// the invocation is complete, so there aren't dangling executions that aren't tied to an invocation.
+			// The invocation hasn't finished yet. Because joins are expensive
+			// in clickhouse, we inline invocation data in the executions table.
+			// For now, add the execution to the ExecutionCollector and the build
+			// event handler will flush it after the invocation is complete.
 			if err := s.env.GetExecutionCollector().AppendExecution(ctx, link.GetInvocationId(), executionProto); err != nil {
 				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.GetInvocationId(), err)
 			} else {
 				log.CtxInfof(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
 			}
 		} else if s.env.GetOLAPDBHandle() != nil {
-			// The execution server may flush to Clickhouse directly if the invocation
-			// is marked as completed by the build event handler before the executor
-			// publishes the final execution update.
+			// Flush to Clickhouse directly if the invocation completed before
+			// the executor published the final execution update.
 			err = s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, []*repb.StoredExecution{executionProto})
 			if err != nil {
 				log.CtxErrorf(ctx, "failed to flush execution %q for invocation %q to clickhouse: %s", executionID, link.GetInvocationId(), err)
@@ -521,7 +518,6 @@ func (s *ExecutionServer) flushExecutionToOLAP(
 				log.CtxInfof(ctx, "successfully write 1 execution for invocation %q", link.GetInvocationId())
 			}
 		}
-
 	}
 	return nil
 }
@@ -1091,7 +1087,7 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 		log.CtxWarningf(ctx, "MarkExecutionFailed: error publishing task %q on stream pubsub: %s", taskID, err)
 		return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 	}
-	if err := s.updateExecutionInDB(ctx, taskID, repb.ExecutionStage_COMPLETED, rsp); err != nil {
+	if err := s.updateExecution(ctx, taskID, repb.ExecutionStage_COMPLETED, rsp); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: error updating execution: %q: %s", taskID, err)
 		return err
 	}
@@ -1150,7 +1146,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		mu.Lock()
 		defer mu.Unlock()
 		if time.Since(lastWrite) > 5*time.Second && taskID != "" {
-			if err := s.updateExecutionInDB(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp)); err != nil {
+			if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp)); err != nil {
 				log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
 				return false
 			}
@@ -1269,7 +1265,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				mu.Lock()
 				defer mu.Unlock()
 
-				if err := s.updateExecutionInDB(ctx, taskID, stage, response); err != nil {
+				if err := s.updateExecution(ctx, taskID, stage, response); err != nil {
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
