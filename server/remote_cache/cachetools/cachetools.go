@@ -1182,6 +1182,9 @@ func (uw *UploadWriter) Write(p []byte) (int, error) {
 		uw.bytesBuffered += n
 		written += n
 		if err := uw.flush(false /* finish */); err != nil {
+			if err == io.EOF {
+				return written, io.ErrShortWrite
+			}
 			return written, err
 		}
 		p = p[n:]
@@ -1219,7 +1222,7 @@ func (uw *UploadWriter) Commit() error {
 	if uw.committed {
 		return nil
 	}
-	if uw.sendErr != nil {
+	if uw.sendErr != nil && uw.sendErr != io.EOF {
 		return status.WrapError(uw.sendErr, "UploadWriter already encountered send error, cannot commit")
 	}
 
