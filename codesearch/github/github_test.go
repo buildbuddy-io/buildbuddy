@@ -387,10 +387,9 @@ func TestComputeIncrementalUpdate_OneCommit(t *testing.T) {
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
-			fmt.Sprintf("log --first-parent --format=%%H %s..%s", firstSHA, lastSHA): "def456",
-			// This sample output is taken directly from the diff-tree documentation, and covers
-			// every modification type.
-			fmt.Sprintf("diff-tree -r %s..%s", firstSHA, lastSHA): `
+			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", firstSHA, lastSHA): `
+def456
+
 :100644 100644 bcd1234 0123456 M	file0
 :100644 100644 abcd123 1234567 C68	file0	file2
 :100644 100644 abcd123 1234567 R86	file1	file3
@@ -439,10 +438,17 @@ func TestComputeIncrementalUpdate_MultipleCommits(t *testing.T) {
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
-			fmt.Sprintf("log --first-parent --format=%%H %s..%s", sha1, sha4): "jkl012\nghi789\ndef456\n",
-			fmt.Sprintf("diff-tree -r %s..%s", sha1, sha2):                    ":100644 100644 bcd1234 0123456 M	file0",
-			fmt.Sprintf("diff-tree -r %s..%s", sha2, sha3):                    ":000000 100644 0000000 1234567 A	file1",
-			fmt.Sprintf("diff-tree -r %s..%s", sha3, sha4):                    ":100644 100644 abcd123 1234567 R86	file1	file2",
+			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", sha1, sha4): `
+def456
+
+:100644 100644 bcd1234 0123456 M	file0
+ghi789
+
+:000000 100644 0000000 1234567 A	file1
+jkl012
+
+:100644 100644 abcd123 1234567 R86	file1	file2
+`,
 		},
 		files: map[string][]byte{
 			"file0": []byte("file0 content"),
@@ -457,22 +463,22 @@ func TestComputeIncrementalUpdate_MultipleCommits(t *testing.T) {
 	assert.Equal(t, &inpb.IncrementalUpdate{
 		Commits: []*inpb.Commit{
 			{
-				Sha:       "def456",
-				ParentSha: "abc123",
+				Sha:       sha2,
+				ParentSha: sha1,
 				AddsAndUpdates: []*inpb.File{
 					{Filepath: "file0", Content: []byte("file0 content")},
 				},
 			},
 			{
-				Sha:       "ghi789",
-				ParentSha: "def456",
+				Sha:       sha3,
+				ParentSha: sha2,
 				AddsAndUpdates: []*inpb.File{
 					{Filepath: "file1", Content: []byte("file1 content")},
 				},
 			},
 			{
-				Sha:       "jkl012",
-				ParentSha: "ghi789",
+				Sha:       sha4,
+				ParentSha: sha3,
 				AddsAndUpdates: []*inpb.File{
 					{Filepath: "file2", Content: []byte("file2 content")},
 				},
@@ -489,8 +495,11 @@ func TestComputeIncrementalUpdate_SkipUnindexable(t *testing.T) {
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
-			fmt.Sprintf("log --first-parent --format=%%H %s..%s", firstSHA, lastSHA): "def456",
-			fmt.Sprintf("diff-tree -r %s..%s", firstSHA, lastSHA):                    ":100644 100644 bcd1234 0123456 M	file0",
+			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", firstSHA, lastSHA): `
+def456
+
+:100644 100644 bcd1234 0123456 M	file0
+`,
 		},
 		files: map[string][]byte{
 			"file0": []byte{0x47, 0x49, 0x46, 0x38, 0x39, 0x61}, // GIF file
