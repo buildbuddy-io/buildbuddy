@@ -244,7 +244,7 @@ func (u *atimeUpdater) EnqueueByResourceName(ctx context.Context, downloadString
 	rn, err := digest.ParseDownloadResourceName(downloadString)
 	if err != nil {
 		// Could be an ActionCache digest, or malformed.
-		log.Debugf("Skipping remote atime update for malformed download resource name: %s [%s]", downloadString, err)
+		log.Infof("Skipping remote atime update for malformed download resource name: %s [%s]", downloadString, err)
 		return
 	}
 	u.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
