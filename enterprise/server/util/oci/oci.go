@@ -370,6 +370,7 @@ func updateResolveEventMetric(host string) {
 	metrics.OCIRegistryResolveEvents.With(prometheus.Labels{
 		metrics.HTTPHostLabel: hostLabel,
 	}).Inc()
+	log.Infof("Resolving OCI image for registry %q", hostLabel)
 }
 
 func (r *Resolver) fetchRawManifestFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, remoteOpts []remote.Option) (*gcr.Hash, []byte, bool, error) {
