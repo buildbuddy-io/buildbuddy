@@ -1,0 +1,120 @@
+package server
+
+import (
+	"context"
+	"testing"
+
+	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
+	spb "github.com/buildbuddy-io/buildbuddy/proto/search"
+)
+
+func mustMakeServer(t *testing.T) *codesearchServer {
+	tmpDir := testfs.MakeTempDir(t)
+
+	te := real_environment.NewRealEnv(nil)
+	te.SetAuthenticator(&nullauth.NullAuthenticator{})
+
+	server, err := New(te, tmpDir, tmpDir)
+	require.NoError(t, err)
+	return server
+}
+func TestIncrementalIndex(t *testing.T) {
+	ctx := context.Background()
+	server := mustMakeServer(t)
+
+	ns, err := server.getUserNamespace(ctx, "")
+	require.NoError(t, err)
+	iw, err := index.NewWriter(server.db, ns)
+	require.NoError(t, err)
+	ru, err := git.ParseGitHubRepoURL("github.com/buildbuddy-io/buildbuddy")
+	require.NoError(t, err)
+	github.SetLastIndexedCommitSha(iw, ru, "def456")
+	err = iw.Flush()
+	require.NoError(t, err)
+
+	rsp, err := server.Index(ctx, &inpb.IndexRequest{
+		GitRepo: &gitpb.GitRepo{
+			RepoUrl: "github.com/buildbuddy-io/buildbuddy",
+		},
+		ReplacementStrategy: inpb.ReplacementStrategy_INCREMENTAL,
+		Update: &inpb.IncrementalUpdate{
+			Commits: []*inpb.Commit{
+				{
+					Sha:       "abc123",
+					ParentSha: "def456",
+					AddsAndUpdates: []*inpb.File{
+						{
+							Filepath: "foo/bar/baz.txt",
+							Content:  []byte("doo be doo be doooo"),
+						},
+					},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, rsp)
+
+	repoStatus, err := server.RepoStatus(context.Background(), &inpb.RepoStatusRequest{
+		RepoUrl: "github.com/buildbuddy-io/buildbuddy",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, repoStatus, &inpb.RepoStatusResponse{
+		LastIndexedCommitSha: "abc123",
+	})
+
+	searchRsp, err := server.Search(context.Background(), &spb.SearchRequest{
+		Query: &spb.Query{
+			Term: "doo",
+		},
+	})
+	require.NoError(t, err)
+
+	assert.NotNil(t, searchRsp)
+	assert.NotNil(t, searchRsp.Results)
+	assert.Len(t, searchRsp.Results, 1)
+	search := searchRsp.Results[0]
+	search.Snippets = nil // clear out snippets to allow for easier comparison
+	assert.Equal(t, search, &spb.Result{
+		Owner:      "buildbuddy-io",
+		Repo:       "buildbuddy",
+		Sha:        "abc123",
+		Filename:   "foo/bar/baz.txt",
+		MatchCount: 1,
+	})
+}
+
+func TestIndexFull(t *testing.T) {
+	t.Skip("This operation downloads a github repo, and requires refactoring to unit test.")
+}
+
+func TestRepoStatus_NoStatus(t *testing.T) {
+	server := mustMakeServer(t)
+
+	response, err := server.RepoStatus(context.Background(), &inpb.RepoStatusRequest{
+		RepoUrl: "github.com/buildbuddy-io/buildbuddy",
+	})
+	assert.True(t, status.IsNotFoundError(err))
+	assert.Nil(t, response)
+}
+
+func TestRepoStatus_InvalidRepo(t *testing.T) {
+	server := mustMakeServer(t)
+
+	response, err := server.RepoStatus(context.Background(), &inpb.RepoStatusRequest{
+		RepoUrl: "foobar",
+	})
+	assert.True(t, status.IsInvalidArgumentError(err))
+	assert.Nil(t, response)
+}
