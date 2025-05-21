@@ -343,6 +343,7 @@ func (t *teeReadCloser) Read(p []byte) (int, error) {
 	}
 	return read, t.lastReadErr
 }
+
 func (t *teeReadCloser) Close() error {
 	err := t.rc.Close()
 	if err == nil && t.lastReadErr != nil && t.lastReadErr != io.EOF {
@@ -389,17 +390,21 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 		c.log.Debugf("Not setting lookaside entry for resource: %s", r)
 		return
 	}
+	c.setLookasideEntry(k, data)
+}
+
+func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
 	entry := lookasideCacheEntry{
 		createdAtMillis: time.Now().UnixMilli(),
 		data:            data,
 	}
 
 	c.lookasideMu.Lock()
-	if !c.lookaside.Contains(k) {
-		c.lookaside.Add(k, entry)
+	if !c.lookaside.Contains(lookasideKey) {
+		c.lookaside.Add(lookasideKey, entry)
 	}
 	c.lookasideMu.Unlock()
-	c.log.Debugf("Set %q in lookaside cache", k)
+	c.log.Debugf("Set %q in lookaside cache", lookasideKey)
 }
 
 // getLookasideEntry returns the resource and if it was found in the lookaside
@@ -442,11 +447,11 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 	return nil, false
 }
 
-func (c *Cache) lookasideWriter(r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	buffer := new(bytes.Buffer)
+func (c *Cache) lookasideWriter(r *rspb.ResourceName, lookasideKey string) (interfaces.CommittedWriteCloser, error) {
+	buffer := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
 	wc := ioutil.NewCustomCommitWriteCloser(buffer)
 	wc.CommitFn = func(int64) error {
-		c.addLookasideEntry(r, buffer.Bytes())
+		c.setLookasideEntry(lookasideKey, buffer.Bytes())
 		return nil
 	}
 	return wc, nil
@@ -463,7 +468,11 @@ func (c *Cache) teeReadCloser(r *rspb.ResourceName, rc io.ReadCloser) io.ReadClo
 	if r.GetDigest().GetSizeBytes() > *maxLookasideEntryBytes {
 		return rc
 	}
-	lwc, err := c.lookasideWriter(r)
+	k, ok := lookasideKey(r)
+	if !ok {
+		return rc
+	}
+	lwc, err := c.lookasideWriter(r, k)
 	if err != nil {
 		return rc
 	}
