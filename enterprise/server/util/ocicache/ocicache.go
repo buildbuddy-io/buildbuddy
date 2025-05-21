@@ -312,3 +312,159 @@ func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader
 	tr := io.TeeReader(upstream, w)
 	return WriteBlobToCache(ctx, tr, bsClient, acClient, ref, hash, contentType, contentLength)
 }
+
+type blobUploadWriter struct {
+	writer interfaces.CommittedWriteCloser
+
+	ctx      context.Context
+	acClient repb.ActionCacheClient
+	bsClient bspb.ByteStreamClient
+
+	contentLength int64
+	contentType   string
+	ref           gcrname.Reference
+	hash          gcr.Hash
+	blobCASDigest *repb.Digest
+}
+
+func (w *blobUploadWriter) Write(p []byte) (int, error) {
+	return w.writer.Write(p)
+}
+
+func (w *blobUploadWriter) Commit() error {
+	if err := w.writer.Commit(); err != nil {
+		return err
+	}
+
+	blobMetadata := &ocipb.OCIBlobMetadata{
+		ContentLength: w.contentLength,
+		ContentType:   w.contentType,
+	}
+	updateCacheEventMetric(casLabel, uploadLabel)
+	blobMetadataCASDigest, err := cachetools.UploadProto(w.ctx, w.bsClient, "", cacheDigestFunction, blobMetadata)
+	if err != nil {
+		return err
+	}
+
+	arKey := &ocipb.OCIActionResultKey{
+		Registry:      w.ref.Context().RegistryStr(),
+		Repository:    w.ref.Context().RepositoryStr(),
+		ResourceType:  ocipb.OCIResourceType_BLOB,
+		HashAlgorithm: w.hash.Algorithm,
+		HashHex:       w.hash.Hex,
+	}
+	ar := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{
+				Path:   blobOutputFilePath,
+				Digest: w.blobCASDigest,
+			},
+			{
+				Path:   blobMetadataOutputFilePath,
+				Digest: blobMetadataCASDigest,
+			},
+		},
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
+	if err != nil {
+		return err
+	}
+	arRN := digest.NewACResourceName(
+		arDigest,
+		actionResultInstanceName,
+		cacheDigestFunction,
+	)
+	updateCacheEventMetric(actionCacheLabel, uploadLabel)
+	err = cachetools.UploadActionResult(w.ctx, w.acClient, arRN, ar)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *blobUploadWriter) Close() error {
+	return w.writer.Close()
+}
+
+type cachingReadCloser struct {
+	reader io.ReadCloser
+	writer interfaces.CommittedWriteCloser
+
+	readErr  error
+	writeErr error
+}
+
+func (rc *cachingReadCloser) Read(p []byte) (int, error) {
+	if rc.readErr != nil {
+		return 0, status.WrapError(rc.readErr, "Reader already encountered error, cannot read further")
+	}
+	n, err := rc.reader.Read(p)
+	if err != nil {
+		rc.readErr = err
+		return n, err
+	}
+	if rc.writeErr != nil {
+		return n, err
+	}
+	written, err := rc.writer.Write(p[:n])
+	if err != nil {
+		rc.writeErr = err
+		log.Warningf("Error writing OCI image blob to the cache: %s", err)
+		return n, nil
+	}
+	if written < n {
+		rc.writeErr = status.DataLossErrorf("attempted to write %d OCI image blob bytes to the cache, only wrote %d bytes", n, written)
+	}
+	return n, nil
+}
+
+func (rc *cachingReadCloser) Close() error {
+	err := rc.reader.Close()
+	if err := rc.writer.Commit(); err != nil {
+		log.Warningf("Could not commit OCI image blob to the cache: %s", err)
+	}
+	if err := rc.writer.Close(); err != nil {
+		log.Warningf("Could not close cache upload: %s", err)
+	}
+	return err
+}
+
+func NewCachingReadCloser(ctx context.Context, upstream io.ReadCloser, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) (io.ReadCloser, error) {
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
+	}
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		cacheDigestFunction,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	updateCacheEventMetric(casLabel, uploadLabel)
+
+	writer, err := cachetools.NewUploadWriter(ctx, bsClient, blobRN)
+	if err != nil {
+		return nil, err
+	}
+	uploader := &blobUploadWriter{
+		writer: writer,
+
+		ctx:      ctx,
+		acClient: acClient,
+		bsClient: bsClient,
+
+		contentLength: contentLength,
+		contentType:   contentType,
+		ref:           ref,
+		hash:          hash,
+		blobCASDigest: blobCASDigest,
+	}
+	return &cachingReadCloser{
+		reader: upstream,
+		writer: uploader,
+	}, nil
+}
