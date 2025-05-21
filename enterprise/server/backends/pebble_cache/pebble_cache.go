@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"math"
 	"math/rand"
 	"os"
@@ -2930,8 +2931,7 @@ func (e *partitionEvictor) computeSize() (int64, map[string]int64, int64, int64,
 func (e *partitionEvictor) Counts() (int64, map[string]int64, int64, int64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	// XXX: copy sizeByGroup.
-	return e.sizeBytes, e.sizeByGroup, e.casCount, e.acCount
+	return e.sizeBytes, maps.Clone(e.sizeByGroup), e.casCount, e.acCount
 }
 
 func (e *partitionEvictor) Statusz(ctx context.Context) string {
