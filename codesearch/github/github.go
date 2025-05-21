@@ -33,11 +33,8 @@ const (
 	// mimetype detection.
 	detectionBufferSize = 1000
 
-<<<<<<< HEAD
 	// The maximum number of changes to process in a single incremental update.
 	// 1000 was an arbitrary choice, and could be adjusted if needed.
-=======
->>>>>>> 47ed319f5c (Switch over to 'git whatchanged', which is much cleaner)
 	maxAllowedChanges = 1000
 )
 
