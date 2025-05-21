@@ -38,6 +38,8 @@ export interface State {
   installationsLoading: boolean;
   installationsResponse: github.GetAppInstallationsResponse | null;
 
+  isUpdatingInstallation: Map<Long, boolean>;
+
   installationToUnlink: github.AppInstallation | null;
   unlinkInstallationLoading: boolean;
 }
@@ -50,6 +52,8 @@ export default class GitHubLink extends React.Component<Props, State> {
 
     installationsResponse: null,
     installationsLoading: false,
+
+    isUpdatingInstallation: new Map<Long, boolean>(),
 
     installationToUnlink: null,
     unlinkInstallationLoading: false,
@@ -154,6 +158,9 @@ export default class GitHubLink extends React.Component<Props, State> {
     idx: number,
     reportCommitStatusesForCIBuilds: boolean
   ) {
+    let prevMap = this.state.isUpdatingInstallation;
+    prevMap.set(installation.installationId, true);
+    this.setState({ isUpdatingInstallation: prevMap });
     rpcService.service
       .updateGitHubAppInstallation(
         github.UpdateGitHubAppInstallationRequest.create({
@@ -171,7 +178,12 @@ export default class GitHubLink extends React.Component<Props, State> {
         this.setState({ installationsResponse: this.state.installationsResponse });
         alertService.success(`Successfully updated settings for "${installation.owner}"`);
       })
-      .catch((e) => errorService.handleError(e));
+      .catch((e) => errorService.handleError(e))
+      .finally(() => {
+        let prevMap = this.state.isUpdatingInstallation;
+        prevMap.set(installation.installationId, false);
+        this.setState({ isUpdatingInstallation: prevMap });
+      });
   }
 
   render() {
@@ -263,6 +275,9 @@ export default class GitHubLink extends React.Component<Props, State> {
                               <div className="input-row">
                                 <label className="input-label">
                                   <Checkbox
+                                    disabled={
+                                      this.state.isUpdatingInstallation.get(installation.installationId) === true
+                                    }
                                     checked={installation.reportCommitStatusesForCiBuilds}
                                     onChange={(e) =>
                                       this.updateInstallationSettings(installation, idx, e.target.checked)
@@ -272,7 +287,8 @@ export default class GitHubLink extends React.Component<Props, State> {
                                 </label>
                               </div>
                               <div className="input-description">
-                                Applies to Workflows and builds tagged with Role=CI
+                                Applies to BuildBuddy Workflows and builds tagged with{" "}
+                                <TextLink href="https://www.buildbuddy.io/docs/guide-metadata#role">ROLE=CI</TextLink>
                               </div>
                             </div>
                           </div>

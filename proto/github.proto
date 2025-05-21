@@ -91,7 +91,7 @@ message AppInstallation {
   int64 app_id = 4;
 
   // Whether to automatically report GitHub commit statuses for build with
-  // role=CI.
+  // role=CI or CI_RUNNER.
   bool report_commit_statuses_for_ci_builds = 5;
 }
 

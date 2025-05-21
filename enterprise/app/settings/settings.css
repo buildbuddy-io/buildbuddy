@@ -159,7 +159,6 @@
 .settings .github-app-installation .installation-settings {
   display: flex;
   flex-direction: column;
-  margin-left: 16px;
 }
 
 .settings .github-app-installation .installation-settings .input-row .input-label {
@@ -169,12 +168,13 @@
 }
 
 .settings .github-app-installation .installation-settings .input-row .input-label > * {
-  margin-left: 8px;
+  margin-right: 8px;
 }
 
 .settings .github-app-installation .installation-settings .input-description {
   font-size: 14px;
   color: #424242;
+  margin-top: 4px;
 }
 
 /* Medium to small screen */
