@@ -29,19 +29,27 @@ func mustMakeServer(t *testing.T) *codesearchServer {
 	require.NoError(t, err)
 	return server
 }
-func TestIncrementalIndex(t *testing.T) {
-	ctx := context.Background()
-	server := mustMakeServer(t)
 
+func bootstrapIndex(t *testing.T, ctx context.Context, server *codesearchServer, repoURL, sha string) {
+	// In order to apply incremental updates, we need to first set the last indexed commit
 	ns, err := server.getUserNamespace(ctx, "")
 	require.NoError(t, err)
 	iw, err := index.NewWriter(server.db, ns)
 	require.NoError(t, err)
-	ru, err := git.ParseGitHubRepoURL("github.com/buildbuddy-io/buildbuddy")
+	ru, err := git.ParseGitHubRepoURL(repoURL)
 	require.NoError(t, err)
-	github.SetLastIndexedCommitSha(iw, ru, "def456")
+	github.SetLastIndexedCommitSha(iw, ru, sha)
 	err = iw.Flush()
 	require.NoError(t, err)
+}
+
+func TestIncrementalIndex(t *testing.T) {
+	ctx := context.Background()
+	server := mustMakeServer(t)
+
+	oldSha := "def456"
+	newSha := "abc123"
+	bootstrapIndex(t, ctx, server, "github.com/buildbuddy-io/buildbuddy", oldSha)
 
 	rsp, err := server.Index(ctx, &inpb.IndexRequest{
 		GitRepo: &gitpb.GitRepo{
@@ -51,8 +59,8 @@ func TestIncrementalIndex(t *testing.T) {
 		Update: &inpb.IncrementalUpdate{
 			Commits: []*inpb.Commit{
 				{
-					Sha:       "abc123",
-					ParentSha: "def456",
+					Sha:       newSha,
+					ParentSha: oldSha,
 					AddsAndUpdates: []*inpb.File{
 						{
 							Filepath: "foo/bar/baz.txt",
@@ -71,7 +79,7 @@ func TestIncrementalIndex(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, repoStatus, &inpb.RepoStatusResponse{
-		LastIndexedCommitSha: "abc123",
+		LastIndexedCommitSha: newSha,
 	})
 
 	searchRsp, err := server.Search(context.Background(), &spb.SearchRequest{
@@ -89,7 +97,7 @@ func TestIncrementalIndex(t *testing.T) {
 	assert.Equal(t, search, &spb.Result{
 		Owner:      "buildbuddy-io",
 		Repo:       "buildbuddy",
-		Sha:        "abc123",
+		Sha:        newSha,
 		Filename:   "foo/bar/baz.txt",
 		MatchCount: 1,
 	})
