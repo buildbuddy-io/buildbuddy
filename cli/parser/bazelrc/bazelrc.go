@@ -17,6 +17,9 @@ import (
 const (
 	EnablePlatformSpecificConfigFlag = "enable_platform_specific_config"
 	workspacePrefix                  = `%workspace%/`
+
+	CommonPhase = "common"
+	AlwaysPhase = "always"
 )
 
 var (
@@ -59,14 +62,14 @@ var (
 		"coverage": "test",
 	}
 
-	commonPhases = map[string]struct{}{
-		"common": {},
-		"always": {},
+	unconditionalCommandPhases = map[string]struct{}{
+		CommonPhase: {},
+		AlwaysPhase: {},
 	}
 
 	allPhases = func() map[string]struct{} {
 		v := maps.Clone(bazelCommands)
-		maps.Insert(v, maps.All(commonPhases))
+		maps.Insert(v, maps.All(unconditionalCommandPhases))
 		v["startup"] = struct{}{}
 		return v
 	}()
@@ -114,7 +117,7 @@ func appendRcRulesFromImport(workspaceDir, path string, namedConfigs map[string]
 	if strings.HasPrefix(path, workspacePrefix) {
 		path = filepath.Join(workspaceDir, path[len(workspacePrefix):])
 	}
-	rpath, err := Realpath(path)
+	realPath, err := Realpath(path)
 	if err != nil {
 		if optional {
 			return nil
@@ -122,7 +125,7 @@ func appendRcRulesFromImport(workspaceDir, path string, namedConfigs map[string]
 		return fmt.Errorf("could not determine real path of bazelrc file: %s", err)
 	}
 
-	return AppendRcRulesFromFile(workspaceDir, rpath, namedConfigs, defaultConfig, importStack, optional)
+	return AppendRcRulesFromFile(workspaceDir, realPath, namedConfigs, defaultConfig, importStack, optional)
 }
 
 // AppendRCRulesFromFile reads and lexes the provided rc file and appends the
@@ -131,12 +134,12 @@ func appendRcRulesFromImport(workspaceDir, path string, namedConfigs map[string]
 // configs is a map keyed by config name where the values are maps keyed by
 // phase name where the values are lists containing all the rules for that
 // config in the order they are encountered.
-func AppendRcRulesFromFile(workspaceDir string, rpath string, namedConfigs map[string]map[string][]string, defaultConfig map[string][]string, importStack []string, optional bool) error {
-	if slices.Contains(importStack, rpath) {
-		return fmt.Errorf("circular import detected: %s -> %s", strings.Join(importStack, " -> "), rpath)
+func AppendRcRulesFromFile(workspaceDir string, realPath string, namedConfigs map[string]map[string][]string, defaultConfig map[string][]string, importStack []string, optional bool) error {
+	if slices.Contains(importStack, realPath) {
+		return fmt.Errorf("circular import detected: %s -> %s", strings.Join(importStack, " -> "), realPath)
 	}
-	importStack = append(importStack, rpath)
-	file, err := os.Open(rpath)
+	importStack = append(importStack, realPath)
+	file, err := os.Open(realPath)
 	if err != nil {
 		if optional {
 			return nil
@@ -194,7 +197,7 @@ func AppendRcRulesFromFile(workspaceDir string, rpath string, namedConfigs map[s
 		}
 		config[rule.Phase] = append(config[rule.Phase], rule.Tokens...)
 	}
-	log.Debugf("Added rc rules from %q; new configs: %#v", rpath, namedConfigs)
+	log.Debugf("Added rc rules from %q; new configs: %#v", realPath, namedConfigs)
 	return scanner.Err()
 }
 
@@ -278,10 +281,10 @@ func Parent(command string) (string, bool) {
 	return parent, ok
 }
 
-// IsCommonPhase returns whether or not this is a phase that should always
+// IsUnconditionalCommandPhase returns whether or not this is a phase that should always
 // be evaluated, regardless of the command.
-func IsCommonPhase(phase string) bool {
-	_, ok := commonPhases[phase]
+func IsUnconditionalCommandPhase(phase string) bool {
+	_, ok := unconditionalCommandPhases[phase]
 	return ok
 }
 

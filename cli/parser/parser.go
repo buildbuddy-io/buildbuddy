@@ -838,7 +838,7 @@ func appendExpansion(
 		case options.Option:
 			// For the common phases, only append the arg if it's supported by
 			// the command.
-			if bazelrc.IsCommonPhase(phase) && !a.Supports(phases[len(phases)-1]) {
+			if bazelrc.IsUnconditionalCommandPhase(phase) && !a.Supports(phases[len(phases)-1]) {
 				if phase == "always" {
 					log.Warnf("Inherited 'always' options: %v", arguments.FormatAll(toExpand))
 					return nil, fmt.Errorf("%[1]s :: Unrecognized option %[1]s", a.Format()[0])
