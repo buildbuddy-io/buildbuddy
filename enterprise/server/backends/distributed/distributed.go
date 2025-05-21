@@ -448,7 +448,7 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 }
 
 func (c *Cache) lookasideWriter(r *rspb.ResourceName, lookasideKey string) (interfaces.CommittedWriteCloser, error) {
-	buffer := new(bytes.Buffer)
+	buffer := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
 	wc := ioutil.NewCustomCommitWriteCloser(buffer)
 	wc.CommitFn = func(int64) error {
 		c.setLookasideEntry(lookasideKey, buffer.Bytes())

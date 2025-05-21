@@ -37,8 +37,8 @@ func init() {
 	log.Configure()
 }
 
-func getAnonContext(t testing.TB, te *testenv.TestEnv) context.Context {
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+func getAnonContext(t testing.TB, env environment.Env) context.Context {
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	if err != nil {
 		t.Fatalf("error attaching user prefix: %v", err)
 	}
