@@ -444,7 +444,7 @@ func TestGetActionWithRealData(t *testing.T) {
 	require.Equal(t, "stderr", actionResp.GetAction()[0].GetFile()[0].GetName())
 }
 
-func TestGetTargetWithRealData(t *testing.T) {
+func TestGetTargetWithLowFilterThreshold(t *testing.T) {
 	// Avoid trying to replicate the blobs to local test server
 	flags.Set(t, "storage.disable_persist_cache_artifacts", true)
 	// Avoid extracting inline cache score card
@@ -461,7 +461,7 @@ func TestGetTargetWithRealData(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("%d", tc.eventFilterThreshold), func(t *testing.T) {
-			flags.Set(t, "app.event_filter_threshold", tc.eventFilterThreshold)
+			flags.Set(t, "app.build_event_filter_start_threshold", tc.eventFilterThreshold)
 
 			testUUID, err := uuid.NewRandom()
 			assert.NoError(t, err)
