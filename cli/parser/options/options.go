@@ -767,6 +767,11 @@ func FromConcrete[T Option](opts []T) []Option {
 	return optSlice
 }
 
+// AccumulateValues accepts an initial value, acc, and a variadic Option
+// parameter, opts, and returns the resulting value of evaluating all of those
+// options in order. It should only be called with opts that all share the same
+// definition, and an inital value that matches the type of value that
+// definition implies. Otherwise, its output will be nonsensical.
 func AccumulateValues[ T string | []string | bool | BoolOrEnum ](acc T, opts...Option) (T, error) {
 	p := any(&acc)
 	for _, opt := range opts {
