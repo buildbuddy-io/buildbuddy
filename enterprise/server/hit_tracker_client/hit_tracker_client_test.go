@@ -300,10 +300,12 @@ func BenchmarkEnqueue(b *testing.B) {
 	numToEnqueue := 1_000_000
 	flags.Set(b, "cache_proxy.remote_hit_tracker.max_hits_per_update", b.N*numToEnqueue)
 	flags.Set(b, "cache_proxy.remote_hit_tracker.max_pending_hits_per_group", b.N*numToEnqueue)
-	_, hitTrackerFactory, _ := setup(b)
 
 	b.ReportAllocs()
 	for b.Loop() {
+		b.StopTimer()
+		_, hitTrackerFactory, _ := setup(b)
+		b.StartTimer()
 		hitTracker := hitTrackerFactory.NewCASHitTracker(b.Context(), &repb.RequestMetadata{})
 		wg := sync.WaitGroup{}
 		for i := 0; i < numToEnqueue; i++ {
