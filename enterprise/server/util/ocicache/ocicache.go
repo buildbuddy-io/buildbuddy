@@ -372,14 +372,12 @@ func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClie
 type writeThroughCacher struct {
 	primary io.Writer
 	cacher  io.Writer
-
-	cacheErr error
 }
 
 func (w *writeThroughCacher) Write(p []byte) (int, error) {
 	n, err := w.primary.Write(p)
-	if n > 0 && w.cacheErr == nil {
-		_, w.cacheErr = w.cacher.Write(p[:n])
+	if n > 0 {
+		w.cacher.Write(p[:n]) // Writing to the cache is best-effort, so ignore any errors.
 	}
 	return n, err
 }
