@@ -52,7 +52,7 @@ def go_web_test_suite(
     wrapped_test_name = name + "_wrapped_test"
 
     test_exec_properties = {
-        "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu22-04-webtest@sha256:754fee72cee06fc72215b5d7edf31ef45116a4468cf5a5ccd4301acd83cba531",
+        "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu22-04-webtest@sha256:336e446da29030dd53e708ce2a8a61605ad4927419f2d6d3ed04f89099e3333b",
     }
     test_exec_properties.update(exec_properties)
 
