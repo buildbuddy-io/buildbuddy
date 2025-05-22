@@ -549,27 +549,30 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 		contentLength, err := l.remoteLayer.Size()
 		if err != nil {
 			log.CtxWarningf(l.ctx, "Could not fetch layer size from upstream remote registry: %s", err)
-			return l.remoteLayer.Compressed()
 		}
-		if _, err := ocicache.FetchBlobMetadataFromCache(l.ctx, l.bsClient, l.acClient, l.ocidigest); err != nil {
-			return l.remoteLayer.Compressed()
+		canAccess := err == nil
+
+		_, err = ocicache.FetchBlobMetadataFromCache(l.ctx, l.bsClient, l.acClient, l.ocidigest)
+		blobInCache := err == nil
+
+		if canAccess && blobInCache {
+			r, w := io.Pipe()
+			go func() {
+				defer w.Close()
+				err := ocicache.FetchBlobFromCache(
+					l.ctx,
+					w,
+					l.bsClient,
+					l.hash,
+					contentLength,
+				)
+				if err != nil {
+					log.Warningf("Error fetching layer from CAS in %q: %s", l.ocidigest.Context(), err)
+					w.CloseWithError(err)
+				}
+			}()
+			return r, nil
 		}
-		r, w := io.Pipe()
-		go func() {
-			defer w.Close()
-			err := ocicache.FetchBlobFromCache(
-				l.ctx,
-				w,
-				l.bsClient,
-				l.hash,
-				contentLength,
-			)
-			if err != nil {
-				log.Warningf("Error fetching layer from CAS in %q: %s", l.ocidigest.Context(), err)
-				w.CloseWithError(err)
-			}
-		}()
-		return r, nil
 	}
 	upstream, err := l.remoteLayer.Compressed()
 	if err != nil {
