@@ -232,13 +232,20 @@ func (c *Proxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*dcpb.
 	}, nil
 }
 
-// ResourceIsolationString returns a compact representation of a resource's isolation that is suitable for logging.
-func ResourceIsolationString(r *rspb.ResourceName) string {
+type resourceIsolationStringer struct{ *rspb.ResourceName }
+
+func (r resourceIsolationStringer) String() string {
 	rep := filepath.Join(r.GetInstanceName(), digest.CacheTypeToPrefix(r.GetCacheType()), r.GetDigest().GetHash())
 	if !strings.HasSuffix(rep, "/") {
 		rep += "/"
 	}
 	return rep
+}
+
+// ResourceIsolationString lazily returns a compact representation of a
+// resource's isolation that is suitable for logging.
+func ResourceIsolationString(r *rspb.ResourceName) fmt.Stringer {
+	return resourceIsolationStringer{r}
 }
 
 func (c *Proxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb.DeleteResponse, error) {
