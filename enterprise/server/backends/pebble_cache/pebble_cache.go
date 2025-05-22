@@ -2888,6 +2888,9 @@ func (e *partitionEvictor) lookupPartitionMetadata() (*sgpb.PartitionMetadata, e
 	if err != nil {
 		return nil, err
 	}
+	if *groupTrackingMinTimeUsec > e.clock.Now().UnixMicro() {
+		partitionMD.SizeByGroup = make(map[string]int64)
+	}
 
 	return partitionMD, nil
 }
