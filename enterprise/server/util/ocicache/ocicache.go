@@ -226,6 +226,8 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	return nil
 }
 
+// WriteManifestToCacheAndResponse reads the entire manifest from the upstream remote registry,
+// and writes the contents to both the response and to the AC.
 func WriteManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, response io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
 	if contentLength > maxManifestSize {
 		return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
@@ -242,6 +244,9 @@ func WriteManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, re
 	return WriteManifestToAC(ctx, buf.Bytes(), acClient, ref, hash, contentType)
 }
 
+// WriteBlobToCacheAndResponse reads an OCI blob (an OCI image layer) from the upstream remote registry
+// and writes those bytes to the response. It also makes a best-effort attempt to write the blob to the CAS.
+// Failure to write the blob to the CAS should not impact writing the blob to the response.
 func WriteBlobToCacheAndResponse(ctx context.Context, upstream io.Reader, response io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
 	uploader, err := NewBlobUploader(ctx, bsClient, acClient, ref, hash, contentType, contentLength)
 	if err != nil {
