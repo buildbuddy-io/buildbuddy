@@ -178,7 +178,7 @@ func createLayer(t *testing.T) ([]byte, name.Reference, gcr.Hash, string) {
 	require.NoError(t, err)
 	layers, err := image.Layers()
 	require.NoError(t, err)
-	require.Equal(t, 1, len(layers))
+	require.Len(t, layers, 1)
 	layer := layers[0]
 	hash, err := layer.Digest()
 	require.NoError(t, err)
