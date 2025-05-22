@@ -214,5 +214,3 @@ type NoOpAtimeUpdater struct{}
 func (a *NoOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) {
 }
 func (a *NoOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ string) {}
-func (a *NoOpAtimeUpdater) EnqueueByFindMissingRequest(_ context.Context, _ *repb.FindMissingBlobsRequest) {
-}

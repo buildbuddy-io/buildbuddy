@@ -33,17 +33,17 @@ const (
 )
 
 var (
-	aDigest = digestProto(strings.Repeat("a", 64), 3)
-	bDigest = digestProto(strings.Repeat("b", 64), 3)
-	cDigest = digestProto(strings.Repeat("c", 64), 3)
-	dDigest = digestProto(strings.Repeat("d", 64), 3)
-	eDigest = digestProto(strings.Repeat("e", 64), 3)
-	fDigest = digestProto(strings.Repeat("f", 64), 3)
-	gDigest = digestProto(strings.Repeat("g", 64), 3)
-	hDigest = digestProto(strings.Repeat("h", 64), 3)
-	iDigest = digestProto(strings.Repeat("i", 64), 3)
-	jDigest = digestProto(strings.Repeat("j", 64), 3)
-	kDigest = digestProto(strings.Repeat("k", 64), 3)
+	digest0 = digestProto(strings.Repeat("0", 64), 3)
+	digest1 = digestProto(strings.Repeat("1", 64), 3)
+	digest2 = digestProto(strings.Repeat("2", 64), 3)
+	digest3 = digestProto(strings.Repeat("3", 64), 3)
+	digest4 = digestProto(strings.Repeat("4", 64), 3)
+	digest5 = digestProto(strings.Repeat("5", 64), 3)
+	digest6 = digestProto(strings.Repeat("6", 64), 3)
+	digest7 = digestProto(strings.Repeat("7", 64), 3)
+	digest8 = digestProto(strings.Repeat("8", 64), 3)
+	digest9 = digestProto(strings.Repeat("9", 64), 3)
+	digestA = digestProto(strings.Repeat("a", 64), 3)
 )
 
 func digestProto(hash string, sizeBytes int64) *repb.Digest {
@@ -191,16 +191,16 @@ func TestAuth(t *testing.T) {
 
 	// No auth, no updates
 	ctx := context.Background()
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
+	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
 	clock.Advance(time.Minute)
 	expectNoMoreUpdates(t, clock, cas)
 
 	// Anon updates with client-identity header
 	ctx = ctxWithClientIdentity()
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
+	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
 	clock.Advance(time.Minute)
 	waitExpectingUpdates(t,
-		[]update{updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256)},
+		[]update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)},
 		cas)
 
 	cas.mu.Lock()
@@ -212,10 +212,10 @@ func TestAuth(t *testing.T) {
 
 	// Group updates with JWT and client-identity header
 	group1Ctx := authenticator.AuthContextFromAPIKey(ctxWithClientIdentity(), user1)
-	updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
+	updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
 	clock.Advance(time.Minute)
 	waitExpectingUpdates(t,
-		[]update{updateOf(group1, "instance-1", aDigest, repb.DigestFunction_SHA256)},
+		[]update{updateOf(group1, "instance-1", digest0, repb.DigestFunction_SHA256)},
 		cas)
 
 	cas.mu.Lock()
@@ -228,15 +228,15 @@ func TestEnqueue_SimpleBatching(t *testing.T) {
 	_, updater, cas, clock := setup(t)
 	ctx := ctxWithClientIdentity()
 
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest, bDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{cDigest}, repb.DigestFunction_SHA256)
+	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0, digest1}, repb.DigestFunction_SHA256)
+	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest2}, repb.DigestFunction_SHA256)
 	require.Equal(t, 0, len(cas.getUpdates()))
 	clock.Advance(time.Minute)
 	waitExpectingUpdates(t,
 		[]update{
-			updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256),
-			updateOf(anon, "instance-1", bDigest, repb.DigestFunction_SHA256),
-			updateOf(anon, "instance-1", cDigest, repb.DigestFunction_SHA256)},
+			updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256),
+			updateOf(anon, "instance-1", digest1, repb.DigestFunction_SHA256),
+			updateOf(anon, "instance-1", digest2, repb.DigestFunction_SHA256)},
 		cas)
 	expectNoMoreUpdates(t, clock, cas)
 }
@@ -247,11 +247,11 @@ func TestEnqueue_Deduping(t *testing.T) {
 	ctx := ctxWithClientIdentity()
 
 	for i := 0; i < 10; i++ {
-		updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
+		updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
 	}
 	require.Equal(t, 0, len(cas.getUpdates()))
 	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256)}, cas)
+	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)}, cas)
 	expectNoMoreUpdates(t, clock, cas)
 }
 
@@ -260,18 +260,18 @@ func TestEnqueue_InstanceNamesIsolated(t *testing.T) {
 	_, updater, cas, clock := setup(t)
 	ctx := ctxWithClientIdentity()
 
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-2", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-3", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
+	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
+	updater.Enqueue(ctx, "instance-2", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
+	updater.Enqueue(ctx, "instance-3", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
 	require.Equal(t, 0, len(cas.getUpdates()))
 	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256)}, cas)
+	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)}, cas)
 	cas.clearUpdates()
 	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-2", aDigest, repb.DigestFunction_SHA256)}, cas)
+	waitExpectingUpdates(t, []update{updateOf(anon, "instance-2", digest0, repb.DigestFunction_SHA256)}, cas)
 	cas.clearUpdates()
 	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-3", aDigest, repb.DigestFunction_SHA256)}, cas)
+	waitExpectingUpdates(t, []update{updateOf(anon, "instance-3", digest0, repb.DigestFunction_SHA256)}, cas)
 	expectNoMoreUpdates(t, clock, cas)
 }
 
@@ -280,14 +280,14 @@ func TestEnqueue_DigestFunctionsIsolated(t *testing.T) {
 	_, updater, cas, clock := setup(t)
 	ctx := ctxWithClientIdentity()
 
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_MD5)
+	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
+	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_BLAKE3)
 	require.Equal(t, 0, len(cas.getUpdates()))
 	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256)}, cas)
+	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256)}, cas)
 	cas.clearUpdates()
 	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", aDigest, repb.DigestFunction_MD5)}, cas)
+	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", digest0, repb.DigestFunction_BLAKE3)}, cas)
 	expectNoMoreUpdates(t, clock, cas)
 }
 
@@ -298,15 +298,15 @@ func TestEnqueue_GroupsIsolated(t *testing.T) {
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
 
-	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(group2Ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
+	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
+	updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
+	updater.Enqueue(group2Ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
 	clock.Advance(time.Second)
 	waitExpectingUpdates(t,
 		[]update{
-			updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256),
-			updateOf(group1, "instance-1", aDigest, repb.DigestFunction_SHA256),
-			updateOf(group2, "instance-1", aDigest, repb.DigestFunction_SHA256)},
+			updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256),
+			updateOf(group1, "instance-1", digest0, repb.DigestFunction_SHA256),
+			updateOf(group2, "instance-1", digest0, repb.DigestFunction_SHA256)},
 		cas)
 	expectNoMoreUpdates(t, clock, cas)
 }
@@ -316,19 +316,19 @@ func TestEnqueue_DedupesToFrontOfLine(t *testing.T) {
 	_, updater, cas, clock := setup(t)
 	ctx := ctxWithClientIdentity()
 
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-2", []*repb.Digest{bDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{cDigest}, repb.DigestFunction_SHA256)
+	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
+	updater.Enqueue(ctx, "instance-2", []*repb.Digest{digest1}, repb.DigestFunction_SHA256)
+	updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest2}, repb.DigestFunction_SHA256)
 	require.Equal(t, 0, len(cas.getUpdates()))
 	clock.Advance(time.Second)
 	waitExpectingUpdates(t,
 		[]update{
-			updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256),
-			updateOf(anon, "instance-1", cDigest, repb.DigestFunction_SHA256)},
+			updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256),
+			updateOf(anon, "instance-1", digest2, repb.DigestFunction_SHA256)},
 		cas)
 	cas.clearUpdates()
 	clock.Advance(time.Second)
-	waitExpectingUpdates(t, []update{updateOf(anon, "instance-2", bDigest, repb.DigestFunction_SHA256)}, cas)
+	waitExpectingUpdates(t, []update{updateOf(anon, "instance-2", digest1, repb.DigestFunction_SHA256)}, cas)
 	expectNoMoreUpdates(t, clock, cas)
 }
 
@@ -336,7 +336,7 @@ func TestEnqueue_DigestsDropped(t *testing.T) {
 	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_group", 7)
 	_, updater, cas, clock := setup(t)
 	ctx := ctxWithClientIdentity()
-	digests := []*repb.Digest{aDigest, bDigest, cDigest, dDigest, eDigest, fDigest, gDigest, hDigest, iDigest, jDigest, kDigest}
+	digests := []*repb.Digest{digest0, digest1, digest2, digest3, digest4, digest5, digest6, digest7, digest8, digest9, digestA}
 
 	// If the updater accumulates too many digests in a group, it drops them.
 	// This threshold is set to 7 above, so expect that many to be sent, though
@@ -379,14 +379,14 @@ func TestEnqueue_UpdatesDropped(t *testing.T) {
 	// them. setupTest() sets the value of remote_atime_max_updates_per_group to
 	// 3, so expect the first 3 to be sent and the others to be dropped.
 	for i := 1; i <= 10; i++ {
-		updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i), []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
+		updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i), []*repb.Digest{digest0}, repb.DigestFunction_SHA256)
 	}
 	tickAlot(clock, time.Second)
 	waitExpectingUpdates(t,
 		[]update{
-			updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256),
-			updateOf(anon, "instance-2", aDigest, repb.DigestFunction_SHA256),
-			updateOf(anon, "instance-3", aDigest, repb.DigestFunction_SHA256)},
+			updateOf(anon, "instance-1", digest0, repb.DigestFunction_SHA256),
+			updateOf(anon, "instance-2", digest0, repb.DigestFunction_SHA256),
+			updateOf(anon, "instance-3", digest0, repb.DigestFunction_SHA256)},
 		cas)
 	expectNoMoreUpdates(t, clock, cas)
 }
@@ -401,22 +401,22 @@ func TestEnqueue_Fairness(t *testing.T) {
 	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
 
 	// Updates (in order of first update in the shard):
-	//   Anon/1/SHA: A, B, C, D, E
-	//   Grp1/1/SHA: A, F, C, G, H, I
-	//   Anon/1/MD5: A, B, C, D, E
-	//   Anon/2/SHA: F, G, H, I, J
-	//   Grp1/2/SHA: A, F
-	//   Grp2/1/SHA: A, G, B, G
-	//   Anon/1/SHA: A, B, I, G, I, A, B, I, C
-	//   Anon/1/SHA: A, A, A, G, B, A, B, C, C
-	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{aDigest, bDigest, cDigest, dDigest, eDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{aDigest, fDigest, cDigest, gDigest, hDigest, iDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{aDigest, bDigest, cDigest, dDigest, eDigest}, repb.DigestFunction_MD5)
-	updater.Enqueue(anonCtx, "instance-2", []*repb.Digest{fDigest, gDigest, hDigest, iDigest, jDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(group1Ctx, "instance-2", []*repb.Digest{aDigest, fDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(group2Ctx, "instance-1", []*repb.Digest{aDigest, gDigest, bDigest, gDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{aDigest, bDigest, iDigest, gDigest, iDigest, aDigest, bDigest, iDigest, cDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{aDigest, aDigest, aDigest, gDigest, bDigest, aDigest, bDigest, cDigest, cDigest}, repb.DigestFunction_SHA256)
+	//   Anon/1/SHA: 0, 1, 2, 3, 4
+	//   Grp1/1/SHA: 0, 5, 2, 6, 7, 8
+	//   Anon/1/MD5: 0, 1, 2, 3, 4
+	//   Anon/2/SHA: 5, 6, 8, 9, A
+	//   Grp1/2/SHA: 0, 5
+	//   Grp2/1/SHA: 0, 6, 1, 6
+	//   Anon/1/SHA: 0, 1, 9, 6, 9, 0, 1, 9, 2
+	//   Anon/1/SHA: 0, 0, 0, 6, 1, 0, 1, 2, 2
+	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest1, digest2, digest3, digest4}, repb.DigestFunction_SHA256)
+	updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{digest0, digest5, digest2, digest6, digest7, digest8}, repb.DigestFunction_SHA256)
+	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest1, digest2, digest3, digest4}, repb.DigestFunction_MD5)
+	updater.Enqueue(anonCtx, "instance-2", []*repb.Digest{digest5, digest6, digest8, digest9, digestA}, repb.DigestFunction_SHA256)
+	updater.Enqueue(group1Ctx, "instance-2", []*repb.Digest{digest0, digest5}, repb.DigestFunction_SHA256)
+	updater.Enqueue(group2Ctx, "instance-1", []*repb.Digest{digest0, digest6, digest1, digest6}, repb.DigestFunction_SHA256)
+	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest1, digest9, digest6, digest9, digest0, digest1, digest9, digest2}, repb.DigestFunction_SHA256)
+	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest0, digest0, digest6, digest1, digest0, digest1, digest2, digest2}, repb.DigestFunction_SHA256)
 	clock.Advance(time.Second)
 
 	// Expect 5 updates from anon, 5 from group1, and 3 from group2.
@@ -472,13 +472,13 @@ func TestEnqueue_Raciness(t *testing.T) {
 	contexts := []context.Context{anonCtx, group1Ctx, group2Ctx}
 	instances := []string{"instance-1", "instance-2", "instance-3"}
 	batches := [][]*repb.Digest{
-		[]*repb.Digest{aDigest, bDigest, cDigest, dDigest, eDigest},
-		[]*repb.Digest{aDigest, fDigest, cDigest, gDigest, hDigest, iDigest},
-		[]*repb.Digest{aDigest, bDigest, cDigest, dDigest, eDigest},
-		[]*repb.Digest{eDigest, fDigest, aDigest},
-		[]*repb.Digest{aDigest, aDigest, aDigest, aDigest, aDigest, aDigest},
-		[]*repb.Digest{aDigest, bDigest, iDigest, gDigest, iDigest, aDigest, bDigest, iDigest, cDigest},
-		[]*repb.Digest{aDigest},
+		[]*repb.Digest{digest0, digest1, digest2, digest3, digest4},
+		[]*repb.Digest{digest0, digest5, digest2, digest6, digest7, digest8},
+		[]*repb.Digest{digest0, digest1, digest2, digest3, digest4},
+		[]*repb.Digest{digest4, digest5, digest0},
+		[]*repb.Digest{digest0, digest0, digest0, digest0, digest0, digest0},
+		[]*repb.Digest{digest0, digest1, digest8, digest6, digest8, digest0, digest1, digest8, digest2},
+		[]*repb.Digest{digest0},
 	}
 	digestFunctions := []repb.DigestFunction_Value{repb.DigestFunction_SHA256, repb.DigestFunction_MD5}
 
@@ -498,7 +498,7 @@ func TestEnqueueByResourceName_ActionCache(t *testing.T) {
 	_, updater, cas, ticker := setup(t)
 	ctx := ctxWithClientIdentity()
 
-	rn := digest.NewACResourceName(aDigest, "instance-1", repb.DigestFunction_SHA256).ActionCacheString()
+	rn := digest.NewACResourceName(digest0, "instance-1", repb.DigestFunction_SHA256).ActionCacheString()
 	updater.EnqueueByResourceName(ctx, rn)
 	expectNoMoreUpdates(t, ticker, cas)
 }
@@ -516,37 +516,37 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
 
-	rnA1 := casResourceName(t, aDigest, "instance-1")
-	rnA2 := casResourceName(t, aDigest, "instance-2")
-	rnB1 := casResourceName(t, bDigest, "instance-1")
-	rnB2 := casResourceName(t, bDigest, "instance-2")
-	rnC1 := casResourceName(t, cDigest, "instance-1")
-	rnC2 := casResourceName(t, cDigest, "instance-2")
-	rnD1 := casResourceName(t, dDigest, "instance-1")
-	rnD2 := casResourceName(t, dDigest, "instance-2")
-	rnE1 := casResourceName(t, eDigest, "instance-1")
-	rnF1 := casResourceName(t, fDigest, "instance-1")
+	rn01 := casResourceName(t, digest0, "instance-1")
+	rn02 := casResourceName(t, digest0, "instance-2")
+	rn11 := casResourceName(t, digest1, "instance-1")
+	rn12 := casResourceName(t, digest1, "instance-2")
+	rn21 := casResourceName(t, digest2, "instance-1")
+	rn22 := casResourceName(t, digest2, "instance-2")
+	rn31 := casResourceName(t, digest3, "instance-1")
+	rn32 := casResourceName(t, digest3, "instance-2")
+	rn41 := casResourceName(t, digest4, "instance-1")
+	rn51 := casResourceName(t, digest5, "instance-1")
 
 	// Updates (in order of first update in the shard):
 	//   Anon/2: B, A, C, D
 	//   Anon/1: A, C, D, B, E, F
 	//   Grp1/1: A
 	//   Grp2/1: C
-	updater.EnqueueByResourceName(anonCtx, rnB2)
-	updater.EnqueueByResourceName(anonCtx, rnA1)
-	updater.EnqueueByResourceName(anonCtx, rnC1)
-	updater.EnqueueByResourceName(anonCtx, rnA2)
-	updater.EnqueueByResourceName(anonCtx, rnB2)
-	updater.EnqueueByResourceName(anonCtx, rnC2)
-	updater.EnqueueByResourceName(anonCtx, rnA1)
-	updater.EnqueueByResourceName(anonCtx, rnD1)
-	updater.EnqueueByResourceName(anonCtx, rnA1)
-	updater.EnqueueByResourceName(group1Ctx, rnA1)
-	updater.EnqueueByResourceName(anonCtx, rnB1)
-	updater.EnqueueByResourceName(anonCtx, rnD2)
-	updater.EnqueueByResourceName(anonCtx, rnE1)
-	updater.EnqueueByResourceName(group2Ctx, rnC1)
-	updater.EnqueueByResourceName(anonCtx, rnF1)
+	updater.EnqueueByResourceName(anonCtx, rn12)
+	updater.EnqueueByResourceName(anonCtx, rn01)
+	updater.EnqueueByResourceName(anonCtx, rn21)
+	updater.EnqueueByResourceName(anonCtx, rn02)
+	updater.EnqueueByResourceName(anonCtx, rn12)
+	updater.EnqueueByResourceName(anonCtx, rn22)
+	updater.EnqueueByResourceName(anonCtx, rn01)
+	updater.EnqueueByResourceName(anonCtx, rn31)
+	updater.EnqueueByResourceName(anonCtx, rn01)
+	updater.EnqueueByResourceName(group1Ctx, rn01)
+	updater.EnqueueByResourceName(anonCtx, rn11)
+	updater.EnqueueByResourceName(anonCtx, rn32)
+	updater.EnqueueByResourceName(anonCtx, rn41)
+	updater.EnqueueByResourceName(group2Ctx, rn21)
+	updater.EnqueueByResourceName(anonCtx, rn51)
 
 	// First update should be 3 for Anon/2, 1 for Grp1/1, and 1 for Grp2/1
 	clock.Advance(time.Second)
@@ -578,40 +578,10 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 	require.Equal(t, map[string]int{anon: 1, group1: 0, group2: 0}, updateCount)
 }
 
-func TestEnqueueByFindMissing(t *testing.T) {
-	flags.Set(t, "cache_proxy.remote_atime_update_interval", time.Millisecond)
-	_, updater, cas, clock := setup(t)
-	ctx := ctxWithClientIdentity()
-
-	req := repb.FindMissingBlobsRequest{
-		InstanceName:   "instance-1",
-		BlobDigests:    []*repb.Digest{aDigest, bDigest, cDigest, dDigest},
-		DigestFunction: repb.DigestFunction_SHA256,
-	}
-	for i := 0; i < 10; i++ {
-		updater.EnqueueByFindMissingRequest(ctx, &req)
-	}
-	require.Equal(t, 0, len(cas.getUpdates()))
-	clock.Advance(time.Second)
-	waitExpectingUpdates(t,
-		[]update{
-			updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256),
-			updateOf(anon, "instance-1", bDigest, repb.DigestFunction_SHA256),
-			updateOf(anon, "instance-1", cDigest, repb.DigestFunction_SHA256),
-			updateOf(anon, "instance-1", dDigest, repb.DigestFunction_SHA256)},
-		cas)
-	cas.clearUpdates()
-	for i := 0; i < 100; i++ {
-		clock.Advance(time.Second)
-	}
-	time.Sleep(10 * time.Millisecond)
-	require.Equal(t, 0, len(cas.getUpdates()))
-}
-
 func BenchmarkEnqueue(b *testing.B) {
 	numToEnqueue := 10_000
 	instances := []string{"instance-1", "instance-2", "instance-3"}
-	digests := []*repb.Digest{aDigest, bDigest, cDigest, dDigest, eDigest, fDigest, gDigest, hDigest, iDigest, jDigest}
+	digests := []*repb.Digest{digest0, digest1, digest2, digest3, digest4, digest5, digest6, digest7, digest8, digest9}
 
 	flags.Set(b, "cache_proxy.remote_atime_max_digests_per_update", b.N*len(instances)*len(digests)*numToEnqueue)
 	flags.Set(b, "cache_proxy.remote_atime_max_updates_per_group", b.N*len(instances)*len(digests)*numToEnqueue)
@@ -623,14 +593,9 @@ func BenchmarkEnqueue(b *testing.B) {
 		for i := 0; i < 10_000; i++ {
 			for _, instance := range instances {
 				for _, digest := range digests {
-					req := repb.FindMissingBlobsRequest{
-						InstanceName:   instance,
-						BlobDigests:    []*repb.Digest{digest},
-						DigestFunction: repb.DigestFunction_SHA256,
-					}
 					wg.Add(1)
 					go func() {
-						updater.EnqueueByFindMissingRequest(ctxWithClientIdentity(), &req)
+						updater.Enqueue(ctxWithClientIdentity(), instance, []*repb.Digest{digest}, repb.DigestFunction_SHA256)
 						wg.Done()
 					}()
 				}

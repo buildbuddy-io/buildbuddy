@@ -250,10 +250,6 @@ func (u *atimeUpdater) EnqueueByResourceName(ctx context.Context, downloadString
 	u.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
 }
 
-func (u *atimeUpdater) EnqueueByFindMissingRequest(ctx context.Context, req *repb.FindMissingBlobsRequest) {
-	u.Enqueue(ctx, req.InstanceName, req.BlobDigests, req.DigestFunction)
-}
-
 func (u *atimeUpdater) start() {
 	for {
 		select {
