@@ -380,7 +380,13 @@ func keyToBigInt(key filestore.PebbleKey) (*big.Int, error) {
 	return big.NewInt(0).SetBytes(hash), nil
 }
 
+// evenlyDividePartitionIntoRanges takes a splitConfig (a start byte, end byte,
+// and number of splits) and returns a slice of splitConfig.Splits+1 range
+// descriptors that completely cover that range from [start byte, end byte).
 func evenlyDividePartitionIntoRanges(splitConfig SplitConfig) []*rfpb.RangeDescriptor {
+	if splitConfig.Splits < 1 {
+		log.Fatalf("Split config does not specify >1 splits")
+	}
 	var startKey, endKey filestore.PebbleKey
 	startVersion, err := startKey.FromBytes(splitConfig.Start)
 	if err != nil {
@@ -397,7 +403,7 @@ func evenlyDividePartitionIntoRanges(splitConfig SplitConfig) []*rfpb.RangeDescr
 		log.Fatalf("Split start and end key must have same partition: %v", splitConfig)
 	}
 
-	log.Printf("startKey: %q, endKey: %q", startKey, endKey)
+	log.Infof("startKey: %q, endKey: %q", startKey, endKey)
 	leftInt, err := keyToBigInt(startKey)
 	if err != nil {
 		log.Fatalf("Error converting startKey %q to int: %s", startKey, err)
@@ -449,7 +455,7 @@ func SendStartShardRequests(ctx context.Context, session *client.Session, store 
 	}
 
 	// If no additional ranges were configured, then append a single range that
-	// funs from constants.UnsplittableMaxByte to keys.MaxByte.
+	// runs from constants.UnsplittableMaxByte to keys.MaxByte.
 	if len(startingRanges) == 1 {
 		startingRanges = append(startingRanges, &rfpb.RangeDescriptor{
 			Start:      keys.Key{constants.UnsplittableMaxByte},
@@ -458,9 +464,9 @@ func SendStartShardRequests(ctx context.Context, session *client.Session, store 
 		})
 	}
 
-	log.Print("The following partitions will be configured:")
+	log.Info("The following partitions will be configured:")
 	for i, rd := range startingRanges {
-		log.Printf("%d [%q, %q)", i, rd.GetStart(), rd.GetEnd())
+		log.Infof("%d [%q, %q)", i, rd.GetStart(), rd.GetEnd())
 	}
 	return SendStartShardRequestsWithRanges(ctx, session, store, nodeGrpcAddrs, startingRanges)
 }
