@@ -226,39 +226,79 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	return nil
 }
 
-func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: contentLength,
+func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
+		if contentLength > maxManifestSize {
+			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
+		}
+		buf := bytes.NewBuffer(make([]byte, 0, contentLength))
+		mw := io.MultiWriter(w, buf)
+		written, err := io.Copy(mw, io.LimitReader(upstream, contentLength))
+		if err != nil {
+			return err
+		}
+		if written != contentLength {
+			return status.DataLossErrorf("expected manifest of length %d, only able to write %d bytes", contentLength, written)
+		}
+		return WriteManifestToAC(ctx, buf.Bytes(), acClient, ref, hash, contentType)
 	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		"",
-		cacheDigestFunction,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	updateCacheEventMetric(casLabel, uploadLabel)
-	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
+	uploader, err := NewBlobUploader(ctx, bsClient, acClient, ref, hash, contentType, contentLength)
 	if err != nil {
+		return err
+	}
+	defer uploader.Close()
+	dst := &writeThroughCacher{
+		primary: w,
+		cacher:  uploader,
+	}
+	if _, err := io.Copy(dst, upstream); err != nil {
+		return err
+	}
+	return uploader.Commit()
+}
+
+type blobUploader struct {
+	ref           gcrname.Reference
+	hash          gcr.Hash
+	contentType   string
+	contentLength int64
+
+	writer *cachetools.UploadWriter
+
+	ctx      context.Context
+	bsClient bspb.ByteStreamClient
+	acClient repb.ActionCacheClient
+}
+
+func (up *blobUploader) Write(p []byte) (int, error) {
+	return up.writer.Write(p)
+}
+
+func (up *blobUploader) Commit() error {
+	if err := up.writer.Commit(); err != nil {
 		return err
 	}
 
 	blobMetadata := &ocipb.OCIBlobMetadata{
-		ContentLength: contentLength,
-		ContentType:   contentType,
+		ContentLength: up.contentLength,
+		ContentType:   up.contentType,
 	}
 	updateCacheEventMetric(casLabel, uploadLabel)
-	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", cacheDigestFunction, blobMetadata)
+	blobMetadataCASDigest, err := cachetools.UploadProto(up.ctx, up.bsClient, "", cacheDigestFunction, blobMetadata)
 	if err != nil {
 		return err
 	}
 
 	arKey := &ocipb.OCIActionResultKey{
-		Registry:      ref.Context().RegistryStr(),
-		Repository:    ref.Context().RepositoryStr(),
+		Registry:      up.ref.Context().RegistryStr(),
+		Repository:    up.ref.Context().RepositoryStr(),
 		ResourceType:  ocipb.OCIResourceType_BLOB,
-		HashAlgorithm: hash.Algorithm,
-		HashHex:       hash.Hex,
+		HashAlgorithm: up.hash.Algorithm,
+		HashHex:       up.hash.Hex,
+	}
+	blobCASDigest := &repb.Digest{
+		Hash:      up.hash.Hex,
+		SizeBytes: up.contentLength,
 	}
 	ar := &repb.ActionResult{
 		OutputFiles: []*repb.OutputFile{
@@ -286,29 +326,54 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 		cacheDigestFunction,
 	)
 	updateCacheEventMetric(actionCacheLabel, uploadLabel)
-	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
-	if err != nil {
-		return err
-	}
-	return nil
+	return cachetools.UploadActionResult(up.ctx, up.acClient, arRN, ar)
 }
 
-func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
-	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
-		if contentLength > maxManifestSize {
-			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
-		}
-		buf := bytes.NewBuffer(make([]byte, 0, contentLength))
-		mw := io.MultiWriter(w, buf)
-		written, err := io.Copy(mw, io.LimitReader(upstream, contentLength))
-		if err != nil {
-			return err
-		}
-		if written != contentLength {
-			return status.DataLossErrorf("expected manifest of length %d, only able to write %d bytes", contentLength, written)
-		}
-		return WriteManifestToAC(ctx, buf.Bytes(), acClient, ref, hash, contentType)
+func (up *blobUploader) Close() error {
+	return up.writer.Close()
+}
+
+func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) (interfaces.CommittedWriteCloser, error) {
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
 	}
-	tr := io.TeeReader(upstream, w)
-	return WriteBlobToCache(ctx, tr, bsClient, acClient, ref, hash, contentType, contentLength)
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		cacheDigestFunction,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	updateCacheEventMetric(casLabel, uploadLabel)
+	uw, err := cachetools.NewUploadWriter(ctx, bsClient, blobRN)
+	if err != nil {
+		return nil, err
+	}
+	return &blobUploader{
+		ref:           ref,
+		hash:          hash,
+		contentType:   contentType,
+		contentLength: contentLength,
+
+		writer: uw,
+
+		ctx:      ctx,
+		bsClient: bsClient,
+		acClient: acClient,
+	}, nil
+}
+
+type writeThroughCacher struct {
+	primary io.Writer
+	cacher  io.Writer
+
+	cacheErr error
+}
+
+func (w *writeThroughCacher) Write(p []byte) (int, error) {
+	n, err := w.primary.Write(p)
+	if n > 0 && w.cacheErr == nil {
+		_, w.cacheErr = w.cacher.Write(p[:n])
+	}
+	return n, err
 }
