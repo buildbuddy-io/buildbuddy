@@ -589,6 +589,8 @@ func layerFiles(t *testing.T, layer v1.Layer) map[string][]byte {
 		if err == io.EOF {
 			break
 		}
+		require.NoError(t, err)
+		require.NotNil(t, header)
 		if header.Typeflag == tar.TypeReg {
 			var buf bytes.Buffer
 			_, err := io.Copy(&buf, tr)
