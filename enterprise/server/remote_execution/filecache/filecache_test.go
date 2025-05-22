@@ -111,7 +111,7 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 	ctx := context.TODO()
 	fcDir := testfs.MakeTempDir(t)
 	baseDir := testfs.MakeTempDir(t)
-	authedCtx := claims.AuthContextFromClaims(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+	authedCtx := claims.AuthContextWithJWT(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
 
 	{
 		// Create a filecache and add a couple files.
@@ -502,7 +502,7 @@ func TestFileCacheWriter(t *testing.T) {
 
 func BenchmarkFilecacheLink(b *testing.B) {
 	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
-	ctx := claims.AuthContextFromClaims(context.Background(), &claims.Claims{}, nil)
+	ctx := claims.AuthContextWithJWT(context.Background(), &claims.Claims{}, nil)
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()
 
@@ -583,7 +583,7 @@ func BenchmarkFilecacheLink(b *testing.B) {
 
 func BenchmarkContainsAdd(b *testing.B) {
 	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
-	ctx := claims.AuthContextFromClaims(context.Background(), &claims.Claims{}, nil)
+	ctx := claims.AuthContextWithJWT(context.Background(), &claims.Claims{}, nil)
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()
 

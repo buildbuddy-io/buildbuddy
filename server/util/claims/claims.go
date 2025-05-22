@@ -303,11 +303,11 @@ func AssembleJWT(c *Claims) (string, error) {
 	return tokenString, err
 }
 
-// Returns a Context containing auth state for the the provided Claims and auth
+// Returns a context containing auth state for the provided Claims and auth
 // error. Note that this function assembles a JWT out of the provided Claims
-// and sets that in the context, so it should only be used in cases where that
-// is necessary.
-func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Context {
+// and sets that in the context as well, so it should only be used in cases
+// where that is necessary.
+func AuthContextWithJWT(ctx context.Context, c *Claims, err error) context.Context {
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
