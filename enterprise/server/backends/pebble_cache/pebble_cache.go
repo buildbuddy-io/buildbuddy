@@ -88,6 +88,7 @@ var (
 	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
 	enableTableBloomFilter    = flag.Bool("cache.pebble.enable_table_bloom_filter", true, "If true, write bloom filter data with pebble SSTables.")
 	enableAutoRatchet         = flag.Bool("cache.pebble.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to latest version.")
+	groupTrackingMinTimeUsec  = flag.Int64("cache.pebble.min_time_for_group_tracking_usec", math.MaxInt64, "If a file was created after this timestamp, we will count it when tracking cache space usage by group.")
 
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UnspecifiedKeyVersion), "The key version new data will be written with. If negative, will write to the highest existing version in the database, or the highest known version if a new database is created.")
 	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
@@ -209,10 +210,11 @@ type Options struct {
 }
 
 type sizeUpdate struct {
-	partID    string
-	groupID   string
-	cacheType rspb.CacheType
-	delta     int64
+	partID         string
+	groupID        string
+	lastModifyUsec int64
+	cacheType      rspb.CacheType
+	delta          int64
 }
 
 type accessTimeUpdate struct {
@@ -1084,7 +1086,7 @@ func (p *PebbleCache) processSizeUpdates() {
 
 	for edit := range p.edits {
 		e := evictors[edit.partID]
-		e.updateSize(edit.cacheType, edit.groupID, edit.delta)
+		e.updateSize(edit.cacheType, edit.lastModifyUsec, edit.groupID, edit.delta)
 	}
 }
 
@@ -1748,10 +1750,11 @@ func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op
 		delta = -1 * delta
 	}
 	up := &sizeUpdate{
-		partID:    partID,
-		groupID:   md.GetFileRecord().GetIsolation().GetGroupId(),
-		cacheType: cacheType,
-		delta:     delta,
+		partID:         partID,
+		lastModifyUsec: md.GetLastModifyUsec(),
+		groupID:        md.GetFileRecord().GetIsolation().GetGroupId(),
+		cacheType:      cacheType,
+		delta:          delta,
 	}
 	p.edits <- up
 }
@@ -2777,7 +2780,7 @@ func (e *partitionEvictor) updateMetrics() {
 	}
 }
 
-func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, groupID string, deltaSize int64) {
+func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, lastModifyUsec int64, groupID string, deltaSize int64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -2786,11 +2789,8 @@ func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, groupID string, 
 		deltaCount = -1
 	}
 
-	if groupID != "" {
-		// When this is first turned on, we will be evicting stuff that we
-		// weren't previously tracking.  Rather than letting ourselves go
-		// negative, we limit at zero.
-		e.sizeByGroup[groupID] = max(0, e.sizeByGroup[groupID]+deltaSize)
+	if lastModifyUsec > *groupTrackingMinTimeUsec {
+		e.sizeByGroup[groupID] += deltaSize
 	}
 
 	switch cacheType {
@@ -2835,8 +2835,8 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, map[str
 
 		sizeBytes := getSizeOnLocalDisk(iter.Key(), fileMetadata, true)
 		totalSizeBytes += sizeBytes
-		if groupID := fileMetadata.GetFileRecord().GetIsolation().GetGroupId(); groupID != "" {
-			totalSizeByGroup[groupID] += sizeBytes
+		if fileMetadata.GetLastModifyUsec() > *groupTrackingMinTimeUsec {
+			totalSizeByGroup[fileMetadata.GetFileRecord().GetIsolation().GetGroupId()] += sizeBytes
 		}
 
 		// identify and count CAS vs AC files.
@@ -3033,7 +3033,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 		return
 	}
 
-	if err := e.deleteFile(key, md.GetFileRecord().GetIsolation().GetGroupId(), version, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
+	if err := e.deleteFile(key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), version, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
 		log.Errorf("[%s] Error evicting file for key %q: %s (ignoring)", e.cacheName, sample.Key, err)
 		return
 	}
@@ -3074,7 +3074,7 @@ func deleteDirIfEmptyAndOld(dir string) error {
 	return os.Remove(dir)
 }
 
-func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, groupID string, version filestore.PebbleKeyVersion, storedSizeBytes int64, storageMetadata *sgpb.StorageMetadata) error {
+func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, groupID string, lastModifyUsec int64, version filestore.PebbleKeyVersion, storedSizeBytes int64, storageMetadata *sgpb.StorageMetadata) error {
 	keyBytes, err := key.Bytes(version)
 	if err != nil {
 		return err
@@ -3113,7 +3113,7 @@ func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, groupID string, v
 	}
 
 	if storedSizeBytes > 0 {
-		e.updateSize(key.CacheType(), groupID, -1*storedSizeBytes)
+		e.updateSize(key.CacheType(), lastModifyUsec, groupID, -1*storedSizeBytes)
 	}
 	return nil
 }
