@@ -544,11 +544,19 @@ func (l *cacheAwareLayer) Digest() (gcr.Hash, error) {
 
 func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 	if *readLayersFromCache {
-		blobMetadata, err := ocicache.FetchBlobMetadataFromCache(l.ctx, l.bsClient, l.acClient, l.ocidigest)
-		if err != nil && !status.IsNotFoundError(err) {
-			log.CtxErrorf(l.ctx, "Error fetching CAS digest for layer in %q: %s", l.ocidigest.Context(), err)
+		contentLength, err := l.remoteLayer.Size()
+		if err != nil {
+			log.CtxWarningf(l.ctx, "Error fetching remote size for layer in %q: %s", l.ocidigest.Context(), err)
 		}
-		if err == nil {
+		canAccess := err == nil
+
+		_, err = ocicache.FetchBlobMetadataFromCache(l.ctx, l.bsClient, l.acClient, l.ocidigest)
+		if err != nil && !status.IsNotFoundError(err) {
+			log.CtxWarningf(l.ctx, "Error fetching CAS digest for layer in %q: %s", l.ocidigest.Context(), err)
+		}
+		blobInCache := err == nil
+
+		if canAccess && blobInCache {
 			r, w := io.Pipe()
 			go func() {
 				defer w.Close()
@@ -557,7 +565,7 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 					w,
 					l.bsClient,
 					l.hash,
-					blobMetadata.ContentLength,
+					contentLength,
 				)
 				if err != nil {
 					log.Warningf("Error fetching layer from CAS in %q: %s", l.ocidigest.Context(), err)
