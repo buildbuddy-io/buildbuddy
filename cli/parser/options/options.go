@@ -288,6 +288,7 @@ type Option interface {
 	GetDefinition() *Definition
 	UseShortName(bool)
 	Normalized() Option
+	BoolLike() BoolLike
 }
 
 // RequiredValueOption is used to represent an option whose definition specifies
@@ -362,6 +363,10 @@ func (o *RequiredValueOption) Normalized() Option {
 		Value:      o.Value,
 		Joined:     true,
 	}
+}
+
+func (o *RequiredValueOption) BoolLike() BoolLike {
+	return nil
 }
 
 type BoolLike interface {
@@ -487,6 +492,10 @@ func (o *BoolOrEnumOption) Normalized() Option {
 	}
 }
 
+func (o *BoolOrEnumOption) BoolLike() BoolLike {
+	return o
+}
+
 // starlarkOption is used to represent an option that has been identified as
 // having a starlark option prefix.
 type starlarkOption struct {
@@ -576,6 +585,10 @@ func (o *ExpansionOption) Normalized() Option {
 		Definition:    o.Definition,
 		UsesShortName: false,
 	}
+}
+
+func (o *ExpansionOption) BoolLike() BoolLike {
+	return nil
 }
 
 // UnknownOption is used to represent an option that lacks a predetermined
@@ -682,4 +695,110 @@ func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 		return &BoolOrEnumOption{Definition: d, Value: v, UsesShortName: form == shortForm, IsNegative: form == negativeForm}, nil
 	}
 	return &ExpansionOption{Definition: d, UsesShortName: form == shortForm}, nil
+}
+
+type BoolOrEnum struct {
+	b *bool
+	e *string
+}
+
+func (b *BoolOrEnum) GetBool() (bool, bool) {
+	if b.b == nil {
+		return false, false
+	}
+	return *b.b, true
+}
+
+func (b *BoolOrEnum) GetEnum() (string, bool) {
+	if b.e == nil {
+		return "", false
+	}
+	return *b.e, true
+}
+
+func (b *BoolOrEnum) Get() any {
+	switch {
+	case b.b != nil:
+		v := *b.b
+		return &v
+	case b.e != nil:
+		v := *b.e
+		return &v
+	default:
+		return nil
+	}
+}
+
+func (b *BoolOrEnum) SetBool(value bool) {
+	b.e = nil
+	b.b = &value
+}
+
+func (b *BoolOrEnum) SetEnum(value string) {
+	b.b = nil
+	b.e = &value
+}
+
+func (b *BoolOrEnum) Set(value any) {
+	if value == nil {
+		return
+	}
+	switch value := value.(type) {
+	case *bool:
+		v := *value
+		b.b = &v
+	case *string:
+		v := *value
+		b.e = &v
+	}
+}
+
+func FromConcrete[T Option](opts []T) []Option {
+	if len(opts) == 0 {
+		return nil
+	}
+	optSlice := make([]Option, 0, len(opts))
+	for _, a := range opts {
+		// `append(a, b...)` only works if `a` and `b` have exactly the same type,
+		// even if the slice element types are the same. So we use a loop and append
+		// one-by-one, converting each element to `Option` with each append.
+		optSlice = append(optSlice, a)
+	}
+	return optSlice
+}
+
+func AccumulateValues[ T string | []string | bool | BoolOrEnum ](acc T, opts...Option) (T, error) {
+	p := any(&acc)
+	for _, opt := range opts {
+		log.Printf("Accumulating %v...", opt.Format())
+		switch p := p.(type) {
+		case *string:
+			*p = opt.GetValue()
+		case *[]string:
+			*p = append(*p, opt.GetValue())
+		case *bool:
+			b := opt.BoolLike()
+			if b == nil {
+				return *new(T), fmt.Errorf("Option '%s' is not a boolean (or boolean-or-enum) option.", opt.Name())
+			}
+			v, err := b.AsBool()
+			if err != nil {
+				return *new(T), fmt.Errorf("Option '%s' was not convertable to a boolean value.", strings.Join(opt.Format(), " "))
+			}
+			*p = v
+		case *BoolOrEnum:
+			b, ok := opt.(BoolLike)
+			if !ok {
+				p.SetEnum(opt.GetValue())
+				continue
+			}
+			v, err := b.AsBool()
+			if err != nil {
+				p.SetEnum(opt.GetValue())
+				continue
+			}
+			p.SetBool(v)
+		}
+	}
+	return acc, nil
 }
