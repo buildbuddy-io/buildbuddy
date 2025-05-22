@@ -152,6 +152,22 @@ func TestManifestWrittenOnlyToAC(t *testing.T) {
 	require.Empty(t, cmp.Diff(raw, mc.Raw))
 }
 
+func TestWriteAndFetchBlob(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, layerRef, hash, contentType := createLayer(t)
+	contentLength := int64(len(layerBuf))
+
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	err := ocicache.WriteBlobToCache(ctx, bytes.NewReader(layerBuf), bsClient, acClient, layerRef, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, layerRef, hash, contentType)
+}
+
 func createLayer(t *testing.T) ([]byte, name.Reference, gcr.Hash, string) {
 	imageName := "create_layer"
 	image, err := crane.Image(map[string][]byte{
