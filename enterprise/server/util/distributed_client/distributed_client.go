@@ -243,7 +243,9 @@ func (r resourceIsolationStringer) String() string {
 }
 
 // ResourceIsolationString lazily returns a compact representation of a
-// resource's isolation that is suitable for logging.
+// resource's isolation that is suitable for logging. This returns a
+// fmt.Stringer instead of a string because it avoids actual formatting if we
+// never log a message (maybe because the log level isn't enabled).
 func ResourceIsolationString(r *rspb.ResourceName) fmt.Stringer {
 	return resourceIsolationStringer{r}
 }

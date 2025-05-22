@@ -222,7 +222,7 @@ func (r *CASResourceName) DownloadString() string {
 				instanceName,
 				blobTypeSegment(r.GetCompressor()),
 				r.GetDigest().GetHash(),
-				strconv.Itoa(int(r.GetDigest().GetSizeBytes()))},
+				strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)},
 			"/")
 	}
 	return strings.Join(
@@ -231,7 +231,7 @@ func (r *CASResourceName) DownloadString() string {
 			blobTypeSegment(r.GetCompressor()),
 			strings.ToLower(r.rn.DigestFunction.String()),
 			r.GetDigest().GetHash(),
-			strconv.Itoa(int(r.GetDigest().GetSizeBytes()))},
+			strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)},
 		"/")
 }
 
@@ -249,7 +249,7 @@ func (r *CASResourceName) NewUploadString() string {
 				u,
 				blobTypeSegment(r.GetCompressor()),
 				r.GetDigest().GetHash(),
-				strconv.Itoa(int(r.GetDigest().GetSizeBytes()))}, "/")
+				strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)}, "/")
 	}
 	return strings.Join(
 		[]string{
@@ -259,7 +259,7 @@ func (r *CASResourceName) NewUploadString() string {
 			blobTypeSegment(r.GetCompressor()),
 			strings.ToLower(r.rn.DigestFunction.String()),
 			r.GetDigest().GetHash(),
-			strconv.Itoa(int(r.GetDigest().GetSizeBytes()))}, "/")
+			strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)}, "/")
 }
 
 type ACResourceName struct {
@@ -278,7 +278,7 @@ func (r *ACResourceName) ActionCacheString() string {
 				blobTypeSegment(r.GetCompressor()),
 				"ac",
 				r.GetDigest().GetHash(),
-				strconv.Itoa(int(r.GetDigest().GetSizeBytes()))},
+				strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)},
 			"/")
 	}
 	return strings.Join(
@@ -288,7 +288,7 @@ func (r *ACResourceName) ActionCacheString() string {
 			"ac",
 			strings.ToLower(r.rn.DigestFunction.String()),
 			r.GetDigest().GetHash(),
-			strconv.Itoa(int(r.GetDigest().GetSizeBytes()))},
+			strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)},
 		"/")
 }
 
