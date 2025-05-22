@@ -263,5 +263,5 @@ func getLastMetadataValue(ctx context.Context, key string) string {
 
 func authContext(ctx context.Context, jwt string, c *claims.Claims) context.Context {
 	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
-	return claims.AuthContextFromClaims(ctx, c, nil)
+	return claims.AuthContextWithClaims(ctx, c)
 }

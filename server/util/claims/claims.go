@@ -303,6 +303,10 @@ func AssembleJWT(c *Claims) (string, error) {
 	return tokenString, err
 }
 
+// Returns a Context containing auth state for the the provided Claims and auth
+// error. Note that this function assembles a JWT out of the provided Claims
+// and sets that in the context, so it should only be used in cases where that
+// is necessary.
 func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Context {
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
@@ -312,6 +316,11 @@ func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Co
 		return authutil.AuthContextWithError(ctx, err)
 	}
 	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
+	return AuthContextWithClaims(ctx, c)
+}
+
+// Returns a Context containing auth state for the the provided Claims.
+func AuthContextWithClaims(ctx context.Context, c *Claims) context.Context {
 	ctx = context.WithValue(ctx, contextClaimsKey, c)
 	// Note: we clear the error here in case it was set initially by the
 	// authentication handler, but then we want to re-authenticate later on in the
