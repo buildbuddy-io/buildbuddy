@@ -353,7 +353,15 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
-	err = ocicache.WriteBlobOrManifestToCacheAndWriter(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, hash, contentType, contentLength)
+	switch ociResourceType {
+	case ocipb.OCIResourceType_BLOB:
+		err = ocicache.WriteBlobToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, hash, contentType, contentLength)
+	case ocipb.OCIResourceType_MANIFEST:
+		err = ocicache.WriteManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, hash, contentType, contentLength)
+	default:
+		err = status.InternalErrorf("Cannot write response body to cache for unknown OCI resource type %s", ociResourceType)
+	}
+
 	if err != nil && err != context.Canceled {
 		log.CtxWarningf(ctx, "Error writing response body to cache for %q: %s", resolvedRef.Context(), err)
 	}
