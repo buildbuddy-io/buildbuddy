@@ -337,7 +337,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			// Backwards-compatible fill of the execution with the ExecutionSummary for
 			// now. The ExecutionSummary will be removed completely in the future.
 			if statsUnset(md) {
-				if decodedMetadata, err := decodeMetadataFromExecutionSummary(executeResponse); err == nil {
+				if decodedMetadata, _ := decodeMetadataFromExecutionSummary(executeResponse); decodedMetadata != nil {
 					md = decodedMetadata
 				}
 			}
@@ -378,6 +378,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
 				executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
 				executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
+				executionProto.Os = properties.OS
 			}
 
 			schedulingMeta := auxMeta.GetSchedulingMetadata()
@@ -429,11 +430,15 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 }
 
 // flushExecutionToOLAP flushes execution data to Clickhouse.
-func (s *ExecutionServer) flushExecutionToOLAP(
-	ctx context.Context,
-	executionID string) error {
+//
+// Returns whether any data was flushed. Because operation updates can be retried,
+// there's a chance this function could be called twice. Because this function
+// deletes ExecutionInvocationLinks after running, if it is run again, there won't
+// be any Links in Redis. That would indicate the data has already been flushed
+// and doesn't need to be flushed again.
+func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) (*repb.StoredExecution, bool, error) {
 	if s.env.GetExecutionCollector() == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
-		return nil
+		return nil, false, nil
 	}
 
 	// Always clean up invocationLinks and execution updates from the collector.
@@ -452,12 +457,12 @@ func (s *ExecutionServer) flushExecutionToOLAP(
 
 	executionProto, err := s.env.GetExecutionCollector().GetInProgressExecution(ctx, executionID)
 	if err != nil {
-		return status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
+		return nil, false, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
 	}
 
 	links, err := s.env.GetExecutionCollector().GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
-		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
+		return nil, false, status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
 	for _, link := range links {
 		executionProto := executionProto.CloneVT()
@@ -489,7 +494,8 @@ func (s *ExecutionServer) flushExecutionToOLAP(
 			}
 		}
 	}
-	return nil
+
+	return executionProto, len(links) > 0, nil
 }
 
 // getUnvalidatedActionResult fetches an action result from the cache but does
@@ -1080,7 +1086,7 @@ func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID stri
 	if err := s.updateExecution(ctx, taskID, repb.ExecutionStage_COMPLETED, executeRsp, auxMetadata, properties, action); err != nil {
 		return err
 	}
-	if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+	if _, _, err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: failed to flush execution to clickhouse: %s", err)
 	}
 	return nil
@@ -1150,8 +1156,17 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
-			if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+			execution, flushed, err := s.flushExecutionToOLAP(ctx, taskID)
+			if err != nil {
 				log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+			}
+			// Assume that if Clickhouse data has not been flushed yet, Usages
+			// data has also not been flushed yet and should be flushed now.
+			if flushed {
+				// TODO(vanja) should this be done when the executor got a cache hit?
+				if err := s.updateUsage(ctx, execution); err != nil {
+					log.CtxWarningf(ctx, "Failed to update usage for %q: %s", taskID, err)
+				}
 			}
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
@@ -1328,20 +1343,15 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		}
 	}
 
-	if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
-		// TODO(vanja) should this be done when the executor got a cache hit?
-		log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
-	}
-
 	return nil
 }
 
-func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb.ExecuteResponse, plat *platform.Properties) error {
+func (s *ExecutionServer) updateUsage(ctx context.Context, execution *repb.StoredExecution) error {
 	ut := s.env.GetUsageTracker()
 	if ut == nil {
 		return nil
 	}
-	dur, err := executionDuration(executeResponse.GetResult().GetExecutionMetadata())
+	dur, err := executionDuration(execution)
 	if err != nil {
 		// If the task encountered an error, it's somewhat expected that the
 		// execution duration will be unset, so don't return an error. For
@@ -1349,22 +1359,16 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 		// even begin. Note that an error doesn't necessarily imply a missing
 		// exec duration though; we may get a DeadlineExceeded error if the task
 		// times out, but still get an exec duration.
-		if execErr := gstatus.ErrorProto(executeResponse.GetStatus()); execErr != nil {
+		if execution.StatusCode != 0 {
 			return nil
 		}
 		return err
 	}
 
-	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Pool, plat.WorkflowID, plat.PoolType)
-	if err != nil {
-		return status.InternalErrorf("failed to determine executor pool: %s", err)
-	}
-
 	counts := &tables.UsageCounts{}
-	setExecutionDuration(counts, dur, pool, plat)
-	usg := executeResponse.GetResult().GetExecutionMetadata().GetUsageStats()
-	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
-		counts.CPUNanos = usg.GetCpuNanos()
+	setExecutionDuration(counts, dur, execution)
+	if !execution.SelfHosted && execution.CpuNanos > 0 {
+		counts.CPUNanos = execution.CpuNanos
 	}
 	labels, err := usageutil.Labels(ctx)
 	if err != nil {
@@ -1441,15 +1445,15 @@ func redactExecutionAuxiliaryMetadata(ctx context.Context, auxAny *anypb.Any) {
 	}
 }
 
-func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
-	if err := md.GetWorkerStartTimestamp().CheckValid(); err != nil {
+func executionDuration(execution *repb.StoredExecution) (time.Duration, error) {
+	start := time.UnixMicro(execution.WorkerStartTimestampUsec)
+	end := time.UnixMicro(execution.WorkerCompletedTimestampUsec)
+	if err := timestamppb.New(start).CheckValid(); err != nil {
 		return 0, err
 	}
-	if err := md.GetWorkerCompletedTimestamp().CheckValid(); err != nil {
+	if err := timestamppb.New(end).CheckValid(); err != nil {
 		return 0, err
 	}
-	start := md.GetWorkerStartTimestamp().AsTime()
-	end := md.GetWorkerCompletedTimestamp().AsTime()
 	dur := end.Sub(start)
 	if dur <= 0 {
 		return 0, status.InternalErrorf("Execution duration is <= 0")
@@ -1457,20 +1461,20 @@ func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
 	return dur, nil
 }
 
-func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, pool *interfaces.PoolInfo, props *platform.Properties) {
+func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, execution *repb.StoredExecution) {
 	if duration < 0 {
 		return
 	}
-	if pool.IsSelfHosted {
-		if props.OS == platform.LinuxOperatingSystemName {
+	if execution.SelfHosted {
+		if execution.Os == platform.LinuxOperatingSystemName {
 			counts.SelfHostedLinuxExecutionDurationUsec += duration.Microseconds()
-		} else if props.OS == platform.DarwinOperatingSystemName {
+		} else if execution.Os == platform.DarwinOperatingSystemName {
 			counts.SelfHostedMacExecutionDurationUsec += duration.Microseconds()
 		}
 	} else {
-		if props.OS == platform.LinuxOperatingSystemName {
+		if execution.Os == platform.LinuxOperatingSystemName {
 			counts.LinuxExecutionDurationUsec += duration.Microseconds()
-		} else if props.OS == platform.DarwinOperatingSystemName {
+		} else if execution.Os == platform.DarwinOperatingSystemName {
 			counts.MacExecutionDurationUsec += duration.Microseconds()
 		}
 	}
