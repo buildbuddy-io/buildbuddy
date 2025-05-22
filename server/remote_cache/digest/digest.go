@@ -523,7 +523,7 @@ func parseResourceName(resourceName string, cacheType rspb.CacheType, resourceTy
 	if pieceIdx >= 0 {
 		piece = pieces[pieceIdx]
 	}
-	if compressor == repb.Compressor_ZSTD {
+	if compressor != repb.Compressor_IDENTITY {
 		if piece != "compressed-blobs" {
 			return nil, status.InvalidArgumentErrorf("Unparseable resource name, invalid compressed blob type: %s", resourceName)
 		}
