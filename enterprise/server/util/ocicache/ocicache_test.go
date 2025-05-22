@@ -17,6 +17,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -151,18 +152,27 @@ func TestManifestWrittenOnlyToAC(t *testing.T) {
 }
 
 func TestWriteAndFetchBlob(t *testing.T) {
-	imageName := "test_write_and_fetch_blob"
-	image, err := crane.Image(map[string][]byte{
-		"/tmp/" + imageName: []byte(imageName),
-	})
-	require.NoError(t, err)
-
 	te := setupTestEnv(t)
+
+	layerBuf, layerRef, hash, contentType := createLayer(t)
+	contentLength := int64(len(layerBuf))
 
 	ctx := context.Background()
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
 
+	err := ocicache.WriteBlobToCache(ctx, bytes.NewReader(layerBuf), bsClient, acClient, layerRef, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, layerRef, hash, contentType)
+}
+
+func createLayer(t *testing.T) ([]byte, name.Reference, v1.Hash, string) {
+	imageName := "create_layer"
+	image, err := crane.Image(map[string][]byte{
+		"/tmp/" + imageName: []byte(imageName),
+	})
+	require.NoError(t, err)
 	imageRef, err := name.ParseReference("buildbuddy.io/" + imageName)
 	require.NoError(t, err)
 	layers, err := image.Layers()
@@ -175,17 +185,20 @@ func TestWriteAndFetchBlob(t *testing.T) {
 	mediaType, err := layer.MediaType()
 	require.NoError(t, err)
 	contentType := string(mediaType)
-	contentLength, err := layer.Size()
-	require.NoError(t, err)
 	rc, err := layer.Compressed()
 	require.NoError(t, err)
 	defer rc.Close()
 	layerBuf, err := io.ReadAll(rc)
 	require.NoError(t, err)
 
-	err = ocicache.WriteBlobToCache(ctx, bytes.NewReader(layerBuf), bsClient, acClient, layerRef, hash, contentType, contentLength)
-	require.NoError(t, err)
+	return layerBuf, layerRef, hash, contentType
+}
 
+func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, layerRef name.Reference, hash v1.Hash, contentType string) {
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
 	blobMetadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, layerRef)
 	require.NoError(t, err)
 	require.NotNil(t, blobMetadata)
