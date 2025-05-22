@@ -1381,9 +1381,7 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	for _, e := range evictors {
 		sizeBytes, sbg, casCount, acCount := e.Counts()
 		for g, s := range sbg {
-			if g != "" {
-				sizeByGroup[g] += s
-			}
+			sizeByGroup[g] += s
 		}
 		totalSizeBytes += sizeBytes
 		totalCASCount += casCount
@@ -1392,7 +1390,7 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("Min DB version: %d, Max DB version: %d, Active version: %d\n", p.minDatabaseVersion(), p.maxDatabaseVersion(), p.activeDatabaseVersion())
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
 	for g, s := range sizeByGroup {
-		buf += fmt.Sprintf("[All Partitions] %s: %d bytes\n", g, s)
+		buf += fmt.Sprintf("[All Partitions] (Group %s): %d bytes\n", g, s)
 	}
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
@@ -2772,9 +2770,6 @@ func (e *partitionEvictor) updateMetrics() {
 		metrics.CacheNameLabel: e.cacheName,
 		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
 	for g, sizeBytes := range e.sizeByGroup {
-		if g == "" {
-			continue
-		}
 		metrics.DiskCachePartitionSizeBytes.With(prometheus.Labels{
 			metrics.PartitionID:    e.part.ID,
 			metrics.CacheNameLabel: e.cacheName,
