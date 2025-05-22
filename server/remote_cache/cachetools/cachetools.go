@@ -1161,6 +1161,9 @@ type UploadWriter struct {
 
 	buf           []byte
 	bytesBuffered int
+
+	useZstd bool
+	cbuf    []byte
 }
 
 // Write copies the input bytes to an internal buffer and may send some or all of the bytes to the CAS.
@@ -1198,8 +1201,15 @@ func (uw *UploadWriter) flush(finish bool) error {
 	if !finish && uw.bytesBuffered < uploadBufSizeBytes {
 		return nil
 	}
+	data := uw.buf[:uw.bytesBuffered]
+	if uw.useZstd {
+		// If CompressZstd allocates a new buffer for the compressed bytes,
+		// use it to send the request and then let it be garbaged collected.
+		// We will put uw.cbuf back into the pool on Close().
+		data = compression.CompressZstd(uw.cbuf[:0], uw.buf[:uw.bytesBuffered])
+	}
 	req := &bspb.WriteRequest{
-		Data:         uw.buf[:uw.bytesBuffered],
+		Data:         data,
 		ResourceName: uw.uploadString,
 		WriteOffset:  uw.bytesUploaded,
 		FinishWrite:  finish,
@@ -1208,7 +1218,7 @@ func (uw *UploadWriter) flush(finish bool) error {
 	if uw.sendErr != nil {
 		return uw.sendErr
 	}
-	uw.bytesUploaded += int64(uw.bytesBuffered)
+	uw.bytesUploaded += int64(len(data))
 	uw.bytesBuffered = 0
 	return nil
 }
@@ -1249,6 +1259,9 @@ func (uw *UploadWriter) Close() error {
 	}
 	uw.closed = true
 	uploadBufPool.Put(uw.buf)
+	if uw.useZstd {
+		uploadBufPool.Put(uw.cbuf)
+	}
 	return nil
 }
 
@@ -1280,6 +1293,18 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		return nil, err
 	}
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+	if r.GetCompressor() == repb.Compressor_ZSTD {
+		return &UploadWriter{
+			ctx:          ctx,
+			stream:       stream,
+			sender:       sender,
+			uploadString: r.NewUploadString(),
+			buf:          uploadBufPool.Get(),
+
+			useZstd: true,
+			cbuf:    uploadBufPool.Get(),
+		}, nil
+	}
 	return &UploadWriter{
 		ctx:          ctx,
 		stream:       stream,
