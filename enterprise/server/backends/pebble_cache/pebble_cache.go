@@ -2787,7 +2787,10 @@ func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, groupID string, 
 	}
 
 	if groupID != "" {
-		e.sizeByGroup[groupID] += deltaSize
+		// When this is first turned on, we will be evicting stuff that we
+		// weren't previously tracking.  Rather than letting ourselves go
+		// negative, we limit at zero.
+		e.sizeByGroup[groupID] = max(0, e.sizeByGroup[groupID]+deltaSize)
 	}
 
 	switch cacheType {
