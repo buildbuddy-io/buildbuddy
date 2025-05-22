@@ -797,8 +797,8 @@ func AccumulateValues[ T string | []string | bool | BoolOrEnum ](acc T, opts...O
 			}
 			*p = v
 		case *BoolOrEnum:
-			b, ok := opt.(BoolLike)
-			if !ok {
+			b := opt.BoolLike()
+			if b == nil {
 				p.SetEnum(opt.GetValue())
 				continue
 			}
