@@ -2888,6 +2888,12 @@ func (e *partitionEvictor) lookupPartitionMetadata() (*sgpb.PartitionMetadata, e
 	if err != nil {
 		return nil, err
 	}
+
+	// Because we enabled group ID-based tracking in the cache without
+	// performing a migration, we had to set an arbitrary timestamp after
+	// which we started tracking.  If we have to reset that to a new time
+	// in the future for whatever reason, we need to clear past tracking
+	// data (or else it may never get removed from the "total size").
 	if *groupTrackingMinTimeUsec > e.clock.Now().UnixMicro() {
 		partitionMD.SizeByGroup = make(map[string]int64)
 	}
