@@ -344,7 +344,6 @@ func (t *teeReadCloser) Read(p []byte) (int, error) {
 	return read, t.lastReadErr
 }
 
-
 func (t *teeReadCloser) Close() error {
 	err := t.rc.Close()
 	if err == nil && t.lastReadErr != nil && t.lastReadErr != io.EOF {
