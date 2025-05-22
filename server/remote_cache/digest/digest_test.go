@@ -43,29 +43,38 @@ func TestParseDownloadResourceName(t *testing.T) {
 			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/",
 			wantError:    status.InvalidArgumentError(""),
 		},
-		// TODO(iain): fix
-		// { // Invalid size
-		// 	resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234b",
-		// 	wantError:    status.InvalidArgumentError(""),
-		// },
-		// TODO(iain): fix
-		// { // Trailing slashes
-		// 	resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234////////",
-		// 	wantError:    status.InvalidArgumentError(""),
-		// },
+		{ // Invalid size
+			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234b",
+			wantError:    status.InvalidArgumentError(""),
+		},
+		{ // Trailing slashes
+			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234////////",
+			wantError:    status.InvalidArgumentError(""),
+		},
 		{ // Bad compression type
 			resourceName: "/compressed-blobs/unknownCompressionType/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			wantError:    status.InvalidArgumentError(""),
+		},
+		{ // Missing blob-type
+			resourceName: "blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			wantError:    status.InvalidArgumentError(""),
+		},
+		{ // Valid, but incorrect hash length
+			resourceName: "/blobs/sha256/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac/1234",
+			wantError:    status.InvalidArgumentError(""),
+		},
+		{ // SHA1 hardcoded
+			resourceName: "/blobs/sha1/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac/1234",
+			wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac", SizeBytes: 1234}, "", repb.DigestFunction_SHA1),
 		},
 		{ // SHA1
 			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac/1234",
 			wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49ac", SizeBytes: 1234}, "", repb.DigestFunction_SHA1),
 		},
-		// TODO(iain): fix
-		// { // MD5
-		// 	resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b51/1234",
-		// 	wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b51", SizeBytes: 1234}, "", repb.DigestFunction_MD5),
-		// },
+		{ // MD5 -- shortest possible resource name
+			resourceName: "blobs/072d9dd55aacaa829d7d1cc9ec8c4b51/1",
+			wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b51", SizeBytes: 1}, "", repb.DigestFunction_MD5),
+		},
 		{ // SHA256
 			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			wantDRN:      digest.NewCASResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "", repb.DigestFunction_SHA256),
@@ -292,6 +301,10 @@ func TestParseActionCacheResourceName(t *testing.T) {
 		},
 		{ // Not enough pieces
 			resourceName: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			wantError:    status.InvalidArgumentError(""),
+		},
+		{ // Missing blob-type
+			resourceName: "ac/blake3/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
 			wantError:    status.InvalidArgumentError(""),
 		},
 		{ // SHA256 AC resource name with instance name

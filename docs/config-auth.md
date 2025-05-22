@@ -148,11 +148,11 @@ SAML 2.0 authentication is avaliable for BuildBuddy Cloud (SaaS).
 
 1. Enter `BuildBuddy` for the name and hit `Create`.
 
-1. In the newly created appliction view, navigate to `Single sign-on` and select `SAML`.
+1. In the newly created application view, navigate to `Single sign-on` and select `SAML`.
 
 1. Click on `Edit` in the first section `Basic SAML Configuration`.
 
-   a. `Identified (Entity ID)` should be `https://app.buildbuddy.io/saml/metadata?slug=<org-slug>`.
+   a. `Identifier (Entity ID)` should be `https://app.buildbuddy.io/saml/metadata?slug=<org-slug>`.
 
    b. `Reply URL (Assertion Consumer Service URL)` should be `https://app.buildbuddy.io/auth/saml/acs?slug=<org-slug>`.
 
