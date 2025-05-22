@@ -248,7 +248,7 @@ func WriteManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, re
 // and writes those bytes to the response. It also makes a best-effort attempt to write the blob to the CAS.
 // Failure to write the blob to the CAS should not impact writing the blob to the response.
 func WriteBlobToCacheAndResponse(ctx context.Context, upstream io.Reader, response io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
-	uploader, err := NewBlobUploader(ctx, bsClient, acClient, ref, hash, contentType, contentLength)
+	uploader, err := newBlobUploader(ctx, bsClient, acClient, ref, hash, contentType, contentLength)
 	if err != nil {
 		return err
 	}
@@ -339,7 +339,7 @@ func (up *blobUploader) Close() error {
 	return up.writer.Close()
 }
 
-func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) (interfaces.CommittedWriteCloser, error) {
+func newBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) (interfaces.CommittedWriteCloser, error) {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -369,8 +369,12 @@ func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClie
 	}, nil
 }
 
+// NewReadThroughCacher creates a ReadCloser that can be used to read the image layer from the upstream registry.
+// On each call to Read(), all the bytes read will be written to the CAS.
+// The blob is committed to the CAS on Close().
+// Any errors encountered writing to the CAS will be ignored.
 func NewReadThroughCacher(ctx context.Context, upstream io.ReadCloser, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) (io.ReadCloser, error) {
-	uploader, err := NewBlobUploader(ctx, bsClient, acClient, ref, hash, contentType, contentLength)
+	uploader, err := newBlobUploader(ctx, bsClient, acClient, ref, hash, contentType, contentLength)
 	if err != nil {
 		return nil, err
 	}
@@ -407,10 +411,11 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 }
 
 func (r *readThroughCacher) Close() error {
-	defer r.uploader.Close()
 	err := r.reader.Close()
-	if err := r.uploader.Commit(); err != nil {
-		return err
-	}
+
+	// Best-effort caching; do not care if commit or close calls fail.
+	r.uploader.Commit()
+	r.uploader.Close()
+
 	return err
 }
