@@ -167,6 +167,29 @@ func TestWriteAndFetchBlob(t *testing.T) {
 	fetchAndCheckBlob(t, te, layerBuf, layerRef, hash, contentType)
 }
 
+func TestCachingReadCloser(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, layerRef, hash, contentType := createLayer(t)
+	contentLength := int64(len(layerBuf))
+
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	rc, err := ocicache.NewCachingReadCloser(ctx, io.NopCloser(bytes.NewReader(layerBuf)), bsClient, acClient, layerRef, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	out := &bytes.Buffer{}
+	_, err = io.Copy(out, rc)
+	require.NoError(t, err)
+
+	err = rc.Close()
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, layerRef, hash, contentType)
+}
+
 func createLayer(t *testing.T) ([]byte, name.Reference, v1.Hash, string) {
 	imageName := "create_layer"
 	image, err := crane.Image(map[string][]byte{

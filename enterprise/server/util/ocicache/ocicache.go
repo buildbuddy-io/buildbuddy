@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -45,6 +46,8 @@ const (
 	casLabel         = "cas"
 
 	cacheDigestFunction = repb.DigestFunction_SHA256
+
+	chunkBufSizeBytes = 1000000 // 1MB
 )
 
 func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string) error {
@@ -446,6 +449,13 @@ func NewCachingReadCloser(ctx context.Context, upstream io.ReadCloser, bsClient 
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
 	updateCacheEventMetric(casLabel, uploadLabel)
 
+	rbuf := make([]byte, 0, chunkBufSizeBytes)
+	cbuf := make([]byte, 0, chunkBufSizeBytes)
+	reader, err := compression.NewZstdCompressingReader(upstream, rbuf[:chunkBufSizeBytes], cbuf[:chunkBufSizeBytes])
+	if err != nil {
+		return nil, status.InternalErrorf("cannot compress OCI image blob for caching: %s", err)
+	}
+
 	writer, err := cachetools.NewUploadWriter(ctx, bsClient, blobRN)
 	if err != nil {
 		return nil, err
@@ -464,7 +474,7 @@ func NewCachingReadCloser(ctx context.Context, upstream io.ReadCloser, bsClient 
 		blobCASDigest: blobCASDigest,
 	}
 	return &cachingReadCloser{
-		reader: upstream,
+		reader: reader,
 		writer: uploader,
 	}, nil
 }
