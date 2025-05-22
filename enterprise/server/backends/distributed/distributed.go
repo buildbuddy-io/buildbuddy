@@ -407,6 +407,20 @@ func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
 	c.log.Debugf("Set %q in lookaside cache", lookasideKey)
 }
 
+var lookasideCacheLookupCount map[bool]prometheus.Counter
+
+func init() {
+	// Calling LookasideCacheLookupCount.With is a large portion of the time
+	// spent on the lookaside cache, so just do it once.
+	lookasideCacheLookupCount = make(map[bool]prometheus.Counter, 2)
+	lookasideCacheLookupCount[true] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
+		metrics.LookasideCacheLookupStatus: metrics.HitStatusLabel,
+	})
+	lookasideCacheLookupCount[false] = metrics.LookasideCacheLookupCount.With(prometheus.Labels{
+		metrics.LookasideCacheLookupStatus: metrics.MissStatusLabel,
+	})
+}
+
 // getLookasideEntry returns the resource and if it was found in the lookaside
 // cache.
 func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
@@ -432,14 +446,7 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
 	}
 	c.lookasideMu.Unlock()
 
-	lookupStatus := metrics.MissStatusLabel
-	if found {
-		lookupStatus = metrics.HitStatusLabel
-	}
-	metrics.LookasideCacheLookupCount.With(prometheus.Labels{
-		metrics.LookasideCacheLookupStatus: lookupStatus,
-	}).Inc()
-
+	lookasideCacheLookupCount[found].Inc()
 	if found {
 		c.log.Debugf("Got %q from lookaside cache", k)
 		return entry.data, true
