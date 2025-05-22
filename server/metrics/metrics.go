@@ -908,7 +908,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "lookaside_cache_eviction_age_msec",
-		Buckets:   durationMsecBuckets(time.Millisecond, 15*time.Minute, 10),
+		Buckets:   durationMsecBuckets(30*time.Minute, 24*time.Hour, 2),
 		Help:      "Age of items evicted from the cache, in **milliseconds**.",
 	}, []string{
 		LookasideCacheEvictionReason,
