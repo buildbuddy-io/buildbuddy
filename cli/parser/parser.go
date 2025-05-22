@@ -734,7 +734,7 @@ func expandConfigs(
 	commandIndex, command := parsed.Find[*parsed.Command](args.Args)
 	if commandIndex == -1 {
 		// No command is a help command that does not expand anything but the startup config.
-		return &parsed.OrderedArgs{Args: append(args.Args, startupConfig...)}, nil
+		return &parsed.OrderedArgs{Args: slices.Concat(startupConfig, args.Args)}, nil
 	}
 	expanded := slices.Concat(startupConfig, args.Args[:commandIndex])
 	expanded = append(expanded, command.PositionalArgument)
