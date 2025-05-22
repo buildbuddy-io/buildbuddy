@@ -1395,22 +1395,22 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
 	if len(sizeByGroup) > 0 {
-		extra := totalSizeBytes;
+		extra := totalSizeBytes
 		sortedKeys := make([]string, 0, len(sizeByGroup))
 		for k, _ := range sizeByGroup {
 			sortedKeys = append(sortedKeys, k)
 		}
 		sort.Strings(sortedKeys)
 		buf += "\n[All partitions] Size by group:\n"
-			for _, g := range sortedKeys {
-				if s, ok := sizeByGroup[g]; ok {
-					buf += fmt.Sprintf("  %s: %d bytes\n", g, s)
-					extra -= s
-				}
+		for _, g := range sortedKeys {
+			if s, ok := sizeByGroup[g]; ok {
+				buf += fmt.Sprintf("  %s: %d bytes\n", g, s)
+				extra -= s
 			}
+		}
 		buf += fmt.Sprintf("Extra space (from before counting began): %d bytes\n", extra)
 	}
-	
+
 	buf += "</pre>"
 	for _, e := range evictors {
 		buf += e.Statusz(ctx)
