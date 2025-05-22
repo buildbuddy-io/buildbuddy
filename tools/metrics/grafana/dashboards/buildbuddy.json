@@ -2756,7 +2756,7 @@
       "seriesOverrides": [
         {
           "$$hashKey": "object:1261",
-          "alias": "QPS",
+          "alias": "hit_ratio",
           "yaxis": 2
         }
       ],
@@ -2770,12 +2770,26 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by(status) (rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=\"buildbuddy-app\"}[${window}])) \n",
+          "expr": "sum by(status) (rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
           "interval": "",
           "legendFormat": "__auto",
           "queryType": "randomWalk",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=\"buildbuddy-app\", status=\"hit\"}[${window}])) / sum(rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
+          "hide": false,
+          "interval": "",
+          "legendFormat": "hit_ratio",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "B"
         }
       ],
       "thresholds": [],
@@ -2801,7 +2815,7 @@
         },
         {
           "$$hashKey": "object:1269",
-          "format": "reqps",
+          "format": "none",
           "logBase": 1,
           "show": true
         }
@@ -2852,13 +2866,7 @@
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
-      "seriesOverrides": [
-        {
-          "$$hashKey": "object:1858",
-          "alias": "QPS",
-          "yaxis": 2
-        }
-      ],
+      "seriesOverrides": [],
       "spaceLength": 10,
       "stack": false,
       "steppedLine": false,
