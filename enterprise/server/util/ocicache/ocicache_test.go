@@ -3,6 +3,7 @@ package ocicache_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
@@ -147,4 +148,53 @@ func TestManifestWrittenOnlyToAC(t *testing.T) {
 
 	require.Equal(t, contentType, mc.ContentType)
 	require.Empty(t, cmp.Diff(raw, mc.Raw))
+}
+
+func TestWriteAndFetchBlob(t *testing.T) {
+	imageName := "test_write_and_fetch_blob"
+	image, err := crane.Image(map[string][]byte{
+		"/tmp/" + imageName: []byte(imageName),
+	})
+	require.NoError(t, err)
+
+	te := setupTestEnv(t)
+
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	imageRef, err := name.ParseReference("buildbuddy.io/" + imageName)
+	require.NoError(t, err)
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.Equal(t, 1, len(layers))
+	layer := layers[0]
+	hash, err := layer.Digest()
+	require.NoError(t, err)
+	layerRef := imageRef.Context().Digest(hash.String())
+	mediaType, err := layer.MediaType()
+	require.NoError(t, err)
+	contentType := string(mediaType)
+	contentLength, err := layer.Size()
+	require.NoError(t, err)
+	rc, err := layer.Compressed()
+	require.NoError(t, err)
+	defer rc.Close()
+	layerBuf, err := io.ReadAll(rc)
+	require.NoError(t, err)
+
+	err = ocicache.WriteBlobToCache(ctx, bytes.NewReader(layerBuf), bsClient, acClient, layerRef, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	blobMetadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, layerRef)
+	require.NoError(t, err)
+	require.NotNil(t, blobMetadata)
+	require.Equal(t, contentLength, blobMetadata.ContentLength)
+	require.Equal(t, contentType, blobMetadata.ContentType)
+
+	out := &bytes.Buffer{}
+	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
+	require.NoError(t, err)
+
+	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
 }
