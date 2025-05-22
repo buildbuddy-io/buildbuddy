@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -45,6 +46,7 @@ var (
 	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from cache before fetching from upstream remote registry.")
 
 	readLayersFromCache = flag.Bool("executor.container_registry.read_layers_from_cache", false, "Read image layers from cache before fetching from upstream remote registry.")
+	writeLayersToCache  = flag.Bool("executor.container_registry.write_layers_to_cache", false, "Write image layers to the cache.")
 
 	defaultPlatform = gcr.Platform{
 		Architecture: "amd64",
@@ -575,7 +577,55 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 			return r, nil
 		}
 	}
-	return l.remoteLayer.Compressed()
+
+	upstream, err := l.remoteLayer.Compressed()
+	if err != nil {
+		return nil, err
+	}
+	if *writeLayersToCache {
+		mediaType, err := l.remoteLayer.MediaType()
+		if err != nil {
+			log.CtxWarningf(l.ctx, "Could not fetch media type for layer in %q: %s", l.ocidigest.Context(), err)
+			return upstream, nil
+		}
+		contentType := string(mediaType)
+		contentLength, err := l.remoteLayer.Size()
+		if err != nil {
+			log.CtxWarningf(l.ctx, "Could not fetch size for layer in %q: %s", l.ocidigest.Context(), err)
+			return upstream, nil
+		}
+		uploader, err := ocicache.NewBlobUploader(l.ctx, l.bsClient, l.acClient, l.ocidigest, l.hash, contentType, contentLength)
+		if err != nil {
+			log.CtxWarningf(l.ctx, "Could not start cache upload for layer in %q: %s", l.ocidigest.Context(), err)
+		}
+		return &cachingTeeReader{
+			reader:   upstream,
+			uploader: uploader,
+		}, nil
+	}
+	return upstream, nil
+}
+
+type cachingTeeReader struct {
+	reader   io.ReadCloser
+	uploader interfaces.CommittedWriteCloser
+}
+
+func (r *cachingTeeReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		r.uploader.Write(p[:n]) // Best-effort write to cache; do not care if it fails.
+	}
+	return n, err
+}
+
+func (r *cachingTeeReader) Close() error {
+	err := r.reader.Close()
+	defer r.uploader.Close()
+	if err := r.uploader.Commit(); err != nil {
+		return err
+	}
+	return err
 }
 
 func (l *cacheAwareLayer) Size() (int64, error) {
