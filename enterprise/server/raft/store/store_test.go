@@ -1598,7 +1598,7 @@ func TestBringupSetRanges(t *testing.T) {
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "raft.bringup.partition_splits", []bringup.SplitConfig{
 		{
-			Start:  []byte("PTdefault/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/9/cas/v5"),
+			Start:  []byte("PTdefault/0000000000000000000000000000000000000000000000000000000000000000/9/cas/v5"),
 			End:    []byte("PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/9/cas/v5"),
 			Splits: 3,
 		},
@@ -1622,7 +1622,17 @@ func TestBringupSetRanges(t *testing.T) {
 
 	mrd := s1.GetRange(1)
 	ranges := fetchRangeDescriptorsFromMetaRange(ctx, t, s1, mrd)
-	for i, rd := range ranges {
-		log.Printf("%d: %+v", i, rd)
-	}
+
+	require.Len(t, ranges, 4)
+	require.Equal(t, "PTdefault/", string(ranges[0].GetStart()))
+	require.Equal(t, "PTdefault/3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[0].GetEnd()))
+
+	require.Equal(t, "PTdefault/3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[1].GetStart()))
+	require.Equal(t, "PTdefault/7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe", string(ranges[1].GetEnd()))
+
+	require.Equal(t, "PTdefault/7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe", string(ranges[2].GetStart()))
+	require.Equal(t, "PTdefault/bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd", string(ranges[2].GetEnd()))
+
+	require.Equal(t, "PTdefault/bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd", string(ranges[3].GetStart()))
+	require.Equal(t, "PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[3].GetEnd()))
 }
