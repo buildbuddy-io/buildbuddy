@@ -333,7 +333,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			// Backwards-compatible fill of the execution with the ExecutionSummary for
 			// now. The ExecutionSummary will be removed completely in the future.
 			if statsUnset(md) {
-				if decodedMetadata, err := decodeMetadataFromExecutionSummary(executeResponse); err == nil {
+				if decodedMetadata, _ := decodeMetadataFromExecutionSummary(executeResponse); decodedMetadata != nil {
 					md = decodedMetadata
 				}
 			}
