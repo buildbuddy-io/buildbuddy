@@ -414,6 +414,8 @@ func evenlyDividePartitionIntoRanges(splitConfig SplitConfig) []*rfpb.RangeDescr
 	ranges := make([]*rfpb.RangeDescriptor, 0)
 
 	l := leftInt
+	// Append all ranges from start --> first split, first split -
+	// -> 2nd split... nth split.
 	for i := 0; i < splitConfig.Splits; i++ {
 		r := new(big.Int).Add(l, interval)
 		ranges = append(ranges, &rfpb.RangeDescriptor{
@@ -423,6 +425,7 @@ func evenlyDividePartitionIntoRanges(splitConfig SplitConfig) []*rfpb.RangeDescr
 		})
 		l = r
 	}
+	// Append a final range from nth split --> end.
 	ranges = append(ranges, &rfpb.RangeDescriptor{
 		Start:      []byte(startKey.Partition() + "/" + hex.EncodeToString(l.Bytes())),
 		End:        []byte(startKey.Partition() + "/" + hex.EncodeToString(rightInt.Bytes())),
@@ -444,6 +447,9 @@ func SendStartShardRequests(ctx context.Context, session *client.Session, store 
 	for _, splitConfig := range *partitionSplits {
 		startingRanges = append(startingRanges, evenlyDividePartitionIntoRanges(splitConfig)...)
 	}
+
+	// If no additional ranges were configured, then append a single range that
+	// funs from constants.UnsplittableMaxByte to keys.MaxByte.
 	if len(startingRanges) == 1 {
 		startingRanges = append(startingRanges, &rfpb.RangeDescriptor{
 			Start:      keys.Key{constants.UnsplittableMaxByte},
