@@ -226,29 +226,30 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	return nil
 }
 
-func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
-	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
-		if contentLength > maxManifestSize {
-			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
-		}
-		buf := bytes.NewBuffer(make([]byte, 0, contentLength))
-		mw := io.MultiWriter(w, buf)
-		written, err := io.Copy(mw, io.LimitReader(upstream, contentLength))
-		if err != nil {
-			return err
-		}
-		if written != contentLength {
-			return status.DataLossErrorf("expected manifest of length %d, only able to write %d bytes", contentLength, written)
-		}
-		return WriteManifestToAC(ctx, buf.Bytes(), acClient, ref, hash, contentType)
+func WriteManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, response io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
+	if contentLength > maxManifestSize {
+		return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
 	}
+	buf := bytes.NewBuffer(make([]byte, 0, contentLength))
+	mw := io.MultiWriter(response, buf)
+	written, err := io.Copy(mw, io.LimitReader(upstream, contentLength))
+	if err != nil {
+		return err
+	}
+	if written != contentLength {
+		return status.DataLossErrorf("expected manifest of length %d, only able to write %d bytes", contentLength, written)
+	}
+	return WriteManifestToAC(ctx, buf.Bytes(), acClient, ref, hash, contentType)
+}
+
+func WriteBlobToCacheAndResponse(ctx context.Context, upstream io.Reader, response io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
 	uploader, err := NewBlobUploader(ctx, bsClient, acClient, ref, hash, contentType, contentLength)
 	if err != nil {
 		return err
 	}
 	defer uploader.Close()
 	dst := &writeThroughCacher{
-		primary: w,
+		primary: response,
 		cacher:  uploader,
 	}
 	if _, err := io.Copy(dst, upstream); err != nil {
