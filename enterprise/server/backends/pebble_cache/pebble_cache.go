@@ -1381,7 +1381,9 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	for _, e := range evictors {
 		sizeBytes, sbg, casCount, acCount := e.Counts()
 		for g, s := range sbg {
-			sizeByGroup[g] += s
+			if g != "" {
+				sizeByGroup[g] += s
+			}
 		}
 		totalSizeBytes += sizeBytes
 		totalCASCount += casCount
@@ -2770,6 +2772,9 @@ func (e *partitionEvictor) updateMetrics() {
 		metrics.CacheNameLabel: e.cacheName,
 		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
 	for g, sizeBytes := range e.sizeByGroup {
+		if g == "" {
+			continue
+		}
 		metrics.DiskCachePartitionSizeBytes.With(prometheus.Labels{
 			metrics.PartitionID:    e.part.ID,
 			metrics.CacheNameLabel: e.cacheName,
@@ -2786,7 +2791,9 @@ func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, groupID string, 
 		deltaCount = -1
 	}
 
-	e.sizeByGroup[groupID] += deltaSize
+	if groupID != "" {
+		e.sizeByGroup[groupID] += deltaSize
+	}
 
 	switch cacheType {
 	case rspb.CacheType_CAS:
@@ -2830,7 +2837,9 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, map[str
 
 		sizeBytes := getSizeOnLocalDisk(iter.Key(), fileMetadata, true)
 		totalSizeBytes += sizeBytes
-		totalSizeByGroup[fileMetadata.GetFileRecord().GetIsolation().GetGroupId()] += sizeBytes
+		if groupID := fileMetadata.GetFileRecord().GetIsolation().GetGroupId(); groupID != nil {
+			totalSizeByGroup[groupID] += sizeBytes
+		}
 
 		// identify and count CAS vs AC files.
 		if bytes.Contains(iter.Key(), casDir) {
