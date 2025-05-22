@@ -696,7 +696,7 @@ func ExpandConfigs(
 		enable := opts[len(opts)-1].Option
 		index := opts[len(opts)-1].Index
 		if b, ok := enable.(options.BoolLike); ok {
-			if v, err := b.AsBool(); err != nil && v {
+			if v, err := b.AsBool(); err == nil && v {
 				bazelOS := bazelrc.GetBazelOS()
 				if platformConfig, ok := namedConfigs[bazelOS]; ok {
 					phases := bazelrc.GetPhases(command)
