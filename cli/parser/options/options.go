@@ -288,6 +288,11 @@ type Option interface {
 	GetDefinition() *Definition
 	UseShortName(bool)
 	Normalized() Option
+
+	// Because Options wrap other Options sometimes, we cannot depend on being
+	// able to use type assertion to get a BoolLike from an Option that should
+	// support it. This problem could theoretically be alleviated by embedding
+	// types defined in type parameters, but that is explicitly disallowed by go.
 	BoolLike() BoolLike
 }
 
