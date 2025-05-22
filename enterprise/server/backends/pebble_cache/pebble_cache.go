@@ -2837,7 +2837,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, map[str
 
 		sizeBytes := getSizeOnLocalDisk(iter.Key(), fileMetadata, true)
 		totalSizeBytes += sizeBytes
-		if groupID := fileMetadata.GetFileRecord().GetIsolation().GetGroupId(); groupID != nil {
+		if groupID := fileMetadata.GetFileRecord().GetIsolation().GetGroupId(); groupID != "" {
 			totalSizeByGroup[groupID] += sizeBytes
 		}
 
