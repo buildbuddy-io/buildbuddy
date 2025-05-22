@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1391,11 +1392,25 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	}
 	buf += fmt.Sprintf("Min DB version: %d, Max DB version: %d, Active version: %d\n", p.minDatabaseVersion(), p.maxDatabaseVersion(), p.activeDatabaseVersion())
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
-	for g, s := range sizeByGroup {
-		buf += fmt.Sprintf("[All Partitions] (Group %s): %d bytes\n", g, s)
-	}
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
+	if len(sizeByGroup) > 0 {
+		extra := totalSizeBytes;
+		sortedKeys := make([]string, 0, len(sizeByGroup))
+		for k, _ := range sizeByGroup {
+			sortedKeys = append(sortedKeys, k)
+		}
+		sort.Strings(sortedKeys)
+		buf += "\n[All partitions] Size by group:\n"
+			for _, g := range sortedKeys {
+				if s, ok := sizeByGroup[g]; ok {
+					buf += fmt.Sprintf("  %s: %d bytes\n", g, s)
+					extra -= s
+				}
+			}
+		buf += fmt.Sprintf("Extra space (from before counting began): %d bytes\n", extra)
+	}
+	
 	buf += "</pre>"
 	for _, e := range evictors {
 		buf += e.Statusz(ctx)
@@ -2773,7 +2788,7 @@ func (e *partitionEvictor) updateMetrics() {
 		metrics.CacheNameLabel: e.cacheName,
 		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
 	for g, sizeBytes := range e.sizeByGroup {
-		metrics.DiskCachePartitionSizeBytes.With(prometheus.Labels{
+		metrics.DiskCachePartitionGroupSizeBytes.With(prometheus.Labels{
 			metrics.PartitionID:    e.part.ID,
 			metrics.CacheNameLabel: e.cacheName,
 			metrics.GroupID:        g}).Set(float64(sizeBytes))
@@ -2902,6 +2917,9 @@ func (e *partitionEvictor) computeSize() (int64, map[string]int64, int64, int64,
 		partitionMD, err := e.lookupPartitionMetadata()
 		if err == nil {
 			log.Infof("[%s] Loaded partition %q metadata from cache: %+v", e.cacheName, e.part.ID, partitionMD)
+			if partitionMD.GetSizeByGroup() == nil {
+				partitionMD.SizeByGroup = make(map[string]int64)
+			}
 			return partitionMD.GetSizeBytes(), partitionMD.GetSizeByGroup(), partitionMD.GetCasCount(), partitionMD.GetAcCount(), nil
 		} else if !status.IsNotFoundError(err) {
 			return 0, nil, 0, 0, err
