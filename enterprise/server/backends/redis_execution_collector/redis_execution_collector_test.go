@@ -27,7 +27,7 @@ func TestCollectExecutionUpdates(t *testing.T) {
 		{
 			ExecutionId:    executionID,
 			InvocationUuid: invocationUUID,
-			Stage:          int64(repb.ExecutionStage_QUEUED),
+			Stage:          int64(repb.ExecutionStage_UNKNOWN),
 			CommandSnippet: "echo Hello",
 		},
 		{
@@ -106,7 +106,7 @@ func TestCollectExecutionUpdates(t *testing.T) {
 	require.NoError(t, err)
 	executions, err = collector.GetInProgressExecutions(ctx, invocationID)
 	require.NoError(t, err)
-	require.Nil(t, executions)
+	require.Empty(t, executions)
 
 	// Delete the in-progress execution.
 	err = collector.DeleteInProgressExecution(ctx, executionID)
@@ -116,6 +116,51 @@ func TestCollectExecutionUpdates(t *testing.T) {
 	execution, err = collector.GetInProgressExecution(ctx, executionID)
 	require.NoError(t, err)
 	require.Nil(t, execution)
+}
+
+func TestGetInProgressExecutionHandlesMissingInitialMetadataUpdate(t *testing.T) {
+	rdb := testredis.Start(t)
+	collector := redis_execution_collector.New(rdb.Client())
+
+	executionID := "execution-123"
+	invocationID := "invocation-123"
+	updates := []*repb.StoredExecution{
+		// Intentionally missing the initial metadata update.
+		{
+			ExecutionId: executionID,
+			Stage:       int64(repb.ExecutionStage_EXECUTING),
+		},
+		{
+			ExecutionId:                  executionID,
+			Stage:                        int64(repb.ExecutionStage_COMPLETED),
+			ExitCode:                     1,
+			WorkerStartTimestampUsec:     1e6,
+			WorkerCompletedTimestampUsec: 2e6,
+		},
+	}
+
+	// Add all updates to the collector.
+	ctx := context.Background()
+	for _, update := range updates {
+		err := collector.UpdateInProgressExecution(ctx, update)
+		require.NoError(t, err)
+	}
+
+	// Also add an invocation link, associating an invocation with the execution.
+	err := collector.AddExecutionInvocationLink(ctx, &sipb.StoredInvocationLink{
+		ExecutionId:  executionID,
+		InvocationId: invocationID,
+	}, true /*=storeReverseLink*/)
+	require.NoError(t, err)
+
+	// Read the updates back, using the execution ID.
+	execution, err := collector.GetInProgressExecution(ctx, executionID)
+	require.NoError(t, err)
+	require.Nil(t, execution)
+
+	executions, err := collector.GetInProgressExecutions(ctx, invocationID)
+	require.NoError(t, err)
+	require.Empty(t, executions)
 }
 
 func TestGetInProgressExecutionsIgnoresDeletedExecutions(t *testing.T) {
@@ -158,8 +203,9 @@ func TestMergeExecutionUpdatesWithRepeatedFields(t *testing.T) {
 	executionID := "execution-123"
 	updates := []*repb.StoredExecution{
 		{
-			ExecutionId: executionID,
-			Stage:       int64(repb.ExecutionStage_EXECUTING),
+			ExecutionId:    executionID,
+			Stage:          int64(repb.ExecutionStage_UNKNOWN),
+			CommandSnippet: "echo Hello",
 		},
 		{
 			ExecutionId: executionID,

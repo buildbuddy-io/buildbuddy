@@ -178,6 +178,9 @@ func (c *collector) GetInProgressExecutions(ctx context.Context, invocationID st
 		if err != nil {
 			return nil, err
 		}
+		if execution == nil {
+			continue
+		}
 		executions = append(executions, execution)
 	}
 	return executions, nil
@@ -314,5 +317,16 @@ func mergeExecutionUpdates(serializedResults []string) (*repb.StoredExecution, e
 			break
 		}
 	}
+
+	// If the execution doesn't have a command_snippet, this means we're missing
+	// the initial metadata update. This can happen if redis restarts during the
+	// execution.
+	//
+	// We could probably recover from this by re-computing this metadata once
+	// the execution is complete, but for now just drop these executions.
+	if out.GetCommandSnippet() == "" {
+		return nil, nil
+	}
+
 	return out, nil
 }
