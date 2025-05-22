@@ -369,6 +369,17 @@ func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClie
 	}, nil
 }
 
+func NewReadThroughCacher(ctx context.Context, upstream io.ReadCloser, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) (io.ReadCloser, error) {
+	uploader, err := NewBlobUploader(ctx, bsClient, acClient, ref, hash, contentType, contentLength)
+	if err != nil {
+		return nil, err
+	}
+	return &readThroughCacher{
+		reader:   upstream,
+		uploader: uploader,
+	}, nil
+}
+
 type writeThroughCacher struct {
 	primary io.Writer
 	cacher  io.Writer
@@ -380,4 +391,26 @@ func (w *writeThroughCacher) Write(p []byte) (int, error) {
 		w.cacher.Write(p[:n]) // Writing to the cache is best-effort, so ignore any errors.
 	}
 	return n, err
+}
+
+type readThroughCacher struct {
+	reader   io.ReadCloser
+	uploader interfaces.CommittedWriteCloser
+}
+
+func (r *readThroughCacher) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		r.uploader.Write(p[:n]) // Best-effort write to cache; do not care if it fails.
+	}
+	return n, err
+}
+
+func (r *readThroughCacher) Close() error {
+	defer r.uploader.Close()
+	err := r.reader.Close()
+	if err := r.uploader.Commit(); err != nil {
+		return err
+	}
+	return err
 }

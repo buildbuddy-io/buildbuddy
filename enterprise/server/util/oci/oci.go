@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -594,38 +593,14 @@ func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
 			log.CtxWarningf(l.ctx, "Could not fetch size for layer in %q: %s", l.ocidigest.Context(), err)
 			return upstream, nil
 		}
-		uploader, err := ocicache.NewBlobUploader(l.ctx, l.bsClient, l.acClient, l.ocidigest, l.hash, contentType, contentLength)
+		cacher, err := ocicache.NewReadThroughCacher(l.ctx, upstream, l.bsClient, l.acClient, l.ocidigest, l.hash, contentType, contentLength)
 		if err != nil {
 			log.CtxWarningf(l.ctx, "Could not start cache upload for layer in %q: %s", l.ocidigest.Context(), err)
+			return upstream, nil
 		}
-		return &cachingTeeReader{
-			reader:   upstream,
-			uploader: uploader,
-		}, nil
+		return cacher, nil
 	}
 	return upstream, nil
-}
-
-type cachingTeeReader struct {
-	reader   io.ReadCloser
-	uploader interfaces.CommittedWriteCloser
-}
-
-func (r *cachingTeeReader) Read(p []byte) (int, error) {
-	n, err := r.reader.Read(p)
-	if n > 0 {
-		r.uploader.Write(p[:n]) // Best-effort write to cache; do not care if it fails.
-	}
-	return n, err
-}
-
-func (r *cachingTeeReader) Close() error {
-	err := r.reader.Close()
-	defer r.uploader.Close()
-	if err := r.uploader.Commit(); err != nil {
-		return err
-	}
-	return err
 }
 
 func (l *cacheAwareLayer) Size() (int64, error) {

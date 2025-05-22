@@ -102,7 +102,7 @@ func setupTestEnv(t *testing.T) *testenv.TestEnv {
 	return te
 }
 
-func TestUploadAndFetchBlob(t *testing.T) {
+func TestReadThroughCacher(t *testing.T) {
 	te := setupTestEnv(t)
 
 	layerBuf, layerRef, hash, contentType := createLayer(t)
@@ -112,17 +112,16 @@ func TestUploadAndFetchBlob(t *testing.T) {
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
 
-	uploader, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, layerRef, hash, contentType, contentLength)
+	upstream := io.NopCloser(bytes.NewReader(layerBuf))
+	cacher, err := ocicache.NewReadThroughCacher(ctx, upstream, bsClient, acClient, layerRef, hash, contentType, contentLength)
 	require.NoError(t, err)
 
-	written, err := io.Copy(uploader, bytes.NewReader(layerBuf))
+	out, err := io.ReadAll(cacher)
 	require.NoError(t, err)
-	require.Equal(t, contentLength, written)
+	require.Len(t, out, len(layerBuf))
+	require.Empty(t, cmp.Diff(layerBuf, out))
 
-	err = uploader.Commit()
-	require.NoError(t, err)
-
-	err = uploader.Close()
+	err = cacher.Close()
 	require.NoError(t, err)
 
 	fetchAndCheckBlob(t, te, layerBuf, layerRef, hash, contentType)
