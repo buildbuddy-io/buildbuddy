@@ -14,7 +14,6 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
 // N.B. This file contains common functions used to format and extract API
@@ -146,9 +145,19 @@ func TestStatusToStatus(testStatus bespb.TestStatus) cmnpb.Status {
 	}
 }
 
-type TargetMap map[string]*apipb.Target
+type TargetMap struct {
+	Targets  map[string]*apipb.Target
+	selector *apipb.TargetSelector
+}
 
-func (tm TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
+func NewTargetMap(selector *apipb.TargetSelector) *TargetMap {
+	return &TargetMap{
+		Targets:  make(map[string]*apipb.Target),
+		selector: selector,
+	}
+}
+
+func (tm *TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 	switch p := event.GetPayload().(type) {
 	case *bespb.BuildEvent_Configured:
 		{
@@ -158,7 +167,7 @@ func (tm TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 				language = components[0]
 			}
 			label := event.GetId().GetTargetConfigured().GetLabel()
-			tm[label] = &apipb.Target{
+			target := &apipb.Target{
 				Id: &apipb.Target_Id{
 					InvocationId: iid,
 					TargetId:     label,
@@ -169,21 +178,41 @@ func (tm TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 				Language: language,
 				Tag:      p.Configured.GetTag(),
 			}
+			if tm.selector != nil && TargetMatchesSelector(target, tm.selector) {
+				tm.Targets[label] = target
+			}
 		}
 	case *bespb.BuildEvent_Completed:
 		{
-			if target := tm[event.GetId().GetTargetCompleted().GetLabel()]; target != nil {
+			if target := tm.Targets[event.GetId().GetTargetCompleted().GetLabel()]; target != nil {
 				target.Status = cmnpb.Status_BUILT
 			}
 		}
 	case *bespb.BuildEvent_TestSummary:
 		{
-			if target := tm[event.GetId().GetTestSummary().GetLabel()]; target != nil {
+			if target := tm.Targets[event.GetId().GetTestSummary().GetLabel()]; target != nil {
 				target.Status = TestStatusToStatus(p.TestSummary.GetOverallStatus())
 				target.Timing = TestTimingFromSummary(p.TestSummary)
 			}
 		}
 	}
+}
+
+// TargetMatchesSelector checks if the target matches the selector.
+func TargetMatchesSelector(target *apipb.Target, selector *apipb.TargetSelector) bool {
+	if selector.GetLabel() != "" {
+		return selector.GetLabel() == target.GetLabel()
+	}
+
+	if selector.GetTag() != "" {
+		for _, tag := range target.GetTag() {
+			if tag == selector.GetTag() {
+				return true
+			}
+		}
+		return false
+	}
+	return selector.GetTargetId() == "" || selector.GetTargetId() == target.GetId().GetTargetId()
 }
 
 func TestTimingFromSummary(testSummary *bespb.TestSummary) *cmnpb.Timing {
@@ -202,12 +231,4 @@ func TestResultTiming(testResult *bespb.TestResult) *cmnpb.Timing {
 		StartTime: timestamppb.New(startTime),
 		Duration:  durationpb.New(duration),
 	}
-}
-
-func TargetMapFromInvocation(inv *inpb.Invocation) TargetMap {
-	targetMap := make(TargetMap)
-	for _, event := range inv.GetEvent() {
-		targetMap.ProcessEvent(inv.GetInvocationId(), event.GetBuildEvent())
-	}
-	return targetMap
 }

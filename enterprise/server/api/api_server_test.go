@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	commonpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -443,7 +444,67 @@ func TestGetActionWithRealData(t *testing.T) {
 	require.Equal(t, "stderr", actionResp.GetAction()[0].GetFile()[0].GetName())
 }
 
-func getEnvAndCtx(t *testing.T, user string) (*testenv.TestEnv, context.Context) {
+func TestGetTargetWithLowFilterThreshold(t *testing.T) {
+	// Avoid trying to replicate the blobs to local test server
+	flags.Set(t, "storage.disable_persist_cache_artifacts", true)
+	// Avoid extracting inline cache score card
+	flags.Set(t, "cache.detailed_stats_enabled", true)
+	env, ctx := getEnvAndCtx(t, "user1")
+	for _, tc := range []struct {
+		eventFilterThreshold int
+	}{
+		{
+			eventFilterThreshold: 1,
+		},
+		{
+			eventFilterThreshold: 30,
+		},
+	} {
+		t.Run(fmt.Sprintf("%d", tc.eventFilterThreshold), func(t *testing.T) {
+			flags.Set(t, "app.build_event_filter_start_threshold", tc.eventFilterThreshold)
+
+			testUUID, err := uuid.NewRandom()
+			assert.NoError(t, err)
+			testInvocationID := testUUID.String()
+			streamBuild(t, env, testInvocationID)
+
+			s := NewAPIServer(env)
+			targetResp, err := s.GetTarget(ctx, &apipb.GetTargetRequest{Selector: &apipb.TargetSelector{InvocationId: testInvocationID}})
+			require.NoError(t, err)
+			require.NotNil(t, targetResp)
+			require.Equal(t, 3, len(targetResp.GetTarget()))
+			for _, target := range targetResp.GetTarget() {
+				if target.GetTiming() == nil {
+					require.Equal(
+						t,
+						commonpb.Status_BUILT,
+						target.GetStatus(),
+						fmt.Sprintf(
+							"expect target %q to have status %q, actual %q",
+							target.GetLabel(),
+							commonpb.Status_name[int32(commonpb.Status_BUILT)],
+							commonpb.Status_name[int32(target.GetStatus())],
+						),
+					)
+				} else {
+					require.Equal(
+						t,
+						commonpb.Status_PASSED,
+						target.GetStatus(),
+						fmt.Sprintf(
+							"expect target %q to have status %q, actual %q",
+							target.GetLabel(),
+							commonpb.Status_name[int32(commonpb.Status_PASSED)],
+							commonpb.Status_name[int32(target.GetStatus())],
+						),
+					)
+				}
+			}
+		})
+	}
+}
+
+func getEnvAndCtx(t testing.TB, user string) (*testenv.TestEnv, context.Context) {
 	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(userMap)
 	te.SetAuthenticator(ta)
@@ -457,20 +518,21 @@ func getEnvAndCtx(t *testing.T, user string) (*testenv.TestEnv, context.Context)
 	return te, ctx
 }
 
-func streamBuildFromTestData(t *testing.T, te *testenv.TestEnv, testDataFile string) string {
+func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, testDataFile string) string {
 	handler := build_event_handler.NewBuildEventHandler(te)
-	var channel interfaces.BuildEventChannel
+	defer handler.Stop()
 
-	b, err := os.Open(path.Join("testdata", testDataFile))
+	f, err := os.Open(path.Join("testdata", testDataFile))
 	require.NoError(t, err)
-	defer b.Close()
+	defer f.Close()
 
 	// Assume the test data follows the --build_event_json_file format
-	decoder := json.NewDecoder(b)
+	decoder := json.NewDecoder(f)
 	// skip the first token, which is the square bracket `[` of the json array
 	_, err = decoder.Token()
 	require.NoError(t, err)
 
+	var channel interfaces.BuildEventChannel
 	var iid string
 	eventId := int64(1)
 	for decoder.More() {
@@ -488,6 +550,7 @@ func streamBuildFromTestData(t *testing.T, te *testenv.TestEnv, testDataFile str
 
 			channel, err = handler.OpenChannel(context.Background(), iid)
 			require.NoError(t, err)
+			defer channel.Close()
 		}
 
 		anyEvent := &anypb.Any{}
@@ -507,8 +570,10 @@ func streamBuildFromTestData(t *testing.T, te *testenv.TestEnv, testDataFile str
 
 func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
 	handler := build_event_handler.NewBuildEventHandler(te)
+	defer handler.Stop()
 	channel, err := handler.OpenChannel(context.Background(), iid)
 	require.NoError(t, err)
+	defer channel.Close()
 
 	err = channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=user1'"), iid, 1))
 	assert.NoError(t, err)
