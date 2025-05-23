@@ -213,7 +213,6 @@ func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
 }
 
 func TestAutoBringup(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	waitForShutdown(t, caches...)
