@@ -330,13 +330,6 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		// Update stats if the operation has been completed.
 		if stage == repb.ExecutionStage_COMPLETED {
 			md := executeResponse.GetResult().GetExecutionMetadata()
-			// Backwards-compatible fill of the execution with the ExecutionSummary for
-			// now. The ExecutionSummary will be removed completely in the future.
-			if statsUnset(md) {
-				if decodedMetadata, err := decodeMetadataFromExecutionSummary(executeResponse); err == nil {
-					md = decodedMetadata
-				}
-			}
 			fillExecutionFromActionMetadata(md, execution)
 		}
 	}
@@ -1549,41 +1542,4 @@ func (s *ExecutionServer) executionIDs(ctx context.Context, invocationID string)
 		return nil, err
 	}
 	return ids, nil
-}
-
-func statsUnset(md *repb.ExecutedActionMetadata) bool {
-	return (md.GetIoStats().GetFileDownloadCount() == 0 &&
-		md.GetIoStats().GetFileDownloadSizeBytes() == 0 &&
-		md.GetIoStats().GetFileDownloadDurationUsec() == 0 &&
-		md.GetIoStats().GetFileUploadCount() == 0 &&
-		md.GetIoStats().GetFileUploadSizeBytes() == 0 &&
-		md.GetIoStats().GetFileUploadDurationUsec() == 0 &&
-		md.GetUsageStats().GetPeakMemoryBytes() == 0 &&
-		md.GetUsageStats().GetCpuNanos() == 0 &&
-		md.GetEstimatedTaskSize().GetEstimatedMemoryBytes() == 0 &&
-		md.GetEstimatedTaskSize().GetEstimatedMilliCpu() == 0 &&
-		md.GetEstimatedTaskSize().GetEstimatedFreeDiskBytes() == 0)
-
-}
-
-func decodeMetadataFromExecutionSummary(resp *repb.ExecuteResponse) (*repb.ExecutedActionMetadata, error) {
-	if resp.GetMessage() == "" {
-		return nil, nil
-	}
-	data, err := base64.StdEncoding.DecodeString(resp.GetMessage())
-	if err != nil {
-		return nil, err
-	}
-	summary := &espb.ExecutionSummary{}
-	if err := proto.Unmarshal(data, summary); err != nil {
-		return nil, err
-	}
-	md := summary.GetExecutedActionMetadata()
-	if md == nil {
-		return nil, nil
-	}
-	md.IoStats = summary.GetIoStats()
-	md.UsageStats = summary.GetUsageStats()
-	md.EstimatedTaskSize = summary.GetEstimatedTaskSize()
-	return md, nil
 }
