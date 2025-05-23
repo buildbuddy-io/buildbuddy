@@ -374,15 +374,15 @@ func updateResolveEventMetric(host string) {
 }
 
 func (r *Resolver) fetchRawManifestFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, remoteOpts []remote.Option) (*gcr.Hash, []byte, bool, error) {
-	if *readManifestsFromCache {
-		headDesc, err := remote.Head(digestOrTagRef, remoteOpts...)
-		if err != nil {
-			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-				return nil, nil, false, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
-			}
-			return nil, nil, false, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	headDesc, err := remote.Head(digestOrTagRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, nil, false, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
 		}
+		return nil, nil, false, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
 
+	if *readManifestsFromCache {
 		mc, err := ocicache.FetchManifestFromAC(ctx, r.env.GetActionCacheClient(), digestOrTagRef, headDesc.Digest)
 		if err == nil {
 			return &headDesc.Digest, mc.Raw, true, nil
@@ -392,7 +392,8 @@ func (r *Resolver) fetchRawManifestFromCacheOrRemote(ctx context.Context, digest
 		}
 	}
 
-	getDesc, err := remote.Get(digestOrTagRef, remoteOpts...)
+	manifestDigest := digestOrTagRef.Context().Digest(headDesc.Digest.String())
+	getDesc, err := remote.Get(manifestDigest, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, nil, false, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
