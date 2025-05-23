@@ -36,9 +36,14 @@ go_library(
 go_test(
     name = "metadata_test",
     srcs = ["metadata_test.go"],
+    exec_properties = {
+        "test.EstimatedComputeUnits": "8",
+        "test.workload-isolation-type": "firecracker",
+    },
     deps = [
         ":metadata",
         "//enterprise/server/filestore",
+        "//enterprise/server/raft/store",
         "//enterprise/server/raft/usagetracker",
         "//proto:metadata_go_proto",
         "//proto:storage_go_proto",
