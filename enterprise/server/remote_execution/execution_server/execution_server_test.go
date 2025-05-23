@@ -88,13 +88,16 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 	return true, nil
 }
 
-func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn) {
+func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	env := testenv.GetTestEnv(t)
 
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
-	redisTarget := testredis.Start(t).Target
-	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
+	r := testredis.Start(t)
+	rdb := redis.NewClient(redisutil.TargetToOptions(r.Target))
+	env.SetDefaultRedisClient(r.Client())
+	err := redis_execution_collector.Register(env)
+	require.NoError(t, err)
 	env.SetRemoteExecutionRedisClient(rdb)
 	env.SetRemoteExecutionRedisPubSubClient(rdb)
 
@@ -115,7 +118,7 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn) {
 
 	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), lis)
 	require.NoError(t, err)
-	return env, conn
+	return env, conn, r
 }
 
 func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
@@ -136,7 +139,7 @@ func createInvocation(ctx context.Context, t *testing.T, db interfaces.DB, inv *
 }
 
 func TestDispatch(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -180,7 +183,7 @@ func TestDispatch(t *testing.T) {
 }
 
 func TestCancel(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -219,7 +222,7 @@ func TestCancel(t *testing.T) {
 }
 
 func TestCancel_SkipCompletedExecution(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -259,7 +262,7 @@ func TestCancel_SkipCompletedExecution(t *testing.T) {
 }
 
 func TestCancel_MultipleExecutions(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -306,7 +309,7 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 }
 
 func TestCancel_InvocationAlreadyCompleted(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -415,8 +418,12 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			flagOverrides: map[string]any{
 				"remote_execution.write_execution_progress_state_to_redis": true,
 				"remote_execution.write_executions_to_primary_db":          false,
-				"remote_execution.read_final_execution_state_from_redis":   true,
 			},
+		},
+		{
+			name:                   "RedisRestart",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			redisRestart:           true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -435,20 +442,22 @@ type publishTest struct {
 	status                   error
 	exitCode                 int32
 	publishMoreMetadata      bool
+	redisRestart             bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	for k, v := range test.flagOverrides {
 		flags.Set(t, k, v)
 	}
-	env, conn := setupEnv(t)
-	redis := testredis.Start(t)
-	env.SetDefaultRedisClient(redis.Client())
-	err := redis_execution_collector.Register(env)
-	require.NoError(t, err)
+	env, conn, r := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
 
 	const instanceName = "test-instance"
 	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
@@ -505,6 +514,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			aux.PlatformOverrides.Properties,
 			&repb.Platform_Property{Name: k, Value: v},
 		)
+	}
+
+	if test.redisRestart {
+		r.Restart()
 	}
 
 	executorGroupID := sharedPoolGroupID
@@ -627,12 +640,20 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		},
 	}, executionUsages)
 
-	// Check that we recorded the executions
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
+
+	if test.redisRestart {
+		assert.Equal(t, 0, len(collectedExecutions))
+		return
+	}
+
+	// Check that we recorded the executions
 	assert.Equal(t, 1, len(collectedExecutions))
 	expectedExecution := &repb.StoredExecution{
 		ExecutionId:                  taskID,
+		GroupId:                      "group1",
+		UserId:                       "user1",
 		InvocationLinkType:           1,
 		InvocationUuid:               strings.ReplaceAll(invocationID, "-", ""),
 		Stage:                        4,
@@ -682,7 +703,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 }
 
 func TestMarkFailed(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -731,7 +752,7 @@ func TestMarkFailed(t *testing.T) {
 
 func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
-	env, conn := setupEnv(t)
+	env, conn, _ := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
 	redis := testredis.Start(t)
 	env.SetDefaultRedisClient(redis.Client())
