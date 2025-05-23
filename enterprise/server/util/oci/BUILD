@@ -10,7 +10,6 @@ go_library(
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/ocicache",
         "//proto:registry_go_proto",
-        "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/http/httpclient",
         "//server/util/flag",
@@ -25,7 +24,6 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
         "@com_github_google_go_containerregistry//pkg/v1/types",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 
