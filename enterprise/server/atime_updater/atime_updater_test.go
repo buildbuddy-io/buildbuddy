@@ -585,10 +585,14 @@ func BenchmarkEnqueue(b *testing.B) {
 
 	flags.Set(b, "cache_proxy.remote_atime_max_digests_per_update", b.N*len(instances)*len(digests)*numToEnqueue)
 	flags.Set(b, "cache_proxy.remote_atime_max_updates_per_group", b.N*len(instances)*len(digests)*numToEnqueue)
-	_, updater, _, _ := setup(b)
 
 	b.ReportAllocs()
 	for b.Loop() {
+		// The updater discards updates and logs stuff if too many updates are
+		// enqueued. Recreate for each benchmark to prevent this.
+		b.StopTimer()
+		_, updater, _, _ := setup(b)
+		b.StartTimer()
 		wg := sync.WaitGroup{}
 		for i := 0; i < 10_000; i++ {
 			for _, instance := range instances {
