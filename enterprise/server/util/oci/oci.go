@@ -245,7 +245,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
-	updateResolveEventMetric(imageRef.Context().RegistryStr())
+	updateResolveEventMetric(imageRef.Context().RepositoryStr())
 
 	gcrPlatform := gcr.Platform{
 		Architecture: platform.GetArch(),
