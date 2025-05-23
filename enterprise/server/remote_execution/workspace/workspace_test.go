@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -243,4 +245,24 @@ func TestCleanInputsIfNecessary_CleanMatching(t *testing.T) {
 		t, keepmePaths(filePaths), actualFilePaths(t, ws),
 		"expected all KEEPME filePaths (and no others) in the workspace after cleanup",
 	)
+}
+
+func TestManyNewWorkspaces(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	root := testfs.MakeTempDir(t)
+	var expectedPath *regexp.Regexp
+	if runtime.GOOS == "windows" {
+		expectedPath = regexp.MustCompile(".*" + regexp.QuoteMeta("execroot\\_main"))
+	} else {
+		expectedPath = regexp.MustCompile(".*")
+	}
+	allPaths := make(map[string]struct{})
+	for i := 0; i < 1000; i++ {
+		ws, err := workspace.New(te, root, &workspace.Opts{})
+		require.NoError(t, err)
+		assert.Regexp(t, expectedPath, ws.Path())
+		allPaths[ws.Path()] = struct{}{}
+	}
+	// Check that all paths are unique.
+	assert.Len(t, allPaths, 1000)
 }

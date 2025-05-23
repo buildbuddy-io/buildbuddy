@@ -286,6 +286,10 @@ func main() {
 	if *deleteBuildRootOnStartup {
 		deleteBuildRoot(rootContext, runner.GetBuildRoot())
 	}
+	err := os.MkdirAll(runner.GetBuildRoot(), 0755)
+	if err != nil {
+		log.Fatalf("Unable to create build root directory %q: %s", runner.GetBuildRoot(), err)
+	}
 
 	// Run any startup commands.
 	for i, startupCommand := range *startupCommands {

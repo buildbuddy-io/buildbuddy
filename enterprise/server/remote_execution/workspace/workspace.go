@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io/fs"
 	"os"
@@ -108,14 +109,28 @@ type Opts struct {
 
 // New creates a new workspace directly under the given parent directory.
 func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
-	id, err := uuid.NewRandom()
-	if err != nil {
-		return nil, status.UnavailableErrorf("failed to generate workspace ID")
-	}
-	rootDir := filepath.Join(parentDir, id.String())
 	dirPerms := fs.FileMode(0777)
-	if err := os.MkdirAll(rootDir, dirPerms); err != nil {
-		return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
+	var rootDir string
+	maxAttempts := 10
+	for i := 0; i < maxAttempts; i++ {
+		rootDir = filepath.Join(parentDir, newRandomBuildDirCandidate())
+		if err := os.Mkdir(rootDir, dirPerms); err == nil {
+			break
+		} else if !os.IsExist(err) {
+			return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
+		}
+		// Got unlucky and the random directory name already exists. This should
+		// never happen on Unix and rarely on Windows, so just try again.
+		if i == maxAttempts-1 {
+			return nil, status.UnavailableErrorf("failed to find random dir below %q in %d attempts", rootDir, maxAttempts)
+		}
+	}
+	// On Windows, must root all executions under a subdirectory called _main (see newRandomBuildDirCandidate).
+	if runtime.GOOS == "windows" {
+		rootDir = filepath.Join(rootDir, "_main")
+		if err := os.Mkdir(rootDir, dirPerms); err != nil {
+			return nil, status.UnavailableErrorf("failed to create _main dir at %q: %s", rootDir, err)
+		}
 	}
 
 	if opts.UseOverlayfs && opts.UseVFS {
@@ -125,6 +140,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 	var overlay *overlayfs.Overlay
 	if opts.UseOverlayfs {
 		overlayOpts := overlayfs.Opts{DirPerms: dirPerms}
+		var err error
 		overlay, err = overlayfs.Convert(context.TODO(), rootDir, overlayOpts)
 		if err != nil {
 			return nil, status.UnavailableErrorf("failed to create workspace overlayfs at %q: %s", rootDir, err)
@@ -153,6 +169,23 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		Opts:      opts,
 		Inputs:    map[string]*repb.FileNode{},
 	}, nil
+}
+
+func newRandomBuildDirCandidate() string {
+	id := uuid.Must(uuid.NewRandom())
+	if runtime.GOOS != "windows" {
+		// Path lengths and the particular name don't matter, use something
+		// guaranteed to be unique.
+		return id.String()
+	}
+	// On Windows, some tools (mostly MSVC) have a 260-character limit on all
+	// paths. Moreover, due to https://github.com/bazelbuild/bazel/issues/19733,
+	// C++ header validation can fail if the absolute build dir path doesn't
+	// end with `execroot\\_main` (with Bzlmod enabled, there is no guarantee
+	// that any particular path is correct for WORKSPACE builds).
+	// https://github.com/bazelbuild/bazel/blob/819aa9688229e244dc90dda1278d7444d910b48a/src/main/java/com/google/devtools/build/lib/rules/cpp/ShowIncludesFilter.java#L101
+	shortId := base64.RawURLEncoding.EncodeToString(id[0:8])
+	return shortId + "execroot"
 }
 
 func startVFS(env environment.Env, path string) (*vfs.VFS, *vfs_server.Server, error) {
