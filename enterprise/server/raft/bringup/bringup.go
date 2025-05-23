@@ -536,6 +536,8 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 			log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
 			return nil
 		})
+
+		// Always wait for the metarange to startup first.
 		if i == 0 {
 			if err := eg.Wait(); err != nil {
 				return err
