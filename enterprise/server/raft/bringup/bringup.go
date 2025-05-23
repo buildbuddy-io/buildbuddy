@@ -497,7 +497,8 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 	replicaID := uint64(constants.InitialReplicaID)
 	rangeID := uint64(constants.InitialRangeID)
 
-	for _, rangeDescriptor := range startingRanges {
+	eg := errgroup.Group{}
+	for i, rangeDescriptor := range startingRanges {
 		bootstrapInfo := MakeBootstrapInfo(rangeID, replicaID, nodeGrpcAddrs)
 		rangeDescriptor.Replicas = bootstrapInfo.Replicas
 		rangeDescriptor.RangeId = rangeID
@@ -528,10 +529,18 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 			})
 		}
 		log.Debugf("Attempting to start cluster %d on: %+v", rangeID, bootstrapInfo)
-		if err := StartShard(ctx, store, bootstrapInfo, batch); err != nil {
-			return err
+		eg.Go(func() error {
+			if err := StartShard(ctx, store, bootstrapInfo, batch); err != nil {
+				return err
+			}
+			log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
+			return nil
+		})
+		if i == 0 {
+			if err := eg.Wait(); err != nil {
+				return err
+			}
 		}
-		log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
 
 		// Record the used IDs.
 		metaRangeBatch := rbuilder.NewBatchBuilder()
@@ -568,5 +577,5 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 		log.Infof("new rangeID: %d", rangeID)
 	}
 
-	return nil
+	return eg.Wait()
 }
