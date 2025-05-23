@@ -110,12 +110,12 @@ export default class TapComponent extends React.Component<Props, State> {
 
   handleRepoChange(event: React.ChangeEvent<HTMLSelectElement>) {
     const repo = event.target.value;
-    router.replaceParams({ repo });
+    router.setQueryParam("repo", repo || undefined);
   }
 
   handleBranchInputKeyPress(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
-      router.replaceParams({ branch: (event.target as HTMLInputElement).value });
+      router.setQueryParam("branch", (event.target as HTMLInputElement).value || undefined);
     }
   }
 
