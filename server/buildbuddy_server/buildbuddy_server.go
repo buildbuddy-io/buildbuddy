@@ -1545,10 +1545,11 @@ func (s *BuildBuddyServer) GetGitHubAppInstallations(ctx context.Context, req *g
 	res := &ghpb.GetAppInstallationsResponse{}
 	for _, i := range installations {
 		res.Installations = append(res.Installations, &ghpb.AppInstallation{
-			GroupId:        i.GroupID,
-			InstallationId: i.InstallationID,
-			Owner:          i.Owner,
-			AppId:          i.AppID,
+			GroupId:                         i.GroupID,
+			InstallationId:                  i.InstallationID,
+			Owner:                           i.Owner,
+			AppId:                           i.AppID,
+			ReportCommitStatusesForCiBuilds: i.ReportCommitStatusesForCIBuilds,
 		})
 	}
 	return res, nil
@@ -1563,6 +1564,18 @@ func (s *BuildBuddyServer) UnlinkGitHubAppInstallation(ctx context.Context, req 
 		return nil, err
 	}
 	return a.UnlinkGitHubAppInstallation(ctx, req)
+}
+
+func (s *BuildBuddyServer) UpdateGitHubAppInstallation(ctx context.Context, req *ghpb.UpdateGitHubAppInstallationRequest) (*ghpb.UpdateGitHubAppInstallationResponse, error) {
+	gh := s.env.GetGitHubAppService()
+	if gh == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	a, err := gh.GetGitHubAppWithID(req.GetAppId())
+	if err != nil {
+		return nil, err
+	}
+	return a.UpdateGitHubAppInstallation(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error) {

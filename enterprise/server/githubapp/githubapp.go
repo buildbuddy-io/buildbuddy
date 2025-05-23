@@ -783,6 +783,32 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 	return &ghpb.UnlinkAppInstallationResponse{}, nil
 }
 
+func (a *GitHubApp) UpdateGitHubAppInstallation(ctx context.Context, req *ghpb.UpdateGitHubAppInstallationRequest) (*ghpb.UpdateGitHubAppInstallationResponse, error) {
+	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetOwner() == "" {
+		return nil, status.FailedPreconditionError("missing owner")
+	}
+	if err := authutil.AuthorizeOrgAdmin(u, u.GetGroupID()); err != nil {
+		return nil, err
+	}
+
+	result := a.env.GetDBHandle().NewQuery(ctx, "githubapp_update_installation").Raw(`
+			UPDATE "GitHubAppInstallations"
+			SET report_commit_statuses_for_ci_builds = ?
+			WHERE owner = ? AND group_id = ?
+		`, req.GetReportCommitStatusesForCiBuilds(), req.GetOwner(), u.GetGroupID()).Exec()
+	if result.Error != nil {
+		return nil, status.InternalErrorf("failed to update installation: %s", err)
+	}
+	if result.RowsAffected == 0 {
+		return nil, status.NotFoundError("repo not found")
+	}
+	return &ghpb.UpdateGitHubAppInstallationResponse{}, nil
+}
+
 // LinkGitHubRepo imports an authorized repo to BuildBuddy.
 //
 //	 In order to authorize the BB GitHub app to access a specific repo, you have to

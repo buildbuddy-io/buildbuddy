@@ -151,6 +151,7 @@ var (
 		"LinkGitHubAppInstallation",
 		"GetGitHubAppInstallations",
 		"UnlinkGitHubAppInstallation",
+		"UpdateGitHubAppInstallation",
 		// Org GitHub repo management
 		"GetAccessibleGitHubRepos",
 		"GetGitHubAppInstallPath",
