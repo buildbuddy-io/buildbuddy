@@ -47,17 +47,8 @@ export default class InvocationExecutionTable extends React.Component<Props> {
                 <div className="status">
                   {!execution.status?.code && (
                     <span>
-                      {execution.exitCode ? (
-                        <>
-                          <span className="status-name failed">{status.name}</span>
-                          {durationSuffix} (exit code {execution.exitCode})
-                        </>
-                      ) : (
-                        <>
-                          <span className="status-name success">{status.name}</span>
-                          {durationSuffix}
-                        </>
-                      )}
+                      <span className={`status-name ${execution.exitCode ? "failed" : "success"}`}>{status.name}</span>
+                      {durationSuffix}
                     </span>
                   )}
                   {!!execution.status?.code && (
