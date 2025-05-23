@@ -18,6 +18,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/stretchr/testify/require"
 
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
@@ -102,7 +103,56 @@ func setupTestEnv(t *testing.T) *testenv.TestEnv {
 	return te
 }
 
-func TestUploadAndFetchBlob(t *testing.T) {
+// TestManifestWrittenOnlyToAC sets the byte stream server and client to nil,
+// writes a manifest to the AC, and fetches it. If that path were to touch the CAS
+// at all, there would be an error trying to write to a nil client or server.
+func TestManifestWrittenOnlyToAC(t *testing.T) {
+	te := setupTestEnv(t)
+
+	imageName := "test_manifest_written_only_to_ac"
+	image, err := crane.Image(map[string][]byte{
+		"/tmp/" + imageName: []byte(imageName),
+	})
+	require.NoError(t, err)
+	raw, err := image.RawManifest()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	mediaType, err := image.MediaType()
+	require.NoError(t, err)
+	contentType := string(mediaType)
+	hash, err := image.Digest()
+	require.NoError(t, err)
+
+	acClient := te.GetActionCacheClient()
+	ref, err := name.ParseReference("buildbuddy.io/" + imageName)
+	require.NoError(t, err)
+
+	var out bytes.Buffer
+	err = ocicache.WriteBlobOrManifestToCacheAndWriter(ctx,
+		bytes.NewReader(raw),
+		&out,
+		nil, // explicitly pass nil bytestream client
+		acClient,
+		ref,
+		ocipb.OCIResourceType_MANIFEST,
+		hash,
+		contentType,
+		int64(len(raw)),
+	)
+	require.NoError(t, err)
+	require.Equal(t, len(raw), out.Len())
+	require.Empty(t, cmp.Diff(raw, out.Bytes()))
+
+	mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref, hash)
+	require.NoError(t, err)
+	require.NotNil(t, mc)
+
+	require.Equal(t, contentType, mc.ContentType)
+	require.Empty(t, cmp.Diff(raw, mc.Raw))
+}
+
+func TestWriteAndFetchBlob(t *testing.T) {
 	te := setupTestEnv(t)
 
 	layerBuf, layerRef, hash, contentType := createLayer(t)
@@ -112,17 +162,7 @@ func TestUploadAndFetchBlob(t *testing.T) {
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
 
-	uploader, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, layerRef, hash, contentType, contentLength)
-	require.NoError(t, err)
-
-	written, err := io.Copy(uploader, bytes.NewReader(layerBuf))
-	require.NoError(t, err)
-	require.Equal(t, contentLength, written)
-
-	err = uploader.Commit()
-	require.NoError(t, err)
-
-	err = uploader.Close()
+	err := ocicache.WriteBlobToCache(ctx, bytes.NewReader(layerBuf), bsClient, acClient, layerRef, hash, contentType, contentLength)
 	require.NoError(t, err)
 
 	fetchAndCheckBlob(t, te, layerBuf, layerRef, hash, contentType)

@@ -34,6 +34,7 @@ go_test(
     deps = [
         ":ocicache",
         "//enterprise/server/clientidentity",
+        "//proto:ociregistry_go_proto",
         "//server/interfaces",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
