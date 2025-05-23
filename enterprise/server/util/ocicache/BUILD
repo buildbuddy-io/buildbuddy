@@ -43,7 +43,6 @@ go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_containerregistry//pkg/crane",
         "@com_github_google_go_containerregistry//pkg/name",
-        "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_stretchr_testify//require",
     ],
 )
