@@ -105,7 +105,7 @@ func (a *TestAuthenticator) AuthenticatedGRPCContext(ctx context.Context) contex
 	if u != nil {
 		c = u.(*claims.Claims)
 	}
-	return claims.AuthContextFromClaims(ctx, c, err)
+	return claims.AuthContextWithJWT(ctx, c, err)
 }
 
 func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
@@ -178,12 +178,12 @@ func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey st
 	ctx = context.WithValue(ctx, authutil.APIKeyHeader, apiKey)
 	u, err := a.APIKeyProvider(ctx, apiKey)
 	if err != nil {
-		return claims.AuthContextFromClaims(ctx, nil, err)
+		return claims.AuthContextWithJWT(ctx, nil, err)
 	}
 	if u == nil {
-		return claims.AuthContextFromClaims(ctx, nil, status.UnauthenticatedErrorf("API key %s is unknown to TestAuthenticator", apiKey))
+		return claims.AuthContextWithJWT(ctx, nil, status.UnauthenticatedErrorf("API key %s is unknown to TestAuthenticator", apiKey))
 	}
-	return claims.AuthContextFromClaims(ctx, u.(*claims.Claims), nil)
+	return claims.AuthContextWithJWT(ctx, u.(*claims.Claims), nil)
 }
 
 func (a *TestAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
