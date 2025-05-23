@@ -185,7 +185,6 @@ func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConf
 }
 
 func getLogDbConfig(t LogDBConfigType) dbConfig.LogDBConfig {
-	log.Infof("getlogdbconfig")
 	switch t {
 	case SmallMemLogDBConfigType:
 		return dbConfig.GetSmallMemLogDBConfig()
