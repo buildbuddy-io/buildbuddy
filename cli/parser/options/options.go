@@ -763,7 +763,7 @@ func (b *BoolOrEnum) Set(value any) {
 // options in order. It should only be called with opts that all share the same
 // definition, and an inital value that matches the type of value that
 // definition implies. Otherwise, its output will be nonsensical.
-func AccumulateValues[ T string | []string | bool | BoolOrEnum, O Option ](acc T, opts...O) (T, error) {
+func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, opts ...O) (T, error) {
 	p := any(&acc)
 	for _, opt := range opts {
 		log.Printf("Accumulating %v...", opt.Format())
