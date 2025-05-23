@@ -1,10 +1,8 @@
 package oci
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -14,25 +12,19 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/net/publicsuffix"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -41,15 +33,7 @@ var (
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
-	writeManifestsToCache  = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
-	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from cache before fetching from upstream remote registry.")
-
-	readLayersFromCache = flag.Bool("executor.container_registry.read_layers_from_cache", false, "Read image layers from cache before fetching from upstream remote registry.")
-
-	defaultPlatform = gcr.Platform{
-		Architecture: "amd64",
-		OS:           "linux",
-	}
+	writeManifestsToCache = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
 )
 
 type MirrorConfig struct {
@@ -245,16 +229,16 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
-	updateResolveEventMetric(imageRef.Context().RegistryStr())
 
-	gcrPlatform := gcr.Platform{
-		Architecture: platform.GetArch(),
-		OS:           platform.GetOs(),
-		Variant:      platform.GetVariant(),
-	}
 	remoteOpts := []remote.Option{
 		remote.WithContext(ctx),
-		remote.WithPlatform(gcrPlatform),
+		remote.WithPlatform(
+			gcr.Platform{
+				Architecture: platform.GetArch(),
+				OS:           platform.GetOs(),
+				Variant:      platform.GetVariant(),
+			},
+		),
 	}
 	if !credentials.IsEmpty() {
 		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
@@ -269,315 +253,38 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	} else {
 		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 	}
-
-	manifestHash, rawManifest, fromCache, err := r.fetchRawManifestFromCacheOrRemote(ctx, imageRef, remoteOpts)
+	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
-		return nil, err
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
-	manifest, err := gcr.ParseManifest(bytes.NewReader(rawManifest))
-	if err != nil {
-		return nil, err
-	}
-	if !fromCache && *writeManifestsToCache {
-		contentType := string(manifest.MediaType)
-		err := ocicache.WriteManifestToAC(ctx, rawManifest, r.env.GetActionCacheClient(), imageRef, *manifestHash, contentType)
+	if *writeManifestsToCache {
+		contentType := string(remoteDesc.MediaType)
+		err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, r.env.GetActionCacheClient(), imageRef, remoteDesc.Digest, contentType)
 		if err != nil {
 			log.CtxWarningf(ctx, "Could not write manifest for %q to the cache: %s", imageRef.Context(), err)
 		}
 	}
 
-	// Unless the manifest is an index (in which case, we need to fetch the appropriate manifest for the input platform below),
-	// return an Image constructed from this manifest.
-	if manifest.MediaType != types.OCIImageIndex && manifest.MediaType != types.DockerManifestList {
-		image := &imageFromManifest{
-			digest: imageRef.Context().Digest(manifestHash.String()),
-
-			rawManifest: rawManifest,
-			manifest:    manifest,
-
-			remoteOpts: remoteOpts,
-			ctx:        ctx,
-			acClient:   r.env.GetActionCacheClient(),
-			bsClient:   r.env.GetByteStreamClient(),
-		}
-		return partial.CompressedToImage(image)
-	}
-
-	index, err := gcr.ParseIndexManifest(bytes.NewReader(rawManifest))
+	// Image() should resolve both images and image indices to an appropriate image
+	img, err := remoteDesc.Image()
 	if err != nil {
-		return nil, err
-	}
-	var child *gcr.Descriptor
-	for _, childDesc := range index.Manifests {
-		p := defaultPlatform
-		if childDesc.Platform != nil {
-			p = *childDesc.Platform
-		}
-
-		if matchesPlatform(p, gcrPlatform) {
-			child = &childDesc
-		}
-	}
-	if child == nil {
-		return nil, status.UnavailableErrorf("no child with platform %+v for %s", platform, imageRef.Context())
-	}
-
-	childRef := imageRef.Context().Digest(child.Digest.String())
-	childHash, childRawManifest, childFromCache, err := r.fetchRawManifestFromCacheOrRemote(ctx, childRef, remoteOpts)
-	if err != nil {
-		return nil, err
-	}
-	childManifest, err := gcr.ParseManifest(bytes.NewReader(childRawManifest))
-	if err != nil {
-		return nil, err
-	}
-	if !childFromCache && *writeManifestsToCache {
-		childContentType := string(childManifest.MediaType)
-		err := ocicache.WriteManifestToAC(ctx, childRawManifest, r.env.GetActionCacheClient(), childRef, *childHash, childContentType)
-		if err != nil {
-			log.CtxWarningf(ctx, "Could not write manifest for %q to the cache: %s", childRef.Context(), err)
+		switch remoteDesc.MediaType {
+		// This is an "image index", a meta-manifest that contains a list of
+		// {platform props, manifest hash} properties to allow client to decide
+		// which manifest they want to use based on platform.
+		case types.OCIImageIndex, types.DockerManifestList:
+			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
+		case types.OCIManifestSchema1, types.DockerManifestSchema2:
+			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
+		default:
+			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
 		}
 	}
-	if childManifest.MediaType == types.OCIImageIndex || childManifest.MediaType == types.DockerManifestList {
-		return nil, status.UnknownErrorf("child manifest for %q is itself an image index", childRef.Context())
-	}
-
-	image := &imageFromManifest{
-		digest: childRef.Context().Digest(childHash.String()),
-
-		rawManifest: childRawManifest,
-		manifest:    childManifest,
-
-		remoteOpts: remoteOpts,
-		ctx:        ctx,
-		acClient:   r.env.GetActionCacheClient(),
-		bsClient:   r.env.GetByteStreamClient(),
-	}
-	return partial.CompressedToImage(image)
+	return img, nil
 }
-
-func updateResolveEventMetric(host string) {
-	var hostLabel string
-	if net.ParseIP(host) != nil {
-		hostLabel = "[IP_ADDRESS]"
-	} else {
-		label, err := publicsuffix.EffectiveTLDPlusOne(host)
-		if err != nil {
-			label = "[UNKNOWN]"
-		}
-		hostLabel = label
-	}
-	metrics.OCIRegistryResolveEvents.With(prometheus.Labels{
-		metrics.HTTPHostLabel: hostLabel,
-	}).Inc()
-	log.Infof("Resolving OCI image for registry %q", hostLabel)
-}
-
-func (r *Resolver) fetchRawManifestFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, remoteOpts []remote.Option) (*gcr.Hash, []byte, bool, error) {
-	if *readManifestsFromCache {
-		headDesc, err := remote.Head(digestOrTagRef, remoteOpts...)
-		if err != nil {
-			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-				return nil, nil, false, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
-			}
-			return nil, nil, false, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-		}
-
-		mc, err := ocicache.FetchManifestFromAC(ctx, r.env.GetActionCacheClient(), digestOrTagRef, headDesc.Digest)
-		if err == nil {
-			return &headDesc.Digest, mc.Raw, true, nil
-		}
-		if !status.IsNotFoundError(err) {
-			log.CtxErrorf(ctx, "error fetching manifest %s from the CAS: %s", digestOrTagRef.Context(), err)
-		}
-	}
-
-	getDesc, err := remote.Get(digestOrTagRef, remoteOpts...)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, nil, false, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
-		}
-		return nil, nil, false, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-	}
-	return &getDesc.Digest, getDesc.Manifest, false, nil
-}
-
-type imageFromManifest struct {
-	digest gcrname.Digest
-
-	rawManifest []byte
-	manifest    *gcr.Manifest
-
-	remoteOpts []remote.Option
-	ctx        context.Context
-	acClient   repb.ActionCacheClient
-	bsClient   bspb.ByteStreamClient
-}
-
-func (i *imageFromManifest) RawManifest() ([]byte, error) {
-	return i.rawManifest, nil
-}
-
-// RawConfigFile returns the config file data from the parsed manifest if present,
-// otherwise it fetches the config file from the upstream remote registry.
-func (i *imageFromManifest) RawConfigFile() ([]byte, error) {
-	if i.manifest.Config.Data != nil {
-		return i.manifest.Config.Data, nil
-	}
-
-	configDigest := i.digest.Digest(i.manifest.Config.Digest.String())
-	remoteLayer, err := remote.Layer(configDigest, i.remoteOpts...)
-	if err != nil {
-		return nil, err
-	}
-	partialLayer := &cacheAwareLayer{
-		hash:      i.manifest.Config.Digest,
-		ocidigest: configDigest,
-
-		remoteLayer: remoteLayer,
-		ctx:         i.ctx,
-		acClient:    i.acClient,
-		bsClient:    i.bsClient,
-	}
-	layer, err := partial.CompressedToLayer(partialLayer)
-	if err != nil {
-		return nil, err
-	}
-	rc, err := layer.Uncompressed()
-	if err != nil {
-		return nil, err
-	}
-	defer rc.Close()
-	rawConfigFile, err := io.ReadAll(rc)
-	if err != nil {
-		return nil, err
-	}
-	return rawConfigFile, nil
-}
-
-func (i *imageFromManifest) MediaType() (types.MediaType, error) {
-	return i.manifest.MediaType, nil
-}
-
-// LayerByDigest fetches the specified layer from the upstream remote registry
-// or returns a NotFoundError.
-func (i *imageFromManifest) LayerByDigest(hash gcr.Hash) (partial.CompressedLayer, error) {
-	for _, d := range i.manifest.Layers {
-		if d.Digest == hash {
-			rlref := i.digest.Context().Digest(hash.String())
-			remoteLayer, err := remote.Layer(rlref, i.remoteOpts...)
-			if err != nil {
-				return nil, err
-			}
-			return &cacheAwareLayer{
-				hash:      hash,
-				ocidigest: rlref,
-
-				remoteLayer: remoteLayer,
-				ctx:         i.ctx,
-				acClient:    i.acClient,
-				bsClient:    i.bsClient,
-			}, nil
-		}
-	}
-	return nil, status.NotFoundErrorf("could not find layer in image %q", i.digest.Context())
-}
-
-var _ partial.CompressedImageCore = (*imageFromManifest)(nil)
-
-// matchesPlatform is taken from https://github.com/google/go-containerregistry/blob/v0.17.0/pkg/v1/remote/index.go
-func matchesPlatform(given, required gcr.Platform) bool {
-	// Required fields that must be identical.
-	if given.Architecture != required.Architecture || given.OS != required.OS {
-		return false
-	}
-
-	// Optional fields that may be empty, but must be identical if provided.
-	if required.OSVersion != "" && given.OSVersion != required.OSVersion {
-		return false
-	}
-	if required.Variant != "" && given.Variant != required.Variant {
-		return false
-	}
-
-	// Verify required platform's features are a subset of given platform's features.
-	if !isSubset(given.OSFeatures, required.OSFeatures) {
-		return false
-	}
-	if !isSubset(given.Features, required.Features) {
-		return false
-	}
-
-	return true
-}
-
-// isSubset is taken from https://github.com/google/go-containerregistry/blob/v0.17.0/pkg/v1/remote/index.go
-func isSubset(lst, required []string) bool {
-	set := make(map[string]bool)
-	for _, value := range lst {
-		set[value] = true
-	}
-
-	for _, value := range required {
-		if _, ok := set[value]; !ok {
-			return false
-		}
-	}
-
-	return true
-}
-
-type cacheAwareLayer struct {
-	hash      gcr.Hash
-	ocidigest gcrname.Digest
-
-	remoteLayer gcr.Layer
-	ctx         context.Context
-	acClient    repb.ActionCacheClient
-	bsClient    bspb.ByteStreamClient
-}
-
-func (l *cacheAwareLayer) Digest() (gcr.Hash, error) {
-	return l.hash, nil
-}
-
-func (l *cacheAwareLayer) Compressed() (io.ReadCloser, error) {
-	if *readLayersFromCache {
-		blobMetadata, err := ocicache.FetchBlobMetadataFromCache(l.ctx, l.bsClient, l.acClient, l.ocidigest)
-		if err != nil && !status.IsNotFoundError(err) {
-			log.CtxErrorf(l.ctx, "Error fetching CAS digest for layer in %q: %s", l.ocidigest.Context(), err)
-		}
-		if err == nil {
-			r, w := io.Pipe()
-			go func() {
-				defer w.Close()
-				err := ocicache.FetchBlobFromCache(
-					l.ctx,
-					w,
-					l.bsClient,
-					l.hash,
-					blobMetadata.ContentLength,
-				)
-				if err != nil {
-					log.Warningf("Error fetching layer from CAS in %q: %s", l.ocidigest.Context(), err)
-					w.CloseWithError(err)
-				}
-			}()
-			return r, nil
-		}
-	}
-	return l.remoteLayer.Compressed()
-}
-
-func (l *cacheAwareLayer) Size() (int64, error) {
-	return l.remoteLayer.Size()
-}
-
-func (l *cacheAwareLayer) MediaType() (types.MediaType, error) {
-	return l.remoteLayer.MediaType()
-}
-
-var _ partial.CompressedLayer = (*cacheAwareLayer)(nil)
 
 // RuntimePlatform returns the platform on which the program is being executed,
 // as reported by the go runtime.

@@ -200,7 +200,7 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	return blobMetadata, nil
 }
 
-func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash gcr.Hash, contentLength int64) error {
+func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, hash gcr.Hash, contentLength int64) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -226,85 +226,39 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	return nil
 }
 
-// WriteManifestToCacheAndResponse reads the entire manifest from the upstream remote registry,
-// and writes the contents to both the response and to the AC.
-func WriteManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, response io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
-	if contentLength > maxManifestSize {
-		return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
+func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
 	}
-	buf := bytes.NewBuffer(make([]byte, 0, contentLength))
-	mw := io.MultiWriter(response, buf)
-	written, err := io.Copy(mw, io.LimitReader(upstream, contentLength))
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		cacheDigestFunction,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	updateCacheEventMetric(casLabel, uploadLabel)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
 	if err != nil {
-		return err
-	}
-	if written != contentLength {
-		return status.DataLossErrorf("expected manifest of length %d, only able to write %d bytes", contentLength, written)
-	}
-	return WriteManifestToAC(ctx, buf.Bytes(), acClient, ref, hash, contentType)
-}
-
-// WriteBlobToCacheAndResponse reads an OCI blob (an OCI image layer) from the upstream remote registry
-// and writes those bytes to the response. It also makes a best-effort attempt to write the blob to the CAS.
-// Failure to write the blob to the CAS should not impact writing the blob to the response.
-func WriteBlobToCacheAndResponse(ctx context.Context, upstream io.Reader, response io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) error {
-	uploader, err := NewBlobUploader(ctx, bsClient, acClient, ref, hash, contentType, contentLength)
-	if err != nil {
-		return err
-	}
-	defer uploader.Close()
-	dst := &writeThroughCacher{
-		primary: response,
-		cacher:  uploader,
-	}
-	if _, err := io.Copy(dst, upstream); err != nil {
-		return err
-	}
-	return uploader.Commit()
-}
-
-type blobUploader struct {
-	ref           gcrname.Reference
-	hash          gcr.Hash
-	contentType   string
-	contentLength int64
-
-	writer *cachetools.UploadWriter
-
-	ctx      context.Context
-	bsClient bspb.ByteStreamClient
-	acClient repb.ActionCacheClient
-}
-
-func (up *blobUploader) Write(p []byte) (int, error) {
-	return up.writer.Write(p)
-}
-
-func (up *blobUploader) Commit() error {
-	if err := up.writer.Commit(); err != nil {
 		return err
 	}
 
 	blobMetadata := &ocipb.OCIBlobMetadata{
-		ContentLength: up.contentLength,
-		ContentType:   up.contentType,
+		ContentLength: contentLength,
+		ContentType:   contentType,
 	}
 	updateCacheEventMetric(casLabel, uploadLabel)
-	blobMetadataCASDigest, err := cachetools.UploadProto(up.ctx, up.bsClient, "", cacheDigestFunction, blobMetadata)
+	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", cacheDigestFunction, blobMetadata)
 	if err != nil {
 		return err
 	}
 
 	arKey := &ocipb.OCIActionResultKey{
-		Registry:      up.ref.Context().RegistryStr(),
-		Repository:    up.ref.Context().RepositoryStr(),
+		Registry:      ref.Context().RegistryStr(),
+		Repository:    ref.Context().RepositoryStr(),
 		ResourceType:  ocipb.OCIResourceType_BLOB,
-		HashAlgorithm: up.hash.Algorithm,
-		HashHex:       up.hash.Hex,
-	}
-	blobCASDigest := &repb.Digest{
-		Hash:      up.hash.Hex,
-		SizeBytes: up.contentLength,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
 	}
 	ar := &repb.ActionResult{
 		OutputFiles: []*repb.OutputFile{
@@ -332,52 +286,29 @@ func (up *blobUploader) Commit() error {
 		cacheDigestFunction,
 	)
 	updateCacheEventMetric(actionCacheLabel, uploadLabel)
-	return cachetools.UploadActionResult(up.ctx, up.acClient, arRN, ar)
-}
-
-func (up *blobUploader) Close() error {
-	return up.writer.Close()
-}
-
-func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, contentType string, contentLength int64) (interfaces.CommittedWriteCloser, error) {
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: contentLength,
-	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		"",
-		cacheDigestFunction,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	updateCacheEventMetric(casLabel, uploadLabel)
-	uw, err := cachetools.NewUploadWriter(ctx, bsClient, blobRN)
+	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return &blobUploader{
-		ref:           ref,
-		hash:          hash,
-		contentType:   contentType,
-		contentLength: contentLength,
-
-		writer: uw,
-
-		ctx:      ctx,
-		bsClient: bsClient,
-		acClient: acClient,
-	}, nil
+	return nil
 }
 
-type writeThroughCacher struct {
-	primary io.Writer
-	cacher  io.Writer
-}
-
-func (w *writeThroughCacher) Write(p []byte) (int, error) {
-	n, err := w.primary.Write(p)
-	if n > 0 {
-		w.cacher.Write(p[:n]) // Writing to the cache is best-effort, so ignore any errors.
+func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
+		if contentLength > maxManifestSize {
+			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
+		}
+		buf := bytes.NewBuffer(make([]byte, 0, contentLength))
+		mw := io.MultiWriter(w, buf)
+		written, err := io.Copy(mw, io.LimitReader(upstream, contentLength))
+		if err != nil {
+			return err
+		}
+		if written != contentLength {
+			return status.DataLossErrorf("expected manifest of length %d, only able to write %d bytes", contentLength, written)
+		}
+		return WriteManifestToAC(ctx, buf.Bytes(), acClient, ref, hash, contentType)
 	}
-	return n, err
+	tr := io.TeeReader(upstream, w)
+	return WriteBlobToCache(ctx, tr, bsClient, acClient, ref, hash, contentType, contentLength)
 }

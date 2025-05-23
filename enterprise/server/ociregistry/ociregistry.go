@@ -353,15 +353,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
-	switch ociResourceType {
-	case ocipb.OCIResourceType_BLOB:
-		err = ocicache.WriteBlobToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, hash, contentType, contentLength)
-	case ocipb.OCIResourceType_MANIFEST:
-		err = ocicache.WriteManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, hash, contentType, contentLength)
-	default:
-		err = status.InternalErrorf("Cannot write response body to cache for unknown OCI resource type %s", ociResourceType)
-	}
-
+	err = ocicache.WriteBlobOrManifestToCacheAndWriter(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, hash, contentType, contentLength)
 	if err != nil && err != context.Canceled {
 		log.CtxWarningf(ctx, "Error writing response body to cache for %q: %s", resolvedRef.Context(), err)
 	}
@@ -414,7 +406,7 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 	if !writeBody {
 		return nil
 	}
-	return ocicache.FetchBlobFromCache(ctx, w, bsClient, hash, blobMetadata.GetContentLength())
+	return ocicache.FetchBlobFromCache(ctx, w, bsClient, acClient, hash, blobMetadata.GetContentLength())
 }
 
 func isDigest(identifier string) bool {
