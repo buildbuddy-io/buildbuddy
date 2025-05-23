@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -25,8 +24,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/net/publicsuffix"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -245,7 +242,6 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
-	updateResolveEventMetric(imageRef.Context().RepositoryStr())
 
 	gcrPlatform := gcr.Platform{
 		Architecture: platform.GetArch(),
@@ -354,23 +350,6 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		bsClient:   r.env.GetByteStreamClient(),
 	}
 	return partial.CompressedToImage(image)
-}
-
-func updateResolveEventMetric(host string) {
-	var hostLabel string
-	if net.ParseIP(host) != nil {
-		hostLabel = "[IP_ADDRESS]"
-	} else {
-		label, err := publicsuffix.EffectiveTLDPlusOne(host)
-		if err != nil {
-			label = "[UNKNOWN]"
-		}
-		hostLabel = label
-	}
-	metrics.OCIRegistryResolveEvents.With(prometheus.Labels{
-		metrics.HTTPHostLabel: hostLabel,
-	}).Inc()
-	log.Infof("Resolving OCI image for registry %q", hostLabel)
 }
 
 func (r *Resolver) fetchRawManifestFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, remoteOpts []remote.Option) (*gcr.Hash, []byte, bool, error) {
