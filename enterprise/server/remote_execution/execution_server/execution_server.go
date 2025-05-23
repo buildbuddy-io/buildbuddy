@@ -304,7 +304,7 @@ func trimStatus(statusMessage string) string {
 }
 
 func (s *ExecutionServer) updateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, executeResponse *repb.ExecuteResponse, auxMeta *espb.ExecutionAuxiliaryMetadata, properties *platform.Properties, action *repb.Action, cmd *repb.Command) error {
-	if s.env.GetDBHandle() == nil {
+	if *writeExecutionsToPrimaryDB && s.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	} else if *writeExecutionProgressStateToRedis && s.env.GetExecutionCollector() == nil {
 		return status.FailedPreconditionError("redis execution collector not configured")
@@ -430,11 +430,11 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 }
 
 // flushExecutionToOLAP flushes execution data to Clickhouse.
-func (s *ExecutionServer) flushExecutionToOLAP(
-	ctx context.Context,
-	executionID string) error {
-	if s.env.GetExecutionCollector() == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
+func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) error {
+	if !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
+	} else if s.env.GetExecutionCollector() == nil {
+		return status.FailedPreconditionError("redis execution collector not configured")
 	}
 
 	// Always clean up invocationLinks and execution updates from the collector.
