@@ -408,7 +408,4 @@ func deleteBuildRoot(ctx context.Context, rootDir string) {
 	if err := disk.ForceRemove(ctx, rootDir); err != nil {
 		log.Warningf("Failed to remove build root dir: %s", err)
 	}
-	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
-		log.Warningf("Failed to create build root dir: %s", err)
-	}
 }
