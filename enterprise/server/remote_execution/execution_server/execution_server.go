@@ -82,7 +82,6 @@ var (
 
 	writeExecutionProgressStateToRedis = flag.Bool("remote_execution.write_execution_progress_state_to_redis", false, "If enabled, write initial execution metadata and progress updates (stage changes) to redis. This state is cleared when the execution is complete.", flag.Internal)
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
-	readFinalExecutionStateFromRedis   = flag.Bool("remote_execution.read_final_execution_state_from_redis", false, "If enabled, read execution metadata and progress state from redis when writing executions to ClickHouse, instead of from the primary DB.", flag.Internal)
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -227,11 +226,13 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	execution.GroupID = permissions.GroupID
 	execution.Perms = execution.Perms | permissions.Perms
 
-	now := time.Now()
-	execution.Model.CreatedAtUsec = now.UnixMicro()
-	execution.Model.UpdatedAtUsec = now.UnixMicro()
-	if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executil.TableExecToProto(execution, nil /*=invocationLink*/)); err != nil {
-		log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
+	if *writeExecutionProgressStateToRedis {
+		now := time.Now()
+		execution.Model.CreatedAtUsec = now.UnixMicro()
+		execution.Model.UpdatedAtUsec = now.UnixMicro()
+		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executil.TableExecToProto(execution, nil /*=invocationLink*/)); err != nil {
+			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
+		}
 	}
 
 	if *writeExecutionsToPrimaryDB {
@@ -302,7 +303,7 @@ func trimStatus(statusMessage string) string {
 	return statusMessage
 }
 
-func (s *ExecutionServer) updateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, executeResponse *repb.ExecuteResponse, auxMeta *espb.ExecutionAuxiliaryMetadata, properties *platform.Properties, action *repb.Action) error {
+func (s *ExecutionServer) updateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, executeResponse *repb.ExecuteResponse, auxMeta *espb.ExecutionAuxiliaryMetadata, properties *platform.Properties, action *repb.Action, cmd *repb.Command) error {
 	if s.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	} else if *writeExecutionProgressStateToRedis && s.env.GetExecutionCollector() == nil {
@@ -391,6 +392,13 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			if len(regionHeaderValues) > 0 {
 				executionProto.Region = regionHeaderValues[len(regionHeaderValues)-1]
 			}
+
+			if u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
+				executionProto.GroupId = u.GetGroupID()
+				executionProto.UserId = u.GetUserID()
+
+			}
+			executionProto.CommandSnippet = generateCommandSnippet(cmd)
 		}
 
 		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
@@ -1062,7 +1070,7 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 }
 
 func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID string, executeRsp *repb.ExecuteResponse) error {
-	action, properties, err := s.metadataForClickhouse(ctx, taskID)
+	action, cmd, properties, err := s.metadataForClickhouse(ctx, taskID)
 	// Even if we can't get the additional metadata, update the data we have.
 	if err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: get additional metadata for %q for clickhouse: %s", taskID, err)
@@ -1070,7 +1078,7 @@ func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID stri
 	// We don't have a response, so we don't have response metadata. It's
 	// not required.
 	var auxMetadata *espb.ExecutionAuxiliaryMetadata
-	if err := s.updateExecution(ctx, taskID, repb.ExecutionStage_COMPLETED, executeRsp, auxMetadata, properties, action); err != nil {
+	if err := s.updateExecution(ctx, taskID, repb.ExecutionStage_COMPLETED, executeRsp, auxMetadata, properties, action, cmd); err != nil {
 		return err
 	}
 	if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
@@ -1079,20 +1087,20 @@ func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID stri
 	return nil
 }
 
-func (s *ExecutionServer) metadataForClickhouse(ctx context.Context, taskID string) (*repb.Action, *platform.Properties, error) {
+func (s *ExecutionServer) metadataForClickhouse(ctx context.Context, taskID string) (*repb.Action, *repb.Command, *platform.Properties, error) {
 	actionRN, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to parse taskID: %s", err)
+		return nil, nil, nil, fmt.Errorf("Failed to parse taskID: %s", err)
 	}
 	action, cmd, err := s.fetchActionAndCommand(ctx, actionRN)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to fetch action and command: %s", err)
+		return nil, nil, nil, fmt.Errorf("Failed to fetch action and command: %s", err)
 	}
 	properties, err := platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd})
 	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to parse platform properties: %s", err)
+		return nil, nil, nil, fmt.Errorf("Failed to parse platform properties: %s", err)
 	}
-	return action, properties, nil
+	return action, cmd, properties, nil
 }
 
 func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperationServer) error {
@@ -1118,7 +1126,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		if time.Since(lastWrite) > 5*time.Second && taskID != "" {
 			// We only write additional metadata when the operation has completed, so
 			// we don't need to pass those fields here for intermediary updates.
-			if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil); err != nil {
+			if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
 				log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
 				return false
 			}
@@ -1188,6 +1196,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
 		var action *repb.Action
+		var cmd *repb.Command
 		if stage == repb.ExecutionStage_COMPLETED && response != nil {
 			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
 			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
@@ -1200,7 +1209,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return status.WrapErrorf(err, "Failed to parse taskID")
 			}
-			var cmd *repb.Command
 			action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
 			if err != nil {
 				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
@@ -1237,7 +1245,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				mu.Lock()
 				defer mu.Unlock()
 
-				if err := s.updateExecution(ctx, taskID, stage, response, auxMeta, properties, action); err != nil {
+				if err := s.updateExecution(ctx, taskID, stage, response, auxMeta, properties, action, cmd); err != nil {
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
