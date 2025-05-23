@@ -758,26 +758,12 @@ func (b *BoolOrEnum) Set(value any) {
 	}
 }
 
-func FromConcrete[T Option](opts []T) []Option {
-	if len(opts) == 0 {
-		return nil
-	}
-	optSlice := make([]Option, 0, len(opts))
-	for _, a := range opts {
-		// `append(a, b...)` only works if `a` and `b` have exactly the same type,
-		// even if the slice element types are the same. So we use a loop and append
-		// one-by-one, converting each element to `Option` with each append.
-		optSlice = append(optSlice, a)
-	}
-	return optSlice
-}
-
 // AccumulateValues accepts an initial value, acc, and a variadic Option
 // parameter, opts, and returns the resulting value of evaluating all of those
 // options in order. It should only be called with opts that all share the same
 // definition, and an inital value that matches the type of value that
 // definition implies. Otherwise, its output will be nonsensical.
-func AccumulateValues[ T string | []string | bool | BoolOrEnum ](acc T, opts...Option) (T, error) {
+func AccumulateValues[ T string | []string | bool | BoolOrEnum, O Option ](acc T, opts...O) (T, error) {
 	p := any(&acc)
 	for _, opt := range opts {
 		log.Printf("Accumulating %v...", opt.Format())

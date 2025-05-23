@@ -546,7 +546,7 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 // args and appends an `ignore_all_rc_files` option to the startup options.
 // Returns a slice of all the rc files that should be parsed.
 func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []string, err error) {
-	if ignore, err := options.AccumulateValues(false, options.FromConcrete(a.RemoveOptions("ignore_all_rc_files"))...); err != nil {
+	if ignore, err := options.AccumulateValues(false, a.RemoveOptions("ignore_all_rc_files")...); err != nil {
 		return nil, fmt.Errorf("Failed to get value from 'ignore_all_rc_files' option: %s", err)
 	} else if ignore {
 		// Before we do anything, check whether --ignore_all_rc_files is already
@@ -559,7 +559,7 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 	// Parse rc files in the order defined here:
 	// https://bazel.build/run/bazelrc#bazelrc-file-locations
 	for _, optName := range []string{"system_rc", "workspace_rc", " home_rc"} {
-		if v, err := options.AccumulateValues(true, options.FromConcrete(a.RemoveOptions(optName))...); err != nil {
+		if v, err := options.AccumulateValues(true, a.RemoveOptions(optName)...); err != nil {
 			return nil, fmt.Errorf("Failed to get value from '%s' option: %s", optName, err)
 		} else if !v {
 			// When these flags are false, they have no effect on the list of
@@ -619,7 +619,7 @@ func (a *OrderedArgs) ExpandConfigs(
 	// Replace the last occurrence of `--enable_platform_specific_config` with
 	// `--config=<bazelOS>`, so long as the last occurrence evaluates as true.
 	opts := expanded.RemoveOptions(bazelrc.EnablePlatformSpecificConfigFlag)
-	if v, err := options.AccumulateValues(false, options.FromConcrete(opts)...); err != nil {
+	if v, err := options.AccumulateValues(false, opts...); err != nil {
 		return nil, fmt.Errorf("Failed to get value from '%s' option: %s", bazelrc.EnablePlatformSpecificConfigFlag, err)
 	} else if v {
 		index := opts[len(opts)-1].Index
