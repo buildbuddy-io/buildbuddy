@@ -31,7 +31,6 @@ func TestInvocationWithRemoteExecutionWithClickHouse_StoreMetadataInRedisAndClic
 		flags: []string{
 			"--remote_execution.write_execution_progress_state_to_redis=true",
 			"--remote_execution.write_executions_to_primary_db=false",
-			"--remote_execution.read_final_execution_state_from_redis=true",
 			"--remote_execution.primary_db_reads_enabled=false",
 			"--remote_execution.olap_reads_enabled=true",
 		},
@@ -43,7 +42,6 @@ func TestInvocationWithRemoteExecutionWithClickHouse_StoreMetadataInPrimaryDBAnd
 		flags: []string{
 			"--remote_execution.write_execution_progress_state_to_redis=false",
 			"--remote_execution.write_executions_to_primary_db=true",
-			"--remote_execution.read_final_execution_state_from_redis=false",
 			"--remote_execution.primary_db_reads_enabled=true",
 			"--remote_execution.olap_reads_enabled=false",
 		},
