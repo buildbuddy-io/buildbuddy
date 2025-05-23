@@ -106,7 +106,9 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
                       <div className="stat">Run {this.props.buildEvent.id.testResult.run}</div>
                       <div className="stat-label">
                         (Attempt {this.props.buildEvent.id.testResult.attempt}, Shard{" "}
-                        {this.props.buildEvent.id.testResult.shard})
+                        {this.props.buildEvent.id.testResult.shard}
+                        {this.props.buildEvent?.testResult?.cachedLocally && <>, Cached Locally</>}
+                        {this.props.buildEvent?.testResult?.executionInfo?.cachedRemotely && <>, Cached Remotely</>})
                       </div>
                     </div>
                   )}

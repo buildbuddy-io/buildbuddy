@@ -229,6 +229,9 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
                         <ChevronRight className="icon" />
                       </span>
                       <span className="target-label">{target.metadata?.label}</span>{" "}
+                      {target.testSummary && target.testSummary.totalNumCached === target.testSummary.totalRunCount && (
+                        <span className="target-cache-status">Cached</span>
+                      )}
                       {target.rootCause && <span className="root-cause-badge">Root cause</span>}
                     </div>
                     <div className="target-duration">{!!target.timing?.duration && renderDuration(target.timing)}</div>
