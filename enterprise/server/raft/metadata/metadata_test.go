@@ -223,7 +223,6 @@ func TestAutoBringup(t *testing.T) {
 }
 
 func TestGetAndSet(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	rc1 := caches[0]
