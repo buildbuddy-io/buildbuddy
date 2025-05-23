@@ -427,24 +427,11 @@ func (i *imageFromManifest) RawConfigFile() ([]byte, error) {
 	}
 
 	configDigest := i.digest.Digest(i.manifest.Config.Digest.String())
-	remoteLayer, err := remote.Layer(configDigest, i.remoteOpts...)
+	rl, err := remote.Layer(configDigest, i.remoteOpts...)
 	if err != nil {
 		return nil, err
 	}
-	partialLayer := &cacheAwareLayer{
-		hash:      i.manifest.Config.Digest,
-		ocidigest: configDigest,
-
-		remoteLayer: remoteLayer,
-		ctx:         i.ctx,
-		acClient:    i.acClient,
-		bsClient:    i.bsClient,
-	}
-	layer, err := partial.CompressedToLayer(partialLayer)
-	if err != nil {
-		return nil, err
-	}
-	rc, err := layer.Uncompressed()
+	rc, err := rl.Uncompressed()
 	if err != nil {
 		return nil, err
 	}
