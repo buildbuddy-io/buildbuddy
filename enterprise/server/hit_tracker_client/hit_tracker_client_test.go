@@ -303,6 +303,8 @@ func BenchmarkEnqueue(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
+		// The client discards hits and logs stuff if too many hits are
+		// enqueued. Recreate for each benchmark to prevent this.
 		b.StopTimer()
 		_, hitTrackerFactory, _ := setup(b)
 		b.StartTimer()

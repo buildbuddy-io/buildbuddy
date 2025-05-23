@@ -588,6 +588,8 @@ func BenchmarkEnqueue(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
+		// The updater discards updates and logs stuff if too many updates are
+		// enqueued. Recreate for each benchmark to prevent this.
 		b.StopTimer()
 		_, updater, _, _ := setup(b)
 		b.StartTimer()
