@@ -260,7 +260,7 @@ func TestManyNewWorkspaces(t *testing.T) {
 			matches := expectedPath.FindStringSubmatch(ws.Path())
 			assert.NotNil(t, matches)
 			idx := expectedPath.SubexpIndex("headerPath")
-			assert.True(t, strings.HasPrefix(matches[idx], "_main\\"), "Expected path %q to start with _main\\", matches[idx])
+			assert.Equal(t, "_main", matches[idx])
 		}
 		allPaths[ws.Path()] = struct{}{}
 	}
