@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -276,7 +275,6 @@ func TestGetAndSet(t *testing.T) {
 }
 
 func TestCacheShutdown(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	rc1 := caches[0]
@@ -330,7 +328,6 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 
@@ -340,9 +337,6 @@ func TestDistributedRanges(t *testing.T) {
 	wrote := make([]*sgpb.FileMetadata, 0)
 	for i := 0; i < 10; i++ {
 		rc := caches[rand.Intn(len(caches))]
-
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
 
 		md := randomFileMetadata(t, 100)
 		_, err := rc.Set(ctx, &mdpb.SetRequest{
@@ -360,8 +354,6 @@ func TestDistributedRanges(t *testing.T) {
 
 	for _, md := range wrote {
 		rc := caches[rand.Intn(len(caches))]
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
 
 		getRsp, err := rc.Get(ctx, &mdpb.GetRequest{
 			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
