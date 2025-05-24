@@ -18,23 +18,38 @@ type Server struct {
 	lru *lru.LRU[*sgpb.FileMetadata]
 }
 
-func NewServer(maxSizeBytes int64) (*Server, error) {
+func NewServer(maxSizeBytes int64, fs filestore.Store) (*Server, error) {
+	s := &Server{
+		fs: fs,
+	}
+
 	l, err := lru.NewLRU[*sgpb.FileMetadata](&lru.Config[*sgpb.FileMetadata]{
 		MaxSize: maxSizeBytes,
-		OnEvict: func(key string, value *sgpb.FileMetadata, reason lru.EvictionReason) {
-			log.Infof("Evicted %+v (REASON: %s)", value, reason)
-		},
-		SizeFn: func(value *sgpb.FileMetadata) int64 { return int64(proto.Size(value)) },
+		OnEvict: s.evict,
+		SizeFn:  func(value *sgpb.FileMetadata) int64 { return int64(proto.Size(value)) },
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &Server{
-		fs:  filestore.New(),
-		lru: l,
-	}, nil
-
+	s.lru = l
+	return s, nil
 }
+
+func (rc *Server) evict(key string, md *sgpb.FileMetadata, reason lru.EvictionReason) {
+	log.Infof("Evicted %+v (REASON: %s)", md, reason)
+
+	if inlineMetadata := md.GetStorageMetadata().GetInlineMetadata(); inlineMetadata != nil {
+		return
+	}
+	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
+		if err := rc.fs.DeleteStoredBlob(context.Background(), gcsMetadata); err != nil {
+			log.Errorf("Error deleting blob: %s", err)
+		}
+	}
+
+	log.Fatalf("Unable to delete metadata: %+v", md)
+}
+
 func (rc *Server) key(r *sgpb.FileRecord) (string, error) {
 	pmk, err := rc.fs.PebbleKey(r)
 	if err != nil {
