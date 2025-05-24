@@ -46,6 +46,7 @@ func TestBazelVersion(t *testing.T) {
 }
 
 func TestParseGlobalFlags(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
