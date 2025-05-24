@@ -498,7 +498,7 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 	rangeID := uint64(constants.InitialRangeID)
 
 	eg := errgroup.Group{}
-	for i, rangeDescriptor := range startingRanges {
+	for _, rangeDescriptor := range startingRanges {
 		bootstrapInfo := MakeBootstrapInfo(rangeID, replicaID, nodeGrpcAddrs)
 		rangeDescriptor.Replicas = bootstrapInfo.Replicas
 		rangeDescriptor.RangeId = rangeID
@@ -529,16 +529,19 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 			})
 		}
 		log.Debugf("Attempting to start cluster %d on: %+v", rangeID, bootstrapInfo)
+
+		// copy range ID because it's going to change next loop
+		rangeIDCopy := rangeID
 		eg.Go(func() error {
 			if err := StartShard(ctx, store, bootstrapInfo, batch); err != nil {
 				return err
 			}
-			log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
+			log.Debugf("Cluster %d started on: %+v", rangeIDCopy, bootstrapInfo)
 			return nil
 		})
 
 		// Always wait for the metarange to startup first.
-		if i == 0 {
+		if rangeID == constants.MetaRangeID {
 			if err := eg.Wait(); err != nil {
 				return err
 			}
