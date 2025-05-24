@@ -532,8 +532,8 @@ dockerfile_image(
 )
 
 dockerfile_image(
-    name = "rbe-ubuntu20-04-webtest_image",
-    dockerfile = "//dockerfiles/rbe-ubuntu20-04-webtest:Dockerfile",
+    name = "rbe-ubuntu22-04-webtest_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu22-04-webtest:Dockerfile",
 )
 
 dockerfile_image(
@@ -615,11 +615,11 @@ load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
 
 buildbuddy_deps()
 
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "buildbuddy")
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU22_04_IMAGE", "buildbuddy")
 
 buildbuddy(
     name = "buildbuddy_toolchain",
-    container_image = UBUNTU20_04_IMAGE,
+    container_image = UBUNTU22_04_IMAGE,
     # This is the MSVC available on Github Action win22 image
     # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md
     msvc_edition = "Enterprise",
