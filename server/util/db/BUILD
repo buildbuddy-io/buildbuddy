@@ -10,6 +10,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/db",
     visibility = ["//visibility:public"],
     x_defs = {
+        # Avoid a conflict with the regular sqlite3 driver.
         "github.com/ncruces/go-sqlite3/driver.driverName": "sqlite3-wasm",
     },
     deps = [

@@ -45,7 +45,7 @@ func keepmePaths(paths []string) map[string]struct{} {
 	expected := map[string]struct{}{}
 	for _, path := range paths {
 		if strings.Contains(path, "KEEPME") {
-			expected[path] = struct{}{}
+			expected[filepath.FromSlash(path)] = struct{}{}
 		}
 	}
 	return expected
