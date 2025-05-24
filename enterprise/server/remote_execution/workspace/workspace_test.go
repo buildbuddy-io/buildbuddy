@@ -252,7 +252,8 @@ func TestManyNewWorkspaces(t *testing.T) {
 	root := testfs.MakeTempDir(t)
 	var expectedPath *regexp.Regexp
 	if runtime.GOOS == "windows" {
-		expectedPath = regexp.MustCompile(".*" + regexp.QuoteMeta("execroot\\_main"))
+		// https://github.com/bazelbuild/bazel/blob/819aa9688229e244dc90dda1278d7444d910b48a/src/main/java/com/google/devtools/build/lib/rules/cpp/ShowIncludesFilter.java#L101
+		expectedPath = regexp.MustCompile(".*execroot\\\\(?P<headerPath>.*)")
 	} else {
 		expectedPath = regexp.MustCompile(".*")
 	}
@@ -260,7 +261,10 @@ func TestManyNewWorkspaces(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		ws, err := workspace.New(te, root, &workspace.Opts{})
 		require.NoError(t, err)
-		assert.Regexp(t, expectedPath, ws.Path())
+		matches := expectedPath.FindStringSubmatch(ws.Path())
+		assert.NotNil(t, matches)
+		idx := expectedPath.SubexpIndex("headerPath")
+		assert.True(t, strings.HasPrefix(matches[idx], "_main\\"), "Expected path %q to start with _main\\", matches[idx])
 		allPaths[ws.Path()] = struct{}{}
 	}
 	// Check that all paths are unique.
