@@ -150,6 +150,21 @@
   color: #212121;
 }
 
+.invocation-targets-card .target-cache-status {
+  border-radius: 16px;
+  color: #212121ad;
+  background: #eee;
+  line-height: 1;
+  flex-shrink: 0;
+
+  font-size: 0.8em;
+  word-break: break-word;
+  white-space: nowrap;
+  margin-left: auto;
+  margin-right: 8px;
+  padding: 2px 6px;
+}
+
 .invocation-targets-card .root-cause-badge {
   background: #eee;
   flex-shrink: 0;
