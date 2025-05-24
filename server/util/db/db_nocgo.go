@@ -9,10 +9,14 @@ import (
 
 	gomysql "github.com/go-sql-driver/mysql"
 	gopostgres "github.com/jackc/pgx/v5/stdlib"
+	gosqlite "github.com/ncruces/go-sqlite3/driver"
+	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
 func getDriver(ds DataSource) (driver.Driver, error) {
 	switch ds.DriverName() {
+	case sqliteDriver:
+		return &gosqlite.SQLite{}, nil
 	case mysqlDriver:
 		return &gomysql.MySQLDriver{}, nil
 	case postgresDriver:

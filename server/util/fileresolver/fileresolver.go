@@ -46,8 +46,10 @@ func (r *fileResolver) Open(name string) (fs.File, error) {
 // consult runfiles regardless of whether they begin with this prefix.
 func New(bundleFS fs.FS, bundleRoot string) fs.FS {
 	bundlePrefix := ""
-	if bundleRoot != "" && !strings.HasSuffix(bundleRoot, string(os.PathSeparator)) {
-		bundlePrefix = bundleRoot + string(os.PathSeparator)
+	// fs.FS as well as runfiles use forward slashes as path separators on all
+	// platforms.
+	if bundleRoot != "" && !strings.HasSuffix(bundleRoot, "/") {
+		bundlePrefix = bundleRoot + "/"
 	}
 	return &fileResolver{
 		bundleFS:     bundleFS,

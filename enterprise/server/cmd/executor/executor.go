@@ -287,6 +287,10 @@ func main() {
 	if *deleteBuildRootOnStartup {
 		deleteBuildRoot(rootContext, runner.GetBuildRoot())
 	}
+	err := os.MkdirAll(runner.GetBuildRoot(), 0755)
+	if err != nil {
+		log.Fatalf("Unable to create build root directory %q: %s", runner.GetBuildRoot(), err)
+	}
 
 	// Run any startup commands.
 	for i, startupCommand := range *startupCommands {
@@ -404,8 +408,5 @@ func deleteBuildRoot(ctx context.Context, rootDir string) {
 
 	if err := disk.ForceRemove(ctx, rootDir); err != nil {
 		log.Warningf("Failed to remove build root dir: %s", err)
-	}
-	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
-		log.Warningf("Failed to create build root dir: %s", err)
 	}
 }

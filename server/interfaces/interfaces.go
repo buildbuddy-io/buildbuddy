@@ -387,6 +387,7 @@ type NewTxRunner func(tx DB) error
 //	})
 type DBHandle interface {
 	DB
+	io.Closer
 
 	Transaction(ctx context.Context, txn NewTxRunner) error
 	TransactionWithOptions(ctx context.Context, opts DBOptions, txn NewTxRunner) error
