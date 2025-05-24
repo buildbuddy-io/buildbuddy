@@ -365,6 +365,29 @@ func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOp
 	return db
 }
 
+func (dbh *DBHandle) Close() error {
+	var errs []error
+	if dbh.db != nil {
+		db, err := dbh.db.DB()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("error getting DB from gorm handle: %w", err))
+		}
+		if err := db.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("error closing DB: %w", err))
+		}
+	}
+	if dbh.readReplicaDB != nil {
+		db, err := dbh.readReplicaDB.DB()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("error getting read replica DB from gorm handle: %w", err))
+		}
+		if err := db.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("error closing read replica DB: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 func IsRecordNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
