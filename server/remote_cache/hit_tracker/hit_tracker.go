@@ -331,14 +331,7 @@ func cacheEventTypeLabel(c counterType) string {
 	return uploadLabel
 }
 
-func (t *TransferTimer) emitSizeMetrics(compressor repb.Compressor_Value, ct counterType, cacheTypeLabel, serverLabel string, digestSizeBytes, bytesTransferredCache, bytesTransferredClient float64) {
-	groupID := interfaces.AuthAnonymousUser
-	if a := t.h.env.GetAuthenticator(); a != nil {
-		if u, err := a.AuthenticatedUser(t.h.ctx); err == nil {
-			groupID = u.GetGroupID()
-		}
-	}
-
+func (t *TransferTimer) emitSizeMetrics(compressor repb.Compressor_Value, ct counterType, cacheTypeLabel, serverLabel, groupID string, digestSizeBytes, bytesTransferredCache, bytesTransferredClient float64) {
 	if ct == UploadSizeBytes {
 		metrics.CacheUploadSizeBytes.With(prometheus.Labels{
 			metrics.CacheTypeLabel: cacheTypeLabel,
@@ -411,13 +404,22 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 
 // Records prometheus metrics about this TransferTimer.
 func (t *TransferTimer) emitMetrics(bytesTransferredCache, bytesTransferredClient int64, duration time.Duration, compressor repb.Compressor_Value, serverLabel string) {
+	groupID := interfaces.AuthAnonymousUser
+	if a := t.h.env.GetAuthenticator(); a != nil {
+		if u, err := a.AuthenticatedUser(t.h.ctx); err == nil {
+			groupID = u.GetGroupID()
+		}
+	}
+
 	et := cacheEventTypeLabel(t.actionCounter)
 	ct := t.h.cacheTypeLabel()
 	metrics.CacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      ct,
 		metrics.CacheEventTypeLabel: et,
+		metrics.GroupID:             groupID,
 	}).Inc()
-	t.emitSizeMetrics(compressor, t.sizeCounter, ct, serverLabel, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient))
+
+	t.emitSizeMetrics(compressor, t.sizeCounter, ct, serverLabel, groupID, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient))
 	durationMetric(t.timeCounter).With(prometheus.Labels{
 		metrics.CacheTypeLabel: ct,
 	}).Observe(float64(duration.Microseconds()))
