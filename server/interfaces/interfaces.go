@@ -117,7 +117,8 @@ type UserInfo interface {
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
-	IsSAML() bool
+	// IsCustomerSSO indicates whether the user logged in via a customer SSO integration (SAML/OIDC).
+	IsCustomerSSO() bool
 }
 
 // Authenticator constants

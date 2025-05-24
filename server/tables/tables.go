@@ -294,8 +294,11 @@ type User struct {
 	// Profile information etc.
 	FirstName string
 	LastName  string
-	Email     string
-	ImageURL  string
+	// Email provided by the login provider.
+	// SSO integrations can send arbitrary e-mails so this should be
+	// used with care in the context of auth.
+	Email    string
+	ImageURL string
 
 	// GitHub token used for all non-login related GitHub features.
 	// Can be for the read-only or read-write BuildBuddy GitHub app.

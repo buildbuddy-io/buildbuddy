@@ -329,6 +329,7 @@ func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 			return nil, status.UnauthenticatedErrorf(authutil.UserNotFoundMsg)
 		}
 		claims.SAML = true
+		claims.CustomerSSO = true
 		return claims, nil
 	}
 	return nil, status.UnauthenticatedError("No SAML User found")
