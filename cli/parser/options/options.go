@@ -288,6 +288,12 @@ type Option interface {
 	GetDefinition() *Definition
 	UseShortName(bool)
 	Normalized() Option
+
+	// Because Options wrap other Options sometimes, we cannot depend on being
+	// able to use type assertion to get a BoolLike from an Option that should
+	// support it. This problem could theoretically be alleviated by embedding
+	// types defined in type parameters, but that is explicitly disallowed by go.
+	BoolLike() BoolLike
 }
 
 // RequiredValueOption is used to represent an option whose definition specifies
@@ -362,6 +368,10 @@ func (o *RequiredValueOption) Normalized() Option {
 		Value:      o.Value,
 		Joined:     true,
 	}
+}
+
+func (o *RequiredValueOption) BoolLike() BoolLike {
+	return nil
 }
 
 type BoolLike interface {
@@ -487,6 +497,10 @@ func (o *BoolOrEnumOption) Normalized() Option {
 	}
 }
 
+func (o *BoolOrEnumOption) BoolLike() BoolLike {
+	return o
+}
+
 // starlarkOption is used to represent an option that has been identified as
 // having a starlark option prefix.
 type starlarkOption struct {
@@ -576,6 +590,10 @@ func (o *ExpansionOption) Normalized() Option {
 		Definition:    o.Definition,
 		UsesShortName: false,
 	}
+}
+
+func (o *ExpansionOption) BoolLike() BoolLike {
+	return nil
 }
 
 // UnknownOption is used to represent an option that lacks a predetermined
@@ -682,4 +700,101 @@ func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 		return &BoolOrEnumOption{Definition: d, Value: v, UsesShortName: form == shortForm, IsNegative: form == negativeForm}, nil
 	}
 	return &ExpansionOption{Definition: d, UsesShortName: form == shortForm}, nil
+}
+
+type BoolOrEnum struct {
+	b *bool
+	e *string
+}
+
+func (b *BoolOrEnum) GetBool() (bool, bool) {
+	if b.b == nil {
+		return false, false
+	}
+	return *b.b, true
+}
+
+func (b *BoolOrEnum) GetEnum() (string, bool) {
+	if b.e == nil {
+		return "", false
+	}
+	return *b.e, true
+}
+
+func (b *BoolOrEnum) Get() any {
+	switch {
+	case b.b != nil:
+		v := *b.b
+		return &v
+	case b.e != nil:
+		v := *b.e
+		return &v
+	default:
+		return nil
+	}
+}
+
+func (b *BoolOrEnum) SetBool(value bool) {
+	b.e = nil
+	b.b = &value
+}
+
+func (b *BoolOrEnum) SetEnum(value string) {
+	b.b = nil
+	b.e = &value
+}
+
+func (b *BoolOrEnum) Set(value any) {
+	if value == nil {
+		return
+	}
+	switch value := value.(type) {
+	case *bool:
+		v := *value
+		b.b = &v
+	case *string:
+		v := *value
+		b.e = &v
+	}
+}
+
+// AccumulateValues accepts an initial value, acc, and a variadic Option
+// parameter, opts, and returns the resulting value of evaluating all of those
+// options in order. It should only be called with opts that all share the same
+// definition, and an inital value that matches the type of value that
+// definition implies. Otherwise, its output will be nonsensical.
+func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, opts ...O) (T, error) {
+	p := any(&acc)
+	for _, opt := range opts {
+		log.Printf("Accumulating %v...", opt.Format())
+		switch p := p.(type) {
+		case *string:
+			*p = opt.GetValue()
+		case *[]string:
+			*p = append(*p, opt.GetValue())
+		case *bool:
+			b := opt.BoolLike()
+			if b == nil {
+				return *new(T), fmt.Errorf("Option '%s' is not a boolean (or boolean-or-enum) option.", opt.Name())
+			}
+			v, err := b.AsBool()
+			if err != nil {
+				return *new(T), fmt.Errorf("Option '%s' was not convertable to a boolean value.", strings.Join(opt.Format(), " "))
+			}
+			*p = v
+		case *BoolOrEnum:
+			b := opt.BoolLike()
+			if b == nil {
+				p.SetEnum(opt.GetValue())
+				continue
+			}
+			v, err := b.AsBool()
+			if err != nil {
+				p.SetEnum(opt.GetValue())
+				continue
+			}
+			p.SetBool(v)
+		}
+	}
+	return acc, nil
 }
