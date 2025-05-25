@@ -36,6 +36,7 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/backends/memory_metrics_collector",
+        "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/cachetools",
