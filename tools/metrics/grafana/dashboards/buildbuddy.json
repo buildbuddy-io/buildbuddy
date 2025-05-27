@@ -12491,7 +12491,17 @@
           "linewidth": 1,
           "nullPointMode": "null",
           "options": {
-            "alertThreshold": true
+            "alertThreshold": true,
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
           },
           "percentage": false,
           "pluginVersion": "10.1.0",
@@ -12511,14 +12521,38 @@
               "exemplar": true,
               "expr": "quantile(0.5, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
-              "legendFormat": "",
+              "legendFormat": "p50",
               "queryType": "randomWalk",
               "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "exemplar": true,
+              "expr": "quantile(0.9, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
+              "interval": "",
+              "legendFormat": "p90",
+              "queryType": "randomWalk",
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "exemplar": true,
+              "expr": "quantile(0.99, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
+              "interval": "",
+              "legendFormat": "p99",
+              "queryType": "randomWalk",
+              "refId": "C"
             }
           ],
           "thresholds": [],
           "timeRegions": [],
-          "title": "Median executor queue length",
+          "title": "Executor queue length",
           "tooltip": {
             "shared": true,
             "sort": 0,
