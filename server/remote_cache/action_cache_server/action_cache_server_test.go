@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
@@ -68,12 +69,14 @@ func TestInlineSingleFile(t *testing.T) {
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "action_cache",
 			metrics.CacheEventTypeLabel: "hit",
+			metrics.GroupID:             interfaces.AuthAnonymousUser,
 		},
 	)))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "cas",
 			metrics.CacheEventTypeLabel: "hit",
+			metrics.GroupID:             interfaces.AuthAnonymousUser,
 		},
 	)))
 }
@@ -112,12 +115,14 @@ func TestInlineSingleFileTooLarge(t *testing.T) {
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "action_cache",
 			metrics.CacheEventTypeLabel: "hit",
+			metrics.GroupID:             interfaces.AuthAnonymousUser,
 		},
 	)))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.CacheEvents.With(
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "cas",
 			metrics.CacheEventTypeLabel: "hit",
+			metrics.GroupID:             interfaces.AuthAnonymousUser,
 		},
 	)))
 }
@@ -172,12 +177,14 @@ func TestInlineMultipleFiles(t *testing.T) {
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "action_cache",
 			metrics.CacheEventTypeLabel: "hit",
+			metrics.GroupID:             interfaces.AuthAnonymousUser,
 		},
 	)))
 	assert.Equal(t, float64(2), testutil.ToFloat64(metrics.CacheEvents.With(
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "cas",
 			metrics.CacheEventTypeLabel: "hit",
+			metrics.GroupID:             interfaces.AuthAnonymousUser,
 		},
 	)))
 }
@@ -221,12 +228,14 @@ func TestInlineWithClientSideCacheMatch(t *testing.T) {
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "action_cache",
 			metrics.CacheEventTypeLabel: "hit",
+			metrics.GroupID:             interfaces.AuthAnonymousUser,
 		},
 	)))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "cas",
 			metrics.CacheEventTypeLabel: "hit",
+			metrics.GroupID:             interfaces.AuthAnonymousUser,
 		},
 	)))
 }
@@ -271,12 +280,14 @@ func TestInlineWithClientSideCacheMismatch(t *testing.T) {
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "action_cache",
 			metrics.CacheEventTypeLabel: "hit",
+			metrics.GroupID:             interfaces.AuthAnonymousUser,
 		},
 	)))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "cas",
 			metrics.CacheEventTypeLabel: "hit",
+			metrics.GroupID:             interfaces.AuthAnonymousUser,
 		},
 	)))
 }
