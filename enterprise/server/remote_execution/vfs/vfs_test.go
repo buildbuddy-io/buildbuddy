@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -64,11 +65,12 @@ func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (
 	err = os.MkdirAll(back, 0755)
 	require.NoError(t, err)
 
+	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
+	require.NoError(t, err)
+
 	server, err := vfs_server.New(env, back)
 	require.NoError(t, err)
-	err = server.Prepare(context.Background(), &container.FileSystemLayout{
-		Inputs: tree,
-	})
+	err = server.Prepare(context.Background(), &container.FileSystemLayout{Inputs: tree}, tf)
 	require.NoError(t, err)
 
 	client := vfs_server.NewDirectClient(server)

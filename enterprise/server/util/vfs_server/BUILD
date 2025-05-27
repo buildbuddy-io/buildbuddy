@@ -68,6 +68,8 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:vfs_go_proto",
+        "//server/cache/dirtools",
+        "//server/environment",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",

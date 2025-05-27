@@ -1055,9 +1055,7 @@ type Runner interface {
 
 	// DownloadInputs downloads any input files associated with the task assigned
 	// to the runner.
-	//
-	// It populates the download stat fields in the given IOStats.
-	DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error
+	DownloadInputs(ctx context.Context) error
 
 	// Run runs the task that is currently assigned to the runner.
 	Run(ctx context.Context, ioStats *repb.IOStats) *CommandResult
