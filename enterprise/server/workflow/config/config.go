@@ -190,8 +190,18 @@ fi`, dirName, downloadURL)
 }
 
 func buildWithKythe(dirName string) string {
+	// TODO(jdelfino): This script doesn't pass any extra flags to Bazel, beyond those needed to
+	// enable Kythe. This means the build will fail or be invalid if the normal build workflow
+	// passes any important flags. While passing flags on the command line is discouraged,
+	// we'll need to handle this eventually.
+	// TODO(jdelfino): The test for bzlmod is a bit hacky, it would be better to dump all the
+	// resolved options to see if enable_bzlmod is set, but I'm not sure how to make Bazel do that.
 	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
 	return fmt.Sprintf(`
+BZL_MAJOR_VERSION=$(bazel version | grep "Build label" | cut -d':' -f 2 | xargs | sed -r "s/([[:digit:]]*).[[:digit:]]*.[[:digit:]]*/\1/"))
+bazel mod graph > /dev/null 2>&1; BZLMOD_ENABLED=$(( $? == 0 ))
+if [ "$BZL_MAJOR_VERSION" -lt 8 ]; then
+
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build --override_repository kythe_release="$KYTHE_DIR" %s //...`, dirName, bazelConfigFlags)
 }
