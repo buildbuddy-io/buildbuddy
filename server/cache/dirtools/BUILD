@@ -16,7 +16,10 @@ go_library(
         "//server/util/alert",
         "//server/util/claims",
         "//server/util/fastcopy",
+<<<<<<< HEAD
         "//server/util/fspath",
+=======
+>>>>>>> 37abac3ff3 (prefetching)
         "//server/util/ioutil",
         "//server/util/log",
         "//server/util/proto",
