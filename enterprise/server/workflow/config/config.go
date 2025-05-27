@@ -194,21 +194,40 @@ func buildWithKythe(dirName string) string {
 	// enable Kythe. This means the build will fail or be invalid if the normal build workflow
 	// passes any important flags. While passing flags on the command line is discouraged,
 	// we'll need to handle this eventually.
-	// TODO(jdelfino): The test for bzlmod is a bit hacky, it would be better to dump all the
-	// resolved options to see if enable_bzlmod is set, but I'm not sure how to make Bazel do that.
 	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
 	return fmt.Sprintf(`
-BZL_MAJOR_VERSION=$(bazel version | grep "Build label" | cut -d':' -f 2 | xargs | sed -r "s/([[:digit:]]*).[[:digit:]]*.[[:digit:]]*/\1/"))
-bazel mod graph > /dev/null 2>&1; BZLMOD_ENABLED=$(( $? == 0 ))
+BZL_MAJOR_VERSION=$(bazel version | grep "Build label" | cut -d':' -f 2 | xargs | cut -d'.' -f1
 
-KYTHE_ARGS="--inject_repository=kythe_release=$KYTHE_DIR"
-if [ "$BZLMOD_ENABLED" -eq 1 && $BZL_MAJOR_VERSION lt 8 ]; then
-  echo 'bazel_dep(name = "kythe", version = "0.0.74")' >> MODULE.bazel
-  echo '
-if [ "$BZL_MAJOR_VERSION" -lt 8 ]; then
+if [ $BZL_MAJOR_VERSION -lt 7 ]; then
+    BZLMOD_DEFAULT=0
+else
+    BZLMOD_DEFAULT=1
+fi
+
+# starlark-semantics will print out enable_bzlmod if it differs from the default.
+bazel info starlark-semantics > /dev/null 2>&1 | grep "enable_bzlmod" > /dev/null 2>&1
+if [ $? -eq 1 ]; then
+    BZLMOD_ENABLED=$BZLMOD_DEFAULT
+else
+    BZLMOD_ENABLED=$(( 1 - $BZLMOD_DEFAULT ))
+fi
 
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build --override_repository kythe_release="$KYTHE_DIR" %s //...`, dirName, bazelConfigFlags)
+
+if [ $BZL_MAJOR_VERSION -lt 8 ]; then
+	if [ "$BZLMOD_ENABLED" -eq 1 ]; then
+        echo "Adding kythe repository to MODULE.bazel"
+        echo >> MODULE.bazel
+		echo 'bazel_dep(name = "kythe", version = "0.0.75")' >> MODULE.bazel
+		echo "local_path_override(module_name=\"kythe\", path=\"$KYTHE_DIR\")" >> MODULE.bazel
+	else
+		KYTHE_ARGS="--override_repository kythe_release=$KYTHE_DIR"
+	fi
+else
+	KYTHE_ARGS="--inject_repository=kythe_release=$KYTHE_DIR"
+fi
+echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
+bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
 }
 
 func prepareKytheOutputs(dirName string) string {
