@@ -264,14 +264,14 @@ timeouts. Timeouts are specified as durations like `1s`, `15m`, or `1h`.
 
 BuildBuddy's remote execution environment supports a feature called
 **remote persistent workers,** which are the remote equivalent of Bazel's
-[persistent workers](https://bazel.build/remote/persistent) for local
-builds.
+local [persistent workers](https://bazel.build/remote/persistent).
 
-Persistent workers help reduce the total cost of cold-starts for build
-actions. A common use case is for actions running on the JVM (such as
-`java_library` build actions), which are slow to compile initially, then
-get faster as Just-In-Time (JIT) compilation kicks in and allows the
-build to run using more optimized machine code.
+Persistent workers help reduce the total cost of cold starts for build
+actions. They are often used to improve the performance of build actions
+running on the JVM (such as Java or Kotlin compile actions), which are
+slow to run initially, but then get faster as Just-In-Time (JIT)
+compilation kicks in and allows the compiler to run using more optimized
+machine code.
 
 To use remote persistent workers, two steps are required:
 
