@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -88,13 +90,13 @@ func requireSyscallError(t *testing.T, err error, errno syscall.Errno) {
 	assert.FailNow(t, "RPC status error did not contain a syscall error number", "RPC error: %s", err)
 }
 
-func newServer(t *testing.T) (*vfs_server.Server, string) {
+func newServer(t *testing.T) (*vfs_server.Server, environment.Env) {
 	env := testenv.GetTestEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 
 	server, err := vfs_server.New(env, tmpDir)
 	require.NoError(t, err)
-	return server, tmpDir
+	return server, env
 }
 
 func newServerWithEnv(t *testing.T) (context.Context, *testenv.TestEnv, *vfs_server.Server, string) {
@@ -169,8 +171,15 @@ func readFromVFS(t *testing.T, server *vfs_server.Server, name string) string {
 	return string(res.Data)
 }
 
+func prepare(t *testing.T, env environment.Env, server *vfs_server.Server, tree *repb.Tree) {
+	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
+	require.NoError(t, err)
+	err = server.Prepare(t.Context(), &container.FileSystemLayout{Inputs: tree}, tf)
+	require.NoError(t, err)
+}
+
 func TestGetLayout(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
 	fileNode1 := &repb.FileNode{
@@ -216,9 +225,8 @@ func TestGetLayout(t *testing.T) {
 		Children: []*repb.Directory{subDir},
 	}
 
-	err = server.Prepare(ctx, &container.FileSystemLayout{
-		Inputs: inputTree,
-	})
+	require.NoError(t, err)
+	prepare(t, env, server, inputTree)
 	require.NoError(t, err)
 
 	rsp, err := server.GetDirectoryContents(ctx, &vfspb.GetDirectoryContentsRequest{})
@@ -260,11 +268,10 @@ func TestLookupNonExistentFile(t *testing.T) {
 }
 
 func TestFileHandles(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
-	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
-	require.NoError(t, err)
+	prepare(t, env, server, &repb.Tree{})
 
 	testFile := "test.file"
 	createRsp, err := server.Create(ctx, &vfspb.CreateRequest{
@@ -333,11 +340,10 @@ func TestFileHandles(t *testing.T) {
 }
 
 func TestDirOps(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
-	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
-	require.NoError(t, err)
+	prepare(t, env, server, &repb.Tree{})
 
 	mkdirRsp, err := server.Mkdir(ctx, &vfspb.MkdirRequest{Name: "dir", Perms: 0700})
 	require.NoError(t, err)
@@ -359,17 +365,16 @@ func TestDirOps(t *testing.T) {
 }
 
 func TestFilenameOps(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
-	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
-	require.NoError(t, err)
+	prepare(t, env, server, &repb.Tree{})
 
 	testFile := "a.file"
 	writeToVFS(t, server, testFile, "some data")
 
 	newName := "b.file"
-	_, err = server.Rename(ctx, &vfspb.RenameRequest{OldName: testFile, NewName: newName})
+	_, err := server.Rename(ctx, &vfspb.RenameRequest{OldName: testFile, NewName: newName})
 	require.NoError(t, err)
 
 	// Old file shouldn't exist anymore.
@@ -392,14 +397,13 @@ func TestFilenameOps(t *testing.T) {
 }
 
 func TestHardlink(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
-	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
-	require.NoError(t, err)
+	prepare(t, env, server, &repb.Tree{})
 
 	fileID := writeToVFS(t, server, "src", "hello")
-	_, err = server.Link(ctx, &vfspb.LinkRequest{Name: "dst", TargetId: fileID})
+	_, err := server.Link(ctx, &vfspb.LinkRequest{Name: "dst", TargetId: fileID})
 	require.NoError(t, err)
 
 	content := readFromVFS(t, server, "dst")
@@ -420,11 +424,10 @@ func TestHardlink(t *testing.T) {
 }
 
 func TestFileLocking(t *testing.T) {
-	server, _ := newServer(t)
+	server, env := newServer(t)
 	ctx := context.Background()
 
-	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
-	require.NoError(t, err)
+	prepare(t, env, server, &repb.Tree{})
 
 	var nodeID uint64
 	// Init two different file handle IDs referring to the same inode.

@@ -160,7 +160,7 @@ func TestWorkspaceCleanup_PreserveWorkspace_CaseInsensitiveFilesystem_Files(t *t
 	}
 	dirDigestA, err := cachetools.UploadProto(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, dirA)
 	require.NoError(t, err)
-	_, err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
 		RemoteInstanceName: "",
 		DigestFunction:     repb.DigestFunction_SHA256,
 		Inputs: &repb.Tree{
@@ -210,7 +210,7 @@ func TestWorkspaceCleanup_PreserveWorkspace_CaseInsensitiveFilesystem_Files(t *t
 	}
 	dirDigestB, err := cachetools.UploadProto(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, dirB)
 	require.NoError(t, err)
-	_, err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
+	err = ws.DownloadInputs(ctx, &container.FileSystemLayout{
 		RemoteInstanceName: "",
 		DigestFunction:     repb.DigestFunction_SHA256,
 		Inputs: &repb.Tree{
