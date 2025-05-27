@@ -19,8 +19,10 @@ storage:
   enable_chunked_event_logs: true
   tempdir: /tmp/${USER}
 cache:
-  disk:
-    root_directory: /tmp/${USER}-buildbuddy-enterprise-cache
+  pebble:
+    name: "pebble_cache"
+    active_key_version: 5
+    root_directory: /tmp/${USER}-buildbuddy-enterprise-pebble-cache
 auth:
   enable_anonymous_usage: true
   enable_self_auth: true
