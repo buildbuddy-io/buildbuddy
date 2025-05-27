@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,9 +25,13 @@ const (
 	// YAML contents, relative to the repository root.
 	FilePath = "buildbuddy.yaml"
 
-	// KytheActionName is the name used for actions automatically
-	// run by us if code search is enabled.
-	KytheActionName = "Generate CodeSearch Index"
+	// KytheActionName is the name used for an action that generates Kythe annotations
+	// This action is run automatically if codesearch is enabled.
+	KytheActionName = "Generate Kythe Annotations"
+
+	// CSIncrementalUpdateName is the name used for an action that sends an incremental update
+	// to the codesearch indexer. This action is run automatically if codesearch is enabled.
+	CSIncrementalUpdateName = "Codesearch Incremental Update"
 )
 
 type BuildBuddyConfig struct {
@@ -238,6 +243,39 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 			},
 			{
 				Run: prepareKytheOutputs(kytheDirName),
+			},
+		},
+	}
+}
+
+func sendIncrementalUpdate(apiTarget, repoURL string) string {
+	// TODO(jdelfino): Where can I see the versions of the CLI? Is there a magic string we
+	// can use here that maps to "latest"?
+	buf := fmt.Sprintf(`
+export USE_BAZEL_VERSION=buildbuddy-io/5.0.224
+bazel index --target %s --repo %s`, apiTarget, repoURL)
+	return buf
+}
+
+func CodesearchIncrementalUpdateAction(apiTarget *url.URL, repoURL, targetRepoDefaultBranch string) *Action {
+	var pushTriggerBranches []string
+	if targetRepoDefaultBranch != "" {
+		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
+	}
+	return &Action{
+		Name: CSIncrementalUpdateName,
+		Triggers: &Triggers{
+			Push: &PushTrigger{Branches: pushTriggerBranches},
+		},
+		ContainerImage: `ubuntu-20.04`,
+		ResourceRequests: ResourceRequests{
+			CPU:    "2",
+			Memory: "4GB",
+			Disk:   "10GB",
+		},
+		Steps: []*rnpb.Step{
+			{
+				Run: sendIncrementalUpdate(apiTarget.String(), repoURL),
 			},
 		},
 	}
