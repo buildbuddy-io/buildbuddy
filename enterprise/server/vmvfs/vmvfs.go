@@ -68,7 +68,7 @@ func (s *vfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*v
 	s.cancelRemoteFunc = cancel
 	s.mu.Unlock()
 
-	if err := s.vfs.PrepareForTask(s.remoteCtx, "fc" /* =taskID */); err != nil {
+	if err := s.vfs.PrepareForTask(s.remoteCtx, "fc", nil); err != nil {
 		return nil, err
 	}
 

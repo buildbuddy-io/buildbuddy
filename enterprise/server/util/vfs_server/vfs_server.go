@@ -50,6 +50,8 @@ const (
 	// This is the total (arbitrary) size we report via statfs.
 	// We don't actually enforce this is a limit.
 	reportedSizeBytes = 20 * 1024 * 1024 * 1024
+
+	rootInodeId = 1
 )
 
 var (
@@ -312,12 +314,16 @@ func (fsn *fsNode) Path() string {
 }
 
 func newDirNode(parent *fsNode, name string) *fsNode {
+	now := time.Now()
 	return &fsNode{
 		nodeType: fsDirectoryNode,
 		name:     name,
 		attrs: &vfspb.Attrs{
-			Size: 1000,
-			Perm: uint32(0755),
+			Size:       1000,
+			Nlink:      1,
+			Perm:       uint32(0755),
+			MtimeNanos: uint64(now.UnixNano()),
+			AtimeNanos: uint64(now.UnixNano()),
 		},
 		parent: parent,
 	}
@@ -385,8 +391,9 @@ type Server struct {
 
 func New(env environment.Env, workspacePath string) (*Server, error) {
 	rootNode := newDirNode(nil, "")
+	rootNode.id = rootInodeId
 	nodes := make(map[uint64]*fsNode)
-	nodes[0] = rootNode
+	nodes[rootInodeId] = rootNode
 
 	fs := unix.Statfs_t{}
 	err := unix.Statfs(workspacePath, &fs)
@@ -394,14 +401,16 @@ func New(env environment.Env, workspacePath string) (*Server, error) {
 		return nil, err
 	}
 
-	return &Server{
+	s := &Server{
 		env:              env,
 		workspacePath:    workspacePath,
 		backingBlockSize: fs.Bsize,
 		fileHandles:      make(map[uint64]*fileHandle),
 		root:             rootNode,
 		nodes:            nodes,
-	}, nil
+	}
+	atomic.StoreUint64(&s.nextId, rootInodeId+1)
+	return s, nil
 }
 
 func (p *Server) Path() string {
@@ -436,10 +445,10 @@ func (p *Server) addNode(node *fsNode) uint64 {
 	return id
 }
 
-func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestFunction repb.DigestFunction_Value) error {
+func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestFunction repb.DigestFunction_Value) ([]uint64, error) {
 	_, dirMap, err := dirtools.DirMapFromTree(inputTree, digestFunction)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	numDirs := 0
 	numFiles := 0
@@ -448,6 +457,10 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 	p.root.mu.Lock()
 	defer p.root.mu.Unlock()
 
+	newDirInodes := make(map[uint64]struct{})
+	modifiedDirInodesSet := make(map[uint64]struct{})
+
+	// TODO(vadim): support for changing node types in place
 	var walkDir func(dir *repb.Directory, parentNode *fsNode) error
 	walkDir = func(dir *repb.Directory, parentNode *fsNode) error {
 		numDirs++
@@ -463,25 +476,54 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 				childDir = &repb.Directory{}
 			}
 
-			subNode := parentNode.children[childDirNode.GetName()]
-			if subNode == nil || !subNode.IsDirectory() {
-				subNode = newDirNode(parentNode, childDirNode.GetName())
-				p.addNode(subNode)
-				parentNode.children[childDirNode.Name] = subNode
+			existingNode := parentNode.children[childDirNode.GetName()]
+			if existingNode != nil && !existingNode.IsDirectory() {
+				return status.UnimplementedErrorf("attempting to change %q to a directory", existingNode.Path())
 			}
-			if err := walkDir(childDir, subNode); err != nil {
+			if existingNode == nil {
+				existingNode = newDirNode(parentNode, childDirNode.GetName())
+				ino := p.addNode(existingNode)
+				newDirInodes[ino] = struct{}{}
+				modifiedDirInodesSet[parentNode.id] = struct{}{}
+				parentNode.children[childDirNode.Name] = existingNode
+			}
+			if err := walkDir(childDir, existingNode); err != nil {
 				return err
 			}
 		}
 		for _, childFileNode := range dir.GetFiles() {
+			existingNode := parentNode.children[childFileNode.GetName()]
+			if existingNode != nil {
+				if !existingNode.IsFile() {
+					return status.UnimplementedErrorf("attempting to change %q to a file", existingNode.Path())
+				} else {
+					ofn := existingNode.fileNode
+					nfn := childFileNode
+					if ofn.GetDigest().GetHash() != nfn.GetDigest().GetHash() || ofn.GetDigest().GetSizeBytes() != nfn.GetDigest().GetSizeBytes() || ofn.GetIsExecutable() != nfn.GetIsExecutable() {
+						return status.UnimplementedErrorf("attempting to change %q file node", existingNode.Path())
+					}
+					continue
+				}
+			}
 			fileNode := newCASFileNode(parentNode, childFileNode)
 			p.addNode(fileNode)
+			modifiedDirInodesSet[parentNode.id] = struct{}{}
 			parentNode.children[childFileNode.Name] = fileNode
 			numFiles++
 		}
 		for _, childSymlink := range dir.GetSymlinks() {
+			existingNode := parentNode.children[childSymlink.GetName()]
+			if existingNode != nil {
+				if !existingNode.IsSymlink() {
+					return status.UnimplementedErrorf("attempting to change %q to a symlink", existingNode.Path())
+				} else if existingNode.target != childSymlink.GetTarget() {
+					return status.UnimplementedErrorf("attempting to change %q symlink from %q to %q", existingNode.Path(), existingNode.target, childSymlink.GetTarget())
+				}
+				continue
+			}
 			symlinkNode := newSymlinkNode(parentNode, childSymlink.GetName(), childSymlink.GetTarget())
 			p.addNode(symlinkNode)
+			modifiedDirInodesSet[parentNode.id] = struct{}{}
 			parentNode.children[childSymlink.Name] = symlinkNode
 			numSymlinks++
 		}
@@ -490,12 +532,21 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 
 	err = walkDir(inputTree.Root, p.root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	log.CtxDebugf(ctx, "VFS contains %d directories, %d files and %d symlinks", numDirs, numFiles, numSymlinks)
 
-	return nil
+	for ino := range newDirInodes {
+		delete(modifiedDirInodesSet, ino)
+	}
+
+	modifiedDirInodes := make([]uint64, 0, len(modifiedDirInodesSet))
+	for ino := range modifiedDirInodesSet {
+		modifiedDirInodes = append(modifiedDirInodes, ino)
+	}
+
+	return modifiedDirInodes, nil
 }
 
 func (p *Server) ComputeStats() *repb.VfsStats {
@@ -525,7 +576,7 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 }
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
-func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout, treeFetcher *dirtools.TreeFetcher) error {
+func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout, treeFetcher *dirtools.TreeFetcher) ([]uint64, error) {
 	p.mu.Lock()
 	p.casFileCount = 0
 	p.casFileSizeBytes = 0
@@ -533,16 +584,16 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 	// There may already be nodes in the tree prior to `Prepare` to be called,
 	// for example by the workspace code pre-creating the action output
 	// directories. We merge the known CAS inputs with the tree we already have.
-	err := p.updateLayout(ctx, layout.Inputs, layout.DigestFunction)
+	modifiedDirInodes, err := p.updateLayout(ctx, layout.Inputs, layout.DigestFunction)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.treeFetcher = treeFetcher
 	p.internalTaskCtx = ctx
-	return nil
+	return modifiedDirInodes, nil
 }
 
 func (p *Server) computeFullPath(relativePath string) (string, error) {
@@ -1310,8 +1361,9 @@ func (p *Server) Mkdir(ctx context.Context, request *vfspb.MkdirRequest) (*vfspb
 	newNode := &fsNode{
 		name: request.GetName(),
 		attrs: &vfspb.Attrs{
-			Size: 1000,
-			Perm: request.GetPerms(),
+			Size:  1000,
+			Nlink: 1,
+			Perm:  request.GetPerms(),
 		},
 		parent: parentNode,
 	}
