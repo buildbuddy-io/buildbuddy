@@ -249,10 +249,8 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 }
 
 func sendIncrementalUpdate(apiTarget, repoURL string) string {
-	// TODO(jdelfino): Where can I see the versions of the CLI? Is there a magic string we
-	// can use here that maps to "latest"?
 	buf := fmt.Sprintf(`
-export USE_BAZEL_VERSION=buildbuddy-io/5.0.224
+export USE_BAZEL_VERSION=buildbuddy-io/latest
 bazel index --target %s --repo-url %s`, apiTarget, repoURL)
 	return buf
 }
