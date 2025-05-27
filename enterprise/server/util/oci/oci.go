@@ -222,44 +222,49 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
 }
 
+// AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
+// Any errors encountered are returned.
+// Otherwise, the function returns nil and it is safe to assume the input credentials grant access
+// to the image.
+func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) error {
+	imageRef, err := gcrname.ParseReference(imageName)
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid image %q", imageName)
+	}
+	log.CtxInfof(ctx, "Authenticating with registry %q", imageRef.Context().RegistryStr())
+
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+
+	_, err = remote.Head(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+	}
+	return nil
+}
+
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
 	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
+	log.CtxInfof(ctx, "Resolving image in registry %q", imageRef.Context().RegistryStr())
 
-	remoteOpts := []remote.Option{
-		remote.WithContext(ctx),
-		remote.WithPlatform(
-			gcr.Platform{
-				Architecture: platform.GetArch(),
-				OS:           platform.GetOs(),
-				Variant:      platform.GetVariant(),
-			},
-		),
-	}
-	if !credentials.IsEmpty() {
-		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
-			Username: credentials.Username,
-			Password: credentials.Password,
-		}))
-	}
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
 
-	tr := httpclient.NewWithAllowedPrivateIPs(r.allowedPrivateIPs).Transport
-	if len(*mirrors) > 0 {
-		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
-	} else {
-		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
-	}
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
 		}
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
+
 	if *writeManifestsToCache {
 		contentType := string(remoteDesc.MediaType)
 		err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, r.env.GetActionCacheClient(), imageRef, remoteDesc.Digest, contentType)
@@ -284,6 +289,33 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		}
 	}
 	return img, nil
+}
+
+func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, credentials Credentials) []remote.Option {
+	remoteOpts := []remote.Option{
+		remote.WithContext(ctx),
+		remote.WithPlatform(
+			gcr.Platform{
+				Architecture: platform.GetArch(),
+				OS:           platform.GetOs(),
+				Variant:      platform.GetVariant(),
+			},
+		),
+	}
+	if !credentials.IsEmpty() {
+		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Basic{
+			Username: credentials.Username,
+			Password: credentials.Password,
+		}))
+	}
+
+	tr := httpclient.NewWithAllowedPrivateIPs(r.allowedPrivateIPs).Transport
+	if len(*mirrors) > 0 {
+		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
+	} else {
+		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
+	}
+	return remoteOpts
 }
 
 // RuntimePlatform returns the platform on which the program is being executed,

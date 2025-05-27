@@ -504,6 +504,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		CacheEventTypeLabel,
+		GroupID,
 	})
 
 	CacheNumHitsExported = promauto.NewCounterVec(prometheus.CounterOpts{

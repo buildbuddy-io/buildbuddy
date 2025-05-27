@@ -82,7 +82,6 @@ var (
 
 	writeExecutionProgressStateToRedis = flag.Bool("remote_execution.write_execution_progress_state_to_redis", false, "If enabled, write initial execution metadata and progress updates (stage changes) to redis. This state is cleared when the execution is complete.", flag.Internal)
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
-	readFinalExecutionStateFromRedis   = flag.Bool("remote_execution.read_final_execution_state_from_redis", false, "If enabled, read execution metadata and progress state from redis when writing executions to ClickHouse, instead of from the primary DB.", flag.Internal)
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -202,6 +201,9 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	if s.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
+	if s.env.GetExecutionCollector() == nil {
+		return status.FailedPreconditionError("redis execution collector not configured")
+	}
 	execution := &tables.Execution{
 		ExecutionID:    executionID,
 		InvocationID:   invocationID,
@@ -301,10 +303,13 @@ func trimStatus(statusMessage string) string {
 	return statusMessage
 }
 
-func (s *ExecutionServer) updateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, executeResponse *repb.ExecuteResponse) error {
-	if s.env.GetDBHandle() == nil {
+func (s *ExecutionServer) updateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, executeResponse *repb.ExecuteResponse, auxMeta *espb.ExecutionAuxiliaryMetadata, properties *platform.Properties, action *repb.Action, cmd *repb.Command) error {
+	if *writeExecutionsToPrimaryDB && s.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
+	} else if *writeExecutionProgressStateToRedis && s.env.GetExecutionCollector() == nil {
+		return status.FailedPreconditionError("redis execution collector not configured")
 	}
+
 	ctx, cancel := background.ExtendContextForFinalization(ctx, updateExecutionTimeout)
 	defer cancel()
 	execution := &tables.Execution{
@@ -334,9 +339,68 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	if *writeExecutionProgressStateToRedis {
+	// If the operation completed, write the data to Redis where we buffer it
+	// before flushing to Clickhouse. Updates aren't recommended in Clickhouse,
+	// which is why we store it in Redis before all execution data has been collected.
+	if *writeExecutionProgressStateToRedis || stage == repb.ExecutionStage_COMPLETED {
 		execution.Model.UpdatedAtUsec = time.Now().UnixMicro()
 		executionProto := executil.TableExecToProto(execution, nil /*=invocationLink*/)
+
+		// Set metadata that isn't stored earlier and is sent with the COMPLETED
+		// event, that we want to flush to Clickhouse.
+		if stage == repb.ExecutionStage_COMPLETED {
+			md := executeResponse.GetResult().GetExecutionMetadata()
+			rmd := bazel_request.GetRequestMetadata(ctx)
+			executionProto.TargetLabel = rmd.GetTargetId()
+			executionProto.ActionMnemonic = rmd.GetActionMnemonic()
+			executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
+			executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
+			executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
+			executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
+
+			executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
+			executionProto.Experiments = auxMeta.GetExperiments()
+
+			executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
+
+			executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
+			executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
+
+			if properties != nil {
+				executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
+				executionProto.RequestedComputeUnits = properties.EstimatedComputeUnits
+				executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
+				executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
+				executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
+			}
+
+			schedulingMeta := auxMeta.GetSchedulingMetadata()
+			executionProto.EstimatedFreeDiskBytes = schedulingMeta.GetTaskSize().GetEstimatedFreeDiskBytes()
+			executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
+			executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
+			executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
+			executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
+			executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
+			executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
+			executionProto.SelfHosted = schedulingMeta == nil || (schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID())
+
+			request := auxMeta.GetExecuteRequest()
+			executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
+			executionProto.ExecutionPriority = request.GetExecutionPolicy().GetPriority()
+
+			regionHeaderValues := metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-executor-region")
+			if len(regionHeaderValues) > 0 {
+				executionProto.Region = regionHeaderValues[len(regionHeaderValues)-1]
+			}
+
+			if u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
+				executionProto.GroupId = u.GetGroupID()
+				executionProto.UserId = u.GetUserID()
+
+			}
+			executionProto.CommandSnippet = generateCommandSnippet(cmd)
+		}
+
 		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
 			log.CtxErrorf(ctx, "Failed to write execution update to redis: %s", err)
 		}
@@ -365,41 +429,14 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 	return dbErr
 }
 
-func (s *ExecutionServer) recordExecution(
-	ctx context.Context,
-	executionID string,
-	action *repb.Action,
-	md *repb.ExecutedActionMetadata,
-	auxMeta *espb.ExecutionAuxiliaryMetadata,
-	properties *platform.Properties) error {
-
-	if s.env.GetExecutionCollector() == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
+// flushExecutionToOLAP flushes execution data to Clickhouse.
+func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID string) error {
+	if !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
+	} else if s.env.GetExecutionCollector() == nil {
+		return status.FailedPreconditionError("redis execution collector not configured")
 	}
-	if s.env.GetDBHandle() == nil {
-		return status.FailedPreconditionError("database not configured")
-	}
-	var executionProto *repb.StoredExecution
-	// Read final execution details (including the initial metadata and
-	// completed execution result) from either redis or the primary DB. This
-	// state does not have the invocation details populated.
-	if *readFinalExecutionStateFromRedis {
-		ex, err := s.env.GetExecutionCollector().GetInProgressExecution(ctx, executionID)
-		if err != nil {
-			return status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
-		}
-		if ex == nil {
-			return status.NotFoundErrorf("execution %q not found in redis", executionID)
-		}
-		executionProto = ex
-	} else {
-		var executionPrimaryDB tables.Execution
-		if err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_lookup_execution").Raw(
-			`SELECT * FROM "Executions" WHERE execution_id = ?`, executionID).Take(&executionPrimaryDB); err != nil {
-			return status.InternalErrorf("failed to look up execution %q: %s", executionID, err)
-		}
-		executionProto = executil.TableExecToProto(&executionPrimaryDB, nil)
-	}
+
 	// Always clean up invocationLinks and execution updates from the collector.
 	// The execution cannot be retried after this point, so nothing will clean
 	// up this data if we don't do it here.
@@ -413,55 +450,19 @@ func (s *ExecutionServer) recordExecution(
 			log.CtxErrorf(ctx, "Failed to clean up in-progress execution in collector: %s", err)
 		}
 	}()
+
+	executionProto, err := s.env.GetExecutionCollector().GetInProgressExecution(ctx, executionID)
+	if err != nil {
+		return status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
+	}
+
 	links, err := s.env.GetExecutionCollector().GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
-	rmd := bazel_request.GetRequestMetadata(ctx)
 	for _, link := range links {
 		executionProto := executionProto.CloneVT()
 		executil.SetInvocationLink(executionProto, link)
-
-		// Set fields that aren't stored in the primary DB
-		executionProto.TargetLabel = rmd.GetTargetId()
-		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
-		executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
-		executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
-		executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
-		executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
-
-		executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
-		executionProto.Experiments = auxMeta.GetExperiments()
-
-		executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
-		executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
-
-		executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
-		executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
-
-		executionProto.RequestedComputeUnits = properties.EstimatedComputeUnits
-		executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
-		executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
-		executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
-
-		schedulingMeta := auxMeta.GetSchedulingMetadata()
-		executionProto.EstimatedFreeDiskBytes = schedulingMeta.GetTaskSize().GetEstimatedFreeDiskBytes()
-		executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
-		executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
-		executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
-		executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
-		executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
-		executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
-		executionProto.SelfHosted = schedulingMeta == nil || (schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID())
-
-		request := auxMeta.GetExecuteRequest()
-		executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
-		executionProto.ExecutionPriority = request.GetExecutionPolicy().GetPriority()
-
-		regionHeaderValues := metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-executor-region")
-		if len(regionHeaderValues) > 0 {
-			executionProto.Region = regionHeaderValues[len(regionHeaderValues)-1]
-		}
 
 		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.GetInvocationId())
 		if err != nil {
@@ -469,14 +470,18 @@ func (s *ExecutionServer) recordExecution(
 			continue
 		}
 		if inv == nil {
-			// The invocation hasn't finished yet. Add the execution to ExecutionCollector, and flush it once
-			// the invocation is complete
+			// The invocation hasn't finished yet. Because joins are expensive
+			// in clickhouse, we inline invocation data in the executions table.
+			// For now, add the execution to the ExecutionCollector and the build
+			// event handler will flush it after the invocation is complete.
 			if err := s.env.GetExecutionCollector().AppendExecution(ctx, link.GetInvocationId(), executionProto); err != nil {
 				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.GetInvocationId(), err)
 			} else {
 				log.CtxInfof(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
 			}
 		} else if s.env.GetOLAPDBHandle() != nil {
+			// Flush to Clickhouse directly if the invocation completed before
+			// the executor published the final execution update.
 			err = s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, []*repb.StoredExecution{executionProto})
 			if err != nil {
 				log.CtxErrorf(ctx, "failed to flush execution %q for invocation %q to clickhouse: %s", executionID, link.GetInvocationId(), err)
@@ -484,7 +489,6 @@ func (s *ExecutionServer) recordExecution(
 				log.CtxInfof(ctx, "successfully write 1 execution for invocation %q", link.GetInvocationId())
 			}
 		}
-
 	}
 	return nil
 }
@@ -1054,13 +1058,10 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 		log.CtxWarningf(ctx, "MarkExecutionFailed: error publishing task %q on stream pubsub: %s", taskID, err)
 		return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 	}
-	if err := s.updateExecution(ctx, taskID, repb.ExecutionStage_COMPLETED, rsp); err != nil {
-		log.CtxWarningf(ctx, "MarkExecutionFailed: error updating execution: %q: %s", taskID, err)
-		return err
-	}
-	err = s.recordFailedExecution(ctx, taskID)
+	err = s.recordFailedExecution(ctx, taskID, rsp)
 	if err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: %s", err)
+		return err
 	}
 	if err := s.cacheExecuteResponse(ctx, taskID, rsp); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: failed to cache execute response for execution %q: %s", taskID, err)
@@ -1068,25 +1069,38 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 	return nil
 }
 
-func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID string) error {
-	actionRN, err := digest.ParseUploadResourceName(taskID)
+func (s *ExecutionServer) recordFailedExecution(ctx context.Context, taskID string, executeRsp *repb.ExecuteResponse) error {
+	action, cmd, properties, err := s.metadataForClickhouse(ctx, taskID)
+	// Even if we can't get the additional metadata, update the data we have.
 	if err != nil {
-		return fmt.Errorf("Failed to parse taskID: %s", err)
-	}
-	action, cmd, err := s.fetchActionAndCommand(ctx, actionRN)
-	if err != nil {
-		return fmt.Errorf("Failed to fetch action and command: %s", err)
-	}
-	properties, err := platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd})
-	if err != nil {
-		return fmt.Errorf("Failed to parse platform properties: %s", err)
+		log.CtxWarningf(ctx, "MarkExecutionFailed: get additional metadata for %q for clickhouse: %s", taskID, err)
 	}
 	// We don't have a response, so we don't have response metadata. It's
 	// not required.
-	if err := s.recordExecution(ctx, taskID, action, nil, nil, properties); err != nil {
-		return fmt.Errorf("Failed to record execution: %s", err)
+	var auxMetadata *espb.ExecutionAuxiliaryMetadata
+	if err := s.updateExecution(ctx, taskID, repb.ExecutionStage_COMPLETED, executeRsp, auxMetadata, properties, action, cmd); err != nil {
+		return err
+	}
+	if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+		log.CtxWarningf(ctx, "MarkExecutionFailed: failed to flush execution to clickhouse: %s", err)
 	}
 	return nil
+}
+
+func (s *ExecutionServer) metadataForClickhouse(ctx context.Context, taskID string) (*repb.Action, *repb.Command, *platform.Properties, error) {
+	actionRN, err := digest.ParseUploadResourceName(taskID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("Failed to parse taskID: %s", err)
+	}
+	action, cmd, err := s.fetchActionAndCommand(ctx, actionRN)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("Failed to fetch action and command: %s", err)
+	}
+	properties, err := platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("Failed to parse platform properties: %s", err)
+	}
+	return action, cmd, properties, nil
 }
 
 func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperationServer) error {
@@ -1110,7 +1124,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		mu.Lock()
 		defer mu.Unlock()
 		if time.Since(lastWrite) > 5*time.Second && taskID != "" {
-			if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp)); err != nil {
+			// We only write additional metadata when the operation has completed, so
+			// we don't need to pass those fields here for intermediary updates.
+			if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp), nil, nil, nil, nil); err != nil {
 				log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
 				return false
 			}
@@ -1135,6 +1151,10 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	for {
 		op, err := stream.Recv()
 		if err == io.EOF {
+			// TODO(Maggie): Flush execution data to DB when the stream is closed
+			//if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+			//	log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
+			//}
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
 		if err != nil {
@@ -1176,6 +1196,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
 		var action *repb.Action
+		var cmd *repb.Command
 		if stage == repb.ExecutionStage_COMPLETED && response != nil {
 			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
 			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
@@ -1188,7 +1209,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return status.WrapErrorf(err, "Failed to parse taskID")
 			}
-			var cmd *repb.Command
 			action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
 			if err != nil {
 				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
@@ -1225,13 +1245,16 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				mu.Lock()
 				defer mu.Unlock()
 
-				if err := s.updateExecution(ctx, taskID, stage, response); err != nil {
+				if err := s.updateExecution(ctx, taskID, stage, response, auxMeta, properties, action, cmd); err != nil {
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
 				lastWrite = time.Now()
-				if err := s.recordExecution(ctx, taskID, action, response.GetResult().GetExecutionMetadata(), auxMeta, properties); err != nil {
-					log.CtxErrorf(ctx, "failed to record execution %q: %s", taskID, err)
+				// TODO(Maggie): After receiving cleanup stats, update execution in OLAP again.
+				// TODO(Maggie): Flush execution data to DB when the stream is closed.
+				// Don't flush early here.
+				if err := s.flushExecutionToOLAP(ctx, taskID); err != nil {
+					log.CtxErrorf(ctx, "failed to flush execution %q to clickhouse: %s", taskID, err)
 				}
 				return nil
 			}()

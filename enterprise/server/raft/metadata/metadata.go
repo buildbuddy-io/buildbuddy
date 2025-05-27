@@ -80,6 +80,8 @@ type Config struct {
 
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
+
+	LogDBConfigType store.LogDBConfigType
 }
 
 // data needed to update last access time.
@@ -174,6 +176,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		GRPCPort:          *gRPCPort,
 		Partitions:        ps,
 		PartitionMappings: *partitionMappings,
+		LogDBConfigType:   store.LargeMemLogDBConfigType,
 	}
 	return New(env, rcConfig)
 }
@@ -202,7 +205,7 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 	rc.grpcAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.GRPCPort)
 	grpcListeningAddr := fmt.Sprintf("%s:%d", conf.ListenAddr, conf.GRPCPort)
 
-	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.Partitions)
+	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.Partitions, rc.conf.LogDBConfigType)
 	if err != nil {
 		return nil, err
 	}

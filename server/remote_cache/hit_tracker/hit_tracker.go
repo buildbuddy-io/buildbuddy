@@ -148,6 +148,7 @@ type HitTracker struct {
 	usage       interfaces.UsageTracker
 	ctx         context.Context
 	iid         string
+	groupID     string
 	actionCache bool
 
 	// The request metadata, may be nil or incomplete.
@@ -166,12 +167,20 @@ func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata
 }
 
 func (h HitTrackerFactory) newHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, actionCache bool) interfaces.HitTracker {
+	groupID := interfaces.AuthAnonymousUser
+	if a := h.env.GetAuthenticator(); a != nil {
+		if u, err := a.AuthenticatedUser(ctx); err == nil {
+			groupID = u.GetGroupID()
+		}
+	}
+
 	return &HitTracker{
 		env:             h.env,
 		c:               h.env.GetMetricsCollector(),
 		usage:           h.env.GetUsageTracker(),
 		ctx:             ctx,
 		iid:             requestMetadata.GetToolInvocationId(),
+		groupID:         groupID,
 		actionCache:     actionCache,
 		requestMetadata: requestMetadata,
 	}
@@ -217,6 +226,7 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 	metrics.CacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
 		metrics.CacheEventTypeLabel: missLabel,
+		metrics.GroupID:             h.groupID,
 	}).Inc()
 	if h.c == nil || h.iid == "" {
 		return nil
@@ -332,13 +342,6 @@ func cacheEventTypeLabel(c counterType) string {
 }
 
 func (t *TransferTimer) emitSizeMetrics(compressor repb.Compressor_Value, ct counterType, cacheTypeLabel, serverLabel string, digestSizeBytes, bytesTransferredCache, bytesTransferredClient float64) {
-	groupID := interfaces.AuthAnonymousUser
-	if a := t.h.env.GetAuthenticator(); a != nil {
-		if u, err := a.AuthenticatedUser(t.h.ctx); err == nil {
-			groupID = u.GetGroupID()
-		}
-	}
-
 	if ct == UploadSizeBytes {
 		metrics.CacheUploadSizeBytes.With(prometheus.Labels{
 			metrics.CacheTypeLabel: cacheTypeLabel,
@@ -352,7 +355,7 @@ func (t *TransferTimer) emitSizeMetrics(compressor repb.Compressor_Value, ct cou
 			metrics.ServerUncompressedUploadBytesCount.With(prometheus.Labels{
 				metrics.CacheTypeLabel: cacheTypeLabel,
 				metrics.ServerName:     serverLabel,
-				metrics.GroupID:        groupID,
+				metrics.GroupID:        t.h.groupID,
 			}).Add(bytesTransferredClient)
 		}
 		metrics.DigestUploadSizeBytes.With(prometheus.Labels{
@@ -369,13 +372,13 @@ func (t *TransferTimer) emitSizeMetrics(compressor repb.Compressor_Value, ct cou
 	metrics.ServerDownloadSizeBytes.With(prometheus.Labels{
 		metrics.CacheTypeLabel: cacheTypeLabel,
 		metrics.ServerName:     serverLabel,
-		metrics.GroupID:        groupID,
+		metrics.GroupID:        t.h.groupID,
 	}).Observe(bytesTransferredClient)
 	if compressor == repb.Compressor_IDENTITY {
 		metrics.ServerUncompressedDownloadBytesCount.With(prometheus.Labels{
 			metrics.CacheTypeLabel: cacheTypeLabel,
 			metrics.ServerName:     serverLabel,
-			metrics.GroupID:        groupID,
+			metrics.GroupID:        t.h.groupID,
 		}).Add(bytesTransferredClient)
 	}
 	metrics.DigestDownloadSizeBytes.With(prometheus.Labels{
@@ -416,7 +419,9 @@ func (t *TransferTimer) emitMetrics(bytesTransferredCache, bytesTransferredClien
 	metrics.CacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      ct,
 		metrics.CacheEventTypeLabel: et,
+		metrics.GroupID:             t.h.groupID,
 	}).Inc()
+
 	t.emitSizeMetrics(compressor, t.sizeCounter, ct, serverLabel, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient))
 	durationMetric(t.timeCounter).With(prometheus.Labels{
 		metrics.CacheTypeLabel: ct,
