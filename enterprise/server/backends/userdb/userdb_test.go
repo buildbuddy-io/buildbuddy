@@ -1500,7 +1500,7 @@ func TestRequestToJoinGroup_AlreadyInGroup_GetAlreadyExists(t *testing.T) {
 	require.Equal(t, role.Admin, role.Role(getGroupRole(t, ctx1, env, "GR1").Role))
 }
 
-func TestRequestToJoinGroup_NoAutoJoinForSAMLUser(t *testing.T) {
+func TestRequestToJoinGroup_NoAutoJoinForSSOUser(t *testing.T) {
 	ctx := context.Background()
 	env := newTestEnv(t)
 	udb := env.GetUserDB()
@@ -1516,7 +1516,7 @@ func TestRequestToJoinGroup_NoAutoJoinForSAMLUser(t *testing.T) {
 			return nil, err
 		}
 		c := ui.(*claims.Claims)
-		c.SAML = true
+		c.CustomerSSO = true
 		return c, nil
 	}
 	createUser(t, ctx, env, "US2", "org1.io")
