@@ -191,7 +191,7 @@ func HandleDownload(args []string) (int, error) {
 		env.SetByteStreamClient(bsClient)
 		env.SetCapabilitiesClient(capsClient)
 		start := time.Now()
-		if txInfo, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), inputTree, *outputDirectory, &dirtools.DownloadTreeOpts{}); err != nil {
+		if txInfo, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), inputTree, &dirtools.DownloadTreeOpts{RootDir: *outputDirectory}); err != nil {
 			return -1, fmt.Errorf("download directory tree to %q: %w", *outputDirectory, err)
 		} else {
 			log.Printf("Downloaded %d files (%s) in %s", txInfo.FileCount, units.HumanSize(float64(txInfo.BytesTransferred)), time.Since(start))
