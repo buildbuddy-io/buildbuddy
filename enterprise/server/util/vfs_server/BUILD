@@ -23,6 +23,7 @@ go_library(
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/container",
+            "//enterprise/server/util/vfscommon",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
             "//server/cache/dirtools",

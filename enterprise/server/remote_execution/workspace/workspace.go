@@ -246,15 +246,16 @@ func (ws *Workspace) CreateOutputDirs() error {
 }
 
 func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
-	if ws.vfsServer != nil {
-		if err := ws.vfsServer.Prepare(ctx, layout, ws.treeFetcher); err != nil {
-			return err
-		}
+	if ws.vfs == nil {
+		return status.FailedPreconditionError("vfs cannot be null if vfsServer is set")
 	}
-	if ws.vfs != nil {
-		if err := ws.vfs.PrepareForTask(ctx, ws.task.GetExecutionId()); err != nil {
-			return err
-		}
+
+	invalidatedInodes, err := ws.vfsServer.Prepare(ctx, layout, ws.treeFetcher)
+	if err != nil {
+		return err
+	}
+	if err := ws.vfs.PrepareForTask(ctx, ws.task.GetExecutionId(), invalidatedInodes); err != nil {
+		return err
 	}
 
 	return nil
@@ -287,7 +288,8 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	ws.treeFetcher = tf
 
 	// Start fetching inputs.
-	if err := tf.Start(); err != nil {
+	inputsState, err := tf.Start()
+	if err != nil {
 		return status.WrapErrorf(err, "could not start tree fetcher")
 	}
 
@@ -297,26 +299,31 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		if err := ws.prepareVFS(ctx, layout); err != nil {
 			return err
 		}
-		return nil
+	} else {
+		// If we're not using FUSE, wait for the input tree to be fully downloaded.
+		txInfo, err := ws.treeFetcher.Wait()
+		if err != nil {
+			return status.WrapError(err, "could not fetch inputs")
+		}
+		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
+		span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
+		span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
+		log.CtxInfof(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
 
-	// If we're not using FUSE, wait for the input tree to be fully downloaded.
-	txInfo, err := ws.treeFetcher.Wait()
-	if err != nil {
-		return status.WrapError(err, "could not fetch inputs")
-	}
-
-	if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
+	// Now that the input tree is setup, remove any unwanted inputs.
+	// Don't touch any inputs specified by the current action as represented
+	// by inputsState.Exist
+	if err := ws.CleanInputsIfNecessary(inputsState.Exist); err != nil {
 		return err
 	}
 
-	for path, node := range txInfo.Transfers {
-		ws.Inputs[fspath.NewKey(path, ws.Opts.CaseInsensitive)] = node
+	// Update the input tracking map to include inputs specified by the action
+	// that were not in the workspace yet.
+	for relPath, node := range inputsState.NeedFetching {
+		ws.Inputs[fspath.NewKey(relPath, ws.Opts.CaseInsensitive)] = node
 	}
-	mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
-	span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
-	span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
-	log.CtxInfof(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
+
 	return nil
 }
 
