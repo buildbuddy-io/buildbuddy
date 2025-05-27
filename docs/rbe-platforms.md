@@ -262,14 +262,32 @@ timeouts. Timeouts are specified as durations like `1s`, `15m`, or `1h`.
 
 ### Remote persistent worker properties
 
-Similar to the local execution environment, the remote execution environment may also retain a long-running process acting as a [persistent worker](https://bazel.build/remote/persistent) to help reduce the total cost of cold-starts for build actions with high startup cost.
+BuildBuddy's remote execution environment supports a feature called
+**remote persistent workers,** which are the remote equivalent of Bazel's
+[persistent workers](https://bazel.build/remote/persistent) for local
+builds.
 
-To use remote persistent workers, the action must have `"recycle-runner": "true"`
-in `exec_properties`.
+Persistent workers help reduce the total cost of cold-starts for build
+actions. A common use case is for actions running on the JVM (such as
+`java_library` build actions), which are slow to compile initially, then
+get faster as Just-In-Time (JIT) compilation kicks in and allows the
+build to run using more optimized machine code.
 
-The Bazel's flag ["--experimental_remote_mark_tool_inputs"](https://bazel.build/reference/command-line-reference#flag--experimental_remote_mark_tool_inputs) should help set these automatically so you don't have to set them manually. However, we provide these `exec_properties` for rules authors to experiment with.
+To use remote persistent workers, two steps are required:
 
-- `persistentWorkerKey`: unique key for the persistent worker. This should be automatically set by Bazel.
+1. Set `"recycle-runner": "true"` in `exec_properties` to enable
+   [runner recycling](#action-isolation-and-hermeticity-properties).
+   We recommend setting this property using a Bazel macro, so that
+   it will be set automatically on the relevant targets supporting
+   persistent workers.
+2. Pass the flag ["--experimental_remote_mark_tool_inputs"](https://bazel.build/reference/command-line-reference#flag--experimental_remote_mark_tool_inputs) to
+   your bazel command or add it to your `.bazelrc`.
+
+The `--experimental_remote_mark_tool_inputs` flag sets the following
+properties (it's not normally recommended to set these manually; they are
+noted here only for documentation purposes):
+
+- `persistentWorkerKey`: unique key for the persistent worker.
 - `persistentWorkerProtocol`: the serialization protocol used by the persistent worker. Available options are `proto` (default) and `json`.
 
 ### Runner container support
