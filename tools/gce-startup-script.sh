@@ -37,3 +37,9 @@ pushd /usr/local/bin
 chmod ugo+x bazelisk
 ln -s bazelisk bazel
 popd
+
+wget -q https://github.com/containers/crun/releases/download/1.15/crun-1.15-linux-amd64-disable-systemd
+mv crun-1.15-linux-amd64-disable-systemd /usr/local/bin/crun
+pushd /usr/local/bin
+chmod u+x crun
+popd
