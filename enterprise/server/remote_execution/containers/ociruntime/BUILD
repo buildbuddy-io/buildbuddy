@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//dockerfiles/test_images:defs.bzl", "NET_TOOLS_IMAGE")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -64,7 +65,7 @@ go_test(
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
-        "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:e904e2149194b94f4504fdfb3c7b2b71afa130708feb482fe9a9d557453fa8fd",
+        "test.container-image": "docker://" + NET_TOOLS_IMAGE,
         "test.EstimatedComputeUnits": "2",
         "test.EstimatedFreeDiskBytes": "10GB",
     },
@@ -86,6 +87,7 @@ go_test(
         "busyboxRlocationpath": "$(rlocationpath :busybox)",
         "ociBusyboxRlocationpath": "$(rlocationpath @busybox)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
+        "netToolsImageRef": NET_TOOLS_IMAGE,
     },
     deps = [
         ":ociruntime",
