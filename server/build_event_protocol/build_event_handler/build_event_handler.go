@@ -493,6 +493,8 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	ctx = r.env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, task.invocationInfo.jwt)
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(50) // Max concurrency when copying files from cache->blobstore.
+
+	artifactsUploaded := make(map[string]struct{}, len(task.persist.URIs))
 	for _, uri := range task.persist.URIs {
 		uri := uri
 		rn, err := digest.ParseDownloadResourceName(uri.Path)
@@ -503,6 +505,10 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		if rn.IsEmpty() {
 			continue
 		}
+		if _, seen := artifactsUploaded[rn.GetDigest().GetHash()]; seen {
+			continue
+		}
+		artifactsUploaded[rn.GetDigest().GetHash()] = struct{}{}
 		eg.Go(func() error {
 			// When persisting artifacts, make sure we associate the cache
 			// requests with the app, not bazel.
