@@ -228,12 +228,12 @@ func (p *Parser) Next(args []string, start int, startup bool) (option options.Op
 		// positional argument
 		return nil, start + 1, nil
 	}
-	if unknownOption, ok := option.(*options.UnknownOption); ok {
+	if _, ok := option.(*options.UnknownOption); ok {
 		log.Debugf("Unknown option %s", startToken)
 		// Unknown option, possibly a plugin-specific argument. Apply a rough
 		// heuristic to determine whether or not to have it consume the next
 		// argument.
-		if b, ok := unknownOption.Option.(options.BoolLike); ok && !option.HasValue() && !b.Negated() {
+		if b := option.BoolLike(); b != nil && !option.HasValue() && !b.Negated() {
 			// This could actually be a required-value-type option rather than a
 			// boolean option; if the next argument doesn't look like an option or a
 			// bazel command, let's assume that it is.
