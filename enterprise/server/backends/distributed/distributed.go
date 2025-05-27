@@ -49,6 +49,7 @@ var (
 	replicationFactor            = flag.Int("cache.distributed_cache.replication_factor", 1, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
 	clusterSize                  = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
 	enableLocalWrites            = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
+	readThroughLocalCache        = flag.Bool("cache.distributed_cache.read_through_local_cache", false, "If enabled, all data read will be written to the local cache node if not already present")
 	enableBackfill               = flag.Bool("cache.distributed_cache.enable_backfill", true, "If enabled, digests written to avoid unavailable nodes will be backfilled when those nodes return")
 	enableLocalCompressionLookup = flag.Bool("cache.distributed_cache.enable_local_compression_lookup", true, "If enabled, checks the local cache for compression support. If not set, distributed compression defaults to off.")
 	newNodes                     = flag.Slice("cache.distributed_cache.new_nodes", []string{}, "The new nodeset to add data too. Useful for migrations. ** Enterprise only **")
@@ -75,6 +76,7 @@ type CacheConfig struct {
 	DisableLocalLookup           bool
 	EnableLocalWrites            bool
 	EnableLocalCompressionLookup bool
+	ReadThroughLocalCache        bool
 }
 
 type hintedHandoffOrder struct {
@@ -138,6 +140,7 @@ func Register(env *real_environment.RealEnv) error {
 		EnableLocalWrites:            *enableLocalWrites,
 		EnableLocalCompressionLookup: *enableLocalCompressionLookup,
 		LookasideCacheSizeBytes:      *lookasideCacheSizeBytes,
+		ReadThroughLocalCache:        *readThroughLocalCache,
 	}
 	log.Infof("Enabling distributed cache with config: %+v", dcConfig)
 	if len(dcConfig.Nodes) == 0 {
@@ -350,8 +353,12 @@ func (t *teeReadCloser) Close() error {
 		log.Warningf("teeReadCloser Close succeeded but Read failed with: %s", t.lastReadErr)
 	}
 	if err == nil && t.lastReadErr == io.EOF && !t.failedWrite {
-		_ = t.cwc.Commit()
-		_ = t.cwc.Close()
+		if err := t.cwc.Commit(); err != nil {
+			log.Infof("Error committing write to local cache: %s", err)
+		}
+		if err := t.cwc.Close(); err != nil {
+			log.Infof("Error closing local cache writer: %s", err)
+		}
 	}
 	return err
 }
@@ -468,22 +475,37 @@ func (c *Cache) lookasideCacheEnabled() bool {
 	return c.config.LookasideCacheSizeBytes > 0
 }
 
-func (c *Cache) teeReadCloser(r *rspb.ResourceName, rc io.ReadCloser) io.ReadCloser {
-	if !c.lookasideCacheEnabled() {
-		return rc
+func (c *Cache) localReadthroughEnabled() bool {
+	return c.config.ReadThroughLocalCache
+}
+
+func combineCommittedWriteClosers(a, b interfaces.CommittedWriteCloser) interfaces.CommittedWriteCloser {
+	if a == nil {
+		return b
 	}
-	if r.GetDigest().GetSizeBytes() > *maxLookasideEntryBytes {
-		return rc
+	if b == nil {
+		return a
 	}
-	k, ok := lookasideKey(r)
-	if !ok {
-		return rc
+
+	c := io.MultiWriter(a, b)
+	cwc := ioutil.NewCustomCommitWriteCloser(c)
+	cwc.CommitFn = func(n int64) error {
+		if err := a.Commit(); err != nil {
+			return err
+		}
+		return b.Commit()
 	}
-	lwc, err := c.lookasideWriter(r, k)
-	if err != nil {
-		return rc
+	cwc.CloseFn = func() error {
+		var firstErr error
+		if err := a.Close(); err != nil {
+			firstErr = err
+		}
+		if err := b.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		return firstErr
 	}
-	return &teeReadCloser{rc: rc, cwc: lwc}
+	return cwc
 }
 
 func (c *Cache) recvHeartbeatCallback(ctx context.Context, peer string) {
@@ -756,20 +778,63 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Reader(ctx, r, offset, limit)
 	}
-	lookasideCacheable := offset == 0 && limit == 0
-	if lookasideCacheable {
+	cacheable := offset == 0 && limit == 0
+	var lookasideWriter, localWriter interfaces.CommittedWriteCloser
+
+	// Check if the blob is in the lookaside cache, and if it's eligible,
+	// configure the lookaside writer so the blob can be cached as it is
+	// read.
+	if cacheable {
 		if buf, found := c.getLookasideEntry(r); found {
 			return io.NopCloser(bytes.NewReader(buf)), nil
 		}
+		if c.lookasideCacheEnabled() && r.GetDigest().GetSizeBytes() <= *maxLookasideEntryBytes {
+			if k, ok := lookasideKey(r); ok {
+				if lwc, err := c.lookasideWriter(r, k); err == nil {
+					lookasideWriter = lwc
+				}
+			}
+		}
 	}
-	rc, err := c.distributedProxy.RemoteReader(ctx, peer, r, offset, limit)
-	if err != nil {
-		return nil, err
+
+	var readCloser io.ReadCloser
+
+	// Check if the blob is in the local read-through cache, if that feature
+	// is enabled. If not, configure localWriter so the blob can be written
+	// to the local cache as it is read.
+	if c.localReadthroughEnabled() {
+		if rc, err := c.local.Reader(ctx, r, offset, limit); err == nil {
+			c.log.CtxDebugf(ctx, "Reader(%q) found locally", distributed_client.ResourceIsolationString(r))
+			readCloser = rc
+		} else {
+			if local, err := c.local.Writer(ctx, r); err == nil {
+				localWriter = local
+			}
+		}
 	}
-	if offset == 0 && limit == 0 {
-		return c.teeReadCloser(r, rc), nil
+
+	// The blob was not found in the lookaside cache or local read-through
+	// cache, so look for it on another node in the distributed hash set.
+	if readCloser == nil {
+		// An error here indicates the digest is not readable, so just
+		// return it to the caller.
+		rc, err := c.distributedProxy.RemoteReader(ctx, peer, r, offset, limit)
+		if err != nil {
+			return nil, err
+		}
+		readCloser = rc
+		c.log.CtxDebugf(ctx, "Reader(%q) found on peer %s", distributed_client.ResourceIsolationString(r), peer)
 	}
-	return rc, nil
+
+	// If the object is cacheable and lookasideWriter or localWriter are
+	// configured, return a teeReadCloser that will write the reads to the
+	// configured writers.
+	if cacheable && (lookasideWriter != nil || localWriter != nil) {
+		cwc := combineCommittedWriteClosers(lookasideWriter, localWriter)
+		return &teeReadCloser{rc: readCloser, cwc: cwc}, nil
+	}
+
+	return readCloser, nil
 }
 
 func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
@@ -1105,7 +1170,6 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 		lookups++
 		r, err := c.remoteReader(ctx, peer, rn, offset, limit)
 		if err == nil {
-			c.log.CtxDebugf(ctx, "Reader(%q) found on peer %s", distributed_client.ResourceIsolationString(rn), peer)
 			backfill()
 			metrics.DistributedCachePeerLookups.With(prometheus.Labels{
 				metrics.DistributedCacheOperation: metricsLabel,
