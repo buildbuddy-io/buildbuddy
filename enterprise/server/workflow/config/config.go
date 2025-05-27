@@ -200,6 +200,11 @@ func buildWithKythe(dirName string) string {
 	return fmt.Sprintf(`
 BZL_MAJOR_VERSION=$(bazel version | grep "Build label" | cut -d':' -f 2 | xargs | sed -r "s/([[:digit:]]*).[[:digit:]]*.[[:digit:]]*/\1/"))
 bazel mod graph > /dev/null 2>&1; BZLMOD_ENABLED=$(( $? == 0 ))
+
+KYTHE_ARGS="--inject_repository=kythe_release=$KYTHE_DIR"
+if [ "$BZLMOD_ENABLED" -eq 1 && $BZL_MAJOR_VERSION lt 8 ]; then
+  echo 'bazel_dep(name = "kythe", version = "0.0.74")' >> MODULE.bazel
+  echo '
 if [ "$BZL_MAJOR_VERSION" -lt 8 ]; then
 
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
