@@ -5,6 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "ociruntime",
     srcs = ["ociruntime.go"],
+    data = [":crun"],
     embedsrcs = [
         "hosts",
         "seccomp.json",
@@ -13,6 +14,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime",
     target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
+    x_defs = {
+        "crunRlocationpath": "$(rlocationpath :crun)",
+    },
     deps = [
         "//enterprise/server/remote_execution/block_io",
         "//enterprise/server/remote_execution/cgroup",
@@ -35,6 +39,7 @@ go_library(
         "//third_party/singleflight",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_opencontainers_runtime_spec//specs-go",
+        "@io_bazel_rules_go//go/runfiles",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
     ],
