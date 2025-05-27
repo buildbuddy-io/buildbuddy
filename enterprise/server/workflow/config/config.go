@@ -253,7 +253,7 @@ func sendIncrementalUpdate(apiTarget, repoURL string) string {
 	// can use here that maps to "latest"?
 	buf := fmt.Sprintf(`
 export USE_BAZEL_VERSION=buildbuddy-io/5.0.224
-bazel index --target %s --repo %s`, apiTarget, repoURL)
+bazel index --target %s --repo-url %s`, apiTarget, repoURL)
 	return buf
 }
 
