@@ -206,6 +206,9 @@ func (l *Logger) Debugf(format string, args ...interface{}) {
 // (e.g. invocation_id, request_id)
 func (l *Logger) CtxDebugf(ctx context.Context, format string, args ...interface{}) {
 	e := l.zl.Debug()
+	if e == nil {
+		return
+	}
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
 }
@@ -430,6 +433,9 @@ func Debugf(format string, args ...interface{}) {
 // (e.g. invocation_id, request_id)
 func CtxDebug(ctx context.Context, message string) {
 	e := log.Debug()
+	if e == nil {
+		return
+	}
 	enrichEventFromContext(ctx, e)
 	e.Msg(message)
 }
@@ -440,6 +446,9 @@ func CtxDebug(ctx context.Context, message string) {
 // (e.g. invocation_id, request_id)
 func CtxDebugf(ctx context.Context, format string, args ...interface{}) {
 	e := log.Debug()
+	if e == nil {
+		return
+	}
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
 }

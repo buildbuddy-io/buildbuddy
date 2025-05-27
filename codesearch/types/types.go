@@ -41,6 +41,7 @@ type DocumentSchema interface {
 	Fields() []FieldSchema
 	Field(name string) FieldSchema
 	MakeDocument(map[string][]byte) (Document, error)
+	MustMakeDocument(map[string][]byte) Document
 }
 
 type Field interface {
@@ -80,11 +81,12 @@ type IndexWriter interface {
 	AddDocument(doc Document) error
 	UpdateDocument(matchField Field, newDoc Document) error
 	DeleteDocument(docID uint64) error
+	DeleteDocumentByMatchField(matchField Field) error
 	Flush() error
 }
 
 type IndexReader interface {
-	GetStoredDocument(docID uint64) (Document, error)
+	GetStoredDocument(docID uint64) Document
 	RawQuery(squery string) ([]DocumentMatch, error)
 }
 

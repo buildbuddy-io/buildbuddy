@@ -287,7 +287,6 @@ type Cache interface {
 
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
-	SupportsEncryption(ctx context.Context) bool
 }
 
 type StoppableCache interface {
@@ -653,6 +652,7 @@ type GitHubApp interface {
 
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
 	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
+	UpdateGitHubAppInstallation(ctx context.Context, req *ghpb.UpdateGitHubAppInstallationRequest) (*ghpb.UpdateGitHubAppInstallationResponse, error)
 
 	LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
@@ -1656,6 +1656,7 @@ type GossipService interface {
 type CodesearchService interface {
 	Search(ctx context.Context, req *cssrpb.SearchRequest) (*cssrpb.SearchResponse, error)
 	Index(ctx context.Context, req *csinpb.IndexRequest) (*csinpb.IndexResponse, error)
+	RepoStatus(ctx context.Context, req *csinpb.RepoStatusRequest) (*csinpb.RepoStatusResponse, error)
 	IngestAnnotations(ctx context.Context, req *csinpb.IngestAnnotationsRequest) (*csinpb.IngestAnnotationsResponse, error)
 	KytheProxy(ctx context.Context, req *cssrpb.KytheRequest) (*cssrpb.KytheResponse, error)
 }
@@ -1672,7 +1673,6 @@ type RegistryService interface {
 type AtimeUpdater interface {
 	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value)
 	EnqueueByResourceName(ctx context.Context, downloadString string)
-	EnqueueByFindMissingRequest(ctx context.Context, req *repb.FindMissingBlobsRequest)
 }
 
 type CPULeaser interface {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -71,11 +72,12 @@ func localAddr(t *testing.T) string {
 
 func getCacheConfig(t *testing.T) *metadata.Config {
 	return &metadata.Config{
-		RootDir:    testfs.MakeTempDir(t),
-		Hostname:   "127.0.0.1",
-		ListenAddr: "127.0.0.1",
-		HTTPPort:   testport.FindFree(t),
-		GRPCPort:   testport.FindFree(t),
+		RootDir:         testfs.MakeTempDir(t),
+		Hostname:        "127.0.0.1",
+		ListenAddr:      "127.0.0.1",
+		HTTPPort:        testport.FindFree(t),
+		GRPCPort:        testport.FindFree(t),
+		LogDBConfigType: store.SmallMemLogDBConfigType,
 	}
 }
 
@@ -105,6 +107,7 @@ func parallelShutdown(caches ...*metadata.Server) {
 }
 
 func waitForHealthy(t *testing.T, caches ...*metadata.Server) {
+	log.Infof("wait for healthy")
 	start := time.Now()
 	timeout := 30 * time.Second
 	done := make(chan struct{})
@@ -120,9 +123,9 @@ func waitForHealthy(t *testing.T, caches ...*metadata.Server) {
 
 	select {
 	case <-done:
-		log.Printf("%d caches became healthy in %s", len(caches), time.Since(start))
+		log.Infof("%d caches became healthy in %s", len(caches), time.Since(start))
 	case <-time.After(timeout):
-		t.Fatalf("Caches [%d] did not become healthy after %s, %+v", len(caches), timeout, caches[0])
+		require.Failf(t, "caches not healthy", "Caches [%d] did not become healthy after %s, %+v", len(caches), timeout, caches[0])
 	}
 }
 
@@ -138,7 +141,7 @@ func waitForShutdown(t *testing.T, caches ...*metadata.Server) {
 	case <-done:
 		break
 	case <-time.After(timeout):
-		t.Fatalf("Caches [%d] did not shutdown after %s", len(caches), timeout)
+		require.Failf(t, "not shutdown", "Caches [%d] did not shutdown after %s", len(caches), timeout)
 	}
 }
 
@@ -168,7 +171,7 @@ func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
 			return nil
 		})
 	}
-	require.Nil(t, eg.Wait())
+	require.NoError(t, eg.Wait())
 
 	// wait for them all to become healthy
 	waitForHealthy(t, caches...)
@@ -213,14 +216,12 @@ func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
 }
 
 func TestAutoBringup(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	waitForShutdown(t, caches...)
 }
 
 func TestGetAndSet(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	rc1 := caches[0]
@@ -229,8 +230,6 @@ func TestGetAndSet(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
 		md := randomFileMetadata(t, 100)
 
 		// Should be able to Set a record.
@@ -239,13 +238,13 @@ func TestGetAndSet(t *testing.T) {
 				FileMetadata: md,
 			}},
 		})
-		require.NoError(t, err)
+		require.NoError(t, err, i)
 
 		// Should be able to fetch the record just set.
 		getRsp, err := rc1.Get(ctx, &mdpb.GetRequest{
 			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
 		})
-		require.NoError(t, err)
+		require.NoError(t, err, i)
 		require.Equal(t, 1, len(getRsp.GetFileMetadatas()))
 		assert.True(t, proto.Equal(md, getRsp.GetFileMetadatas()[0]))
 
@@ -253,7 +252,7 @@ func TestGetAndSet(t *testing.T) {
 		findRsp, err := rc1.Find(ctx, &mdpb.FindRequest{
 			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
 		})
-		require.NoError(t, err)
+		require.NoError(t, err, i)
 		require.Equal(t, 1, len(findRsp.GetFindResponses()))
 		assert.True(t, findRsp.GetFindResponses()[0].GetPresent())
 
@@ -263,13 +262,13 @@ func TestGetAndSet(t *testing.T) {
 				FileRecord: md.GetFileRecord(),
 			}},
 		})
-		require.NoError(t, err)
+		require.NoError(t, err, i)
 
 		// Record should no longer be found.
 		findRsp, err = rc1.Find(ctx, &mdpb.FindRequest{
 			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
 		})
-		require.NoError(t, err)
+		require.NoError(t, err, i)
 		require.Equal(t, 1, len(findRsp.GetFindResponses()))
 		assert.False(t, findRsp.GetFindResponses()[0].GetPresent())
 	}

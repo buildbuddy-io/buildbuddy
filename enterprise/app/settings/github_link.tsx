@@ -23,6 +23,7 @@ import LinkButton from "../../../app/components/button/link_button";
 import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
 import GitHubTooltip from "./github_tooltip";
 import { installReadOnlyGitHubAppURL, installReadWriteGitHubAppURL } from "../../../app/util/github";
+import Checkbox from "../../../app/components/checkbox/checkbox";
 
 export interface Props {
   user: User;
@@ -37,6 +38,8 @@ export interface State {
   installationsLoading: boolean;
   installationsResponse: github.GetAppInstallationsResponse | null;
 
+  isUpdatingInstallation: Map<Long, boolean>;
+
   installationToUnlink: github.AppInstallation | null;
   unlinkInstallationLoading: boolean;
 }
@@ -49,6 +52,8 @@ export default class GitHubLink extends React.Component<Props, State> {
 
     installationsResponse: null,
     installationsLoading: false,
+
+    isUpdatingInstallation: new Map<Long, boolean>(),
 
     installationToUnlink: null,
     unlinkInstallationLoading: false,
@@ -148,6 +153,39 @@ export default class GitHubLink extends React.Component<Props, State> {
     this.setState({ installationToUnlink: null });
   }
 
+  private updateInstallationSettings(
+    installation: github.AppInstallation,
+    idx: number,
+    reportCommitStatusesForCIBuilds: boolean
+  ) {
+    let prevMap = this.state.isUpdatingInstallation;
+    prevMap.set(installation.installationId, true);
+    this.setState({ isUpdatingInstallation: prevMap });
+    rpcService.service
+      .updateGitHubAppInstallation(
+        github.UpdateGitHubAppInstallationRequest.create({
+          appId: installation.appId,
+          owner: installation.owner,
+          reportCommitStatusesForCiBuilds: reportCommitStatusesForCIBuilds,
+        })
+      )
+      .then(() => {
+        if (!this.state.installationsResponse || this.state.installationsResponse.installations.length < idx + 1) {
+          throw new Error(`unexpected installation response`);
+        }
+        this.state.installationsResponse.installations[idx].reportCommitStatusesForCiBuilds =
+          reportCommitStatusesForCIBuilds;
+        this.setState({ installationsResponse: this.state.installationsResponse });
+        alertService.success(`Successfully updated settings for "${installation.owner}"`);
+      })
+      .catch((e) => errorService.handleError(e))
+      .finally(() => {
+        let prevMap = this.state.isUpdatingInstallation;
+        prevMap.set(installation.installationId, false);
+        this.setState({ isUpdatingInstallation: prevMap });
+      });
+  }
+
   render() {
     if (this.state.isRefreshingUser) return <div className="loading" />;
 
@@ -217,18 +255,42 @@ export default class GitHubLink extends React.Component<Props, State> {
                 <div>
                   <div className="github-app-installations">
                     {this.state.installationsResponse?.installations.map(
-                      (installation) => (
+                      (installation, idx) => (
                         console.log(installation),
                         (
                           <div className="github-app-installation">
-                            <div className="installation-owner">
-                              <TextLink href={`https://github.com/${installation.owner}`}>
-                                {installation.owner}
-                              </TextLink>
+                            <div className="installation-header">
+                              <div className="installation-owner">
+                                <TextLink href={`https://github.com/${installation.owner}`}>
+                                  {installation.owner}
+                                </TextLink>
+                              </div>
+                              <OutlinedButton
+                                className="destructive"
+                                onClick={() => this.showUnlinkDialog(installation)}>
+                                Unlink
+                              </OutlinedButton>
                             </div>
-                            <OutlinedButton className="destructive" onClick={() => this.showUnlinkDialog(installation)}>
-                              Unlink
-                            </OutlinedButton>
+                            <div className="installation-settings">
+                              <div className="input-row">
+                                <label className="input-label">
+                                  <Checkbox
+                                    disabled={
+                                      this.state.isUpdatingInstallation.get(installation.installationId) === true
+                                    }
+                                    checked={installation.reportCommitStatusesForCiBuilds}
+                                    onChange={(e) =>
+                                      this.updateInstallationSettings(installation, idx, e.target.checked)
+                                    }
+                                  />
+                                  <span>Report commit statuses to GitHub</span>
+                                </label>
+                              </div>
+                              <div className="input-description">
+                                Applies to BuildBuddy Workflows and builds tagged with{" "}
+                                <TextLink href="https://www.buildbuddy.io/docs/guide-metadata#role">ROLE=CI</TextLink>
+                              </div>
+                            </div>
                           </div>
                         )
                       )

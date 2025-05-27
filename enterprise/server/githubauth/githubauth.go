@@ -161,7 +161,7 @@ func (a *githubAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	return claims.AuthContextFromClaims(ctx, c, err)
+	return claims.AuthContextWithJWT(ctx, c, err)
 }
 
 func (a *githubAuthenticator) FillUser(ctx context.Context, user *tables.User) error {

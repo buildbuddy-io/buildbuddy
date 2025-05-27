@@ -90,6 +90,13 @@ const (
 	listenerID = "replicaStatusWaiter"
 )
 
+type LogDBConfigType int
+
+const (
+	SmallMemLogDBConfigType LogDBConfigType = iota
+	LargeMemLogDBConfigType
+)
+
 type Store struct {
 	env        environment.Env
 	rootDir    string
@@ -177,7 +184,19 @@ func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConf
 	return r, nil
 }
 
-func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr string, partitions []disk.Partition) (*Store, error) {
+func getLogDbConfig(t LogDBConfigType) dbConfig.LogDBConfig {
+	switch t {
+	case SmallMemLogDBConfigType:
+		return dbConfig.GetSmallMemLogDBConfig()
+	case LargeMemLogDBConfigType:
+		return dbConfig.GetLargeMemLogDBConfig()
+	default:
+		alert.UnexpectedEvent("unknown-raft-log-db-config-type", "unknown type: %d", t)
+	}
+	return dbConfig.GetDefaultLogDBConfig()
+}
+
+func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr string, partitions []disk.Partition, logDBConfigType LogDBConfigType) (*Store, error) {
 	rangeCache := rangecache.New()
 	raftListener := listener.NewRaftListener()
 	gossipManager := env.GetGossipService()
@@ -189,6 +208,7 @@ func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr str
 		RaftAddress:    raftAddr,
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: regHolder,
+			LogDB:               getLogDbConfig(logDBConfigType),
 		},
 		RaftEventListener:   raftListener,
 		SystemEventListener: raftListener,

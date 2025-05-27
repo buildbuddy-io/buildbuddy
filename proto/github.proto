@@ -89,6 +89,10 @@ message AppInstallation {
   // The ID of the GitHub app being linked. There are only 2 possible values,
   // corresponding to either the read-write or read-only app.
   int64 app_id = 4;
+
+  // Whether to automatically report GitHub commit statuses for build with
+  // role=CI or CI_RUNNER.
+  bool report_commit_statuses_for_ci_builds = 5;
 }
 
 // A request to list GitHub App installations accessible to user as well as
@@ -131,6 +135,17 @@ message UnlinkAppInstallationRequest {
 }
 
 message UnlinkAppInstallationResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message UpdateGitHubAppInstallationRequest {
+  context.RequestContext request_context = 1;
+  int64 app_id = 2;
+  string owner = 3;
+  bool report_commit_statuses_for_ci_builds = 4;
+}
+
+message UpdateGitHubAppInstallationResponse {
   context.ResponseContext response_context = 1;
 }
 

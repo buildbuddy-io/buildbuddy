@@ -86,6 +86,8 @@ type Config struct {
 
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
+
+	LogDBConfigType store.LogDBConfigType
 }
 
 // data needed to update last access time.
@@ -180,6 +182,7 @@ func Register(env *real_environment.RealEnv) error {
 		GRPCPort:          *gRPCPort,
 		Partitions:        ps,
 		PartitionMappings: *partitionMappings,
+		LogDBConfigType:   store.LargeMemLogDBConfigType,
 	}
 	rc, err := NewRaftCache(env, rcConfig)
 	if err != nil {
@@ -222,7 +225,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc.grpcAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.GRPCPort)
 	grpcListeningAddr := fmt.Sprintf("%s:%d", conf.ListenAddr, conf.GRPCPort)
 
-	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.Partitions)
+	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.Partitions, rc.conf.LogDBConfigType)
 	if err != nil {
 		return nil, err
 	}
@@ -658,10 +661,6 @@ func (rc *RaftCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 
 func (rc *RaftCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
-}
-
-func (rc *RaftCache) SupportsEncryption(ctx context.Context) bool {
-	return false
 }
 
 func (rc *RaftCache) olderThanThreshold(t time.Time, threshold time.Duration) bool {

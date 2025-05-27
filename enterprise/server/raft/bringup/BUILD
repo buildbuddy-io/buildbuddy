@@ -7,6 +7,7 @@ go_library(
     srcs = ["bringup.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup",
     deps = [
+        "//enterprise/server/filestore",
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
@@ -14,6 +15,7 @@ go_library(
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
         "//server/interfaces",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",

@@ -100,7 +100,7 @@ func contextWith(t *testing.T, key string, value string) context.Context {
 }
 
 func validJwt(t *testing.T, uid string) string {
-	authctx := claims.AuthContextFromClaims(context.Background(), &claims.Claims{UserID: uid}, nil)
+	authctx := claims.AuthContextWithJWT(context.Background(), &claims.Claims{UserID: uid}, nil)
 	jwt, ok := authctx.Value(authutil.ContextTokenStringKey).(string)
 	require.True(t, ok)
 	require.NotEqual(t, "", jwt)

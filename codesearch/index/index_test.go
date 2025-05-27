@@ -3,7 +3,6 @@ package index
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"slices"
 	"strconv"
 	"testing"
@@ -17,12 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func hash(s string) uint64 {
-	h := fnv.New64a()
-	h.Write([]byte(s))
-	return h.Sum64()
-}
 
 var testSchema = schema.NewDocumentSchema(
 	[]types.FieldSchema{
@@ -62,8 +55,7 @@ func extractFieldMatches(tb testing.TB, r types.IndexReader, docMatches []types.
 	tb.Helper()
 	m := make(map[string][]uint64)
 	for _, docMatch := range docMatches {
-		storedDoc, err := r.GetStoredDocument(docMatch.Docid())
-		require.NoError(tb, err)
+		storedDoc := r.GetStoredDocument(docMatch.Docid())
 		id, err := strconv.ParseUint(string(storedDoc.Field("id").Contents()), 10, 64)
 		require.NoError(tb, err)
 		for _, fieldName := range docMatch.FieldNames() {
@@ -171,6 +163,99 @@ func TestIncrementalIndexing(t *testing.T) {
 	assert.Equal(t, map[string][]uint64{"text": {1, 5}}, extractFieldMatches(t, r, matches))
 }
 
+func TestUpdateSameDocTwiceInSameBatch(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	w, err := NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 7, `one one one`)))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err := r.RawQuery("(:eq text one)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {7}}, extractFieldMatches(t, r, matches))
+
+	w, err = NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Update the document twice in the same batch, make sure the last update sticks
+	docV2 := docWithIDAndText(t, 7, `two two two`)
+	docV3 := docWithIDAndText(t, 7, `three three three`)
+	require.NoError(t, w.UpdateDocument(docV2.Field("id"), docV2))
+	require.NoError(t, w.UpdateDocument(docV3.Field("id"), docV3))
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err = r.RawQuery("(:eq text thr)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {7}}, extractFieldMatches(t, r, matches))
+
+	matches, err = r.RawQuery("(:eq text two)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{}, extractFieldMatches(t, r, matches))
+}
+
+func TestUpdateSameDocThriceInSameBatch(t *testing.T) {
+	// This test hits unique cases that "update twice" doesn't hit, related to
+	// updating the doc id / match field mappins when a document is updated multiple
+	// time in the same batch.
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	w, err := NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 7, `one one one`)))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err := r.RawQuery("(:eq text one)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {7}}, extractFieldMatches(t, r, matches))
+
+	w, err = NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	docV2 := docWithIDAndText(t, 7, `two two two`)
+	docV3 := docWithIDAndText(t, 7, `three three three`)
+	docV4 := docWithIDAndText(t, 7, `four four four`)
+	require.NoError(t, w.UpdateDocument(docV2.Field("id"), docV2))
+	require.NoError(t, w.UpdateDocument(docV3.Field("id"), docV3))
+	require.NoError(t, w.UpdateDocument(docV4.Field("id"), docV4))
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err = r.RawQuery("(:eq text fou)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {7}}, extractFieldMatches(t, r, matches))
+
+	matches, err = r.RawQuery("(:eq text thr)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{}, extractFieldMatches(t, r, matches))
+
+	matches, err = r.RawQuery("(:eq text two)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{}, extractFieldMatches(t, r, matches))
+}
+
 func TestStoredVsUnstoredFields(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
@@ -223,8 +308,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	assert.Equal(t, map[string][]uint64{"field_b": {7}, "field_a": {7}}, extractFieldMatches(t, r, matches))
 
 	// stored document should only contain stored fields
-	rdoc, err := r.GetStoredDocument(1)
-	require.NoError(t, err)
+	rdoc := r.GetStoredDocument(1)
 	assert.Equal(t, []byte("7"), rdoc.Field("id").Contents())
 	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
 	assert.Nil(t, rdoc.Field("field_b").Contents())
@@ -266,8 +350,7 @@ func TestGetStoredDocument(t *testing.T) {
 	r := NewReader(ctx, db, "testing-namespace", docSchema)
 
 	// stored document should only contain stored fields
-	rdoc, err := r.GetStoredDocument(1)
-	require.NoError(t, err)
+	rdoc := r.GetStoredDocument(1)
 	assert.Equal(t, []byte("50"), rdoc.Field("id").Contents())
 	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
 }
@@ -391,9 +474,7 @@ func TestMetadataDocs(t *testing.T) {
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
-	readDoc, err := r.GetStoredDocument(1)
-	require.NoError(t, err)
-
+	readDoc := r.GetStoredDocument(1)
 	assert.Equal(t, commitSHA, string(readDoc.Field(schema.LatestSHAField).Contents()))
 }
 

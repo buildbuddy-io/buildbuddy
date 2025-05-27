@@ -469,7 +469,7 @@ func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey 
 	}
 	ctx = context.WithValue(ctx, authutil.APIKeyHeader, apiKey)
 	c, err := a.claimsFromAPIKey(ctx, apiKey)
-	return claims.AuthContextFromClaims(ctx, c, err)
+	return claims.AuthContextWithJWT(ctx, c, err)
 }
 
 func (a *OpenIDAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
@@ -567,7 +567,7 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 // `contextUserErrorKey` context value.
 func (a *OpenIDAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
 	c, err := a.authenticateGRPCRequest(ctx, true /* acceptJWT= */)
-	return claims.AuthContextFromClaims(ctx, c, err)
+	return claims.AuthContextWithJWT(ctx, c, err)
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
@@ -581,7 +581,7 @@ func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	return claims.AuthContextFromClaims(ctx, c, err)
+	return claims.AuthContextWithJWT(ctx, c, err)
 }
 
 func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) (*claims.Claims, *userToken, error) {

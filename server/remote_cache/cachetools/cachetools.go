@@ -202,16 +202,11 @@ func batchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorag
 			})
 			continue
 		}
-		data := res.Data
 		// TODO: parallel decompression
 		// TODO: accept decompression buffer map as optional arg
-		if res.GetCompressor() == repb.Compressor_ZSTD {
-			buf := make([]byte, 0, res.GetDigest().GetSizeBytes())
-			d, err := compression.DecompressZstd(buf, res.Data)
-			if err != nil {
-				return nil, status.WrapError(err, "decompress blob")
-			}
-			data = d
+		data, err := decompressBytes(res.Data, res.GetDigest(), res.GetCompressor())
+		if err != nil {
+			return nil, status.WrapError(err, "decompress blob")
 		}
 		// Validate digest
 		downloadedContentDigest, err := digest.Compute(bytes.NewReader(data), req.GetDigestFunction())
@@ -249,25 +244,23 @@ func ComputeFileDigest(fullFilePath, instanceName string, digestFunction repb.Di
 	return computeDigest(f, instanceName, digestFunction)
 }
 
-func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, rn *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
+func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName, in io.Reader) (*repb.Digest, int64, error) {
 	if bsClient == nil {
 		return nil, 0, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if rn.IsEmpty() {
-		return rn.GetDigest(), 0, nil
+	if r.IsEmpty() {
+		return r.GetDigest(), 0, nil
 	}
-
-	w, err := NewUploadWriter(ctx, bsClient, rn)
+	stream, err := bsClient.Write(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer w.Close()
 
-	rc := io.NopCloser(in)
-	if rn.GetCompressor() == repb.Compressor_ZSTD {
+	var rc io.ReadCloser = io.NopCloser(in)
+	if r.GetCompressor() == repb.Compressor_ZSTD {
 		rbuf := make([]byte, 0, uploadBufSizeBytes)
 		cbuf := make([]byte, 0, uploadBufSizeBytes)
-		reader, err := compression.NewZstdCompressingReader(rc, rbuf[:uploadBufSizeBytes], cbuf[:uploadBufSizeBytes])
+		reader, err := compression.NewZstdCompressingReader(io.NopCloser(in), rbuf[:uploadBufSizeBytes], cbuf[:uploadBufSizeBytes])
 		if err != nil {
 			return nil, 0, status.InternalErrorf("Failed to compress blob: %s", err)
 		}
@@ -275,32 +268,68 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, rn *d
 	}
 	defer rc.Close()
 
-	if _, err := w.ReadFrom(rc); err != nil {
-		return nil, 0, err
+	buf := make([]byte, uploadBufSizeBytes)
+	bytesUploaded := int64(0)
+	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+	resourceName := r.NewUploadString()
+	for {
+		n, err := ioutil.ReadTryFillBuffer(rc, buf)
+		if err != nil && err != io.EOF {
+			return nil, bytesUploaded, err
+		}
+		readDone := err == io.EOF
+
+		req := &bspb.WriteRequest{
+			Data:         buf[:n],
+			ResourceName: resourceName,
+			WriteOffset:  bytesUploaded,
+			FinishWrite:  readDone,
+		}
+
+		err = sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+		if err != nil {
+			// If the blob already exists in the CAS, the server will respond EOF.
+			// It is safe to stop sending writes.
+			if err == io.EOF {
+				break
+			}
+			return nil, bytesUploaded, err
+		}
+		bytesUploaded += int64(len(req.Data))
+		if readDone {
+			break
+		}
+
 	}
-	if err := w.Commit(); err != nil {
-		return nil, 0, err
+	rsp, err := stream.CloseAndRecv()
+	if err != nil {
+		// If there is a hash mismatch and the reader supports seeking, re-hash
+		// to check whether a concurrent mutation has occurred.
+		if rs, ok := in.(io.ReadSeeker); ok && status.IsDataLossError(err) {
+			if err := checkConcurrentMutation(r.GetDigest(), r.GetDigestFunction(), rs); err != nil {
+				return nil, 0, retry.NonRetryableError(status.WrapError(err, "check for concurrent mutation during upload"))
+			}
+		}
+		return nil, bytesUploaded, err
 	}
 
-	bytesUploaded := w.GetBytesUploaded()
-	committedSize := w.GetCommittedSize()
-
-	if rn.GetCompressor() == repb.Compressor_IDENTITY {
+	remoteSize := rsp.GetCommittedSize()
+	if r.GetCompressor() == repb.Compressor_IDENTITY {
 		// Either the write succeeded or was short-circuited, but in
 		// either case, the remoteSize for uncompressed uploads should
 		// match the file size.
-		if committedSize != rn.GetDigest().GetSizeBytes() {
-			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", committedSize, rn.GetDigest().GetSizeBytes())
+		if remoteSize != r.GetDigest().GetSizeBytes() {
+			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
 		}
 	} else {
 		// -1 is returned if the blob already exists, otherwise the
-		// remote (committed) size should agree with what we uploaded.
-		if committedSize != bytesUploaded && committedSize != -1 {
-			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", committedSize, rn.GetDigest().GetSizeBytes())
+		// remoteSize should agree with what we uploaded.
+		if remoteSize != bytesUploaded && remoteSize != -1 {
+			return nil, bytesUploaded, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
 		}
 	}
 
-	return rn.GetDigest(), bytesUploaded, nil
+	return r.GetDigest(), bytesUploaded, nil
 }
 
 type uploadRetryResult = struct {
@@ -725,7 +754,21 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 		if err != nil {
 			return err
 		}
-		for _, fileResponse := range rsp.GetResponses() {
+		for i, fileResponse := range rsp.GetResponses() {
+			if fileResponse.GetStatus().GetCode() == int32(gcodes.DataLoss) && i < len(req.GetRequests()) {
+				// If there is a hash mismatch, re-hash the uncompressed payload
+				// to check whether a concurrent mutation occurred after we
+				// computed the original digest.
+				ri := req.GetRequests()[i]
+				b, err := decompressBytes(ri.GetData(), ri.GetDigest(), ri.GetCompressor())
+				if err != nil {
+					log.CtxWarningf(ul.ctx, "Error decompressing blob while checking for concurrent mutation: %s", err)
+				} else {
+					if err := checkConcurrentMutation(fileResponse.GetDigest(), ul.digestFunction, bytes.NewReader(b)); err != nil {
+						return status.WrapError(err, "check for concurrent mutation during upload")
+					}
+				}
+			}
 			if fileResponse.GetStatus().GetCode() != int32(gcodes.OK) {
 				return gstatus.Error(gcodes.Code(fileResponse.GetStatus().GetCode()), fmt.Sprintf("Error uploading file: %v", fileResponse.GetDigest()))
 			}
@@ -742,6 +785,31 @@ func (ul *BatchCASUploader) Wait() error {
 		}
 	}
 	return ul.eg.Wait()
+}
+
+func decompressBytes(b []byte, d *repb.Digest, compressor repb.Compressor_Value) ([]byte, error) {
+	if compressor == repb.Compressor_ZSTD {
+		buf := make([]byte, 0, d.GetSizeBytes())
+		return compression.DecompressZstd(buf, b)
+	}
+	return b, nil
+}
+
+// Re-computes the digest for the given reader and compares it to a digest
+// computed previously. Returns an error if the digests do not match or if
+// there is an error re-computing the digest.
+func checkConcurrentMutation(originalDigest *repb.Digest, digestFunction repb.DigestFunction_Value, r io.ReadSeeker) error {
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return status.DataLossErrorf("seek: %s", err)
+	}
+	computedDigest, err := digest.Compute(r, digestFunction)
+	if err != nil {
+		return status.DataLossErrorf("recompute digest: %s", err)
+	}
+	if !digest.Equal(computedDigest, originalDigest) {
+		return status.DataLossErrorf("possible concurrent mutation detected: digest changed from %s to %s", digest.String(originalDigest), digest.String(computedDigest))
+	}
+	return nil
 }
 
 // UploadStats contains the statistics for a batch of uploads.
@@ -1085,106 +1153,90 @@ type UploadWriter struct {
 	uploadString string
 
 	bytesUploaded int64
-	finished      bool
 	committedSize int64
-	closed        bool
+
+	sendErr   error
+	committed bool
+	closed    bool
 
 	buf           []byte
 	bytesBuffered int
+
+	useZstd bool
+	cbuf    []byte
 }
 
 // Write copies the input bytes to an internal buffer and may send some or all of the bytes to the CAS.
 // Bytes are not guaranteed to be uploaded to the CAS until a call to Commit() succeeds.
 // Returning EOF indicates that the blob already exists in the CAS and no further writes are necessary.
 func (uw *UploadWriter) Write(p []byte) (int, error) {
-	if uw.finished || uw.closed {
-		return 0, status.FailedPreconditionError("Cannot write to UploadWriter after it is finished or closed")
+	if uw.closed {
+		return 0, status.FailedPreconditionError("Cannot write to UploadWriter after it is closed")
+	}
+	if uw.committed {
+		return 0, status.FailedPreconditionError("Cannot write to UploadWriter after it is committed")
+	}
+	if uw.sendErr != nil {
+		return 0, status.WrapError(uw.sendErr, "UploadWriter already encountered send error, cannot write")
 	}
 	written := 0
 	for len(p) > 0 {
 		n := copy(uw.buf[uw.bytesBuffered:], p)
 		uw.bytesBuffered += n
-		if uw.bytesBuffered == uploadBufSizeBytes {
-			if err := uw.flush(false /* finish */); err != nil {
-				return written, err
-			}
-		}
 		written += n
+		if err := uw.flush(false /* finish */); err != nil {
+			if err == io.EOF {
+				return written, io.ErrShortWrite
+			}
+			return written, err
+		}
 		p = p[n:]
 	}
 	return written, nil
 }
 
+// flush sends a WriteRequest to the CAS if the internal buffer is full
+// or if this is the last write (finish=true).
 func (uw *UploadWriter) flush(finish bool) error {
-	if uw.finished {
+	if !finish && uw.bytesBuffered < uploadBufSizeBytes {
 		return nil
 	}
-	if uw.closed {
-		return status.FailedPreconditionError("UploadWriteCloser already finished or closed, cannot flush")
+	data := uw.buf[:uw.bytesBuffered]
+	if uw.useZstd {
+		// If CompressZstd allocates a new buffer for the compressed bytes,
+		// use it to send the request and then let it be garbaged collected.
+		// We will put uw.cbuf back into the pool on Close().
+		data = compression.CompressZstd(uw.cbuf[:0], uw.buf[:uw.bytesBuffered])
 	}
 	req := &bspb.WriteRequest{
-		Data:         uw.buf[:uw.bytesBuffered],
+		Data:         data,
 		ResourceName: uw.uploadString,
 		WriteOffset:  uw.bytesUploaded,
 		FinishWrite:  finish,
 	}
-	err := uw.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
-	if err != nil {
-		// If the blob already exists in the CAS, the server will respond EOF
-		// to indicate no further writes are needed.
-		if err == io.EOF {
-			uw.finished = true
-		}
-		return err
+	uw.sendErr = uw.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+	if uw.sendErr != nil {
+		return uw.sendErr
 	}
-	uw.bytesUploaded += int64(uw.bytesBuffered)
+	uw.bytesUploaded += int64(len(data))
 	uw.bytesBuffered = 0
-	uw.finished = finish
 	return nil
-}
-
-// ReadFrom reads all the bytes from the input Reader until encountering EOF,
-// copies them to an internal buffer, and may send some or all of the bytes to the CAS.
-// The bytes are not guaranteed uploaded to the CAS until Commit is called and returns successfully.
-// ReadFrom returns the number of bytes read from the input reader.
-func (uw *UploadWriter) ReadFrom(r io.Reader) (int64, error) {
-	if uw.finished || uw.closed {
-		return 0, status.FailedPreconditionError("UploadWriter cannot ReadFrom after it is finished or closed")
-	}
-	bytesRead := int64(0)
-	for {
-		n, err := ioutil.ReadTryFillBuffer(r, uw.buf[uw.bytesBuffered:])
-		uw.bytesBuffered += n
-		bytesRead += int64(n)
-		if err != nil && err != io.EOF {
-			return bytesRead, err
-		}
-		readDone := err == io.EOF
-
-		if uw.bytesBuffered == uploadBufSizeBytes {
-			err := uw.flush(false /* finish */)
-			if err != nil && err != io.EOF {
-				return bytesRead, err
-			}
-			// If the blob already exists in the CAS, the server can respond with an EOF.
-			// Stop sending bytes to the server.
-			if err == io.EOF {
-				break
-			}
-		}
-		if readDone {
-			break
-		}
-	}
-	return bytesRead, nil
 }
 
 // Commit sends any bytes remaining in the internal buffer to the CAS
 // and tells the server that the stream is done sending writes.
 func (uw *UploadWriter) Commit() error {
 	if uw.closed {
-		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot commit")
+		return status.FailedPreconditionError("UploadWriter already closed, cannot commit")
 	}
+	if uw.committed {
+		return nil
+	}
+	if uw.sendErr != nil && uw.sendErr != io.EOF {
+		return status.WrapError(uw.sendErr, "UploadWriter already encountered send error, cannot commit")
+	}
+
+	uw.committed = true
 	err := uw.flush(true /* finish */)
 	// If the blob already exists in the CAS, the server can respond with an EOF.
 	// The blob exists, it is safe to finish committing.
@@ -1203,11 +1255,14 @@ func (uw *UploadWriter) Commit() error {
 // It is expected (and safe) to call Close even if Commit fails.
 func (uw *UploadWriter) Close() error {
 	if uw.closed {
-		return status.FailedPreconditionError("UploadWriteCloser already closed, cannot close again")
+		return status.FailedPreconditionError("UploadWriter already closed, cannot close again")
 	}
 	uw.closed = true
 	uploadBufPool.Put(uw.buf)
-	return uw.stream.CloseSend()
+	if uw.useZstd {
+		uploadBufPool.Put(uw.cbuf)
+	}
+	return nil
 }
 
 func (uw *UploadWriter) GetCommittedSize() int64 {
@@ -1222,8 +1277,13 @@ func (uw *UploadWriter) GetBytesUploaded() int64 {
 var _ interfaces.CommittedWriteCloser = (*UploadWriter)(nil)
 
 // NewUploadWriter returns an UploadWriter that writes to the CAS for the specific resource name.
-// The blob is guaranteed to be written to the CAS only if all Write(...) calls and the Close() call succeed.
+// The blob is guaranteed to be written to the CAS only if all Write(...) calls and the Commit() calls succeed.
 // The caller is responsible for checking data integrity using GetCommittedSize() and GetBytesUploaded().
+//
+// You must call Close() on an UploadWriter.
+// You also must either
+//   - call Commit() on the UploadWriter or
+//   - encounter a non-EOF error in a call to Write(...)
 func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASResourceName) (*UploadWriter, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
@@ -1233,6 +1293,18 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		return nil, err
 	}
 	sender := rpcutil.NewSender[*bspb.WriteRequest](ctx, stream)
+	if r.GetCompressor() == repb.Compressor_ZSTD {
+		return &UploadWriter{
+			ctx:          ctx,
+			stream:       stream,
+			sender:       sender,
+			uploadString: r.NewUploadString(),
+			buf:          uploadBufPool.Get(),
+
+			useZstd: true,
+			cbuf:    uploadBufPool.Get(),
+		}, nil
+	}
 	return &UploadWriter{
 		ctx:          ctx,
 		stream:       stream,

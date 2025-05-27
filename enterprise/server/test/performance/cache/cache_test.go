@@ -37,8 +37,8 @@ func init() {
 	log.Configure()
 }
 
-func getAnonContext(t testing.TB, te *testenv.TestEnv) context.Context {
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+func getAnonContext(t testing.TB, env environment.Env) context.Context {
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	if err != nil {
 		t.Fatalf("error attaching user prefix: %v", err)
 	}
@@ -99,14 +99,15 @@ func getMigrationCache(t testing.TB, env environment.Env, src, dest interfaces.C
 	return migration_cache.NewMigrationCache(env, config, src, dest)
 }
 
-func getDistributedCache(t testing.TB, te *testenv.TestEnv, c interfaces.Cache) interfaces.Cache {
+func getDistributedCache(t testing.TB, te environment.Env, c interfaces.Cache, lookasideCacheSizeBytes int64) interfaces.Cache {
 	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	conf := distributed.CacheConfig{
-		ListenAddr:         listenAddr,
-		GroupName:          "default",
-		ReplicationFactor:  1,
-		Nodes:              []string{listenAddr},
-		DisableLocalLookup: true,
+		ListenAddr:              listenAddr,
+		GroupName:               "default",
+		ReplicationFactor:       1,
+		Nodes:                   []string{listenAddr},
+		DisableLocalLookup:      true,
+		LookasideCacheSizeBytes: lookasideCacheSizeBytes,
 	}
 	dc, err := distributed.NewDistributedCache(te, c, conf, te.GetHealthChecker())
 	if err != nil {
@@ -117,7 +118,7 @@ func getDistributedCache(t testing.TB, te *testenv.TestEnv, c interfaces.Cache) 
 	return dc
 }
 
-func getPebbleCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
+func getPebbleCache(t testing.TB, te environment.Env) interfaces.Cache {
 	testRootDir := testfs.MakeTempDir(t)
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
 		Name:          testRootDir,
@@ -179,8 +180,8 @@ func benchmarkRead(ctx context.Context, c interfaces.Cache, digestSizeBytes int6
 	}
 }
 
-func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes, rspb.CacheType_CAS)
+func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B, cacheType rspb.CacheType) {
+	digestBufs := makeDigests(b, numDigests, digestSizeBytes, cacheType)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	b.ReportAllocs()
 	b.SetBytes(digestSizeBytes)
@@ -238,12 +239,13 @@ type namedCache struct {
 	Name string
 }
 
-func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
+func getAllCaches(b *testing.B, te environment.Env) []*namedCache {
 	flags.Set(b, "cache.distributed_cache.consistent_hash_function", "SHA256")
 	dc := getDiskCache(b, te)
-	ddc := getDistributedCache(b, te, dc)
+	ddc := getDistributedCache(b, te, dc, 0)
 	pc := getPebbleCache(b, te)
-	dpc := getDistributedCache(b, te, pc)
+	dpc := getDistributedCache(b, te, pc, 0)
+	lpc := getDistributedCache(b, te, getPebbleCache(b, te), 100_000)
 
 	time.Sleep(100 * time.Millisecond)
 	caches := []*namedCache{
@@ -252,8 +254,9 @@ func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 		{ddc, "DistDisk"},
 		{getPebbleCache(b, te), "LocalPebble"},
 		{dpc, "DistPebble"},
+		{lpc, "LookasideDistPebble"},
 		{getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), "LocalMigration"},
-		{getDistributedCache(b, te, getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te))), "DistMigration"},
+		{getDistributedCache(b, te, getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), 0), "DistMigration"},
 	}
 	return caches
 }
@@ -295,15 +298,18 @@ func BenchmarkRead(b *testing.B) {
 
 func BenchmarkGetSingle(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
+	// sizes := []int64{10}
 	te := testenv.GetTestEnv(b)
 	ctx := getAnonContext(b, te)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
-			name := fmt.Sprintf("%s%d", cache.Name, size)
-			b.Run(name, func(b *testing.B) {
-				benchmarkGet(ctx, cache, size, b)
-			})
+			for _, cacheType := range []rspb.CacheType{rspb.CacheType_AC, rspb.CacheType_CAS} {
+				name := fmt.Sprintf("%s%d/%s", cache.Name, size, cacheType)
+				b.Run(name, func(b *testing.B) {
+					benchmarkGet(ctx, cache, size, b, cacheType)
+				})
+			}
 		}
 	}
 }

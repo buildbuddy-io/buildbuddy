@@ -53,6 +53,10 @@ func (css *CodesearchService) Index(ctx context.Context, req *inpb.IndexRequest)
 	return css.client.Index(ctx, req)
 }
 
+func (css *CodesearchService) RepoStatus(ctx context.Context, req *inpb.RepoStatusRequest) (*inpb.RepoStatusResponse, error) {
+	return css.client.RepoStatus(ctx, req)
+}
+
 func (css *CodesearchService) IngestAnnotations(ctx context.Context, req *inpb.IngestAnnotationsRequest) (*inpb.IngestAnnotationsResponse, error) {
 	return css.client.IngestAnnotations(ctx, req)
 }

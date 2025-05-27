@@ -22,6 +22,9 @@ var (
 	SHAField       = "sha"
 	LatestSHAField = "latest_sha"
 
+	// TODO(jdelfino): Define CodeSchema and MetadataSchema types that implement the
+	// types.DocumentSchema interface. Then we can hide all the flexibility from the clients,
+	// without hardcoding a particular schema into the search core.
 	gitHubFileSchema = NewDocumentSchema([]types.FieldSchema{
 		MustFieldSchema(types.KeywordField, IDField, false),
 		MustFieldSchema(types.TrigramField, FilenameField, true),
@@ -150,6 +153,14 @@ func (d documentSchema) MakeDocument(data map[string][]byte) (types.Document, er
 		fields[name] = fieldSchema.MakeField(field_data)
 	}
 	return document(fields), nil
+}
+
+func (d documentSchema) MustMakeDocument(data map[string][]byte) types.Document {
+	doc, err := d.MakeDocument(data)
+	if err != nil {
+		panic(fmt.Sprintf("failed to create document: %v", err))
+	}
+	return doc
 }
 
 func NewDocumentSchema(schemas []types.FieldSchema) types.DocumentSchema {

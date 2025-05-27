@@ -475,7 +475,6 @@ func TestReadOffsetLimit(t *testing.T) {
 }
 
 func TestReadWriteWithFailedNode(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -522,10 +521,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	// or distributedCaches so they should not be referenced
 	// below when reading / writing, although the running nodes
 	// still have reference to them via the Nodes list.
-	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-	err := dc3.Shutdown(shutdownCtx)
-	cancel()
-	assert.Nil(t, err)
+	waitForShutdown(dc3)
 
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
@@ -989,6 +985,11 @@ func TestGetMulti(t *testing.T) {
 }
 
 func TestHintedHandoff(t *testing.T) {
+	// TestHintedHandoff has flaked multiple times recently:
+	//   https://app.buildbuddy.io/invocation/831b22ac-123b-4190-9a32-d9f06a2719b9
+	//   https://app.buildbuddy.io/invocation/be67e9bc-5104-4538-a86c-86656f8af43d
+	//   https://app.buildbuddy.io/invocation/010bd6d5-eae4-4a02-a1ad-b81311c3a461
+	quarantine.SkipQuarantinedTest(t)
 	env, authenticator, ctx := getEnvAuthAndCtx(t)
 
 	// Authenticate as user1.
