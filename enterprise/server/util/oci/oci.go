@@ -238,9 +238,9 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	_, err = remote.Head(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
-		return status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		return status.UnavailableErrorf("could not authorize to remote registry: %s", err)
 	}
 	return nil
 }
@@ -260,7 +260,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
 		}
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
