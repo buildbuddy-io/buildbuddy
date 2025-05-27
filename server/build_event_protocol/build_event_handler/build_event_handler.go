@@ -494,7 +494,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(50) // Max concurrency when copying files from cache->blobstore.
 
-	artifactsUploaded := make(map[string]struct{}, len(task.persist.URIs))
+	artifactsUploaded := make(map[string]struct{}, 0)
 	for _, uri := range task.persist.URIs {
 		uri := uri
 		rn, err := digest.ParseDownloadResourceName(uri.Path)
