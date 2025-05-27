@@ -6,6 +6,7 @@ go_test(
     data = glob(["testdata/**"]),
     deps = [
         "//cli/testutil/testcli",
+        "//server/testutil/quarantine",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

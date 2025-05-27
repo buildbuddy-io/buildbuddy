@@ -8,11 +8,16 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestPrintCompactExec(t *testing.T) {
+	// Quarantining this test due to likely flakes on master:
+	// - https://app.buildbuddy.io/invocation/9f1cf241-0dd3-4394-95ee-edccc50dcf60
+	// - https://app.buildbuddy.io/invocation/8e7a9e14-9d33-47cf-b0a8-17a97a04095a
+	quarantine.SkipQuarantinedTest(t)
 	files, err := filepath.Glob("testdata/*.binpb.zst")
 	require.NoError(t, err)
 
