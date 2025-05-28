@@ -78,7 +78,7 @@ type Tokenizer interface {
 }
 
 type IndexWriter interface {
-	AddDocument(matchField Field, doc Document) error
+	AddDocument(doc Document) error
 	UpdateDocument(matchField Field, newDoc Document) error
 	DeleteDocument(docID uint64) error
 	DeleteDocumentByMatchField(matchField Field) error
