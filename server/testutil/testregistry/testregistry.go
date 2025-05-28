@@ -12,11 +12,14 @@ import (
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -136,6 +139,22 @@ func (r *Registry) PushNamedImage(t *testing.T, imageName string) (string, gcr.I
 
 func (r *Registry) PushNamedImageWithFiles(t *testing.T, imageName string, files map[string][]byte) (string, gcr.Image) {
 	image, err := crane.Image(files)
+	require.NoError(t, err)
+	return r.Push(t, image, imageName), image
+}
+
+func (r *Registry) PushNamedImageWithMultipleLayers(t *testing.T, imageName string) (string, gcr.Image) {
+	base := empty.Image
+	layers := make([]gcr.Layer, 0, 9)
+	for i := 0; i < 9; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 128)
+		layer, err := crane.Layer(map[string][]byte{
+			"/layer/" + rn.Digest.Hash: buf,
+		})
+		require.NoError(t, err)
+		layers = append(layers, layer)
+	}
+	image, err := mutate.AppendLayers(base, layers...)
 	require.NoError(t, err)
 	return r.Push(t, image, imageName), image
 }
