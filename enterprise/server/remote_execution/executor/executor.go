@@ -56,6 +56,7 @@ var (
 	slowTaskThreshold          = flag.Duration("executor.slow_task_threshold", 1*time.Hour, "Warn about tasks that take longer than this threshold.")
 	defaultTerminationGrace    = flag.Duration("executor.default_termination_grace_period", 0, "Default termination grace period for all actions. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
 	maxTerminationGracePeriod  = flag.Duration("executor.max_termination_grace_period", 1*time.Minute, "Max termination grace period that actions can request. An error will be returned if a task requests a grace period greater than this value. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
+	checkActionResultBeforeExecution  = flag.Duration("executor.check_action_result_before_execution", true, "If true, the executor will call GetActionResult to verify an action does not already exist before running it.")
 )
 
 const (
@@ -259,7 +260,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(status.WrapError(err, "validate command"))
 	}
 
-	if !req.GetSkipCacheLookup() {
+	if *checkActionResultBeforeExecution && !req.GetSkipCacheLookup() {
 		log.CtxDebugf(ctx, "Checking action cache for existing result.")
 		if err := stateChangeFn(repb.ExecutionStage_CACHE_CHECK, operation.InProgressExecuteResponse()); err != nil {
 			return true, err
