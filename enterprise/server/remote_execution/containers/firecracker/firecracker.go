@@ -1911,7 +1911,10 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// Hardlink the ext4 image to the chroot at containerFSPath.
 	imageExt4Path, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
 	if err != nil {
-		return status.UnavailableErrorf("disk image is unavailable: %s", err)
+		return status.UnavailableErrorf("container image is unavailable: %s", err)
+	}
+	if imageExt4Path == "" {
+		return status.UnavailableErrorf("container image not found: %s", c.containerImage)
 	}
 	if err := os.Link(imageExt4Path, containerFSPath); err != nil {
 		return err
