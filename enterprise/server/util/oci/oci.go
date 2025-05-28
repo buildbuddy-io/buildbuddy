@@ -446,46 +446,48 @@ func (i *cachingImage) Digest() (gcr.Hash, error) {
 }
 
 func (i *cachingImage) Manifest() (*gcr.Manifest, error) {
-	if i.cachedManifest == nil {
-		rawManifest, err := i.RawManifest()
-		if err != nil {
-			return nil, err
-		}
-		manifest, err := gcr.ParseManifest(bytes.NewReader(rawManifest))
-		if err != nil {
-			return nil, err
-		}
-		i.cachedManifest = manifest
+	if i.cachedManifest != nil {
+		return i.cachedManifest, nil
 	}
+	rawManifest, err := i.RawManifest()
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := gcr.ParseManifest(bytes.NewReader(rawManifest))
+	if err != nil {
+		return nil, err
+	}
+	i.cachedManifest = manifest
 	return i.cachedManifest, nil
 }
 
 // RawManifest returns the raw manifest bytes from the upstream registry,
 // optionally writing it to the Action Cache if that behavior is enabled.
 func (i *cachingImage) RawManifest() ([]byte, error) {
-	if i.cachedRawManifest == nil {
-		remoteRawManifest, err := i.Image.RawManifest()
-		if err != nil {
-			return nil, err
-		}
-		i.cachedRawManifest = remoteRawManifest
+	if i.cachedRawManifest != nil {
+		return i.cachedRawManifest, nil
+	}
+	remoteRawManifest, err := i.Image.RawManifest()
+	if err != nil {
+		return nil, err
+	}
+	i.cachedRawManifest = remoteRawManifest
 
-		if *writeManifestsToCache {
-			mediaType, err := i.MediaType()
-			if err != nil {
-				log.Warningf("Could not fetch media type for manifest: %s", err)
-				return remoteRawManifest, nil
-			}
-			digest, err := i.Digest()
-			if err != nil {
-				log.Warningf("Could not fetch digest for manifest: %s", err)
-				return remoteRawManifest, nil
-			}
-			err = ocicache.WriteManifestToAC(i.ctx, remoteRawManifest, i.acClient, i.repository, digest, string(mediaType))
-			if err != nil {
-				log.Warningf("Could not write manifest to the cache: %s", err)
-				return remoteRawManifest, nil
-			}
+	if *writeManifestsToCache {
+		mediaType, err := i.MediaType()
+		if err != nil {
+			log.Warningf("Could not fetch media type for manifest: %s", err)
+			return remoteRawManifest, nil
+		}
+		digest, err := i.Digest()
+		if err != nil {
+			log.Warningf("Could not fetch digest for manifest: %s", err)
+			return remoteRawManifest, nil
+		}
+		err = ocicache.WriteManifestToAC(i.ctx, remoteRawManifest, i.acClient, i.repository, digest, string(mediaType))
+		if err != nil {
+			log.Warningf("Could not write manifest to the cache: %s", err)
+			return remoteRawManifest, nil
 		}
 	}
 
