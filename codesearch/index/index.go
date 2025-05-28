@@ -315,64 +315,6 @@ func (w *Writer) CompactDeletes() error {
 	return nil
 }
 
-func (w *Writer) GetNthKey(prefix string, n int) ([]byte, []byte, error) {
-	iter, err := w.db.NewIter(&pebble.IterOptions{
-		LowerBound: []byte(prefix),
-		UpperBound: []byte(prefix + "\xff"),
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	defer iter.Close()
-
-	count := 0
-	for iter.First(); iter.Valid(); iter.Next() {
-		if count == n {
-			return iter.Key(), iter.Value(), nil
-		}
-		count++
-	}
-	return nil, nil, fmt.Errorf("didn't get to %d", n)
-}
-
-func (w *Writer) GetAllKeys() (map[string]int, error) {
-	iter, err := w.db.NewIter(&pebble.IterOptions{
-		LowerBound: []byte(""),
-		UpperBound: []byte("\xff"),
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer iter.Close()
-
-	keys := make(map[string]int)
-	for iter.First(); iter.Valid(); iter.Next() {
-		keys[string(iter.Key())] = len(iter.Value())
-	}
-	return keys, nil
-}
-
-func (w *Writer) CountKeys(prefix string) (int, int, int, error) {
-	iter, err := w.db.NewIter(&pebble.IterOptions{
-		LowerBound: []byte(prefix),
-		UpperBound: []byte(prefix + "\xff"),
-	})
-	if err != nil {
-		return 0, 0, 0, err
-	}
-	defer iter.Close()
-
-	count := 0
-	keySizeCount := 0
-	valSizeCount := 0
-	for iter.First(); iter.Valid(); iter.Next() {
-		count++
-		keySizeCount += len(iter.Key())
-		valSizeCount += len(iter.Value())
-	}
-	return count, keySizeCount, valSizeCount, nil
-}
-
 // Deletes the document with the given docID.
 func (w *Writer) DeleteDocument(docID uint64) error {
 	// TODO(jdelfino): There's an issue with this delete function: it doesn't delete the document's
