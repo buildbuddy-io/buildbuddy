@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/ocicache",
         "//proto:registry_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/http/httpclient",
         "//server/util/flag",
