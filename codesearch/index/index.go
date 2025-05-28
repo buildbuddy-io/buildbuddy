@@ -250,11 +250,56 @@ func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 	return postingList.ToArray()[0], nil
 }
 
-func (w *Writer) DropNamespace() error {
-	w.batch.RangeKeyDelete(fmt.Appendf(nil, "%s:", w.namespace), fmt.Appendf(nil, "%s:\xff", w.namespace), nil)
+// Deletes the document with the given docID.
+func (w *Writer) DeleteDocument(docID uint64) error {
+	// TODO(jdelfino): There's an issue with this delete function: it doesn't delete the document's
+	// id field postings. The id field is the field used in UpdateDocument and DeleteDocumentByMatchField
+	// to find the previous version of the document. So if we delete using this method, then later
+	// add a new document with the same external id, future updates to that document will fail
+	// because they will match multiple documents. I think the solution is to honor the deleted doc
+	// id list when looking up by ID, but that's a potential performance issue.
+	// As of this writing, DeleteDocument isn't used, so we'll just walk around the landmine for now.
+	fieldsStart := w.storedFieldKey(docID, "")
+	fieldsEnd := w.storedFieldKey(docID, "\xff")
+	if err := w.batch.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {
+		return err
+	}
+	w.deletes.Add(docID)
+
 	return nil
 }
 
+// Deletes the document matching the provided matchField.
+// The matchField must be a keyword field, and an error is returned if the number of documents
+// matching the matchField is not exactly 1.
+func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
+	docId, err := w.lookupDocId(matchField)
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil // Doc not found, delete is a no-op
+		}
+		return err
+	}
+
+	key := w.postingListKey(string(matchField.Contents()), matchField.Name())
+	// The key field needs to be explicitly deleted, unlike the other fields, otherwise the old docID
+	// will remain in the posting list for the id field
+	w.batch.Delete(key, nil)
+
+	// The key field must also be removed from any pending updates, in case this document was
+	// already added previously in this batch.
+	if fpl, ok := w.fieldPostingLists[matchField.Name()]; ok {
+		if pl, ok := fpl[string(matchField.Contents())]; ok {
+			pl.Remove(docId)
+		}
+	}
+
+	return w.DeleteDocument(docId)
+}
+
+// DeleteMatchingDocuments deletes all documents which match the given matchField.
+// This can be used, for example, to delete all documents from a given repository,
+// by passing "repo:<repo_name>" as the matchField.
 func (w *Writer) DeleteMatchingDocuments(matchField types.Field) error {
 	if matchField.Type() != types.KeywordField {
 		return status.InternalError("match field must be of keyword type")
@@ -282,6 +327,12 @@ func (w *Writer) DeleteMatchingDocuments(matchField types.Field) error {
 	}
 
 	log.Infof("Dropped %d documents", delPl.GetCardinality())
+	return nil
+}
+
+// DropNamespace deletes everything in a namespace.
+func (w *Writer) DropNamespace() error {
+	w.batch.RangeKeyDelete(fmt.Appendf(nil, "%s:", w.namespace), fmt.Appendf(nil, "%s:\xff", w.namespace), nil)
 	return nil
 }
 
@@ -345,53 +396,6 @@ func (w *Writer) CompactDeletes() error {
 	return nil
 }
 
-// Deletes the document with the given docID.
-func (w *Writer) DeleteDocument(docID uint64) error {
-	// TODO(jdelfino): There's an issue with this delete function: it doesn't delete the document's
-	// id field postings. The id field is the field used in UpdateDocument and DeleteDocumentByMatchField
-	// to find the previous version of the document. So if we delete using this method, then later
-	// add a new document with the same external id, future updates to that document will fail
-	// because they will match multiple documents. I think the solution is to honor the deleted doc
-	// id list when looking up by ID, but that's a potential performance issue.
-	// As of this writing, DeleteDocument isn't used, so we'll just walk around the landmine for now.
-	fieldsStart := w.storedFieldKey(docID, "")
-	fieldsEnd := w.storedFieldKey(docID, "\xff")
-	if err := w.batch.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {
-		return err
-	}
-	w.deletes.Add(docID)
-
-	return nil
-}
-
-// Deletes the document matching the provided matchField.
-// The matchField must be a keyword field, and an error is returned if the number of documents
-// matching the matchField is not exactly 1.
-func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
-	docId, err := w.lookupDocId(matchField)
-	if err != nil {
-		if err == pebble.ErrNotFound {
-			return nil // Doc not found, delete is a no-op
-		}
-		return err
-	}
-
-	key := w.postingListKey(string(matchField.Contents()), matchField.Name())
-	// The key field needs to be explicitly deleted, unlike the other fields, otherwise the old docID
-	// will remain in the posting list for the id field
-	w.batch.Delete(key, nil)
-
-	// The key field must also be removed from any pending updates, in case this document was
-	// already added previously in this batch.
-	if fpl, ok := w.fieldPostingLists[matchField.Name()]; ok {
-		if pl, ok := fpl[string(matchField.Contents())]; ok {
-			pl.Remove(docId)
-		}
-	}
-
-	return w.DeleteDocument(docId)
-}
-
 // Updates an existing document, or adds it if it doesn't exist. Document identity is determined
 // by the matchField parameter, which must be a keyword field.
 // Returns an error if the number of documents matching the matchField is not exactly 1.
@@ -406,8 +410,6 @@ func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) e
 	return w.AddDocument(newDoc)
 }
 
-// TODO(jdelfino): bake the matchfield into the document schema. if we want to support
-// updates we need a primary key.
 func (w *Writer) AddDocument(doc types.Document) error {
 	w.docIndex++
 

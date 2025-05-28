@@ -88,7 +88,7 @@ func TestDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// TODO(jdelfino): fix this ugliness everywhere
+
 	require.NoError(t, w.AddDocument(docWithID(t, 1)))
 	require.NoError(t, w.AddDocument(docWithID(t, 2)))
 	require.NoError(t, w.AddDocument(docWithID(t, 3)))
