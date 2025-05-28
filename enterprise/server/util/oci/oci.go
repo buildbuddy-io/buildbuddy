@@ -417,44 +417,34 @@ type cachingImage struct {
 	cachedRawManifest []byte
 }
 
-// Layers returns the ordered collection of filesystem layers that comprise this image.
-// The order of the list is oldest/base layer first, and most-recent/top layer last.
 func (i *cachingImage) Layers() ([]gcr.Layer, error) {
 	return i.Image.Layers()
 }
 
-// MediaType of this image's manifest.
 func (i *cachingImage) MediaType() (types.MediaType, error) {
 	return i.Image.MediaType()
 }
 
-// Size returns the size of the manifest.
 func (i *cachingImage) Size() (int64, error) {
 	return i.Image.Size()
 }
 
-// ConfigName returns the hash of the image's config file, also known as
-// the Image ID.
 func (i *cachingImage) ConfigName() (gcr.Hash, error) {
 	return i.Image.ConfigName()
 }
 
-// ConfigFile returns this image's config file.
 func (i *cachingImage) ConfigFile() (*gcr.ConfigFile, error) {
 	return i.Image.ConfigFile()
 }
 
-// RawConfigFile returns the serialized bytes of ConfigFile().
 func (i *cachingImage) RawConfigFile() ([]byte, error) {
 	return i.Image.RawConfigFile()
 }
 
-// Digest returns the sha256 of this image's manifest.
 func (i *cachingImage) Digest() (gcr.Hash, error) {
 	return i.Image.Digest()
 }
 
-// Manifest returns this image's Manifest object.
 func (i *cachingImage) Manifest() (*gcr.Manifest, error) {
 	if i.cachedManifest == nil {
 		rawManifest, err := i.RawManifest()
@@ -470,7 +460,8 @@ func (i *cachingImage) Manifest() (*gcr.Manifest, error) {
 	return i.cachedManifest, nil
 }
 
-// RawManifest returns the serialized bytes of Manifest()
+// RawManifest returns the raw manifest bytes from the upstream registry,
+// optionally writing it to the Action Cache if that behavior is enabled.
 func (i *cachingImage) RawManifest() ([]byte, error) {
 	if i.cachedRawManifest == nil {
 		remoteRawManifest, err := i.Image.RawManifest()
