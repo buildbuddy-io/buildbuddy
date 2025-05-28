@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
@@ -145,7 +146,12 @@ func handleIndex(args []string) {
 	if *reset {
 		os.RemoveAll(indexDir)
 	}
-	db, err := pebble.Open(indexDir, &pebble.Options{})
+	db, err := pebble.Open(indexDir, &pebble.Options{
+		Merger: &pebble.Merger{
+			Merge: posting.InitRoaringMerger,
+			Name:  "roaringMerger",
+		},
+	})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -197,7 +203,12 @@ func handleIndex(args []string) {
 func handleSearch(ctx context.Context, args []string) {
 	pat := args[0]
 
-	db, err := pebble.Open(indexDir, &pebble.Options{})
+	db, err := pebble.Open(indexDir, &pebble.Options{
+		Merger: &pebble.Merger{
+			Merge: posting.InitRoaringMerger,
+			Name:  "roaringMerger",
+		},
+	})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -266,7 +277,12 @@ func handleSearch(ctx context.Context, args []string) {
 func handleSquery(ctx context.Context, args []string) {
 	pat := args[0]
 
-	db, err := pebble.Open(indexDir, &pebble.Options{})
+	db, err := pebble.Open(indexDir, &pebble.Options{
+		Merger: &pebble.Merger{
+			Merge: posting.InitRoaringMerger,
+			Name:  "roaringMerger",
+		},
+	})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
