@@ -24,12 +24,23 @@ var testSchema = schema.NewDocumentSchema(
 	},
 )
 
+var opts = &pebble.Options{
+	Merger: &pebble.Merger{
+		Merge: posting.InitRoaringMerger,
+		Name:  "roaringMerger",
+	},
+}
+
 func newTestDocument(t *testing.T, fieldMap map[string][]byte) types.Document {
 	doc, err := testSchema.MakeDocument(fieldMap)
 	if err != nil {
 		t.Fatalf("failed to create test document: %v", err)
 	}
 	return doc
+}
+
+func idField(id uint64) types.Field {
+	return testSchema.Field("id").MakeField([]byte(fmt.Sprintf("%d", id)))
 }
 
 func docWithID(t *testing.T, id uint64) types.Document {
@@ -72,7 +83,7 @@ func extractFieldMatches(tb testing.TB, r types.IndexReader, docMatches []types.
 func TestDeletes(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
+	db, err := pebble.Open(indexDir, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,9 +92,10 @@ func TestDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithID(t, 1)))
-	require.NoError(t, w.AddDocument(docWithID(t, 2)))
-	require.NoError(t, w.AddDocument(docWithID(t, 3)))
+	// TODO(jdelfino): fix this ugliness everywhere
+	require.NoError(t, w.AddDocument(idField(1), docWithID(t, 1)))
+	require.NoError(t, w.AddDocument(idField(2), docWithID(t, 2)))
+	require.NoError(t, w.AddDocument(idField(3), docWithID(t, 3)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
@@ -108,7 +120,7 @@ func TestDeletes(t *testing.T) {
 func TestIncrementalIndexing(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
+	db, err := pebble.Open(indexDir, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,9 +130,9 @@ func TestIncrementalIndexing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
+	require.NoError(t, w.AddDocument(idField(1), docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(idField(2), docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(idField(3), docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
@@ -136,8 +148,8 @@ func TestIncrementalIndexing(t *testing.T) {
 	}
 	doc1 := docWithIDAndText(t, 1, `one one one`)
 	require.NoError(t, w.UpdateDocument(doc1.Field("id"), doc1))
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 4, `four bap`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 5, `one zip`)))
+	require.NoError(t, w.AddDocument(idField(4), docWithIDAndText(t, 4, `four bap`)))
+	require.NoError(t, w.AddDocument(idField(5), docWithIDAndText(t, 5, `one zip`)))
 	require.NoError(t, w.Flush())
 
 	r = NewReader(ctx, db, "testing-namespace", testSchema)
@@ -166,7 +178,7 @@ func TestIncrementalIndexing(t *testing.T) {
 func TestUpdateSameDocTwiceInSameBatch(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
+	db, err := pebble.Open(indexDir, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +188,7 @@ func TestUpdateSameDocTwiceInSameBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 7, `one one one`)))
+	require.NoError(t, w.AddDocument(idField(7), docWithIDAndText(t, 7, `one one one`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
@@ -212,7 +224,7 @@ func TestUpdateSameDocThriceInSameBatch(t *testing.T) {
 	// time in the same batch.
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
+	db, err := pebble.Open(indexDir, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +234,7 @@ func TestUpdateSameDocThriceInSameBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 7, `one one one`)))
+	require.NoError(t, w.AddDocument(idField(7), docWithIDAndText(t, 7, `one one one`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
@@ -259,7 +271,7 @@ func TestUpdateSameDocThriceInSameBatch(t *testing.T) {
 func TestStoredVsUnstoredFields(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
+	db, err := pebble.Open(indexDir, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +300,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assert.NoError(t, w.AddDocument(doc))
+	assert.NoError(t, w.AddDocument(doc.Field("id"), doc))
 	require.NoError(t, w.Flush())
 
 	// docs should be searchable by stored fields
@@ -317,7 +329,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 func TestGetStoredDocument(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
+	db, err := pebble.Open(indexDir, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +356,7 @@ func TestGetStoredDocument(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assert.NoError(t, w.AddDocument(doc))
+	assert.NoError(t, w.AddDocument(doc.Field("id"), doc))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", docSchema)
@@ -358,7 +370,7 @@ func TestGetStoredDocument(t *testing.T) {
 func TestNamespaceSeparation(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
+	db, err := pebble.Open(indexDir, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,19 +379,19 @@ func TestNamespaceSeparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
+	require.NoError(t, w.AddDocument(idField(1), docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(idField(2), docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(idField(3), docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
 	w, err = NewWriter(db, "namespace-b")
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one oof`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two rab`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three zab`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 4, `four pab`)))
+	require.NoError(t, w.AddDocument(idField(1), docWithIDAndText(t, 1, `one oof`)))
+	require.NoError(t, w.AddDocument(idField(2), docWithIDAndText(t, 2, `two rab`)))
+	require.NoError(t, w.AddDocument(idField(3), docWithIDAndText(t, 3, `three zab`)))
+	require.NoError(t, w.AddDocument(idField(4), docWithIDAndText(t, 4, `four pab`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "namespace-a", testSchema)
@@ -404,7 +416,7 @@ func TestNamespaceSeparation(t *testing.T) {
 func TestSQuery(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
+	db, err := pebble.Open(indexDir, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,9 +425,9 @@ func TestSQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
-	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
+	require.NoError(t, w.AddDocument(idField(1), docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(idField(2), docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(idField(3), docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
@@ -450,7 +462,7 @@ func TestSQuery(t *testing.T) {
 func TestMetadataDocs(t *testing.T) {
 	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
+	db, err := pebble.Open(indexDir, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +506,7 @@ func printDB(t testing.TB, db *pebble.DB) {
 
 func TestDBFormat(t *testing.T) {
 	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
+	db, err := pebble.Open(indexDir, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,8 +542,8 @@ func TestDBFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(doc1))
-	require.NoError(t, w.AddDocument(doc2))
+	require.NoError(t, w.AddDocument(doc1.Field("id"), doc1))
+	require.NoError(t, w.AddDocument(doc2.Field("id"), doc2))
 	require.NoError(t, w.Flush())
 
 	// Re-add doc1 again.
