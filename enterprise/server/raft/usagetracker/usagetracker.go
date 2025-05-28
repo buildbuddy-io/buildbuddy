@@ -201,7 +201,6 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 	defer timer.Stop()
 
 	flush := func() {
-		log.Info("flush eviction")
 		if len(keys) == 0 {
 			return
 		}
