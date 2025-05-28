@@ -265,7 +265,7 @@ func CodesearchIncrementalUpdateAction(apiTarget *url.URL, repoURL, targetRepoDe
 		Triggers: &Triggers{
 			Push: &PushTrigger{Branches: pushTriggerBranches},
 		},
-		ContainerImage: `ubuntu-20.04`,
+		ContainerImage: `ubuntu-22.04`,
 		ResourceRequests: ResourceRequests{
 			CPU:    "2",
 			Memory: "4GB",
