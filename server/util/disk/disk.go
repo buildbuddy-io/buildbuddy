@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -101,6 +102,44 @@ func DeleteFile(ctx context.Context, fullPath string) error {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 	return os.Remove(fullPath)
+}
+
+// ChildMounts returns the mount points of all filesystems mounted under the
+// given path. It does not include the given path itself.
+func ChildMounts(ctx context.Context, path string) ([]string, error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer spn.End()
+
+	// TODO: implement for other platforms.
+	if runtime.GOOS != "linux" {
+		return nil, status.UnimplementedErrorf("not yet implemented for OS %q", runtime.GOOS)
+	}
+
+	// Use abs path so that we can use a prefix check to see if a mount point
+	// listed in /proc/self/mountinfo is a child of the given path.
+	prefix, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	prefix += string(os.PathSeparator)
+
+	b, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		return nil, err
+	}
+
+	var out []string
+	for line := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		mountPoint := fields[4]
+		if strings.HasPrefix(mountPoint, prefix) {
+			out = append(out, mountPoint)
+		}
+	}
+	return out, nil
 }
 
 // ForceRemove attempts to delete a directory using os.RemoveAll. If that fails,
