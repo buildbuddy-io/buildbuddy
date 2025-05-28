@@ -211,7 +211,7 @@ func (k *key) NGram() []byte {
 }
 
 func (w *Writer) storedFieldKey(docID uint64, field string) []byte {
-	return []byte(fmt.Sprintf("%s:doc:%d:%s", w.namespace, docID, field))
+	return fmt.Appendf(nil, "%s:doc:%d:%s", w.namespace, docID, field)
 }
 
 func (w *Writer) postingListKey(ngram string, field string) []byte {
@@ -220,14 +220,13 @@ func (w *Writer) postingListKey(ngram string, field string) []byte {
 }
 
 func postingListKey(namespace, ngram, field string) []byte {
-	return []byte(fmt.Sprintf("%s:gra:%s:%s", namespace, ngram, field))
+	return fmt.Appendf(nil, "%s:gra:%s:%s", namespace, ngram, field)
 }
 
 func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 	if matchField.Type() != types.KeywordField {
 		return 0, status.InternalError("match field must be of keyword type")
 	}
-	key := postingListKey(w.namespace, string(matchField.Contents()), matchField.Name())
 
 	var postingList posting.List
 	// First, check in the current batch
@@ -235,6 +234,7 @@ func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 		postingList = pl
 	} else {
 		// If not found, check in the index
+		key := postingListKey(w.namespace, string(matchField.Contents()), matchField.Name())
 		value, closer, err := w.db.Get(key)
 		if err != nil {
 			return 0, err
@@ -246,7 +246,6 @@ func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 			return 0, err
 		}
 	}
-
 	if postingList.GetCardinality() != 1 {
 		return 0, status.FailedPreconditionErrorf("Match field matches > 1 docs: %v", matchField)
 	}
@@ -268,6 +267,7 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 		return err
 	}
 	w.deletes.Add(docID)
+
 	return nil
 }
 
@@ -282,6 +282,7 @@ func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
 		}
 		return err
 	}
+
 	key := w.postingListKey(string(matchField.Contents()), matchField.Name())
 	// The key field needs to be explicitly deleted, unlike the other fields, otherwise the old docID
 	// will remain in the posting list for the id field
@@ -296,6 +297,105 @@ func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
 	}
 
 	return w.DeleteDocument(docId)
+}
+
+// DeleteMatchingDocuments deletes all documents which match the given matchField.
+// This can be used, for example, to delete all documents from a given repository,
+// by passing "repo:<repo_name>" as the matchField.
+func (w *Writer) DeleteMatchingDocuments(matchField types.Field) error {
+	if matchField.Type() != types.KeywordField {
+		return status.InternalError("match field must be of keyword type")
+	}
+	rv, closer, err := w.db.Get(w.postingListKey(string(matchField.Contents()), matchField.Name()))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			log.Infof("No documents matching %v found, nothing to drop", matchField)
+			return nil
+		} else {
+			return err
+		}
+	}
+	defer closer.Close()
+
+	delPl, err := posting.Unmarshal(rv)
+	if err != nil {
+		return err
+	}
+
+	for _, docID := range delPl.ToArray() {
+		if err := w.DeleteDocument(docID); err != nil {
+			return status.InternalErrorf("error deleting document %d: %v", docID, err)
+		}
+	}
+
+	log.Infof("Dropped %d documents", delPl.GetCardinality())
+	return nil
+}
+
+// DropNamespace deletes everything in a namespace.
+func (w *Writer) DropNamespace() error {
+	w.batch.RangeKeyDelete(fmt.Appendf(nil, "%s:", w.namespace), fmt.Appendf(nil, "%s:\xff", w.namespace), nil)
+	return nil
+}
+
+// CompactDeletes removes all orphaned docIds from posting lists.
+// When documents are deleted, their stored fields are removed, including their docID field,
+// but the docID remains in all the posting lists, and is removed at query time. Over time,
+// the deletes list can become very large, and overall index size and query performance can suffer.
+// Running CompactDeletes occasionally will remove these deleted docIds entirely from the index.
+func (w *Writer) CompactDeletes() error {
+	log.Infof("Compacting deletes for namespace %q", w.namespace)
+
+	delBytes, closer, err := w.db.Get(w.postingListKey(types.DeletesField, types.DeletesField))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			log.Infof("Nothing to compact for namespace %q", w.namespace)
+			return nil // nothing to compact
+		} else {
+			return err
+		}
+	}
+	defer closer.Close()
+	delPl, err := posting.Unmarshal(delBytes)
+	if err != nil {
+		return err
+	}
+
+	iter, err := w.db.NewIter(&pebble.IterOptions{
+		LowerBound: fmt.Appendf(nil, "%s:gra:", w.namespace),
+		UpperBound: fmt.Appendf(nil, "%s:gra:\xff", w.namespace),
+	})
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+
+	changeCount := 0
+	delCount := 0
+	for iter.First(); iter.Valid(); iter.Next() {
+		pl, err := posting.Unmarshal(iter.Value())
+		if err != nil {
+			return err
+		}
+		beforeCard := pl.GetCardinality()
+		pl.AndNot(delPl)
+
+		if pl.GetCardinality() == 0 {
+			w.batch.Delete(iter.Key(), nil)
+			delCount++
+		} else if pl.GetCardinality() != beforeCard {
+			w.updatePostingList(iter.Key(), pl, w.batch.SetDeferred)
+			changeCount++
+		} // else unchanged, do nothing
+	}
+
+	err = w.batch.Delete(w.postingListKey(types.DeletesField, types.DeletesField), nil)
+	if err != nil {
+		return err
+	}
+
+	log.Infof("Finished compacting deletes for namespace %q, updated %d keys, deleted %d keys", w.namespace, changeCount, delCount)
+	return nil
 }
 
 // Updates an existing document, or adds it if it doesn't exist. Document identity is determined
@@ -322,6 +422,7 @@ func (w *Writer) AddDocument(doc types.Document) error {
 
 	for _, fieldName := range doc.Fields() {
 		field := doc.Field(fieldName)
+
 		if _, ok := w.fieldPostingLists[field.Name()]; !ok {
 			w.fieldPostingLists[field.Name()] = make(postingLists, 0)
 		}
@@ -369,31 +470,38 @@ func (w *Writer) flushBatch() error {
 	return nil
 }
 
+func (w *Writer) updatePostingList(key []byte, pl posting.List, deferOp func(int, int) *pebble.DeferredBatchOp) error {
+	valueLength := posting.GetSerializedSizeInBytes(pl)
+	keyLength := len(key)
+
+	op := deferOp(keyLength, valueLength)
+	copy(op.Key, key)
+	if err := posting.MarshalInto(pl, op.Value[:0]); err != nil {
+		return err
+	}
+	if err := op.Finish(); err != nil {
+		return err
+	}
+	if w.batch.Len() >= batchFlushSizeBytes {
+		if err := w.flushBatch(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (w *Writer) Flush() error {
 	mu := sync.Mutex{}
 	eg := new(errgroup.Group)
 	eg.SetLimit(runtime.GOMAXPROCS(0))
 	writePLs := func(key []byte, pl posting.List) error {
-		valueLength := posting.GetSerializedSizeInBytes(pl)
-		keyLength := len(key)
-
 		mu.Lock()
 		defer mu.Unlock()
-		op := w.batch.MergeDeferred(keyLength, valueLength)
-		copy(op.Key, key)
-		if err := posting.MarshalInto(pl, op.Value[:0]); err != nil {
-			return err
-		}
-		if err := op.Finish(); err != nil {
-			return err
-		}
-		if w.batch.Len() >= batchFlushSizeBytes {
-			if err := w.flushBatch(); err != nil {
-				return err
-			}
-		}
+		w.updatePostingList(key, pl, w.batch.MergeDeferred)
 		return nil
 	}
+
 	fieldNames := slices.Sorted(maps.Keys(w.fieldPostingLists))
 	for _, fieldName := range fieldNames {
 		postingLists := w.fieldPostingLists[fieldName]
@@ -440,13 +548,13 @@ func NewReader(ctx context.Context, db pebble.Reader, namespace string, schema t
 }
 
 func (r *Reader) storedFieldKey(docID uint64, field string) []byte {
-	return []byte(fmt.Sprintf("%s:doc:%d:%s", r.namespace, docID, field))
+	return fmt.Appendf(nil, "%s:doc:%d:%s", r.namespace, docID, field)
 }
 
 func (r *Reader) allDocIDs() (posting.FieldMap, error) {
 	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: r.storedFieldKey(0, types.DocIDField),
-		UpperBound: []byte(fmt.Sprintf("%s:doc:\xff", r.namespace)),
+		UpperBound: fmt.Appendf(nil, "%s:doc:\xff", r.namespace),
 	})
 	if err != nil {
 		return nil, err
@@ -558,7 +666,7 @@ func (r *Reader) GetStoredDocument(docID uint64) types.Document {
 // If `restrict` is set to a non-empty value, matches will only be returned if
 // they are both found and also are present in the restrict set.
 func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field string) (posting.FieldMap, error) {
-	minKey := []byte(fmt.Sprintf("%s:gra:%s:%s", r.namespace, ngram, field))
+	minKey := fmt.Appendf(nil, "%s:gra:%s:%s", r.namespace, ngram, field)
 	maxKey := append(minKey, byte('\xff'))
 	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: minKey,

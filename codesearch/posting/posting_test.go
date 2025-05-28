@@ -49,6 +49,21 @@ func TestAnd(t *testing.T) {
 	assert.Equal(t, []uint64{3}, pl.ToArray())
 }
 
+func TestAndNot(t *testing.T) {
+	pl := posting.NewList()
+	pl.Add(1)
+	pl.Add(2)
+	pl.Add(3)
+
+	pl2 := posting.NewList()
+	pl2.Add(3)
+	pl2.Add(4)
+	pl2.Add(5)
+
+	pl.AndNot(pl2)
+	assert.Equal(t, []uint64{1, 2}, pl.ToArray())
+}
+
 func TestRemove(t *testing.T) {
 	pl := posting.NewList()
 	pl.Add(1)
