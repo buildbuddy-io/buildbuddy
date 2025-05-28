@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"maps"
-	"runtime"
 	"slices"
 	"strconv"
 	"sync"
@@ -20,7 +19,6 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/xiam/s-expr/ast"
 	"github.com/xiam/s-expr/parser"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -32,8 +30,6 @@ const (
 	generationKey       = "__generation__"
 )
 
-type postingLists map[string]posting.List
-
 // Writer is not thread-safe. A single instance should not be used concurrently.
 // Multiple instances can be used concurrently without crashing, however CRUD operations are
 // not atomic, so index corruption can occur if multiple writers are used to modify the same
@@ -42,13 +38,14 @@ type Writer struct {
 	db  *pebble.DB
 	log log.Logger
 
-	generation        uint32
-	docIndex          uint32
-	namespace         string
-	fieldPostingLists map[string]postingLists
-	deletes           posting.List
-	batch             *pebble.Batch
-	tokenizers        map[string]types.Tokenizer
+	generation uint32
+	docIndex   uint32
+	namespace  string
+	//fieldPostingLists map[string]postingLists
+	batchDocIds map[string]map[string]uint64
+	deletes     posting.List
+	batch       *pebble.Batch
+	tokenizers  map[string]types.Tokenizer
 }
 
 func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
@@ -59,15 +56,16 @@ func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
 	subLog := log.NamedSubLogger(fmt.Sprintf("writer:%s (generation %d)", namespace, generation))
 
 	return &Writer{
-		db:                db,
-		log:               subLog,
-		generation:        generation,
-		docIndex:          0,
-		namespace:         namespace,
-		fieldPostingLists: make(map[string]postingLists),
-		deletes:           posting.NewList(),
-		batch:             db.NewBatch(),
-		tokenizers:        make(map[string]types.Tokenizer),
+		db:         db,
+		log:        subLog,
+		generation: generation,
+		docIndex:   0,
+		namespace:  namespace,
+		//fieldPostingLists: make(map[string]postingLists),
+		batchDocIds: make(map[string]map[string]uint64),
+		deletes:     posting.NewList(),
+		batch:       db.NewBatch(),
+		tokenizers:  make(map[string]types.Tokenizer),
 	}, nil
 }
 
@@ -241,16 +239,43 @@ func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 		}
 		defer closer.Close()
 
-		postingList, err = posting.Unmarshal(value)
-		if err != nil {
-			return 0, err
-		}
+	value, closer, err := w.db.Get(key)
+	if err != nil {
+		return 0, err
+	}
+	defer closer.Close()
+
+	postingList, err = posting.Unmarshal(value)
+	if err != nil {
+		return 0, err
 	}
 	if postingList.GetCardinality() != 1 {
 		return 0, status.FailedPreconditionErrorf("Match field matches > 1 docs: %v", matchField)
 	}
 	return postingList.ToArray()[0], nil
 }
+
+func (w *Writer) DropNamespace() error {
+	w.batch.RangeKeyDelete([]byte(fmt.Sprintf("%s:", w.namespace)), []byte(fmt.Sprintf("%s:\xff", w.namespace)), nil)
+	return nil
+}
+
+/*
+func CompactDeletes(r *Reader, w *Writer) error {
+	fm, err := r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
+	if err != nil {
+		return err
+	}
+	pl := fm.ToPosting()
+	if pl.GetCardinality() == 0 {
+		return nil
+	}
+
+	for _, docID := range pl.ToArray() {
+		results.Remove(docID)
+	}
+}
+*/
 
 // Deletes the document with the given docID.
 func (w *Writer) DeleteDocument(docID uint64) error {
@@ -288,12 +313,9 @@ func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
 	// will remain in the posting list for the id field
 	w.batch.Delete(key, nil)
 
-	// The key field must also be removed from any pending updates, in case this document was
-	// already added previously in this batch.
-	if fpl, ok := w.fieldPostingLists[matchField.Name()]; ok {
-		if pl, ok := fpl[string(matchField.Contents())]; ok {
-			pl.Remove(docId)
-		}
+	// If this doc was added within this batch, remove it from the mapping of docIds
+	if mfm, ok := w.batchDocIds[matchField.Name()]; ok {
+		delete(mfm, string(matchField.Contents()))
 	}
 
 	return w.DeleteDocument(docId)
@@ -409,16 +431,37 @@ func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) e
 		return err
 	}
 
-	return w.AddDocument(newDoc)
+	return w.AddDocument(matchField, newDoc)
 }
 
-func (w *Writer) AddDocument(doc types.Document) error {
+func (w *Writer) recordDocId(matchField types.Field, docID uint64) {
+	if _, ok := w.batchDocIds[matchField.Name()]; !ok {
+		w.batchDocIds[matchField.Name()] = make(map[string]uint64)
+	}
+	w.batchDocIds[matchField.Name()][string(matchField.Contents())] = docID
+}
+
+func (w *Writer) addDocIdToBatch(key []byte, docID uint64) error {
+	op := w.batch.MergeDeferred(len(key), 8 /* sizeof(uint64) */)
+	copy(op.Key, key)
+	binary.LittleEndian.PutUint64(op.Value, docID)
+	if err := op.Finish(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// TODO(jdelfino): bake the matchfield into the document schema. if we want to support
+// updates we need a primary key.
+func (w *Writer) AddDocument(matchField types.Field, doc types.Document) error {
 	w.docIndex++
 
 	// **Always store DocID.**
 	docID := uint64(w.generation)<<32 | uint64(w.docIndex)
 	idKey := w.storedFieldKey(docID, types.DocIDField)
 	w.batch.Set(idKey, Uint64ToBytes(docID), nil)
+
+	w.recordDocId(matchField, docID)
 
 	for _, fieldName := range doc.Fields() {
 		field := doc.Field(fieldName)
@@ -438,10 +481,8 @@ func (w *Writer) AddDocument(doc types.Document) error {
 
 		for tokenizer.Next() == nil {
 			ngram := string(tokenizer.Ngram())
-			if _, ok := postingLists[ngram]; !ok {
-				postingLists[ngram] = posting.NewList()
-			}
-			postingLists[ngram].Add(docID)
+			key := w.postingListKey(ngram, fieldName)
+			w.addDocIdToBatch(key, docID)
 		}
 
 		if field.Schema().Stored() {
@@ -450,14 +491,16 @@ func (w *Writer) AddDocument(doc types.Document) error {
 		}
 	}
 	if w.batch.Len() >= batchFlushSizeBytes {
-		if err := w.flushBatch(); err != nil {
+		if err := w.Flush(); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (w *Writer) flushBatch() error {
+func (w *Writer) Flush() error {
+	w.batchDocIds = make(map[string]map[string]uint64)
+
 	if w.batch.Empty() {
 		return nil
 	}
