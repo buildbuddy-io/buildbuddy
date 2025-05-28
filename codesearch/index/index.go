@@ -332,37 +332,7 @@ func (w *Writer) DeleteMatchingDocuments(matchField types.Field) error {
 
 // DropNamespace deletes everything in a namespace.
 func (w *Writer) DropNamespace() error {
-	w.batch.DeleteRange(fmt.Appendf(nil, "%s:", w.namespace), fmt.Appendf(nil, "%s:\xff", w.namespace), nil)
-	return nil
-}
-
-func (w *Writer) DeleteMatchingDocuments(matchField types.Field) error {
-	if matchField.Type() != types.KeywordField {
-		return status.InternalError("match field must be of keyword type")
-	}
-	rv, closer, err := w.db.Get(w.postingListKey(string(matchField.Contents()), matchField.Name()))
-	if err != nil {
-		if err == pebble.ErrNotFound {
-			log.Infof("No documents matching %v found, nothing to drop", matchField)
-			return nil
-		} else {
-			return err
-		}
-	}
-	defer closer.Close()
-
-	delPl, err := posting.Unmarshal(rv)
-	if err != nil {
-		return err
-	}
-
-	for _, docID := range delPl.ToArray() {
-		if err := w.DeleteDocument(docID); err != nil {
-			return status.InternalErrorf("error deleting document %d: %v", docID, err)
-		}
-	}
-
-	log.Infof("Dropped %d documents", delPl.GetCardinality())
+	w.batch.RangeKeyDelete(fmt.Appendf(nil, "%s:", w.namespace), fmt.Appendf(nil, "%s:\xff", w.namespace), nil)
 	return nil
 }
 
@@ -440,8 +410,6 @@ func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) e
 	return w.AddDocument(newDoc)
 }
 
-// TODO(jdelfino): bake the matchfield into the document schema. if we want to support
-// updates we need a primary key.
 func (w *Writer) AddDocument(doc types.Document) error {
 	w.docIndex++
 
