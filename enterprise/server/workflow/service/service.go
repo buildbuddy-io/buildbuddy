@@ -601,18 +601,20 @@ func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, re
 	return err
 }
 
-func (ws *workflowService) addKytheActionIfEnabled(ctx context.Context, c *config.BuildBuddyConfig, workflow *tables.Workflow, wd *interfaces.WebhookData) error {
-	enableKythe, err := ws.enableExtraKytheIndexingAction(ctx, workflow.GroupID)
+func (ws *workflowService) addCodesearchActionsIfEnabled(ctx context.Context, c *config.BuildBuddyConfig, workflow *tables.Workflow, wd *interfaces.WebhookData) error {
+
+	enableCS, err := ws.isCodesearchIndexingEnabled(ctx, workflow.GroupID)
 	if err != nil {
 		return err
 	}
-	if enableKythe {
+	if enableCS {
+		c.Actions = append(c.Actions, config.CodesearchIncrementalUpdateAction(build_buddy_url.WithPath(""), workflow.RepoURL, wd.TargetRepoDefaultBranch))
 		c.Actions = append(c.Actions, config.KytheIndexingAction(wd.TargetRepoDefaultBranch))
 	}
 	return nil
 }
 
-func (ws *workflowService) enableExtraKytheIndexingAction(ctx context.Context, groupID string) (bool, error) {
+func (ws *workflowService) isCodesearchIndexingEnabled(ctx context.Context, groupID string) (bool, error) {
 	if !*enableKytheIndexing {
 		return false, nil
 	}
@@ -1299,7 +1301,7 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 		}
 	}
 
-	if err := ws.addKytheActionIfEnabled(ctx, c, workflow, webhookData); err != nil {
+	if err := ws.addCodesearchActionsIfEnabled(ctx, c, workflow, webhookData); err != nil {
 		return nil, err
 	}
 	return c, nil

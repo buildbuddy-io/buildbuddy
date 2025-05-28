@@ -46,9 +46,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	gh_webhooks "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
-	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
-	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	gh_oauth "github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -542,47 +540,8 @@ func (a *GitHubApp) maybeTriggerBuildBuddyWorkflow(ctx context.Context, eventTyp
 	if err != nil {
 		return err
 	}
-	if err := a.MaybeReindexRepo(ctx, row.GitRepository, wd, repoURL, tok.GetToken()); err != nil {
-		log.Debugf("Not indexing repo: %s", err)
-	}
 	return a.env.GetWorkflowService().HandleRepositoryEvent(
 		ctx, row.GitRepository, wd, tok.GetToken())
-}
-
-func (a *GitHubApp) MaybeReindexRepo(ctx context.Context, repo *tables.GitRepository, wd *interfaces.WebhookData, repoURL *gitutil.RepoURL, accessToken string) error {
-	codesearchService := a.env.GetCodesearchService()
-	if codesearchService == nil {
-		return nil
-	}
-	if wd.EventName != webhook_data.EventName.Push || wd.PushedBranch != wd.TargetRepoDefaultBranch {
-		return nil
-	}
-	g, err := a.env.GetUserDB().GetGroupByID(ctx, repo.GroupID)
-	if err != nil {
-		return err
-	}
-	if !g.CodeSearchEnabled {
-		return nil
-	}
-
-	key, err := a.env.GetAuthDB().GetAPIKeyForInternalUseOnly(ctx, repo.GroupID)
-	if err != nil {
-		return err
-	}
-	ctx = a.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
-	_, err = codesearchService.Index(ctx, &csinpb.IndexRequest{
-		GitRepo: &gitpb.GitRepo{
-			RepoUrl:     repoURL.String(),
-			AccessToken: accessToken,
-			Username:    repoURL.Owner,
-		},
-		RepoState: &gitpb.RepoState{
-			CommitSha: wd.SHA,
-			Branch:    wd.PushedBranch,
-		},
-		Async: true, // don't wait for an answer.
-	})
-	return err
 }
 
 func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error) {
