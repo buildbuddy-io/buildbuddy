@@ -277,7 +277,11 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 
 	if useCache {
-		desc := &cachingDescriptor{Descriptor: remoteDesc}
+		desc := &cachingDescriptor{
+			Descriptor: remoteDesc,
+			acClient:   r.env.GetActionCacheClient(),
+			ctx:        ctx,
+		}
 		img, err := desc.Image()
 		if err != nil {
 			return nil, status.UnknownErrorf("could not get image from caching descriptor: %s", err)
@@ -386,6 +390,7 @@ type cachingDescriptor struct {
 
 	repository gcrname.Repository
 	acClient   repb.ActionCacheClient
+	ctx        context.Context
 }
 
 func (d *cachingDescriptor) Image() (gcr.Image, error) {
@@ -397,6 +402,7 @@ func (d *cachingDescriptor) Image() (gcr.Image, error) {
 		Image:      remoteImage,
 		repository: d.repository,
 		acClient:   d.acClient,
+		ctx:        d.ctx,
 	}, nil
 }
 
@@ -405,6 +411,7 @@ type cachingImage struct {
 
 	repository gcrname.Repository
 	acClient   repb.ActionCacheClient
+	ctx        context.Context
 
 	cachedManifest    *gcr.Manifest
 	cachedRawManifest []byte
@@ -483,7 +490,7 @@ func (i *cachingImage) RawManifest() ([]byte, error) {
 				log.Warningf("Could not fetch digest for manifest: %s", err)
 				return remoteRawManifest, nil
 			}
-			err = ocicache.WriteManifestToAC(context.TODO(), remoteRawManifest, i.acClient, i.repository, digest, string(mediaType))
+			err = ocicache.WriteManifestToAC(i.ctx, remoteRawManifest, i.acClient, i.repository, digest, string(mediaType))
 			if err != nil {
 				log.Warningf("Could not write manifest to the cache: %s", err)
 				return remoteRawManifest, nil
