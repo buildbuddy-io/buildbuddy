@@ -486,6 +486,64 @@ func TestMetadataDocs(t *testing.T) {
 	assert.Equal(t, commitSHA, string(readDoc.Field(schema.LatestSHAField).Contents()))
 }
 
+func TestCompactDeletes(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	w, err := NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+
+	doc := docWithIDAndText(t, 8, `one`)
+	require.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	printDB(t, db)
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	delList, err := r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(0), delList.GetCardinality())
+
+	w, err = NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.UpdateDocument(doc.Field("id"), doc))
+	require.NoError(t, w.Flush())
+
+	printDB(t, db)
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	delList, err = r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), delList.GetCardinality())
+	assert.Equal(t, []uint64{1}, delList.ToPosting().ToArray())
+
+	oneList, err := r.postingList([]byte("one"), posting.NewFieldMap(), "text")
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1, (1<<32 | 1)}, oneList.ToPosting().ToArray())
+
+	printDB(t, db)
+
+	w, err = NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.CompactDeletes())
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	delList, err = r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{}, delList.ToPosting().ToArray())
+
+	oneList, err = r.postingList([]byte("one"), posting.NewFieldMap(), "text")
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1<<32 | 1}, oneList.ToPosting().ToArray())
+	printDB(t, db)
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},

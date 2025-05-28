@@ -13,6 +13,7 @@ import (
 type List interface {
 	Or(List)
 	And(List)
+	AndNot(List)
 	Add(uint64)
 	Remove(uint64)
 	GetCardinality() uint64
@@ -37,6 +38,15 @@ func (w *roaringWrapper) And(l List) {
 		panic("not roaringWrapper")
 	}
 	w.Bitmap.And(bm.Bitmap)
+}
+
+// AndNot is the same as set difference, equivalent to w - l
+func (w *roaringWrapper) AndNot(l List) {
+	bm, ok := l.(*roaringWrapper)
+	if !ok {
+		panic("not roaringWrapper")
+	}
+	w.Bitmap.AndNot(bm.Bitmap)
 }
 
 func NewList(ids ...uint64) List {

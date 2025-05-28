@@ -49,7 +49,7 @@ func lastIndexedDocKey(repoURL *git.RepoURL) []byte {
 
 func makeFileId(repoURL *git.RepoURL, name string) []byte {
 	uniqueID := xxhash.Sum64String(repoURL.Owner + repoURL.Repo + name)
-	idBytes := []byte(fmt.Sprintf("%d", uniqueID))
+	idBytes := fmt.Appendf(nil, "%d", uniqueID)
 	return idBytes
 }
 
@@ -73,7 +73,6 @@ func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filename string, fileContent []byte) error {
 	err := validateFile(fileContent)
 	if err != nil {
-		log.Infof("File %s can't be indexed, skipping: %v", filename, err)
 		return err
 	}
 
