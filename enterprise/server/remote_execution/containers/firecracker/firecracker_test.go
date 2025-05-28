@@ -1602,6 +1602,7 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 	}
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
+	require.NoError(t, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage))
 	err = c.Create(ctx, opts.ActionWorkingDirectory)
 	require.NoError(t, err)
 	t.Cleanup(func() {
