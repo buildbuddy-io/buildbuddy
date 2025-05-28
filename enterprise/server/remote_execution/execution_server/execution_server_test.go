@@ -673,6 +673,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		SelfHosted:                   test.expectedSelfHosted,
 		Region:                       "test-region",
 		CommandSnippet:               "test",
+		Os:                           "linux",
 		QueuedTimestampUsec:          queuedTime.UnixMicro(),
 		WorkerStartTimestampUsec:     workerStartTime.UnixMicro(),
 		WorkerCompletedTimestampUsec: workerEndTime.UnixMicro(),
