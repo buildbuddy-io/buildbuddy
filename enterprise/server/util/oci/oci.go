@@ -267,7 +267,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 
 	if *writeManifestsToCache {
 		contentType := string(remoteDesc.MediaType)
-		err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, r.env.GetActionCacheClient(), imageRef, remoteDesc.Digest, contentType)
+		err := ocicache.WriteManifestToAC(ctx, remoteDesc.Manifest, r.env.GetActionCacheClient(), imageRef.Context(), remoteDesc.Digest, contentType)
 		if err != nil {
 			log.CtxWarningf(ctx, "Could not write manifest for %q to the cache: %s", imageRef.Context(), err)
 		}
