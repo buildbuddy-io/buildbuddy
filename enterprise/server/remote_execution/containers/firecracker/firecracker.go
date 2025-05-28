@@ -1914,7 +1914,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return status.UnavailableErrorf("container image is unavailable: %s", err)
 	}
 	if imageExt4Path == "" {
-		return status.UnavailableErrorf("container image not found ")
+		return status.UnavailableErrorf("container image not found: %s", c.containerImage)
 	}
 	if err := os.Link(imageExt4Path, containerFSPath); err != nil {
 		return err
