@@ -39,10 +39,6 @@ func newTestDocument(t *testing.T, fieldMap map[string][]byte) types.Document {
 	return doc
 }
 
-func idField(id uint64) types.Field {
-	return testSchema.Field("id").MakeField([]byte(fmt.Sprintf("%d", id)))
-}
-
 func docWithID(t *testing.T, id uint64) types.Document {
 	return newTestDocument(
 		t,
@@ -130,9 +126,9 @@ func TestIncrementalIndexing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(idField(1), docWithIDAndText(t, 1, `one foo`)))
-	require.NoError(t, w.AddDocument(idField(2), docWithIDAndText(t, 2, `two bar`)))
-	require.NoError(t, w.AddDocument(idField(3), docWithIDAndText(t, 3, `three baz`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
@@ -148,8 +144,8 @@ func TestIncrementalIndexing(t *testing.T) {
 	}
 	doc1 := docWithIDAndText(t, 1, `one one one`)
 	require.NoError(t, w.UpdateDocument(doc1.Field("id"), doc1))
-	require.NoError(t, w.AddDocument(idField(4), docWithIDAndText(t, 4, `four bap`)))
-	require.NoError(t, w.AddDocument(idField(5), docWithIDAndText(t, 5, `one zip`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 4, `four bap`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 5, `one zip`)))
 	require.NoError(t, w.Flush())
 
 	r = NewReader(ctx, db, "testing-namespace", testSchema)
@@ -188,7 +184,7 @@ func TestUpdateSameDocTwiceInSameBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(idField(7), docWithIDAndText(t, 7, `one one one`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 7, `one one one`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
@@ -234,7 +230,7 @@ func TestUpdateSameDocThriceInSameBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(idField(7), docWithIDAndText(t, 7, `one one one`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 7, `one one one`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
@@ -300,7 +296,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assert.NoError(t, w.AddDocument(doc.Field("id"), doc))
+	assert.NoError(t, w.AddDocument(doc))
 	require.NoError(t, w.Flush())
 
 	// docs should be searchable by stored fields
@@ -356,7 +352,7 @@ func TestGetStoredDocument(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assert.NoError(t, w.AddDocument(doc.Field("id"), doc))
+	assert.NoError(t, w.AddDocument(doc))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", docSchema)
@@ -379,19 +375,19 @@ func TestNamespaceSeparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(idField(1), docWithIDAndText(t, 1, `one foo`)))
-	require.NoError(t, w.AddDocument(idField(2), docWithIDAndText(t, 2, `two bar`)))
-	require.NoError(t, w.AddDocument(idField(3), docWithIDAndText(t, 3, `three baz`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
 	w, err = NewWriter(db, "namespace-b")
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(idField(1), docWithIDAndText(t, 1, `one oof`)))
-	require.NoError(t, w.AddDocument(idField(2), docWithIDAndText(t, 2, `two rab`)))
-	require.NoError(t, w.AddDocument(idField(3), docWithIDAndText(t, 3, `three zab`)))
-	require.NoError(t, w.AddDocument(idField(4), docWithIDAndText(t, 4, `four pab`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one oof`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two rab`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three zab`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 4, `four pab`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "namespace-a", testSchema)
@@ -425,9 +421,9 @@ func TestSQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(idField(1), docWithIDAndText(t, 1, `one foo`)))
-	require.NoError(t, w.AddDocument(idField(2), docWithIDAndText(t, 2, `two bar`)))
-	require.NoError(t, w.AddDocument(idField(3), docWithIDAndText(t, 3, `three baz`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
 	require.NoError(t, w.Flush())
 
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
@@ -701,8 +697,8 @@ func TestDBFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(doc1.Field("id"), doc1))
-	require.NoError(t, w.AddDocument(doc2.Field("id"), doc2))
+	require.NoError(t, w.AddDocument(doc1))
+	require.NoError(t, w.AddDocument(doc2))
 	require.NoError(t, w.Flush())
 
 	// Re-add doc1 again.
