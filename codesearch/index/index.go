@@ -30,6 +30,8 @@ const (
 	generationKey       = "__generation__"
 )
 
+type postingLists map[string]posting.List
+
 // Writer is not thread-safe. A single instance should not be used concurrently.
 // Multiple instances can be used concurrently without crashing, however CRUD operations are
 // not atomic, so index corruption can occur if multiple writers are used to modify the same
@@ -38,14 +40,13 @@ type Writer struct {
 	db  *pebble.DB
 	log log.Logger
 
-	generation uint32
-	docIndex   uint32
-	namespace  string
-	//fieldPostingLists map[string]postingLists
-	batchDocIds map[string]map[string]uint64
-	deletes     posting.List
-	batch       *pebble.Batch
-	tokenizers  map[string]types.Tokenizer
+	generation        uint32
+	docIndex          uint32
+	namespace         string
+	fieldPostingLists map[string]postingLists
+	deletes           posting.List
+	batch             *pebble.Batch
+	tokenizers        map[string]types.Tokenizer
 }
 
 func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
@@ -56,16 +57,15 @@ func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
 	subLog := log.NamedSubLogger(fmt.Sprintf("writer:%s (generation %d)", namespace, generation))
 
 	return &Writer{
-		db:         db,
-		log:        subLog,
-		generation: generation,
-		docIndex:   0,
-		namespace:  namespace,
-		//fieldPostingLists: make(map[string]postingLists),
-		batchDocIds: make(map[string]map[string]uint64),
-		deletes:     posting.NewList(),
-		batch:       db.NewBatch(),
-		tokenizers:  make(map[string]types.Tokenizer),
+		db:                db,
+		log:               subLog,
+		generation:        generation,
+		docIndex:          0,
+		namespace:         namespace,
+		fieldPostingLists: make(map[string]postingLists),
+		deletes:           posting.NewList(),
+		batch:             db.NewBatch(),
+		tokenizers:        make(map[string]types.Tokenizer),
 	}, nil
 }
 
@@ -226,27 +226,24 @@ func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 		return 0, status.InternalError("match field must be of keyword type")
 	}
 
-	if mfm, ok := w.batchDocIds[matchField.Name()]; ok {
-		if docID, ok := mfm[string(matchField.Contents())]; ok {
-			return docID, nil
+	var postingList posting.List
+	// First, check in the current batch
+	if pl, ok := w.fieldPostingLists[matchField.Name()][string(matchField.Contents())]; ok {
+		postingList = pl
+	} else {
+		// If not found, check in the index
+		key := postingListKey(w.namespace, string(matchField.Contents()), matchField.Name())
+		value, closer, err := w.db.Get(key)
+		if err != nil {
+			return 0, err
+		}
+		defer closer.Close()
+
+		postingList, err = posting.Unmarshal(value)
+		if err != nil {
+			return 0, err
 		}
 	}
-
-	key := postingListKey(w.namespace, string(matchField.Contents()), matchField.Name())
-
-	var postingList posting.List
-
-	value, closer, err := w.db.Get(key)
-	if err != nil {
-		return 0, err
-	}
-	defer closer.Close()
-
-	postingList, err = posting.Unmarshal(value)
-	if err != nil {
-		return 0, err
-	}
-
 	if postingList.GetCardinality() != 1 {
 		return 0, status.FailedPreconditionErrorf("Match field matches > 1 docs: %v", matchField)
 	}
@@ -289,8 +286,7 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 	if err := w.batch.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {
 		return err
 	}
-	delKey := w.postingListKey(types.DeletesField, types.DeletesField)
-	w.addDocIdToBatch(delKey, docID)
+	w.deletes.Add(docID)
 
 	return nil
 }
@@ -312,9 +308,12 @@ func (w *Writer) DeleteDocumentByMatchField(matchField types.Field) error {
 	// will remain in the posting list for the id field
 	w.batch.Delete(key, nil)
 
-	// If this doc was added within this batch, remove it from the mapping of docIds
-	if mfm, ok := w.batchDocIds[matchField.Name()]; ok {
-		delete(mfm, string(matchField.Contents()))
+	// The key field must also be removed from any pending updates, in case this document was
+	// already added previously in this batch.
+	if fpl, ok := w.fieldPostingLists[matchField.Name()]; ok {
+		if pl, ok := fpl[string(matchField.Contents())]; ok {
+			pl.Remove(docId)
+		}
 	}
 
 	return w.DeleteDocument(docId)
@@ -331,29 +330,12 @@ func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) e
 		return err
 	}
 
-	return w.AddDocument(matchField, newDoc)
-}
-
-func (w *Writer) recordDocId(matchField types.Field, docID uint64) {
-	if _, ok := w.batchDocIds[matchField.Name()]; !ok {
-		w.batchDocIds[matchField.Name()] = make(map[string]uint64)
-	}
-	w.batchDocIds[matchField.Name()][string(matchField.Contents())] = docID
-}
-
-func (w *Writer) addDocIdToBatch(key []byte, docID uint64) error {
-	op := w.batch.MergeDeferred(len(key), 8 /* sizeof(uint64) */)
-	copy(op.Key, key)
-	binary.LittleEndian.PutUint64(op.Value, docID)
-	if err := op.Finish(); err != nil {
-		return err
-	}
-	return nil
+	return w.AddDocument(newDoc)
 }
 
 // TODO(jdelfino): bake the matchfield into the document schema. if we want to support
 // updates we need a primary key.
-func (w *Writer) AddDocument(matchField types.Field, doc types.Document) error {
+func (w *Writer) AddDocument(doc types.Document) error {
 	w.docIndex++
 
 	// **Always store DocID.**
@@ -361,10 +343,13 @@ func (w *Writer) AddDocument(matchField types.Field, doc types.Document) error {
 	idKey := w.storedFieldKey(docID, types.DocIDField)
 	w.batch.Set(idKey, Uint64ToBytes(docID), nil)
 
-	w.recordDocId(matchField, docID)
-
 	for _, fieldName := range doc.Fields() {
 		field := doc.Field(fieldName)
+
+		if _, ok := w.fieldPostingLists[field.Name()]; !ok {
+			w.fieldPostingLists[field.Name()] = make(postingLists, 0)
+		}
+		postingLists := w.fieldPostingLists[field.Name()]
 
 		// Tokenizers are not thread-safe, so the writer must create its own instances.
 		if _, ok := w.tokenizers[field.Name()]; !ok {
@@ -376,8 +361,10 @@ func (w *Writer) AddDocument(matchField types.Field, doc types.Document) error {
 
 		for tokenizer.Next() == nil {
 			ngram := string(tokenizer.Ngram())
-			key := w.postingListKey(ngram, fieldName)
-			w.addDocIdToBatch(key, docID)
+			if _, ok := postingLists[ngram]; !ok {
+				postingLists[ngram] = posting.NewList()
+			}
+			postingLists[ngram].Add(docID)
 		}
 
 		if field.Schema().Stored() {
@@ -386,16 +373,14 @@ func (w *Writer) AddDocument(matchField types.Field, doc types.Document) error {
 		}
 	}
 	if w.batch.Len() >= batchFlushSizeBytes {
-		if err := w.Flush(); err != nil {
+		if err := w.flushBatch(); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (w *Writer) Flush() error {
-	w.batchDocIds = make(map[string]map[string]uint64)
-
+func (w *Writer) flushBatch() error {
 	if w.batch.Empty() {
 		return nil
 	}
@@ -406,6 +391,50 @@ func (w *Writer) Flush() error {
 	w.log.Debugf("flushed batch")
 	w.batch = w.db.NewBatch()
 	return nil
+}
+
+func (w *Writer) Flush() error {
+	writePLs := func(key []byte, pl posting.List) error {
+		valueLength := posting.GetSerializedSizeInBytes(pl)
+		keyLength := len(key)
+
+		op := w.batch.MergeDeferred(keyLength, valueLength)
+		copy(op.Key, key)
+		if err := posting.MarshalInto(pl, op.Value[:0]); err != nil {
+			return err
+		}
+		if err := op.Finish(); err != nil {
+			return err
+		}
+		if w.batch.Len() >= batchFlushSizeBytes {
+			if err := w.flushBatch(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	fieldNames := slices.Sorted(maps.Keys(w.fieldPostingLists))
+	for _, fieldName := range fieldNames {
+		postingLists := w.fieldPostingLists[fieldName]
+		log.Printf("field: %q had %d ngrams", fieldName, len(postingLists))
+		for ngram, docIDs := range postingLists {
+			ngram := ngram
+			fieldName := fieldName
+			docIDs := docIDs
+			err := writePLs(w.postingListKey(ngram, fieldName), docIDs)
+			if err != nil {
+				log.Errorf("error writing posting list for ngram %q, field %q: %v", ngram, fieldName, err)
+			}
+		}
+	}
+	if w.deletes.GetCardinality() > 0 {
+		plKey := w.postingListKey(types.DeletesField, types.DeletesField)
+		err := writePLs(plKey, w.deletes)
+		if err != nil {
+			log.Errorf("error writing deletes posting list: %v", err)
+		}
+	}
+	return w.flushBatch()
 }
 
 type Reader struct {
