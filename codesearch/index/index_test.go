@@ -544,6 +544,57 @@ func TestCompactDeletes(t *testing.T) {
 	printDB(t, db)
 }
 
+func TestDeleteMatchingDocuments(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	schema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.TrigramField, "text", true),
+			schema.MustFieldSchema(types.KeywordField, "url", true),
+		},
+	)
+
+	doc1 := schema.MustMakeDocument(map[string][]byte{
+		"id":   []byte("1"),
+		"text": []byte("one"),
+		"url":  []byte("github.com/buildbuddy-io/buildbuddy"),
+	})
+	doc2 := schema.MustMakeDocument(map[string][]byte{
+		"id":   []byte("2"),
+		"text": []byte("one"),
+		"url":  []byte("github.com/buildbuddy-io/buildbuddy-internal"),
+	})
+
+	w, err := NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+
+	require.NoError(t, w.AddDocument(doc1))
+	require.NoError(t, w.AddDocument(doc2))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err := r.RawQuery(`(:eq text one)`)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {1, 2}}, extractFieldMatches(t, r, matches))
+
+	w, err = NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.DeleteMatchingDocuments(schema.Field("url").MakeField([]byte("github.com/buildbuddy-io/buildbuddy"))))
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err = r.RawQuery(`(:eq text one)`)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {2}}, extractFieldMatches(t, r, matches))
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},
