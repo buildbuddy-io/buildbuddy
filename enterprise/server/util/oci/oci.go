@@ -36,7 +36,7 @@ var (
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
-	useCachePct           = flag.Int("executor.container_registry.use_cache_pct", 0, "Percentage of image pulls to use the cache (individaul cache flags must also be enabled).")
+	useCachePercent       = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls to use the cache (individaul cache flags must also be enabled).")
 	writeManifestsToCache = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
 )
 
@@ -270,10 +270,10 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 
 	useCache := false
-	if *useCachePct >= 100 {
+	if *useCachePercent >= 100 {
 		useCache = true
-	} else if *useCachePct > 0 && *useCachePct < 100 {
-		useCache = rand.Intn(100) < *useCachePct
+	} else if *useCachePercent > 0 && *useCachePercent < 100 {
+		useCache = rand.Intn(100) < *useCachePercent
 	}
 
 	if useCache {

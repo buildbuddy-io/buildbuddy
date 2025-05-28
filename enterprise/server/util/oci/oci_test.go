@@ -333,11 +333,11 @@ func TestResolve(t *testing.T) {
 			},
 		},
 	} {
-		for _, useCachePct := range []int{0, 100} {
-			t.Run(tc.name+fmt.Sprintf("/use_cache_pct_%d", useCachePct), func(t *testing.T) {
+		for _, useCachePercent := range []int{0, 100} {
+			t.Run(tc.name+fmt.Sprintf("/use_cache_percent_%d", useCachePercent), func(t *testing.T) {
 				te := testenv.GetTestEnv(t)
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-				flags.Set(t, "executor.container_registry.use_cache_pct", useCachePct)
+				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
 				registry := testregistry.Run(t, tc.opts)
 				_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
 
@@ -425,12 +425,12 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 			},
 		},
 	} {
-		for _, useCachePct := range []int{0, 100} {
-			name := tc.name + "/use_cache_pct_" + strconv.Itoa(useCachePct)
+		for _, useCachePercent := range []int{0, 100} {
+			name := tc.name + "/use_cache_percent_" + strconv.Itoa(useCachePercent)
 			t.Run(name, func(t *testing.T) {
 				te := testenv.GetTestEnv(t)
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-				flags.Set(t, "executor.container_registry.use_cache_pct", useCachePct)
+				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
 				upstreamCounter := atomic.Int32{}
 				registry := testregistry.Run(t, testregistry.Opts{
 					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
