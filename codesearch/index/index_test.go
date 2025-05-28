@@ -81,6 +81,7 @@ func TestDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	require.NoError(t, w.AddDocument(docWithID(t, 1)))
 	require.NoError(t, w.AddDocument(docWithID(t, 2)))
 	require.NoError(t, w.AddDocument(docWithID(t, 3)))
@@ -476,6 +477,115 @@ func TestMetadataDocs(t *testing.T) {
 	r := NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
 	readDoc := r.GetStoredDocument(1)
 	assert.Equal(t, commitSHA, string(readDoc.Field(schema.LatestSHAField).Contents()))
+}
+
+func TestCompactDeletes(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	w, err := NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+
+	doc := docWithIDAndText(t, 8, `one`)
+	require.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	printDB(t, db)
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	delList, err := r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(0), delList.GetCardinality())
+
+	w, err = NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.UpdateDocument(doc.Field("id"), doc))
+	require.NoError(t, w.Flush())
+
+	printDB(t, db)
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	delList, err = r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), delList.GetCardinality())
+	assert.Equal(t, []uint64{1}, delList.ToPosting().ToArray())
+
+	oneList, err := r.postingList([]byte("one"), posting.NewFieldMap(), "text")
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1, (1<<32 | 1)}, oneList.ToPosting().ToArray())
+
+	printDB(t, db)
+
+	w, err = NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.CompactDeletes())
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	delList, err = r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{}, delList.ToPosting().ToArray())
+
+	oneList, err = r.postingList([]byte("one"), posting.NewFieldMap(), "text")
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1<<32 | 1}, oneList.ToPosting().ToArray())
+	printDB(t, db)
+}
+
+func TestDeleteMatchingDocuments(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	schema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.TrigramField, "text", true),
+			schema.MustFieldSchema(types.KeywordField, "url", true),
+		},
+	)
+
+	doc1 := schema.MustMakeDocument(map[string][]byte{
+		"id":   []byte("1"),
+		"text": []byte("one"),
+		"url":  []byte("github.com/buildbuddy-io/buildbuddy"),
+	})
+	doc2 := schema.MustMakeDocument(map[string][]byte{
+		"id":   []byte("2"),
+		"text": []byte("one"),
+		"url":  []byte("github.com/buildbuddy-io/buildbuddy-internal"),
+	})
+
+	w, err := NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+
+	require.NoError(t, w.AddDocument(doc1))
+	require.NoError(t, w.AddDocument(doc2))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err := r.RawQuery(`(:eq text one)`)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {1, 2}}, extractFieldMatches(t, r, matches))
+
+	w, err = NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.DeleteMatchingDocuments(schema.Field("url").MakeField([]byte("github.com/buildbuddy-io/buildbuddy"))))
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err = r.RawQuery(`(:eq text one)`)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {2}}, extractFieldMatches(t, r, matches))
 }
 
 func printDB(t testing.TB, db *pebble.DB) {
