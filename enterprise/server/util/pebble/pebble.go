@@ -656,6 +656,10 @@ type MetricsCollector struct {
 	diskStallCount       int64
 }
 
+func (mc *MetricsCollector) BackgroundError(err error) {
+	log.Errorf("Pebble Cache background error: %v", err)
+}
+
 func (mc *MetricsCollector) WriteStallStats() (int64, time.Duration) {
 	count := atomic.LoadInt64(&mc.writeStallCount)
 	durationInt := atomic.LoadInt64((*int64)(&mc.writeStallDuration))

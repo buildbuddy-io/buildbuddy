@@ -504,6 +504,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 		MaxConcurrentCompactions: func() int { return 18 },
 		MemTableSize:             64 << 20, // 64 MB
 		EventListener: &pebble.EventListener{
+			BackgroundError: mc.BackgroundError,
 			WriteStallBegin: mc.WriteStallBegin,
 			WriteStallEnd:   mc.WriteStallEnd,
 			DiskSlow:        mc.DiskSlow,
