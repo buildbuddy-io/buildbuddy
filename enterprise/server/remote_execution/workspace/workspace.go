@@ -3,7 +3,6 @@ package workspace
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io/fs"
 	"os"
@@ -31,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/gobwas/glob"
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
@@ -169,23 +167,6 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		Opts:      opts,
 		Inputs:    map[string]*repb.FileNode{},
 	}, nil
-}
-
-func newRandomBuildDirCandidate() string {
-	id := uuid.Must(uuid.NewRandom())
-	if runtime.GOOS != "windows" {
-		// Path lengths and the particular name don't matter, use something
-		// guaranteed to be unique.
-		return id.String()
-	}
-	// On Windows, some tools (mostly MSVC) have a 260-character limit on all
-	// paths. Moreover, due to https://github.com/bazelbuild/bazel/issues/19733,
-	// C++ header validation can fail if the absolute build dir path doesn't
-	// end with `execroot\\_main` (with Bzlmod enabled, there is no guarantee
-	// that any particular path is correct for WORKSPACE builds).
-	// https://github.com/bazelbuild/bazel/blob/819aa9688229e244dc90dda1278d7444d910b48a/src/main/java/com/google/devtools/build/lib/rules/cpp/ShowIncludesFilter.java#L101
-	shortId := base64.RawURLEncoding.EncodeToString(id[0:8])
-	return shortId + "execroot"
 }
 
 func startVFS(env environment.Env, path string) (*vfs.VFS, *vfs_server.Server, error) {

@@ -4,7 +4,11 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "workspace",
-    srcs = ["workspace.go"],
+    srcs = [
+        "workspace.go",
+        "workspace_unix.go",
+        "workspace_windows.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace",
     deps = [
         "//enterprise/server/cmd/ci_runner/bundle",
@@ -25,10 +29,56 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_gobwas_glob//:glob",
-        "@com_github_google_uuid//:uuid",
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_x_sync//errgroup",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:aix": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:android": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:darwin": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:dragonfly": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:freebsd": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:illumos": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:ios": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:js": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:netbsd": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:openbsd": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:osx": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:plan9": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:qnx": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:solaris": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 go_test(
