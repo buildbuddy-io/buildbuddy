@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -747,6 +748,13 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 		stream:      stream,
 		r:           r,
 	}
+	// TODO(vanja) figure out if this fixes the in-flight RPCs metric and the
+	// possible memory leak. If it does, figure out which caller isn't closing
+	// the stream.
+	runtime.AddCleanup(wc, func(stream dcpb.DistributedCache_WriteClient) {
+		// This is safe to do multiple times.
+		stream.CloseAndRecv()
+	}, stream)
 	return c.newBufferedStreamWriteCloser(wc), nil
 }
 
