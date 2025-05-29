@@ -11196,10 +11196,6 @@
                       "fixedColor": "dark-orange",
                       "mode": "fixed"
                     }
-                  },
-                  {
-                    "id": "custom.lineWidth",
-                    "value": 0
                   }
                 ]
               },
@@ -18234,7 +18230,7 @@
     ]
   },
   "timezone": "",
-  "title": "BuildBuddy Metrics",
-  "uid": "1rsE5yoGz",
+  "title": "BuildBuddy Metricss",
+  "uid": "f2d8a06d-dcf5-4054-a891-882b6fb6c103",
   "weekStart": ""
 }
