@@ -425,6 +425,11 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			redisRestart:           true,
 		},
+		{
+			name:                   "RetryExecution",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			retry:                  true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			testExecuteAndPublishOperation(t, test)
@@ -443,6 +448,7 @@ type publishTest struct {
 	exitCode                 int32
 	publishMoreMetadata      bool
 	redisRestart             bool
+	retry                    bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -505,10 +511,14 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NoError(t, err)
 	stream, err := client.PublishOperation(executorCtx)
 	require.NoError(t, err)
+
 	queuedTime := time.Unix(100, 0)
 	workerStartTime := queuedTime.Add(1 * time.Second)
 	workerEndTime := workerStartTime.Add(5 * time.Second)
-	aux := &espb.ExecutionAuxiliaryMetadata{PlatformOverrides: &repb.Platform{}}
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{},
+		Retry:             test.retry,
+	}
 	for k, v := range test.platformOverrides {
 		aux.PlatformOverrides.Properties = append(
 			aux.PlatformOverrides.Properties,
@@ -618,27 +628,30 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		require.Equal(t, codes.NotFound, gstatus.Code(err), "Error should be NotFound, but is %v", err)
 	}
 
-	// Should also be able to fetch the ExecuteResponse from cache. See field
-	// comment on Execution.execute_response_digest for notes on serialization
-	// format.
-	cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), taskID)
-	require.NoError(t, err)
-	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
+	// If retrying the execution, we don't cache the execution response or record usages.
+	if !test.retry {
+		// Should also be able to fetch the ExecuteResponse from cache. See field
+		// comment on Execution.execute_response_digest for notes on serialization
+		// format.
+		cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), taskID)
+		require.NoError(t, err)
+		assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
 
-	// Should also have recorded usage.
-	ut := env.GetUsageTracker().(*fakeUsageTracker)
-	var executionUsages []usage
-	for _, u := range ut.usages {
-		if u.labels.Client == "executor" && (u.counts.LinuxExecutionDurationUsec > 0 || u.counts.SelfHostedLinuxExecutionDurationUsec > 0) {
-			executionUsages = append(executionUsages, u)
+		// Should also have recorded usage.
+		ut := env.GetUsageTracker().(*fakeUsageTracker)
+		var executionUsages []usage
+		for _, u := range ut.usages {
+			if u.labels.Client == "executor" && (u.counts.LinuxExecutionDurationUsec > 0 || u.counts.SelfHostedLinuxExecutionDurationUsec > 0) {
+				executionUsages = append(executionUsages, u)
+			}
 		}
+		assert.Equal(t, []usage{
+			{
+				labels: tables.UsageLabels{Client: "executor"},
+				counts: test.expectedExecutionUsage,
+			},
+		}, executionUsages)
 	}
-	assert.Equal(t, []usage{
-		{
-			labels: tables.UsageLabels{Client: "executor"},
-			counts: test.expectedExecutionUsage,
-		},
-	}, executionUsages)
 
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
@@ -698,8 +711,12 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			&repb.StoredExecution{},
 			"created_at_usec",
 			"updated_at_usec",
+			"run_id",
 		))
 	assert.Emptyf(t, diff, "Recorded execution didn't match the expected one: %s", expectedExecution)
+	if test.retry {
+		require.NotEmpty(t, collectedExecutions[0].RunId)
+	}
 }
 
 func TestMarkFailed(t *testing.T) {

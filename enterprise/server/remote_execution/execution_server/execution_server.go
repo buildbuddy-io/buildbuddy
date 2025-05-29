@@ -40,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
@@ -399,6 +400,12 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 
 			}
 			executionProto.CommandSnippet = generateCommandSnippet(cmd)
+
+			// If retrying this execution ID, set a unique run ID so each retry
+			// attempt can be tracked separately.
+			if auxMeta.GetRetry() {
+				executionProto.RunId = uuid.New()
+			}
 		}
 
 		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
@@ -1226,7 +1233,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
-			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties); err != nil {
+			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties, auxMeta); err != nil {
 				// Errors updating the router or recording usage are non-fatal.
 				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
@@ -1262,7 +1269,10 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				return err
 			}
 
-			if response != nil {
+			// If the server is retrying the execution, don't bother caching
+			// the response.
+			retry := auxMeta != nil && auxMeta.GetRetry()
+			if response != nil && !retry {
 				// TODO(vanja) should this be done when the executor got a
 				// cache hit?
 				if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {
@@ -1310,7 +1320,7 @@ func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceN
 
 // markTaskComplete contains logic to be run when the task is complete but
 // before letting the client know that the task has completed.
-func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties) error {
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ACResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties, auxMeta *espb.ExecutionAuxiliaryMetadata) error {
 	execErr := gstatus.ErrorProto(executeResponse.GetStatus())
 	router := s.env.GetTaskRouter()
 	if router != nil && !executeResponse.GetCachedResult() {
@@ -1335,9 +1345,13 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		}
 	}
 
-	if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
-		// TODO(vanja) should this be done when the executor got a cache hit?
-		log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
+	// Don't charge customers on retry attempts, as often that's due to infrastructure
+	// issues on our end.
+	if !auxMeta.GetRetry() {
+		if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
+			// TODO(vanja) should this be done when the executor got a cache hit?
+			log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
+		}
 	}
 
 	return nil

@@ -236,8 +236,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		DoNotCache:               task.GetAction().GetDoNotCache(),
 	}
 	finishWithErrFn := func(finalErr error) (retry bool, err error) {
+		retry = false
 		if shouldRetry(task, finalErr) {
-			return true, finalErr
+			auxMetadata.Retry = true
+			retry = true
 		}
 		resp := operation.ErrorResponse(finalErr)
 		md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
