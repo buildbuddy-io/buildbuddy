@@ -6665,7 +6665,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 9
       },
       "id": 264,
       "panels": [
@@ -7274,7 +7274,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 12
       },
       "id": 38,
       "panels": [
@@ -7821,7 +7821,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 13
       },
       "id": 458,
       "panels": [
@@ -8466,7 +8466,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 14
       },
       "id": 48,
       "panels": [
@@ -8854,7 +8854,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 15
       },
       "id": 384,
       "panels": [
@@ -10128,7 +10128,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 16
       },
       "id": 107,
       "panels": [
@@ -10997,7 +10997,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 17
       },
       "id": 28,
       "panels": [
@@ -11020,7 +11020,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 89
+            "y": 18
           },
           "hiddenSeries": false,
           "id": 190,
@@ -11174,7 +11174,45 @@
                   {
                     "id": "color",
                     "value": {
-                      "fixedColor": "dark-red",
+                      "fixedColor": "orange",
+                      "mode": "fixed"
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 3
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "p50 queue length"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "dark-orange",
+                      "mode": "fixed"
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "p90 queue length"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "red",
                       "mode": "fixed"
                     }
                   }
@@ -11183,25 +11221,23 @@
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Ramp-up threshold"
+                  "options": "p99 queue length"
                 },
                 "properties": [
                   {
                     "id": "color",
                     "value": {
-                      "fixedColor": "super-light-red",
+                      "fixedColor": "dark-red",
                       "mode": "fixed"
                     }
                   },
                   {
-                    "id": "custom.lineStyle",
-                    "value": {
-                      "dash": [
-                        0,
-                        5
-                      ],
-                      "fill": "dot"
-                    }
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "tasks"
                   }
                 ]
               },
@@ -11214,7 +11250,7 @@
                   {
                     "id": "color",
                     "value": {
-                      "fixedColor": "dark-blue",
+                      "fixedColor": "blue",
                       "mode": "fixed"
                     }
                   },
@@ -11251,29 +11287,6 @@
                       "fixedColor": "yellow",
                       "mode": "fixed"
                     }
-                  },
-                  {
-                    "id": "custom.axisPlacement",
-                    "value": "right"
-                  },
-                  {
-                    "id": "unit",
-                    "value": "tasks"
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "p50 queue length"
-                },
-                "properties": [
-                  {
-                    "id": "color",
-                    "value": {
-                      "fixedColor": "dark-orange",
-                      "mode": "fixed"
-                    }
                   }
                 ]
               }
@@ -11283,7 +11296,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 89
+            "y": 18
           },
           "id": 159,
           "options": {
@@ -11320,21 +11333,8 @@
               },
               "editorMode": "code",
               "expr": "quantile(\n    0.5,\n    sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
-              "hide": false,
-              "instant": false,
-              "legendFormat": "p50 queue length",
-              "range": true,
-              "refId": "F"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
-              "legendFormat": "Pods running",
+              "legendFormat": "p50 queue length",
               "range": true,
               "refId": "B"
             },
@@ -11343,10 +11343,51 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=\"${pool}-autoscaler\"}",
+              "editorMode": "code",
+              "expr": "quantile(\n    0.9,\n    sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
-              "legendFormat": "Autoscaler target",
+              "legendFormat": "p90 queue length",
+              "range": true,
               "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "quantile(\n    0.99,\n    sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "p99 queue length",
+              "range": true,
+              "refId": "D"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "Pods running",
+              "range": true,
+              "refId": "E"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=\"${pool}-autoscaler\"}",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "Autoscaler target",
+              "range": true,
+              "refId": "F"
             },
             {
               "datasource": {
@@ -11359,7 +11400,7 @@
               "instant": false,
               "legendFormat": "Tasks running",
               "range": true,
-              "refId": "E"
+              "refId": "G"
             }
           ],
           "title": "Executor autoscaling",
@@ -11386,7 +11427,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 97
+            "y": 26
           },
           "hiddenSeries": false,
           "id": 210,
@@ -11525,7 +11566,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 97
+            "y": 26
           },
           "id": 1209,
           "options": {
@@ -11620,7 +11661,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 105
+            "y": 34
           },
           "id": 31,
           "options": {
@@ -11670,7 +11711,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 105
+            "y": 34
           },
           "hiddenSeries": false,
           "id": 178,
@@ -11820,7 +11861,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 113
+            "y": 42
           },
           "id": 8505,
           "options": {
@@ -11937,7 +11978,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 113
+            "y": 42
           },
           "id": 8606,
           "options": {
@@ -12076,7 +12117,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 121
+            "y": 50
           },
           "id": 1216,
           "options": {
@@ -12206,7 +12247,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 121
+            "y": 50
           },
           "id": 1231,
           "options": {
@@ -12292,7 +12333,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 129
+            "y": 58
           },
           "hiddenSeries": false,
           "id": 33,
@@ -12384,7 +12425,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 129
+            "y": 58
           },
           "hiddenSeries": false,
           "id": 35,
@@ -12468,140 +12509,14 @@
             "type": "prometheus",
             "uid": "vm"
           },
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 137
-          },
-          "hiddenSeries": false,
-          "id": 129,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": false,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true,
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "none"
-            }
-          },
-          "percentage": false,
-          "pluginVersion": "10.1.0",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "exemplar": true,
-              "expr": "quantile(0.5, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
-              "interval": "",
-              "legendFormat": "p50",
-              "queryType": "randomWalk",
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "exemplar": true,
-              "expr": "quantile(0.9, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
-              "interval": "",
-              "legendFormat": "p90",
-              "queryType": "randomWalk",
-              "refId": "B"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "exemplar": true,
-              "expr": "quantile(0.99, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
-              "interval": "",
-              "legendFormat": "p99",
-              "queryType": "randomWalk",
-              "refId": "C"
-            }
-          ],
-          "thresholds": [],
-          "timeRegions": [],
-          "title": "Executor queue length",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "mode": "time",
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:971",
-              "decimals": 0,
-              "format": "short",
-              "logBase": 1,
-              "min": "0",
-              "show": true
-            },
-            {
-              "$$hashKey": "object:972",
-              "format": "short",
-              "logBase": 1,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "collapsed": true,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
           "description": "Number of actions waiting to be executed",
           "fill": 0,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 12,
-            "y": 137
+            "x": 0,
+            "y": 66
           },
           "hiddenSeries": false,
           "id": 102,
@@ -12668,6 +12583,99 @@
             },
             {
               "$$hashKey": "object:894",
+              "format": "short",
+              "logBase": 1,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "collapsed": true,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 66
+          },
+          "hiddenSeries": false,
+          "id": 180,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": false,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "10.1.0",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
+              "interval": "",
+              "legendFormat": "{{pod}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeRegions": [],
+          "title": "Total CPU usage (CPU seconds)",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:1049",
+              "format": "s",
+              "logBase": 1,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:1050",
               "format": "short",
               "logBase": 1,
               "show": true
@@ -12807,7 +12815,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 145
+            "y": 74
           },
           "id": 1195,
           "options": {
@@ -12877,233 +12885,6 @@
             }
           ],
           "title": "File cache hit rate",
-          "type": "timeseries"
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "collapsed": true,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 145
-          },
-          "hiddenSeries": false,
-          "id": 180,
-          "legend": {
-            "alignAsTable": true,
-            "avg": false,
-            "current": true,
-            "max": false,
-            "min": false,
-            "show": false,
-            "sort": "current",
-            "sortDesc": true,
-            "total": false,
-            "values": true
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "10.1.0",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
-              "interval": "",
-              "legendFormat": "{{pod}}",
-              "queryType": "randomWalk",
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeRegions": [],
-          "title": "Total CPU usage (CPU seconds)",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "mode": "time",
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:1049",
-              "format": "s",
-              "logBase": 1,
-              "min": "0",
-              "show": true
-            },
-            {
-              "$$hashKey": "object:1050",
-              "format": "short",
-              "logBase": 1,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false
-          }
-        },
-        {
-          "collapsed": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "axisSoftMin": 0,
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "decbytes"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 153
-          },
-          "id": 1202,
-          "options": {
-            "legend": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "displayMode": "table",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "exemplar": true,
-              "expr": "histogram_quantile(\n  0.5,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
-              "interval": "",
-              "legendFormat": "p50",
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "exemplar": true,
-              "expr": "histogram_quantile(\n  0.9,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
-              "hide": false,
-              "interval": "",
-              "legendFormat": "p90",
-              "refId": "B"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "exemplar": true,
-              "expr": "histogram_quantile(\n  0.99,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
-              "hide": false,
-              "interval": "",
-              "legendFormat": "p99",
-              "refId": "C"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "exemplar": true,
-              "expr": "histogram_quantile(\n  0.9999,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
-              "hide": false,
-              "interval": "",
-              "legendFormat": "p99.99",
-              "refId": "D"
-            }
-          ],
-          "title": "File cache added file size",
           "type": "timeseries"
         },
         {
@@ -13196,7 +12977,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 153
+            "y": 74
           },
           "id": 1196,
           "options": {
@@ -13237,16 +13018,56 @@
           },
           "fieldConfig": {
             "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "axisSoftMin": 0,
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
                 "hideFrom": {
                   "legend": false,
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
                 "scaleDistribution": {
                   "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
                 }
-              }
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "decbytes"
             },
             "overrides": []
           },
@@ -13254,61 +13075,74 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 161
+            "y": 82
           },
-          "id": 7139,
+          "id": 1202,
           "options": {
-            "calculate": false,
-            "cellGap": 1,
-            "color": {
-              "exponent": 0.5,
-              "fill": "dark-orange",
-              "mode": "scheme",
-              "reverse": false,
-              "scale": "exponential",
-              "scheme": "Oranges",
-              "steps": 64
-            },
-            "exemplars": {
-              "color": "rgba(255,0,255,0.7)"
-            },
-            "filterValues": {
-              "le": 1e-09
-            },
             "legend": {
-              "show": true
-            },
-            "rowsFrame": {
-              "layout": "auto"
+              "calcs": [
+                "lastNotNull"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
-              "show": true,
-              "yHistogram": false
-            },
-            "yAxis": {
-              "axisPlacement": "left",
-              "reverse": false,
-              "unit": "percentunit"
+              "mode": "multi",
+              "sort": "none"
             }
           },
-          "pluginVersion": "10.1.0",
           "targets": [
             {
               "datasource": {
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"cpu\", stall_type=\"full\"}[${window}]))",
-              "format": "heatmap",
-              "instant": false,
-              "legendFormat": "__auto",
-              "range": true,
+              "exemplar": true,
+              "expr": "histogram_quantile(\n  0.5,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
+              "interval": "",
+              "legendFormat": "p50",
               "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "exemplar": true,
+              "expr": "histogram_quantile(\n  0.9,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "p90",
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "exemplar": true,
+              "expr": "histogram_quantile(\n  0.99,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "p99",
+              "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "exemplar": true,
+              "expr": "histogram_quantile(\n  0.9999,\n  sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "p99.99",
+              "refId": "D"
             }
           ],
-          "title": "PSI - cpu full stall",
-          "type": "heatmap"
+          "title": "File cache added file size",
+          "type": "timeseries"
         },
         {
           "collapsed": true,
@@ -13335,7 +13169,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 161
+            "y": 82
           },
           "id": 7145,
           "options": {
@@ -13416,9 +13250,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 169
+            "y": 90
           },
-          "id": 7151,
+          "id": 7139,
           "options": {
             "calculate": false,
             "cellGap": 1,
@@ -13461,7 +13295,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"memory\", stall_type=\"full\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"cpu\", stall_type=\"full\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -13469,7 +13303,7 @@
               "refId": "A"
             }
           ],
-          "title": "PSI - memory full stall",
+          "title": "PSI - cpu full stall",
           "type": "heatmap"
         },
         {
@@ -13497,7 +13331,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 169
+            "y": 90
           },
           "id": 7157,
           "options": {
@@ -13578,9 +13412,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 177
+            "y": 98
           },
-          "id": 7163,
+          "id": 7151,
           "options": {
             "calculate": false,
             "cellGap": 1,
@@ -13623,7 +13457,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"io\", stall_type=\"full\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"memory\", stall_type=\"full\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -13631,7 +13465,7 @@
               "refId": "A"
             }
           ],
-          "title": "PSI - io full stall",
+          "title": "PSI - memory full stall",
           "type": "heatmap"
         },
         {
@@ -13659,7 +13493,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 177
+            "y": 98
           },
           "id": 7169,
           "options": {
@@ -13714,6 +13548,87 @@
           ],
           "title": "PSI - io partial stall",
           "type": "heatmap"
+        },
+        {
+          "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "scaleDistribution": {
+                  "type": "linear"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 106
+          },
+          "id": 7163,
+          "options": {
+            "calculate": false,
+            "cellGap": 1,
+            "color": {
+              "exponent": 0.5,
+              "fill": "dark-orange",
+              "mode": "scheme",
+              "reverse": false,
+              "scale": "exponential",
+              "scheme": "Oranges",
+              "steps": 64
+            },
+            "exemplars": {
+              "color": "rgba(255,0,255,0.7)"
+            },
+            "filterValues": {
+              "le": 1e-09
+            },
+            "legend": {
+              "show": true
+            },
+            "rowsFrame": {
+              "layout": "auto"
+            },
+            "tooltip": {
+              "show": true,
+              "yHistogram": false
+            },
+            "yAxis": {
+              "axisPlacement": "left",
+              "reverse": false,
+              "unit": "percentunit"
+            }
+          },
+          "pluginVersion": "10.1.0",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"io\", stall_type=\"full\"}[${window}]))",
+              "format": "heatmap",
+              "instant": false,
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "PSI - io full stall",
+          "type": "heatmap"
         }
       ],
       "repeat": "pool",
@@ -13739,7 +13654,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 20
       },
       "id": 83,
       "panels": [
@@ -14152,7 +14067,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 24
       },
       "id": 71,
       "panels": [
@@ -14589,7 +14504,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 28
       },
       "id": 9283,
       "panels": [
@@ -14920,7 +14835,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 29
       },
       "id": 9320,
       "panels": [
@@ -15255,7 +15170,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 30
       },
       "id": 1088,
       "panels": [
