@@ -1593,8 +1593,9 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	flags.Set(t, "executor.network_stats_enabled", true)
 
-	// Make sure the container can send packets to something external of the VM
+	// Make sure the container can send packets to something external to the VM
 	googleDNS := "8.8.8.8"
 	cmd := &repb.Command{Arguments: []string{"ping", "-c1", googleDNS}}
 
@@ -1622,6 +1623,8 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
 }
 
 func TestSnapshotAndResumeWithNetwork(t *testing.T) {
@@ -1629,6 +1632,7 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	flags.Set(t, "executor.network_stats_enabled", true)
 
 	// Make sure the container can send packets to something external of the VM
 	googleDNS := "8.8.8.8"
@@ -1658,6 +1662,8 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
 
 	err = c.Pause(ctx)
 	require.NoError(t, err)
@@ -1669,6 +1675,8 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
 
 	err = c.Pause(ctx)
 	require.NoError(t, err)
