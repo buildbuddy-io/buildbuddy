@@ -334,7 +334,7 @@ func (w *Writer) DeleteMatchingDocuments(matchField types.Field) error {
 
 // DropNamespace deletes everything in a namespace.
 func (w *Writer) DropNamespace() error {
-	w.batch.RangeKeyDelete(fmt.Appendf(nil, "%s:", w.namespace), fmt.Appendf(nil, "%s:\xff", w.namespace), nil)
+	w.batch.DeleteRange(fmt.Appendf(nil, "%s:", w.namespace), fmt.Appendf(nil, "%s:\xff", w.namespace), nil)
 	return nil
 }
 
