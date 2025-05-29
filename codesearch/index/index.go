@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"maps"
+	"runtime"
 	"slices"
 	"strconv"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/xiam/s-expr/ast"
 	"github.com/xiam/s-expr/parser"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -490,6 +492,16 @@ func (w *Writer) updatePostingList(key []byte, pl posting.List, deferOp func(int
 }
 
 func (w *Writer) Flush() error {
+	mu := sync.Mutex{}
+	eg := new(errgroup.Group)
+	eg.SetLimit(runtime.GOMAXPROCS(0))
+	writePLs := func(key []byte, pl posting.List) error {
+		mu.Lock()
+		defer mu.Unlock()
+		w.updatePostingList(key, pl, w.batch.MergeDeferred)
+		return nil
+	}
+
 	fieldNames := slices.Sorted(maps.Keys(w.fieldPostingLists))
 	for _, fieldName := range fieldNames {
 		postingLists := w.fieldPostingLists[fieldName]
@@ -498,18 +510,19 @@ func (w *Writer) Flush() error {
 			ngram := ngram
 			fieldName := fieldName
 			docIDs := docIDs
-			err := w.updatePostingList(w.postingListKey(ngram, fieldName), docIDs, w.batch.MergeDeferred)
-			if err != nil {
-				log.Errorf("error writing posting list for ngram %q, field %q: %v", ngram, fieldName, err)
-			}
+			eg.Go(func() error {
+				return writePLs(w.postingListKey(ngram, fieldName), docIDs)
+			})
 		}
 	}
 	if w.deletes.GetCardinality() > 0 {
-		plKey := w.postingListKey(types.DeletesField, types.DeletesField)
-		err := w.updatePostingList(plKey, w.deletes, w.batch.MergeDeferred)
-		if err != nil {
-			log.Errorf("error writing deletes posting list: %v", err)
-		}
+		eg.Go(func() error {
+			plKey := w.postingListKey(types.DeletesField, types.DeletesField)
+			return writePLs(plKey, w.deletes)
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
 	}
 	return w.flushBatch()
 }
