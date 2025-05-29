@@ -2349,6 +2349,17 @@ message UsageStats {
   // IO stats for the block device where all action IO happened (action inputs
   // and outputs, overlayfs temporary files, etc.)
   CgroupIOStats cgroup_io_stats = 9;
+
+  // Network statistics for the network interface assigned to the action.
+  NetworkStats network_stats = 10;
+}
+
+// Network statistics for an action.
+message NetworkStats {
+  int64 bytes_received = 1;
+  int64 packets_received = 2;
+  int64 bytes_sent = 3;
+  int64 packets_sent = 4;
 }
 
 // Structured representation of the cgroup2 "io.stat" file.
@@ -2514,6 +2525,10 @@ message StoredExecution {
   int64 disk_bytes_written = 35;
   int64 disk_read_operations = 36;
   int64 disk_write_operations = 37;
+  int64 network_bytes_sent = 63;
+  int64 network_bytes_received = 64;
+  int64 network_packets_sent = 65;
+  int64 network_packets_received = 66;
 
   // Effective task sizing
   int64 estimated_memory_bytes = 17;
