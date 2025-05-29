@@ -249,10 +249,10 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 }
 
 func sendIncrementalUpdate(apiTarget, repoURL string) string {
+	// TODO(jdelfino): Remove explicit CLI installation once buildbuddy-internal/#5060 is resolved
 	buf := fmt.Sprintf(`
-export USE_BAZEL_VERSION=buildbuddy-io/latest
-bazel version
-bazel index --target %s --repo-url %s`, apiTarget, repoURL)
+curl -fsSL https://install.buildbuddy.io | bash
+bb index --target %s --repo-url %s`, apiTarget, repoURL)
 	return buf
 }
 
