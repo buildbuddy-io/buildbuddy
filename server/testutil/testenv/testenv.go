@@ -190,8 +190,7 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	}
 	te.SetDBHandle(dbHandle)
 	t.Cleanup(func() {
-		err := dbHandle.Close()
-		if err != nil {
+		if err := dbHandle.Close(); err != nil {
 			t.Fatalf("Error closing database handle: %s", err)
 		}
 	})
