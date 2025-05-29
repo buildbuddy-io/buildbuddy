@@ -251,6 +251,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 func sendIncrementalUpdate(apiTarget, repoURL string) string {
 	buf := fmt.Sprintf(`
 export USE_BAZEL_VERSION=buildbuddy-io/latest
+bazel version
 bazel index --target %s --repo-url %s`, apiTarget, repoURL)
 	return buf
 }
