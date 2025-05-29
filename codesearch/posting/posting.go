@@ -2,12 +2,9 @@ package posting
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
-	"io"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/cockroachdb/pebble"
 )
 
 type List interface {
@@ -88,14 +85,12 @@ func Marshal(pl List) ([]byte, error) {
 func Unmarshal(buf []byte) (List, error) {
 	readStream := bytes.NewReader(buf)
 	pl := roaring64.New()
-	for len(buf) > 0 {
-		plTemp := roaring64.New()
-		n, err := plTemp.ReadFrom(readStream)
-		if err != nil {
-			return nil, err
-		}
-		buf = buf[n:]
-		pl.Or(plTemp)
+	n, err := pl.ReadFrom(readStream)
+	if err != nil {
+		return nil, err
+	}
+	if n != int64(len(buf)) {
+		return nil, fmt.Errorf("read only %d bytes of buffer with size %d", n, len(buf))
 	}
 	return &roaringWrapper{pl}, nil
 }
@@ -153,70 +148,4 @@ func (fm *FieldMap) Remove(docid uint64) {
 	for _, pl := range f {
 		pl.Remove(docid)
 	}
-}
-
-// TODO(jdelfino): probably move to their own file
-
-func unmarshalSingle(buf []byte) (List, uint64, error) {
-	if len(buf) == 8 {
-		// bare uint64, not a posting list
-		return nil, binary.LittleEndian.Uint64(buf), nil
-	}
-
-	readStream := bytes.NewReader(buf)
-	pl := roaring64.New()
-	n, err := pl.ReadFrom(readStream)
-	if err != nil {
-		return nil, 0, err
-	}
-	if n != int64(len(buf)) {
-		return nil, 0, fmt.Errorf("expected to read %d bytes, but read %d", len(buf), n)
-	}
-	return &roaringWrapper{pl}, 0, nil
-}
-
-func InitRoaringMerger(key, value []byte) (pebble.ValueMerger, error) {
-	// TODO(jdelfino): Sanity check key to make sure it is a posting list key?
-	pl, docId, err := unmarshalSingle(value)
-	if err != nil {
-		return nil, err
-	}
-
-	if pl == nil {
-		pl = NewList(docId)
-	}
-
-	return &RoaringValueMerger{
-		pl: pl,
-	}, nil
-}
-
-type RoaringValueMerger struct {
-	pl List
-}
-
-func mergeInto(pl List, docIdBytes []byte) error {
-	newPl, docId, err := unmarshalSingle(docIdBytes)
-	if err != nil {
-		return err
-	}
-	if newPl == nil {
-		pl.Add(docId)
-	} else {
-		pl.Or(newPl)
-	}
-	return nil
-}
-
-func (rm *RoaringValueMerger) MergeNewer(value []byte) error {
-	return mergeInto(rm.pl, value)
-}
-
-func (rm *RoaringValueMerger) MergeOlder(value []byte) error {
-	return mergeInto(rm.pl, value)
-}
-
-func (rm *RoaringValueMerger) Finish(includesBase bool) ([]byte, io.Closer, error) {
-	r, err := Marshal(rm.pl)
-	return r, nil, err
 }

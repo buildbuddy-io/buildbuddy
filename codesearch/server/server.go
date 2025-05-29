@@ -68,7 +68,7 @@ func New(env environment.Env, rootDirectory, scratchDirectory string) (*codesear
 	if err := disk.EnsureDirectoryExists(scratchDirectory); err != nil {
 		return nil, err
 	}
-	db, err := pebble.Open(rootDirectory, &pebble.Options{})
+	db, err := index.OpenPebbleDB(rootDirectory)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +327,7 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		unlockFn := css.repoLocks.Lock(lockKey)
 		defer unlockFn()
 
-		log.Infof("Starting indexing %s@%s", repoURL, commitSHA)
+		log.Infof("Starting indexing %q@%s", repoURL, commitSHA)
 
 		var err error
 		switch req.GetReplacementStrategy() {

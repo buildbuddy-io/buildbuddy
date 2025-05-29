@@ -24,13 +24,6 @@ var testSchema = schema.NewDocumentSchema(
 	},
 )
 
-var opts = &pebble.Options{
-	Merger: &pebble.Merger{
-		Merge: posting.InitRoaringMerger,
-		Name:  "roaringMerger",
-	},
-}
-
 func newTestDocument(t *testing.T, fieldMap map[string][]byte) types.Document {
 	doc, err := testSchema.MakeDocument(fieldMap)
 	if err != nil {
@@ -76,18 +69,20 @@ func extractFieldMatches(tb testing.TB, r types.IndexReader, docMatches []types.
 	return m
 }
 
+func mustOpenDB(t *testing.T, indexDir string) *pebble.DB {
+	t.Helper()
+	db, err := OpenPebbleDB(indexDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
 func TestDeletes(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	require.NoError(t, w.AddDocument(docWithID(t, 1)))
 	require.NoError(t, w.AddDocument(docWithID(t, 2)))
@@ -115,17 +110,10 @@ func TestDeletes(t *testing.T) {
 
 func TestIncrementalIndexing(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
@@ -173,17 +161,10 @@ func TestIncrementalIndexing(t *testing.T) {
 
 func TestUpdateSameDocTwiceInSameBatch(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 7, `one one one`)))
 	require.NoError(t, w.Flush())
 
@@ -219,17 +200,10 @@ func TestUpdateSameDocThriceInSameBatch(t *testing.T) {
 	// updating the doc id / match field mappins when a document is updated multiple
 	// time in the same batch.
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 7, `one one one`)))
 	require.NoError(t, w.Flush())
 
@@ -266,12 +240,7 @@ func TestUpdateSameDocThriceInSameBatch(t *testing.T) {
 
 func TestStoredVsUnstoredFields(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	docSchema := schema.NewDocumentSchema(
 		[]types.FieldSchema{
@@ -292,9 +261,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	}
 
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	assert.NoError(t, w.AddDocument(doc))
 	require.NoError(t, w.Flush())
@@ -324,12 +291,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 
 func TestGetStoredDocument(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	docSchema := schema.NewDocumentSchema(
 		[]types.FieldSchema{
@@ -343,14 +305,10 @@ func TestGetStoredDocument(t *testing.T) {
 			"field_a": []byte("stored"),
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	assert.NoError(t, w.AddDocument(doc))
 	require.NoError(t, w.Flush())
@@ -365,16 +323,11 @@ func TestGetStoredDocument(t *testing.T) {
 
 func TestNamespaceSeparation(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
 	w, err := NewWriter(db, "namespace-a")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
@@ -411,16 +364,11 @@ func TestNamespaceSeparation(t *testing.T) {
 
 func TestSQuery(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
@@ -457,12 +405,7 @@ func TestSQuery(t *testing.T) {
 
 func TestMetadataDocs(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	commitSHA := "abc123"
 	repoURL := "github.com/buildbuddy-io/buildbuddy"
@@ -488,12 +431,7 @@ func TestMetadataDocs(t *testing.T) {
 
 func TestCompactDeletes(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	w, err := NewWriter(db, "testing-namespace")
 	require.NoError(t, err)
@@ -546,12 +484,7 @@ func TestCompactDeletes(t *testing.T) {
 
 func TestDeleteMatchingDocuments(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	schema := schema.NewDocumentSchema(
 		[]types.FieldSchema{
@@ -597,12 +530,7 @@ func TestDeleteMatchingDocuments(t *testing.T) {
 
 func TestDropNamespace(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	w, err := NewWriter(db, "ns-a")
 	require.NoError(t, err)
@@ -660,12 +588,7 @@ func printDB(t testing.TB, db *pebble.DB) {
 }
 
 func TestDBFormat(t *testing.T) {
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	docSchema := schema.NewDocumentSchema(
 		[]types.FieldSchema{
