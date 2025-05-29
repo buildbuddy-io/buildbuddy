@@ -576,6 +576,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		RepoState: &gitpb.RepoState{
 			CommitSha: req.GetCommitSha(),
 			Branch:    req.GetBranch(),
+			Patch:     req.GetPatches(),
 		},
 		Steps:          steps,
 		Async:          req.GetAsync(),
