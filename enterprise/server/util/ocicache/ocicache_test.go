@@ -125,6 +125,7 @@ func TestWriteBlobToCacheAndResponse(t *testing.T) {
 		contentLength,
 	)
 	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
 
 	fetchAndCheckBlob(t, te, layerBuf, layerRef, hash, contentType)
 }
