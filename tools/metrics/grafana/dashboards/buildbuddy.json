@@ -11230,14 +11230,6 @@
                       "fixedColor": "dark-red",
                       "mode": "fixed"
                     }
-                  },
-                  {
-                    "id": "custom.axisPlacement",
-                    "value": "right"
-                  },
-                  {
-                    "id": "unit",
-                    "value": "tasks"
                   }
                 ]
               },
@@ -11287,6 +11279,10 @@
                       "fixedColor": "yellow",
                       "mode": "fixed"
                     }
+                  },
+                  {
+                    "id": "unit",
+                    "value": "tasks"
                   }
                 ]
               }
@@ -17856,7 +17852,7 @@
     "list": [
       {
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "us-west1",
           "value": "us-west1"
         },
