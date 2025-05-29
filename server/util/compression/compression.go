@@ -116,6 +116,35 @@ func (d *zstdDecompressor) Close() error {
 	return lastErr
 }
 
+func NewZstdCompressor(w io.Writer, compressBuf []byte) io.Writer {
+	return &zstdCompressor{
+		w:           w,
+		compressBuf: compressBuf,
+	}
+}
+
+// zstdCompressor compresses bytes before writing them to the nested writer
+type zstdCompressor struct {
+	w io.Writer
+
+	compressBuf []byte
+}
+
+func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
+	z.compressBuf = CompressZstd(z.compressBuf, decompressedBytes)
+	compressedBytesWritten, err := z.w.Write(z.compressBuf)
+	if err != nil {
+		return 0, err
+	}
+	if compressedBytesWritten < len(z.compressBuf) {
+		return 0, io.ErrShortWrite
+	}
+
+	// Return the size of the original buffer even though a different compressed buffer size may have been written,
+	// or clients will return a short write error
+	return len(decompressedBytes), nil
+}
+
 type compressingReader struct {
 	inputReader io.ReadCloser
 	readBuf     []byte

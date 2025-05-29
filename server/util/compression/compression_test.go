@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"math"
 	"strconv"
 	"testing"
 
@@ -50,9 +49,23 @@ func TestLossless(t *testing.T) {
 			compress:   compressWithNewZstdCompressingReader,
 			decompress: decompressWithNewZstdDecompressingReader,
 		},
+		{
+			name:       "NewZstdCompressor -> DecompressZstd",
+			compress:   compressWithNewZstdCompressor,
+			decompress: decompressWithDecompressZstd,
+		},
+		{
+			name:       "NewZstdCompressor -> NewZstdDecompressor",
+			compress:   compressWithNewZstdCompressor,
+			decompress: decompressWithNewZstdDecompressor,
+		},
+		{
+			name:       "NewZstdCompressor -> NewZstdDecompressingReader",
+			compress:   compressWithNewZstdCompressor,
+			decompress: decompressWithNewZstdDecompressingReader,
+		},
 	} {
-		for i := 1; i <= 5; i++ {
-			srclen := int(math.Pow10(i))
+		for _, srclen := range []int{9, 99, 999, 9999} {
 			name := tc.name + "_" + strconv.Itoa(srclen) + "_bytes"
 			t.Run(name, func(t *testing.T) {
 				_, r := testdigest.NewReader(t, int64(srclen))
@@ -86,6 +99,29 @@ func compressWithNewZstdCompressingReader(t *testing.T, src []byte) []byte {
 	err = c.Close()
 	require.NoError(t, err)
 	return compressed
+}
+
+func compressWithNewZstdCompressor(t *testing.T, src []byte) []byte {
+	compressBuf := make([]byte, len(src))
+	w := &bytes.Buffer{}
+	c := compression.NewZstdCompressor(w, compressBuf)
+
+	written, err := c.Write(src)
+	require.NoError(t, err)
+	require.Equal(t, len(src), written)
+	return w.Bytes()
+}
+
+type testCommittedWriteCloser struct {
+	io.Writer
+}
+
+func (w *testCommittedWriteCloser) Commit() error {
+	return nil
+}
+
+func (w *testCommittedWriteCloser) Close() error {
+	return nil
 }
 
 func decompressWithDecompressZstd(t *testing.T, srclen int, compressed []byte) []byte {
