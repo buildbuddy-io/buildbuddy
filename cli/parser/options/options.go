@@ -766,7 +766,6 @@ func (b *BoolOrEnum) Set(value any) {
 func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, opts ...O) (T, error) {
 	p := any(&acc)
 	for _, opt := range opts {
-		log.Printf("Accumulating %v...", opt.Format())
 		switch p := p.(type) {
 		case *string:
 			*p = opt.GetValue()
