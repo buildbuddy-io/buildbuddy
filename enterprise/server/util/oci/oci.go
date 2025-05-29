@@ -38,6 +38,11 @@ var (
 
 	useCachePercent       = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls to use the cache (individaul cache flags must also be enabled).")
 	writeManifestsToCache = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
+
+	defaultPlatform = gcr.Platform{
+		Architecture: "amd64",
+		OS:           "linux",
+	}
 )
 
 type MirrorConfig struct {
@@ -276,17 +281,29 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	switch remoteDesc.MediaType {
-	case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
-		return nil, status.UnknownErrorf("unsupported MediaType %q", remoteDesc.MediaType)
-	case types.OCIImageIndex, types.DockerManifestList:
-		return nil, status.UnimplementedError("image indexes not supported yet")
-	case types.OCIManifestSchema1, types.DockerManifestSchema2:
-	default:
-		log.CtxWarningf(ctx, "Unexpected media type %q", remoteDesc.MediaType)
-	}
-
 	if useCache {
+
+		switch remoteDesc.MediaType {
+		case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
+			return nil, status.UnknownErrorf("unsupported MediaType %q", remoteDesc.MediaType)
+		case types.OCIImageIndex, types.DockerManifestList:
+			index := &indexFromRawManifest{
+				repo:        imageRef.Context(),
+				desc:        remoteDesc.Descriptor,
+				rawManifest: remoteDesc.Manifest,
+				remoteOpts:  remoteOpts,
+			}
+			gcrPlatform := gcr.Platform{
+				Architecture: platform.GetArch(),
+				OS:           platform.GetOs(),
+				Variant:      platform.GetVariant(),
+			}
+			return index.imageByPlatform(gcrPlatform)
+		case types.OCIManifestSchema1, types.DockerManifestSchema2:
+		default:
+			log.CtxWarningf(ctx, "Unexpected media type %q", remoteDesc.MediaType)
+		}
+
 		return &imageFromRawManifest{
 			repo:        imageRef.Context(),
 			desc:        remoteDesc.Descriptor,
@@ -389,6 +406,180 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 		}
 	}
 	return t.inner.RoundTrip(in)
+}
+
+type indexFromRawManifest struct {
+	repo        gcrname.Repository
+	desc        gcr.Descriptor
+	rawManifest []byte
+
+	remoteOpts []remote.Option
+}
+
+func (i *indexFromRawManifest) Digest() (gcr.Hash, error) {
+	return i.desc.Digest, nil
+}
+
+func (i *indexFromRawManifest) MediaType() (types.MediaType, error) {
+	return i.desc.MediaType, nil
+}
+
+func (i *indexFromRawManifest) Size() (int64, error) {
+	return i.desc.Size, nil
+}
+
+func (i *indexFromRawManifest) RawManifest() ([]byte, error) {
+	return i.rawManifest, nil
+}
+
+func (i *indexFromRawManifest) IndexManifest() (*gcr.IndexManifest, error) {
+	return gcr.ParseIndexManifest(bytes.NewReader(i.rawManifest))
+}
+
+func (i *indexFromRawManifest) Image(h gcr.Hash) (gcr.Image, error) {
+	desc, err := i.childByHash(h)
+	if err != nil {
+		return nil, err
+	}
+
+	switch desc.MediaType {
+	case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
+		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
+	case types.OCIImageIndex, types.DockerManifestList:
+		return nil, status.UnknownErrorf("nested index manifests not supported")
+	case types.OCIManifestSchema1, types.DockerManifestSchema2:
+	default:
+		log.Warningf("Unexpected media type in index manifest: %q", desc.MediaType)
+	}
+
+	ref := i.repo.Digest(h.String())
+	remoteDesc, err := remote.Get(ref, i.remoteOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	image := &imageFromRawManifest{
+		repo:        i.repo,
+		desc:        *desc,
+		rawManifest: remoteDesc.Manifest,
+		remoteOpts:  i.remoteOpts,
+	}
+
+	return image, nil
+}
+
+func (i *indexFromRawManifest) ImageIndex(h gcr.Hash) (gcr.ImageIndex, error) {
+	desc, err := i.childByHash(h)
+	if err != nil {
+		return nil, err
+	}
+
+	switch desc.MediaType {
+	case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
+		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
+	case types.OCIManifestSchema1, types.DockerManifestSchema2:
+		return nil, status.UnknownErrorf("fetching index manifest but found image")
+	case types.OCIImageIndex, types.DockerManifestList:
+	default:
+		log.Warningf("Unexpected media type in index manifest: %q", desc.MediaType)
+	}
+
+	ref := i.repo.Digest(h.String())
+	remoteDesc, err := remote.Get(ref, i.remoteOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	index := &indexFromRawManifest{
+		repo:        i.repo,
+		desc:        *desc,
+		rawManifest: remoteDesc.Manifest,
+		remoteOpts:  i.remoteOpts,
+	}
+
+	return index, nil
+
+}
+
+func (i *indexFromRawManifest) imageByPlatform(platform gcr.Platform) (gcr.Image, error) {
+	desc, err := i.childByPlatform(platform)
+	if err != nil {
+		return nil, err
+	}
+	return i.Image(desc.Digest)
+}
+
+func (i *indexFromRawManifest) childByPlatform(platform gcr.Platform) (*gcr.Descriptor, error) {
+	index, err := i.IndexManifest()
+	if err != nil {
+		return nil, err
+	}
+	for _, childDesc := range index.Manifests {
+		// If platform is missing from child descriptor, assume it's amd64/linux.
+		p := defaultPlatform
+		if childDesc.Platform != nil {
+			p = *childDesc.Platform
+		}
+
+		if matchesPlatform(p, platform) {
+			return &childDesc, nil
+		}
+	}
+	return nil, status.NotFoundErrorf("no child with platform %+v in index", platform)
+}
+
+func matchesPlatform(given, required gcr.Platform) bool {
+	// Required fields that must be identical.
+	if given.Architecture != required.Architecture || given.OS != required.OS {
+		return false
+	}
+
+	// Optional fields that may be empty, but must be identical if provided.
+	if required.OSVersion != "" && given.OSVersion != required.OSVersion {
+		return false
+	}
+	if required.Variant != "" && given.Variant != required.Variant {
+		return false
+	}
+
+	// Verify required platform's features are a subset of given platform's features.
+	if !isSubset(given.OSFeatures, required.OSFeatures) {
+		return false
+	}
+	if !isSubset(given.Features, required.Features) {
+		return false
+	}
+
+	return true
+}
+
+// isSubset checks if the required array of strings is a subset of the given lst.
+func isSubset(lst, required []string) bool {
+	set := make(map[string]bool)
+	for _, value := range lst {
+		set[value] = true
+	}
+
+	for _, value := range required {
+		if _, ok := set[value]; !ok {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (i *indexFromRawManifest) childByHash(h gcr.Hash) (*gcr.Descriptor, error) {
+	index, err := i.IndexManifest()
+	if err != nil {
+		return nil, err
+	}
+	for _, childDesc := range index.Manifests {
+		if h == childDesc.Digest {
+			return &childDesc, nil
+		}
+	}
+	return nil, status.NotFoundError("could not find child hash in index manifest")
 }
 
 type imageFromRawManifest struct {
