@@ -177,12 +177,16 @@ type Execution struct {
 	FileUploadDurationUsec   int64
 
 	// UsageStats
-	PeakMemoryBytes     int64
-	CPUNanos            int64
-	DiskBytesRead       int64
-	DiskBytesWritten    int64
-	DiskReadOperations  int64
-	DiskWriteOperations int64
+	PeakMemoryBytes        int64
+	CPUNanos               int64
+	DiskBytesRead          int64
+	DiskBytesWritten       int64
+	DiskReadOperations     int64
+	DiskWriteOperations    int64
+	NetworkBytesSent       int64
+	NetworkBytesReceived   int64
+	NetworkPacketsSent     int64
+	NetworkPacketsReceived int64
 
 	// Task sizing
 	EstimatedMemoryBytes          int64
@@ -284,6 +288,10 @@ func (e *Execution) AdditionalFields() []string {
 		"DiskBytesWritten",
 		"DiskReadOperations",
 		"DiskWriteOperations",
+		"NetworkBytesSent",
+		"NetworkBytesReceived",
+		"NetworkPacketsSent",
+		"NetworkPacketsReceived",
 		"EstimatedFreeDiskBytes",
 		"RequestedComputeUnits",
 		"RequestedMemoryBytes",

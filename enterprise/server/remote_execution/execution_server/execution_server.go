@@ -357,6 +357,10 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
 			executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
 			executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
+			executionProto.NetworkBytesSent = md.GetUsageStats().GetNetworkStats().GetBytesSent()
+			executionProto.NetworkBytesReceived = md.GetUsageStats().GetNetworkStats().GetBytesReceived()
+			executionProto.NetworkPacketsSent = md.GetUsageStats().GetNetworkStats().GetPacketsSent()
+			executionProto.NetworkPacketsReceived = md.GetUsageStats().GetNetworkStats().GetPacketsReceived()
 
 			executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
 			executionProto.Experiments = auxMeta.GetExperiments()

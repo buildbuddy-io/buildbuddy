@@ -159,6 +159,12 @@ func OLAPExecToClientProto(in *olaptables.Execution) (*espb.Execution, error) {
 			UsageStats: &repb.UsageStats{
 				CpuNanos:        in.CPUNanos,
 				PeakMemoryBytes: in.PeakMemoryBytes,
+				NetworkStats: &repb.NetworkStats{
+					BytesSent:       in.NetworkBytesSent,
+					PacketsSent:     in.NetworkPacketsSent,
+					BytesReceived:   in.NetworkBytesReceived,
+					PacketsReceived: in.NetworkPacketsReceived,
+				},
 			},
 			DoNotCache: in.DoNotCache,
 		},
