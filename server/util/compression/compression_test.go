@@ -112,18 +112,6 @@ func compressWithNewZstdCompressor(t *testing.T, src []byte) []byte {
 	return w.Bytes()
 }
 
-type testCommittedWriteCloser struct {
-	io.Writer
-}
-
-func (w *testCommittedWriteCloser) Commit() error {
-	return nil
-}
-
-func (w *testCommittedWriteCloser) Close() error {
-	return nil
-}
-
 func decompressWithDecompressZstd(t *testing.T, srclen int, compressed []byte) []byte {
 	decompressed := make([]byte, srclen)
 	decompressed, err := compression.DecompressZstd(decompressed, compressed)
