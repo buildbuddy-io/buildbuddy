@@ -2,8 +2,10 @@ package networking
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -29,6 +33,8 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -38,6 +44,7 @@ var (
 	networkLockDir                = flag.String("executor.network_lock_directory", "", "If set, use this directory to store lockfiles for allocated IP ranges. This is required if running multiple executors within the same networking environment.")
 	taskIPRange                   = flag.String("executor.task_ip_range", "192.168.0.0/16", "Subnet to allocate IP addresses from for actions that require network access. Must be a /16 range.")
 	taskAllowedPrivateIPs         = flag.Slice("executor.task_allowed_private_ips", []string{}, "Allowed private IPs that should be reachable from actions: either 'default', an IP address, or IP range. Private IP ranges as defined in RFC1918 are otherwise blocked.")
+	networkStatsEnabled           = flag.Bool("executor.network_stats_enabled", false, "Enable basic tx/rx statistics.")
 
 	// Private IP ranges, as defined in RFC1918.
 	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
@@ -73,6 +80,15 @@ var (
 	// network. (The number 4 is based on the current min CPU task size estimate
 	// of 250m)
 	defaultNetworkPoolSizeLimit = runtime.NumCPU() * 4
+
+	// Files in the /sys/class/net/<device>/statistics directory which are read
+	// when reporting network stats.
+	netStatFiles = []string{
+		"rx_bytes",
+		"rx_packets",
+		"tx_bytes",
+		"tx_packets",
+	}
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -374,6 +390,13 @@ func (p *VethNetworkPool[T]) Get(ctx context.Context) T {
 		return zero
 	}
 
+	// Record a new baseline for network stats, so that the stats reported for
+	// the action only reflect the accumulated stats relative to the baseline.
+	if err := n.getVethPair().updateBaseline(ctx); err != nil {
+		log.CtxErrorf(ctx, "Failed to reset networking stats: %s", err)
+		return zero
+	}
+
 	// Run any implementation-specific logic needed to bring up the pooled
 	// network.
 	if err := n.activate(ctx); err != nil {
@@ -609,6 +632,11 @@ type vethPair struct {
 	// root net namespace.
 	hostDevice string
 
+	// Stats for the host device captured when the device was returned from a
+	// pool. This is used to calculate the incremental network usage for a
+	// single action using the network.
+	hostBaselineStats *repb.NetworkStats
+
 	// namespacedDevice is the name of the end of the veth pair which is in the
 	// namespace.
 	namespacedDevice string
@@ -747,6 +775,50 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 
 	vp.Cleanup = cleanupStack.Cleanup
 	return vp, nil
+}
+
+func (v *vethPair) updateBaseline(ctx context.Context) error {
+	stats, err := ReadInterfaceStats(ctx, v.hostDevice)
+	if err != nil {
+		return fmt.Errorf("read interface stats: %w", err)
+	}
+	v.hostBaselineStats = stats
+	return nil
+}
+
+func (v *vethPair) Stats(ctx context.Context) (*repb.NetworkStats, error) {
+	stats, err := ReadInterfaceStats(ctx, v.hostDevice)
+	if err != nil {
+		return nil, fmt.Errorf("read interface stats: %w", err)
+	}
+	if stats == nil {
+		return nil, nil
+	}
+
+	// Subtract the baseline stats so that we only report the incremental usage
+	// since the network was returned from the pool (if applicable).
+	if v.hostBaselineStats != nil {
+		subtractStats(stats, v.hostBaselineStats)
+	}
+
+	// Swap TX with RX stats. This is because every packet sent on the
+	// namespaced end is (normally) received on the host end, and vice versa.
+	//
+	// TODO: figure out whether it's possible for packets to be dropped across
+	// the veth pair, which would invalidate this assumption and probably result
+	// in incorrect stats when the system is under heavy load.
+	//
+	// TODO: ideally we would directly report the stats from the namespaced end
+	// of the veth pair, since the namespaced end is what the action actually
+	// interfaces with. But this would require entering the net namespace, which
+	// would mean either (A) shelling out to `ip netns exec`, which adds several
+	// ms of overhead (not ideal especially if we want to poll these metrics and
+	// show them in a graph), or (B) running some sort of persistent agent in
+	// the net namespace to collect the stats, which doesn't seem worth the
+	// complexity right now.
+	swapTxRx(stats)
+
+	return stats, nil
 }
 
 // RemoveAddrs unassigns the IP addresses from the host and veth side of the
@@ -889,6 +961,16 @@ func (v *VMNetwork) deactivate(ctx context.Context) error {
 	return nil
 }
 
+// Stats returns the stats for the network. Only external traffic is measured.
+// If the network was returned from a pool, only the incremental stats are
+// reported.
+func (v *VMNetwork) Stats(ctx context.Context) (*repb.NetworkStats, error) {
+	if v.vethPair == nil {
+		return nil, nil
+	}
+	return v.vethPair.Stats(ctx)
+}
+
 func (v *VMNetwork) NamespacePath() string {
 	return v.netns.Path()
 }
@@ -1005,6 +1087,23 @@ func (c *ContainerNetwork) HostNetwork() *HostNet {
 	return c.vethPair.network
 }
 
+func (c *ContainerNetwork) HostDevice() string {
+	if c.vethPair == nil {
+		return ""
+	}
+	return c.vethPair.hostDevice
+}
+
+// Stats returns the stats for the network. Only external traffic is measured.
+// If the network was returned from a pool, only the incremental stats are
+// reported.
+func (c *ContainerNetwork) Stats(ctx context.Context) (*repb.NetworkStats, error) {
+	if c.vethPair == nil {
+		return nil, nil
+	}
+	return c.vethPair.Stats(ctx)
+}
+
 func (c *ContainerNetwork) Cleanup(ctx context.Context) error {
 	return c.cleanup(ctx)
 }
@@ -1091,6 +1190,101 @@ func findRoute(destination string) (route, error) {
 	}
 
 	return route{}, status.FailedPreconditionErrorf("Unable to determine device with prefix: %s", destination)
+}
+
+func ReadInterfaceStatsInNamespace(ctx context.Context, netns *Namespace, device string) (*repb.NetworkStats, error) {
+	command := []string{"cat"}
+	for _, f := range netStatFiles {
+		command = append(command, filepath.Join("/sys/class/net", device, "statistics", f))
+	}
+	output, err := sudoCommand(ctx, namespace(netns, command...)...)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) != len(netStatFiles) {
+		return nil,
+			fmt.Errorf("expected %d lines, got %d", len(netStatFiles), len(lines))
+	}
+	stats := &repb.NetworkStats{}
+	for i, file := range netStatFiles {
+		v, err := strconv.ParseInt(lines[i], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid network interface statistic value %q=%q for device %s: %s", file, lines[i], device, err)
+		}
+		if err := setStatFromSysfs(stats, file, v); err != nil {
+			return nil, err
+		}
+	}
+	return stats, nil
+}
+
+// ReadInterfaceStats reads networking metrics for the given device, e.g.
+// "veth0abc123". This includes things like bytes transmitted and received.
+func ReadInterfaceStats(ctx context.Context, device string) (*repb.NetworkStats, error) {
+	if !*networkStatsEnabled {
+		return nil, nil
+	}
+
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	s := &repb.NetworkStats{}
+	statsDir := filepath.Join("/sys/class/net", device, "statistics")
+	for _, statsFileName := range netStatFiles {
+		path := filepath.Join(statsDir, statsFileName)
+		b, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				log.CtxInfof(ctx, "Network interface statistic %q not found for device %s at %q", statsFileName, device, path)
+				continue
+			}
+			log.CtxWarningf(ctx, "Failed to read network interface statistic %q for device %s: %s", statsFileName, device, err)
+			continue
+		}
+		v, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+		if err != nil {
+			log.CtxErrorf(ctx, "Invalid network interface statistic value %q=%q for device %s: %s", statsFileName, string(b), device, err)
+			continue
+		}
+		if err := setStatFromSysfs(s, statsFileName, v); err != nil {
+			log.CtxWarningf(ctx, "Failed to set network interface statistic %q for device %s: %s", statsFileName, device, err)
+		}
+	}
+	return s, nil
+}
+
+// setStatFromSysfs sets the value of a network stat from its corresponding file
+// name under /sys/class/net/[device]/statistics.
+func setStatFromSysfs(s *repb.NetworkStats, name string, v int64) error {
+	switch name {
+	case "rx_bytes":
+		s.BytesReceived = v
+	case "rx_packets":
+		s.PacketsReceived = v
+	case "tx_bytes":
+		s.BytesSent = v
+	case "tx_packets":
+		s.PacketsSent = v
+	default:
+		return fmt.Errorf("unsupported statistic")
+	}
+	return nil
+}
+
+// Subtracts all of the fields of b from a.
+func subtractStats(a, b *repb.NetworkStats) {
+	a.BytesReceived -= b.BytesReceived
+	a.PacketsReceived -= b.PacketsReceived
+	a.BytesSent -= b.BytesSent
+	a.PacketsSent -= b.PacketsSent
+}
+
+// Swaps all "received" fields with their corresponding "sent" fields in a
+// NetworkStats message.
+func swapTxRx(stats *repb.NetworkStats) {
+	stats.BytesReceived, stats.BytesSent = stats.BytesSent, stats.BytesReceived
+	stats.PacketsReceived, stats.PacketsSent = stats.PacketsSent, stats.PacketsReceived
 }
 
 // EnableMasquerading turns on ipmasq for the device with --device_prefix. This is required
@@ -1297,4 +1491,80 @@ func IsSecondaryNetworkEnabled() bool {
 
 func PreserveExistingNetNamespaces() bool {
 	return *preserveExistingNetNamespaces
+}
+
+// PacketCapture represents a packet capture process. A packet capture can be
+// started with StartPacketCapture, and stopped by calling Stop and Wait on the
+// returned instance. The resulting packet capture can be viewed with a program
+// like wireshark.
+//
+// NOTE: this is intended for debugging purposes only and should not be used in
+// production.
+type PacketCapture struct {
+	cmd    *exec.Cmd
+	stderr *bytes.Buffer
+	done   chan struct{}
+	err    error
+}
+
+// StartPacketCapture starts a packet capture on the given device, writing
+// captured packets to the given writer. The resulting packet capture can be
+// viewed with a program like wireshark.
+//
+// Requires tcpdump to be available on $PATH.
+func StartPacketCapture(device string, w io.Writer) (*PacketCapture, error) {
+	stderr := &bytes.Buffer{}
+	args := []string{"tcpdump", "-i", device, "-w", "-"}
+	if os.Getuid() != 0 {
+		args = append([]string{"sudo", "-A"}, args...)
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdout = w
+	lockbuf := lockingbuffer.New()
+	cmd.Stderr = io.MultiWriter(stderr, lockbuf)
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	pcap := &PacketCapture{
+		cmd:    cmd,
+		stderr: stderr,
+		done:   make(chan struct{}),
+	}
+	go func() {
+		err := cmd.Wait()
+		pcap.err = err
+		close(pcap.done)
+	}()
+	for !strings.Contains(lockbuf.String(), "listening on") {
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-pcap.done:
+			return nil, pcap.Wait()
+		}
+	}
+	return pcap, nil
+}
+
+// Stop stops packet capture.
+// Call Wait() to wait for the packet capture to finish.
+func (p *PacketCapture) Stop() error {
+	// Wait a bit for packets to be captured - it takes some time for tcpdump
+	// to actually capture the packets even if they have already been sent.
+	// TODO: there has to be a better way to do this...
+	time.Sleep(1 * time.Second)
+	return p.cmd.Process.Signal(os.Interrupt)
+}
+
+func (p *PacketCapture) Wait() error {
+	<-p.done
+	// Ignore SIGINT triggered by Stop()
+	if ws, ok := p.cmd.ProcessState.Sys().(syscall.WaitStatus); ok && ws.Signaled() && ws.Signal() == syscall.SIGINT {
+		log.Debugf("Stopped packet capture. tcpdump stderr: %q", p.stderr)
+		return nil
+	}
+	if p.err != nil {
+		return fmt.Errorf("packet capture failed: %w: %q", p.err, p.stderr)
+	}
+	log.Debugf("Stopped packet capture. tcpdump stderr: %q", p.stderr)
+	return nil
 }
