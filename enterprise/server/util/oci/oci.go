@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
@@ -11,7 +12,6 @@ import (
 	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -20,12 +20,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -261,6 +261,13 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
 
+	useCache := false
+	if *useCachePercent >= 100 {
+		useCache = true
+	} else if *useCachePercent > 0 && *useCachePercent < 100 {
+		useCache = rand.Intn(100) < *useCachePercent
+	}
+
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -269,24 +276,23 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	useCache := false
-	if *useCachePercent >= 100 {
-		useCache = true
-	} else if *useCachePercent > 0 && *useCachePercent < 100 {
-		useCache = rand.Intn(100) < *useCachePercent
+	switch remoteDesc.MediaType {
+	case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
+		return nil, status.UnknownErrorf("unsupported MediaType %q", remoteDesc.MediaType)
+	case types.OCIImageIndex, types.DockerManifestList:
+		return nil, status.UnimplementedError("image indexes not supported yet")
+	case types.OCIManifestSchema1, types.DockerManifestSchema2:
+	default:
+		log.CtxWarningf(ctx, "Unexpected media type %q", remoteDesc.MediaType)
 	}
 
 	if useCache {
-		desc := &cachingDescriptor{
-			Descriptor: remoteDesc,
-			acClient:   r.env.GetActionCacheClient(),
-			ctx:        ctx,
-		}
-		img, err := desc.Image()
-		if err != nil {
-			return nil, status.UnknownErrorf("could not get image from caching descriptor: %s", err)
-		}
-		return img, nil
+		return &imageFromRawManifest{
+			repo:        imageRef.Context(),
+			desc:        remoteDesc.Descriptor,
+			rawManifest: remoteDesc.Manifest,
+			remoteOpts:  remoteOpts,
+		}, nil
 	}
 
 	// Image() should resolve both images and image indices to an appropriate image
@@ -385,70 +391,24 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
-type cachingDescriptor struct {
-	*remote.Descriptor
+type imageFromRawManifest struct {
+	repo        gcrname.Repository
+	desc        gcr.Descriptor
+	rawManifest []byte
 
-	repository gcrname.Repository
-	acClient   repb.ActionCacheClient
-	ctx        context.Context
+	remoteOpts    []remote.Option
+	rawConfigFile []byte
 }
 
-func (d *cachingDescriptor) Image() (gcr.Image, error) {
-	remoteImage, err := d.Descriptor.Image()
-	if err != nil {
-		return nil, err
-	}
-	return &cachingImage{
-		Image:      remoteImage,
-		repository: d.repository,
-		acClient:   d.acClient,
-		ctx:        d.ctx,
-	}, nil
+func (i *imageFromRawManifest) Digest() (gcr.Hash, error) {
+	return i.desc.Digest, nil
 }
 
-type cachingImage struct {
-	gcr.Image
-
-	repository gcrname.Repository
-	acClient   repb.ActionCacheClient
-	ctx        context.Context
-
-	cachedManifest    *gcr.Manifest
-	cachedRawManifest []byte
+func (i *imageFromRawManifest) RawManifest() ([]byte, error) {
+	return i.rawManifest, nil
 }
 
-func (i *cachingImage) Layers() ([]gcr.Layer, error) {
-	return i.Image.Layers()
-}
-
-func (i *cachingImage) MediaType() (types.MediaType, error) {
-	return i.Image.MediaType()
-}
-
-func (i *cachingImage) Size() (int64, error) {
-	return i.Image.Size()
-}
-
-func (i *cachingImage) ConfigName() (gcr.Hash, error) {
-	return i.Image.ConfigName()
-}
-
-func (i *cachingImage) ConfigFile() (*gcr.ConfigFile, error) {
-	return i.Image.ConfigFile()
-}
-
-func (i *cachingImage) RawConfigFile() ([]byte, error) {
-	return i.Image.RawConfigFile()
-}
-
-func (i *cachingImage) Digest() (gcr.Hash, error) {
-	return i.Image.Digest()
-}
-
-func (i *cachingImage) Manifest() (*gcr.Manifest, error) {
-	if i.cachedManifest != nil {
-		return i.cachedManifest, nil
-	}
+func (i *imageFromRawManifest) Manifest() (*gcr.Manifest, error) {
 	rawManifest, err := i.RawManifest()
 	if err != nil {
 		return nil, err
@@ -457,51 +417,163 @@ func (i *cachingImage) Manifest() (*gcr.Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	i.cachedManifest = manifest
-	return i.cachedManifest, nil
+	return manifest, nil
 }
 
-// RawManifest returns the raw manifest bytes from the upstream registry,
-// optionally writing it to the Action Cache if that behavior is enabled.
-func (i *cachingImage) RawManifest() ([]byte, error) {
-	if i.cachedRawManifest != nil {
-		return i.cachedRawManifest, nil
+func (i *imageFromRawManifest) MediaType() (types.MediaType, error) {
+	return i.desc.MediaType, nil
+}
+
+func (i *imageFromRawManifest) Size() (int64, error) {
+	return i.desc.Size, nil
+}
+
+func (i *imageFromRawManifest) RawConfigFile() ([]byte, error) {
+	if i.rawConfigFile != nil {
+		return i.rawConfigFile, nil
 	}
-	remoteRawManifest, err := i.Image.RawManifest()
+
+	manifest, err := i.Manifest()
 	if err != nil {
 		return nil, err
 	}
-	i.cachedRawManifest = remoteRawManifest
-
-	if *writeManifestsToCache {
-		mediaType, err := i.MediaType()
-		if err != nil {
-			log.Warningf("Could not fetch media type for manifest: %s", err)
-			return remoteRawManifest, nil
-		}
-		digest, err := i.Digest()
-		if err != nil {
-			log.Warningf("Could not fetch digest for manifest: %s", err)
-			return remoteRawManifest, nil
-		}
-		err = ocicache.WriteManifestToAC(i.ctx, remoteRawManifest, i.acClient, i.repository, digest, string(mediaType))
-		if err != nil {
-			log.Warningf("Could not write manifest to the cache: %s", err)
-			return remoteRawManifest, nil
-		}
+	if manifest.Config.Data != nil {
+		return manifest.Config.Data, nil
+	}
+	layer := layerFromDigest{
+		digest:     manifest.Config.Digest,
+		repo:       i.repo,
+		image:      i,
+		remoteOpts: i.remoteOpts,
 	}
 
-	return i.cachedRawManifest, nil
+	rc, err := layer.Uncompressed()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	rawConfigFile, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, err
+	}
+	i.rawConfigFile = rawConfigFile
+	return i.rawConfigFile, nil
 }
 
-// LayerByDigest returns a Layer for interacting with a particular layer of
-// the image, looking it up by "digest" (the compressed hash).
-func (i *cachingImage) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
-	return i.Image.LayerByDigest(digest)
+func (i *imageFromRawManifest) ConfigFile() (*gcr.ConfigFile, error) {
+	rawConfigFile, err := i.RawConfigFile()
+	if err != nil {
+		return nil, err
+	}
+	return gcr.ParseConfigFile(bytes.NewReader(rawConfigFile))
 }
 
-// LayerByDiffID is an analog to LayerByDigest, looking up by "diff id"
-// (the uncompressed hash).
-func (i *cachingImage) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
-	return i.Image.LayerByDiffID(diffID)
+func (i *imageFromRawManifest) ConfigName() (gcr.Hash, error) {
+	manifest, err := i.Manifest()
+	if err != nil {
+		return gcr.Hash{}, err
+	}
+	return manifest.Config.Digest, nil
+}
+
+func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
+	m, err := i.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	layers := make([]gcr.Layer, 0, len(m.Layers))
+	for _, layerDesc := range m.Layers {
+		layer := &layerFromDigest{
+			digest:     layerDesc.Digest,
+			repo:       i.repo,
+			image:      i,
+			remoteOpts: i.remoteOpts,
+		}
+
+		layers = append(layers, layer)
+	}
+	return layers, nil
+}
+
+func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
+	return &layerFromDigest{
+		digest:     digest,
+		repo:       i.repo,
+		image:      i,
+		remoteOpts: i.remoteOpts,
+	}, nil
+}
+
+func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
+	digest, err := partial.DiffIDToBlob(i, diffID)
+	if err != nil {
+		return nil, err
+	}
+	return &layerFromDigest{
+		digest:     digest,
+		repo:       i.repo,
+		image:      i,
+		remoteOpts: i.remoteOpts,
+	}, nil
+}
+
+type layerFromDigest struct {
+	digest gcr.Hash
+	repo   gcrname.Repository
+	image  gcr.Image
+
+	remoteOpts  []remote.Option
+	remoteLayer gcr.Layer
+}
+
+func (l *layerFromDigest) Digest() (gcr.Hash, error) {
+	return l.digest, nil
+}
+
+func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
+	return partial.BlobToDiffID(l.image, l.digest)
+}
+
+func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
+	if l.remoteLayer != nil {
+		return l.remoteLayer.Compressed()
+	}
+	ref := l.repo.Digest(l.digest.String())
+	remoteLayer, err := remote.Layer(ref, l.remoteOpts...)
+	if err != nil {
+		return nil, err
+	}
+	l.remoteLayer = remoteLayer
+	return l.remoteLayer.Compressed()
+}
+
+func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
+	if l.remoteLayer != nil {
+		return l.remoteLayer.Uncompressed()
+	}
+	ref := l.repo.Digest(l.digest.String())
+	remoteLayer, err := remote.Layer(ref, l.remoteOpts...)
+	if err != nil {
+		return nil, err
+	}
+	l.remoteLayer = remoteLayer
+	return l.remoteLayer.Uncompressed()
+}
+
+func (l *layerFromDigest) Size() (int64, error) {
+	ref := l.repo.Digest(l.digest.String())
+	desc, err := remote.Head(ref, l.remoteOpts...)
+	if err != nil {
+		return 0, err
+	}
+	return desc.Size, nil
+}
+
+func (l *layerFromDigest) MediaType() (types.MediaType, error) {
+	ref := l.repo.Digest(l.digest.String())
+	desc, err := remote.Head(ref, l.remoteOpts...)
+	if err != nil {
+		return "", err
+	}
+	return desc.MediaType, nil
 }

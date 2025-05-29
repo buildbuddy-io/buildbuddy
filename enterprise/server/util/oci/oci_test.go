@@ -434,7 +434,9 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 				upstreamCounter := atomic.Int32{}
 				registry := testregistry.Run(t, testregistry.Opts{
 					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-						upstreamCounter.Add(1)
+						if r.URL.Path != "/v2/" {
+							upstreamCounter.Add(1)
+						}
 						return true
 					},
 				})
