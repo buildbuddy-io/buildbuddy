@@ -177,7 +177,7 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
-const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.74-buildbuddy.tar.gz"
+const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.75-buildbuddy.tar.gz"
 
 func checkoutKythe(dirName, downloadURL string) string {
 	buf := fmt.Sprintf(`
@@ -198,7 +198,7 @@ func buildWithKythe(dirName string) string {
 	// before this can go in - the current buildbuddy-io/kythe release does not support bzlmod.
 	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
 	return fmt.Sprintf(`
-BZL_MAJOR_VERSION=$(bazel version | grep "Build label" | cut -d':' -f 2 | xargs | cut -d'.' -f1
+BZL_MAJOR_VERSION=$(bazel version | grep "Build label" | cut -d':' -f 2 | xargs | cut -d'.' -f1)
 
 if [ $BZL_MAJOR_VERSION -lt 7 ]; then
     BZLMOD_DEFAULT=0
@@ -216,20 +216,27 @@ fi
 
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 
-if [ $BZL_MAJOR_VERSION -lt 8 ]; then
-	if [ "$BZLMOD_ENABLED" -eq 1 ]; then
+if [ "$BZLMOD_ENABLED" -eq - ]; then
+    # with bzlmod enabled, override_repository will not work unless the repository is already defined
+	# inject_repository will work, but was added in Bazel 8, so we need to handle <8 by
+	# manually adding to MODULE.bazel.
+    if [ $BZL_MAJOR_VERSION -lt 8 ]; then
         echo "Adding kythe repository to MODULE.bazel"
         echo >> MODULE.bazel
 		echo 'bazel_dep(name = "kythe", version = "0.0.75")' >> MODULE.bazel
 		echo "local_path_override(module_name=\"kythe\", path=\"$KYTHE_DIR\")" >> MODULE.bazel
 	else
-		KYTHE_ARGS="--override_repository kythe_release=$KYTHE_DIR"
+		KYTHE_ARGS="--inject_repository kythe_release=$KYTHE_DIR"
 	fi
 else
-	KYTHE_ARGS="--inject_repository=kythe_release=$KYTHE_DIR"
+    # override_repository always works if bzlmod is disabled.
+	KYTHE_ARGS="--override_repository=kythe_release=$KYTHE_DIR"
 fi
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
+set -x
+bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...
+unset - x`, dirName, bazelConfigFlags)
+
 }
 
 func prepareKytheOutputs(dirName string) string {
