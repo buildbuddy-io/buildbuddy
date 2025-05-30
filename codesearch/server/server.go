@@ -369,7 +369,10 @@ func (css *codesearchServer) RepoStatus(ctx context.Context, req *inpb.RepoStatu
 
 	rev, err := github.GetLastIndexedCommitSha(r, repoURL)
 	if err != nil {
-		return nil, err
+		// If there's no status, return an empty commi SHA, but don't error.
+		if !status.IsNotFoundError(err) {
+			return nil, err
+		}
 	}
 
 	return &inpb.RepoStatusResponse{

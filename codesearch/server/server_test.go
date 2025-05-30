@@ -109,8 +109,10 @@ func TestRepoStatus_NoStatus(t *testing.T) {
 	response, err := server.RepoStatus(context.Background(), &inpb.RepoStatusRequest{
 		RepoUrl: "github.com/buildbuddy-io/buildbuddy",
 	})
-	assert.True(t, status.IsNotFoundError(err), "expected status.NotFoundError, got: %v", err)
-	assert.Nil(t, response)
+	require.NoError(t, err)
+	assert.Equal(t, &inpb.RepoStatusResponse{
+		LastIndexedCommitSha: "",
+	}, response)
 }
 
 func TestRepoStatus_InvalidRepo(t *testing.T) {

@@ -5,6 +5,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -20,6 +23,7 @@ var (
 
 type CodesearchService struct {
 	client csspb.CodesearchServiceClient
+	env    environment.Env
 }
 
 func Register(realEnv *real_environment.RealEnv) error {
@@ -41,6 +45,7 @@ func New(env environment.Env) (*CodesearchService, error) {
 	}
 	return &CodesearchService{
 		client: csspb.NewCodesearchServiceClient(conn),
+		env:    env,
 	}, nil
 }
 
@@ -49,7 +54,56 @@ func (css *CodesearchService) Search(ctx context.Context, req *srpb.SearchReques
 	return css.client.Search(ctx, req)
 }
 
+func (css *CodesearchService) getGitRepoAccessToken(ctx context.Context, groupId, repoURL string) (string, error) {
+	gha, err := css.env.GetGitHubAppService().GetGitHubAppForOwner(ctx, repoURL)
+	if err != nil {
+		return "", status.UnavailableErrorf("could not get GitHub app for repo %q: %s", repoURL, err)
+	}
+
+	gitRepository := &tables.GitRepository{}
+	err = css.env.GetDBHandle().NewQuery(ctx, "hosted_runner_get_for_repo").Raw(`
+		SELECT *
+		FROM "GitRepositories"
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, groupId, repoURL).Take(gitRepository)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return "", status.NotFoundErrorf("repo %q not found", repoURL)
+		}
+		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
+	}
+
+	token, err := gha.GetRepositoryInstallationToken(ctx, gitRepository)
+	if err != nil {
+		return "", status.UnavailableErrorf("could not get access token for repo %q: %s", repoURL, err)
+	}
+
+	return token, nil
+}
+
 func (css *CodesearchService) Index(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+	claims, err := claims.ClaimsFromContext(ctx)
+	if err != nil {
+		return nil, status.UnauthenticatedErrorf("failed to get claims from context: %s", err)
+	}
+
+	g, err := css.env.GetUserDB().GetGroupByID(ctx, claims.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	if !g.CodeSearchEnabled {
+		return nil, status.FailedPreconditionError("Codesearch is not enabled")
+	}
+
+	if req.GetReplacementStrategy() == inpb.ReplacementStrategy_REPLACE_REPO {
+		token, err := css.getGitRepoAccessToken(ctx, claims.GroupID, req.GetGitRepo().GetRepoUrl())
+		if err != nil {
+			return nil, err
+		}
+		req.GetGitRepo().AccessToken = token
+	}
+
 	return css.client.Index(ctx, req)
 }
 
