@@ -8,6 +8,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
 )
 
+// The name of the merger is stored in the Pebble database. Opening a database with
+// a different merger is an error. So if this name changes, the entire codesearch index
+// would need to be rebuilt.
+// Changing the behavior of this merger without changing the name / regenerating the index
+// must be done in a backward compatible way.
 const roaringMergerName = "roaring_merger"
 
 // OpenPebbleDB opens a Pebble database at the specified path with the merger used
