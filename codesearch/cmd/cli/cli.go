@@ -191,14 +191,6 @@ func handleIndex(args []string) {
 	if err := iw.Flush(); err != nil {
 		log.Fatal(err.Error())
 	}
-
-	err = iw.CompactDeletes()
-	if err != nil {
-		log.Fatalf("error compacting deletes: %s", err)
-	}
-	if err := iw.Flush(); err != nil {
-		log.Fatal(err.Error())
-	}
 }
 
 func handleSearch(ctx context.Context, args []string) {
