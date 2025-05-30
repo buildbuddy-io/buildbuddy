@@ -81,7 +81,7 @@ func buildIndexRequest(gc github.GitClient, repoURL *git.RepoURL, headSHA, lastI
 	}
 
 	if lastIndexSHA != "" {
-		update, err := github.ComputeIncrementalUpdate(gc, "", headSHA)
+		update, err := github.ComputeIncrementalUpdate(gc, lastIndexSHA, headSHA)
 		if err != nil {
 			if status.IsFailedPreconditionError(err) {
 				log.Printf("Failed to compute incremental update, falling back to full re-index: %s", err)
