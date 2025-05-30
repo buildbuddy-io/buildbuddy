@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"maps"
 	"runtime"
 	"slices"
@@ -233,31 +234,33 @@ func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 		return pl.ToArray()[0], nil
 	}
 
-	pl, err := getPostingListReadOnly(w.db, w.namespace, string(matchField.Contents()), matchField.Name())
+	pl, closer, err := getPostingListReadOnly(w.db, w.namespace, string(matchField.Contents()), matchField.Name())
 	if err != nil {
 		return 0, err
 	}
+	defer closer.Close()
+
 	if pl.GetCardinality() != 1 {
 		return 0, status.FailedPreconditionErrorf("Match field matches > 1 docs: %v", matchField)
 	}
 	return pl.Iterator().Next(), nil
 }
 
-func getPostingListReadOnly(db pebble.Reader, namespace, key, field string) (posting.List, error) {
+func getPostingListReadOnly(db pebble.Reader, namespace, key, field string) (posting.List, io.Closer, error) {
 	delBytes, closer, err := db.Get(postingListKey(namespace, key, field))
 	if err != nil {
 		if err == pebble.ErrNotFound {
-			return posting.NewList(), nil // No deletes, return empty list
+			return posting.NewList(), nil, nil // No deletes, return empty list
 		}
-		return nil, err
+		return nil, nil, err
 	}
-	defer closer.Close()
 
 	dels, err := posting.UnmarshalReadOnly(delBytes)
 	if err != nil {
-		return nil, err
+		closer.Close()
+		return nil, nil, err
 	}
-	return dels, nil
+	return dels, closer, nil
 }
 
 // Deletes the document with the given docID.
@@ -314,10 +317,11 @@ func (w *Writer) DeleteMatchingDocuments(matchField types.Field) error {
 	if matchField.Type() != types.KeywordField {
 		return status.InternalError("match field must be of keyword type")
 	}
-	delPl, err := getPostingListReadOnly(w.db, w.namespace, string(matchField.Contents()), matchField.Name())
+	delPl, closer, err := getPostingListReadOnly(w.db, w.namespace, string(matchField.Contents()), matchField.Name())
 	if err != nil {
 		return err
 	}
+	defer closer.Close()
 
 	it := delPl.Iterator()
 	for it.HasNext() {
@@ -345,10 +349,11 @@ func (w *Writer) DropNamespace() error {
 func (w *Writer) CompactDeletes() error {
 	log.Infof("Compacting deletes for namespace %q", w.namespace)
 
-	delPl, err := getPostingListReadOnly(w.db, w.namespace, types.DeletesField, types.DeletesField)
+	delPl, closer, err := getPostingListReadOnly(w.db, w.namespace, types.DeletesField, types.DeletesField)
 	if err != nil {
 		return err
 	}
+	defer closer.Close()
 
 	iter, err := w.db.NewIter(&pebble.IterOptions{
 		LowerBound: fmt.Appendf(nil, "%s:gra:", w.namespace),
@@ -796,10 +801,12 @@ func (r *Reader) postingQuery(q *ast.Node, restrict posting.FieldMap) (posting.F
 }
 
 func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
-	pl, err := getPostingListReadOnly(r.db, r.namespace, types.DeletesField, types.DeletesField)
+	pl, closer, err := getPostingListReadOnly(r.db, r.namespace, types.DeletesField, types.DeletesField)
 	if err != nil {
 		return err
 	}
+	defer closer.Close()
+
 	if pl.GetCardinality() == 0 {
 		return nil
 	}
