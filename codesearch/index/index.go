@@ -240,8 +240,10 @@ func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 	}
 	defer closer.Close()
 
-	if pl.GetCardinality() != 1 {
-		return 0, status.FailedPreconditionErrorf("Match field matches > 1 docs: %v", matchField)
+	if pl.GetCardinality() > 1 {
+		return 0, status.FailedPreconditionErrorf("Match field matches > 1 (%d) docs: %v", pl.GetCardinality(), matchField)
+	} else if pl.GetCardinality() == 0 {
+		return 0, pebble.ErrNotFound // No matching documents
 	}
 	return pl.Iterator().Next(), nil
 }
@@ -250,7 +252,7 @@ func getPostingListReadOnly(db pebble.Reader, namespace, key, field string) (pos
 	delBytes, closer, err := db.Get(postingListKey(namespace, key, field))
 	if err != nil {
 		if err == pebble.ErrNotFound {
-			return posting.NewList(), nil, nil // No deletes, return empty list
+			return posting.NewList(), io.NopCloser(nil), nil // No deletes, return empty list
 		}
 		return nil, nil, err
 	}
