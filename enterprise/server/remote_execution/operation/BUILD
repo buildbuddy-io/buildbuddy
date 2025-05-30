@@ -13,6 +13,7 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/retry",
+        "//server/util/rexec",
         "//server/util/status",
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//status",

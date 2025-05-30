@@ -272,6 +272,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) *s
 		ActionMnemonic:                     in.GetActionMnemonic(),
 		Experiments:                        in.GetExperiments(),
 		CommandSnippet:                     in.GetCommandSnippet(),
+		RunID:                              in.GetRunId(),
 	}
 }
 

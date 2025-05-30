@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/genproto/googleapis/longrunning"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
@@ -366,6 +367,15 @@ func AuxiliaryMetadata(md *repb.ExecutedActionMetadata, pb proto.Message) (ok bo
 		}
 	}
 	return false, nil
+}
+
+func ExecutionAuxiliaryMetadata(executeRsp *repb.ExecuteResponse) *espb.ExecutionAuxiliaryMetadata {
+	auxMeta := new(espb.ExecutionAuxiliaryMetadata)
+	ok, err := AuxiliaryMetadata(executeRsp.GetResult().GetExecutionMetadata(), auxMeta)
+	if ok && err == nil {
+		return auxMeta
+	}
+	return nil
 }
 
 // Retryable returns false if the error is a configuration error

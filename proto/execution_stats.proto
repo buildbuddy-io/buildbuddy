@@ -166,8 +166,8 @@ message ExecutionAuxiliaryMetadata {
   // The timestamp at which the task was locally enqueued on the worker.
   google.protobuf.Timestamp worker_queued_timestamp = 9;
 
-  // If the execution failed and should be retried, the executor will set to
-  // true.
+  // If the execution failed and should be automatically retried by the server,
+  // the executor will set to true.
   bool retry = 10;
 }
 
