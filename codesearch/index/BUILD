@@ -4,7 +4,7 @@ go_library(
     name = "index",
     srcs = [
         "index.go",
-        "merger.go"
+        "merger.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/index",
     visibility = ["//visibility:public"],
