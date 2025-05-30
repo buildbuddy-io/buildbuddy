@@ -102,7 +102,7 @@ func (css *CodesearchService) Index(ctx context.Context, req *inpb.IndexRequest)
 	}
 
 	if req.GetReplacementStrategy() == inpb.ReplacementStrategy_REPLACE_REPO {
-		token, _ := css.getGitRepoAccessToken(ctx, claims.GroupID, req.GetGitRepo().GetRepoUrl())
+		token, err := css.getGitRepoAccessToken(ctx, claims.GroupID, req.GetGitRepo().GetRepoUrl())
 		if err != nil {
 			return nil, err
 		}
