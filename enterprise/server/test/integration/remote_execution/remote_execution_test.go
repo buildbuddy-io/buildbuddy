@@ -1700,7 +1700,39 @@ func TestRedisRestart(t *testing.T) {
 	)
 }
 
+type cancelInvocationTestCase struct {
+	name  string
+	flags map[string]any
+}
+
 func TestInvocationCancellation(t *testing.T) {
+	for _, tc := range []cancelInvocationTestCase{
+		{
+			name: "executions stored in redis",
+			flags: map[string]any{
+				"remote_execution.write_execution_progress_state_to_redis": true,
+				"remote_execution.write_executions_to_primary_db":          false,
+			},
+		},
+		{
+			name: "executions stored in DB",
+			flags: map[string]any{
+				"remote_execution.write_execution_progress_state_to_redis": false,
+				"remote_execution.write_executions_to_primary_db":          true,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testInvocationCancellation(t, tc)
+		})
+	}
+}
+
+func testInvocationCancellation(t *testing.T, tc cancelInvocationTestCase) {
+	for k, v := range tc.flags {
+		flags.Set(t, k, v)
+	}
+
 	rbe := rbetest.NewRBETestEnv(t)
 
 	bbServer := rbe.AddBuildBuddyServer()
