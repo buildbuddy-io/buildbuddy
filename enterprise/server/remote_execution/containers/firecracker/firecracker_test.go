@@ -86,6 +86,7 @@ const (
 )
 
 var (
+	testExecutorRoot = flag.String("test_executor_root", "/tmp/test-executor-root", "If set, use this as the executor root data dir. Helps avoid excessive image pulling when re-running tests.")
 	// TODO(bduffany): make the bazel test a benchmark, and run it for both
 	// NBD and non-NBD.
 	testBazelBuild = flag.Bool("test_bazel_build", false, "Whether to test a bazel build.")
@@ -293,10 +294,27 @@ func runProxyServers(ctx context.Context, proxyEnv *testenv.TestEnv, t *testing.
 	proxyEnv.SetLocalActionCacheServer(acServer)
 }
 
-func getExecutorConfig(t *testing.T) *firecracker.ExecutorConfig {
+func executorRootDir(t *testing.T) string {
+	// When running this test on the bare executor pool, ensure the jailer root
+	// is under /buildbuddy so that it's on the same device as the executor data
+	// dir (with action workspaces and filecache).
+	// Using a fixed directory also means that separate runs can share the image
+	// cache instead of each having to pull their own images.
+	if testfs.Exists(t, "/buildbuddy", "") {
+		*testExecutorRoot = "/buildbuddy/test-executor-root"
+	}
+
+	if *testExecutorRoot != "" {
+		return *testExecutorRoot
+	}
+
 	// NOTE: JailerRoot needs to be < 38 chars long, so can't just use
 	// testfs.MakeTempDir(t).
-	root := testfs.MakeTempSymlink(t, "/tmp", "buildbuddy-*-jail", testfs.MakeTempDir(t))
+	return testfs.MakeTempSymlink(t, "/tmp", "buildbuddy-*-jailer", testfs.MakeTempDir(t))
+}
+
+func getExecutorConfig(t *testing.T) *firecracker.ExecutorConfig {
+	root := executorRootDir(t)
 
 	buildRoot := filepath.Join(root, "build")
 	cacheRoot := filepath.Join(root, "cache")
