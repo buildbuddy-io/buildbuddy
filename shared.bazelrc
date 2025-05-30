@@ -93,7 +93,6 @@ common:quarantine --test_env=RUN_QUARANTINED_TESTS=true
 # Configuration used to deflake tests
 common:deflake --config=remote-minimal
 common:deflake --runs_per_test=100
-common:deflake --test_output=errors
 common:deflake --test_runner_fail_fast
 common:deflake --notest_keep_going
 common:deflake --config=quarantine
