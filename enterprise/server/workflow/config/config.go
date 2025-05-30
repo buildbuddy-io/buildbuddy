@@ -198,7 +198,7 @@ func buildWithKythe(dirName string) string {
 	// before this can go in - the current buildbuddy-io/kythe release does not support bzlmod.
 	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
 	return fmt.Sprintf(`
-BZL_MAJOR_VERSION=$(bazel version | grep "Build label" | cut -d':' -f 2 | xargs | cut -d'.' -f1)
+BZL_MAJOR_VERSION=$(bazel --version | cut -d' ' -f2 | xargs | cut -d'.' -f1)
 
 if [ $BZL_MAJOR_VERSION -lt 7 ]; then
     BZLMOD_DEFAULT=0
@@ -226,7 +226,7 @@ if [ "$BZLMOD_ENABLED" -eq - ]; then
 		echo 'bazel_dep(name = "kythe", version = "0.0.75")' >> MODULE.bazel
 		echo "local_path_override(module_name=\"kythe\", path=\"$KYTHE_DIR\")" >> MODULE.bazel
 	else
-		KYTHE_ARGS="--inject_repository kythe_release=$KYTHE_DIR"
+		KYTHE_ARGS="--inject_repository=kythe_release=$KYTHE_DIR"
 	fi
 else
     # override_repository always works if bzlmod is disabled.
