@@ -15,27 +15,34 @@ const roaringMergerName = "roaring_merger"
 func OpenPebbleDB(path string) (*pebble.DB, error) {
 	return pebble.Open(path, &pebble.Options{
 		Merger: &pebble.Merger{
-			Merge: InitRoaringMerger,
+			Merge: initRoaringMerger,
 			Name:  roaringMergerName,
 		},
 	})
 }
 
-func InitRoaringMerger(key, value []byte) (pebble.ValueMerger, error) {
-	// TODO(jdelfino): Sanity check key to make sure it is a posting list key? this will only work
-	// posting lists...
-	// TODO(jdelfino): do we need to handle empty/nil value?
+func initRoaringMerger(key, value []byte) (pebble.ValueMerger, error) {
+	// If we ever need to support merging values that are not posting lists,
+	// we can peek at the first few bytes here to see if they match the roaring
+	// format: https://github.com/RoaringBitmap/RoaringFormatSpec?tab=readme-ov-file#1-cookie-header
+	// For now, we assume all values are posting lists.
+	if len(value) == 0 {
+		return &roaringValueMerger{
+			pl: posting.NewList(),
+		}, nil
+	}
+
 	pl, err := posting.Unmarshal(value)
 	if err != nil {
 		return nil, err
 	}
 
-	return &RoaringValueMerger{
+	return &roaringValueMerger{
 		pl: pl,
 	}, nil
 }
 
-type RoaringValueMerger struct {
+type roaringValueMerger struct {
 	pl posting.List
 }
 
@@ -48,15 +55,15 @@ func mergeInto(pl posting.List, docIdBytes []byte) error {
 	return nil
 }
 
-func (rm *RoaringValueMerger) MergeNewer(value []byte) error {
+func (rm *roaringValueMerger) MergeNewer(value []byte) error {
 	return mergeInto(rm.pl, value)
 }
 
-func (rm *RoaringValueMerger) MergeOlder(value []byte) error {
+func (rm *roaringValueMerger) MergeOlder(value []byte) error {
 	return mergeInto(rm.pl, value)
 }
 
-func (rm *RoaringValueMerger) Finish(includesBase bool) ([]byte, io.Closer, error) {
+func (rm *roaringValueMerger) Finish(includesBase bool) ([]byte, io.Closer, error) {
 	r, err := posting.Marshal(rm.pl)
 	return r, nil, err
 }
