@@ -6,11 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/url"
 	"os"
 	"path"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
@@ -39,6 +41,10 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+)
+
+const (
+	killChance = 1.0 / 100_000.0
 )
 
 var (
@@ -236,6 +242,10 @@ func main() {
 		if err := stream.Send(&req); err != nil {
 			log.Fatalf("Error sending event on stream: %s", err.Error())
 		}
+		if rand.Float64() < killChance {
+			log.Warningf("Killing process!")
+			syscall.Kill(os.Getpid(), syscall.SIGKILL)
+		}
 	}
 
 	// Fetch invocation log chunks from the original invocation and replay them
@@ -274,6 +284,10 @@ func main() {
 						},
 					},
 				})
+				if rand.Float64() < killChance {
+					log.Warningf("Killing process!")
+					syscall.Kill(os.Getpid(), syscall.SIGKILL)
+				}
 			}
 
 			if status.IsNotFoundError(err) {
