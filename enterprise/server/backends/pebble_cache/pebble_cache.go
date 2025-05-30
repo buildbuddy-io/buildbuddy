@@ -2196,8 +2196,9 @@ type zstdCompressor struct {
 	cacheName string
 
 	interfaces.CommittedWriteCloser
-	compressBuf []byte
-	bufferPool  *bytebufferpool.VariableSizePool
+	compressBuf     []byte
+	poolCompressBuf []byte // Buffer we must return to the pool on close.
+	bufferPool      *bytebufferpool.VariableSizePool
 
 	numDecompressedBytes int
 	numCompressedBytes   int
@@ -2209,11 +2210,14 @@ func NewZstdCompressor(cacheName string, wc interfaces.CommittedWriteCloser, bp 
 		cacheName:            cacheName,
 		CommittedWriteCloser: wc,
 		compressBuf:          compressBuf,
+		poolCompressBuf:      compressBuf,
 		bufferPool:           bp,
 	}
 }
 
 func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
+	// CompressZstd can allocate a new buffer if the given compressBuf is not large enough
+	// to fit the compressed bytes.
 	z.compressBuf = compression.CompressZstd(z.compressBuf, decompressedBytes)
 	compressedBytesWritten, err := z.CommittedWriteCloser.Write(z.compressBuf)
 	if err != nil {
@@ -2233,7 +2237,7 @@ func (z *zstdCompressor) Close() error {
 		With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: z.cacheName}).
 		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
 
-	z.bufferPool.Put(z.compressBuf)
+	z.bufferPool.Put(z.poolCompressBuf)
 	return z.CommittedWriteCloser.Close()
 }
 
