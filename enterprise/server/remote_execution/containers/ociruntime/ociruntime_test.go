@@ -59,6 +59,7 @@ var (
 	busyboxRlocationpath    string
 	ociBusyboxRlocationpath string
 	testworkerRlocationpath string
+	netToolsImageRef        string
 )
 
 func init() {
@@ -107,7 +108,7 @@ func netToolsImage(t *testing.T) string {
 	if !hasMountPermissions(t) {
 		t.Skipf("using a real container image with overlayfs requires mount permissions")
 	}
-	return "gcr.io/flame-public/net-tools@sha256:e904e2149194b94f4504fdfb3c7b2b71afa130708feb482fe9a9d557453fa8fd"
+	return netToolsImageRef
 }
 
 // Returns a remote reference to the image in //dockerfiles/test_images/ociruntime_test/image_config_test_image
@@ -934,7 +935,6 @@ func TestSignal(t *testing.T) {
 }
 
 func TestNetwork_Enabled(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	setupNetworking(t)
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
@@ -951,6 +951,7 @@ func TestNetwork_Enabled(t *testing.T) {
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.network_stats_enabled", true)
 
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
@@ -981,6 +982,8 @@ func TestNetwork_Enabled(t *testing.T) {
 	t.Logf("stdout: %s", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
+	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
 }
 
 func TestNetwork_Disabled(t *testing.T) {
@@ -1000,6 +1003,7 @@ func TestNetwork_Disabled(t *testing.T) {
 
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.network_stats_enabled", true)
 
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
@@ -1035,6 +1039,8 @@ func TestNetwork_Disabled(t *testing.T) {
 	t.Logf("stdout: %s", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesSent())
+	assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesReceived())
 }
 
 func TestUser(t *testing.T) {
