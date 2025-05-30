@@ -155,7 +155,6 @@ go_test(
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/snaploader",
         "//enterprise/server/remote_execution/snaputil",
-        "//enterprise/server/remote_execution/vbd",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/testutil/testcontainer",
         "//enterprise/server/util/cpuset",
