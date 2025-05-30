@@ -552,6 +552,11 @@ func (i *indexFromRawManifest) ImageIndex(h gcr.Hash) (gcr.ImageIndex, error) {
 
 }
 
+// imageByPlatform finds the first child entry in the index manifest
+// that matches the given platform and converts its manifest into an Image.
+// If the child entry does not, in fact, point to an OCI image, an error is returned.
+//
+// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
 func (i *indexFromRawManifest) imageByPlatform(platform gcr.Platform) (gcr.Image, error) {
 	desc, err := i.childByPlatform(platform)
 	if err != nil {
@@ -560,6 +565,10 @@ func (i *indexFromRawManifest) imageByPlatform(platform gcr.Platform) (gcr.Image
 	return i.Image(desc.Digest)
 }
 
+// childPlatform finds the first child entry in the index rawManifest
+// that matches the given platform.
+//
+// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
 func (i *indexFromRawManifest) childByPlatform(platform gcr.Platform) (*gcr.Descriptor, error) {
 	index, err := i.IndexManifest()
 	if err != nil {
@@ -579,6 +588,9 @@ func (i *indexFromRawManifest) childByPlatform(platform gcr.Platform) (*gcr.Desc
 	return nil, status.NotFoundErrorf("no child with platform %+v in index", platform)
 }
 
+// matchesPlatform returns true if the given platform satisfies the required platform.
+//
+// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
 func matchesPlatform(given, required gcr.Platform) bool {
 	// Required fields that must be identical.
 	if given.Architecture != required.Architecture || given.OS != required.OS {
@@ -605,6 +617,8 @@ func matchesPlatform(given, required gcr.Platform) bool {
 }
 
 // isSubset checks if the required array of strings is a subset of the given lst.
+//
+// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
 func isSubset(lst, required []string) bool {
 	set := make(map[string]bool)
 	for _, value := range lst {
@@ -620,6 +634,10 @@ func isSubset(lst, required []string) bool {
 	return true
 }
 
+// childByHash finds the first child entry in the index manifest
+// that matches the given digest.
+//
+// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
 func (i *indexFromRawManifest) childByHash(h gcr.Hash) (*gcr.Descriptor, error) {
 	index, err := i.IndexManifest()
 	if err != nil {
@@ -776,46 +794,43 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 	return partial.BlobToDiffID(l.image, l.digest)
 }
 
-func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
+func (l *layerFromDigest) fetchRemoteLayer() error {
 	if l.remoteLayer != nil {
-		return l.remoteLayer.Compressed()
+		return nil
 	}
 	ref := l.repo.Digest(l.digest.String())
 	remoteLayer, err := remote.Layer(ref, l.remoteOpts...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	l.remoteLayer = remoteLayer
+	return nil
+}
+
+func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
+	if err := l.fetchRemoteLayer(); err != nil {
+		return nil, err
+	}
 	return l.remoteLayer.Compressed()
 }
 
 func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
-	if l.remoteLayer != nil {
-		return l.remoteLayer.Uncompressed()
-	}
-	ref := l.repo.Digest(l.digest.String())
-	remoteLayer, err := remote.Layer(ref, l.remoteOpts...)
-	if err != nil {
+	if err := l.fetchRemoteLayer(); err != nil {
 		return nil, err
 	}
-	l.remoteLayer = remoteLayer
 	return l.remoteLayer.Uncompressed()
 }
 
 func (l *layerFromDigest) Size() (int64, error) {
-	ref := l.repo.Digest(l.digest.String())
-	desc, err := remote.Head(ref, l.remoteOpts...)
-	if err != nil {
+	if err := l.fetchRemoteLayer(); err != nil {
 		return 0, err
 	}
-	return desc.Size, nil
+	return l.remoteLayer.Size()
 }
 
 func (l *layerFromDigest) MediaType() (types.MediaType, error) {
-	ref := l.repo.Digest(l.digest.String())
-	desc, err := remote.Head(ref, l.remoteOpts...)
-	if err != nil {
+	if err := l.fetchRemoteLayer(); err != nil {
 		return "", err
 	}
-	return desc.MediaType, nil
+	return l.remoteLayer.MediaType()
 }
