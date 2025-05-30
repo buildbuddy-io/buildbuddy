@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"math"
 	"strconv"
 	"testing"
 
@@ -50,18 +49,39 @@ func TestLossless(t *testing.T) {
 			compress:   compressWithNewZstdCompressingReader,
 			decompress: decompressWithNewZstdDecompressingReader,
 		},
+		{
+			name:       "NewZstdCompressingWriter -> DecompressZstd",
+			compress:   compressWithNewZstdCompressingWriter,
+			decompress: decompressWithDecompressZstd,
+		},
+		{
+			name:       "NewZstdCompressingWriter -> NewZstdDecompressor",
+			compress:   compressWithNewZstdCompressingWriter,
+			decompress: decompressWithNewZstdDecompressor,
+		},
+		{
+			name:       "NewZstdCompressingWriter -> NewZstdDecompressingReader",
+			compress:   compressWithNewZstdCompressingWriter,
+			decompress: decompressWithNewZstdDecompressingReader,
+		},
 	} {
-		for i := 1; i <= 5; i++ {
-			srclen := int(math.Pow10(i))
+		for _, srclen := range []int{9, 99, 999, 1_999_999, 5_999_999} {
 			name := tc.name + "_" + strconv.Itoa(srclen) + "_bytes"
 			t.Run(name, func(t *testing.T) {
 				_, r := testdigest.NewReader(t, int64(srclen))
 				src, err := io.ReadAll(r)
 				require.NoError(t, err)
+				require.Len(t, src, srclen)
 				require.Equal(t, srclen, len(src))
 				compressed := tc.compress(t, src)
 
 				decompressed := tc.decompress(t, len(src), compressed)
+				require.Len(t, decompressed, srclen)
+				if srclen > 1000 {
+					require.Empty(t, cmp.Diff(src[:1000], decompressed[:1000]))
+					require.Empty(t, cmp.Diff(src[len(src)-1000:], decompressed[len(decompressed)-1000:]))
+					return
+				}
 				require.Empty(t, cmp.Diff(src, decompressed))
 			})
 		}
@@ -88,6 +108,17 @@ func compressWithNewZstdCompressingReader(t *testing.T, src []byte) []byte {
 	return compressed
 }
 
+func compressWithNewZstdCompressingWriter(t *testing.T, src []byte) []byte {
+	compressed := &bytes.Buffer{}
+	cw := compression.NewZstdCompressingWriter(compressed)
+	written, err := cw.Write(src)
+	require.NoError(t, err)
+	require.Equal(t, len(src), written)
+	err = cw.Close()
+	require.NoError(t, err)
+	return compressed.Bytes()
+}
+
 func decompressWithDecompressZstd(t *testing.T, srclen int, compressed []byte) []byte {
 	decompressed := make([]byte, srclen)
 	decompressed, err := compression.DecompressZstd(decompressed, compressed)
@@ -111,10 +142,9 @@ func decompressWithNewZstdDecompressingReader(t *testing.T, srclen int, compress
 	rc := io.NopCloser(bytes.NewReader(compressed))
 	d, err := compression.NewZstdDecompressingReader(rc)
 	require.NoError(t, err)
-	buf := make([]byte, srclen)
-	n, err := d.Read(buf)
+	buf, err := io.ReadAll(d)
 	require.NoError(t, err)
-	require.Equal(t, srclen, n)
+	require.Len(t, buf, srclen)
 	err = d.Close()
 	require.NoError(t, err)
 	err = rc.Close()

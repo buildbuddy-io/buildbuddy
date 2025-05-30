@@ -7,10 +7,13 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+const compressChunkSize = 4 * 1024 * 1024 // 4MB
 
 var (
 	// zstdEncoder can be shared across goroutines to compress chunks of data
@@ -22,6 +25,8 @@ var (
 	// either for streaming decompression using ReadFrom or batch decompression
 	// using DecodeAll. The returned decoders *must not* be closed.
 	zstdDecoderPool = NewZstdDecoderPool()
+
+	compressBufPool = bytebufferpool.FixedSize(compressChunkSize)
 )
 
 func mustGetZstdEncoder() *zstd.Encoder {
@@ -175,6 +180,50 @@ func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf 
 		readBuf:     readBuf,
 		compressBuf: compressBuf,
 	}, nil
+}
+
+type compressingWriter struct {
+	w               io.Writer
+	compressBuf     []byte
+	poolCompressBuf []byte
+}
+
+func (c *compressingWriter) Write(p []byte) (int, error) {
+	var totalWritten int
+	for len(p) > 0 {
+		chunkSize := min(len(p), cap(c.compressBuf))
+		chunk := p[:chunkSize]
+		c.compressBuf = CompressZstd(c.compressBuf[:0], chunk)
+
+		written, err := c.w.Write(c.compressBuf)
+		if err != nil {
+			return totalWritten, err
+		}
+		if written < len(c.compressBuf) {
+			return totalWritten, io.ErrShortWrite
+		}
+
+		totalWritten += chunkSize
+		p = p[chunkSize:]
+	}
+	return totalWritten, nil
+}
+
+func (c *compressingWriter) Close() error {
+	compressBufPool.Put(c.poolCompressBuf)
+	return nil
+}
+
+// NewZstdCompressingWriter returns a writer that compresses each chunk of the
+// input using zstd and writes the compressed data to the underlying writer.
+// The writer uses a fixed-size 4MB buffer for compression.
+func NewZstdCompressingWriter(w io.Writer) io.WriteCloser {
+	compressBuf := compressBufPool.Get()
+	return &compressingWriter{
+		w:               w,
+		compressBuf:     compressBuf,
+		poolCompressBuf: compressBuf,
+	}
 }
 
 // NewZstdDecompressingReader reads zstd-compressed data from the input
