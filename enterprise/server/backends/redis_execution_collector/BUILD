@@ -11,6 +11,7 @@ go_library(
         "//proto:stored_invocation_go_proto",
         "//server/real_environment",
         "//server/util/proto",
+        "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
     ],
 )
@@ -23,6 +24,7 @@ go_test(
         "//enterprise/server/testutil/testredis",
         "//proto:remote_execution_go_proto",
         "//proto:stored_invocation_go_proto",
+        "//server/util/status",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

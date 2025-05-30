@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -211,7 +212,7 @@ func (c *collector) GetInProgressExecution(ctx context.Context, executionID stri
 		return nil, err
 	}
 	if len(serializedResults) == 0 {
-		return nil, nil
+		return nil, status.NotFoundErrorf("in progress execution %s not found", executionID)
 	}
 	return mergeExecutionUpdates(serializedResults)
 }

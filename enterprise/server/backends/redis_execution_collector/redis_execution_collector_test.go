@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -112,10 +113,9 @@ func TestCollectExecutionUpdates(t *testing.T) {
 	err = collector.DeleteInProgressExecution(ctx, executionID)
 	require.NoError(t, err)
 
-	// Read the updates back again; should return nil.
-	execution, err = collector.GetInProgressExecution(ctx, executionID)
-	require.NoError(t, err)
-	require.Nil(t, execution)
+	// Read the updates back again; should return not found error.
+	_, err = collector.GetInProgressExecution(ctx, executionID)
+	require.True(t, status.IsNotFoundError(err))
 }
 
 func TestGetInProgressExecutionsIgnoresDeletedExecutions(t *testing.T) {
