@@ -194,8 +194,6 @@ func buildWithKythe(dirName string) string {
 	// enable Kythe. This means the build will fail or be invalid if the normal build workflow
 	// passes any important flags. While passing flags on the command line is discouraged,
 	// we'll need to handle this eventually.
-	// TODO(jdelfino): DO NOT SUBMIT We need to cut a new release of kythe with bzlmod support
-	// before this can go in - the current buildbuddy-io/kythe release does not support bzlmod.
 	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
 	return fmt.Sprintf(`
 BZL_MAJOR_VERSION=$(bazel --version | cut -d' ' -f2 | xargs | cut -d'.' -f1)
