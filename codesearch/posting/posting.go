@@ -15,6 +15,7 @@ type List interface {
 	Remove(uint64)
 	GetCardinality() uint64
 	ToArray() []uint64
+	Iterator() roaring64.IntPeekable64
 	Clear()
 }
 
@@ -44,6 +45,10 @@ func (w *roaringWrapper) AndNot(l List) {
 		panic("not roaringWrapper")
 	}
 	w.Bitmap.AndNot(bm.Bitmap)
+}
+
+func (w *roaringWrapper) Iterator() roaring64.IntPeekable64 {
+	return w.Bitmap.Iterator()
 }
 
 func NewList(ids ...uint64) List {
@@ -95,6 +100,21 @@ func Unmarshal(buf []byte) (List, error) {
 	return &roaringWrapper{pl}, nil
 }
 
+// UnmarshalReadOnly unmarshals a posting list from a byte slice without copying
+// the underlying data. This should be used to reduce allocations when the posting
+// list will be used in a read-only fashion.
+func UnmarshalReadOnly(buf []byte) (List, error) {
+	pl := roaring64.New()
+	n, err := pl.FromUnsafeBytes(buf)
+	if err != nil {
+		return nil, err
+	}
+	if n < int64(len(buf)) {
+		return nil, fmt.Errorf("read only %d bytes of buffer with size %d", n, len(buf))
+	}
+	return &roaringWrapper{pl}, nil
+}
+
 // A fieldMap is a collection of postingLists that are keyed by the field that
 // was matched.
 //
@@ -117,6 +137,7 @@ func (fm *FieldMap) OrField(fieldName string, pl2 List) {
 		(*fm)[fieldName] = pl2
 	}
 }
+
 func (fm *FieldMap) Or(fm2 FieldMap) {
 	for fieldName, pl2 := range fm2 {
 		fm.OrField(fieldName, pl2)
@@ -143,9 +164,10 @@ func (fm *FieldMap) ToPosting() List {
 func (fm *FieldMap) GetCardinality() uint64 {
 	return fm.ToPosting().GetCardinality()
 }
-func (fm *FieldMap) Remove(docid uint64) {
+
+func (fm *FieldMap) Remove(r List) {
 	f := (*fm)
 	for _, pl := range f {
-		pl.Remove(docid)
+		pl.AndNot(r)
 	}
 }

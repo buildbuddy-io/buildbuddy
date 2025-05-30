@@ -228,28 +228,36 @@ func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 		return 0, status.InternalError("match field must be of keyword type")
 	}
 
-	var postingList posting.List
 	// First, check in the current batch
 	if pl, ok := w.fieldPostingLists[matchField.Name()][string(matchField.Contents())]; ok {
-		postingList = pl
-	} else {
-		// If not found, check in the index
-		key := postingListKey(w.namespace, string(matchField.Contents()), matchField.Name())
-		value, closer, err := w.db.Get(key)
-		if err != nil {
-			return 0, err
-		}
-		defer closer.Close()
-
-		postingList, err = posting.Unmarshal(value)
-		if err != nil {
-			return 0, err
-		}
+		return pl.ToArray()[0], nil
 	}
-	if postingList.GetCardinality() != 1 {
+
+	pl, err := getPostingListReadOnly(w.db, w.namespace, string(matchField.Contents()), matchField.Name())
+	if err != nil {
+		return 0, err
+	}
+	if pl.GetCardinality() != 1 {
 		return 0, status.FailedPreconditionErrorf("Match field matches > 1 docs: %v", matchField)
 	}
-	return postingList.ToArray()[0], nil
+	return pl.Iterator().Next(), nil
+}
+
+func getPostingListReadOnly(db pebble.Reader, namespace, key, field string) (posting.List, error) {
+	delBytes, closer, err := db.Get(postingListKey(namespace, key, field))
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return posting.NewList(), nil // No deletes, return empty list
+		}
+		return nil, err
+	}
+	defer closer.Close()
+
+	dels, err := posting.UnmarshalReadOnly(delBytes)
+	if err != nil {
+		return nil, err
+	}
+	return dels, nil
 }
 
 // Deletes the document with the given docID.
@@ -306,23 +314,14 @@ func (w *Writer) DeleteMatchingDocuments(matchField types.Field) error {
 	if matchField.Type() != types.KeywordField {
 		return status.InternalError("match field must be of keyword type")
 	}
-	rv, closer, err := w.db.Get(w.postingListKey(string(matchField.Contents()), matchField.Name()))
-	if err != nil {
-		if err == pebble.ErrNotFound {
-			log.Infof("No documents matching %v found, nothing to drop", matchField)
-			return nil
-		} else {
-			return err
-		}
-	}
-	defer closer.Close()
-
-	delPl, err := posting.Unmarshal(rv)
+	delPl, err := getPostingListReadOnly(w.db, w.namespace, string(matchField.Contents()), matchField.Name())
 	if err != nil {
 		return err
 	}
 
-	for _, docID := range delPl.ToArray() {
+	it := delPl.Iterator()
+	for it.HasNext() {
+		docID := it.Next()
 		if err := w.DeleteDocument(docID); err != nil {
 			return status.InternalErrorf("error deleting document %d: %v", docID, err)
 		}
@@ -346,17 +345,7 @@ func (w *Writer) DropNamespace() error {
 func (w *Writer) CompactDeletes() error {
 	log.Infof("Compacting deletes for namespace %q", w.namespace)
 
-	delBytes, closer, err := w.db.Get(w.postingListKey(types.DeletesField, types.DeletesField))
-	if err != nil {
-		if err == pebble.ErrNotFound {
-			log.Infof("Nothing to compact for namespace %q", w.namespace)
-			return nil // nothing to compact
-		} else {
-			return err
-		}
-	}
-	defer closer.Close()
-	delPl, err := posting.Unmarshal(delBytes)
+	delPl, err := getPostingListReadOnly(w.db, w.namespace, types.DeletesField, types.DeletesField)
 	if err != nil {
 		return err
 	}
@@ -695,16 +684,16 @@ func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field stri
 		if !bytes.Equal(ngram, k.data) {
 			continue
 		}
-		postingList, err := posting.Unmarshal(iter.Value())
+		pl, err := posting.UnmarshalReadOnly(iter.Value())
 		if err != nil {
 			return nil, err
 		}
+		resultSet.OrField(k.field, pl)
+
 		if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
 			tracker.Add(performance.POSTING_LIST_COUNT, 1)
-			tracker.Add(performance.POSTING_LIST_DOCIDS_COUNT, int64(postingList.GetCardinality()))
+			tracker.Add(performance.POSTING_LIST_DOCIDS_COUNT, int64(pl.GetCardinality()))
 		}
-
-		resultSet.OrField(k.field, postingList)
 	}
 	if restrict.GetCardinality() > 0 {
 		resultSet.And(restrict)
@@ -807,17 +796,14 @@ func (r *Reader) postingQuery(q *ast.Node, restrict posting.FieldMap) (posting.F
 }
 
 func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
-	fm, err := r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
+	pl, err := getPostingListReadOnly(r.db, r.namespace, types.DeletesField, types.DeletesField)
 	if err != nil {
 		return err
 	}
-	pl := fm.ToPosting()
 	if pl.GetCardinality() == 0 {
 		return nil
 	}
-	for _, docID := range pl.ToArray() {
-		results.Remove(docID)
-	}
+	results.Remove(pl)
 	return nil
 }
 
