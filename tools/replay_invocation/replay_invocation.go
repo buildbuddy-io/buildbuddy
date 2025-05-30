@@ -158,13 +158,15 @@ func main() {
 	}
 	cancelCh := make(chan struct{}, 10)
 	go func() {
-		cancelChance := 0.01
+		cancelChance := 0.00001
+		cancelAttempt := 1
 		for range cancelCh {
 			if rand.Float64() < cancelChance {
-				fmt.Println("VANJAAAAAAAAAAAAAAAAAAAAAAA - CANCELLED with chance", cancelChance)
+				fmt.Println("VANJAAAAAAAAAAAAAAAAAAAAAAA - CANCELLED at attempt", cancelAttempt, "with chance", cancelChance)
 				cancel()
 			}
-			cancelChance += 0.01
+			cancelChance += 0.00001
+			cancelAttempt++
 		}
 	}()
 	defer close(cancelCh)
