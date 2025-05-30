@@ -209,8 +209,13 @@ func (c *compressingWriter) Write(p []byte) (int, error) {
 	return totalWritten, nil
 }
 
+// Close puts the compression buffer back into the pool.
+// If the underlying Writer is also a Closer, it closes it.
 func (c *compressingWriter) Close() error {
 	compressBufPool.Put(c.poolCompressBuf)
+	if closer, ok := c.w.(io.Closer); ok {
+		return closer.Close()
+	}
 	return nil
 }
 
