@@ -446,7 +446,7 @@ func (i *indexFromRawManifest) Image(h gcr.Hash) (gcr.Image, error) {
 	case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
 		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	case types.OCIImageIndex, types.DockerManifestList:
-		return nil, status.UnknownErrorf("nested index manifests not supported")
+		return nil, status.UnknownErrorf("fetching image manifest from index, but encountered an index manifest")
 	case types.OCIManifestSchema1, types.DockerManifestSchema2:
 	default:
 		log.Warningf("Unexpected media type in index manifest: %q", desc.MediaType)
