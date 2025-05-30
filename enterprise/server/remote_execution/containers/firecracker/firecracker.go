@@ -2100,7 +2100,7 @@ func (c *FirecrackerContainer) fillNetStats(ctx context.Context, usageStats *rep
 	}
 	netStats, err := c.network.Stats(ctx)
 	if err != nil {
-		log.CtxErrorf(ctx, "Failed to get network stats: %s", err)
+		log.CtxWarningf(ctx, "Failed to get network stats: %s", err)
 		return
 	}
 	usageStats.NetworkStats = netStats

@@ -359,11 +359,11 @@ func TestNetworkStats(t *testing.T) {
 			require.Equal(t, int64(0), stats.GetPacketsSent(), "%s (attempt %d): should have sent 0 packets initially", tc.name, attemptNumber)
 		}
 
-		var pcap *networking.PacketCapture
+		var pcap *testnetworking.PacketCapture
 		pcapBuf := &bytes.Buffer{}
 		hostDevice := cn.HostDevice()
 		if enablePcap && !tc.loopbackOnly {
-			p, err := networking.StartPacketCapture(hostDevice, pcapBuf)
+			p, err := testnetworking.StartPacketCapture(hostDevice, pcapBuf)
 			require.NoError(t, err)
 			pcap = p
 		}

@@ -12,7 +12,6 @@ go_library(
         "//server/util/alert",
         "//server/util/background",
         "//server/util/flag",
-        "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
