@@ -466,7 +466,7 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 
 		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.GetInvocationId())
 		if err != nil {
-			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector: %s", link.GetInvocationId(), err)
+			log.CtxErrorf(ctx, "Failed to get invocation %q from ExecutionCollector: %s", link.GetInvocationId(), err)
 			continue
 		}
 		if inv == nil {
@@ -475,18 +475,18 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 			// For now, add the execution to the ExecutionCollector and the build
 			// event handler will flush it after the invocation is complete.
 			if err := s.env.GetExecutionCollector().AppendExecution(ctx, link.GetInvocationId(), executionProto); err != nil {
-				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.GetInvocationId(), err)
+				log.CtxErrorf(ctx, "Failed to append execution %q to invocation %q: %s", executionID, link.GetInvocationId(), err)
 			} else {
-				log.CtxInfof(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
+				log.CtxInfof(ctx, "Appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
 			}
 		} else if s.env.GetOLAPDBHandle() != nil {
 			// Flush to Clickhouse directly if the invocation completed before
 			// the executor published the final execution update.
 			err = s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, []*repb.StoredExecution{executionProto})
 			if err != nil {
-				log.CtxErrorf(ctx, "failed to flush execution %q for invocation %q to clickhouse: %s", executionID, link.GetInvocationId(), err)
+				log.CtxErrorf(ctx, "Failed to flush execution %q for invocation %q to clickhouse: %s", executionID, link.GetInvocationId(), err)
 			} else {
-				log.CtxInfof(ctx, "successfully write 1 execution for invocation %q", link.GetInvocationId())
+				log.CtxInfof(ctx, "Flushed single execution row for invocation %q to clickhouse", link.GetInvocationId())
 			}
 		}
 	}
@@ -1158,7 +1158,11 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
 		if err != nil {
-			log.CtxErrorf(ctx, "PublishOperation: recv err: %s", err)
+			if ctx.Err() != nil {
+				log.CtxInfof(ctx, "Operation stream cancelled: %s", ctx.Err())
+			} else {
+				log.CtxErrorf(ctx, "PublishOperation: recv err: %s", err)
+			}
 			return err
 		}
 
@@ -1382,6 +1386,10 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 
 func (s *ExecutionServer) fetchAction(ctx context.Context, actionResourceName *digest.CASResourceName) (*repb.Action, error) {
 	action := &repb.Action{}
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
 			err = digest.MissingDigestError(actionResourceName.GetDigest())
@@ -1396,6 +1404,10 @@ func (s *ExecutionServer) fetchCommand(ctx context.Context, actionResourceName *
 	cmdDigest := action.GetCommandDigest()
 	cmdInstanceNameDigest := digest.NewCASResourceName(cmdDigest, actionResourceName.GetInstanceName(), actionResourceName.GetDigestFunction())
 	cmd := &repb.Command{}
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
 			err = digest.MissingDigestError(actionResourceName.GetDigest())
@@ -1492,21 +1504,19 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 	for _, id := range ids {
 		ctx := log.EnrichContext(ctx, log.ExecutionIDKey, id)
 		log.CtxInfof(ctx, "Cancelling execution %q due to user request for invocation %q", id, invocationID)
-		cancelled, err := s.env.GetSchedulerService().CancelTask(ctx, id)
-		if cancelled {
-			numCancelled++
-		}
-		if err != nil {
-			log.Warningf("Failed to cancel task %q: %s", id, err)
-		}
-		if err == nil && cancelled {
-			err = s.MarkExecutionFailed(ctx, id, status.CanceledError("invocation cancelled"))
-			if err != nil {
-				log.CtxWarningf(ctx, "Could not mark execution %q as cancelled: %s", id, err)
+		req := &scpb.CancelTaskRequest{TaskId: id}
+		if _, err := s.env.GetSchedulerService().CancelTask(ctx, req); err != nil {
+			if !status.IsNotFoundError(err) {
+				log.CtxWarningf(ctx, "Failed to cancel task %q: %s", id, err)
 			}
+			continue
+		}
+		numCancelled++
+		if err := s.MarkExecutionFailed(ctx, id, status.CanceledError("invocation cancelled")); err != nil {
+			log.CtxWarningf(ctx, "Could not mark execution %q as cancelled: %s", id, err)
 		}
 	}
-	log.CtxInfof(ctx, "Cancelled %d executions for invocation %s", numCancelled, invocationID)
+	log.CtxInfof(ctx, "Cancelled %d execution(s) for invocation %s", numCancelled, invocationID)
 
 	if numCancelled > 0 {
 		inv, err := s.markInvocationAsDisconnected(ctx, invocationID)

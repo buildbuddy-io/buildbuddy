@@ -91,11 +91,12 @@ const (
 	taskTTL = 24 * time.Hour
 
 	// Names of task fields in Redis task hash.
-	redisTaskProtoField       = "taskProto"
-	redisTaskMetadataField    = "schedulingMetadataProto"
-	redisTaskQueuedAtUsec     = "queuedAtUsec"
-	redisTaskAttempCountField = "attemptCount"
-	redisTaskClaimedField     = "claimed"
+	redisTaskProtoField                 = "taskProto"
+	redisTaskMetadataField              = "schedulingMetadataProto"
+	redisTaskQueuedAtUsec               = "queuedAtUsec"
+	redisTaskAttempCountField           = "attemptCount"
+	redisTaskClaimedField               = "claimed"
+	redisTaskLeaseHolderExecutorIdField = "leaseHolderExecutorId"
 
 	// Maximum number of unclaimed task IDs we track per pool.
 	maxUnclaimedTasksTracked = 10_000
@@ -182,7 +183,8 @@ var (
 		if isNewAttempt then
 			redis.call("hincrby", KEYS[1], "attemptCount", 1)
 		end
-		redis.call("hset", KEYS[1], "leaseId", ARGV[4])	
+		redis.call("hset", KEYS[1], "leaseId", ARGV[4])
+		redis.call("hset", KEYS[1], "leaseHolderExecutorId", ARGV[5])
 
 		return redis.call("hset", KEYS[1], "claimed", "1")
 		`)
@@ -204,6 +206,7 @@ var (
 				redis.call("hset", KEYS[1], "reconnectToken", ARGV[1])
 				redis.call("hset", KEYS[1], "reconnectPeriodEnd", ARGV[2])
 			end
+			redis.call("hdel", KEYS[1], "leaseHolderExecutorId")
 			return redis.call("hdel", KEYS[1], "claimed")
 		else 
 			return 0 
@@ -626,6 +629,12 @@ func getAssignableCustomResource(en *scpb.ExecutionNode, name string) float32 {
 	return 0
 }
 
+// isConnected returns true if the executor is connected to this scheduler
+// server instance.
+func (en *executionNode) isConnected() bool {
+	return en.handle != nil
+}
+
 func (en *executionNode) String() string {
 	if en.handle != nil {
 		return fmt.Sprintf("connected executor(%s)", en.GetExecutorId())
@@ -900,11 +909,12 @@ func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, 
 }
 
 type persistedTask struct {
-	taskID          string
-	metadata        *scpb.SchedulingMetadata
-	serializedTask  []byte
-	queuedTimestamp time.Time
-	attemptCount    int64
+	taskID                string
+	metadata              *scpb.SchedulingMetadata
+	serializedTask        []byte
+	queuedTimestamp       time.Time
+	attemptCount          int64
+	leaseHolderExecutorID string
 }
 
 type schedulerClient struct {
@@ -922,6 +932,13 @@ func (c *schedulerClient) EnqueueTaskReservation(ctx context.Context, request *s
 		return c.localServer.EnqueueTaskReservation(ctx, request)
 	}
 	return c.rpcClient.EnqueueTaskReservation(ctx, request)
+}
+
+func (c *schedulerClient) CancelTask(ctx context.Context, req *scpb.CancelTaskRequest) (*scpb.CancelTaskResponse, error) {
+	if c.localServer != nil {
+		return c.localServer.CancelTask(ctx, req)
+	}
+	return c.rpcClient.CancelTask(ctx, req)
 }
 
 type schedulerClientCache struct {
@@ -1024,6 +1041,8 @@ type SchedulerServer struct {
 	pools map[nodePoolKey]*nodePool
 
 	leaseDuration, leaseGracePeriod time.Duration
+
+	localLeaseCancelChans sync.Map // string -> chan struct{}
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -1391,7 +1410,7 @@ func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID, leaseID, reco
 	return nil
 }
 
-func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken string, clientSupportsReconnect bool) (string, error) {
+func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken string, clientSupportsReconnect bool, executorID string) (string, error) {
 	leaseId, err := random.RandomString(20)
 	if err != nil {
 		return "", status.InternalErrorf("could not generate lease ID: %s", err)
@@ -1401,6 +1420,7 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken 
 		ctx, s.rdb,
 		[]string{s.redisKeyForTask(taskID)},
 		checkTaskReconnectToken, reconnectToken, time.Now().UnixNano(), leaseId,
+		executorID,
 	).Result()
 	if err != nil {
 		log.CtxErrorf(ctx, "claimTask error: redis script failed: %s", err)
@@ -1526,6 +1546,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		redisTaskMetadataField,
 		redisTaskQueuedAtUsec,
 		redisTaskAttempCountField,
+		redisTaskLeaseHolderExecutorIdField,
 	}
 	key := s.redisKeyForTask(taskID)
 	vals, err := s.rdb.HMGet(ctx, key, fields...).Result()
@@ -1577,12 +1598,19 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		return nil, status.InvalidArgumentErrorf("could not parse attempt count %q: %v", attemptCountStr, attemptCount)
 	}
 
+	// Lease-holder executor ID field.
+	leaseExecutorID, ok := vals[4].(string)
+	if !ok {
+		return nil, status.InvalidArgumentErrorf("unexpected type %T for executor ID", vals[4])
+	}
+
 	return &persistedTask{
-		taskID:          taskID,
-		metadata:        metadata,
-		serializedTask:  serializedTask,
-		queuedTimestamp: time.UnixMicro(queuedAtUsec),
-		attemptCount:    attemptCount,
+		taskID:                taskID,
+		metadata:              metadata,
+		serializedTask:        serializedTask,
+		queuedTimestamp:       time.UnixMicro(queuedAtUsec),
+		attemptCount:          attemptCount,
+		leaseHolderExecutorID: leaseExecutorID,
 	}, nil
 }
 
@@ -1593,6 +1621,19 @@ func (s *SchedulerServer) isShuttingDown() bool {
 	default:
 		return false
 	}
+}
+
+func (s *SchedulerServer) findExecutorByID(ctx context.Context, executorID string) (*nodePool, *executionNode, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, pool := range s.pools {
+		for _, node := range pool.nodes {
+			if node.GetExecutorId() == executorID {
+				return pool, node, true
+			}
+		}
+	}
+	return nil, nil, false
 }
 
 type leaseMessage struct {
@@ -1645,6 +1686,8 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 	}()
 
+	cancelledChan := make(chan struct{})
+
 	livenessTicker := s.clock.NewTicker(s.leaseDuration)
 	defer livenessTicker.Stop()
 	for {
@@ -1660,6 +1703,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			} else {
 				continue
 			}
+		case <-cancelledChan:
+			// We were proactively notified that the task was deleted;
+			// this means it is no longer claimed.
+			log.CtxInfof(ctx, "Cancelling task lease due to task cancellation")
+			claimed = false
+			return status.CanceledErrorf("task cancelled")
 		}
 		if err == io.EOF {
 			log.CtxWarningf(ctx, "LeaseTask %q got EOF: %s", taskID, err)
@@ -1686,12 +1735,14 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 		if !claimed {
 			log.CtxInfof(ctx, "LeaseTask attempt (reconnect=%t) from executor %q", req.GetReconnectToken() != "", executorID)
-			leaseID, err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect())
+			leaseID, err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect(), executorID)
 			if err != nil {
 				log.CtxDebugf(ctx, "LeaseTask claim attempt (reconnect=%t) failed: %s", req.GetReconnectToken() != "", err)
 				return err
 			}
 			claimed = true
+			s.localLeaseCancelChans.Store(taskID, cancelledChan)
+			defer s.localLeaseCancelChans.Delete(taskID)
 			task, err := s.readTask(ctx, req.GetTaskId())
 			if err != nil {
 				log.CtxErrorf(ctx, "LeaseTask error reading task %s", err.Error())
@@ -2104,8 +2155,45 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	return &scpb.ScheduleTaskResponse{}, nil
 }
 
-func (s *SchedulerServer) CancelTask(ctx context.Context, taskID string) (bool, error) {
-	return s.deleteTask(ctx, taskID)
+func (s *SchedulerServer) CancelTask(ctx context.Context, req *scpb.CancelTaskRequest) (*scpb.CancelTaskResponse, error) {
+	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
+
+	task, err := s.readTask(ctx, req.GetTaskId())
+	if err != nil {
+		log.CtxInfof(ctx, "Failed to read task for cancellation: %s", err)
+	}
+
+	deleteOK, deleteErr := s.deleteTask(ctx, req.GetTaskId())
+
+	// Locally or remotely cancel any currently held lease for the task
+	// (best-effort immediate cancellation).
+	cancelChan, ok := s.localLeaseCancelChans.LoadAndDelete(req.GetTaskId())
+	if ok {
+		close(cancelChan.(chan struct{}))
+	} else if task != nil && task.leaseHolderExecutorID != "" && !req.GetLocalOnly() {
+		_, node, ok := s.findExecutorByID(ctx, task.leaseHolderExecutorID)
+		if ok && !node.isConnected() {
+			// Executor is connected to a different scheduler server instance.
+			// Cancel the lease on the schedulerClient scheduler server.
+			schedulerClient, err := s.schedulerClientCache.get(node.schedulerHostPort)
+			if err != nil {
+				log.CtxInfof(ctx, "Could not get scheduler client for remote executor %q: %s", node.schedulerHostPort, err)
+			} else {
+				req = req.CloneVT()
+				req.LocalOnly = true
+				schedulerClient.CancelTask(ctx, req)
+			}
+		}
+	}
+
+	if deleteErr != nil {
+		return nil, status.WrapError(err, "delete task")
+	}
+	if !deleteOK {
+		return nil, status.NotFoundErrorf("task not found")
+	}
+
+	return &scpb.CancelTaskResponse{}, nil
 }
 
 func (s *SchedulerServer) ExistsTask(ctx context.Context, taskID string) (bool, error) {

@@ -889,7 +889,7 @@ type SchedulerService interface {
 	RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
-	CancelTask(ctx context.Context, taskID string) (bool, error)
+	CancelTask(ctx context.Context, req *scpb.CancelTaskRequest) (*scpb.CancelTaskResponse, error)
 	ExistsTask(ctx context.Context, taskID string) (bool, error)
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)

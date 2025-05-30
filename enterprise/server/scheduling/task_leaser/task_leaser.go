@@ -58,6 +58,7 @@ func (t *TaskLeaser) Lease(ctx context.Context, taskID string) (interfaces.TaskL
 		execTask:         &repb.ExecutionTask{},
 		quit:             make(chan struct{}),
 		ttl:              100 * time.Second,
+		errCh:            make(chan error, 1),
 	}
 	ctx, serializedTask, err := lease.claim(ctx)
 	if err != nil {
@@ -69,6 +70,60 @@ func (t *TaskLeaser) Lease(ctx context.Context, taskID string) (interfaces.TaskL
 		return nil, status.InternalErrorf("unmarshal ExecutionTask: %s", err)
 	}
 	return lease, nil
+}
+
+// leaseStream receives from a task lease stream in the background, so that
+// errors returned by Recv() can be returned immediately (e.g. when the
+// scheduler cancels the task). It otherwise behaves the same way as a
+// bidirectional gRPC stream.
+type leaseStream struct {
+	scpb.Scheduler_LeaseTaskClient
+
+	msgs chan *scpb.LeaseTaskResponse
+	done chan struct{}
+	err  error
+}
+
+func newLeaseStream(stream scpb.Scheduler_LeaseTaskClient, errCh chan error) *leaseStream {
+	r := &leaseStream{
+		Scheduler_LeaseTaskClient: stream,
+
+		msgs: make(chan *scpb.LeaseTaskResponse),
+		done: make(chan struct{}),
+	}
+	go func() {
+		defer close(r.done)
+		for {
+			msg, err := stream.Recv()
+			if err == io.EOF {
+				r.err = err
+				return
+			} else if err != nil {
+				r.err = err
+				select {
+				case errCh <- err:
+				default:
+				}
+				return
+			}
+			select {
+			case r.msgs <- msg:
+			case <-stream.Context().Done():
+				r.err = stream.Context().Err()
+				return
+			}
+		}
+	}()
+	return r
+}
+
+func (r *leaseStream) Recv() (*scpb.LeaseTaskResponse, error) {
+	select {
+	case <-r.done:
+		return nil, r.err
+	case msg := <-r.msgs:
+		return msg, nil
+	}
 }
 
 type TaskLease struct {
@@ -83,7 +138,8 @@ type TaskLease struct {
 	supportsReconnect bool
 	quit              chan struct{}
 	mu                sync.Mutex // protects stream
-	stream            scpb.Scheduler_LeaseTaskClient
+	stream            *leaseStream
+	errCh             chan error
 	ttl               time.Duration
 	cancelFunc        context.CancelFunc
 }
@@ -140,7 +196,7 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 		if err != nil {
 			return nil, status.WrapError(err, "reconnect lease")
 		}
-		t.stream = stream
+		t.stream = newLeaseStream(stream, t.errCh)
 		if r == nil {
 			ctx, cancel := context.WithTimeout(ctx, reconnectTimeout)
 			defer cancel()
@@ -174,9 +230,18 @@ func (t *TaskLease) keepLease(ctx context.Context) {
 			select {
 			case <-t.quit:
 				return
+			case err := <-t.errCh:
+				if status.IsCanceledError(err) {
+					log.CtxInfof(ctx, "Task cancelled by server: %s", err)
+					close(t.quit)
+					t.cancelFunc()
+					return
+				}
+				// Other errors will be surfaced in pingServer.
 			case <-time.After(t.ttl):
 				if _, err := t.pingServer(ctx); err != nil {
 					log.CtxErrorf(ctx, "Error updating lease for task: %q: %s", t.taskID, err)
+					close(t.quit)
 					t.cancelFunc()
 					return
 				}
@@ -193,7 +258,7 @@ func (t *TaskLease) claim(ctx context.Context) (context.Context, []byte, error) 
 	if err != nil {
 		return nil, nil, err
 	}
-	t.stream = stream
+	t.stream = newLeaseStream(stream, t.errCh)
 	serializedTask, err := t.pingServer(ctx)
 	if err == nil {
 		defer t.keepLease(ctx)

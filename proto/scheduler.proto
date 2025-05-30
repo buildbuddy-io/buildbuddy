@@ -472,6 +472,8 @@ service Scheduler {
 
   rpc LeaseTask(stream LeaseTaskRequest) returns (stream LeaseTaskResponse) {}
 
+  rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse) {}
+
   rpc TaskExists(TaskExistsRequest) returns (TaskExistsResponse) {}
 
   rpc ScheduleTask(ScheduleTaskRequest) returns (ScheduleTaskResponse) {}
@@ -559,3 +561,14 @@ message RegisteredExecutionNode {
   acl.ACL acl = 4;
   google.protobuf.Timestamp last_ping_time = 5;
 }
+
+message CancelTaskRequest {
+  // Task ID to cancel.
+  string task_id = 1;
+
+  // If true, only cancel task leases held by the local scheduler server; do not
+  // proxy to other scheduler server instances.
+  bool local_only = 2;
+}
+
+message CancelTaskResponse {}

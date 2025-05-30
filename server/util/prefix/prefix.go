@@ -5,7 +5,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -54,6 +53,7 @@ func UserPrefixFromContext(ctx context.Context) (string, error) {
 	if v := ctx.Value(userPrefix); v != nil {
 		return v.(string), nil
 	}
-	log.Warning("No user prefix on context -- did you forget to call AttachUserPrefixToContext")
-	return "", status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	// If this happens, it's a bug: we expect that AttachUserPrefixToContext
+	// should have been called beforehand.
+	return "", status.InternalErrorf("missing user prefix on context")
 }

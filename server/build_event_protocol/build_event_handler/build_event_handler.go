@@ -340,8 +340,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	if err != nil {
 		return err
 	}
-	// Temporary logging for debugging clickhouse missing data.
-	log.CtxInfo(ctx, "Successfully wrote invocation to clickhouse")
+	log.CtxInfo(ctx, "Wrote invocation to clickhouse")
 
 	if r.env.GetExecutionCollector() == nil {
 		return nil
@@ -354,7 +353,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	defer func() {
 		err := r.env.GetExecutionCollector().DeleteExecutions(ctx, inv.InvocationID)
 		if err != nil {
-			log.CtxErrorf(ctx, "failed to clean up executions in collector: %s", err)
+			log.CtxErrorf(ctx, "Failed to clean up executions in collector: %s", err)
 		}
 	}()
 
@@ -367,9 +366,9 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	// is received after the Invocation is complete.
 	storedInv := toStoredInvocation(inv)
 	if err = r.env.GetExecutionCollector().AddInvocation(ctx, storedInv); err != nil {
-		log.CtxErrorf(ctx, "failed to write the complete Invocation to redis: %s", err)
+		log.CtxErrorf(ctx, "Failed to write invocation to redis: %s", err)
 	} else {
-		log.CtxInfo(ctx, "Successfully wrote invocation to redis")
+		log.CtxInfo(ctx, "Wrote invocation to redis")
 	}
 
 	// Once we've flushed execution stats to ClickHouse for this invocation,
@@ -394,7 +393,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 			log.CtxErrorf(ctx, "Failed to flush executions to OLAP DB: %s", err)
 			break
 		}
-		log.CtxInfof(ctx, "successfully wrote %d executions", len(executions))
+		log.CtxInfof(ctx, "Flushed %d execution(s) to OLAP DB", len(executions))
 		// Flush executions to OLAP
 		size := len(executions)
 		if size < batchSize {
