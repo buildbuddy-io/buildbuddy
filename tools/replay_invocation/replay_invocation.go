@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/url"
 	"os"
 	"path"
@@ -155,6 +156,18 @@ func main() {
 		InvocationId: getUUID(),
 		BuildId:      getUUID(),
 	}
+	cancelCh := make(chan struct{}, 10)
+	go func() {
+		cancelChance := 0.01
+		for range cancelCh {
+			if rand.Float64() < cancelChance {
+				fmt.Println("VANJAAAAAAAAAAAAAAAAAAAAAAA - CANCELLED with chance", cancelChance)
+				cancel()
+			}
+			cancelChance += 0.01
+		}
+	}()
+	defer close(cancelCh)
 	invocationURL := *besResultsURL + streamID.GetInvocationId()
 	log.Infof("Replaying invocation; results will be available at %s", invocationURL)
 	for {
@@ -233,6 +246,7 @@ func main() {
 				},
 			},
 		}
+		cancelCh <- struct{}{}
 		if err := stream.Send(&req); err != nil {
 			log.Fatalf("Error sending event on stream: %s", err.Error())
 		}
@@ -265,6 +279,7 @@ func main() {
 					continue
 				}
 				sequenceNum += 1
+				cancelCh <- struct{}{}
 				stream.Send(&pepb.PublishBuildToolEventStreamRequest{
 					OrderedBuildEvent: &pepb.OrderedBuildEvent{
 						StreamId:       streamID,
