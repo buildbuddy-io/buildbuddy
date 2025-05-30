@@ -233,7 +233,7 @@ func BenchmarkListQuery(b *testing.B) {
 		}
 	})
 
-	b.Run("Merge", func(b *testing.B) {
+	b.Run("MergeOld", func(b *testing.B) {
 		for b.Loop() {
 			pl := posting.NewList()
 			for _, b := range bufs {

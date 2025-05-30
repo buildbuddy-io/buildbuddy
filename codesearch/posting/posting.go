@@ -101,8 +101,12 @@ func Unmarshal(buf []byte) (List, error) {
 }
 
 // UnmarshalReadOnly unmarshals a posting list from a byte slice without copying
-// the underlying data. This should be used to reduce allocations when the posting
-// list will be used in a read-only fashion.
+// the underlying data.
+//
+// Important: buf must remain valid for the lifetime of the returned List, and the returned List
+// should not be modified.
+//
+// This should be used to reduce allocations when the posting list will be used in a read-only fashion.
 func UnmarshalReadOnly(buf []byte) (List, error) {
 	pl := roaring64.New()
 	n, err := pl.FromUnsafeBytes(buf)
