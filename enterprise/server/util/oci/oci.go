@@ -12,6 +12,7 @@ import (
 	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -26,6 +27,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -281,11 +283,32 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	if useCache {
+	// Reject Docker Schema 1 manifests.
+	// Allow manifests and indexes.
+	switch remoteDesc.MediaType {
+	case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
+		return nil, status.UnknownErrorf("unsupported MediaType %q", remoteDesc.MediaType)
+	case types.OCIManifestSchema1, types.DockerManifestSchema2:
+	case types.OCIImageIndex, types.DockerManifestList:
+	default:
+		log.CtxWarningf(ctx, "Unexpected media type %q", remoteDesc.MediaType)
+	}
 
+	if useCache {
+		if *writeManifestsToCache {
+			err := ocicache.WriteManifestToAC(
+				ctx,
+				remoteDesc.Manifest,
+				r.env.GetActionCacheClient(),
+				imageRef.Context(),
+				remoteDesc.Descriptor.Digest,
+				string(remoteDesc.MediaType),
+			)
+			if err != nil {
+				log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
+			}
+		}
 		switch remoteDesc.MediaType {
-		case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
-			return nil, status.UnknownErrorf("unsupported MediaType %q", remoteDesc.MediaType)
 		case types.OCIImageIndex, types.DockerManifestList:
 			index := &indexFromRawManifest{
 				repo:        imageRef.Context(),
@@ -299,9 +322,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 				Variant:      platform.GetVariant(),
 			}
 			return index.imageByPlatform(gcrPlatform)
-		case types.OCIManifestSchema1, types.DockerManifestSchema2:
 		default:
-			log.CtxWarningf(ctx, "Unexpected media type %q", remoteDesc.MediaType)
 		}
 
 		return &imageFromRawManifest{
@@ -413,6 +434,8 @@ type indexFromRawManifest struct {
 	desc        gcr.Descriptor
 	rawManifest []byte
 
+	ctx        context.Context
+	acClient   repb.ActionCacheClient
 	remoteOpts []remote.Option
 }
 
@@ -458,6 +481,20 @@ func (i *indexFromRawManifest) Image(h gcr.Hash) (gcr.Image, error) {
 		return nil, err
 	}
 
+	if *writeManifestsToCache {
+		err := ocicache.WriteManifestToAC(
+			i.ctx,
+			remoteDesc.Manifest,
+			i.acClient,
+			i.repo,
+			h,
+			string(remoteDesc.Descriptor.MediaType),
+		)
+		if err != nil {
+			log.CtxWarningf(i.ctx, "Could not write manifest to cache: %s", err)
+		}
+	}
+
 	image := &imageFromRawManifest{
 		repo:        i.repo,
 		desc:        *desc,
@@ -488,6 +525,20 @@ func (i *indexFromRawManifest) ImageIndex(h gcr.Hash) (gcr.ImageIndex, error) {
 	remoteDesc, err := remote.Get(ref, i.remoteOpts...)
 	if err != nil {
 		return nil, err
+	}
+
+	if *writeManifestsToCache {
+		err := ocicache.WriteManifestToAC(
+			i.ctx,
+			remoteDesc.Manifest,
+			i.acClient,
+			i.repo,
+			h,
+			string(remoteDesc.Descriptor.MediaType),
+		)
+		if err != nil {
+			log.CtxWarningf(i.ctx, "Could not write manifest to cache: %s", err)
+		}
 	}
 
 	index := &indexFromRawManifest{
