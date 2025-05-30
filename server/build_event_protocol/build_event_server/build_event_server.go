@@ -153,7 +153,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			// is done.
 			select {
 			case inCh <- in:
-			case <-ctx.Done():
+			case <-stream.Context().Done():
 				return
 			}
 
