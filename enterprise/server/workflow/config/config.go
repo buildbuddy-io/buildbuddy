@@ -205,8 +205,7 @@ else
 fi
 
 # starlark-semantics will print out enable_bzlmod if it differs from the default.
-bazel info starlark-semantics > /dev/null 2>&1 | grep "enable_bzlmod" > /dev/null 2>&1
-if [ $? -eq 1 ]; then
+if ! bazel info starlark-semantics | grep -q "enable_bzlmod" ; then
     BZLMOD_ENABLED=$BZLMOD_DEFAULT
 else
     BZLMOD_ENABLED=$(( 1 - $BZLMOD_DEFAULT ))
@@ -214,17 +213,16 @@ fi
 
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 
-if [ "$BZLMOD_ENABLED" -eq - ]; then
+if [ "$BZLMOD_ENABLED" -eq 1 ]; then
     # with bzlmod enabled, override_repository will not work unless the repository is already defined
 	# inject_repository will work, but was added in Bazel 8, so we need to handle <8 by
 	# manually adding to MODULE.bazel.
     if [ $BZL_MAJOR_VERSION -lt 8 ]; then
         echo "Adding kythe repository to MODULE.bazel"
-        echo >> MODULE.bazel
-		echo 'bazel_dep(name = "kythe", version = "0.0.75")' >> MODULE.bazel
-		echo "local_path_override(module_name=\"kythe\", path=\"$KYTHE_DIR\")" >> MODULE.bazel
+        echo -e '\nbazel_dep(name = "kythe", version = "0.0.75")' >> MODULE.bazel
+        echo "local_path_override(module_name=\"kythe\", path=\"$KYTHE_DIR\")" >> MODULE.bazel
 	else
-		KYTHE_ARGS="--inject_repository=kythe_release=$KYTHE_DIR"
+        KYTHE_ARGS="--inject_repository=kythe_release=$KYTHE_DIR"
 	fi
 else
     # override_repository always works if bzlmod is disabled.
