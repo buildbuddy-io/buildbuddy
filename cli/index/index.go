@@ -72,7 +72,7 @@ func getRepoInfo(gc github.GitClient) (*git.RepoURL, string, error) {
 	return parseRepoURL, headSHA, nil
 }
 
-func makeIndexRequest(gc github.GitClient, repoURL *git.RepoURL, headSHA, lastIndexSHA string) (*inpb.IndexRequest, error) {
+func buildIndexRequest(gc github.GitClient, repoURL *git.RepoURL, headSHA, lastIndexSHA string) (*inpb.IndexRequest, error) {
 	req := &inpb.IndexRequest{
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:  repoURL.String(),
@@ -134,7 +134,7 @@ func indexRepo() error {
 		return fmt.Errorf("failed to get repo status: %w", err)
 	}
 
-	update, err := makeIndexRequest(gc, parsedRepoURL, headSHA, rsp.GetLastIndexedCommitSha())
+	update, err := buildIndexRequest(gc, parsedRepoURL, headSHA, rsp.GetLastIndexedCommitSha())
 	if err != nil {
 		return fmt.Errorf("failed to create index request: %w", err)
 	}
