@@ -15,10 +15,12 @@ message RunRequest {
   string commit_sha = 3;
 
   // Any local patches that should be applied to the repo before
-  // running the command. Each patch should be base64-encoded.
+  // running the command.
   // Patches will be applied using "git apply" in the root directory of the
   // repository.
-  repeated string patches = 11;
+  // In JSON requests (e.g. curl request body), this field should be specified
+  // as a list of base64-encoded strings.
+  repeated bytes patches = 11;
 
   // Bash commands to run, in order.
   // If a step fails, subsequent steps are not run.

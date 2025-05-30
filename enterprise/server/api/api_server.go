@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/base64"
 	"flag"
 	"maps"
 	"net/http"
@@ -572,20 +571,12 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		})
 	}
 
-	patches := make([][]byte, len(req.GetPatches()))
-	for i, p := range req.GetPatches() {
-		data, err := base64.StdEncoding.DecodeString(p)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("invalid patch: %s", err)
-		}
-		patches[i] = data
-	}
 	rsp, err := r.Run(ctx, &rnpb.RunRequest{
 		GitRepo: &gitpb.GitRepo{RepoUrl: req.GetRepo()},
 		RepoState: &gitpb.RepoState{
 			CommitSha: req.GetCommitSha(),
 			Branch:    req.GetBranch(),
-			Patch:     patches,
+			Patch:     req.GetPatches(),
 		},
 		Steps:          steps,
 		Async:          req.GetAsync(),

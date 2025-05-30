@@ -324,7 +324,7 @@ response to check for completion of the remote run.
 
 You can use the `GetLog` API to fetch logs for your remote run.
 
-#### Applying GitHub patches
+#### Applying git patches
 
 If using the CLI, it will automatically upload local git diffs to the remote runner
 to ensure the remote git workspace matches your local one.
