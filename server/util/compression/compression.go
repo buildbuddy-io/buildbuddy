@@ -183,7 +183,7 @@ func NewZstdCompressingReader(reader io.ReadCloser, readBuf []byte, compressBuf 
 }
 
 type compressingWriter struct {
-	w               io.Writer
+	w               io.WriteCloser
 	compressBuf     []byte
 	poolCompressBuf []byte
 }
@@ -211,13 +211,13 @@ func (c *compressingWriter) Write(p []byte) (int, error) {
 
 func (c *compressingWriter) Close() error {
 	compressBufPool.Put(c.poolCompressBuf)
-	return nil
+	return c.w.Close()
 }
 
 // NewZstdCompressingWriter returns a writer that compresses each chunk of the
 // input using zstd and writes the compressed data to the underlying writer.
 // The writer uses a fixed-size 4MB buffer for compression.
-func NewZstdCompressingWriter(w io.Writer) io.WriteCloser {
+func NewZstdCompressingWriter(w io.WriteCloser) io.WriteCloser {
 	compressBuf := compressBufPool.Get()
 	return &compressingWriter{
 		w:               w,

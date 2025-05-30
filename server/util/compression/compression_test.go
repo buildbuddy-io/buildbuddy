@@ -108,9 +108,17 @@ func compressWithNewZstdCompressingReader(t *testing.T, src []byte) []byte {
 	return compressed
 }
 
+type nopWriteCloser struct {
+	io.Writer
+}
+
+func (w *nopWriteCloser) Close() error {
+	return nil
+}
+
 func compressWithNewZstdCompressingWriter(t *testing.T, src []byte) []byte {
 	compressed := &bytes.Buffer{}
-	cw := compression.NewZstdCompressingWriter(compressed)
+	cw := compression.NewZstdCompressingWriter(&nopWriteCloser{compressed})
 	written, err := cw.Write(src)
 	require.NoError(t, err)
 	require.Equal(t, len(src), written)
