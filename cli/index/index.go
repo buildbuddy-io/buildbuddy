@@ -98,7 +98,9 @@ func buildIndexRequest(gc github.GitClient, repoURL *git.RepoURL, headSHA, lastI
 	}
 
 	req.ReplacementStrategy = inpb.ReplacementStrategy_REPLACE_REPO
-	req.GetRepoState().CommitSha = headSHA
+	req.RepoState = &gitpb.RepoState{
+		CommitSha: headSHA,
+	}
 	req.Async = true // Don't wait for full re-indexes to complete.
 	// Access token will be added by the server based on user auth.
 	return req, nil

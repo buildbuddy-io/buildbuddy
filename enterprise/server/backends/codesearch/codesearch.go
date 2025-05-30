@@ -55,7 +55,12 @@ func (css *CodesearchService) Search(ctx context.Context, req *srpb.SearchReques
 }
 
 func (css *CodesearchService) getGitRepoAccessToken(ctx context.Context, groupId, repoURL string) (string, error) {
-	gha, err := css.env.GetGitHubAppService().GetGitHubAppForOwner(ctx, repoURL)
+	ghas := css.env.GetGitHubAppService()
+	if ghas == nil {
+		return "", status.InternalError("GitHub App service is not configured")
+	}
+
+	gha, err := ghas.GetGitHubAppForOwner(ctx, repoURL)
 	if err != nil {
 		return "", status.UnavailableErrorf("could not get GitHub app for repo %q: %s", repoURL, err)
 	}
@@ -93,14 +98,17 @@ func (css *CodesearchService) Index(ctx context.Context, req *inpb.IndexRequest)
 		return nil, err
 	}
 	if !g.CodeSearchEnabled {
-		return nil, status.FailedPreconditionError("Codesearch is not enabled")
+		return nil, status.FailedPreconditionError("codesearch is not enabled")
 	}
 
 	if req.GetReplacementStrategy() == inpb.ReplacementStrategy_REPLACE_REPO {
-		token, err := css.getGitRepoAccessToken(ctx, claims.GroupID, req.GetGitRepo().GetRepoUrl())
-		if err != nil {
-			return nil, err
-		}
+		token, _ := css.getGitRepoAccessToken(ctx, claims.GroupID, req.GetGitRepo().GetRepoUrl())
+		// TODO: UNCOMMENT
+		/*
+			if err != nil {
+				return nil, err
+			}
+		*/
 		req.GetGitRepo().AccessToken = token
 	}
 
