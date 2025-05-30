@@ -73,7 +73,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
 	enterprise_app_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/app"
-	raft_cache "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache"
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
@@ -235,10 +234,6 @@ func main() {
 	}
 
 	if err := distributed.Register(realEnv); err != nil {
-		log.Fatal(err.Error())
-	}
-
-	if err := raft_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
 
