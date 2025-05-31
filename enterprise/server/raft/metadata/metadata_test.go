@@ -560,7 +560,12 @@ func TestLRU(t *testing.T) {
 	log.Printf("evictedAgeTotal: %s, keptAgeTotal: %s", evictedAgeTotal, keptAgeTotal)
 	log.Printf("avg evictedAge: %f, avg keptAge: %f", avgEvictedAgeSeconds, avgKeptAgeSeconds)
 
-	// Check that mostly (80%) of evictions were perfect
+	// Check that mostly (80%) of evictions were perfect:
+	// Note: perfectEvictionCount <= len(perfectLRUEvictees) is always true.
+	// Therefore, perfectEvictionCount >= 0.8 * evictedCount is only true when
+	// 0.8 * evictedCount < len(perfectLRUEvictees). When 0.8 * evictedCount >=
+	// len(perfectLRUEvictees), we have
+	// perfectEvictionCount == len(perfectLRUEvictees).
 	require.GreaterOrEqual(t, float64(perfectEvictionCount), math.Min(math.Floor(.80*float64(evictedCount)), float64(len(perfectLRUEvictees))))
 	// Check that total number of evictions was < quartile*2, so not too much
 	// good stuff was evicted.
