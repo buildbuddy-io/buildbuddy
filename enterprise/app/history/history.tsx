@@ -56,7 +56,6 @@ interface State {
   aggregateStats?: invocation.InvocationStat[];
   loadingAggregateStats?: boolean;
 
-  hoveredInvocationId?: string;
   pageToken?: string;
   invocationIdToCompare?: string;
 
@@ -394,16 +393,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
     router.clearFilters();
   }
 
-  handleMouseOver(invocation: invocation.Invocation) {
-    this.setState({
-      hoveredInvocationId: invocation.invocationId,
-    });
-  }
-
-  handleMouseOut(invocation: invocation.IInvocation) {
-    this.setState({ hoveredInvocationId: undefined });
-  }
-
   handleLoadNextPageClicked() {
     this.getInvocations(true);
   }
@@ -659,9 +648,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
           <div className="container nopadding-dense">
             {this.state.invocations?.map((invocation) => (
               <InvocationCardComponent
-                className={this.state.hoveredInvocationId == invocation.invocationId ? "card-hovered" : ""}
-                onMouseOver={this.handleMouseOver.bind(this, invocation)}
-                onMouseOut={this.handleMouseOut.bind(this, invocation)}
                 invocation={invocation}
                 isSelectedForCompare={invocation.invocationId === this.state.invocationIdToCompare}
                 isSelectedWithKeyboard={invocation.invocationId === this.state.selectedInvocationId}
