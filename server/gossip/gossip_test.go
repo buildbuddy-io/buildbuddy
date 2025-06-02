@@ -154,7 +154,6 @@ func removeDuplicates(dups []string) []string {
 }
 
 func TestUserQuery(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	data := make(map[string][]string, 0)
 
 	addrs := make([]string, 0)
@@ -166,7 +165,7 @@ func TestUserQuery(t *testing.T) {
 			data[addr] = append(data[addr], letterByte)
 		}
 	}
-
+	gossipManagers := make([]*gossip.GossipManager, len(addrs))
 	for i, nodeAddr := range addrs {
 		nodeAddr := nodeAddr
 		b := &testBroker{
@@ -179,22 +178,29 @@ func TestUserQuery(t *testing.T) {
 				}
 			},
 		}
-		n := newGossipManager(t, nodeAddr, addrs[:i], b)
+		peers := make([]string, 0, len(addrs)-1)
+		for _, p := range addrs {
+			if p != nodeAddr {
+				peers = append(peers, p)
+			}
+		}
+		n := newGossipManager(t, nodeAddr, peers, b)
 		defer n.Shutdown()
+		gossipManagers[i] = n
 	}
 
 	mu := sync.Mutex{}
 	receivedLetters := make([]string, 0)
-	n := newGossipManager(t, localAddr(t), addrs, &testBroker{})
-	defer n.Shutdown()
 	go func() {
-		rsp, err := n.Query("letters", nil, nil)
-		require.NoError(t, err)
-		for nodeResponse := range rsp.ResponseCh() {
-			mu.Lock()
-			letters := strings.Split(string(nodeResponse.Payload), ",")
-			receivedLetters = append(receivedLetters, letters...)
-			mu.Unlock()
+		for _, n := range gossipManagers {
+			rsp, err := n.Query("letters", nil, nil)
+			require.NoError(t, err)
+			for nodeResponse := range rsp.ResponseCh() {
+				mu.Lock()
+				letters := strings.Split(string(nodeResponse.Payload), ",")
+				receivedLetters = append(receivedLetters, letters...)
+				mu.Unlock()
+			}
 		}
 	}()
 
