@@ -608,7 +608,8 @@ func (ws *workflowService) addCodesearchActionsIfEnabled(ctx context.Context, c 
 		return err
 	}
 	if enableCS {
-		c.Actions = append(c.Actions, config.CodesearchIncrementalUpdateAction(build_buddy_url.WithPath(""), workflow.RepoURL, wd.TargetRepoDefaultBranch))
+		// TODO(jdelfino): Using the cache API URL here is hacky, long term we might want a codesearch_api_url
+		c.Actions = append(c.Actions, config.CodesearchIncrementalUpdateAction(cache_api_url.WithPath(""), workflow.RepoURL, wd.TargetRepoDefaultBranch))
 		c.Actions = append(c.Actions, config.KytheIndexingAction(wd.TargetRepoDefaultBranch))
 	}
 	return nil

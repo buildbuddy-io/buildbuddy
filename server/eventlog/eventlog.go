@@ -393,11 +393,12 @@ func (w *EventLogWriter) writeChunkToKeyValStore(ctx context.Context, writeReque
 		keyval.SetProto(ctx, w.keyValueStore, w.eventLogPath, nil)
 		return
 	}
-	curChunk := &elpb.LiveEventLogChunk{
-		ChunkId: chunkId,
-		Buffer:  append(chunk, volatileTail...),
-	}
+	curChunk := elpb.LiveEventLogChunkFromVTPool()
+	curChunk.ChunkId = chunkId
+	curChunk.Buffer = append(chunk, volatileTail...)
+
 	if proto.Equal(w.lastChunk, curChunk) {
+		curChunk.ReturnToVTPool()
 		return
 	}
 	keyval.SetProto(
@@ -406,6 +407,7 @@ func (w *EventLogWriter) writeChunkToKeyValStore(ctx context.Context, writeReque
 		w.eventLogPath,
 		curChunk,
 	)
+	w.lastChunk.ReturnToVTPool()
 	w.lastChunk = curChunk
 	if w.pubsub != nil {
 		w.pubsub.Publish(ctx, w.pubsubChannel, "")

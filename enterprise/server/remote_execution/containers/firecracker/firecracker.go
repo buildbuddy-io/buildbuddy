@@ -2081,16 +2081,31 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 	case res := <-resultCh:
 		cancelCgroupPoll()
 		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), res.UsageStats)
+		c.fillNetStats(ctx, res.UsageStats)
 		return res, true
 	case err := <-healthCheckErrCh:
 		cancelCgroupPoll()
 		res := commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
 		statsMu.Lock()
 		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), lastGuestStats)
+		c.fillNetStats(ctx, res.UsageStats)
 		statsMu.Unlock()
 		return res, false
 	}
 }
+
+func (c *FirecrackerContainer) fillNetStats(ctx context.Context, usageStats *repb.UsageStats) {
+	if c.network == nil {
+		return
+	}
+	netStats, err := c.network.Stats(ctx)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get network stats: %s", err)
+		return
+	}
+	usageStats.NetworkStats = netStats
+}
+
 func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn, error) {
 	if c.vmExec.conn == nil && c.vmExec.err == nil {
 		c.vmExec.conn, c.vmExec.err = c.dialVMExecServer(ctx)

@@ -6,10 +6,12 @@ RUN apt-get update && \
         conntrack \
         curl \
         dnsutils \
+        file \
         iproute2 \
         iptables \
         iputils-ping \
         net-tools \
+        tcpdump \
         && \
     update-ca-certificates && \
     apt-get clean && \

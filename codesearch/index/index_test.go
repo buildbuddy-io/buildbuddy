@@ -588,6 +588,56 @@ func TestDeleteMatchingDocuments(t *testing.T) {
 	assert.Equal(t, map[string][]uint64{"text": {2}}, extractFieldMatches(t, r, matches))
 }
 
+func TestDropNamespace(t *testing.T) {
+	ctx := context.Background()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	w, err := NewWriter(db, "ns-a")
+	require.NoError(t, err)
+
+	doc := docWithIDAndText(t, 8, `one`)
+	require.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	w, err = NewWriter(db, "ns-b")
+	require.NoError(t, err)
+
+	doc2 := docWithIDAndText(t, 9, `one`)
+	require.NoError(t, w.AddDocument(doc2))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "ns-a", testSchema)
+	matches, err := r.RawQuery("(:all)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"id": {8}, "text": {8}}, extractFieldMatches(t, r, matches))
+
+	r = NewReader(ctx, db, "ns-b", testSchema)
+	matches, err = r.RawQuery("(:all)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"id": {9}, "text": {9}}, extractFieldMatches(t, r, matches))
+
+	w, err = NewWriter(db, "ns-a")
+	require.NoError(t, err)
+	require.NoError(t, w.DropNamespace())
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "ns-a", testSchema)
+	matches, err = r.RawQuery("(:all)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{}, extractFieldMatches(t, r, matches))
+
+	r = NewReader(ctx, db, "ns-b", testSchema)
+	matches, err = r.RawQuery("(:all)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"id": {9}, "text": {9}}, extractFieldMatches(t, r, matches))
+
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},
