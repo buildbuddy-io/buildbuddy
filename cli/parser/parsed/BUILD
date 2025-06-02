@@ -10,6 +10,7 @@ go_library(
         "//cli/parser/arguments",
         "//cli/parser/bazelrc",
         "//cli/parser/options",
+        "//server/util/lib/set",
     ],
 )
 

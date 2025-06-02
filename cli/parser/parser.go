@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 
 	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
@@ -68,45 +68,96 @@ func SetBazelHelpForTesting(encodedProto string) {
 	}
 }
 
-// Parser contains a set of OptionDefinitions (indexed for ease of parsing) and
-// the known bazel commands.
-type Parser struct {
+// Subparser is a parser that recognizes one set of options, optionally followed by a subcommand.
+type Subparser struct {
 	ByName      map[string]*options.Definition
 	ByShortName map[string]*options.Definition
 
-	BazelCommands map[string]struct{}
+	Subcommands set.Set[string]
+}
+
+func (m *Subparser) ForceAdd(d *options.Definition) {
+	m.ByName[d.Name()] = d
+	if d.ShortName() != "" {
+		m.ByShortName[d.ShortName()] = d
+	}
+}
+
+func (m *Subparser) Add(d *options.Definition) error {
+	if _, ok := m.ByName[d.Name()]; ok {
+		return fmt.Errorf("Naming collision adding flag %s; flag already exists with that name.", d.Name())
+	}
+	if _, ok := m.ByShortName[d.ShortName()]; ok {
+		return fmt.Errorf("Naming collision adding flag with short name %s; flag already exists with that short name.", d.ShortName())
+	}
+	m.ForceAdd(d)
+	return nil
+}
+
+// Parser contains a set of OptionDefinitions (indexed for ease of parsing) and
+// the known bazel commands.
+type Parser struct {
+	StartupOptionParser *Subparser
+	CommandOptionParser *Subparser
 }
 
 func NewParser(optionDefinitions []*options.Definition) *Parser {
 	p := &Parser{
-		ByName:        map[string]*options.Definition{},
-		ByShortName:   map[string]*options.Definition{},
-		BazelCommands: map[string]struct{}{},
+		StartupOptionParser: &Subparser{
+			ByName:      map[string]*options.Definition{},
+			ByShortName: map[string]*options.Definition{},
+			Subcommands: make(set.Set[string]),
+		},
+		CommandOptionParser: &Subparser{
+			ByName:      map[string]*options.Definition{},
+			ByShortName: map[string]*options.Definition{},
+		},
 	}
-	for _, o := range optionDefinitions {
-		p.ByName[o.Name()] = o
-		if o.ShortName() != "" {
-			p.ByShortName[o.ShortName()] = o
-		}
+	for _, d := range optionDefinitions {
+		p.AddOptionDefinition(d)
 	}
 	return p
 }
 
-func (p *Parser) ForceAddOptionDefinition(o *options.Definition) {
-	p.ByName[o.Name()] = o
-	if o.ShortName() != "" {
-		p.ByShortName[o.ShortName()] = o
+func (p *Parser) ForceAddOptionDefinition(d *options.Definition) {
+	if d.Supports("startup") {
+		p.StartupOptionParser.ForceAdd(d)
+	}
+	addedToCommonParser := false
+	for cmd := range d.SupportedCommands() {
+		if cmd != "startup" {
+			p.StartupOptionParser.Subcommands.Add(cmd)
+			if !addedToCommonParser {
+				// non-startup flags support the "common" and "always" bazelrc classifiers
+				d.AddSupportedCommand("common")
+				d.AddSupportedCommand("always")
+				p.CommandOptionParser.ForceAdd(d)
+			}
+		}
 	}
 }
 
-func (p *Parser) AddOptionDefinition(o *options.Definition) error {
-	if _, ok := p.ByName[o.Name()]; ok {
-		return fmt.Errorf("Naming collision adding flag %s; flag already exists with that name.", o.Name())
+func (p *Parser) AddOptionDefinition(d *options.Definition) error {
+	if d.Supports("startup") {
+		if err := p.StartupOptionParser.Add(d); err != nil {
+			return nil
+		}
 	}
-	if _, ok := p.ByShortName[o.ShortName()]; ok {
-		return fmt.Errorf("Naming collision adding flag with short name %s; flag already exists with that short name.", o.ShortName())
+	addedToCommonParser := false
+	for cmd := range d.SupportedCommands() {
+		if cmd != "startup" {
+			p.StartupOptionParser.Subcommands.Add(cmd)
+			if !addedToCommonParser {
+				// non-startup flags support the "common" and "always" bazelrc classifiers
+				d.AddSupportedCommand("common")
+				d.AddSupportedCommand("always")
+				if err := p.CommandOptionParser.Add(d); err != nil {
+					return err
+				}
+				addedToCommonParser = true
+			}
+		}
 	}
-	p.ForceAddOptionDefinition(o)
 	return nil
 }
 
@@ -125,8 +176,12 @@ func (p *Parser) ParseArgs(args []string) (*parsed.OrderedArgs, error) {
 func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.OrderedArgs, error) {
 	parsedArgs := &parsed.OrderedArgs{}
 	next := args
+	subparser := p.StartupOptionParser
+	if command != "startup" {
+		subparser = p.CommandOptionParser
+	}
 	for {
-		opts, argIndex, err := p.ParseOptions(next, command)
+		opts, argIndex, err := subparser.ParseOptions(next, command)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse %s options: %s", command, err)
 		}
@@ -151,9 +206,10 @@ func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.Ord
 				// argument parsing and ignores all non-startup options in the rc file.
 				break
 			}
-			if _, ok := p.BazelCommands[command]; !ok {
+			if !subparser.Subcommands.Contains(command) {
 				return nil, fmt.Errorf("Command '%s' not found. Try 'bb help'", command)
 			}
+			subparser = p.CommandOptionParser
 		}
 		parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: next[0]})
 		next = next[1:]
@@ -166,7 +222,7 @@ func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.Ord
 // the length of the input arguments array if no positional argument was
 // encountered. If no command is provided, options will not be filtered by
 // command.
-func (p *Parser) ParseOptions(args []string, command string) ([]options.Option, int, error) {
+func (p *Subparser) ParseOptions(args []string, command string) ([]options.Option, int, error) {
 	var parsedOptions []options.Option
 	// Iterate through the args, looking for a terminating token.
 	for i := 0; i < len(args); {
@@ -175,7 +231,7 @@ func (p *Parser) ParseOptions(args []string, command string) ([]options.Option, 
 			// POSIX-specified (and bazel-supported) delimiter to end option parsing
 			return parsedOptions, i, nil
 		}
-		option, next, err := p.Next(args, i, command == "startup")
+		option, next, err := p.Next(args, i)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to parse options: %s", err)
 		}
@@ -211,11 +267,7 @@ func (p *Parser) ParseOptions(args []string, command string) ([]options.Option, 
 // If args[start] corresponds to an option definition that is not known by the
 // parser, the returned values will be (nil, start+1). It is up to the caller to
 // decide how args[start] should be interpreted.
-//
-// TODO(zoey): when we have plugin option defintions, remove the "startup"
-// parameter since it only exists to aid in the guessing heuristic for unknown
-// options.
-func (p *Parser) Next(args []string, start int, startup bool) (option options.Option, next int, err error) {
+func (p *Subparser) Next(args []string, start int) (option options.Option, next int, err error) {
 	if start > len(args) {
 		return nil, -1, fmt.Errorf("arg index %d out of bounds", start)
 	}
@@ -239,7 +291,7 @@ func (p *Parser) Next(args []string, start int, startup bool) (option options.Op
 			// bazel command, let's assume that it is.
 			if start+1 < len(args) {
 				if nextArg := args[start+1]; !strings.HasPrefix(nextArg, "-") {
-					if _, ok := p.BazelCommands[nextArg]; !startup || !ok {
+					if !p.Subcommands.Contains(nextArg) {
 						option, err = options.NewOption(
 							strings.TrimLeft(startToken, "-"),
 							nil,
@@ -274,7 +326,7 @@ func (p *Parser) Next(args []string, start int, startup bool) (option options.Op
 // the help function lets us replace it for testing.
 type BazelHelpFunc func() (string, error)
 
-func (p *Parser) parseLongNameOption(optName string) (options.Option, error) {
+func (p *Subparser) parseLongNameOption(optName string) (options.Option, error) {
 	var v *string
 	if eqIndex := strings.Index(optName, "="); eqIndex != -1 {
 		// This option is of the form --NAME=value; split it up into the option
@@ -296,10 +348,10 @@ func (p *Parser) parseLongNameOption(optName string) (options.Option, error) {
 		if strings.HasPrefix(optName, prefix) {
 			// This is a new starlark definition; let's hang on to it.
 			d := options.NewStarlarkOptionDefinition(optName)
-			d.AddSupportedCommand(slices.Collect(maps.Keys(p.BazelCommands))...)
+			d.AddSupportedCommand(slices.Collect(bazelrc.BazelCommands().All())...)
 			// No need to check if this option already exists since we never reach
 			// this code if it does.
-			p.ForceAddOptionDefinition(d)
+			p.ForceAdd(d)
 			return options.NewOption(optName, v, d)
 		}
 	}
@@ -320,7 +372,7 @@ func (p *Parser) parseLongNameOption(optName string) (options.Option, error) {
 	)
 }
 
-func (p *Parser) parseShortNameOption(optName string) (options.Option, error) {
+func (p *Subparser) parseShortNameOption(optName string) (options.Option, error) {
 	if len(optName) != 1 {
 		return nil, fmt.Errorf("Invalid options syntax: '-%s'", optName)
 	}
@@ -355,7 +407,7 @@ func (p *Parser) parseShortNameOption(optName string) (options.Option, error) {
 // either "--NAME" or "-SHORTNAME". The boolean returned indicates whether this
 // option still needs a value (which is to say, if the OptionDefinition requires
 // a value but none was provided via an `=`).
-func (p *Parser) ParseOption(opt string) (option options.Option, err error) {
+func (p *Subparser) ParseOption(opt string) (option options.Option, err error) {
 	if optName, found := strings.CutPrefix(opt, "--"); found {
 		return p.parseLongNameOption(optName)
 	}
@@ -385,27 +437,16 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 }
 
 // GenerateParser takes a FlagCollection proto message, converts it into
-// OptionDefinitions, places each option definition into a Parser, scrapes a set
-// of commands from all the supported commands listed by each option for the
-// Parser, and returns the Parser.
-func GenerateParser(flagCollection *bfpb.FlagCollection) (*Parser, error) {
-	parser := NewParser(nil)
+// OptionDefinitions, places each option definition into subparsers corresponding
+// to the commands it supports, and returns the resulting parser.
+func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...string) (*Parser, error) {
+	p := NewParser(nil)
 	for _, info := range flagCollection.FlagInfos {
-		d := options.DefinitionFrom(info)
-		if !d.Supports("startup") {
-			// only add commands from non-startup flags to the bazel commands
-			for cmd := range d.SupportedCommands() {
-				parser.BazelCommands[cmd] = struct{}{}
-			}
-			// non-startup flags support the "common" and "always" bazelrc classifiers
-			d.AddSupportedCommand("common")
-			d.AddSupportedCommand("always")
-		}
-		if err := parser.AddOptionDefinition(d); err != nil {
+		if err := p.AddOptionDefinition(options.DefinitionFrom(info)); err != nil {
 			return nil, err
 		}
 	}
-	return parser, nil
+	return p, nil
 }
 
 func GetParser() (*Parser, error) {
@@ -431,7 +472,7 @@ func CanonicalizeArgs(args []string) ([]string, error) {
 
 func (p *Parser) canonicalizeArgs(args []string) ([]string, error) {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		if _, ok := p.BazelCommands[args[0]]; !ok {
+		if !p.StartupOptionParser.Subcommands.Contains(args[0]) {
 			// Not a bazel command; no startup args to canonicalize.
 			return args, nil
 		}
@@ -636,20 +677,33 @@ func (p *Parser) ParseConfig(phase string, tokens []string) ([]arguments.Argumen
 	return parsedArgs.Args, nil
 }
 
-// Convenience function to use the singleton parser's MakeOption function.
-func MakeOption(optionName string, value *string) (option options.Option, err error) {
+// Convenience function to use the singleton parser's MakeStartupOption function.
+func MakeStartupOption(optionName string, value *string) (option options.Option, err error) {
 	p, err := GetParser()
 	if err != nil {
 		return nil, err
 	}
-	o, err := p.MakeOption(optionName, value)
+	return p.MakeStartupOption(optionName, value)
+}
+
+// Convenience function to use the singleton parser's MakeCommandOption function.
+func MakeCommandOption(optionName string, value *string) (option options.Option, err error) {
+	p, err := GetParser()
 	if err != nil {
 		return nil, err
 	}
-	return o, nil
+	return p.MakeCommandOption(optionName, value)
 }
 
-func (p *Parser) MakeOption(optionName string, value *string) (option options.Option, err error) {
+func (p *Parser) MakeStartupOption(optionName string, value *string) (option options.Option, err error) {
+	return p.StartupOptionParser.MakeOption(optionName, value)
+}
+
+func (p *Parser) MakeCommandOption(optionName string, value *string) (option options.Option, err error) {
+	return p.CommandOptionParser.MakeOption(optionName, value)
+}
+
+func (p *Subparser) MakeOption(optionName string, value *string) (option options.Option, err error) {
 	if len(optionName) == 1 {
 		// assume length 1 is a short name
 		option, err = p.parseShortNameOption(optionName)
@@ -700,11 +754,11 @@ func (p *Parser) consumeAndParseRCFiles(args *parsed.OrderedArgs, workspaceDir s
 
 	// Ignore all RC files when actually running bazel, since the CLI has already
 	// accounted for them.
-	ignoreAllRCFilesOptionDefinition, ok := p.ByName["ignore_all_rc_files"]
+	ignoreAllRCFilesOptionDefinition, ok := p.StartupOptionParser.ByName["ignore_all_rc_files"]
 	if !ok {
 		return nil, nil, fmt.Errorf("`ignore_all_rc_files` was not present in the option definitions.")
 	}
-	opt, err := MakeOption(ignoreAllRCFilesOptionDefinition.Name(), nil)
+	opt, err := MakeStartupOption(ignoreAllRCFilesOptionDefinition.Name(), nil)
 	if err != nil {
 		return nil, nil, err
 	}
