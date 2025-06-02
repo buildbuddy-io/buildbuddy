@@ -32,7 +32,7 @@ func localAddr(t *testing.T) string {
 }
 
 func newGossipManager(t *testing.T, addr string, seeds []string, broker interfaces.GossipListener) *gossip.GossipManager {
-	node, err := gossip.New("name-"+addr, addr, seeds)
+	node, err := gossip.New(addr, addr, seeds)
 	require.NoError(t, err)
 	require.NotNil(t, node)
 	node.AddListener(broker)
@@ -154,7 +154,6 @@ func removeDuplicates(dups []string) []string {
 }
 
 func TestUserQuery(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	data := make(map[string][]string, 0)
 
 	addrs := make([]string, 0)
@@ -166,13 +165,16 @@ func TestUserQuery(t *testing.T) {
 			data[addr] = append(data[addr], letterByte)
 		}
 	}
-
+	gossipManagers := make([]*gossip.GossipManager, len(addrs))
 	for i, nodeAddr := range addrs {
 		nodeAddr := nodeAddr
 		b := &testBroker{
 			onEvent: func(eventType serf.EventType, event serf.Event) {
 				if query, ok := event.(*serf.Query); ok {
 					if query.Name == "letters" {
+						if query.SourceNode() == nodeAddr {
+							return
+						}
 						err := query.Respond([]byte(strings.Join(data[nodeAddr], ",")))
 						require.NoError(t, err)
 					}
@@ -181,43 +183,23 @@ func TestUserQuery(t *testing.T) {
 		}
 		n := newGossipManager(t, nodeAddr, addrs[:i], b)
 		defer n.Shutdown()
+		gossipManagers[i] = n
 	}
 
-	mu := sync.Mutex{}
 	receivedLetters := make([]string, 0)
-	n := newGossipManager(t, localAddr(t), addrs, &testBroker{})
-	defer n.Shutdown()
-	go func() {
+	for _, n := range gossipManagers {
 		rsp, err := n.Query("letters", nil, nil)
 		require.NoError(t, err)
 		for nodeResponse := range rsp.ResponseCh() {
-			mu.Lock()
 			letters := strings.Split(string(nodeResponse.Payload), ",")
 			receivedLetters = append(receivedLetters, letters...)
-			mu.Unlock()
 		}
-	}()
+	}
 
-	seenItAll := make(chan struct{})
-	go func() {
-		for {
-			mu.Lock()
-			letters := removeDuplicates(receivedLetters)
-			mu.Unlock()
-
-			sort.Strings(letters)
-			if strings.Join(letters, "") == "abcdefghijklmnopqrstuvwxy" {
-				close(seenItAll)
-				break
-			}
-		}
-	}()
-
-	select {
-	case <-time.After(3 * time.Second):
-		t.Fatalf("Timed out waiting for tags to be received: %+v", receivedLetters)
-	case <-seenItAll:
-		break
+	letters := removeDuplicates(receivedLetters)
+	sort.Strings(letters)
+	if strings.Join(letters, "") != "abcdefghijklmnopqrstuvwxy" {
+		t.Fatalf("Did not receive all letters")
 	}
 }
 
