@@ -15,6 +15,7 @@ go_library(
         "//server/util/claims",
         "//server/util/db",
         "//server/util/flag",
+        "//server/util/git",
         "//server/util/grpc_client",
         "//server/util/status",
     ],
