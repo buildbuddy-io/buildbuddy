@@ -178,13 +178,7 @@ func TestUserQuery(t *testing.T) {
 				}
 			},
 		}
-		peers := make([]string, 0, len(addrs)-1)
-		for _, p := range addrs {
-			if p != nodeAddr {
-				peers = append(peers, p)
-			}
-		}
-		n := newGossipManager(t, nodeAddr, peers, b)
+		n := newGossipManager(t, nodeAddr, addrs[:i], b)
 		defer n.Shutdown()
 		gossipManagers[i] = n
 	}
