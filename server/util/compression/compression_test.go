@@ -114,6 +114,8 @@ func compressWithNewZstdCompressingWriter(t *testing.T, src []byte) []byte {
 	written, err := cw.Write(src)
 	require.NoError(t, err)
 	require.Equal(t, len(src), written)
+	err = cw.Commit()
+	require.NoError(t, err)
 	err = cw.Close()
 	require.NoError(t, err)
 	return compressed.Bytes()
