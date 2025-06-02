@@ -315,7 +315,6 @@ func executorRootDir(t *testing.T) string {
 
 func getExecutorConfig(t *testing.T) *firecracker.ExecutorConfig {
 	root := executorRootDir(t)
-
 	buildRoot := filepath.Join(root, "build")
 	cacheRoot := filepath.Join(root, "cache")
 
