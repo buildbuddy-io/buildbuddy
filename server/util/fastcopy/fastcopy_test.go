@@ -91,6 +91,8 @@ func TestFastCopyXFSReflink(t *testing.T) {
 		t.Skipf("test runs on linux only")
 	}
 
+	err := os.Setenv("PATH", os.Getenv("PATH")+":/sbin:/usr/sbin")
+	require.NoError(t, err, "failed to set PATH for mkfs.xfs")
 	if _, err := exec.LookPath("mkfs.xfs"); err != nil {
 		t.Skipf("test requires xfsprogs")
 	}
@@ -104,7 +106,7 @@ func TestFastCopyXFSReflink(t *testing.T) {
 		dd if=/dev/zero count=1000000 > ./disk.xfs
 		mkfs.xfs ./disk.xfs
 		mkdir `+mnt+`
-		mount -o loop ./disk.xfs `+mnt+`
+		mount -o loop -t xfs ./disk.xfs `+mnt+` || dmesg && exit 1
 	`)
 	t.Cleanup(func() {
 		testshell.Run(t, root, `umount --force `+mnt)
@@ -112,7 +114,7 @@ func TestFastCopyXFSReflink(t *testing.T) {
 
 	src := filepath.Join(mnt, "src.txt")
 	dst := src + ".reflink"
-	err := os.WriteFile(src, nil, 0644)
+	err = os.WriteFile(src, nil, 0644)
 	require.NoError(t, err)
 
 	err = fastcopy.FastCopy(src, dst)
