@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/metrics",
         "//server/util/bytebufferpool",
+        "//server/util/ioutil",
         "//server/util/log",
         "@com_github_klauspost_compress//zstd",
         "@com_github_prometheus_client_golang//prometheus",

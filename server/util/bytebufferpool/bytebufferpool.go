@@ -112,8 +112,8 @@ type VariableWriteBufPool struct {
 	maxBufferSize int
 }
 
-// NewVariableWriteBufPool returns a byte buffer pool that can be used when the
-// buffer size is not fixed. It internally maintains pools of different
+// NewVariableWriteBufPool returns a  pool of bufio.Writers.
+// It internally maintains pools of different
 // bufio.WriteBuffers in different sizes to accomadate the requested size.
 func NewVariableWriteBufPool(maxBufferSize int) *VariableWriteBufPool {
 	bp := &VariableWriteBufPool{}

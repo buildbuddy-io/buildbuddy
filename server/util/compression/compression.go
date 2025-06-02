@@ -1,13 +1,16 @@
 package compression
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"runtime"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/bazel-buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,6 +30,11 @@ var (
 	zstdDecoderPool = NewZstdDecoderPool()
 
 	compressBufPool = bytebufferpool.FixedSize(compressChunkSize)
+	writerPool      = sync.Pool{
+		New: func() any {
+			return bufio.NewWriterSize(io.Discard, compressChunkSize)
+		},
+	}
 )
 
 func mustGetZstdEncoder() *zstd.Encoder {
@@ -222,13 +230,23 @@ func (c *compressingWriter) Close() error {
 // NewZstdCompressingWriter returns a writer that compresses each chunk of the
 // input using zstd and writes the compressed data to the underlying writer.
 // The writer uses a fixed-size 4MB buffer for compression.
-func NewZstdCompressingWriter(w io.Writer) io.WriteCloser {
+func NewZstdCompressingWriter(w io.Writer) interfaces.CommittedWriteCloser {
 	compressBuf := compressBufPool.Get()
-	return &compressingWriter{
+	compressor := &compressingWriter{
 		w:               w,
 		compressBuf:     compressBuf,
 		poolCompressBuf: compressBuf,
 	}
+	bw := writerPool.Get().(*bufio.Writer)
+	bw.Reset(compressor)
+	cwc := ioutil.NewCustomCommitWriteCloser(bw)
+	cwc.CommitFn = func(_ int64) error {
+		return bw.Flush()
+	}
+	cwc.CloseFn = func() error {
+		return compressor.Close()
+	}
+	return cwc
 }
 
 // NewZstdDecompressingReader reads zstd-compressed data from the input
