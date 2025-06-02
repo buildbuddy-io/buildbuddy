@@ -251,7 +251,7 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		interceptors.GetStreamInterceptor(env, config.ExtraChainedStreamInterceptors...),
 		grpc.StreamInterceptor(Metrics().StreamServerInterceptor()),
 		grpc.UnaryInterceptor(Metrics().UnaryServerInterceptor()),
-		experimental.BufferPool(mem.NopBufferPool{}),
+		experimental.BufferPool(mem.DefaultBufferPool()),
 		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
 		KeepaliveEnforcementPolicy(),
 	}
