@@ -199,25 +199,23 @@ func TestUserQuery(t *testing.T) {
 	}()
 
 	seenItAll := make(chan struct{})
-	go func() {
-		for {
-			mu.Lock()
-			letters := removeDuplicates(receivedLetters)
-			mu.Unlock()
+	for {
+		mu.Lock()
+		letters := removeDuplicates(receivedLetters)
+		mu.Unlock()
 
-			sort.Strings(letters)
-			if strings.Join(letters, "") == "abcdefghijklmnopqrstuvwxy" {
-				close(seenItAll)
-				break
-			}
+		sort.Strings(letters)
+		if strings.Join(letters, "") == "abcdefghijklmnopqrstuvwxy" {
+			close(seenItAll)
+			break
 		}
-	}()
+	}
 
 	select {
-	case <-time.After(3 * time.Second):
-		t.Fatalf("Timed out waiting for tags to be received: %+v", receivedLetters)
 	case <-seenItAll:
 		break
+	default:
+		t.Fatalf("Timed out waiting for tags to be received: %+v", receivedLetters)
 	}
 }
 
