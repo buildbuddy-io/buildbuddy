@@ -16,6 +16,7 @@ go_library(
         "//proto:index_go_proto",
         "//server/util/git",
         "//server/util/grpc_client",
+        "//server/util/status",
         "@org_golang_google_grpc//metadata",
     ],
 )

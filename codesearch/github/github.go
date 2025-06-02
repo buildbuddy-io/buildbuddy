@@ -284,10 +284,10 @@ func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.Inc
 	changes := strings.Split(strings.TrimSpace(changesStr), "\n")
 
 	if len(changes) > maxAllowedChanges {
-		return nil, fmt.Errorf("too many changes in commit range %s..%s: %d", firstSha, lastSha, len(changes))
+		return nil, status.FailedPreconditionErrorf("too many changes in commit range %s..%s: %d", firstSha, lastSha, len(changes))
 	}
 	if len(changes) == 0 || (len(changes) == 1 && len(changes[0]) == 0) {
-		return nil, fmt.Errorf("no commits found between %s and %s", firstSha, lastSha)
+		return nil, status.FailedPreconditionErrorf("no commits found between %s and %s", firstSha, lastSha)
 	}
 
 	result := &inpb.IncrementalUpdate{

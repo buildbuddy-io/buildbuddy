@@ -41,6 +41,13 @@ const (
 	// The total number of submitted executions (canonical, hedged, and merged)
 	// for this action.
 	actionCountKey = "action-count"
+	// The total number of invocations referencing this action.
+	// When an execution is merged against this action, the refcount increases
+	// by 1.
+	// When an invocation is cancelled, the refcount decreases by 1.
+	// When the refcount reaches 0, it's assumed there are no more invocations
+	// waiting for this action to complete, so the execution can be cancelled.
+	invocationRefcountKey = "invocation-refcount"
 
 	// The redis keys storing action merging data are versioned to support
 	// making backwards-incompatible changes to the storage representation.
