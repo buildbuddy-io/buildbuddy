@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -43,6 +44,7 @@ var (
 	writeManifestsToCache  = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
 	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from the cache after HEAD request to upstream registry.")
 	writeLayersToCache     = flag.Bool("executor.container_registry.write_layers_to_cache", false, "Write layers to cache when fetching from upstream registry.")
+	readLayersFromCache    = flag.Bool("executor.container_registry.read_layers_from_cache", false, "Read layers from cache before fetching from upstream registry.")
 
 	defaultPlatform = gcr.Platform{
 		Architecture: "amd64",
@@ -813,17 +815,80 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	if err := l.fetchRemoteLayer(); err != nil {
 		return nil, err
 	}
-	// ocicache.WriteBlobToCache(
-	// 	l.image.ctx,
-	// 	r,
-	// 	bsClient,
-	// 	acClient,
-	// 	repo,
-	// 	hash,
-	// 	contentType,
-	// 	contentLength,
-	// )
-	return l.remoteLayer.Compressed()
+
+	if *readLayersFromCache {
+		metadata, err := ocicache.FetchBlobMetadataFromCache(
+			l.image.ctx,
+			l.image.bsClient,
+			l.image.acClient,
+			l.repo,
+			l.digest,
+		)
+		if err != nil && !status.IsNotFoundError(err) {
+			log.Warningf("Error fetching blob metadata from cache: %s", err)
+		} else if err == nil {
+			pr, pw := io.Pipe()
+			go func() {
+				defer pw.Close()
+				err := ocicache.FetchBlobFromCache(
+					l.image.ctx,
+					pw,
+					l.image.bsClient,
+					l.image.acClient,
+					l.digest,
+					metadata.GetContentLength(),
+				)
+				if err != nil {
+					log.Warningf("Error fetching blob from cache: %s", err)
+					pw.CloseWithError(err)
+				}
+			}()
+			return pr, nil
+		}
+	}
+
+	if !*writeLayersToCache {
+		return l.remoteLayer.Compressed()
+	}
+
+	rc, err := l.remoteLayer.Compressed()
+	if err != nil {
+		return nil, err
+	}
+	contentLength, err := l.Size()
+	if err != nil {
+		log.Warningf("Error fetching size for layer: %s", err)
+		return rc, nil
+	}
+	uploader, err := ocicache.NewBlobUploader(
+		l.image.ctx,
+		l.image.bsClient,
+		l.repo,
+		l.digest,
+		contentLength,
+	)
+	if err != nil {
+		return rc, nil
+	}
+	mediaType, err := l.MediaType()
+	if err != nil {
+		log.Warningf("Error fetching media type for layer: %s", err)
+		return rc, nil
+	}
+	tee := &teeReadCloser{
+		rc: rc,
+		wc: &blobWriteCloser{
+			uploader:      uploader,
+			repo:          l.repo,
+			hash:          l.digest,
+			contentType:   string(mediaType),
+			contentLength: contentLength,
+			ctx:           l.image.ctx,
+			bsClient:      l.image.bsClient,
+			acClient:      l.image.acClient,
+		},
+	}
+	return tee, nil
 }
 
 func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
@@ -845,4 +910,76 @@ func (l *layerFromDigest) MediaType() (types.MediaType, error) {
 		return "", err
 	}
 	return l.remoteLayer.MediaType()
+}
+
+type blobWriteCloser struct {
+	uploader interfaces.CommittedWriteCloser
+
+	repo          gcrname.Repository
+	hash          gcr.Hash
+	contentType   string
+	contentLength int64
+
+	ctx      context.Context
+	bsClient bspb.ByteStreamClient
+	acClient repb.ActionCacheClient
+}
+
+func (wc *blobWriteCloser) Write(p []byte) (int, error) {
+	return wc.uploader.Write(p)
+}
+
+func (wc *blobWriteCloser) Close() error {
+	commitErr := wc.uploader.Commit()
+	if commitErr == nil {
+		err := ocicache.WriteBlobMetadataToCache(
+			wc.ctx,
+			wc.bsClient,
+			wc.acClient,
+			wc.repo,
+			wc.hash,
+			wc.contentType,
+			wc.contentLength,
+		)
+		if err != nil {
+			log.Warningf("Error writing blob metadata to cache: %s", err)
+		}
+	}
+
+	err := wc.uploader.Close()
+	if commitErr != nil {
+		return commitErr
+	}
+	return err
+}
+
+type teeReadCloser struct {
+	rc io.ReadCloser
+	wc io.WriteCloser
+
+	writeErr error
+}
+
+func (t *teeReadCloser) Read(p []byte) (int, error) {
+	n, err := t.rc.Read(p)
+	if err != nil {
+		return n, err
+	}
+	if t.writeErr != nil {
+		return n, err
+	}
+	written, err := t.wc.Write(p[:n])
+	if err != nil {
+		log.Warningf("Error writing in teeReadCloser: %s", err)
+		t.writeErr = err
+	} else if written < n {
+		t.writeErr = io.ErrShortWrite
+	}
+	return n, err
+}
+
+func (t *teeReadCloser) Close() error {
+	err := t.rc.Close()
+	t.wc.Close()
+	return err
 }

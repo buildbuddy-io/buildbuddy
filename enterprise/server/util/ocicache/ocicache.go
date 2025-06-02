@@ -220,7 +220,7 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	return nil
 }
 
-func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) error {
+func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, repo gcrname.Repository, hash gcr.Hash, contentLength int64) (interfaces.CommittedWriteCloser, error) {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -232,11 +232,10 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
 	updateCacheEventMetric(casLabel, uploadLabel)
-	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
-	if err != nil {
-		return err
-	}
+	return cachetools.NewUploadWriter(ctx, bsClient, blobRN)
+}
 
+func WriteBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) error {
 	blobMetadata := &ocipb.OCIBlobMetadata{
 		ContentLength: contentLength,
 		ContentType:   contentType,
@@ -253,6 +252,10 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 		ResourceType:  ocipb.OCIResourceType_BLOB,
 		HashAlgorithm: hash.Algorithm,
 		HashHex:       hash.Hex,
+	}
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
 	}
 	ar := &repb.ActionResult{
 		OutputFiles: []*repb.OutputFile{
@@ -285,6 +288,25 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 		return err
 	}
 	return nil
+}
+
+func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) error {
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
+	}
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		"",
+		cacheDigestFunction,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	updateCacheEventMetric(casLabel, uploadLabel)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
+	if err != nil {
+		return err
+	}
+	return WriteBlobMetadataToCache(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
 }
 
 func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
