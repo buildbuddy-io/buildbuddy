@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -60,7 +61,12 @@ func (css *CodesearchService) getGitRepoAccessToken(ctx context.Context, groupId
 		return "", status.InternalError("GitHub App service is not configured")
 	}
 
-	gha, err := ghas.GetGitHubAppForOwner(ctx, repoURL)
+	parsedRepoURL, err := git.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("invalid repo URL %q: %s", repoURL, err)
+	}
+
+	gha, err := ghas.GetGitHubAppForOwner(ctx, parsedRepoURL.Owner)
 	if err != nil {
 		return "", status.UnavailableErrorf("could not get GitHub app for repo %q: %s", repoURL, err)
 	}
