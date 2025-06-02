@@ -387,11 +387,11 @@ func isSupportedCommand(command string) bool {
 	return false
 }
 
-// GetAPIKeyInteractively attempts to read an API key from the
+// GetAPIKey attempts to read an API key from the
 // BUILDBUDDY_API_KEY environment variable and, if not set, from the buildbuddy
 // config set at the key `buildbuddy.api-key` in .git/config. If neither is set,
 // and we're running in a tty, this will prompt the user to set it.
-func GetAPIKeyInteractively() (string, error) {
+func GetAPIKey() (string, error) {
 	var err error
 	apiKey := os.Getenv("BUILDBUDDY_API_KEY")
 	if apiKey != "" {
