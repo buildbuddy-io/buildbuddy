@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/bazel-buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
@@ -227,6 +228,57 @@ func (c *compressingWriter) Close() error {
 	return nil
 }
 
+type pooledBufWriter struct {
+	w *bufio.Writer
+
+	committed bool
+	closed    bool
+}
+
+func (b *pooledBufWriter) Write(p []byte) (int, error) {
+	if b.closed {
+		return status.FailedPreconditionError("pooledBufWriter already closed, cannot receive writes")
+	}
+	if b.committed {
+		return status.FailedPreconditionError("pooledBufWriter already committed, cannot receive writes")
+	}
+	return b.w.Write(p)
+}
+
+func (b *pooledBufWriter) ReadFrom(r io.Reader) (int64, error) {
+	if b.closed {
+		return status.FailedPreconditionError("pooledBufWriter already closed, cannot ReadFrom")
+	}
+	if b.committed {
+		return status.FailedPreconditionError("pooledBufWriter already committed, cannot ReadFrom")
+	}
+	return b.w.ReadFrom(r)
+}
+
+// Commit flushes any buffered bytes.
+// It is an error to call Commit after Close.
+func (b *pooledBufWriter) Commit() error {
+	if b.closed {
+		return status.FailedPreconditionError("pooledBufWriter already closed, cannot commit")
+	}
+	if b.committed {
+		return nil
+	}
+	b.committed = true
+	return b.w.Flush()
+}
+
+// Close puts the bufio.Writer back into the pool.
+// It is an error to call Close more than once.
+func (b *pooledBufWriter) Close() error {
+	if b.closed {
+		return status.FailedPreconditionError("pooledBufWriter already closed, cannot close again")
+	}
+	b.closed = true
+	bufWriterPool.Put(b.w)
+	return nil
+}
+
 // NewZstdCompressingWriter returns a writer that compresses each chunk of the
 // input using zstd and writes the compressed data to the underlying writer.
 // The writer uses a fixed-size 4MB buffer for compression.
@@ -239,14 +291,13 @@ func NewZstdCompressingWriter(w io.Writer) interfaces.CommittedWriteCloser {
 	}
 	bw := bufWriterPool.Get().(*bufio.Writer)
 	bw.Reset(compressor)
-	cwc := ioutil.NewCustomCommitWriteCloser(bw)
-	cwc.CommitFn = func(_ int64) error {
-		return bw.Flush()
-	}
+	cwc := ioutil.NewCustomCommitWriteCloser(
+		&pooledBufWriter{
+			w: bw,
+		},
+	)
 	cwc.CloseFn = func() error {
-		err := compressor.Close()
-		bufWriterPool.Put(bw)
-		return err
+		return compressor.Close()
 	}
 	return cwc
 }
