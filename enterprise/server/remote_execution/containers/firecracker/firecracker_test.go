@@ -31,7 +31,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
@@ -157,36 +156,6 @@ func TestGuestAPIVersion(t *testing.T) {
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
 	if t.Failed() {
 		t.Log("Possible breaking change in VM guest API detected. Please see the instructions in firecracker_test.go > TestGuestAPIVersion")
-	}
-}
-
-// cleanExecutorRoot cleans all entries in the test root dir *except* for cached
-// ext4 images. Converting docker images to ext4 images takes a long time and
-// it would slow down testing to build these images from scratch every time.
-// So we instead keep the same directory around and clean it between tests.
-//
-// See README.md for more details on the filesystem layout.
-func cleanExecutorRoot(t *testing.T, path string) {
-	if os.Getuid() == 0 {
-		// Clean up VBD mounts that might've been left around from previous
-		// tests that were interrupted. Otherwise we won't be able to clean up
-		// old firecracker workspaces.
-		err := vbd.CleanStaleMounts()
-		require.NoError(t, err)
-	}
-
-	err := os.MkdirAll(path, 0755)
-	require.NoError(t, err)
-	entries, err := os.ReadDir(path)
-	require.NoError(t, err)
-	for _, entry := range entries {
-		// The "/executor" subdir contains the cached images.
-		// Delete all other content.
-		if entry.Name() == "executor" {
-			continue
-		}
-		err := os.RemoveAll(filepath.Join(path, entry.Name()))
-		require.NoError(t, err)
 	}
 }
 
@@ -329,6 +298,8 @@ func executorRootDir(t *testing.T) string {
 	// When running this test on the bare executor pool, ensure the jailer root
 	// is under /buildbuddy so that it's on the same device as the executor data
 	// dir (with action workspaces and filecache).
+	// Using a fixed directory also means that separate runs can share the image
+	// cache instead of each having to pull their own images.
 	if testfs.Exists(t, "/buildbuddy", "") {
 		*testExecutorRoot = "/buildbuddy/test-executor-root"
 	}
@@ -832,7 +803,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	cfg := getExecutorConfig(t)
 
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	filecacheRoot := testfs.MakeDirAll(t, cfg.JailerRoot, "filecache")
+	filecacheRoot := testfs.MakeTempDir(t)
 	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
@@ -882,6 +853,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 		vm, err := firecracker.NewContainer(ctx, env, task, opts)
 		require.NoError(t, err)
 		containersToCleanup = append(containersToCleanup, vm)
+		require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage))
 		err = vm.Create(ctx, workDir)
 		require.NoError(t, err)
 		cmd := appendToLog(stringToLog)
@@ -915,7 +887,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	// by pulling artifacts from the remote cache
 	err = os.RemoveAll(filecacheRoot)
 	require.NoError(t, err)
-	filecacheRoot2 := testfs.MakeDirAll(t, cfg.JailerRoot, "filecache2")
+	filecacheRoot2 := testfs.MakeTempDir(t)
 	fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize, false)
 	require.NoError(t, err)
 	fc2.WaitForDirectoryScanToComplete()
@@ -1651,6 +1623,7 @@ func TestSnapshotAndResumeWithNetwork(t *testing.T) {
 	}
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
+	require.NoError(t, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage))
 	err = c.Create(ctx, opts.ActionWorkingDirectory)
 	require.NoError(t, err)
 	t.Cleanup(func() {
