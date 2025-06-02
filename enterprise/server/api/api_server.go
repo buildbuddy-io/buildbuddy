@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"flag"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/url"
@@ -585,6 +586,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		ExecProperties: execProps,
 		RemoteHeaders:  req.GetRemoteHeaders(),
 		RunRemotely:    true,
+		RunnerFlags:    []string{fmt.Sprintf("--skip_automatic_configuration=%v", req.GetSkipAutomaticConfiguration())},
 	})
 	if err != nil {
 		return nil, err
