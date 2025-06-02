@@ -9,7 +9,6 @@ go_library(
         "//cli/arg",
         "//cli/log",
         "//cli/login",
-        "//cli/storage",
         "//proto:buildbuddy_service_go_proto",
         "//proto:search_go_proto",
         "//server/util/grpc_client",
