@@ -5,6 +5,7 @@ package auditlog;
 import "proto/api_key.proto";
 import "proto/context.proto";
 import "proto/encryption.proto";
+import "proto/firecracker.proto";
 import "proto/github.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
@@ -61,6 +62,7 @@ enum Action {
   CREATE_IMPERSONATION_API_KEY = 12;
   UPDATE_IP_RULES_CONFIG = 13;
   INVALIDATE_VM_SNAPSHOT = 14;
+  IMPERSONATE_REMOTE_RUN = 15;
 }
 
 message ResourceID {
@@ -101,6 +103,7 @@ message Entry {
     iprules.DeleteRuleRequest delete_ip_rule = 17;
     iprules.SetRulesConfigRequest set_rules_config = 18;
     workflow.InvalidateSnapshotRequest invalidate_snapshot = 19;
+    firecracker.SnapshotKey impersonate_remote_run = 20;
   }
   message Request {
     APIRequest api_request = 1;

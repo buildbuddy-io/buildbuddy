@@ -11,6 +11,8 @@ go_library(
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/workflow/config",
+        "//proto:auditlog_go_proto",
+        "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//server/endpoint_urls/build_buddy_url",
@@ -33,6 +35,7 @@ go_library(
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
