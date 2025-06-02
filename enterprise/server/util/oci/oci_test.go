@@ -371,6 +371,152 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+// TestResolve_WithCache enumerates all the different combinations of read/write flags for manifests and layers,
+// resolves images and indexes with those flags set, and validates the number of requests made to the upstream registry.
+func TestResolve_WithCache(t *testing.T) {
+	for _, tc := range []resolveTestCase{
+		{
+			name: "resolving an existing image without credentials succeeds",
+
+			imageName: "resolve_existing",
+			imageFiles: map[string][]byte{
+				"/name": []byte("resolving an existing image without credentials succeeds"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_existing",
+				platform: &rgpb.Platform{
+					Arch: runtime.GOARCH,
+					Os:   runtime.GOOS,
+				},
+			},
+		},
+		{
+			name: "resolving a platform-specific image without including the variant succeeds",
+
+			imageName: "resolve_platform_variant",
+			imageFiles: map[string][]byte{
+				"/name":    []byte("resolving a platform-specific image without including the variant succeeds"),
+				"/variant": []byte("v8"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: "arm64",
+				OS:           "linux",
+				Variant:      "v8",
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_platform_variant",
+				platform: &rgpb.Platform{
+					Arch: "arm64",
+					Os:   "linux",
+				},
+			},
+		},
+	} {
+		for _, writeManifests := range []bool{false, true} {
+			for _, readManifests := range []bool{false, true} {
+				for _, writeLayers := range []bool{false, true} {
+					for _, readLayers := range []bool{false, true} {
+						name := tc.name + fmt.Sprintf(
+							"/write_manifests_%t_read_manifests_%t_write_layers_%t_read_layers_%t",
+							writeManifests,
+							readManifests,
+							writeLayers,
+							readLayers,
+						)
+						t.Run(name, func(t *testing.T) {
+							te := testenv.GetTestEnv(t)
+							flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+							flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+							flags.Set(t, "executor.container_registry.write_manifests_to_cache", writeManifests)
+							flags.Set(t, "executor.container_registry.read_manifests_from_cache", readManifests)
+							flags.Set(t, "executor.container_registry.write_layers_to_cache", writeLayers)
+							flags.Set(t, "executor.container_registry.read_layers_from_cache", readLayers)
+							counter := atomic.Int32{}
+							registry := testregistry.Run(t, testregistry.Opts{
+								HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+									if r.URL.Path != "/v2/" {
+										counter.Add(1)
+									}
+									return true
+								},
+							})
+							_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
+
+							index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+								Add: pushedImage,
+								Descriptor: v1.Descriptor{
+									Platform: &tc.imagePlatform,
+								},
+							})
+							registry.PushIndex(t, index, tc.imageName+"_index")
+
+							{
+								imageAddress := registry.ImageAddress(tc.args.imageName + "_image")
+								resolveAndCheck(t, tc, te, imageAddress, &counter, int32(1), int32(0), int32(1))
+
+								resolveCount := int32(1)
+								if writeManifests && readManifests {
+									resolveCount = int32(0)
+								}
+								layersCount := int32(1)
+								if writeLayers && readLayers {
+									layersCount = int32(0)
+								}
+								resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, int32(0), layersCount)
+							}
+
+							{
+								indexAddress := registry.ImageAddress(tc.args.imageName + "_index")
+								resolveAndCheck(t, tc, te, indexAddress, &counter, int32(2), int32(0), int32(1))
+
+								resolveCount := int32(1)
+								if writeManifests && readManifests {
+									resolveCount = int32(0)
+								}
+								layersCount := int32(1)
+								if writeLayers && readLayers {
+									layersCount = int32(0)
+								}
+								resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, int32(0), layersCount)
+							}
+						})
+					}
+				}
+			}
+		}
+	}
+}
+
+func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, counter *atomic.Int32, resolveCount, layersCount, filesCount int32) {
+	beforeResolve := counter.Load()
+	pulledImage, err := newResolver(t, te).Resolve(
+		context.Background(),
+		imageAddress,
+		tc.args.platform,
+		tc.args.credentials,
+	)
+	require.NoError(t, err)
+	require.Equal(t, resolveCount, counter.Load()-beforeResolve)
+
+	beforeLayers := counter.Load()
+	layers, err := pulledImage.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+	require.Equal(t, layersCount, beforeLayers-counter.Load())
+
+	beforeFiles := counter.Load()
+	files := layerFiles(t, layers[0])
+	require.Equal(t, filesCount, counter.Load()-beforeFiles)
+
+	require.Empty(t, cmp.Diff(tc.imageFiles, files))
+}
+
 // TestResolve_Layers_DiffIDs tests for a specific regression that led to an incident:
 //
 // Layer.DiffID() returns the SHA256 of the uncompressed bytes for the layer.
