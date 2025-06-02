@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/bazel-buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
