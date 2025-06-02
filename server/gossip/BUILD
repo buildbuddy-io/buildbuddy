@@ -30,7 +30,6 @@ go_test(
         "//server/interfaces",
         "//server/testutil/quarantine",
         "//server/testutil/testport",
-        "//server/util/log",
         "//server/util/testing/flags",
         "@com_github_hashicorp_serf//serf",
         "@com_github_stretchr_testify//require",
