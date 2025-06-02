@@ -172,7 +172,7 @@ common:local-rbe-linux --config=local
 
 # Build with --config=local-rbe-mac to target a local executor on macOS.
 common:local-rbe-mac --remote_executor=grpc://localhost:1985
-common:local-rbe-mac --config=local-rbe
+common:local-rbe-mac --config=target-darwin-arm64
 common:local-rbe-mac --config=local
 
 # Build with --config=dev to send build logs to the dev server
@@ -193,10 +193,14 @@ common:cache --config=cache-shared
 common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
 
 # Target+Exec Platforms configuration
+common:workspace-target-darwin-arm64 --platforms=@buildbuddy_toolchain//:platform_darwin_arm64
+common:workspace-target-darwin-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_darwin_arm64
 common:workspace-target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 common:workspace-target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 common:workspace-target-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
 common:workspace-target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
+common:bzlmod-target-darwin-arm64 --platforms=@buildbuddy_toolchain//:platform_darwin_arm64
+common:bzlmod-target-darwin-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_darwin_arm64
 common:bzlmod-target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
