@@ -7,11 +7,13 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/bazel-buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -194,10 +196,14 @@ type compressingWriter struct {
 	w               io.Writer
 	compressBuf     []byte
 	poolCompressBuf []byte
+	closed          bool
 }
 
 func (c *compressingWriter) Write(p []byte) (int, error) {
-	var totalWritten int
+	if c.closed {
+		return 0, status.FailedPreconditionError("compressingWriter already closed, cannot receive writes")
+	}
+	totalWritten := 0
 	for len(p) > 0 {
 		chunkSize := min(len(p), cap(c.compressBuf))
 		chunk := p[:chunkSize]
@@ -220,6 +226,10 @@ func (c *compressingWriter) Write(p []byte) (int, error) {
 // Close puts the compression buffer back into the pool.
 // If the underlying Writer is also a Closer, it closes it.
 func (c *compressingWriter) Close() error {
+	if c.closed {
+		return status.FailedPreconditionError("compressingWriter already closed, cannot close again")
+	}
+	c.closed = true
 	compressBufPool.Put(c.poolCompressBuf)
 	if closer, ok := c.w.(io.Closer); ok {
 		return closer.Close()
@@ -244,6 +254,9 @@ func NewZstdCompressingWriter(w io.Writer) interfaces.CommittedWriteCloser {
 		return bw.Flush()
 	}
 	cwc.CloseFn = func() error {
+		if compressor.closed {
+			return status.FailedPreconditionError("Writer already closed, cannot close again")
+		}
 		err := compressor.Close()
 		bufWriterPool.Put(bw)
 		return err
