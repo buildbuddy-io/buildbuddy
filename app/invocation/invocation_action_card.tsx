@@ -1,7 +1,7 @@
 import React, { ReactElement } from "react";
 import format, { durationUsec } from "../format/format";
 import InvocationModel from "./invocation_model";
-import { ArrowRight, Download, File, FileQuestion, FileSymlink, Folder, Info, MoreVertical } from "lucide-react";
+import { ArrowRight, Copy, Download, File, FileQuestion, FileSymlink, Folder, Info, MoreVertical } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
@@ -39,7 +39,6 @@ import { copyToClipboard } from "../util/clipboard";
 import Popup from "../components/popup/popup";
 import Menu, { MenuItem } from "../components/menu/menu";
 
-type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
 
 interface Props {
@@ -515,6 +514,74 @@ export default class InvocationActionCardComponent extends React.Component<Props
       </>
     );
   }
+
+  /** Return true if the string needs quoting and, if so, quote it safely. */
+  private shellQuote(arg: string): string {
+    // If the arg has no spaces or shell meta chars, leave it unchanged.
+    if (!/[^\w@%+=:,./-]/.test(arg)) return arg;
+    // Wrap in single-quotes and escape internal single-quotes.
+    return `'${arg.replace(/'/g, `'\\''`)}'`;
+  }
+
+  /** Build a fully-formed `bb execute` command for this action. */
+  private buildBbExecuteCommand(): string {
+    const { action, command } = this.state;
+    if (!action || !command) return "";
+
+    const parts: string[] = ["bb execute"];
+    parts.push(`--remote_header=x-buildbuddy-api-key=$BB_API_KEY`);
+
+    // Remote executor / instance (derived from invocation options if present)
+    const remoteExec = this.props.model.stringCommandLineOption("remote_executor");
+    if (remoteExec) parts.push(`--remote_executor=${this.shellQuote(remoteExec)}`);
+
+    const digestFn =
+      build.bazel.remote.execution.v2.DigestFunction.Value[this.props.model.getDigestFunction()].toLowerCase();
+    if (digestFn === "blake3" || digestFn === "sha256") parts.push(`--digest_function=${digestFn}`);
+
+    const invocationId = this.props.model.getInvocationId();
+    if (invocationId) parts.push(`--invocation_id=${invocationId}`);
+
+    const remoteInstance = this.props.model.optionsMap.get("remote_instance_name");
+    if (remoteInstance) parts.push(`--remote_instance_name=${this.shellQuote(remoteInstance)}`);
+
+    // Timeout
+    if (action.timeout?.seconds) parts.push(`--remote_timeout=${action.timeout.seconds}s`);
+
+    if (action.inputRootDigest)
+      parts.push(`--input_root_digest=${digestToString(action.inputRootDigest)}`);
+
+    // Env vars
+    for (const env of command.environmentVariables) {
+      parts.push(`--action_env=${this.shellQuote(`${env.name}=${env.value}`)}`);
+    }
+
+    // Platform props
+    for (const prop of command.platform?.properties ?? []) {
+      parts.push(`--exec_properties=${this.shellQuote(`${prop.name}=${prop.value}`)}`);
+    }
+
+    // Expected outputs
+    const addOutPath = (p: string) => parts.push(`--output_path=${this.shellQuote(p)}`);
+    if (command.outputPaths.length) command.outputPaths.forEach(addOutPath);
+    else {
+      command.outputFiles.forEach(addOutPath);
+      command.outputDirectories.forEach(addOutPath);
+    }
+
+    // Separator and original argv
+    parts.push("--", ...command.arguments.map((a) => this.shellQuote(a)));
+
+    return parts.join(" \\\n\t");
+  }
+
+  /** Copy the command to clipboard and toast the user. */
+  private onClickCopyBbExecute = () => {
+    const cmd = this.buildBbExecuteCommand();
+    if (!cmd) return alert_service.error("Unable to build command");
+    copyToClipboard(cmd);
+    alert_service.success("`bb execute` command copied to clipboard");
+  };
 
   handleFileClicked(node: TreeNode) {
     if (!("digest" in node.obj)) return;
@@ -1035,7 +1102,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     </div>
                   </div>
                   <div className="action-line">
-                    <div className="action-title">Command details</div>
+                    <div className="action-header">
+                      <div className="action-title">Command details</div>
+                      {this.state.command && (
+                        <OutlinedButton
+                          className="copy-bb-execute-button"
+                          title="Copy as bb-execute"
+                          onClick={this.onClickCopyBbExecute}>
+                          <Copy className="icon copy-icon" />
+                          Copy as bb-execute
+                        </OutlinedButton>
+                      )}
+                    </div>
                     {this.state.command ? (
                       <div>
                         <div className="action-section">
