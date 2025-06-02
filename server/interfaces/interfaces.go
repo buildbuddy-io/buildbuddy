@@ -723,9 +723,9 @@ type GitHubAppService interface {
 	// have an authenticated user context.
 	GetGitHubAppForAuthenticatedUser(ctx context.Context) (GitHubApp, error)
 	// GetGitHubAppForRepoURL returns the BB GitHub app corresponding to the app installation
-	// for the given URL. The installation must be both installed on GitHub and imported
+	// for the given owner. The installation must be both installed on GitHub and imported
 	// to BuildBuddy via (`LinkGitHubAppInstallation`).
-	GetGitHubAppForOwner(ctx context.Context, repoURL string) (GitHubApp, error)
+	GetGitHubAppForOwner(ctx context.Context, owner string) (GitHubApp, error)
 
 	InstallPath(ctx context.Context) (string, error)
 
