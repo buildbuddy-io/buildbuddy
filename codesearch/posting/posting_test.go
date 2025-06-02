@@ -95,23 +95,6 @@ func TestMarshal(t *testing.T) {
 	assert.Equal(t, []uint64{1, 2, 3, 4, 5}, pl2.ToArray())
 }
 
-func TestConcat(t *testing.T) {
-	pl := posting.NewList(1, 2, 3, 4, 5)
-	buf, err := posting.Marshal(pl)
-	assert.NoError(t, err)
-
-	pl2 := posting.NewList(4294967296, 4294967297, 4294967298, 4294967299, 4294967300)
-	buf2, err := posting.Marshal(pl2)
-	assert.NoError(t, err)
-
-	pl3, err := posting.Unmarshal(append(buf, buf2...))
-	assert.NoError(t, err)
-
-	assert.Equal(t, []uint64{1, 2, 3, 4, 5}, pl.ToArray())
-	assert.Equal(t, []uint64{4294967296, 4294967297, 4294967298, 4294967299, 4294967300}, pl2.ToArray())
-	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 4294967296, 4294967297, 4294967298, 4294967299, 4294967300}, pl3.ToArray())
-}
-
 func TestConcat2(t *testing.T) {
 	pl := posting.NewList(1, 2, 3, 4, 5, 4294967296, 4294967297, 4294967298, 4294967299, 4294967300)
 	buf, err := posting.Marshal(pl)
@@ -163,25 +146,6 @@ func TestFieldMapAnd(t *testing.T) {
 
 	assert.Equal(t, []uint64{2}, fm["test"].ToArray())
 	assert.Equal(t, []uint64{2}, fm["test2"].ToArray())
-}
-
-func TestMerge(t *testing.T) {
-	pl1 := posting.NewList(1, 2, 3, 4, 5)
-	buf1, err := posting.Marshal(pl1)
-	assert.NoError(t, err)
-
-	pl2 := posting.NewList(6, 7, 8)
-	buf2, err := posting.Marshal(pl2)
-	assert.NoError(t, err)
-
-	combined := make([]byte, len(buf1)+len(buf2))
-	copy(combined, buf1)
-	copy(combined[len(buf1):], buf2)
-
-	pl3, err := posting.Unmarshal(combined)
-	assert.NoError(t, err)
-
-	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, pl3.ToArray())
 }
 
 func BenchmarkListSerializationPosting(b *testing.B) {

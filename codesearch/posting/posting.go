@@ -2,6 +2,7 @@ package posting
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 )
@@ -84,14 +85,12 @@ func Marshal(pl List) ([]byte, error) {
 func Unmarshal(buf []byte) (List, error) {
 	readStream := bytes.NewReader(buf)
 	pl := roaring64.New()
-	for len(buf) > 0 {
-		plTemp := roaring64.New()
-		n, err := plTemp.ReadFrom(readStream)
-		if err != nil {
-			return nil, err
-		}
-		buf = buf[n:]
-		pl.Or(plTemp)
+	n, err := pl.ReadFrom(readStream)
+	if err != nil {
+		return nil, err
+	}
+	if n != int64(len(buf)) {
+		return nil, fmt.Errorf("read only %d bytes of buffer with size %d", n, len(buf))
 	}
 	return &roaringWrapper{pl}, nil
 }

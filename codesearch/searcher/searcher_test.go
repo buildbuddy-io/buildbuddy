@@ -77,10 +77,8 @@ func createSampleIndex(t testing.TB) *pebble.DB {
 	t.Helper()
 
 	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	db, err := index.OpenPebbleDB(indexDir)
+	require.NoError(t, err)
 	t.Cleanup(func() {
 		db.Close()
 	})
