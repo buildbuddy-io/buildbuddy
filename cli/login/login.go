@@ -43,6 +43,7 @@ var (
 	allowExisting    = flags.Bool("allow_existing", false, "Don't force re-login if the current credentials are valid.")
 	noLaunchBrowser  = flags.Bool("no_launch_browser", false, "Never launch a browser window from this script.")
 	promptForBrowser = flags.Bool("prompt_for_browser", false, "Prompt before opening the browser. Has no effect if -no_launch_browser is set.")
+	nonInteractive   = flags.Bool("non_interactive", false, "Run in non-interactive mode. If set, the script will not prompt for input.")
 
 	loginURL  = flags.String("url", "https://app.buildbuddy.io", "Web URL for user to login")
 	apiTarget = flags.String("target", DefaultApiTarget, "BuildBuddy gRPC target")
@@ -399,10 +400,14 @@ func GetAPIKeyInteractively() (string, error) {
 	apiKey, err = storage.ReadRepoConfig("api-key")
 	if err != nil {
 		log.Debugf("Could not read api key from bb config: %s", err)
+		if *nonInteractive {
+			return "", status.NotFoundErrorf("API key not set and non-interactive mode is enabled")
+		}
 	} else {
 		log.Debugf("API key read from `buildbuddy.api-key` in .git/config.")
 		return apiKey, nil
 	}
+
 	// If an API key is not set, prompt the user to set it in their cli config.
 	if _, err = HandleLogin([]string{}); err != nil {
 		return "", status.WrapError(err, "handle login")

@@ -84,7 +84,7 @@ func indexRepo() error {
 		return err
 	}
 
-	if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil && apiKey != "" {
+	if apiKey, err := login.GetAPIKeyInteractively(); err == nil && apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
