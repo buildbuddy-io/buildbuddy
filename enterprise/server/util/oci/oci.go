@@ -30,6 +30,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -40,7 +41,8 @@ var (
 
 	useCachePercent        = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls to use the cache (individaul cache flags must also be enabled).")
 	writeManifestsToCache  = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
-	readManifestsFromCache = flag.Bool("executor.containery_registry.read_manifests_from_cache", false, "Read manifests from the cache after HEAD request to upstream registry.")
+	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from the cache after HEAD request to upstream registry.")
+	writeLayersToCache     = flag.Bool("executor.container_registry.write_layers_to_cache", false, "Write layers to cache when fetching from upstream registry.")
 
 	defaultPlatform = gcr.Platform{
 		Architecture: "amd64",
@@ -286,6 +288,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 				Variant:      platform.GetVariant(),
 			},
 			r.env.GetActionCacheClient(),
+			r.env.GetByteStreamClient(),
 			remoteOpts,
 		)
 	}
@@ -316,7 +319,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	return img, nil
 }
 
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, remoteOpts []remote.Option) (gcr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, remoteOpts []remote.Option) (gcr.Image, error) {
 	if *readManifestsFromCache {
 		desc, err := remote.Head(digestOrTagRef, remoteOpts...)
 		if err != nil {
@@ -343,6 +346,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 					repo:        digestOrTagRef.Context(),
 					desc:        *desc,
 					rawManifest: mc.GetRaw(),
+					acClient:    acClient,
 				}
 				return index.imageByPlatform(platform)
 			case types.OCIManifestSchema1, types.DockerManifestSchema2:
@@ -353,6 +357,9 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				repo:        digestOrTagRef.Context(),
 				desc:        *desc,
 				rawManifest: mc.GetRaw(),
+				ctx:         ctx,
+				acClient:    acClient,
+				bsClient:    bsClient,
 				remoteOpts:  remoteOpts,
 			}, nil
 		}
@@ -398,6 +405,9 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		repo:        digestOrTagRef.Context(),
 		desc:        remoteDesc.Descriptor,
 		rawManifest: remoteDesc.Manifest,
+		ctx:         ctx,
+		acClient:    acClient,
+		bsClient:    bsClient,
 		remoteOpts:  remoteOpts,
 	}, nil
 }
@@ -487,6 +497,7 @@ type indexFromRawManifest struct {
 
 	ctx        context.Context
 	acClient   repb.ActionCacheClient
+	bsClient   bspb.ByteStreamClient
 	remoteOpts []remote.Option
 }
 
@@ -531,6 +542,7 @@ func (i *indexFromRawManifest) Image(digest gcr.Hash) (gcr.Image, error) {
 		i.repo.Digest(desc.Digest.String()),
 		defaultPlatform,
 		i.acClient,
+		i.bsClient,
 		i.remoteOpts,
 	)
 }
@@ -643,6 +655,9 @@ type imageFromRawManifest struct {
 	desc        gcr.Descriptor
 	rawManifest []byte
 
+	ctx           context.Context
+	acClient      repb.ActionCacheClient
+	bsClient      bspb.ByteStreamClient
 	remoteOpts    []remote.Option
 	rawConfigFile []byte
 }
@@ -767,7 +782,7 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error)
 type layerFromDigest struct {
 	digest gcr.Hash
 	repo   gcrname.Repository
-	image  gcr.Image
+	image  *imageFromRawManifest
 
 	remoteOpts  []remote.Option
 	remoteLayer gcr.Layer
@@ -798,6 +813,16 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	if err := l.fetchRemoteLayer(); err != nil {
 		return nil, err
 	}
+	// ocicache.WriteBlobToCache(
+	// 	l.image.ctx,
+	// 	r,
+	// 	bsClient,
+	// 	acClient,
+	// 	repo,
+	// 	hash,
+	// 	contentType,
+	// 	contentLength,
+	// )
 	return l.remoteLayer.Compressed()
 }
 
