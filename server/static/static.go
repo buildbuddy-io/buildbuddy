@@ -128,7 +128,8 @@ func handleRootPaths(env environment.Env, rootPaths []string, template *template
 		}
 
 		if r.URL.Path == "/" {
-			serveIndexTemplate(r.Context(), env, template, version, jsPath, stylePath, appBundleHash, w)
+			ctx := env.GetAuthenticator().AuthenticatedHTTPContext(w, r)
+			serveIndexTemplate(ctx, env, template, version, jsPath, stylePath, appBundleHash, w)
 			return
 		}
 
@@ -221,7 +222,11 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 
 	if efp := env.GetExperimentFlagProvider(); efp != nil {
 		config.FlipLogoOnHover = efp.Boolean(ctx, "flip-logo-on-hover", false /*=default*/)
+		if *codeSearchEnabled {
+			config.CodeSearchEnabled = efp.Boolean(ctx, "codesearch-enabled", false /*=default*/)
+		}
 	}
+
 	configJSON, err := protojson.Marshal(&config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
