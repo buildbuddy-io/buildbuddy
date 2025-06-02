@@ -13673,7 +13673,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 231
+            "y": 21
           },
           "hiddenSeries": false,
           "id": 85,
@@ -13776,7 +13776,101 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 231
+            "y": 21
+          },
+          "hiddenSeries": false,
+          "id": 93,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "10.1.0",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum (go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=\"${job}\"}) by (job, pod_name, namespace)",
+              "interval": "",
+              "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
+              "queryType": "randomWalk",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeRegions": [],
+          "title": "Median GC duration",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:5933",
+              "format": "s",
+              "logBase": 1,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:5934",
+              "format": "short",
+              "logBase": 1,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 30
           },
           "hiddenSeries": false,
           "id": 87,
@@ -13863,17 +13957,16 @@
             "type": "prometheus",
             "uid": "vm"
           },
-          "description": "% of time spent in the garbage collector since the program started.",
           "fill": 0,
           "fillGradient": 0,
           "gridPos": {
-            "h": 8,
+            "h": 9,
             "w": 12,
-            "x": 0,
-            "y": 240
+            "x": 12,
+            "y": 30
           },
           "hiddenSeries": false,
-          "id": 91,
+          "id": 10729,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -13908,7 +14001,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(go_memstats_gc_cpu_fraction{region=\"${region}\", job=\"${job}\"}) by (pod_name, job, namespace)",
+              "expr": "sum (go_threads{region=\"${region}\", job=\"${job}\"} ) by (pod_name, job, namespace)",
               "interval": "",
               "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
               "queryType": "randomWalk",
@@ -13918,7 +14011,7 @@
           ],
           "thresholds": [],
           "timeRegions": [],
-          "title": "GC CPU fraction",
+          "title": "OS threads",
           "tooltip": {
             "shared": true,
             "sort": 2,
@@ -13932,107 +14025,13 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:5856",
-              "format": "percentunit",
-              "logBase": 1,
-              "show": true
-            },
-            {
-              "$$hashKey": "object:5857",
+              "$$hashKey": "object:5779",
               "format": "short",
               "logBase": 1,
               "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "fill": 0,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 240
-          },
-          "hiddenSeries": false,
-          "id": 93,
-          "legend": {
-            "alignAsTable": true,
-            "avg": false,
-            "current": true,
-            "max": false,
-            "min": false,
-            "show": true,
-            "sort": "current",
-            "sortDesc": true,
-            "total": false,
-            "values": true
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "10.1.0",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "expr": "sum (go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=\"${job}\"}) by (job, pod_name, namespace)",
-              "interval": "",
-              "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
-              "queryType": "randomWalk",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeRegions": [],
-          "title": "Median GC duration",
-          "tooltip": {
-            "shared": true,
-            "sort": 2,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "mode": "time",
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:5933",
-              "format": "s",
-              "logBase": 1,
-              "min": "0",
-              "show": true
             },
             {
-              "$$hashKey": "object:5934",
+              "$$hashKey": "object:5780",
               "format": "short",
               "logBase": 1,
               "show": true
