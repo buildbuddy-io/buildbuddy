@@ -244,7 +244,9 @@ func NewZstdCompressingWriter(w io.Writer) interfaces.CommittedWriteCloser {
 		return bw.Flush()
 	}
 	cwc.CloseFn = func() error {
-		return compressor.Close()
+		err := compressor.Close()
+		writerPool.Put(bw)
+		return err
 	}
 	return cwc
 }
