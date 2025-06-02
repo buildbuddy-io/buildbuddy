@@ -249,20 +249,20 @@ func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 }
 
 func getPostingListReadOnly(db pebble.Reader, namespace, key, field string) (posting.List, io.Closer, error) {
-	delBytes, closer, err := db.Get(postingListKey(namespace, key, field))
+	plBytes, closer, err := db.Get(postingListKey(namespace, key, field))
 	if err != nil {
 		if err == pebble.ErrNotFound {
-			return posting.NewList(), io.NopCloser(nil), nil // No deletes, return empty list
+			return posting.NewList(), io.NopCloser(nil), nil
 		}
 		return nil, nil, err
 	}
 
-	dels, err := posting.UnmarshalReadOnly(delBytes)
+	pl, err := posting.UnmarshalReadOnly(plBytes)
 	if err != nil {
 		closer.Close()
 		return nil, nil, err
 	}
-	return dels, closer, nil
+	return pl, closer, nil
 }
 
 // Deletes the document with the given docID.
@@ -695,12 +695,13 @@ func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field stri
 		if err != nil {
 			return nil, err
 		}
-		resultSet.OrField(k.field, pl)
 
 		if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
 			tracker.Add(performance.POSTING_LIST_COUNT, 1)
 			tracker.Add(performance.POSTING_LIST_DOCIDS_COUNT, int64(pl.GetCardinality()))
 		}
+
+		resultSet.OrField(k.field, pl)
 	}
 	if restrict.GetCardinality() > 0 {
 		resultSet.And(restrict)

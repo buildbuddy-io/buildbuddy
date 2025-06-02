@@ -47,10 +47,6 @@ func (w *roaringWrapper) AndNot(l List) {
 	w.Bitmap.AndNot(bm.Bitmap)
 }
 
-func (w *roaringWrapper) Iterator() roaring64.IntPeekable64 {
-	return w.Bitmap.Iterator()
-}
-
 func NewList(ids ...uint64) List {
 	bm := roaring64.New()
 	if len(ids) > 0 {
