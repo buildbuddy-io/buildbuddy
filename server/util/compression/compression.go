@@ -30,7 +30,7 @@ var (
 	zstdDecoderPool = NewZstdDecoderPool()
 
 	compressBufPool = bytebufferpool.FixedSize(compressChunkSize)
-	writerPool      = sync.Pool{
+	bufWriterPool   = sync.Pool{
 		New: func() any {
 			return bufio.NewWriterSize(io.Discard, compressChunkSize)
 		},
@@ -237,7 +237,7 @@ func NewZstdCompressingWriter(w io.Writer) interfaces.CommittedWriteCloser {
 		compressBuf:     compressBuf,
 		poolCompressBuf: compressBuf,
 	}
-	bw := writerPool.Get().(*bufio.Writer)
+	bw := bufWriterPool.Get().(*bufio.Writer)
 	bw.Reset(compressor)
 	cwc := ioutil.NewCustomCommitWriteCloser(bw)
 	cwc.CommitFn = func(_ int64) error {
@@ -245,7 +245,7 @@ func NewZstdCompressingWriter(w io.Writer) interfaces.CommittedWriteCloser {
 	}
 	cwc.CloseFn = func() error {
 		err := compressor.Close()
-		writerPool.Put(bw)
+		bufWriterPool.Put(bw)
 		return err
 	}
 	return cwc
