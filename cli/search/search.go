@@ -43,7 +43,7 @@ func searchCode(args []string) error {
 	}
 
 	ctx := context.Background()
-	if apiKey, err := login.GetAPIKeyInteractively(); err == nil && apiKey != "" {
+	if apiKey, err := login.GetAPIKey(); err == nil && apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
