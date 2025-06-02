@@ -15,12 +15,16 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -430,7 +434,7 @@ func TestResolve_WithCache(t *testing.T) {
 							readLayers,
 						)
 						t.Run(name, func(t *testing.T) {
-							te := testenv.GetTestEnv(t)
+							te := setupTestEnvWithCache(t)
 							flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 							flags.Set(t, "executor.container_registry.use_cache_percent", 100)
 							flags.Set(t, "executor.container_registry.write_manifests_to_cache", writeManifests)
@@ -458,9 +462,13 @@ func TestResolve_WithCache(t *testing.T) {
 
 							{
 								imageAddress := registry.ImageAddress(tc.args.imageName + "_image")
-								resolveAndCheck(t, tc, te, imageAddress, &counter, int32(1), int32(0), int32(1))
-
 								resolveCount := int32(1)
+								if readManifests {
+									resolveCount = int32(2)
+								}
+								resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, int32(0), int32(1))
+
+								resolveCount = int32(1)
 								if writeManifests && readManifests {
 									resolveCount = int32(0)
 								}
@@ -491,6 +499,23 @@ func TestResolve_WithCache(t *testing.T) {
 			}
 		}
 	}
+}
+
+func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	require.NoError(t, err)
+	err = clientidentity.Register(te)
+	require.NoError(t, err)
+	require.NotNil(t, te.GetClientIdentityService())
+
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	return te
 }
 
 func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, counter *atomic.Int32, resolveCount, layersCount, filesCount int32) {

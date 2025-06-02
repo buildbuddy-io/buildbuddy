@@ -1,7 +1,9 @@
 package oci
 
 import (
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -16,7 +18,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -50,6 +54,9 @@ var (
 		Architecture: "amd64",
 		OS:           "linux",
 	}
+
+	gzipHeader = []byte{0x1f, 0x8b}
+	zstdHeader = []byte{0x28, 0xB5, 0x2F, 0xFD}
 )
 
 type MirrorConfig struct {
@@ -892,10 +899,55 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 }
 
 func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
-	if err := l.fetchRemoteLayer(); err != nil {
+	compressed, err := l.Compressed()
+	if err != nil {
 		return nil, err
 	}
-	return l.remoteLayer.Uncompressed()
+	buffered := bufio.NewReader(compressed)
+
+	isGZip, err := checkCompression(buffered, gzipHeader)
+	if err != nil {
+		if err := compressed.Close(); err != nil {
+			log.Warningf("Error closing compressed layer reader: %s", err)
+		}
+		return nil, err
+	}
+	if isGZip {
+		unzipper, err := gzip.NewReader(buffered)
+		if err != nil {
+			if err := compressed.Close(); err != nil {
+				log.Warningf("Error closing compressed layer reader: %s", err)
+			}
+			return nil, err
+		}
+		rc := ioutil.NewCustomReadCloser(unzipper)
+		rc.CloseFn = func() error {
+			return compressed.Close()
+		}
+		return rc, nil
+	}
+
+	isZStd, err := checkCompression(buffered, zstdHeader)
+	if err != nil {
+		if err := compressed.Close(); err != nil {
+			log.Warningf("Error closing compressed layer reader: %s", err)
+		}
+		return nil, err
+	}
+	if isZStd {
+		rc := ioutil.NewCustomReadCloser(buffered)
+		decompressor, err := compression.NewZstdDecompressingReader(rc)
+		if err != nil {
+			if err := compressed.Close(); err != nil {
+				log.Warningf("Error closing compressed layer reader: %s", err)
+			}
+			return nil, err
+		}
+		return decompressor, nil
+	}
+
+	// Layer is not compressed after all!
+	return compressed, nil
 }
 
 func (l *layerFromDigest) Size() (int64, error) {
@@ -982,4 +1034,15 @@ func (t *teeReadCloser) Close() error {
 	err := t.rc.Close()
 	t.wc.Close()
 	return err
+}
+
+func checkCompression(r *bufio.Reader, header []byte) (bool, error) {
+	b, err := r.Peek(len(header))
+	if err != nil {
+		if err == io.EOF {
+			return false, nil
+		}
+		return false, err
+	}
+	return bytes.Equal(header, b), nil
 }
