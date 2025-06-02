@@ -1,14 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = [
-    "//cli/remotebazel:__pkg__",
-    "//enterprise:__subpackages__",
-])
-
 go_library(
     name = "dirtools",
     srcs = ["dirtools.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/cache/dirtools",
+    visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
