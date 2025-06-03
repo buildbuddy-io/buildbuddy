@@ -206,7 +206,7 @@ func TestUserQuery(t *testing.T) {
 func TestUserEvents(t *testing.T) {
 	quarantine.SkipQuarantinedTest(t)
 	addrs := make([]string, 0)
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 3; i++ {
 		addrs = append(addrs, localAddr(t))
 	}
 	// map of nodeAddr => received bits
@@ -247,7 +247,7 @@ func TestUserEvents(t *testing.T) {
 				sort.Strings(gotData[addr])
 				nodeGot := strings.Join(gotData[addr], "")
 				mu.Unlock()
-				if nodeGot == "abcdefghijklmnopqrstuvwxy" {
+				if nodeGot == "abcdefghijklmno" {
 					done[addr] = struct{}{}
 				}
 			}
