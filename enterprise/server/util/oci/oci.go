@@ -270,14 +270,6 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
 
-	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-	}
-
 	useCache := false
 	if *useCachePercent >= 100 {
 		useCache = true
@@ -286,16 +278,26 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 
 	if useCache {
-		desc := &cachingDescriptor{
-			Descriptor: remoteDesc,
-			acClient:   r.env.GetActionCacheClient(),
-			ctx:        ctx,
+		return fetchImageFromCacheOrRemote(
+			ctx,
+			imageRef,
+			gcr.Platform{
+				Architecture: platform.GetArch(),
+				OS:           platform.GetOs(),
+				Variant:      platform.GetVariant(),
+			},
+			r.env.GetActionCacheClient(),
+			r.env.GetByteStreamClient(),
+			remoteOpts,
+		)
+	}
+
+	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
 		}
-		img, err := desc.Image()
-		if err != nil {
-			return nil, status.UnknownErrorf("could not get image from caching descriptor: %s", err)
-		}
-		return img, nil
+		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
 	// Image() should resolve both images and image indices to an appropriate image
@@ -490,127 +492,6 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 		}
 	}
 	return t.inner.RoundTrip(in)
-}
-
-type cachingDescriptor struct {
-	*remote.Descriptor
-
-	repository gcrname.Repository
-	acClient   repb.ActionCacheClient
-	ctx        context.Context
-}
-
-func (d *cachingDescriptor) Image() (gcr.Image, error) {
-	remoteImage, err := d.Descriptor.Image()
-	if err != nil {
-		return nil, err
-	}
-	return &cachingImage{
-		Image:      remoteImage,
-		repository: d.repository,
-		acClient:   d.acClient,
-		ctx:        d.ctx,
-	}, nil
-}
-
-type cachingImage struct {
-	gcr.Image
-
-	repository gcrname.Repository
-	acClient   repb.ActionCacheClient
-	ctx        context.Context
-
-	cachedManifest    *gcr.Manifest
-	cachedRawManifest []byte
-}
-
-func (i *cachingImage) Layers() ([]gcr.Layer, error) {
-	return i.Image.Layers()
-}
-
-func (i *cachingImage) MediaType() (types.MediaType, error) {
-	return i.Image.MediaType()
-}
-
-func (i *cachingImage) Size() (int64, error) {
-	return i.Image.Size()
-}
-
-func (i *cachingImage) ConfigName() (gcr.Hash, error) {
-	return i.Image.ConfigName()
-}
-
-func (i *cachingImage) ConfigFile() (*gcr.ConfigFile, error) {
-	return i.Image.ConfigFile()
-}
-
-func (i *cachingImage) RawConfigFile() ([]byte, error) {
-	return i.Image.RawConfigFile()
-}
-
-func (i *cachingImage) Digest() (gcr.Hash, error) {
-	return i.Image.Digest()
-}
-
-func (i *cachingImage) Manifest() (*gcr.Manifest, error) {
-	if i.cachedManifest != nil {
-		return i.cachedManifest, nil
-	}
-	rawManifest, err := i.RawManifest()
-	if err != nil {
-		return nil, err
-	}
-	manifest, err := gcr.ParseManifest(bytes.NewReader(rawManifest))
-	if err != nil {
-		return nil, err
-	}
-	i.cachedManifest = manifest
-	return i.cachedManifest, nil
-}
-
-// RawManifest returns the raw manifest bytes from the upstream registry,
-// optionally writing it to the Action Cache if that behavior is enabled.
-func (i *cachingImage) RawManifest() ([]byte, error) {
-	if i.cachedRawManifest != nil {
-		return i.cachedRawManifest, nil
-	}
-	remoteRawManifest, err := i.Image.RawManifest()
-	if err != nil {
-		return nil, err
-	}
-	i.cachedRawManifest = remoteRawManifest
-
-	if *writeManifestsToCache {
-		mediaType, err := i.MediaType()
-		if err != nil {
-			log.Warningf("Could not fetch media type for manifest: %s", err)
-			return remoteRawManifest, nil
-		}
-		digest, err := i.Digest()
-		if err != nil {
-			log.Warningf("Could not fetch digest for manifest: %s", err)
-			return remoteRawManifest, nil
-		}
-		err = ocicache.WriteManifestToAC(i.ctx, remoteRawManifest, i.acClient, i.repository, digest, string(mediaType))
-		if err != nil {
-			log.Warningf("Could not write manifest to the cache: %s", err)
-			return remoteRawManifest, nil
-		}
-	}
-
-	return i.cachedRawManifest, nil
-}
-
-// LayerByDigest returns a Layer for interacting with a particular layer of
-// the image, looking it up by "digest" (the compressed hash).
-func (i *cachingImage) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
-	return i.Image.LayerByDigest(digest)
-}
-
-// LayerByDiffID is an analog to LayerByDigest, looking up by "diff id"
-// (the uncompressed hash).
-func (i *cachingImage) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
-	return i.Image.LayerByDiffID(diffID)
 }
 
 type indexFromRawManifest struct {
