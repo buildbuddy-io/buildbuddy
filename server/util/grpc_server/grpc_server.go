@@ -14,15 +14,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_forward"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric/noop"
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
@@ -184,41 +181,6 @@ func GRPCShutdownFunc(grpcServer *grpc.Server) func(ctx context.Context) error {
 	}
 }
 
-func propagateActionIDToSpan(ctx context.Context) {
-	actionId := bazel_request.GetActionID(ctx)
-	if actionId == "" {
-		return
-	}
-	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(attribute.String("action_id", actionId))
-}
-
-func propagateInvocationIDToSpan(ctx context.Context) {
-	invocationId := bazel_request.GetInvocationID(ctx)
-	if invocationId == "" {
-		return
-	}
-	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(attribute.String("invocation_id", invocationId))
-}
-
-func propagateRequestMetadataIDsToSpanUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
-		propagateInvocationIDToSpan(ctx)
-		propagateActionIDToSpan(ctx)
-		return handler(ctx, req)
-	}
-}
-
-func propagateRequestMetadataIDsToSpanStreamServerInterceptor() grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		ctx := stream.Context()
-		propagateInvocationIDToSpan(ctx)
-		propagateActionIDToSpan(ctx)
-		return handler(srv, stream)
-	}
-}
-
 func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 	return CommonGRPCServerOptionsWithConfig(env, GRPCServerConfig{})
 }
@@ -245,8 +207,6 @@ var Metrics = sync.OnceValue(func() *grpc_prometheus.ServerMetrics {
 func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerConfig) []grpc.ServerOption {
 	return []grpc.ServerOption{
 		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithMeterProvider(noop.NewMeterProvider()))),
-		grpc.ChainUnaryInterceptor(propagateRequestMetadataIDsToSpanUnaryServerInterceptor()),
-		grpc.ChainStreamInterceptor(propagateRequestMetadataIDsToSpanStreamServerInterceptor()),
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
 		interceptors.GetStreamInterceptor(env, config.ExtraChainedStreamInterceptors...),
 		grpc.StreamInterceptor(Metrics().StreamServerInterceptor()),

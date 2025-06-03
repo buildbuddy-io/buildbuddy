@@ -62,6 +62,7 @@ func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
 	if len(b) == 0 {
 		return nil
 	}
+
 	rmd := &repb.RequestMetadata{}
 	if err := proto.Unmarshal(b, rmd); err != nil {
 		return nil

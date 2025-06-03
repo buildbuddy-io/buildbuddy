@@ -27,6 +27,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
@@ -474,10 +476,46 @@ func PropagateMetadataStreamInterceptor(keys ...string) grpc.StreamServerInterce
 	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(keys...))
 }
 
+func propagateActionIDToSpan(ctx context.Context) {
+	actionId := bazel_request.GetActionID(ctx)
+	if actionId == "" {
+		return
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("action_id", actionId))
+}
+
+func propagateInvocationIDToSpan(ctx context.Context) {
+	invocationId := bazel_request.GetInvocationID(ctx)
+	if invocationId == "" {
+		return
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("invocation_id", invocationId))
+}
+
+func propagateRequestMetadataIDsToSpanUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+		propagateInvocationIDToSpan(ctx)
+		propagateActionIDToSpan(ctx)
+		return handler(ctx, req)
+	}
+}
+
+func propagateRequestMetadataIDsToSpanStreamServerInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx := stream.Context()
+		propagateInvocationIDToSpan(ctx)
+		propagateActionIDToSpan(ctx)
+		return handler(srv, stream)
+	}
+}
+
 func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnaryServerInterceptor) grpc.ServerOption {
 	interceptors := []grpc.UnaryServerInterceptor{
 		unaryRecoveryInterceptor(),
 		copyHeadersUnaryServerInterceptor(),
+		propagateRequestMetadataIDsToSpanUnaryServerInterceptor(),
 		ClientIPUnaryServerInterceptor(),
 		subdomainUnaryServerInterceptor(),
 		requestIDUnaryServerInterceptor(),
@@ -503,6 +541,7 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 	interceptors := []grpc.StreamServerInterceptor{
 		streamRecoveryInterceptor(),
 		copyHeadersStreamServerInterceptor(),
+		propagateRequestMetadataIDsToSpanStreamServerInterceptor(),
 		clientIPStreamServerInterceptor(),
 		subdomainStreamServerInterceptor(),
 		requestIDStreamServerInterceptor(),
