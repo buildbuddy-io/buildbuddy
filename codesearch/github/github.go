@@ -295,13 +295,13 @@ func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.Inc
 	var currentCommit *inpb.Commit
 	sha := firstSha
 
+	regexpSha := regexp.MustCompile("^[0-9a-f]{5,40}$")
+	filepathSha := regexp.MustCompile("^:[0-9]{6} [0-9]{6}")
+
 	for _, line := range changes {
 		line := strings.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
 
-		if line[0] != ':' {
+		if regexpSha.MatchString(line) {
 			// Commit line
 			currentCommit = &inpb.Commit{
 				Sha:       line,
@@ -309,10 +309,10 @@ func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.Inc
 			}
 			result.Commits = append(result.Commits, currentCommit)
 			sha = line
-		} else {
+		} else if filepathSha.MatchString(line) {
 			// Diff line
 			processDiffTreeLine(gc, line, currentCommit)
-		}
+		} // else: ignore other lines
 	}
 	return result, nil
 }

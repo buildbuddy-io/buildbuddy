@@ -393,22 +393,22 @@ def456
 }
 
 func TestComputeIncrementalUpdate_MultipleCommits(t *testing.T) {
-	sha1 := "abc123"
-	sha2 := "def456"
-	sha3 := "ghi789"
-	sha4 := "jkl012"
+	sha1 := "aaa123"
+	sha2 := "bbb456"
+	sha3 := "ccc789"
+	sha4 := "ddd012"
 
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
 			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", sha1, sha4): `
-def456
+bbb456
 
 :100644 100644 bcd1234 0123456 M	file0
-ghi789
+ccc789
 
 :000000 100644 0000000 1234567 A	file1
-jkl012
+ddd012
 
 :100644 100644 abcd123 1234567 R86	file1	file2
 `,
@@ -498,4 +498,41 @@ func TestComputeIncrementalUpdate_NoChanges(t *testing.T) {
 	result, err := ComputeIncrementalUpdate(fakeClient, firstSHA, lastSHA)
 	assert.Error(t, err)
 	assert.Nil(t, result)
+}
+
+func TestComputeIncrementalUpdate_WithWarnings(t *testing.T) {
+	firstSHA := "abc123"
+	lastSHA := "def456"
+
+	fakeClient := &fakeGitClient{
+		t: t,
+		commands: map[string]string{
+			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", firstSHA, lastSHA): `
+warning: fetch normally indicates which branches had a forced update,
+but that check has been disabled; to re-enable, use '--show-forced-updates'
+flag or run 'git config fetch.showForcedUpdates true'
+def456
+
+:100644 100644 bcd1234 0123456 M	file0
+`,
+		},
+		files: map[string][]byte{
+			"file0": []byte("file0 content"),
+		},
+	}
+
+	result, err := ComputeIncrementalUpdate(fakeClient, firstSHA, lastSHA)
+	require.NoError(t, err)
+
+	assert.Equal(t, &inpb.IncrementalUpdate{
+		Commits: []*inpb.Commit{
+			{
+				Sha:       "def456",
+				ParentSha: "abc123",
+				AddsAndUpdates: []*inpb.File{
+					{Filepath: "file0", Content: []byte("file0 content")},
+				},
+			},
+		},
+	}, result)
 }
