@@ -213,7 +213,7 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 				DigestFunction: digestFunction,
 			})
 			if err != nil {
-				return err
+				return status.InternalErrorf("failed to get tree for input root digest %q: %s", action.GetInputRootDigest(), err)
 			}
 			var blobDigests []*repb.Digest
 			for {
@@ -222,7 +222,7 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 					break
 				}
 				if err != nil {
-					return err
+					return status.InternalErrorf("failed to receive tree response for input root digest %q: %s", action.GetInputRootDigest(), err)
 				}
 				for _, d := range treeResp.GetDirectories() {
 					for _, fn := range d.GetFiles() {
@@ -230,24 +230,26 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 					}
 				}
 			}
-			if len(blobDigests) != 0 {
-				missingBlobResp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
-					InstanceName:   instanceName,
-					DigestFunction: digestFunction,
-					BlobDigests:    blobDigests,
-				})
-				if err != nil {
-					return err
-				}
-				if len(missingBlobResp.GetMissingBlobDigests()) > 0 {
-					missingBlobJson, err := protojson.Marshal(missingBlobResp)
-					if err != nil {
-						return status.InternalErrorf("failed to marshal missing blob response: %s", err)
-					}
-					return status.FailedPreconditionErrorf("input root digest %q is not fully uploaded to the CAS, missing blobs: %s", action.GetInputRootDigest(), missingBlobJson)
-				}
+			if len(blobDigests) == 0 {
+				return nil
 			}
-			return nil
+			blobDigests = slices.Clip(blobDigests)
+			missingBlobResp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+				InstanceName:   instanceName,
+				DigestFunction: digestFunction,
+				BlobDigests:    blobDigests,
+			})
+			if err != nil {
+				return status.InternalErrorf("failed to find missing blobs for input root digest %q: %s", action.GetInputRootDigest(), err)
+			}
+			if len(missingBlobResp.GetMissingBlobDigests()) == 0 {
+				return nil
+			}
+			missingBlobJson, err := protojson.Marshal(missingBlobResp)
+			if err != nil {
+				return status.InternalErrorf("failed to marshal missing blob response: %s", err)
+			}
+			return status.FailedPreconditionErrorf("input root digest %q is not fully uploaded to the CAS, missing blobs: %s", action.GetInputRootDigest(), missingBlobJson)
 		})
 	}
 	if err := eg.Wait(); err != nil {
