@@ -29,8 +29,8 @@ func FromSeq[E comparable](s iter.Seq[E]) Set[E] {
 	return set
 }
 
-// Seq returns a sequence of all the elements in this set.
-func (s Set[E]) Seq() iter.Seq[E] {
+// All returns a sequence of all the elements in this set.
+func (s Set[E]) All() iter.Seq[E] {
 	return maps.Keys(s)
 }
 
