@@ -17,7 +17,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 )
 
-// This test client implements the CodeSearch service methods, and has a hardcoded lastCommitSHA,
+// This test client implements the CodeSearch service methods. It has a hardcoded lastCommitSHA,
 // and records Index requests sent to it.
 type testBBClient struct {
 	bbspb.BuildBuddyServiceClient

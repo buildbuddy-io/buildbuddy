@@ -36,10 +36,6 @@ All unindexed changes in the current repo will be submitted to the indexer for a
 `
 )
 
-// TODO:
-// indexer type: git command line client, testgit repo (dir), bb service
-// refactor to use this
-
 func makeGitClient() (github.GitClient, error) {
 	repoRoot, err := storage.RepoRootPath()
 	if err != nil {
