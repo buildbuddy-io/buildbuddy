@@ -229,26 +229,33 @@ func (w *Writer) lookupDocId(matchField types.Field) (uint64, error) {
 		return 0, status.InternalError("match field must be of keyword type")
 	}
 
-	// First, check in the current batch
+	var docIdPl posting.ReadOnlyList
+
 	if pl, ok := w.fieldPostingLists[matchField.Name()][string(matchField.Contents())]; ok {
-		return pl.ToArray()[0], nil
+		// Check in the current batch
+		docIdPl = pl
+	} else {
+		// If not found in the current batch, check in the index
+		pl, closer, err := getPostingListReadOnly(w.db, w.namespace, string(matchField.Contents()), matchField.Name())
+		if err != nil {
+			return 0, err
+		}
+		defer closer.Close()
+		docIdPl = pl
 	}
 
-	pl, closer, err := getPostingListReadOnly(w.db, w.namespace, string(matchField.Contents()), matchField.Name())
-	if err != nil {
-		return 0, err
+	if docIdPl.GetCardinality() > 1 {
+		return 0, status.FailedPreconditionErrorf("Match field matches > 1 (%d) docs: %v", docIdPl.GetCardinality(), matchField)
+	} else if docIdPl.GetCardinality() == 0 {
+		return 0, pebble.ErrNotFound
 	}
-	defer closer.Close()
-
-	if pl.GetCardinality() > 1 {
-		return 0, status.FailedPreconditionErrorf("Match field matches > 1 (%d) docs: %v", pl.GetCardinality(), matchField)
-	} else if pl.GetCardinality() == 0 {
-		return 0, pebble.ErrNotFound // No matching documents
-	}
-	return pl.Iterator().Next(), nil
+	return docIdPl.Iterator().Next(), nil
 }
 
-func getPostingListReadOnly(db pebble.Reader, namespace, key, field string) (posting.List, io.Closer, error) {
+// getPostingListReadOnly retrieves a posting list from the database with minimal copying.
+// It returns a ReadOnlyList and an io.Closer that must be closed when done. The posting list is
+// only valid until the closer is closed.
+func getPostingListReadOnly(db pebble.Reader, namespace, key, field string) (posting.ReadOnlyList, io.Closer, error) {
 	plBytes, closer, err := db.Get(postingListKey(namespace, key, field))
 	if err != nil {
 		if err == pebble.ErrNotFound {
@@ -467,12 +474,12 @@ func (w *Writer) flushBatch() error {
 }
 
 func (w *Writer) updatePostingList(key []byte, pl posting.List, deferOp func(int, int) *pebble.DeferredBatchOp) error {
-	valueLength := posting.GetSerializedSizeInBytes(pl)
+	valueLength := int(pl.GetSerializedSizeInBytes())
 	keyLength := len(key)
 
 	op := deferOp(keyLength, valueLength)
 	copy(op.Key, key)
-	if err := posting.MarshalInto(pl, op.Value[:0]); err != nil {
+	if err := pl.MarshalInto(op.Value[:0]); err != nil {
 		return err
 	}
 	if err := op.Finish(); err != nil {
