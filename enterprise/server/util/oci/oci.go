@@ -3,7 +3,6 @@ package oci
 import (
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -18,9 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -907,55 +904,11 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 }
 
 func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
-	compressed, err := l.Compressed()
+	cl, err := partial.CompressedToLayer(l)
 	if err != nil {
 		return nil, err
 	}
-	buffered := bufio.NewReader(compressed)
-
-	isGZip, err := checkCompression(buffered, gzipHeader)
-	if err != nil {
-		if err := compressed.Close(); err != nil {
-			log.Warningf("Error closing compressed layer reader: %s", err)
-		}
-		return nil, err
-	}
-	if isGZip {
-		unzipper, err := gzip.NewReader(buffered)
-		if err != nil {
-			if err := compressed.Close(); err != nil {
-				log.Warningf("Error closing compressed layer reader: %s", err)
-			}
-			return nil, err
-		}
-		rc := ioutil.NewCustomReadCloser(unzipper)
-		rc.CloseFn = func() error {
-			return compressed.Close()
-		}
-		return rc, nil
-	}
-
-	isZStd, err := checkCompression(buffered, zstdHeader)
-	if err != nil {
-		if err := compressed.Close(); err != nil {
-			log.Warningf("Error closing compressed layer reader: %s", err)
-		}
-		return nil, err
-	}
-	if isZStd {
-		rc := ioutil.NewCustomReadCloser(buffered)
-		decompressor, err := compression.NewZstdDecompressingReader(rc)
-		if err != nil {
-			if err := compressed.Close(); err != nil {
-				log.Warningf("Error closing compressed layer reader: %s", err)
-			}
-			return nil, err
-		}
-		return decompressor, nil
-	}
-
-	// Layer is not compressed after all!
-	return compressed, nil
+	return cl.Uncompressed()
 }
 
 func (l *layerFromDigest) Size() (int64, error) {
