@@ -287,8 +287,20 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 	}
 	start := time.Now()
 	if err := cloneOrLink(groupID, filecachePath(c.rootDir, key), outputPath); err != nil {
-		log.Warningf("Failed to link file from cache: %s", err)
-		return false
+		if status.IsAlreadyExistsError(err) {
+			// Remove and try again.
+			if err := os.RemoveAll(outputPath); err != nil {
+				log.Warningf("Failed to remove existing destination file: %s", err)
+				return false
+			}
+			if err := cloneOrLink(groupID, filecachePath(c.rootDir, key), outputPath); err != nil {
+				log.Warningf("Failed to link file from cache (after removing existing path): %s", err)
+				return false
+			}
+		} else {
+			log.Warningf("Failed to link file from cache: %s (%v)", err, err)
+			return false
+		}
 	}
 	metrics.FileCacheLinkLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
 	return true
@@ -362,7 +374,7 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		// (i.e. it's being added from some action workspace), then remove and
 		// unlink any existing entry, then hardlink to the destination path.
 		c.l.Remove(k)
-		if err := cloneOrLink(groupID, existingFilePath, fp); err != nil {
+		if err := cloneOrLink(groupID, existingFilePath, fp); err != nil && !status.IsAlreadyExistsError(err) {
 			return err
 		}
 
@@ -558,6 +570,9 @@ func cloneOrLink(groupID, source, destination string) error {
 func wrapOSError(err error, message string) error {
 	if os.IsNotExist(err) {
 		return status.NotFoundErrorf("%s: %s", message, err)
+	}
+	if os.IsExist(err) {
+		return status.AlreadyExistsErrorf("%s: %s", message, err)
 	}
 	return status.InternalErrorf("%s: %s", message, err)
 }

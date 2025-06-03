@@ -637,6 +637,9 @@ func writeFile(fp *FilePointer, data []byte) error {
 	if fp.FileNode.IsExecutable {
 		mode = 0755
 	}
+	// TODO: make sure it's not possible to overwrite existing files here
+	// when using preserve-workspace=true. Might make sense to open with O_EXCL
+	// here and if it exists, remove and try again.
 	f, err := os.OpenFile(fp.FullPath, os.O_RDWR|os.O_CREATE, mode)
 	if err != nil {
 		return err
@@ -649,10 +652,19 @@ func writeFile(fp *FilePointer, data []byte) error {
 }
 
 func copyFile(src *FilePointer, dest *FilePointer, opts *DownloadTreeOpts) error {
-	if err := removeExisting(dest, opts); err != nil {
+	if err := fastcopy.FastCopy(src.FullPath, dest.FullPath); err != nil {
+		if os.IsExist(err) {
+			// Remove and try again.
+			if err := os.RemoveAll(dest.FullPath); err != nil {
+				return fmt.Errorf("remove existing path: %w", err)
+			}
+			if err := fastcopy.FastCopy(src.FullPath, dest.FullPath); err != nil {
+				return err
+			}
+		}
 		return err
 	}
-	return fastcopy.FastCopy(src.FullPath, dest.FullPath)
+	return nil
 }
 
 // linkFileFromFileCache attempts to link the given file path from the local

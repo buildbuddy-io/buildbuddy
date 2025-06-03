@@ -18,9 +18,5 @@ func Clone(source, destination string) error {
 }
 
 func FastCopy(source, destination string) error {
-	err := os.Link(source, destination)
-	if !os.IsExist(err) {
-		return err
-	}
-	return nil
+	return os.Link(source, destination)
 }

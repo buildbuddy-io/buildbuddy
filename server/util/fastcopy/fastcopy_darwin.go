@@ -3,8 +3,6 @@
 package fastcopy
 
 import (
-	"errors"
-
 	"golang.org/x/sys/unix"
 )
 
@@ -13,8 +11,5 @@ func Clone(source, destination string) error {
 }
 
 func FastCopy(source, destination string) error {
-	if err := unix.Clonefile(source, destination, unix.CLONE_NOFOLLOW); err != nil && !errors.Is(err, unix.EEXIST) {
-		return err
-	}
-	return nil
+	return unix.Clonefile(source, destination, unix.CLONE_NOFOLLOW)
 }
