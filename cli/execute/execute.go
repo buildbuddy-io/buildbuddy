@@ -42,7 +42,7 @@ var (
 
 // Flags specific to `bb execute`.
 var (
-	inputRoot       = flags.String("input_root", "", "Input root directory. By default, the action will have no inputs. Take precedent over input_root_digest if both are set.")
+	inputRoot       = flags.String("input_root", "", "Input root directory. By default, the action will have no inputs. Takes precedence over input_root_digest if both are set.")
 	inputRootDigest = flags.String("input_root_digest", "", "Digest of the input root directory. This is useful to re-run an existing action. Users can also use `bb download` to fetch the input tree locally.")
 	outputPaths     = flag.New(flags, "output_path", []string{}, "Path to an expected output file or directory. The path should be relative to the workspace root. This flag can be specified more than once.")
 	// Note: bazel has remote_default_exec_properties but it has somewhat
