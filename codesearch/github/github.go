@@ -38,9 +38,11 @@ const (
 	maxAllowedChanges = 1000
 )
 
-// TODO(tylerw): this should come from a flag?
 var (
-	skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
+	// TODO(tylerw): this should come from a flag?
+	skipMime    = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
+	regexpSha   = regexp.MustCompile("^[0-9a-f]{5,40}$")
+	filepathSha = regexp.MustCompile("^:[0-9]{6} [0-9]{6}")
 )
 
 func lastIndexedDocKey(repoURL *git.RepoURL) []byte {
@@ -294,9 +296,6 @@ func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.Inc
 	}
 	var currentCommit *inpb.Commit
 	sha := firstSha
-
-	regexpSha := regexp.MustCompile("^[0-9a-f]{5,40}$")
-	filepathSha := regexp.MustCompile("^:[0-9]{6} [0-9]{6}")
 
 	for _, line := range changes {
 		line := strings.TrimSpace(line)
