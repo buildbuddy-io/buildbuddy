@@ -99,40 +99,6 @@ func NewCustomCommitWriteCloser(w io.Writer) *CustomCommitWriteCloser {
 	}
 }
 
-type CustomReadCloser struct {
-	r       io.Reader
-	CloseFn CloseFunc
-}
-
-func (c *CustomReadCloser) Read(p []byte) (int, error) {
-	return c.r.Read(p)
-}
-
-func (c *CustomReadCloser) Close() error {
-	var firstErr error
-
-	// Close may free resources, so all Close functions should be called.
-	// The first error encountered will be returned.
-	if closer, ok := c.r.(io.Closer); ok {
-		if err := closer.Close(); err != nil {
-			firstErr = err
-		}
-	}
-
-	if c.CloseFn != nil {
-		if err := c.CloseFn(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
-}
-
-func NewCustomReadCloser(r io.Reader) *CustomReadCloser {
-	return &CustomReadCloser{
-		r: r,
-	}
-}
-
 // Counter keeps a count of all bytes written, discarding any written bytes.
 // It is not safe for concurrent use.
 type Counter struct{ n int64 }
