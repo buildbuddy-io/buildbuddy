@@ -288,7 +288,7 @@ func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.Inc
 		return nil, status.FailedPreconditionErrorf("too many changes in commit range %s..%s: %d", firstSha, lastSha, len(changes))
 	}
 	if len(changes) == 0 || (len(changes) == 1 && len(changes[0]) == 0) {
-		return nil, status.FailedPreconditionErrorf("no commits found between %s and %s", firstSha, lastSha)
+		return nil, nil
 	}
 
 	result := &inpb.IncrementalUpdate{

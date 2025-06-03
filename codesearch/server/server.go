@@ -174,8 +174,8 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 	for i, commit := range commits {
 		// We currently only support sequential commits, with no gaps.
 		// We could do a topological sort, but we just don't need that right now.
-		if i > 1 && commit.GetParentSha() != commits[i-1].GetSha() {
-			return nil, status.InvalidArgumentErrorf("commits must be sequential. Commit %s is not preceded by its parent", commit.GetSha())
+		if i >= 1 && commit.GetParentSha() != commits[i-1].GetSha() {
+			return nil, status.InvalidArgumentErrorf("commits must be sequential. Commit %s has parent %s, but is not preceded by that commit", commit.GetSha(), commit.GetParentSha())
 		}
 		if commit.GetParentSha() == lastIndexedSHA {
 			firstIndexToProcess = i

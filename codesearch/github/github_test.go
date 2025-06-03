@@ -496,7 +496,7 @@ func TestComputeIncrementalUpdate_NoChanges(t *testing.T) {
 	}
 
 	result, err := ComputeIncrementalUpdate(fakeClient, firstSHA, lastSHA)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, result)
 }
 

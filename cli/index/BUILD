@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "index",
@@ -18,6 +18,23 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",
+    ],
+)
+
+go_test(
+    name = "index_test",
+    srcs = ["index_test.go"],
+    embed = [":index"],
+    deps = [
+        "//codesearch/github",
+        "//proto:buildbuddy_service_go_proto",
+        "//proto:git_go_proto",
+        "//proto:index_go_proto",
+        "//server/testutil/testgit",
+        "//server/testutil/testshell",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
 
