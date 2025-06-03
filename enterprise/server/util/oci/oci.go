@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -28,6 +30,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -39,6 +42,11 @@ var (
 	useCachePercent        = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls to use the cache (individaul cache flags must also be enabled).")
 	writeManifestsToCache  = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
 	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from the cache after a HEAD request to the upstream registry.")
+
+	defaultPlatform = gcr.Platform{
+		Architecture: "amd64",
+		OS:           "linux",
+	}
 )
 
 type MirrorConfig struct {
@@ -308,6 +316,104 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	return img, nil
 }
 
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, remoteOpts []remote.Option) (gcr.Image, error) {
+	if *readManifestsFromCache {
+		desc, err := remote.Head(digestOrTagRef, remoteOpts...)
+		if err != nil {
+			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+				return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
+			}
+			return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
+		}
+
+		mc, err := ocicache.FetchManifestFromAC(
+			ctx,
+			acClient,
+			digestOrTagRef.Context(),
+			desc.Digest,
+		)
+		if err != nil && !status.IsNotFoundError(err) {
+			log.Warningf("Error fetching manifest from cache: %s", err)
+		} else if err == nil {
+			switch desc.MediaType {
+			case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
+				return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
+			case types.OCIImageIndex, types.DockerManifestList:
+				index := &indexFromRawManifest{
+					repo:        digestOrTagRef.Context(),
+					desc:        *desc,
+					rawManifest: mc.GetRaw(),
+					ctx:         ctx,
+					acClient:    acClient,
+					bsClient:    bsClient,
+				}
+				return index.imageByPlatform(platform)
+			case types.OCIManifestSchema1, types.DockerManifestSchema2:
+			default:
+				log.Warningf("Unexpected media type in index manifest: %q", desc.MediaType)
+			}
+			return &imageFromRawManifest{
+				repo:        digestOrTagRef.Context(),
+				desc:        *desc,
+				rawManifest: mc.GetRaw(),
+				ctx:         ctx,
+				acClient:    acClient,
+				bsClient:    bsClient,
+				remoteOpts:  remoteOpts,
+			}, nil
+		}
+	}
+
+	remoteDesc, err := remote.Get(digestOrTagRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
+
+	if *writeManifestsToCache {
+		err := ocicache.WriteManifestToAC(
+			ctx,
+			remoteDesc.Manifest,
+			acClient,
+			digestOrTagRef.Context(),
+			remoteDesc.Digest,
+			string(remoteDesc.MediaType),
+		)
+		if err != nil {
+			log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
+		}
+	}
+
+	switch remoteDesc.MediaType {
+	case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
+		return nil, status.UnknownErrorf("unsupported MediaType %q", remoteDesc.MediaType)
+	case types.OCIImageIndex, types.DockerManifestList:
+		index := &indexFromRawManifest{
+			repo:        digestOrTagRef.Context(),
+			desc:        remoteDesc.Descriptor,
+			rawManifest: remoteDesc.Manifest,
+			ctx:         ctx,
+			acClient:    acClient,
+			bsClient:    bsClient,
+		}
+		return index.imageByPlatform(platform)
+	case types.OCIManifestSchema1, types.DockerManifestSchema2:
+	default:
+		log.Warningf("Unexpected media type in index manifest: %q", remoteDesc.MediaType)
+	}
+	return &imageFromRawManifest{
+		repo:        digestOrTagRef.Context(),
+		desc:        remoteDesc.Descriptor,
+		rawManifest: remoteDesc.Manifest,
+		ctx:         ctx,
+		acClient:    acClient,
+		bsClient:    bsClient,
+		remoteOpts:  remoteOpts,
+	}, nil
+}
+
 func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, credentials Credentials) []remote.Option {
 	remoteOpts := []remote.Option{
 		remote.WithContext(ctx),
@@ -505,4 +611,361 @@ func (i *cachingImage) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
 // (the uncompressed hash).
 func (i *cachingImage) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
 	return i.Image.LayerByDiffID(diffID)
+}
+
+type indexFromRawManifest struct {
+	repo        gcrname.Repository
+	desc        gcr.Descriptor
+	rawManifest []byte
+
+	ctx        context.Context
+	acClient   repb.ActionCacheClient
+	bsClient   bspb.ByteStreamClient
+	remoteOpts []remote.Option
+}
+
+func (i *indexFromRawManifest) Digest() (gcr.Hash, error) {
+	return i.desc.Digest, nil
+}
+
+func (i *indexFromRawManifest) MediaType() (types.MediaType, error) {
+	return i.desc.MediaType, nil
+}
+
+func (i *indexFromRawManifest) Size() (int64, error) {
+	return i.desc.Size, nil
+}
+
+func (i *indexFromRawManifest) RawManifest() ([]byte, error) {
+	return i.rawManifest, nil
+}
+
+func (i *indexFromRawManifest) IndexManifest() (*gcr.IndexManifest, error) {
+	return gcr.ParseIndexManifest(bytes.NewReader(i.rawManifest))
+}
+
+func (i *indexFromRawManifest) Image(digest gcr.Hash) (gcr.Image, error) {
+	desc, err := i.childByHash(digest)
+	if err != nil {
+		return nil, err
+	}
+
+	switch desc.MediaType {
+	case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
+		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
+	case types.OCIImageIndex, types.DockerManifestList:
+		return nil, status.UnknownErrorf("fetching image manifest from index, but encountered an index manifest")
+	case types.OCIManifestSchema1, types.DockerManifestSchema2:
+	default:
+		log.Warningf("Unexpected media type in index manifest: %q", desc.MediaType)
+	}
+
+	return fetchImageFromCacheOrRemote(
+		i.ctx,
+		i.repo.Digest(desc.Digest.String()),
+		defaultPlatform,
+		i.acClient,
+		i.bsClient,
+		i.remoteOpts,
+	)
+}
+
+func (i *indexFromRawManifest) ImageIndex(h gcr.Hash) (gcr.ImageIndex, error) {
+	return nil, status.UnimplementedError("indexFromRawManifest.ImageIndex(...) not implemented")
+}
+
+// imageByPlatform finds the first child entry in the index manifest
+// that matches the given platform and converts its manifest into an Image.
+// If the child entry does not, in fact, point to an OCI image, an error is returned.
+//
+// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
+func (i *indexFromRawManifest) imageByPlatform(platform gcr.Platform) (gcr.Image, error) {
+	desc, err := i.childByPlatform(platform)
+	if err != nil {
+		return nil, err
+	}
+	return i.Image(desc.Digest)
+}
+
+// childPlatform finds the first child entry in the index rawManifest
+// that matches the given platform.
+//
+// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
+func (i *indexFromRawManifest) childByPlatform(platform gcr.Platform) (*gcr.Descriptor, error) {
+	index, err := i.IndexManifest()
+	if err != nil {
+		return nil, err
+	}
+	for _, childDesc := range index.Manifests {
+		// If platform is missing from child descriptor, assume it's amd64/linux.
+		p := defaultPlatform
+		if childDesc.Platform != nil {
+			p = *childDesc.Platform
+		}
+
+		if matchesPlatform(p, platform) {
+			return &childDesc, nil
+		}
+	}
+	return nil, status.NotFoundErrorf("no child with platform %+v in index", platform)
+}
+
+// matchesPlatform returns true if the given platform satisfies the required platform.
+//
+// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
+func matchesPlatform(given, required gcr.Platform) bool {
+	// Required fields that must be identical.
+	if given.Architecture != required.Architecture || given.OS != required.OS {
+		return false
+	}
+
+	// Optional fields that may be empty, but must be identical if provided.
+	if required.OSVersion != "" && given.OSVersion != required.OSVersion {
+		return false
+	}
+	if required.Variant != "" && given.Variant != required.Variant {
+		return false
+	}
+
+	// Verify required platform's features are a subset of given platform's features.
+	if !isSubset(given.OSFeatures, required.OSFeatures) {
+		return false
+	}
+	if !isSubset(given.Features, required.Features) {
+		return false
+	}
+
+	return true
+}
+
+// isSubset checks if the required array of strings is a subset of the given lst.
+//
+// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
+func isSubset(lst, required []string) bool {
+	set := make(map[string]bool)
+	for _, value := range lst {
+		set[value] = true
+	}
+
+	for _, value := range required {
+		if _, ok := set[value]; !ok {
+			return false
+		}
+	}
+
+	return true
+}
+
+// childByHash finds the first child entry in the index manifest
+// that matches the given digest.
+//
+// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
+func (i *indexFromRawManifest) childByHash(h gcr.Hash) (*gcr.Descriptor, error) {
+	index, err := i.IndexManifest()
+	if err != nil {
+		return nil, err
+	}
+	for _, childDesc := range index.Manifests {
+		if h == childDesc.Digest {
+			return &childDesc, nil
+		}
+	}
+	return nil, status.NotFoundError("could not find child hash in index manifest")
+}
+
+type imageFromRawManifest struct {
+	repo        gcrname.Repository
+	desc        gcr.Descriptor
+	rawManifest []byte
+
+	ctx           context.Context
+	acClient      repb.ActionCacheClient
+	bsClient      bspb.ByteStreamClient
+	remoteOpts    []remote.Option
+	rawConfigFile []byte
+}
+
+func (i *imageFromRawManifest) Digest() (gcr.Hash, error) {
+	return i.desc.Digest, nil
+}
+
+func (i *imageFromRawManifest) RawManifest() ([]byte, error) {
+	return i.rawManifest, nil
+}
+
+func (i *imageFromRawManifest) Manifest() (*gcr.Manifest, error) {
+	rawManifest, err := i.RawManifest()
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := gcr.ParseManifest(bytes.NewReader(rawManifest))
+	if err != nil {
+		return nil, err
+	}
+	return manifest, nil
+}
+
+func (i *imageFromRawManifest) MediaType() (types.MediaType, error) {
+	return i.desc.MediaType, nil
+}
+
+func (i *imageFromRawManifest) Size() (int64, error) {
+	return i.desc.Size, nil
+}
+
+func (i *imageFromRawManifest) RawConfigFile() ([]byte, error) {
+	if i.rawConfigFile != nil {
+		return i.rawConfigFile, nil
+	}
+
+	manifest, err := i.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	if manifest.Config.Data != nil {
+		return manifest.Config.Data, nil
+	}
+	layer := layerFromDigest{
+		digest:     manifest.Config.Digest,
+		repo:       i.repo,
+		image:      i,
+		remoteOpts: i.remoteOpts,
+	}
+
+	rc, err := layer.Uncompressed()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	rawConfigFile, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, err
+	}
+	i.rawConfigFile = rawConfigFile
+	return i.rawConfigFile, nil
+}
+
+func (i *imageFromRawManifest) ConfigFile() (*gcr.ConfigFile, error) {
+	rawConfigFile, err := i.RawConfigFile()
+	if err != nil {
+		return nil, err
+	}
+	return gcr.ParseConfigFile(bytes.NewReader(rawConfigFile))
+}
+
+func (i *imageFromRawManifest) ConfigName() (gcr.Hash, error) {
+	manifest, err := i.Manifest()
+	if err != nil {
+		return gcr.Hash{}, err
+	}
+	return manifest.Config.Digest, nil
+}
+
+func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
+	m, err := i.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	layers := make([]gcr.Layer, 0, len(m.Layers))
+	for _, layerDesc := range m.Layers {
+		layer := &layerFromDigest{
+			digest:     layerDesc.Digest,
+			repo:       i.repo,
+			image:      i,
+			remoteOpts: i.remoteOpts,
+			desc:       &layerDesc,
+		}
+
+		layers = append(layers, layer)
+	}
+	return layers, nil
+}
+
+func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
+	return &layerFromDigest{
+		digest:     digest,
+		repo:       i.repo,
+		image:      i,
+		remoteOpts: i.remoteOpts,
+	}, nil
+}
+
+func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
+	digest, err := partial.DiffIDToBlob(i, diffID)
+	if err != nil {
+		return nil, err
+	}
+	return &layerFromDigest{
+		digest:     digest,
+		repo:       i.repo,
+		image:      i,
+		remoteOpts: i.remoteOpts,
+	}, nil
+}
+
+type layerFromDigest struct {
+	digest gcr.Hash
+	repo   gcrname.Repository
+	image  *imageFromRawManifest
+
+	remoteOpts  []remote.Option
+	desc        *gcr.Descriptor
+	remoteLayer gcr.Layer
+}
+
+func (l *layerFromDigest) Digest() (gcr.Hash, error) {
+	return l.digest, nil
+}
+
+func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
+	return partial.BlobToDiffID(l.image, l.digest)
+}
+
+func (l *layerFromDigest) fetchRemoteLayer() error {
+	if l.remoteLayer != nil {
+		return nil
+	}
+	ref := l.repo.Digest(l.digest.String())
+	remoteLayer, err := remote.Layer(ref, l.remoteOpts...)
+	if err != nil {
+		return err
+	}
+	l.remoteLayer = remoteLayer
+	return nil
+}
+
+func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
+	if err := l.fetchRemoteLayer(); err != nil {
+		return nil, err
+	}
+
+	return l.remoteLayer.Compressed()
+}
+
+func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
+	cl, err := partial.CompressedToLayer(l)
+	if err != nil {
+		return nil, err
+	}
+	return cl.Uncompressed()
+}
+
+func (l *layerFromDigest) Size() (int64, error) {
+	if l.desc != nil {
+		return l.desc.Size, nil
+	}
+	if err := l.fetchRemoteLayer(); err != nil {
+		return 0, err
+	}
+	return l.remoteLayer.Size()
+}
+
+func (l *layerFromDigest) MediaType() (types.MediaType, error) {
+	if l.desc != nil {
+		return l.desc.MediaType, nil
+	}
+	if err := l.fetchRemoteLayer(); err != nil {
+		return "", err
+	}
+	return l.remoteLayer.MediaType()
 }
