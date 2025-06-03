@@ -222,7 +222,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 	if efp := env.GetExperimentFlagProvider(); efp != nil {
 		config.FlipLogoOnHover = efp.Boolean(ctx, "flip-logo-on-hover", false /*=default*/)
 		if *codeSearchEnabled {
-			config.CodeSearchEnabled = efp.Boolean(ctx, "codesearch-enabled", false /*=default*/)
+			config.CodeSearchEnabled = efp.Boolean(ctx, "codesearch-allowed", false /*=default*/)
 		}
 	}
 
