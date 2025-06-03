@@ -132,11 +132,9 @@ func (fm *FieldMap) OrField(fieldName string, pl2 ReadOnlyList) {
 	if pl, ok := (*fm)[fieldName]; ok {
 		pl.Or(pl2)
 	} else {
-		pl, ok := pl2.(List)
-		if !ok {
-			panic("not a List")
-		}
-		(*fm)[fieldName] = List(pl)
+		newPl := NewList()
+		newPl.Or(pl2)
+		(*fm)[fieldName] = newPl
 	}
 }
 
