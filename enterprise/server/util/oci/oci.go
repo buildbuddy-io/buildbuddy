@@ -355,7 +355,9 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 					repo:        digestOrTagRef.Context(),
 					desc:        *desc,
 					rawManifest: mc.GetRaw(),
+					ctx:         ctx,
 					acClient:    acClient,
+					bsClient:    bsClient,
 				}
 				return index.imageByPlatform(platform)
 			case types.OCIManifestSchema1, types.DockerManifestSchema2:
@@ -404,6 +406,9 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			repo:        digestOrTagRef.Context(),
 			desc:        remoteDesc.Descriptor,
 			rawManifest: remoteDesc.Manifest,
+			ctx:         ctx,
+			acClient:    acClient,
+			bsClient:    bsClient,
 		}
 		return index.imageByPlatform(platform)
 	case types.OCIManifestSchema1, types.DockerManifestSchema2:
@@ -759,6 +764,7 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 			repo:       i.repo,
 			image:      i,
 			remoteOpts: i.remoteOpts,
+			desc:       &layerDesc,
 		}
 
 		layers = append(layers, layer)
@@ -794,6 +800,7 @@ type layerFromDigest struct {
 	image  *imageFromRawManifest
 
 	remoteOpts  []remote.Option
+	desc        *gcr.Descriptor
 	remoteLayer gcr.Layer
 }
 
@@ -841,7 +848,6 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 					l.image.ctx,
 					pw,
 					l.image.bsClient,
-					l.image.acClient,
 					l.digest,
 					metadata.GetContentLength(),
 				)
@@ -882,18 +888,20 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		log.Warningf("Error fetching media type for layer: %s", err)
 		return rc, nil
 	}
+	wc := &blobWriteCloser{
+		uploader:      uploader,
+		repo:          l.repo,
+		hash:          l.digest,
+		contentType:   string(mediaType),
+		contentLength: contentLength,
+		ctx:           l.image.ctx,
+		bsClient:      l.image.bsClient,
+		acClient:      l.image.acClient,
+	}
 	tee := &teeReadCloser{
-		rc: rc,
-		wc: &blobWriteCloser{
-			uploader:      uploader,
-			repo:          l.repo,
-			hash:          l.digest,
-			contentType:   string(mediaType),
-			contentLength: contentLength,
-			ctx:           l.image.ctx,
-			bsClient:      l.image.bsClient,
-			acClient:      l.image.acClient,
-		},
+		Reader: io.TeeReader(rc, wc),
+		rc:     rc,
+		wc:     wc,
 	}
 	return tee, nil
 }
@@ -951,6 +959,9 @@ func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
 }
 
 func (l *layerFromDigest) Size() (int64, error) {
+	if l.desc != nil {
+		return l.desc.Size, nil
+	}
 	if err := l.fetchRemoteLayer(); err != nil {
 		return 0, err
 	}
@@ -958,6 +969,9 @@ func (l *layerFromDigest) Size() (int64, error) {
 }
 
 func (l *layerFromDigest) MediaType() (types.MediaType, error) {
+	if l.desc != nil {
+		return l.desc.MediaType, nil
+	}
 	if err := l.fetchRemoteLayer(); err != nil {
 		return "", err
 	}
@@ -1000,34 +1014,17 @@ func (wc *blobWriteCloser) Close() error {
 
 	err := wc.uploader.Close()
 	if commitErr != nil {
+		log.Warningf("Could not commit blob: %s", commitErr)
 		return commitErr
 	}
 	return err
 }
 
 type teeReadCloser struct {
+	io.Reader
+
 	rc io.ReadCloser
 	wc io.WriteCloser
-
-	writeErr error
-}
-
-func (t *teeReadCloser) Read(p []byte) (int, error) {
-	n, err := t.rc.Read(p)
-	if err != nil {
-		return n, err
-	}
-	if t.writeErr != nil {
-		return n, err
-	}
-	written, err := t.wc.Write(p[:n])
-	if err != nil {
-		log.Warningf("Error writing in teeReadCloser: %s", err)
-		t.writeErr = err
-	} else if written < n {
-		t.writeErr = io.ErrShortWrite
-	}
-	return n, err
 }
 
 func (t *teeReadCloser) Close() error {

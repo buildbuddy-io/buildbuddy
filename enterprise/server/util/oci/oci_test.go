@@ -444,7 +444,7 @@ func TestResolve_WithCache(t *testing.T) {
 							counter := atomic.Int32{}
 							registry := testregistry.Run(t, testregistry.Opts{
 								HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-									if r.URL.Path != "/v2/" {
+									if r.Method == http.MethodGet && r.URL.Path != "/v2/" {
 										counter.Add(1)
 									}
 									return true
@@ -463,35 +463,35 @@ func TestResolve_WithCache(t *testing.T) {
 							{
 								imageAddress := registry.ImageAddress(tc.args.imageName + "_image")
 								resolveCount := int32(1)
-								if readManifests {
-									resolveCount = int32(2)
-								}
-								resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, int32(0), int32(1))
+								filesCount := int32(1)
+								resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, filesCount)
 
 								resolveCount = int32(1)
 								if writeManifests && readManifests {
 									resolveCount = int32(0)
 								}
-								layersCount := int32(1)
+								filesCount = int32(1)
 								if writeLayers && readLayers {
-									layersCount = int32(0)
+									filesCount = int32(0)
 								}
-								resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, int32(0), layersCount)
+								resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, filesCount)
 							}
 
 							{
 								indexAddress := registry.ImageAddress(tc.args.imageName + "_index")
-								resolveAndCheck(t, tc, te, indexAddress, &counter, int32(2), int32(0), int32(1))
+								resolveCount := int32(2)
+								filesCount := int32(1)
+								resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, filesCount)
 
-								resolveCount := int32(1)
+								resolveCount = int32(2)
 								if writeManifests && readManifests {
 									resolveCount = int32(0)
 								}
-								layersCount := int32(1)
+								filesCount = int32(1)
 								if writeLayers && readLayers {
-									layersCount = int32(0)
+									filesCount = int32(0)
 								}
-								resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, int32(0), layersCount)
+								resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, filesCount)
 							}
 						})
 					}
@@ -518,7 +518,7 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	return te
 }
 
-func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, counter *atomic.Int32, resolveCount, layersCount, filesCount int32) {
+func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, counter *atomic.Int32, resolveCount, filesCount int32) {
 	beforeResolve := counter.Load()
 	pulledImage, err := newResolver(t, te).Resolve(
 		context.Background(),
@@ -533,7 +533,7 @@ func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imag
 	layers, err := pulledImage.Layers()
 	require.NoError(t, err)
 	require.Len(t, layers, 1)
-	require.Equal(t, layersCount, beforeLayers-counter.Load())
+	require.Zero(t, beforeLayers-counter.Load())
 
 	beforeFiles := counter.Load()
 	files := layerFiles(t, layers[0])
