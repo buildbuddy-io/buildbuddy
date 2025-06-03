@@ -128,8 +128,7 @@ func handleRootPaths(env environment.Env, rootPaths []string, template *template
 		}
 
 		if r.URL.Path == "/" {
-			ctx := env.GetAuthenticator().AuthenticatedHTTPContext(w, r)
-			serveIndexTemplate(ctx, env, template, version, jsPath, stylePath, appBundleHash, w)
+			serveIndexTemplate(r.Context(), env, template, version, jsPath, stylePath, appBundleHash, w)
 			return
 		}
 
