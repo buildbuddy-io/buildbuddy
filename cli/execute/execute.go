@@ -158,8 +158,8 @@ func execute(cmdArgs []string) error {
 	}
 	if *inputRootDigest != "" {
 		ird := *inputRootDigest
-		if !strings.HasPrefix(ird, "blobs/") {
-			ird = fmt.Sprintf("blobs/%s", ird)
+		if !strings.HasPrefix(ird, "/blobs/") {
+			ird = fmt.Sprintf("/blobs/%s", ird)
 		}
 		rn, err := digest.ParseDownloadResourceName(ird)
 		if err != nil {
