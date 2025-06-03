@@ -363,10 +363,14 @@ func (t *teeReadCloser) Close() error {
 	return err
 }
 
+func isTreeCacheResource(r *rspb.ResourceName) bool {
+	return r.GetCacheType() == rspb.CacheType_AC && strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName)
+}
+
 // lookasideKey returns the resource's key in the lookaside cache and true,
 // or "" and false if the resource shouldn't be stored in the lookaside cache.
 func lookasideKey(r *rspb.ResourceName) (key string, ok bool) {
-	if r.GetCacheType() == rspb.CacheType_AC && strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
+	if isTreeCacheResource(r) {
 		// These are OK to put in the lookaside cache because even
 		// though they are technically AC entries, they are based on CAS
 		// content that does not change.
@@ -806,7 +810,9 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		if rc, err := c.local.Reader(ctx, r, offset, limit); err == nil {
 			c.log.CtxDebugf(ctx, "Reader(%q) found locally", distributed_client.ResourceIsolationString(r))
 			readCloser = rc
-		} else {
+		} else if r.GetCacheType() == rspb.CacheType_CAS || isTreeCacheResource(r) {
+			// AC entries are can be updated, so we don't want to hold on to an
+			// old version.
 			if local, err := c.local.Writer(ctx, r); err == nil {
 				localWriter = local
 			}
