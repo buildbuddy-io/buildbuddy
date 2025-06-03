@@ -291,6 +291,7 @@ func sendIncrementalUpdate(apiTarget, repoURL string) string {
 	// TODO(jdelfino): Remove explicit CLI installation once buildbuddy-internal/#5060 is resolved
 	buf := fmt.Sprintf(`
 curl -fsSL https://install.buildbuddy.io | bash
+git fetch --force --filter=blob:none --unshallow origin
 bb index --target %s --repo-url %s`, apiTarget, repoURL)
 	return buf
 }
