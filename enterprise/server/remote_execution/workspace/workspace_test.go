@@ -244,3 +244,20 @@ func TestCleanInputsIfNecessary_CleanMatching(t *testing.T) {
 		"expected all KEEPME filePaths (and no others) in the workspace after cleanup",
 	)
 }
+
+func TestPreserveWorkspace_DoesNotPreserveOutputPaths(t *testing.T) {
+	ctx := context.Background()
+	ws := newWorkspace(t, &workspace.Opts{Preserve: true})
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			OutputPaths: []string{"foo.out"},
+		},
+	})
+	testfs.WriteAllFileContents(t, ws.Path(), map[string]string{
+		"foo.out": "foo",
+	})
+
+	err := ws.Clean()
+	require.NoError(t, err)
+	assert.Empty(t, actualFilePaths(t, ws))
+}
