@@ -4,6 +4,7 @@ package rexec
 import (
 	"bytes"
 	"context"
+	"io"
 	"maps"
 	"slices"
 	"sort"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -200,6 +202,53 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 			return nil, err
 		}
 		inputRootDigest = d
+	} else {
+		eg.Go(func() error {
+			casClient := env.GetContentAddressableStorageClient()
+			// Call GetTree to ensure that the input root directory is fully
+			// uploaded to the CAS, even if it is empty.
+			treeStream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
+				InstanceName:   instanceName,
+				RootDigest:     action.GetInputRootDigest(),
+				DigestFunction: digestFunction,
+			})
+			if err != nil {
+				return err
+			}
+			var blobDigests []*repb.Digest
+			for {
+				treeResp, err := treeStream.Recv()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					return err
+				}
+				for _, d := range treeResp.GetDirectories() {
+					for _, fn := range d.GetFiles() {
+						blobDigests = append(blobDigests, fn.GetDigest())
+					}
+				}
+			}
+			if len(blobDigests) != 0 {
+				missingBlobResp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+					InstanceName:   instanceName,
+					DigestFunction: digestFunction,
+					BlobDigests:    blobDigests,
+				})
+				if err != nil {
+					return err
+				}
+				if len(missingBlobResp.GetMissingBlobDigests()) > 0 {
+					missingBlobJson, err := protojson.Marshal(missingBlobResp)
+					if err != nil {
+						return status.InternalErrorf("failed to marshal missing blob response: %s", err)
+					}
+					return status.FailedPreconditionErrorf("input root digest %q is not fully uploaded to the CAS, missing blobs: %s", action.GetInputRootDigest(), missingBlobJson)
+				}
+			}
+			return nil
+		})
 	}
 	if err := eg.Wait(); err != nil {
 		return nil, err
