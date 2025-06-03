@@ -696,6 +696,7 @@ func TestResolve_WithCache(t *testing.T) {
 					flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 					flags.Set(t, "executor.container_registry.use_cache_percent", 100)
 					flags.Set(t, "executor.container_registry.write_manifests_to_cache", writeManifests)
+					flags.Set(t, "executor.container_registry.read_manifests_from_cache", readManifests)
 					counter := atomic.Int32{}
 					registry := testregistry.Run(t, testregistry.Opts{
 						HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {

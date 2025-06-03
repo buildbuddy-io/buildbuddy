@@ -494,6 +494,8 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
+// indexFromRawManifest exists for Resolver.Resolve(...) to be able to
+// find the image in an index that best matches the given platform.
 type indexFromRawManifest struct {
 	repo        gcrname.Repository
 	desc        gcr.Descriptor
@@ -525,6 +527,8 @@ func (i *indexFromRawManifest) IndexManifest() (*gcr.IndexManifest, error) {
 	return gcr.ParseIndexManifest(bytes.NewReader(i.rawManifest))
 }
 
+// Image finds the child with the input digest and converts it to a go-containerregistry Image.
+// If the child is itself an image index, that is an error.
 func (i *indexFromRawManifest) Image(digest gcr.Hash) (gcr.Image, error) {
 	desc, err := i.childByHash(digest)
 	if err != nil {
@@ -694,6 +698,9 @@ func (i *imageFromRawManifest) Size() (int64, error) {
 	return i.desc.Size, nil
 }
 
+// RawConfigFile looks for the raw config file bytes
+// in the rawConfigFile field, then in the manifest's Config section,
+// then from the upstream registry.
 func (i *imageFromRawManifest) RawConfigFile() ([]byte, error) {
 	if i.rawConfigFile != nil {
 		return i.rawConfigFile, nil
@@ -784,6 +791,9 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error)
 	}, nil
 }
 
+// layerFromDigest exists for two reasons:
+// 1. To (eventually) cache compressed bytes as they are read.
+// 2. To guarantee DiffID() does not make extraneous requests to the upstream registry.
 type layerFromDigest struct {
 	digest gcr.Hash
 	repo   gcrname.Repository
@@ -823,6 +833,8 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	return l.remoteLayer.Compressed()
 }
 
+// Uncompressed fetches the compressed bytes from the upstream server
+// and returns a ReadCloser that decompresses as it reads.
 func (l *layerFromDigest) Uncompressed() (io.ReadCloser, error) {
 	cl, err := partial.CompressedToLayer(l)
 	if err != nil {
