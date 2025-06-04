@@ -430,6 +430,8 @@ func TestMetadataDocs(t *testing.T) {
 }
 
 func TestCompactDeletes(t *testing.T) {
+	// This test adds a document, updates it, checks that the original document was deleted,
+	// then compacts the deletes and checks to ensure that the deleted document id is fully removed.
 	ctx := context.Background()
 	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
@@ -440,8 +442,6 @@ func TestCompactDeletes(t *testing.T) {
 	require.NoError(t, w.AddDocument(doc))
 	require.NoError(t, w.Flush())
 
-	printDB(t, db)
-
 	r := NewReader(ctx, db, "testing-namespace", testSchema)
 	delList, err := r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
 	require.NoError(t, err)
@@ -451,8 +451,6 @@ func TestCompactDeletes(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.UpdateDocument(doc.Field("id"), doc))
 	require.NoError(t, w.Flush())
-
-	printDB(t, db)
 
 	r = NewReader(ctx, db, "testing-namespace", testSchema)
 	delList, err = r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
@@ -573,6 +571,35 @@ func TestDropNamespace(t *testing.T) {
 
 }
 
+func TestMergeActuallyMerges(t *testing.T) {
+	// This test ensures that our custom merger is actually merging posting lists when updating,
+	// rather than just appending them (which is what would happen if the default merger was used).
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	w, err := NewWriter(db, "ns-a")
+	require.NoError(t, err)
+
+	doc := docWithIDAndText(t, 8, `one`)
+	require.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	w, err = NewWriter(db, "ns-a")
+	require.NoError(t, err)
+
+	doc2 := docWithIDAndText(t, 9, `done`) // should end up in pl for "one" also
+	require.NoError(t, w.AddDocument(doc2))
+	require.NoError(t, w.Flush())
+
+	plBytes, closer, err := w.db.Get([]byte("ns-a:gra:one:text"))
+	require.NoError(t, err)
+	t.Cleanup(func() { closer.Close() })
+
+	expectedBytes, err := posting.NewList(1, (1<<32 | 1)).Marshal()
+	require.NoError(t, err)
+
+	assert.Equal(t, expectedBytes, plBytes)
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},
@@ -587,7 +614,9 @@ func printDB(t testing.TB, db *pebble.DB) {
 	log.Printf("<END DB>")
 }
 
-func TestDBFormat(t *testing.T) {
+func TestDBFormatAddOnly(t *testing.T) {
+	// This test ensures that the expected key/value pairs are written to the database when documents
+	// are added.
 	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	docSchema := schema.NewDocumentSchema(
@@ -596,49 +625,122 @@ func TestDBFormat(t *testing.T) {
 			schema.MustFieldSchema(types.KeywordField, "content", false),
 		},
 	)
-	doc1, err := docSchema.MakeDocument(
+	doc1 := docSchema.MustMakeDocument(
 		map[string][]byte{
 			"id":      []byte("1"),
 			"content": []byte("one"),
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	doc2, err := docSchema.MakeDocument(
+	doc2 := docSchema.MustMakeDocument(
 		map[string][]byte{
 			"id":      []byte("2"),
 			"content": []byte("two"),
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	w, err := NewWriter(db, "testns")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(doc1))
+	require.NoError(t, w.AddDocument(doc2))
+	require.NoError(t, w.Flush())
+
+	printDB(t, db)
+	iter, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: []byte{0},
+		UpperBound: []byte{255},
+	})
+	require.NoError(t, err)
+	defer iter.Close()
+
+	require.True(t, iter.First())
+
+	require.Equal(t, "__generation__", string(iter.Key())) // global segment generation key
+	assert.Equal(t, uint32(0), BytesToUint32(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:1:_id", string(iter.Key())) // first doc id field content
+	assert.Equal(t, uint64(1), BytesToUint64(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:1:id", string(iter.Key())) // first doc id field content
+	assert.Equal(t, "1", string(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:2:_id", string(iter.Key())) // second doc ptr
+	assert.Equal(t, uint64(2), BytesToUint64(iter.Value()))  // 1st segment, 2nd docid
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:2:id", string(iter.Key())) // second doc id field content
+	assert.Equal(t, "2", string(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:1:id", string(iter.Key())) // ngram "1", field "id" posting list
+	pl1ID, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1}, pl1ID.ToArray())
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:2:id", string(iter.Key())) // ngram "2", field "id" posting list
+	pl2ID, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{2}, pl2ID.ToArray())
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:one:content", string(iter.Key())) // ngram "one", field content PL
+	plOneContent, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1}, plOneContent.ToArray())
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:two:content", string(iter.Key())) // ngram "two", field content PL
+	plTwoContent, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{2}, plTwoContent.ToArray())
+
+	assert.False(t, iter.Next()) // End of data.
+}
+
+func TestDBFormatUpdate(t *testing.T) {
+	// This test ensures that the expected key/value pairs are written to the database when a
+	// document is updated.
+
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "content", false),
+		},
+	)
+	doc1 := docSchema.MustMakeDocument(
+		map[string][]byte{
+			"id":      []byte("1"),
+			"content": []byte("one"),
+		},
+	)
+	doc2 := docSchema.MustMakeDocument(
+		map[string][]byte{
+			"id":      []byte("2"),
+			"content": []byte("two"),
+		},
+	)
+
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
 	require.NoError(t, w.AddDocument(doc1))
 	require.NoError(t, w.AddDocument(doc2))
 	require.NoError(t, w.Flush())
 
 	// Re-add doc1 again.
-	doc1, err = docSchema.MakeDocument(
+	doc1 = docSchema.MustMakeDocument(
 		map[string][]byte{
 			"id":      []byte("1"),
 			"content": []byte("ONE"),
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	w, err = NewWriter(db, "testns")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	require.NoError(t, w.UpdateDocument(doc1.Field("id"), doc1))
 	require.NoError(t, w.Flush())
 
@@ -653,56 +755,118 @@ func TestDBFormat(t *testing.T) {
 	require.True(t, iter.First())
 
 	require.Equal(t, "__generation__", string(iter.Key())) // global segment generation key
-	require.Equal(t, uint32(1), BytesToUint32(iter.Value()))
+	assert.Equal(t, uint32(1), BytesToUint32(iter.Value()))
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:doc:2:_id", string(iter.Key())) // second doc ptr
-	require.Equal(t, uint64(2), BytesToUint64(iter.Value())) // 1st segment, 2nd docid
+	assert.Equal(t, uint64(2), BytesToUint64(iter.Value()))  // 1st segment, 2nd docid
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:doc:2:id", string(iter.Key())) // second doc id field content
-	require.Equal(t, "2", string(iter.Value()))
+	assert.Equal(t, "2", string(iter.Value()))
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:doc:4294967297:_id", string(iter.Key())) // first doc id field content
-	require.Equal(t, uint64(4294967297), BytesToUint64(iter.Value()))
+	assert.Equal(t, uint64(4294967297), BytesToUint64(iter.Value()))
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:doc:4294967297:id", string(iter.Key())) // first doc id field content
-	require.Equal(t, "1", string(iter.Value()))
+	assert.Equal(t, "1", string(iter.Value()))
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:gra:1:id", string(iter.Key())) // ngram "1", field "id" posting list
 	pl1ID, err := posting.Unmarshal(iter.Value())
 	require.NoError(t, err)
-	require.Equal(t, []uint64{uint64(1<<32) + 1}, pl1ID.ToArray())
+	assert.Equal(t, []uint64{uint64(1<<32) + 1}, pl1ID.ToArray())
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:gra:2:id", string(iter.Key())) // ngram "2", field "id" posting list
 	pl2ID, err := posting.Unmarshal(iter.Value())
 	require.NoError(t, err)
-	require.Equal(t, []uint64{2}, pl2ID.ToArray())
+	assert.Equal(t, []uint64{2}, pl2ID.ToArray())
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:gra:_del:_del", string(iter.Key()))
 	plDel, err := posting.Unmarshal(iter.Value())
 	require.NoError(t, err)
-	require.Equal(t, []uint64{1}, plDel.ToArray()) // doc 1 was deleted (via UpdateDocument)
+	assert.Equal(t, []uint64{1}, plDel.ToArray()) // doc 1 was deleted (via UpdateDocument)
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:gra:one:content", string(iter.Key())) // ngram "one", field content PL
 	plOneContent, err := posting.Unmarshal(iter.Value())
 	require.NoError(t, err)
-	require.Equal(t, []uint64{1, uint64(1<<32) + 1}, plOneContent.ToArray())
+	assert.Equal(t, []uint64{1, uint64(1<<32) + 1}, plOneContent.ToArray())
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:gra:two:content", string(iter.Key())) // ngram "two", field content PL
 	plTwoContent, err := posting.Unmarshal(iter.Value())
 	require.NoError(t, err)
-	require.Equal(t, []uint64{2}, plTwoContent.ToArray())
+	assert.Equal(t, []uint64{2}, plTwoContent.ToArray())
 
-	require.False(t, iter.Next()) // End of data.
+	assert.False(t, iter.Next()) // End of data.
 
+}
+
+func TestDBFormatCompactDeletes(t *testing.T) {
+	// This test ensures that deleted documents are actually removed from posting lists after
+	// compacting deletes.
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	doc1 := docWithIDAndText(t, 1, "one")
+
+	w, err := NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(doc1))
+	require.NoError(t, w.Flush())
+
+	w, err = NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.UpdateDocument(doc1.Field("id"), doc1))
+	require.NoError(t, w.Flush())
+
+	w, err = NewWriter(db, "testns")
+	require.NoError(t, err)
+	require.NoError(t, w.CompactDeletes())
+	require.NoError(t, w.Flush())
+
+	printDB(t, db)
+	iter, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: []byte{0},
+		UpperBound: []byte{255},
+	})
+	require.NoError(t, err)
+	defer iter.Close()
+
+	require.True(t, iter.First())
+
+	require.Equal(t, "__generation__", string(iter.Key())) // global segment generation key
+	assert.Equal(t, uint32(2), BytesToUint32(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:4294967297:_id", string(iter.Key())) // first doc id field content
+	assert.Equal(t, uint64(1<<32|1), BytesToUint64(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:4294967297:id", string(iter.Key())) // first doc id field content
+	assert.Equal(t, "1", string(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:4294967297:text", string(iter.Key())) // first doc text field content
+	assert.Equal(t, "one", string(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:1:id", string(iter.Key())) // ngram "1", field "id" posting list
+	pl1ID, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1<<32 | 1}, pl1ID.ToArray())
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:one:text", string(iter.Key())) // ngram "one", field content PL
+	plOneContent, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1<<32 | 1}, plOneContent.ToArray())
+
+	assert.False(t, iter.Next()) // End of data.
 }
 
 // WRITE:

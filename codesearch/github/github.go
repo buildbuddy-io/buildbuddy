@@ -272,6 +272,8 @@ func processDiffTreeLine(gc GitClient, line string, commit *inpb.Commit) error {
 }
 
 // ComputeIncrementalUpdate generates an incremental update payload for the codesearch indexer.
+// If no updates are found, it returns nil with no error.
+//
 // The information is extracted using the git command line client on a local clone of a repo.
 // The payload contains a list of commits, the file contents for each added/modified file, and a list
 // of deleted filenames.
@@ -288,7 +290,7 @@ func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.Inc
 		return nil, status.FailedPreconditionErrorf("too many changes in commit range %s..%s: %d", firstSha, lastSha, len(changes))
 	}
 	if len(changes) == 0 || (len(changes) == 1 && len(changes[0]) == 0) {
-		return nil, status.FailedPreconditionErrorf("no commits found between %s and %s", firstSha, lastSha)
+		return nil, nil
 	}
 
 	result := &inpb.IncrementalUpdate{

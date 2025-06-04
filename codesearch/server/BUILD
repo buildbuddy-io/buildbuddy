@@ -56,6 +56,7 @@ go_test(
         "//server/real_environment",
         "//server/testutil/testfs",
         "//server/util/git",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

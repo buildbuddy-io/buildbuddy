@@ -41,7 +41,6 @@ func makeGitClient() (github.GitClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("Repo root: %s", repoRoot)
 
 	return github.NewCommandLineGitClient(repoRoot), nil
 }
@@ -88,6 +87,9 @@ func buildIndexRequest(gc github.GitClient, repoURL *git.RepoURL, headSHA, lastI
 			} else {
 				return nil, fmt.Errorf("failed to compute incremental update: %w", err)
 			}
+		} else if update == nil {
+			log.Printf("No new commits found since last index (%s), skipping indexing.", lastIndexSHA)
+			return nil, nil
 		} else {
 			req.ReplacementStrategy = inpb.ReplacementStrategy_INCREMENTAL
 			req.Update = update
@@ -106,13 +108,8 @@ func buildIndexRequest(gc github.GitClient, repoURL *git.RepoURL, headSHA, lastI
 	return req, nil
 }
 
-func indexRepo() error {
+func indexRepo(gc github.GitClient, client bbspb.BuildBuddyServiceClient) error {
 	ctx := context.Background()
-
-	gc, err := makeGitClient()
-	if err != nil {
-		return err
-	}
 
 	parsedRepoURL, headSHA, err := getRepoInfo(gc)
 	if err != nil {
@@ -123,12 +120,6 @@ func indexRepo() error {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
-	conn, err := grpc_client.DialSimple(*target)
-	if err != nil {
-		return err
-	}
-
-	client := bbspb.NewBuildBuddyServiceClient(conn)
 	rsp, err := client.RepoStatus(ctx, &inpb.RepoStatusRequest{
 		RepoUrl: parsedRepoURL.String(),
 	})
@@ -139,6 +130,9 @@ func indexRepo() error {
 	update, err := buildIndexRequest(gc, parsedRepoURL, headSHA, rsp.GetLastIndexedCommitSha())
 	if err != nil {
 		return fmt.Errorf("failed to create index request: %w", err)
+	}
+	if update == nil {
+		return nil
 	}
 
 	_, err = client.Index(ctx, update)
@@ -171,7 +165,18 @@ func HandleIndex(args []string) (int, error) {
 		return 1, nil
 	}
 
-	if err := indexRepo(); err != nil {
+	gc, err := makeGitClient()
+	if err != nil {
+		return 1, err
+	}
+
+	conn, err := grpc_client.DialSimple(*target)
+	if err != nil {
+		return 1, err
+	}
+	client := bbspb.NewBuildBuddyServiceClient(conn)
+
+	if err := indexRepo(gc, client); err != nil {
 		log.Print(err)
 		return 1, nil
 	}
