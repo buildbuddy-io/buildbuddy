@@ -476,28 +476,25 @@ func PropagateMetadataStreamInterceptor(keys ...string) grpc.StreamServerInterce
 	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(keys...))
 }
 
-func propagateActionIDToSpan(ctx context.Context) {
-	actionId := bazel_request.GetActionID(ctx)
-	if actionId == "" {
+func propagateBazelRequestMetadataIDsToSpan(ctx context.Context) {
+	metadata := bazel_request.GetRequestMetadata(ctx)
+	attributes := make([]attribute.KeyValue, 0, 2)
+	if id := metadata.GetToolInvocationId(); id != "" {
+		attributes = append(attributes, attribute.String("invocation_id", id))
+	}
+	if id := metadata.GetActionId(); id != "" {
+		attributes = append(attributes, attribute.String("action_id", id))
+	}
+	if len(attributes) == 0 {
 		return
 	}
 	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(attribute.String("action_id", actionId))
-}
-
-func propagateInvocationIDToSpan(ctx context.Context) {
-	invocationId := bazel_request.GetInvocationID(ctx)
-	if invocationId == "" {
-		return
-	}
-	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(attribute.String("invocation_id", invocationId))
+	span.SetAttributes(attributes...)
 }
 
 func propagateRequestMetadataIDsToSpanUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
-		propagateInvocationIDToSpan(ctx)
-		propagateActionIDToSpan(ctx)
+		propagateBazelRequestMetadataIDsToSpan(ctx)
 		return handler(ctx, req)
 	}
 }
@@ -505,8 +502,7 @@ func propagateRequestMetadataIDsToSpanUnaryServerInterceptor() grpc.UnaryServerI
 func propagateRequestMetadataIDsToSpanStreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx := stream.Context()
-		propagateInvocationIDToSpan(ctx)
-		propagateActionIDToSpan(ctx)
+		propagateBazelRequestMetadataIDsToSpan(ctx)
 		return handler(srv, stream)
 	}
 }
