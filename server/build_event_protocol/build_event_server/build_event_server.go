@@ -184,7 +184,11 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			log.CtxWarningf(ctx, "Error receiving build event stream %+v: %s", streamID, err)
 			return disconnectWithErr(err)
 		case in := <-inCh:
-			if streamID == nil && in.GetOrderedBuildEvent().GetStreamId().GetInvocationId() != "" {
+			if streamID == nil {
+				if in.GetOrderedBuildEvent().GetStreamId().GetInvocationId() == "" {
+					return status.FailedPreconditionError("Missing invocation ID")
+				}
+
 				streamID = in.GetOrderedBuildEvent().GetStreamId()
 				ctx = log.EnrichContext(ctx, log.InvocationIDKey, streamID.GetInvocationId())
 				newChannel, err := s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.GetInvocationId())
