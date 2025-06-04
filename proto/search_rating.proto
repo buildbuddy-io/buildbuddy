@@ -19,7 +19,6 @@ message IdealResult {
 message Case {
     search.Query query = 1;
     repeated IdealResult ideal_results = 2;
-    // nDCG depth - how many results to analyze
     bool penalize_unmatched = 3;
 }
 

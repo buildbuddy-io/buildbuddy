@@ -1,3 +1,6 @@
+// TODO: package comment explaining scoring
+// TODO: readme with annotation instructions
+// TODO: should this be automated? put in a workflow and run when CS deps change?
 package main
 
 import (
