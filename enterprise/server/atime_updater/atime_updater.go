@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gstatus "google.golang.org/grpc/status"
@@ -188,11 +187,10 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	updates.mu.Unlock()
 	if pendingUpdate == nil {
 		log.CtxInfof(ctx, "Too many pending FindMissingBlobsRequests for updating remote atime for group %s, dropping %d pending atime updates", groupID, len(keys))
-		metrics.RemoteAtimeUpdates.With(
-			prometheus.Labels{
-				metrics.GroupID:              groupID,
-				metrics.EnqueueUpdateOutcome: "dropped_too_many_batches",
-			}).Add(float64(len(digests)))
+		metrics.RemoteAtimeUpdates.WithLabelValues(
+			groupID,
+			"dropped_too_many_batches",
+		).Add(float64(len(digests)))
 		return
 	}
 
@@ -223,21 +221,18 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 		log.Debugf("atime-updater metrics don't add up. incoming digests: %d, added: %d, duplicates: %d, dropped: %d", len(digests), enqueued, duplicate, dropped)
 	}
 
-	metrics.RemoteAtimeUpdates.With(
-		prometheus.Labels{
-			metrics.GroupID:              groupID,
-			metrics.EnqueueUpdateOutcome: "enqueued",
-		}).Add(float64(enqueued))
-	metrics.RemoteAtimeUpdates.With(
-		prometheus.Labels{
-			metrics.GroupID:              groupID,
-			metrics.EnqueueUpdateOutcome: "duplicate",
-		}).Add(float64(duplicate))
-	metrics.RemoteAtimeUpdates.With(
-		prometheus.Labels{
-			metrics.GroupID:              groupID,
-			metrics.EnqueueUpdateOutcome: "dropped_too_many_updates",
-		}).Add(float64(dropped))
+	metrics.RemoteAtimeUpdates.WithLabelValues(
+		groupID,
+		"enqueued",
+	).Add(float64(enqueued))
+	metrics.RemoteAtimeUpdates.WithLabelValues(
+		groupID,
+		"duplicate",
+	).Add(float64(duplicate))
+	metrics.RemoteAtimeUpdates.WithLabelValues(
+		groupID,
+		"dropped_too_many_updates",
+	).Add(float64(dropped))
 }
 
 func (u *atimeUpdater) EnqueueByResourceName(ctx context.Context, downloadString string) {
@@ -341,11 +336,10 @@ func (u *atimeUpdater) update(ctx context.Context, groupID string, authHeaders m
 	ctx = authutil.AddAuthHeadersToContext(ctx, authHeaders, u.authenticator)
 
 	_, err := u.remote.FindMissingBlobs(ctx, req)
-	metrics.RemoteAtimeUpdatesSent.With(
-		prometheus.Labels{
-			metrics.GroupID:     groupID,
-			metrics.StatusLabel: gstatus.Code(err).String(),
-		}).Inc()
+	metrics.RemoteAtimeUpdatesSent.WithLabelValues(
+		groupID,
+		gstatus.Code(err).String(),
+	).Inc()
 	if err != nil {
 		log.CtxWarningf(ctx, "Error sending FindMissingBlobs request to update remote atimes for group %s: %s", groupID, err)
 	}
