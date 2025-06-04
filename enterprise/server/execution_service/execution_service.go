@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeseries"
 	"github.com/buildbuddy-io/buildbuddy/server/util/trace_events"
@@ -367,6 +368,10 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 
 	metadata := res.GetResult().GetExecutionMetadata()
 	stats := metadata.GetUsageStats()
+	auxMetadata := &espb.ExecutionAuxiliaryMetadata{}
+	if _, err := rexec.AuxiliaryMetadata(metadata, auxMetadata); err != nil {
+		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionAuxiliaryMetadata: %s", err)
+	}
 
 	timestampsMillis := timeseries.DeltaDecode(stats.GetTimeline().GetTimestamps())
 	cumulativeCPUMillis := timeseries.DeltaDecode(stats.GetTimeline().GetCpuSamples())
@@ -454,6 +459,12 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 			end:   metadata.GetWorkerStartTimestamp(),
 		},
 		{
+			name:  "queued",
+			tid:   executorTID,
+			start: auxMetadata.GetWorkerQueuedTimestamp(),
+			end:   metadata.GetWorkerStartTimestamp(),
+		},
+		{
 			name:  "execute action",
 			tid:   executorTID,
 			start: metadata.GetWorkerStartTimestamp(),
@@ -484,6 +495,11 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 			end:   metadata.GetOutputUploadCompletedTimestamp(),
 		},
 	} {
+		// Skip nil timestamps. In particular, older executors may not have
+		// worker_queued_timestamp.
+		if span.start == nil || span.end == nil {
+			continue
+		}
 		event := &trace_events.Event{
 			ThreadID:  span.tid,
 			Name:      span.name,
