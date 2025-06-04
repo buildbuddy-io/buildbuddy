@@ -59,9 +59,8 @@ message RunRequest {
   // This is only supported for bare runners.
   bool use_system_git_credentials = 9;
 
-  // Whether to skip the automatic configuration steps on the remote runner
-  // (including GitHub setup).
-  bool skip_automatic_configuration = 12;
+  // Whether to skip the automatic GitHub setup steps on the remote runner.
+  bool skip_automatic_checkout = 12;
 }
 
 message Step {
