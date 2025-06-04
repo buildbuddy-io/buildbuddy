@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 // A writer that drops anything written to it.
@@ -47,6 +48,10 @@ func (c *CustomCommitWriteCloser) Write(buf []byte) (int, error) {
 }
 
 func (c *CustomCommitWriteCloser) Commit() error {
+	if c.committed {
+		return status.FailedPreconditionError("CommitWriteCloser already committed, cannot commit again")
+	}
+
 	// Commit functions are run in order. If a commit function at a lower
 	// level succeeds, the one above it should succeed as well.
 	//
