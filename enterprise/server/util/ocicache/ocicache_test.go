@@ -171,13 +171,44 @@ func TestNewBlobUploader(t *testing.T) {
 
 	up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
 	require.NoError(t, err)
-	written, err := up.Write(layerBuf)
+
+	written, err := up.Write(layerBuf[:256])
 	require.NoError(t, err)
-	require.Equal(t, len(layerBuf), written)
+	require.Equal(t, 256, written)
+
+	written, err = up.Write(layerBuf[256:])
+	require.NoError(t, err)
+	require.Equal(t, len(layerBuf)-256, written)
+
 	err = up.Close()
 	require.NoError(t, err)
 
+	err = up.Close()
+	require.Error(t, err)
+
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func TestNewBlobUploader_PartialWriteFails(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "write_and_fetch_blob", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+	written, err := up.Write(layerBuf[:256])
+	require.NoError(t, err)
+	require.Equal(t, 256, written)
+	err = up.Close()
+	require.Error(t, err)
+
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
+	require.Error(t, err)
+	require.Nil(t, metadata)
 }
 
 func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, name.Repository, gcr.Hash, string) {
