@@ -165,7 +165,7 @@ func (t *NoOpTransferTimer) Record(bytesTransferred int64, duration time.Duratio
 
 type HitTrackerClient struct {
 	ctx             context.Context
-	enqueueFn       func(context.Context, *repb.RequestMetadata, *hitpb.CacheHit)
+	enqueueFn       func(context.Context, *hitpb.CacheHit)
 	client          hitpb.HitTrackerServiceClient
 	requestMetadata *repb.RequestMetadata
 	cacheType       rspb.CacheType
@@ -202,14 +202,13 @@ func (h *HitTrackerFactory) groupID(ctx context.Context) groupID {
 	return groupID(claims.GetGroupID())
 }
 
-func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.RequestMetadata, hit *hitpb.CacheHit) {
+func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 	groupID := h.groupID(ctx)
 
 	h.mu.Lock()
 	if h.shouldFlushSynchronously() {
 		h.mu.Unlock()
 		log.CtxInfof(ctx, "hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
-		hit.RequestMetadata = requestMetadata
 		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}}); err != nil {
 			log.CtxWarningf(ctx, "Error sending HitTrackerService.Track RPC: %v", err)
 		}
@@ -245,7 +244,7 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 
 type TransferTimer struct {
 	ctx              context.Context
-	enqueueFn        func(context.Context, *repb.RequestMetadata, *hitpb.CacheHit)
+	enqueueFn        func(context.Context, *hitpb.CacheHit)
 	invocationID     string
 	requestMetadata  *repb.RequestMetadata
 	digest           *repb.Digest
@@ -266,7 +265,7 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 		Duration:         durationpb.New(time.Since(t.start)),
 		CacheRequestType: t.cacheRequestType,
 	}
-	t.enqueueFn(t.ctx, t.requestMetadata, hit)
+	t.enqueueFn(t.ctx, hit)
 	return nil
 }
 
