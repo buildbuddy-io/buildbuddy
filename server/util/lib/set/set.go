@@ -30,7 +30,7 @@ type mapView[E comparable, V any] map[E]V
 func From[E comparable](s ...E) Set[E] {
 	set := make(Set[E], len(s))
 	for _, e := range s {
-		set[e] = nothing{}
+		set.Add(e)
 	}
 	return set
 }
@@ -39,7 +39,7 @@ func From[E comparable](s ...E) Set[E] {
 func FromSeq[E comparable](s iter.Seq[E]) Set[E] {
 	set := make(Set[E])
 	for e := range s {
-		set[e] = nothing{}
+		set.Add(e)
 	}
 	return set
 }
