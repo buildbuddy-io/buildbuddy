@@ -66,9 +66,3 @@ func RegisterClients(env *testenv.TestEnv, conn grpc.ClientConnInterface) {
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 }
-
-func SetupAndRun(t *testing.T, te *testenv.TestEnv) {
-	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
-	Setup(t, te, localGRPClis)
-	go runServer()
-}

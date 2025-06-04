@@ -86,7 +86,9 @@ func TestCacheSecret(t *testing.T) {
 func setupTestEnv(t *testing.T) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
 	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
-	testcache.SetupAndRun(t, te)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
 	return te
 }
 
