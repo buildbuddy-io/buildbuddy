@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	//go:embed ratings.proto.txt
+	//go:embed ratings.proto.json
 	ratingsProtoText []byte
 
 	codesearchBackend = flag.String("codesearch_backend", "grpc://localhost:2633", "Codesearch backend address (e.g. localhost:2633, or a remote gRPC server address).")
@@ -36,8 +36,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to parse ratings proto text: %s", err)
 	}
-	log.Infof("Loaded ratings: %v", ratings)
-	log.Infof("Raw ratings: %s", ratingsProtoText)
 
 	if *apiKey == "" {
 		log.Fatalf("API key must be provided with --api_key")
@@ -85,16 +83,16 @@ func indexRepos(ctx context.Context, client cspb.CodesearchServiceClient, repos 
 }
 
 func runCase(ctx context.Context, client cspb.CodesearchServiceClient, tc *srpb.Case) float64 {
-	log.Infof("Running test case: %s", tc.GetQuery())
+	log.Debugf("Running test case: %s", tc.GetQuery())
 	results, err := client.Search(ctx, &spb.SearchRequest{
 		Query: tc.GetQuery(),
 	})
 	if err != nil {
 		log.Fatalf("Failed to search: %s", err)
 	}
-	log.Infof("Search results: %s", protojson.Format(results))
+	log.Debugf("Search results: %s", protojson.Format(results))
 	s := score(results, tc)
-	log.Infof("Score for query '%s': %.2f", tc.GetQuery(), s)
+	log.Infof("Normalized score for query '%s': %.2f", tc.GetQuery(), s)
 	return s
 }
 
@@ -125,12 +123,11 @@ func score(results *spb.SearchResponse, tc *srpb.Case) float64 {
 	for i, ideal := range idealResults {
 		idealRels[i] = float64(ideal.GetRelevance())
 	}
-	log.Infof("1")
 
 	rels := make([]float64, len(results.GetResults()))
 	for i, result := range results.GetResults() {
 		rels[i] = scoreDoc(result, idealResults, tc.GetPenalizeUnmatched())
-		log.Infof("Score for %s: %.2f", result.GetFilename(), rels[i])
+		log.Debugf("Score for %s: %.2f", result.GetFilename(), rels[i])
 	}
 
 	return ndcg(rels, idealRels)
@@ -141,7 +138,6 @@ func ndcg(rels []float64, idealRels []float64) float64 {
 		return 0.0
 	}
 
-	log.Infof("Calculating nDCG for %d results", len(rels))
 	// TODO: sort by rel descending, or rely on the order of the input?
 	idealDcg := dcg(idealRels)
 	if idealDcg == 0 {
@@ -149,7 +145,7 @@ func ndcg(rels []float64, idealRels []float64) float64 {
 	}
 
 	final := dcg(rels)
-	log.Infof("nDCG: %.2f / %.2f = %.2f", final, idealDcg, final/idealDcg)
+	log.Debugf("nDCG: %.2f / %.2f = %.2f", final, idealDcg, final/idealDcg)
 	return final / idealDcg
 }
 
@@ -157,7 +153,6 @@ func dcg(rels []float64) float64 {
 	sum := 0.0
 	for i, rel := range rels {
 		sum += rel / math.Log2(float64(i+2))
-		log.Infof("DCG: Adding rel %.2f at position %d, current sum: %.2f, log: %.2f", rel, i+1, sum, math.Log2(float64(i+2)))
 	}
 	return sum
 }
