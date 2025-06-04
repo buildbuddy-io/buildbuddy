@@ -126,7 +126,6 @@ func score(results *spb.SearchResponse, tc *srpb.Case) float64 {
 		idealRels[i] = float64(ideal.GetRelevance())
 	}
 	log.Infof("1")
-	idealDcg := dcg(idealRels)
 
 	rels := make([]float64, len(results.GetResults()))
 	for i, result := range results.GetResults() {
@@ -134,9 +133,22 @@ func score(results *spb.SearchResponse, tc *srpb.Case) float64 {
 		log.Infof("Score for %s: %.2f", result.GetFilename(), rels[i])
 	}
 
-	log.Infof("2")
+	return ndcg(rels, idealRels)
+}
+
+func ndcg(rels []float64, idealRels []float64) float64 {
+	if len(rels) == 0 || len(idealRels) == 0 {
+		return 0.0
+	}
+
+	log.Infof("Calculating nDCG for %d results", len(rels))
+	idealDcg := dcg(idealRels)
+	if idealDcg == 0 {
+		return 0.0
+	}
+
 	final := dcg(rels)
-	log.Infof("Score: %.2f, ideal: %.2f, normalized: %.2f", final, idealDcg, final/idealDcg)
+	log.Infof("nDCG: %.2f / %.2f = %.2f", final, idealDcg, final/idealDcg)
 	return final / idealDcg
 }
 
