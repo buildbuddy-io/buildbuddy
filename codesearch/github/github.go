@@ -272,6 +272,8 @@ func processDiffTreeLine(gc GitClient, line string, commit *inpb.Commit) error {
 }
 
 // ComputeIncrementalUpdate generates an incremental update payload for the codesearch indexer.
+// If no updates are found, it returns nil with no error.
+//
 // The information is extracted using the git command line client on a local clone of a repo.
 // The payload contains a list of commits, the file contents for each added/modified file, and a list
 // of deleted filenames.
