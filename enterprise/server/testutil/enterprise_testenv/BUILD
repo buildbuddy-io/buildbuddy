@@ -14,7 +14,6 @@ go_library(
         "//enterprise/server/clientidentity",
         "//enterprise/server/util/redisutil",
         "//server/remote_cache/byte_stream_client",
-        "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testhealthcheck",
         "//server/util/log",

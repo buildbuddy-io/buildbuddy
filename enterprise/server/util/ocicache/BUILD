@@ -36,6 +36,7 @@ go_test(
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:ociregistry_go_proto",
         "//server/interfaces",
+        "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",

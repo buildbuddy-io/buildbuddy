@@ -7,14 +7,16 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
-	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/stretchr/testify/require"
+
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 )
 
 func TestCacheSecret(t *testing.T) {
@@ -84,7 +86,7 @@ func TestCacheSecret(t *testing.T) {
 func setupTestEnv(t *testing.T) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
 	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
-	enterprise_testenv.RunTestCaches(t, te)
+	testcache.SetupAndRun(t, te)
 	return te
 }
 

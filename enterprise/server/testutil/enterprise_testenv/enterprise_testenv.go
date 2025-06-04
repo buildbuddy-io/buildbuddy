@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhealthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -73,10 +72,4 @@ func AddClientIdentity(t *testing.T, te *testenv.TestEnv, client string) {
 	err = clientidentity.Register(te)
 	require.NoError(t, err)
 	require.NotNil(t, te.GetClientIdentityService())
-}
-
-func RunTestCaches(t *testing.T, te *testenv.TestEnv) {
-	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
-	testcache.Setup(t, te, localGRPClis)
-	go runServer()
 }
