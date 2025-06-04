@@ -11,6 +11,9 @@ message IdealResult {
     repeated int32 snippet_line_numbers = 5;
 
     float relevance = 6;
+
+    // Not used programatically, but to aid annotation
+    string notes = 7;
 }
 
 message Case {

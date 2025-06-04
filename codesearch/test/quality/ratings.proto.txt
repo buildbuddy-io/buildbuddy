@@ -81,6 +81,22 @@
                     "relevance": 1.0
                 }
             ]
+        },
+        {
+            "query": { "term": "ParseFlagSet" },
+            "penalize_unmatched": false,
+            "ideal_results": [
+                {
+                    "owner": "buildbuddy-io",
+                    "repo": "buildbuddy",
+                    "filename": "cli/arg/arg.go",
+                    "match_count": 2,
+                    "snippet_line_numbers": [],
+                    "relevance": 2.0,
+                    "notes": "definition site"
+                }
+            ]
         }
+
     ]
 }
