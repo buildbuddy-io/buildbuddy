@@ -23,10 +23,7 @@ type Nothing = struct{}
 // `make(Set[E], cap)`, just like a normal map.
 type Set[E comparable] map[E]Nothing
 
-// Set is just a lightweight wrapper around the standard golang stand-in for the
-// set type, map[E]struct{}. It is intended to improve readability and reduce
-// code duplication. An empty Set can be made with `make(Set[E])` or
-// `make(Set[E], cap)`, just like a normal map.
+// mapView is a view of a `map[E]V` as a `View[E] `.
 type mapView[E comparable, V any] map[E]V
 
 // From creates a new Set containing all the provided elements.
