@@ -10,7 +10,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/hashicorp/serf/serf"
@@ -32,7 +31,7 @@ func localAddr(t *testing.T) string {
 }
 
 func newGossipManager(t *testing.T, addr string, seeds []string, broker interfaces.GossipListener) *gossip.GossipManager {
-	node, err := gossip.New(addr, addr, seeds)
+	node, err := gossip.New("name-"+addr, addr, seeds)
 	require.NoError(t, err)
 	require.NotNil(t, node)
 	node.AddListener(broker)
@@ -154,6 +153,9 @@ func removeDuplicates(dups []string) []string {
 }
 
 func TestUserQuery(t *testing.T) {
+	// Increase --gossip.retransmit_mult to 10 from 4 (default) to prevent from
+	// flakiness due to broadcast failures.
+	flags.Set(t, "gossip.retransmit_mult", 10)
 	data := make(map[string][]string, 0)
 
 	addrs := make([]string, 0)
@@ -165,16 +167,13 @@ func TestUserQuery(t *testing.T) {
 			data[addr] = append(data[addr], letterByte)
 		}
 	}
-	gossipManagers := make([]*gossip.GossipManager, len(addrs))
+
 	for i, nodeAddr := range addrs {
 		nodeAddr := nodeAddr
 		b := &testBroker{
 			onEvent: func(eventType serf.EventType, event serf.Event) {
 				if query, ok := event.(*serf.Query); ok {
 					if query.Name == "letters" {
-						if query.SourceNode() == nodeAddr {
-							return
-						}
 						err := query.Respond([]byte(strings.Join(data[nodeAddr], ",")))
 						require.NoError(t, err)
 					}
@@ -183,28 +182,50 @@ func TestUserQuery(t *testing.T) {
 		}
 		n := newGossipManager(t, nodeAddr, addrs[:i], b)
 		defer n.Shutdown()
-		gossipManagers[i] = n
 	}
 
+	mu := sync.Mutex{}
 	receivedLetters := make([]string, 0)
-	for _, n := range gossipManagers {
+	n := newGossipManager(t, localAddr(t), addrs, &testBroker{})
+	defer n.Shutdown()
+	go func() {
 		rsp, err := n.Query("letters", nil, nil)
 		require.NoError(t, err)
 		for nodeResponse := range rsp.ResponseCh() {
+			mu.Lock()
 			letters := strings.Split(string(nodeResponse.Payload), ",")
 			receivedLetters = append(receivedLetters, letters...)
+			mu.Unlock()
 		}
-	}
+	}()
 
-	letters := removeDuplicates(receivedLetters)
-	sort.Strings(letters)
-	if strings.Join(letters, "") != "abcdefghijklmnopqrstuvwxy" {
-		t.Fatalf("Did not receive all letters")
+	seenItAll := make(chan struct{})
+	go func() {
+		for {
+			mu.Lock()
+			letters := removeDuplicates(receivedLetters)
+			mu.Unlock()
+
+			sort.Strings(letters)
+			if strings.Join(letters, "") == "abcdefghijklmnopqrstuvwxy" {
+				close(seenItAll)
+				break
+			}
+		}
+	}()
+
+	select {
+	case <-time.After(3 * time.Second):
+		t.Fatalf("Timed out waiting for tags to be received: %+v", receivedLetters)
+	case <-seenItAll:
+		break
 	}
 }
 
 func TestUserEvents(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
+	// Increase --gossip.retransmit_mult to 10 from 4 (default) to prevent from
+	// flakiness due to broadcast failures.
+	flags.Set(t, "gossip.retransmit_mult", 10)
 	addrs := make([]string, 0)
 	for i := 0; i < 5; i++ {
 		addrs = append(addrs, localAddr(t))
