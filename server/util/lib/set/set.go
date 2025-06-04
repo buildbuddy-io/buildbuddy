@@ -14,14 +14,14 @@ type View[E comparable] interface {
 	Difference(View[E]) iter.Seq[E]
 }
 
-// Nothing is an alias for struct{} for clarity/readability.
-type Nothing = struct{}
+// nothing is an alias for struct{} for clarity/readability.
+type nothing = struct{}
 
 // Set is just a lightweight wrapper around the standard golang stand-in for the
 // set type, map[E]struct{}. It is intended to improve readability and reduce
 // code duplication. An empty Set can be made with `make(Set[E])` or
 // `make(Set[E], cap)`, just like a normal map.
-type Set[E comparable] map[E]Nothing
+type Set[E comparable] map[E]nothing
 
 // mapView is a view of a `map[E]V` as a `View[E] `.
 type mapView[E comparable, V any] map[E]V
@@ -30,7 +30,7 @@ type mapView[E comparable, V any] map[E]V
 func From[E comparable](s ...E) Set[E] {
 	set := make(Set[E], len(s))
 	for _, e := range s {
-		set[e] = Nothing{}
+		set[e] = nothing{}
 	}
 	return set
 }
@@ -39,7 +39,7 @@ func From[E comparable](s ...E) Set[E] {
 func FromSeq[E comparable](s iter.Seq[E]) Set[E] {
 	set := make(Set[E])
 	for e := range s {
-		set[e] = Nothing{}
+		set[e] = nothing{}
 	}
 	return set
 }
