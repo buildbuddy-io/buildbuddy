@@ -160,10 +160,10 @@ func TestWriteAndFetchBlob(t *testing.T) {
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 }
 
-func TestNewBlobUploader(t *testing.T) {
+func TestBlobUploader(t *testing.T) {
 	te := setupTestEnv(t)
 
-	layerBuf, repo, hash, contentType := createLayer(t, "write_and_fetch_blob", 1024)
+	layerBuf, repo, hash, contentType := createLayer(t, "blob_uploader", 1024)
 	contentLength := int64(len(layerBuf))
 	ctx := context.Background()
 	bsClient := te.GetByteStreamClient()
@@ -183,16 +183,19 @@ func TestNewBlobUploader(t *testing.T) {
 	err = up.Close()
 	require.NoError(t, err)
 
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	// Second close fails, but can still fetch blob.
 	err = up.Close()
 	require.Error(t, err)
 
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 }
 
-func TestNewBlobUploader_PartialWriteFails(t *testing.T) {
+func TestBlobUploader_PartialWriteFails(t *testing.T) {
 	te := setupTestEnv(t)
 
-	layerBuf, repo, hash, contentType := createLayer(t, "write_and_fetch_blob", 1024)
+	layerBuf, repo, hash, contentType := createLayer(t, "blob_uploader_partial_write", 1024)
 	contentLength := int64(len(layerBuf))
 	ctx := context.Background()
 	bsClient := te.GetByteStreamClient()
@@ -209,6 +212,94 @@ func TestNewBlobUploader_PartialWriteFails(t *testing.T) {
 	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
 	require.Error(t, err)
 	require.Nil(t, metadata)
+}
+
+func TestBlobUploader_BlobExists(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "blob_uploader_blob_exists", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	for i := 0; i < 2; i++ {
+		up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
+		require.NoError(t, err)
+
+		written, err := up.Write(layerBuf)
+		require.NoError(t, err)
+		require.Equal(t, len(layerBuf), written)
+
+		err = up.Close()
+		require.NoError(t, err)
+
+		fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+	}
+}
+
+func TestReadThroughCacher(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "read_through_cacher", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+	r := io.NopCloser(bytes.NewReader(layerBuf))
+
+	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, r, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	readout, err := io.ReadAll(cacher)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(layerBuf, readout))
+
+	// metadata not present before close
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
+	require.Error(t, err)
+	require.Nil(t, metadata)
+
+	// blob not present before close
+	fetchout := &bytes.Buffer{}
+	err = ocicache.FetchBlobFromCache(ctx, fetchout, bsClient, hash, contentLength)
+	require.Error(t, err)
+
+	err = cacher.Close()
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func TestReadThroughCacher_PartialReadPreventsCommit(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "read_through_cacher_partial_read", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+	rc := io.NopCloser(bytes.NewReader(layerBuf))
+
+	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, rc, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	readbuf := make([]byte, 256)
+	n, err := cacher.Read(readbuf)
+	require.NoError(t, err)
+	require.Equal(t, 256, n)
+
+	// Errors committing and closing the writer will be logged but not returned.
+	err = cacher.Close()
+	require.NoError(t, err)
+
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
+	require.Error(t, err)
+	require.Nil(t, metadata)
+
+	out := &bytes.Buffer{}
+	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
+	require.Error(t, err)
 }
 
 func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, name.Repository, gcr.Hash, string) {
