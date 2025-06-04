@@ -85,7 +85,7 @@ func TestAddMany(t *testing.T) {
 
 func TestMarshal(t *testing.T) {
 	pl := posting.NewList(1, 2, 3, 4, 5)
-	buf, err := posting.Marshal(pl)
+	buf, err := pl.Marshal()
 	assert.NoError(t, err)
 
 	pl2, err := posting.Unmarshal(buf)
@@ -97,7 +97,7 @@ func TestMarshal(t *testing.T) {
 
 func TestConcat2(t *testing.T) {
 	pl := posting.NewList(1, 2, 3, 4, 5, 4294967296, 4294967297, 4294967298, 4294967299, 4294967300)
-	buf, err := posting.Marshal(pl)
+	buf, err := pl.Marshal()
 	assert.NoError(t, err)
 
 	pl2, err := posting.Unmarshal(buf)
@@ -160,10 +160,10 @@ func BenchmarkListSerializationPosting(b *testing.B) {
 
 	b.ReportAllocs()
 	b.StopTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		b.StartTimer()
 		pl := posting.NewList(ids...)
-		_, err := posting.Marshal(pl)
+		_, err := pl.Marshal()
 		b.StopTimer()
 		require.NoError(b, err)
 	}
@@ -180,16 +180,70 @@ func BenchmarkListDeserializationPosting(b *testing.B) {
 	}
 
 	pl := posting.NewList(ids...)
-	buf, err := posting.Marshal(pl)
+	buf, err := pl.Marshal()
+	require.NoError(b, err)
+
+	// Ensure this operation will succeed, to avoid checking err in the loop
+	_, err = posting.Unmarshal(buf)
 	require.NoError(b, err)
 
 	b.ReportAllocs()
-	b.StopTimer()
-	for n := 0; n < b.N; n++ {
-		b.StartTimer()
-		pl, err := posting.Unmarshal(buf)
-		_ = pl.ToArray()
-		b.StopTimer()
-		require.NoError(b, err)
+
+	b.Run("UnmarshalReadOnly", func(b *testing.B) {
+		for b.Loop() {
+			posting.UnmarshalReadOnly(buf)
+		}
+	})
+
+	b.Run("Unmarshal", func(b *testing.B) {
+		for b.Loop() {
+			posting.Unmarshal(buf)
+		}
+	})
+}
+
+func BenchmarkListQuery(b *testing.B) {
+	// Mimic a codesearch query: unmarshal a bunch of posting lists, or them together, then
+	// remove one big list of deleted ids.
+	c := 0
+	delPls := posting.NewList()
+	for range 100_000 {
+		delPls.Add(uint64(c))
+		c += rand.Intn(500_000)
 	}
+
+	bufs := make([][]byte, 0)
+	c = 0
+	for range 10_000 {
+		newBuf, err := posting.NewList(uint64(c)).Marshal()
+		require.NoError(b, err)
+		bufs = append(bufs, newBuf)
+		c += rand.Intn(500_000)
+	}
+
+	b.ReportAllocs()
+	b.Run("MergeOptimized", func(b *testing.B) {
+		for b.Loop() {
+			pl := posting.NewList()
+			for _, b := range bufs {
+				newPl, _ := posting.UnmarshalReadOnly(b)
+				pl.Or(newPl)
+			}
+			pl.AndNot(delPls)
+		}
+	})
+
+	b.Run("MergeOld", func(b *testing.B) {
+		for b.Loop() {
+			pl := posting.NewList()
+			for _, b := range bufs {
+				newPl, _ := posting.Unmarshal(b)
+				pl.Or(newPl)
+			}
+			delA := delPls.ToArray()
+			for _, id := range delA {
+				pl.Remove(id)
+			}
+		}
+	})
 }

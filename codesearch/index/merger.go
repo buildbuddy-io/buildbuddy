@@ -69,6 +69,6 @@ func (rm *roaringValueMerger) MergeOlder(value []byte) error {
 }
 
 func (rm *roaringValueMerger) Finish(includesBase bool) ([]byte, io.Closer, error) {
-	r, err := posting.Marshal(rm.pl)
+	r, err := rm.pl.Marshal()
 	return r, nil, err
 }
