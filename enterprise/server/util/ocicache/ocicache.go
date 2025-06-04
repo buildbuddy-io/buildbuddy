@@ -290,6 +290,10 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 	return writeBlobMetadataToCache(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
 }
 
+// NewBlobUploader creates a WriteCloser that writes OCI blobs to the CAS.
+//
+// On Close, the BlobUploader will attempt to commit the OCI blob to the CAS (relying on the Byte Stream Server to detect and reject blobs that
+// do not match the given digest). It will also write blob metadata to the CAS and an AC entry pointing to the blob and its metadata.
 func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (io.WriteCloser, error) {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
@@ -362,6 +366,10 @@ func (b *blobUploader) Close() error {
 	return err
 }
 
+// NewBlobReadThroughCacher creates a ReadCloser that will write bytes to the CAS as they are read from the input ReadCloser.
+// Any errors writing to the CAS will be logged and ignored.
+//
+// Closing the ReadThroughCacher closes the input ReadCloser and the underlying BlobUploader.
 func NewBlobReadThroughCacher(ctx context.Context, rc io.ReadCloser, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (io.ReadCloser, error) {
 	wc, err := NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
 	if err != nil {
@@ -393,6 +401,7 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 	}
 	written, err := r.wc.Write(p[:n])
 	if err != nil {
+		log.Warningf("Error writing to cache: %s", err)
 		r.writeErr = err
 		return n, nil
 	}
