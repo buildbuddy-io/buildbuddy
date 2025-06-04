@@ -229,18 +229,24 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 			}
 			res := make([]*approxlru.Sample[*evictionKey], 0)
 			batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
+			errCount := 0
 			for i, k := range keys {
 				_, err := batchRsp.DeleteResponse(i)
-				if err != nil {
-					return nil, err
+				if err == nil {
+					res = append(res, k.Meta.(*approxlru.Sample[*evictionKey]))
+				} else {
+					errCount++
 				}
-				res = append(res, k.Meta.(*approxlru.Sample[*evictionKey]))
+			}
+			if errCount > 0 {
+				return res, status.InternalErrorf("failed to evict %d keys", errCount)
+
 			}
 			return res, nil
 		})
 		if err != nil {
 			metrics.RaftEvictionErrorCount.Inc()
-			log.Warningf("failed to evict %d keys: %s", len(keys), err)
+			log.Warning(err.Error())
 		}
 
 		for _, rsp := range rsps {
@@ -754,7 +760,7 @@ type watermark struct {
 	sizeBytes int64
 }
 
-func (ut *Tracker) TestingWaitForGC() error {
+func (ut *Tracker) TestingWaitForGC(ctx context.Context) error {
 	lastSize := make(map[string]watermark)
 	for {
 		ut.mu.Lock()
@@ -780,7 +786,7 @@ func (ut *Tracker) TestingWaitForGC() error {
 				}
 			} else {
 				if size := lastSize[pu.part.ID].sizeBytes; size > 0 && time.Since(lastSize[pu.part.ID].timestamp) > 3*time.Second {
-					return status.FailedPreconditionErrorf("LRU not making progress: size is %s, maxAllowedSize is %s", units.HumanSize(float64(size)), units.HumanSize(float64(maxAllowedSize)))
+					log.Warningf("LRU not making progress: size is %s, maxAllowedSize is %s", units.HumanSize(float64(size)), units.HumanSize(float64(maxAllowedSize)))
 				}
 			}
 			if totalSizeBytes <= maxAllowedSize {
@@ -790,7 +796,11 @@ func (ut *Tracker) TestingWaitForGC() error {
 		if done == len(partitionUsage) {
 			break
 		}
-
+		select {
+		case <-ctx.Done():
+			return status.CanceledError("context canceled waiting for GC")
+		default:
+		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	return nil

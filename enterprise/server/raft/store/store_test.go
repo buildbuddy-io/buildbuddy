@@ -940,7 +940,6 @@ func TestPostFactoSplit(t *testing.T) {
 }
 
 func TestManySplits(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
@@ -1024,8 +1023,10 @@ func readSessionIDs(t *testing.T, ctx context.Context, rangeID uint64, store *te
 }
 
 func TestCleanupExpiredSessions(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	flags.Set(t, "cache.raft.client_session_ttl", 5*time.Hour)
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1588,4 +1589,51 @@ func TestRebalance(t *testing.T) {
 			break
 		}
 	}
+}
+
+func TestBringupSetRanges(t *testing.T) {
+	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
+	flags.Set(t, "cache.raft.max_range_size_bytes", 8000)
+	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "raft.bringup.partition_splits", []bringup.SplitConfig{
+		{
+			Start:  []byte("PTdefault/0000000000000000000000000000000000000000000000000000000000000000/9/cas/v5"),
+			End:    []byte("PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/9/cas/v5"),
+			Splits: 3,
+		},
+	})
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1}
+	sf.StartShard(t, ctx, stores...)
+
+	testutil.WaitForRangeLease(t, ctx, stores, 1) // metarange
+	testutil.WaitForRangeLease(t, ctx, stores, 2) // start -> 1st split
+	testutil.WaitForRangeLease(t, ctx, stores, 3) // 1st split -> 2nd split
+	testutil.WaitForRangeLease(t, ctx, stores, 4) // 2nd split -> 3rd split
+	testutil.WaitForRangeLease(t, ctx, stores, 5) // 3rd split -> end
+
+	writeNRecordsAndFlush(ctx, t, s1, 20, 1) // each write is 1000 bytes
+
+	mrd := s1.GetRange(1)
+	ranges := fetchRangeDescriptorsFromMetaRange(ctx, t, s1, mrd)
+
+	require.Len(t, ranges, 4)
+	require.Equal(t, "PTdefault/", string(ranges[0].GetStart()))
+	require.Equal(t, "PTdefault/3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[0].GetEnd()))
+
+	require.Equal(t, "PTdefault/3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[1].GetStart()))
+	require.Equal(t, "PTdefault/7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe", string(ranges[1].GetEnd()))
+
+	require.Equal(t, "PTdefault/7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe", string(ranges[2].GetStart()))
+	require.Equal(t, "PTdefault/bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd", string(ranges[2].GetEnd()))
+
+	require.Equal(t, "PTdefault/bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd", string(ranges[3].GetStart()))
+	require.Equal(t, "PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[3].GetEnd()))
 }

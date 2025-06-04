@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"flag"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
@@ -36,6 +38,7 @@ import (
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -133,15 +136,11 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 
 	if req.IncludeMetadata || req.IncludeArtifacts {
 		for _, i := range invocations {
-			inv, err := build_event_handler.LookupInvocation(s.env, ctx, i.Id.InvocationId)
-			if err != nil {
-				return nil, err
-			}
-			for _, event := range inv.GetEvent() {
-				switch p := event.BuildEvent.Payload.(type) {
+			_, err := build_event_handler.LookupInvocationWithCallback(ctx, s.env, i.Id.InvocationId, func(event *inpb.InvocationEvent) error {
+				switch p := event.GetBuildEvent().GetPayload().(type) {
 				case *bespb.BuildEvent_BuildMetadata:
 					if req.IncludeMetadata {
-						for k, v := range p.BuildMetadata.Metadata {
+						for k, v := range p.BuildMetadata.GetMetadata() {
 							i.BuildMetadata = append(i.BuildMetadata, &apipb.InvocationMetadata{
 								Key:   k,
 								Value: v,
@@ -150,7 +149,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 					}
 				case *bespb.BuildEvent_WorkspaceStatus:
 					if req.IncludeMetadata {
-						for _, item := range p.WorkspaceStatus.Item {
+						for _, item := range p.WorkspaceStatus.GetItem() {
 							i.WorkspaceStatus = append(i.WorkspaceStatus, &apipb.InvocationMetadata{
 								Key:   item.Key,
 								Value: item.Value,
@@ -159,7 +158,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 					}
 				case *bespb.BuildEvent_NamedSetOfFiles:
 					if req.IncludeArtifacts {
-						for _, file := range p.NamedSetOfFiles.Files {
+						for _, file := range p.NamedSetOfFiles.GetFiles() {
 							i.Artifacts = append(i.Artifacts, &apipb.File{
 								Name: file.GetName(),
 								Uri:  file.GetUri(),
@@ -167,6 +166,10 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 						}
 					}
 				}
+				return nil
+			})
+			if err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -228,7 +231,7 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 	if err != nil {
 		log.Debugf("redisCachedTarget err: %s", err)
 	} else if cachedTarget != nil {
-		if targetMatchesTargetSelector(cachedTarget, req.GetSelector()) {
+		if api_common.TargetMatchesSelector(cachedTarget, req.GetSelector()) {
 			rsp.Target = append(rsp.Target, cachedTarget)
 		}
 	}
@@ -236,22 +239,18 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 		return rsp, nil
 	}
 
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetSelector().GetInvocationId())
+	targetMap := api_common.NewTargetMap(req.GetSelector())
+	_, err = build_event_handler.LookupInvocationWithCallback(ctx, s.env, req.GetSelector().GetInvocationId(), func(event *inpb.InvocationEvent) error {
+		targetMap.ProcessEvent(req.GetSelector().GetInvocationId(), event.GetBuildEvent())
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	targetMap := api_common.TargetMapFromInvocation(inv)
-
-	// Filter to only selected targets.
-	targets := []*apipb.Target{}
-	for _, target := range targetMap {
-		if targetMatchesTargetSelector(target, req.GetSelector()) {
-			targets = append(targets, target)
-		}
-	}
 
 	return &apipb.GetTargetResponse{
-		Target: targets,
+		// Collect all the map values into a slice.
+		Target: slices.Collect(maps.Values(targetMap.Targets)),
 	}, nil
 }
 
@@ -314,24 +313,23 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 		return rsp, nil
 	}
 
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, iid)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, event := range inv.GetEvent() {
+	_, err = build_event_handler.LookupInvocationWithCallback(ctx, s.env, iid, func(event *inpb.InvocationEvent) error {
 		action := &apipb.Action{
 			Id: &apipb.Action_Id{
-				InvocationId: inv.InvocationId,
+				InvocationId: iid,
 			},
 		}
-		action = api_common.FillActionFromBuildEvent(event.BuildEvent, action)
+		action = api_common.FillActionFromBuildEvent(event.GetBuildEvent(), action)
 
 		// Filter to only selected actions.
 		if action != nil && actionMatchesActionSelector(action, req.GetSelector()) {
-			action = api_common.FillActionOutputFilesFromBuildEvent(event.BuildEvent, action)
+			action = api_common.FillActionOutputFilesFromBuildEvent(event.GetBuildEvent(), action)
 			rsp.Action = append(rsp.Action, action)
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return rsp, nil
@@ -418,20 +416,16 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	urlStr := strings.TrimPrefix(parsedURL.RequestURI(), "/")
 
 	var resourceName *rspb.ResourceName
-	if digest.IsActionCacheResourceName(urlStr) {
-		parsedRN, err := digest.ParseActionCacheResourceName(urlStr)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err)
-		}
-		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_AC, parsedRN.GetDigestFunction()).ToProto()
-	} else if digest.IsDownloadResourceName(urlStr) {
-		parsedRN, err := digest.ParseDownloadResourceName(urlStr)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err)
-		}
-		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_CAS, parsedRN.GetDigestFunction()).ToProto()
+
+	parsedACRN, err := digest.ParseActionCacheResourceName(urlStr)
+	if err == nil {
+		resourceName = digest.NewResourceName(parsedACRN.GetDigest(), parsedACRN.GetInstanceName(), rspb.CacheType_AC, parsedACRN.GetDigestFunction()).ToProto()
 	} else {
-		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
+		parsedCASRN, err := digest.ParseDownloadResourceName(urlStr)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
+		}
+		resourceName = digest.NewResourceName(parsedCASRN.GetDigest(), parsedCASRN.GetInstanceName(), rspb.CacheType_CAS, parsedCASRN.GetDigestFunction()).ToProto()
 	}
 
 	err = s.env.GetCache().Delete(ctx, resourceName)
@@ -500,23 +494,6 @@ func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Reque
 	}
 	handler := promhttp.HandlerFor(reg, opts)
 	handler.ServeHTTP(w, r)
-}
-
-// Returns true if a selector has an empty target ID or matches the target's ID or tag
-func targetMatchesTargetSelector(target *apipb.Target, selector *apipb.TargetSelector) bool {
-	if selector.Label != "" {
-		return selector.Label == target.Label
-	}
-
-	if selector.Tag != "" {
-		for _, tag := range target.GetTag() {
-			if tag == selector.Tag {
-				return true
-			}
-		}
-		return false
-	}
-	return selector.TargetId == "" || selector.TargetId == target.GetId().TargetId
 }
 
 // Returns true if a selector doesn't specify a particular id or matches the target's ID
@@ -599,6 +576,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		RepoState: &gitpb.RepoState{
 			CommitSha: req.GetCommitSha(),
 			Branch:    req.GetBranch(),
+			Patch:     req.GetPatches(),
 		},
 		Steps:          steps,
 		Async:          req.GetAsync(),

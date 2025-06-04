@@ -23,6 +23,7 @@ import (
 	_ "embed"
 	mrand "math/rand/v2"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -94,6 +95,11 @@ const (
 
 var (
 	versionDirRegexp = regexp.MustCompile(`^v\d+$`)
+)
+
+// Set via x_defs from the BUILD file
+var (
+	crunRlocationpath string
 )
 
 //go:embed seccomp.json
@@ -200,6 +206,18 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 
 	// Try to find a usable runtime if the runtime flag is not explicitly set.
 	rt := *Runtime
+	if rt == "" && crunRlocationpath != "" {
+		runfilePath, err := runfiles.Rlocation(crunRlocationpath)
+		if err != nil {
+			log.Infof("crun rlocation lookup failed (falling back to PATH lookup): %s", err)
+		} else {
+			if _, err := os.Stat(runfilePath); err != nil {
+				log.Infof("Failed to stat crun binary from runfiles (falling back to PATH lookup): %s", err)
+			} else {
+				rt = runfilePath
+			}
+		}
+	}
 	if rt == "" {
 		for _, r := range []string{"crun", "runc", "runsc"} {
 			if _, err := exec.LookPath(r); err == nil {
@@ -211,6 +229,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if rt == "" {
 		return nil, status.FailedPreconditionError("could not find a usable container runtime in PATH")
 	}
+	log.Infof("Located OCI runtime binary at %s", rt)
 
 	// Configure the tini binary path.
 	binDir := filepath.Join(buildRoot, "executor", "bin")
@@ -289,7 +308,11 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err := cleanStaleImageCacheDirs(imageCacheRoot); err != nil {
 		log.Warningf("Failed to clean up old image cache versions: %s", err)
 	}
-	imageStore, err := NewImageStore(imageCacheRoot)
+	resolver, err := oci.NewResolver(env)
+	if err != nil {
+		return nil, err
+	}
+	imageStore, err := NewImageStore(resolver, imageCacheRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -740,6 +763,13 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	// it can be diagnosed.
 	if err := c.checkPIDLimitExceeded(ctx, res); err != nil {
 		log.CtxWarning(ctx, status.Message(err))
+	}
+
+	networkStats, err := c.network.Stats(ctx)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get network stats: %s", err)
+	} else {
+		res.UsageStats.NetworkStats = networkStats
 	}
 
 	return res
@@ -1396,11 +1426,7 @@ type ImageLayer struct {
 	DiffID ctr.Hash
 }
 
-func NewImageStore(layersDir string) (*ImageStore, error) {
-	resolver, err := oci.NewResolver()
-	if err != nil {
-		return nil, err
-	}
+func NewImageStore(resolver *oci.Resolver, layersDir string) (*ImageStore, error) {
 	return &ImageStore{
 		resolver:     resolver,
 		layersDir:    layersDir,

@@ -46,10 +46,12 @@ func TestNegativeStarlarkFlagWithValue(t *testing.T) {
 			p, err := GetParser()
 			require.NoError(t, err)
 			defer delete(p.ByName, "@io_bazel_rules_docker//transitions:enable")
-			expandedArgs, err := p.expandConfigs(ws, test.Args)
+			parsedArgs, err := ParseArgs(test.Args)
+			require.NoError(t, err)
+			expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 			require.NoError(t, err, "error expanding %s", test.Args)
-			assert.Equal(t, test.Expanded, expandedArgs)
+			assert.Equal(t, test.Expanded, expandedArgs.Format())
 		})
 	}
 }
@@ -83,10 +85,12 @@ func TestParseBazelrc_Simple(t *testing.T) {
 			p, err := GetParser()
 			require.NoError(t, err)
 			defer delete(p.ByName, "@io_bazel_rules_docker//transitions:enable")
-			expandedArgs, err := p.expandConfigs(ws, test.Args)
+			parsedArgs, err := ParseArgs(test.Args)
+			require.NoError(t, err)
+			expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 			require.NoError(t, err, "error expanding %s", test.Args)
-			assert.Equal(t, test.Expanded, expandedArgs)
+			assert.Equal(t, test.Expanded, expandedArgs.Format())
 		})
 	}
 }
@@ -98,8 +102,8 @@ func TestParseBazelrc_Complex(t *testing.T) {
 		"import.bazelrc": `
 common:import --build_metadata=IMPORTED_FLAG=1
 `,
-		"explicit_import_1.bazelrc": "--build_metadata=EXPLICIT_IMPORT_1=1",
-		"explicit_import_2.bazelrc": "--build_metadata=EXPLICIT_IMPORT_2=1",
+		"explicit_import_1.bazelrc": "common --build_metadata=EXPLICIT_IMPORT_1=1",
+		"explicit_import_2.bazelrc": "common --build_metadata=EXPLICIT_IMPORT_2=1",
 		".bazelrc": `
 
 # COMMENT
@@ -110,10 +114,11 @@ startup --startup_flag_1
 startup:config --startup_configs_are_not_supported_so_this_flag_should_be_ignored
 
 # continuations are allowed \
---build_metadata=THIS_IS_NOT_A_FLAG_SINCE_IT_IS_PART_OF_THE_PREVIOUS_LINE=1
+common --build_metadata=THIS_IS_NOT_A_FLAG_SINCE_IT_IS_PART_OF_THE_PREVIOUS_LINE=1
 
---invalid_common_flag_1          # trailing comments are allowed
---build_metadata=VALID_COMMON_FLAG=1
+common --invalid_common_flag_1          # trailing comments are allowed
+--build_metadata=INVALID_COMMON_FLAG=1
+common --build_metadata=VALID_COMMON_FLAG=1
 common --invalid_common_flag_2
 common --build_metadata=VALID_COMMON_FLAG=2
 common:foo --build_metadata=COMMON_CONFIG_FOO=1
@@ -146,11 +151,12 @@ try-import %workspace%/NONEXISTENT.bazelrc
 
 	for _, tc := range []struct {
 		args                 []string
+		errorContents        []string
 		expectedExpandedArgs []string
 	}{
 		{
-			[]string{"query"},
-			[]string{
+			args: []string{"query"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
@@ -159,11 +165,11 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{
+			args: []string{
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
 				"query",
 			},
-			[]string{
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
@@ -173,12 +179,12 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{
+			args: []string{
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_2.bazelrc"),
 				"query",
 			},
-			[]string{
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
@@ -189,7 +195,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{
+			args: []string{
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
 				// Passing --bazelrc=/dev/null causes subsequent --bazelrc args
 				// to be ignored.
@@ -197,7 +203,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_2.bazelrc"),
 				"query",
 			},
-			[]string{
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"query",
@@ -207,27 +213,19 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{
+			args: []string{
 				"--ignore_all_rc_files",
 				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
 				"build",
 				"--config=foo",
 			},
-			[]string{
-				"--ignore_all_rc_files",
-				// Note: when `--ignore_all_rc_files` is set, it's OK to leave
-				// --bazelrc flags as-is, since Bazel will ignore these when it
-				// actually gets invoked. We also don't expand --config args,
-				// since bazel will fail anyway due to configs being effectively
-				// disabled when --ignore_all_rc_files is set.
-				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
-				"build",
-				"--config=foo",
+			errorContents: []string{
+				"config value 'foo' is not defined in any .rc file",
 			},
 		},
 		{
-			[]string{"--explicit_startup_flag", "query"},
-			[]string{
+			args: []string{"--explicit_startup_flag", "query"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--explicit_startup_flag",
 				"--ignore_all_rc_files",
@@ -237,8 +235,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"build"},
-			[]string{
+			args: []string{"build"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -248,8 +246,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"build", "--explicit_flag"},
-			[]string{
+			args: []string{"build", "--explicit_flag"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -260,8 +258,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"build", "--config=foo"},
-			[]string{
+			args: []string{"build", "--config=foo"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -276,8 +274,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"build", "--config=foo", "--config", "bar"},
-			[]string{
+			args: []string{"build", "--config=foo", "--config", "bar"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -294,8 +292,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"test"},
-			[]string{
+			args: []string{"test"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"test",
@@ -308,8 +306,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 		{
-			[]string{"build", "--config=workspace_status_with_space"},
-			[]string{
+			args: []string{"build", "--config=workspace_status_with_space"},
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -322,11 +320,11 @@ try-import %workspace%/NONEXISTENT.bazelrc
 		// Test parsing flags that do not require a value to be set, like
 		// --remote_download_minimal or --java_debug
 		{
-			[]string{
+			args: []string{
 				"build",
 				"--config=no_value_flag",
 			},
-			[]string{
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -339,11 +337,11 @@ try-import %workspace%/NONEXISTENT.bazelrc
 		// Test parsing a config that should have been imported with
 		// try-import %workspace%/<import_name>.bazelrc
 		{
-			[]string{
+			args: []string{
 				"build",
 				"--config=import",
 			},
-			[]string{
+			expectedExpandedArgs: []string{
 				"--startup_flag_1",
 				"--ignore_all_rc_files",
 				"build",
@@ -355,12 +353,20 @@ try-import %workspace%/NONEXISTENT.bazelrc
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			p, err := GetParser()
+			parsedArgs, err := ParseArgs(tc.args)
 			require.NoError(t, err)
-			expandedArgs, err := p.expandConfigs(ws, tc.args)
+			expandedArgs, err := resolveArgs(parsedArgs, ws)
 
-			require.NoError(t, err, "error expanding %s", tc.args)
-			assert.Equal(t, tc.expectedExpandedArgs, expandedArgs)
+			if tc.errorContents != nil {
+				for _, ec := range tc.errorContents {
+					require.ErrorContains(t, err, ec)
+				}
+			} else {
+				require.NoError(t, err, "error expanding %s", tc.args)
+			}
+			if tc.expectedExpandedArgs != nil {
+				assert.Equal(t, tc.expectedExpandedArgs, expandedArgs.Format())
+			}
 		})
 	}
 }
@@ -378,13 +384,15 @@ build:d --config=d
 `,
 	})
 
-	p, err := GetParser()
+	parsedArgs, err := ParseArgs([]string{"build", "--config=a"})
 	require.NoError(t, err)
-	_, err = p.expandConfigs(ws, []string{"build", "--config=a"})
-	require.Error(t, err)
+	_, err = resolveArgs(parsedArgs, ws)
+
 	assert.Contains(t, err.Error(), "circular --config reference detected: a -> b -> c -> a")
 
-	_, err = p.expandConfigs(ws, []string{"build", "--config=d"})
+	parsedArgs, err = ParseArgs([]string{"build", "--config=d"})
+	require.NoError(t, err)
+	_, err = resolveArgs(parsedArgs, ws)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular --config reference detected: d -> d")
 }
@@ -400,11 +408,9 @@ func TestParseBazelrc_CircularImport(t *testing.T) {
 
 	p, err := GetParser()
 	require.NoError(t, err)
-	_, err = p.expandConfigs(ws, []string{"build"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "circular import detected:")
-
-	_, err = p.expandConfigs(ws, []string{"build"})
+	args, err := p.ParseArgs([]string{"build"})
+	require.NoError(t, err)
+	_, _, err = p.consumeAndParseRCFiles(args, ws)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular import detected:")
 }
@@ -471,12 +477,12 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			p, err := GetParser()
+			parsedArgs, err := ParseArgs(test.args)
 			require.NoError(t, err)
-			expandedArgs, err := p.expandConfigs(ws, test.args)
+			expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 			require.NoError(t, err, "error expanding %s", test.args)
-			assert.Equal(t, test.expectedExpandedArgs, expandedArgs)
+			assert.Equal(t, test.expectedExpandedArgs, expandedArgs.Format())
 		})
 	}
 }
@@ -688,15 +694,12 @@ func TestCommonUndocumentedOption(t *testing.T) {
 		"build",
 		"--experimental_skip_ttvs_for_genquery",
 	}
-	p, err := GetParser()
+	parsedArgs, err := ParseArgs(args)
 	require.NoError(t, err)
-	expandedArgs, err := p.expandConfigs(
-		ws,
-		args,
-	)
+	expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 	require.NoError(t, err, "error expanding %s", args)
-	assert.Equal(t, expectedExpandedArgs, expandedArgs)
+	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
 }
 
 func TestCommonPositionalArgument(t *testing.T) {
@@ -715,13 +718,10 @@ func TestCommonPositionalArgument(t *testing.T) {
 		"build",
 		"foo",
 	}
-	p, err := GetParser()
+	parsedArgs, err := ParseArgs(args)
 	require.NoError(t, err)
-	expandedArgs, err := p.expandConfigs(
-		ws,
-		args,
-	)
+	expandedArgs, err := resolveArgs(parsedArgs, ws)
 
 	require.NoError(t, err, "error expanding %s", args)
-	assert.Equal(t, expectedExpandedArgs, expandedArgs)
+	assert.Equal(t, expectedExpandedArgs, expandedArgs.Format())
 }

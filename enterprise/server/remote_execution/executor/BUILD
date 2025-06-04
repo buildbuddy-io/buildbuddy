@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -37,5 +37,31 @@ go_library(
         "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "executor_test",
+    srcs = ["executor_test.go"],
+    deps = [
+        ":executor",
+        "//enterprise/server/remote_execution/commandutil",
+        "//enterprise/server/remote_execution/operation",
+        "//enterprise/server/test/integration/remote_execution/rbetest",
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
+        "//server/interfaces",
+        "//server/remote_cache/cachetools",
+        "//server/remote_cache/digest",
+        "//server/testutil/testauth",
+        "//server/testutil/testcache",
+        "//server/testutil/testenv",
+        "//server/testutil/testfs",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto//googleapis/longrunning",
     ],
 )

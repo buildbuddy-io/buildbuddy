@@ -129,6 +129,8 @@ var (
 		// Codesearch and Kythe
 		"Search",
 		"KytheProxy",
+		"Index",
+		"RepoStatus",
 		// Workspace management
 		"GetWorkspace",
 		"SaveWorkspace",
@@ -149,6 +151,7 @@ var (
 		"LinkGitHubAppInstallation",
 		"GetGitHubAppInstallations",
 		"UnlinkGitHubAppInstallation",
+		"UpdateGitHubAppInstallation",
 		// Org GitHub repo management
 		"GetAccessibleGitHubRepos",
 		"GetGitHubAppInstallPath",

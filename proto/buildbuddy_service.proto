@@ -9,6 +9,7 @@ import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
 import "proto/encryption.proto";
 import "proto/grp.proto";
+import "proto/index.proto";
 import "proto/invocation.proto";
 import "proto/iprules.proto";
 import "proto/runner.proto";
@@ -176,6 +177,8 @@ service BuildBuddyService {
       returns (github.GetAppInstallationsResponse);
   rpc UnlinkGitHubAppInstallation(github.UnlinkAppInstallationRequest)
       returns (github.UnlinkAppInstallationResponse);
+  rpc UpdateGitHubAppInstallation(github.UpdateGitHubAppInstallationRequest)
+      returns (github.UpdateGitHubAppInstallationResponse);
 
   // Linked Git repositories API
   rpc GetLinkedGitHubRepos(github.GetLinkedReposRequest)
@@ -230,6 +233,8 @@ service BuildBuddyService {
   // Codesearch and Kythe API
   rpc Search(search.SearchRequest) returns (search.SearchResponse);
   rpc KytheProxy(search.KytheRequest) returns (search.KytheResponse);
+  rpc Index(index.IndexRequest) returns (index.IndexResponse);
+  rpc RepoStatus(index.RepoStatusRequest) returns (index.RepoStatusResponse);
 
   // Encryption API
   rpc SetEncryptionConfig(encryption.SetEncryptionConfigRequest)

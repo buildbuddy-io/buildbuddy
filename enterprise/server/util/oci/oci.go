@@ -1,14 +1,18 @@
 package oci
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
 	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -21,6 +25,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -30,6 +35,9 @@ var (
 	mirrors                = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
+
+	useCachePercent       = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls to use the cache (individaul cache flags must also be enabled).")
+	writeManifestsToCache = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
 )
 
 type MirrorConfig struct {
@@ -201,10 +209,12 @@ func (c Credentials) Equals(o Credentials) bool {
 }
 
 type Resolver struct {
+	env environment.Env
+
 	allowedPrivateIPs []*net.IPNet
 }
 
-func NewResolver() (*Resolver, error) {
+func NewResolver(env environment.Env) (*Resolver, error) {
 	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
 	for _, r := range *allowedPrivateIPs {
 		_, ipNet, err := net.ParseCIDR(r)
@@ -213,17 +223,91 @@ func NewResolver() (*Resolver, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
-	return &Resolver{allowedPrivateIPs: allowedPrivateIPNets}, nil
+	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
+}
+
+// AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
+// Any errors encountered are returned.
+// Otherwise, the function returns nil and it is safe to assume the input credentials grant access
+// to the image.
+func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) error {
+	imageRef, err := gcrname.ParseReference(imageName)
+	if err != nil {
+		return status.InvalidArgumentErrorf("invalid image %q", imageName)
+	}
+	log.CtxInfof(ctx, "Authenticating with registry %q", imageRef.Context().RegistryStr())
+
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+
+	_, err = remote.Head(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+	}
+	return nil
 }
 
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
 	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
+	log.CtxInfof(ctx, "Resolving image in registry %q", imageRef.Context().RegistryStr())
 
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+
+	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
+
+	useCache := false
+	if *useCachePercent >= 100 {
+		useCache = true
+	} else if *useCachePercent > 0 && *useCachePercent < 100 {
+		useCache = rand.Intn(100) < *useCachePercent
+	}
+
+	if useCache {
+		desc := &cachingDescriptor{
+			Descriptor: remoteDesc,
+			acClient:   r.env.GetActionCacheClient(),
+			ctx:        ctx,
+		}
+		img, err := desc.Image()
+		if err != nil {
+			return nil, status.UnknownErrorf("could not get image from caching descriptor: %s", err)
+		}
+		return img, nil
+	}
+
+	// Image() should resolve both images and image indices to an appropriate image
+	img, err := remoteDesc.Image()
+	if err != nil {
+		switch remoteDesc.MediaType {
+		// This is an "image index", a meta-manifest that contains a list of
+		// {platform props, manifest hash} properties to allow client to decide
+		// which manifest they want to use based on platform.
+		case types.OCIImageIndex, types.DockerManifestList:
+			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
+		case types.OCIManifestSchema1, types.DockerManifestSchema2:
+			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
+		default:
+			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
+		}
+	}
+	return img, nil
+}
+
+func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, credentials Credentials) []remote.Option {
 	remoteOpts := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithPlatform(
@@ -247,30 +331,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	} else {
 		remoteOpts = append(remoteOpts, remote.WithTransport(tr))
 	}
-	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-	}
-
-	// Image() should resolve both images and image indices to an appropriate image
-	img, err := remoteDesc.Image()
-	if err != nil {
-		switch remoteDesc.MediaType {
-		// This is an "image index", a meta-manifest that contains a list of
-		// {platform props, manifest hash} properties to allow client to decide
-		// which manifest they want to use based on platform.
-		case types.OCIImageIndex, types.DockerManifestList:
-			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
-		case types.OCIManifestSchema1, types.DockerManifestSchema2:
-			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
-		default:
-			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
-		}
-	}
-	return img, nil
+	return remoteOpts
 }
 
 // RuntimePlatform returns the platform on which the program is being executed,
@@ -322,4 +383,125 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 		}
 	}
 	return t.inner.RoundTrip(in)
+}
+
+type cachingDescriptor struct {
+	*remote.Descriptor
+
+	repository gcrname.Repository
+	acClient   repb.ActionCacheClient
+	ctx        context.Context
+}
+
+func (d *cachingDescriptor) Image() (gcr.Image, error) {
+	remoteImage, err := d.Descriptor.Image()
+	if err != nil {
+		return nil, err
+	}
+	return &cachingImage{
+		Image:      remoteImage,
+		repository: d.repository,
+		acClient:   d.acClient,
+		ctx:        d.ctx,
+	}, nil
+}
+
+type cachingImage struct {
+	gcr.Image
+
+	repository gcrname.Repository
+	acClient   repb.ActionCacheClient
+	ctx        context.Context
+
+	cachedManifest    *gcr.Manifest
+	cachedRawManifest []byte
+}
+
+func (i *cachingImage) Layers() ([]gcr.Layer, error) {
+	return i.Image.Layers()
+}
+
+func (i *cachingImage) MediaType() (types.MediaType, error) {
+	return i.Image.MediaType()
+}
+
+func (i *cachingImage) Size() (int64, error) {
+	return i.Image.Size()
+}
+
+func (i *cachingImage) ConfigName() (gcr.Hash, error) {
+	return i.Image.ConfigName()
+}
+
+func (i *cachingImage) ConfigFile() (*gcr.ConfigFile, error) {
+	return i.Image.ConfigFile()
+}
+
+func (i *cachingImage) RawConfigFile() ([]byte, error) {
+	return i.Image.RawConfigFile()
+}
+
+func (i *cachingImage) Digest() (gcr.Hash, error) {
+	return i.Image.Digest()
+}
+
+func (i *cachingImage) Manifest() (*gcr.Manifest, error) {
+	if i.cachedManifest != nil {
+		return i.cachedManifest, nil
+	}
+	rawManifest, err := i.RawManifest()
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := gcr.ParseManifest(bytes.NewReader(rawManifest))
+	if err != nil {
+		return nil, err
+	}
+	i.cachedManifest = manifest
+	return i.cachedManifest, nil
+}
+
+// RawManifest returns the raw manifest bytes from the upstream registry,
+// optionally writing it to the Action Cache if that behavior is enabled.
+func (i *cachingImage) RawManifest() ([]byte, error) {
+	if i.cachedRawManifest != nil {
+		return i.cachedRawManifest, nil
+	}
+	remoteRawManifest, err := i.Image.RawManifest()
+	if err != nil {
+		return nil, err
+	}
+	i.cachedRawManifest = remoteRawManifest
+
+	if *writeManifestsToCache {
+		mediaType, err := i.MediaType()
+		if err != nil {
+			log.Warningf("Could not fetch media type for manifest: %s", err)
+			return remoteRawManifest, nil
+		}
+		digest, err := i.Digest()
+		if err != nil {
+			log.Warningf("Could not fetch digest for manifest: %s", err)
+			return remoteRawManifest, nil
+		}
+		err = ocicache.WriteManifestToAC(i.ctx, remoteRawManifest, i.acClient, i.repository, digest, string(mediaType))
+		if err != nil {
+			log.Warningf("Could not write manifest to the cache: %s", err)
+			return remoteRawManifest, nil
+		}
+	}
+
+	return i.cachedRawManifest, nil
+}
+
+// LayerByDigest returns a Layer for interacting with a particular layer of
+// the image, looking it up by "digest" (the compressed hash).
+func (i *cachingImage) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
+	return i.Image.LayerByDigest(digest)
+}
+
+// LayerByDiffID is an analog to LayerByDigest, looking up by "diff id"
+// (the uncompressed hash).
+func (i *cachingImage) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
+	return i.Image.LayerByDiffID(diffID)
 }

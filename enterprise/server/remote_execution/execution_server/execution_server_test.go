@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -45,7 +46,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	gstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -88,13 +88,16 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 	return true, nil
 }
 
-func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn) {
+func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	env := testenv.GetTestEnv(t)
 
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
-	redisTarget := testredis.Start(t).Target
-	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
+	r := testredis.Start(t)
+	rdb := redis.NewClient(redisutil.TargetToOptions(r.Target))
+	env.SetDefaultRedisClient(r.Client())
+	err := redis_execution_collector.Register(env)
+	require.NoError(t, err)
 	env.SetRemoteExecutionRedisClient(rdb)
 	env.SetRemoteExecutionRedisPubSubClient(rdb)
 
@@ -115,7 +118,7 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn) {
 
 	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), lis)
 	require.NoError(t, err)
-	return env, conn
+	return env, conn, r
 }
 
 func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
@@ -136,7 +139,7 @@ func createInvocation(ctx context.Context, t *testing.T, db interfaces.DB, inv *
 }
 
 func TestDispatch(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -180,7 +183,7 @@ func TestDispatch(t *testing.T) {
 }
 
 func TestCancel(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -219,7 +222,7 @@ func TestCancel(t *testing.T) {
 }
 
 func TestCancel_SkipCompletedExecution(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -259,7 +262,7 @@ func TestCancel_SkipCompletedExecution(t *testing.T) {
 }
 
 func TestCancel_MultipleExecutions(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -306,7 +309,7 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 }
 
 func TestCancel_InvocationAlreadyCompleted(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -399,6 +402,29 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			publishMoreMetadata:    true,
 		},
+		{
+			name:                   "PublishMoreMetadata_PrimaryDBAndRedisDoubleWrite",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			publishMoreMetadata:    true,
+			flagOverrides: map[string]any{
+				"remote_execution.write_execution_progress_state_to_redis": true,
+				"remote_execution.write_executions_to_primary_db":          true,
+			},
+		},
+		{
+			name:                   "PublishMoreMetadata_NoPrimaryDB_RedisOnly",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			publishMoreMetadata:    true,
+			flagOverrides: map[string]any{
+				"remote_execution.write_execution_progress_state_to_redis": true,
+				"remote_execution.write_executions_to_primary_db":          false,
+			},
+		},
+		{
+			name:                   "RedisRestart",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			redisRestart:           true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			testExecuteAndPublishOperation(t, test)
@@ -409,56 +435,29 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 type publishTest struct {
 	name                     string
 	platformOverrides        map[string]string
+	flagOverrides            map[string]any
 	expectedSelfHosted       bool
 	expectedExecutionUsage   tables.UsageCounts
 	cachedResult, doNotCache bool
 	status                   error
 	exitCode                 int32
 	publishMoreMetadata      bool
-}
-
-type fakeCollector struct {
-	interfaces.ExecutionCollector
-	invocationLinks []*sipb.StoredInvocationLink
-	executions      []*repb.StoredExecution
-}
-
-func (fc *fakeCollector) DeleteExecutionInvocationLinks(_ context.Context, _ string) error {
-	return nil
-}
-
-func (fc *fakeCollector) AddExecutionInvocationLink(_ context.Context, link *sipb.StoredInvocationLink, _ bool) error {
-	fc.invocationLinks = append(fc.invocationLinks, link)
-	return nil
-}
-
-func (fc *fakeCollector) GetExecutionInvocationLinks(_ context.Context, executionID string) ([]*sipb.StoredInvocationLink, error) {
-	var res []*sipb.StoredInvocationLink
-	for _, link := range fc.invocationLinks {
-		if link.GetExecutionId() == executionID {
-			res = append(res, link)
-		}
-	}
-	return res, nil
-}
-
-func (fc *fakeCollector) GetInvocation(_ context.Context, invocationID string) (*sipb.StoredInvocation, error) {
-	// return nil to always force AppendExecution calls.
-	return nil, nil
-}
-
-func (fc *fakeCollector) AppendExecution(_ context.Context, _ string, execution *repb.StoredExecution) error {
-	fc.executions = append(fc.executions, execution)
-	return nil
+	redisRestart             bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
-	env, conn := setupEnv(t)
-	execCollector := new(fakeCollector)
-	env.SetExecutionCollector(execCollector)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	for k, v := range test.flagOverrides {
+		flags.Set(t, k, v)
+	}
+	env, conn, r := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
 
 	const instanceName = "test-instance"
 	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
@@ -517,6 +516,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		)
 	}
 
+	if test.redisRestart {
+		r.Restart()
+	}
+
 	executorGroupID := sharedPoolGroupID
 	if test.expectedSelfHosted {
 		executorGroupID = selfHostedPoolGroupID
@@ -546,6 +549,12 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		}
 		usageStats.Timeline = &repb.UsageTimeline{
 			StartTime: tspb.New(workerStartTime),
+		}
+		usageStats.NetworkStats = &repb.NetworkStats{
+			BytesSent:       1000,
+			PacketsSent:     3000,
+			BytesReceived:   2000,
+			PacketsReceived: 4000,
 		}
 	} else {
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
@@ -637,29 +646,42 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		},
 	}, executionUsages)
 
+	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+	require.NoError(t, err)
+
+	if test.redisRestart {
+		assert.Equal(t, 0, len(collectedExecutions))
+		return
+	}
+
 	// Check that we recorded the executions
-	assert.Equal(t, 1, len(execCollector.executions))
+	assert.Equal(t, 1, len(collectedExecutions))
 	expectedExecution := &repb.StoredExecution{
-		ExecutionId:            taskID,
-		InvocationLinkType:     1,
-		InvocationUuid:         strings.ReplaceAll(invocationID, "-", ""),
-		Stage:                  4,
-		StatusCode:             int32(gstatus.Code(test.status)),
-		StatusMessage:          gstatus.Convert(test.status).Proto().GetMessage(),
-		ExitCode:               test.exitCode,
-		DoNotCache:             test.doNotCache,
-		CachedResult:           test.cachedResult,
-		RequestedComputeUnits:  2.5,
-		RequestedFreeDiskBytes: 1000,
-		RequestedMemoryBytes:   2000,
-		RequestedMilliCpu:      1500,
-		RequestedIsolationType: "oci",
-		RequestedTimeoutUsec:   10000000,
-		TargetLabel:            "//some:test",
-		ActionMnemonic:         "TestRunner",
-		SelfHosted:             test.expectedSelfHosted,
-		Region:                 "test-region",
-		CommandSnippet:         "test",
+		ExecutionId:                  taskID,
+		GroupId:                      "group1",
+		UserId:                       "user1",
+		InvocationLinkType:           1,
+		InvocationUuid:               strings.ReplaceAll(invocationID, "-", ""),
+		Stage:                        4,
+		StatusCode:                   int32(gstatus.Code(test.status)),
+		StatusMessage:                gstatus.Convert(test.status).Proto().GetMessage(),
+		ExitCode:                     test.exitCode,
+		DoNotCache:                   test.doNotCache,
+		CachedResult:                 test.cachedResult,
+		RequestedComputeUnits:        2.5,
+		RequestedFreeDiskBytes:       1000,
+		RequestedMemoryBytes:         2000,
+		RequestedMilliCpu:            1500,
+		RequestedIsolationType:       "oci",
+		RequestedTimeoutUsec:         10000000,
+		TargetLabel:                  "//some:test",
+		ActionMnemonic:               "TestRunner",
+		SelfHosted:                   test.expectedSelfHosted,
+		Region:                       "test-region",
+		CommandSnippet:               "test",
+		QueuedTimestampUsec:          queuedTime.UnixMicro(),
+		WorkerStartTimestampUsec:     workerStartTime.UnixMicro(),
+		WorkerCompletedTimestampUsec: workerEndTime.UnixMicro(),
 	}
 	if test.publishMoreMetadata {
 		expectedExecution.ExecutionPriority = 999
@@ -673,10 +695,14 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.PredictedFreeDiskBytes = 3003
 		expectedExecution.EffectiveIsolationType = "firecracker"
 		expectedExecution.EffectiveTimeoutUsec = 11000000
+		expectedExecution.NetworkBytesSent = 1000
+		expectedExecution.NetworkBytesReceived = 2000
+		expectedExecution.NetworkPacketsSent = 3000
+		expectedExecution.NetworkPacketsReceived = 4000
 	}
 	diff := cmp.Diff(
 		expectedExecution,
-		execCollector.executions[0],
+		collectedExecutions[0],
 		protocmp.Transform(),
 		protocmp.IgnoreFields(
 			&repb.StoredExecution{},
@@ -687,7 +713,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 }
 
 func TestMarkFailed(t *testing.T) {
-	env, _ := setupEnv(t)
+	env, _, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -730,16 +756,17 @@ func TestMarkFailed(t *testing.T) {
 
 	require.Equal(t, int64(repb.ExecutionStage_COMPLETED), ex.Stage)
 
-	err = s.MarkExecutionFailed(ctx, "blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1", status.InternalError("It didn't work"))
+	err = s.MarkExecutionFailed(ctx, "uploads/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1", status.InternalError("It didn't work"))
 	require.True(t, status.IsNotFoundError(err), "error should be NotFoundError, but was %s", err)
 }
 
 func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
-	env, conn := setupEnv(t)
+	env, conn, _ := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
-	execCollector := new(fakeCollector)
-	env.SetExecutionCollector(execCollector)
+	redis := testredis.Start(t)
+	env.SetDefaultRedisClient(redis.Client())
+	redis_execution_collector.Register(env)
 
 	// Start an execution with an empty invocation ID.
 	clientCtx := context.Background()
@@ -754,11 +781,13 @@ func TestInvocationLink_EmptyInvocationID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wait for the execution to be accepted by the server.
-	_, err = executionClient.Recv()
+	rsp, err := executionClient.Recv()
 	require.NoError(t, err)
 
 	// No invocation links should be recorded.
-	require.Empty(t, execCollector.invocationLinks)
+	invocationLinks, err := env.GetExecutionCollector().GetExecutionInvocationLinks(clientCtx, rsp.GetName())
+	require.NoError(t, err)
+	require.Empty(t, invocationLinks)
 
 	err = executionClient.CloseSend()
 	require.NoError(t, err)

@@ -163,6 +163,10 @@ func (pmk PebbleKey) CacheType() rspb.CacheType {
 	}
 }
 
+func (pmk PebbleKey) Partition() string {
+	return PartitionDirectoryPrefix + pmk.partID
+}
+
 func (pmk PebbleKey) Hash() string {
 	return pmk.hash
 }

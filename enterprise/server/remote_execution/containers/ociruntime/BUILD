@@ -1,10 +1,12 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//dockerfiles/test_images:defs.bzl", "NET_TOOLS_IMAGE")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
     name = "ociruntime",
     srcs = ["ociruntime.go"],
+    data = [":crun"],
     embedsrcs = [
         "hosts",
         "seccomp.json",
@@ -13,6 +15,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime",
     target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
+    x_defs = {
+        "crunRlocationpath": "$(rlocationpath :crun)",
+    },
     deps = [
         "//enterprise/server/remote_execution/block_io",
         "//enterprise/server/remote_execution/cgroup",
@@ -35,6 +40,7 @@ go_library(
         "//third_party/singleflight",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_opencontainers_runtime_spec//specs-go",
+        "@io_bazel_rules_go//go/runfiles",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
     ],
@@ -59,7 +65,7 @@ go_test(
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
-        "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:e904e2149194b94f4504fdfb3c7b2b71afa130708feb482fe9a9d557453fa8fd",
+        "test.container-image": "docker://" + NET_TOOLS_IMAGE,
         "test.EstimatedComputeUnits": "2",
         "test.EstimatedFreeDiskBytes": "10GB",
     },
@@ -81,6 +87,7 @@ go_test(
         "busyboxRlocationpath": "$(rlocationpath :busybox)",
         "ociBusyboxRlocationpath": "$(rlocationpath @busybox)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
+        "netToolsImageRef": NET_TOOLS_IMAGE,
     },
     deps = [
         ":ociruntime",

@@ -54,7 +54,9 @@ type Claims struct {
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
-	SAML                   bool                          `json:"saml,omitempty"`
+	// TODO(vadim): remove this field
+	SAML        bool `json:"saml,omitempty"`
+	CustomerSSO bool `json:"customer_sso,omitempty"`
 }
 
 func (c *Claims) GetAPIKeyID() string {
@@ -108,6 +110,10 @@ func (c *Claims) GetEnforceIPRules() bool {
 
 func (c *Claims) IsSAML() bool {
 	return c.SAML
+}
+
+func (c *Claims) IsCustomerSSO() bool {
+	return c.SAML || c.CustomerSSO
 }
 
 func ParseClaims(token string) (*Claims, error) {
@@ -303,7 +309,11 @@ func AssembleJWT(c *Claims) (string, error) {
 	return tokenString, err
 }
 
-func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Context {
+// Returns a context containing auth state for the provided Claims and auth
+// error. Note that this function assembles a JWT out of the provided Claims
+// and sets that in the context as well, so it should only be used in cases
+// where that is necessary.
+func AuthContextWithJWT(ctx context.Context, c *Claims, err error) context.Context {
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
@@ -312,6 +322,11 @@ func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Co
 		return authutil.AuthContextWithError(ctx, err)
 	}
 	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
+	return AuthContext(ctx, c)
+}
+
+// Returns a Context containing auth state for the the provided Claims.
+func AuthContext(ctx context.Context, c *Claims) context.Context {
 	ctx = context.WithValue(ctx, contextClaimsKey, c)
 	// Note: we clear the error here in case it was set initially by the
 	// authentication handler, but then we want to re-authenticate later on in the

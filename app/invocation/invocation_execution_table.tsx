@@ -13,6 +13,8 @@ import {
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
+import { joinReactNodes } from "../util/react";
+import { ChevronRight } from "lucide-react";
 
 interface Props {
   executions: execution_stats.Execution[];
@@ -28,6 +30,8 @@ export default class InvocationExecutionTable extends React.Component<Props> {
           if (!execution.actionDigest) {
             return;
           }
+          const workerDurationUsec = workerDuration(execution);
+          const durationSuffix = workerDurationUsec ? <> in {format.durationUsec(workerDurationUsec)}</> : null;
           return (
             <Link
               key={index}
@@ -36,24 +40,15 @@ export default class InvocationExecutionTable extends React.Component<Props> {
               <div className="invocation-execution-row-image">{status.icon}</div>
               <div>
                 <div className="execution-header">
-                  {execution.targetLabel && <span className="target-label">{execution.targetLabel}</span>}
-                  <DigestComponent digest={execution.actionDigest} />
+                  {renderExecutionLabel(execution)}
+                  <DigestComponent digest={execution.actionDigest} expanded={execution.targetLabel === ""} />
                 </div>
                 <div className="command-snippet">$ {execution.commandSnippet}</div>
                 <div className="status">
                   {!execution.status?.code && (
                     <span>
-                      {execution.exitCode ? (
-                        <>
-                          <span className="status-name failed">{status.name}</span> in{" "}
-                          {format.durationUsec(workerDuration(execution))} (exit code {execution.exitCode})
-                        </>
-                      ) : (
-                        <>
-                          <span className="status-name success">{status.name}</span> in{" "}
-                          {format.durationUsec(workerDuration(execution))}
-                        </>
-                      )}
+                      <span className={`status-name ${execution.exitCode ? "failed" : "success"}`}>{status.name}</span>
+                      {durationSuffix}
                     </span>
                   )}
                   {!!execution.status?.code && (
@@ -85,4 +80,19 @@ export default class InvocationExecutionTable extends React.Component<Props> {
       </div>
     );
   }
+}
+
+function renderExecutionLabel(execution: execution_stats.Execution) {
+  const nodes = [
+    execution.targetLabel && <span className="target-label">{execution.targetLabel}</span>,
+    execution.actionMnemonic && <span className="action-mnemonic">{execution.actionMnemonic}</span>,
+  ].filter((node) => node);
+  if (!nodes.length) {
+    return null;
+  }
+  return (
+    <span className="execution-label">
+      {joinReactNodes(nodes, <ChevronRight className="icon breadcrumb-separator" />)}
+    </span>
+  );
 }

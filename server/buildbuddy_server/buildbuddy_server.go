@@ -61,6 +61,7 @@ import (
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
@@ -1544,10 +1545,11 @@ func (s *BuildBuddyServer) GetGitHubAppInstallations(ctx context.Context, req *g
 	res := &ghpb.GetAppInstallationsResponse{}
 	for _, i := range installations {
 		res.Installations = append(res.Installations, &ghpb.AppInstallation{
-			GroupId:        i.GroupID,
-			InstallationId: i.InstallationID,
-			Owner:          i.Owner,
-			AppId:          i.AppID,
+			GroupId:                         i.GroupID,
+			InstallationId:                  i.InstallationID,
+			Owner:                           i.Owner,
+			AppId:                           i.AppID,
+			ReportCommitStatusesForCiBuilds: i.ReportCommitStatusesForCIBuilds,
 		})
 	}
 	return res, nil
@@ -1562,6 +1564,18 @@ func (s *BuildBuddyServer) UnlinkGitHubAppInstallation(ctx context.Context, req 
 		return nil, err
 	}
 	return a.UnlinkGitHubAppInstallation(ctx, req)
+}
+
+func (s *BuildBuddyServer) UpdateGitHubAppInstallation(ctx context.Context, req *ghpb.UpdateGitHubAppInstallationRequest) (*ghpb.UpdateGitHubAppInstallationResponse, error) {
+	gh := s.env.GetGitHubAppService()
+	if gh == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	a, err := gh.GetGitHubAppWithID(req.GetAppId())
+	if err != nil {
+		return nil, err
+	}
+	return a.UpdateGitHubAppInstallation(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error) {
@@ -1729,6 +1743,20 @@ func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) 
 func (s *BuildBuddyServer) KytheProxy(ctx context.Context, req *srpb.KytheRequest) (*srpb.KytheResponse, error) {
 	if css := s.env.GetCodesearchService(); css != nil {
 		return css.KytheProxy(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) Index(ctx context.Context, req *csinpb.IndexRequest) (*csinpb.IndexResponse, error) {
+	if css := s.env.GetCodesearchService(); css != nil {
+		return css.Index(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) RepoStatus(ctx context.Context, req *csinpb.RepoStatusRequest) (*csinpb.RepoStatusResponse, error) {
+	if css := s.env.GetCodesearchService(); css != nil {
+		return css.RepoStatus(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }

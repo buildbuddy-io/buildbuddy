@@ -396,6 +396,7 @@ proto_library(
     ],
     deps = [
         ":context_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
     ],
 )
 
@@ -603,6 +604,7 @@ proto_library(
         ":gcp_proto",
         ":github_proto",
         ":group_proto",
+        ":index_proto",
         ":invocation_proto",
         ":iprules_proto",
         ":quota_proto",
@@ -1299,6 +1301,7 @@ go_proto_library(
     proto = ":eventlog_proto",
     deps = [
         ":context_go_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
     ],
 )
 
@@ -1593,6 +1596,7 @@ go_proto_library(
         ":gcp_go_proto",
         ":github_go_proto",
         ":group_go_proto",
+        ":index_go_proto",
         ":invocation_go_proto",
         ":iprules_go_proto",
         ":quota_go_proto",
@@ -2276,6 +2280,7 @@ ts_proto_library(
     proto = ":eventlog_proto",
     deps = [
         ":context_ts_proto",
+        ":vtproto_ts_proto",
     ],
 )
 
@@ -2383,6 +2388,16 @@ ts_proto_library(
         ":kythe_filetree_ts_proto",
         ":kythe_graph_ts_proto",
         ":kythe_xref_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "index_ts_proto",
+    proto = ":index_proto",
+    deps = [
+        ":context_ts_proto",
+        ":git_ts_proto",
+        ":resource_ts_proto",
     ],
 )
 
@@ -2537,6 +2552,7 @@ ts_proto_library(
         ":gcp_ts_proto",
         ":github_ts_proto",
         ":group_ts_proto",
+        ":index_ts_proto",
         ":invocation_ts_proto",
         ":iprules_ts_proto",
         ":quota_ts_proto",

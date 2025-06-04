@@ -607,6 +607,7 @@ type FirecrackerContainer struct {
 	machine         *fcclient.Machine    // the firecracker machine object.
 	vmLog           *VMLog
 	env             environment.Env
+	resolver        *oci.Resolver
 
 	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
@@ -654,6 +655,11 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		return nil, err
 	}
 
+	resolver, err := oci.NewResolver(env)
+	if err != nil {
+		return nil, err
+	}
+
 	c := &FirecrackerContainer{
 		vmConfig:         opts.VMConfiguration.CloneVT(),
 		executorConfig:   opts.ExecutorConfig,
@@ -667,6 +673,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		cgroupSettings:   &scpb.CgroupSettings{},
 		blockDevice:      opts.BlockDevice,
 		env:              env,
+		resolver:         resolver,
 		task:             task,
 		loader:           loader,
 		vmLog:            vmLog,
@@ -1016,7 +1023,7 @@ func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 		return &fcpb.VMMetadata{
 			VmId:        c.id,
 			SnapshotId:  c.snapshotID,
-			SnapshotKey: c.SnapshotKeySet().BranchKey,
+			SnapshotKey: c.SnapshotKeySet().GetBranchKey(),
 		}
 	}
 	return c.snapshot.GetVMMetadata()
@@ -1904,7 +1911,10 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// Hardlink the ext4 image to the chroot at containerFSPath.
 	imageExt4Path, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
 	if err != nil {
-		return status.UnavailableErrorf("disk image is unavailable: %s", err)
+		return status.UnavailableErrorf("container image is unavailable: %s", err)
+	}
+	if imageExt4Path == "" {
+		return status.UnavailableErrorf("container image not found: %s", c.containerImage)
 	}
 	if err := os.Link(imageExt4Path, containerFSPath); err != nil {
 		return err
@@ -2071,16 +2081,31 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 	case res := <-resultCh:
 		cancelCgroupPoll()
 		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), res.UsageStats)
+		c.fillNetStats(ctx, res.UsageStats)
 		return res, true
 	case err := <-healthCheckErrCh:
 		cancelCgroupPoll()
 		res := commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
 		statsMu.Lock()
 		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), lastGuestStats)
+		c.fillNetStats(ctx, res.UsageStats)
 		statsMu.Unlock()
 		return res, false
 	}
 }
+
+func (c *FirecrackerContainer) fillNetStats(ctx context.Context, usageStats *repb.UsageStats) {
+	if c.network == nil {
+		return
+	}
+	netStats, err := c.network.Stats(ctx)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get network stats: %s", err)
+		return
+	}
+	usageStats.NetworkStats = netStats
+}
+
 func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn, error) {
 	if c.vmExec.conn == nil && c.vmExec.err == nil {
 		c.vmExec.conn, c.vmExec.err = c.dialVMExecServer(ctx)
@@ -2410,7 +2435,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.executorConfig.CacheRoot, c.containerImage, creds)
+	_, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}

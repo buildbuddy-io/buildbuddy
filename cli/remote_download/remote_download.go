@@ -107,7 +107,7 @@ func HandleRemoteDownload(args []string) (int, error) {
 	}
 	client := rapb.NewFetchClient(conn)
 
-	apiKey, err := login.GetAPIKeyInteractively()
+	apiKey, err := login.GetAPIKey()
 	if err != nil {
 		return -1, fmt.Errorf("failed to get API key: %w", err)
 	}

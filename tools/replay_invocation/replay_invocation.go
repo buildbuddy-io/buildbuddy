@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
@@ -28,7 +30,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
@@ -38,7 +42,10 @@ import (
 )
 
 var (
-	invocationID  = flag.String("invocation_id", "", "The invocation ID to replay.")
+	// Event source: can either be an invocation_id or build_event_json_file.
+	invocationID       = flag.String("invocation_id", "", "The invocation ID to replay.")
+	buildEventJSONFile = flag.String("build_event_json_file", "", "If set, replay from a build_event_json_file instead of from the original invocation ID.")
+
 	besBackend    = flag.String("bes_backend", "", "The bes backend to replay events to.")
 	besResultsURL = flag.String("bes_results_url", "", "The invocation URL prefix")
 	cacheTarget   = flag.String("cache_target", "", "Cache target where artifacts are copied, if applicable. Defaults to bes_backend.")
@@ -89,6 +96,13 @@ func main() {
 		}
 	}
 
+	if *buildEventJSONFile == "" && *invocationID == "" {
+		log.Fatalf("Must provide either invocation_id or build_event_json_file")
+	}
+	if *buildEventJSONFile != "" && *invocationID != "" {
+		log.Fatalf("Cannot set both invocation_id and build_event_json_file")
+	}
+
 	env := real_environment.NewRealEnv(healthcheck.NewHealthChecker(""))
 	ctx := env.GetServerContext()
 	ctx, cancel := context.WithCancel(ctx)
@@ -101,6 +115,14 @@ func main() {
 	bs, err := blobstore.NewFromConfig(ctx)
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err.Error())
+	}
+
+	var eventSource EventSource
+	if *buildEventJSONFile == "" {
+		// Copy blobs from blobstore
+		eventSource = NewBlobstoreEventSource(bs, *invocationID, *attemptNumber)
+	} else {
+		eventSource = NewBuildEventJSONFileEventSource(*buildEventJSONFile)
 	}
 	conn, err := grpc_client.DialSimple(*besBackend)
 	if err != nil {
@@ -128,9 +150,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error opening stream: %s", err.Error())
 	}
-	protoStreamID := build_event_handler.GetStreamIdFromInvocationIdAndAttempt(*invocationID, uint64(*attemptNumber))
-	eventAllocator := func() proto.Message { return &inpb.InvocationEvent{} }
-	pr := protofile.NewBufferedProtoReader(bs, protoStreamID, eventAllocator)
 	sequenceNum := int64(0)
 	streamID := &bepb.StreamId{
 		InvocationId: getUUID(),
@@ -139,7 +158,7 @@ func main() {
 	invocationURL := *besResultsURL + streamID.GetInvocationId()
 	log.Infof("Replaying invocation; results will be available at %s", invocationURL)
 	for {
-		msg, err := pr.ReadProto(ctx)
+		ie, err := eventSource.Next(ctx)
 		if err != nil {
 			if err == io.EOF {
 				if sequenceNum == 0 {
@@ -155,7 +174,6 @@ func main() {
 		if sequenceNum%10_000 == 0 {
 			log.Infof("Progress: replaying event %d", sequenceNum)
 		}
-		ie := msg.(*inpb.InvocationEvent)
 		buildEvent := ie.GetBuildEvent()
 		switch p := buildEvent.Payload.(type) {
 		case *espb.BuildEvent_Progress:
@@ -220,49 +238,53 @@ func main() {
 		}
 	}
 
-	// Fetch invocation log chunks and replay them as synthetic progress
-	// events.
-	logsBlobstorePrefix := eventlog.GetEventLogPathFromInvocationIdAndAttempt(*invocationID, uint64(*attemptNumber))
-	log.Infof("Fetching log chunks from %s_*", logsBlobstorePrefix)
-	chunks := chunkstore.New(bs, &chunkstore.ChunkstoreOptions{})
-	for i := 0; ; i++ {
-		b, err := chunks.ReadChunk(ctx, logsBlobstorePrefix, uint16(i))
-		if len(b) > 0 {
-			if *printLogs {
-				os.Stderr.Write(b)
-			}
+	// Fetch invocation log chunks from the original invocation and replay them
+	// as synthetic progress events. Note: if we're using a
+	// build_event_json_file, we have the original progress events and can
+	// replay them directly.
+	if *buildEventJSONFile == "" {
+		logsBlobstorePrefix := eventlog.GetEventLogPathFromInvocationIdAndAttempt(*invocationID, uint64(*attemptNumber))
+		log.Infof("Fetching log chunks from %s_*", logsBlobstorePrefix)
+		chunks := chunkstore.New(bs, &chunkstore.ChunkstoreOptions{})
+		for i := 0; ; i++ {
+			b, err := chunks.ReadChunk(ctx, logsBlobstorePrefix, uint16(i))
+			if len(b) > 0 {
+				if *printLogs {
+					os.Stderr.Write(b)
+				}
 
-			a := &anypb.Any{}
-			buildEvent := &espb.BuildEvent{
-				Id: &espb.BuildEventId{Id: &espb.BuildEventId_Progress{}},
-				Payload: &espb.BuildEvent_Progress{Progress: &espb.Progress{
-					Stderr: string(b),
-				}},
-			}
-			if err := a.MarshalFrom(buildEvent); err != nil {
-				log.Warningf("Error marshaling bazel progress event to any; dropping event: %s", err)
-				continue
-			}
-			sequenceNum += 1
-			stream.Send(&pepb.PublishBuildToolEventStreamRequest{
-				OrderedBuildEvent: &pepb.OrderedBuildEvent{
-					StreamId:       streamID,
-					SequenceNumber: sequenceNum,
-					Event: &bepb.BuildEvent{
-						Event: &bepb.BuildEvent_BazelEvent{BazelEvent: a},
+				a := &anypb.Any{}
+				buildEvent := &espb.BuildEvent{
+					Id: &espb.BuildEventId{Id: &espb.BuildEventId_Progress{}},
+					Payload: &espb.BuildEvent_Progress{Progress: &espb.Progress{
+						Stderr: string(b),
+					}},
+				}
+				if err := a.MarshalFrom(buildEvent); err != nil {
+					log.Warningf("Error marshaling bazel progress event to any; dropping event: %s", err)
+					continue
+				}
+				sequenceNum += 1
+				stream.Send(&pepb.PublishBuildToolEventStreamRequest{
+					OrderedBuildEvent: &pepb.OrderedBuildEvent{
+						StreamId:       streamID,
+						SequenceNumber: sequenceNum,
+						Event: &bepb.BuildEvent{
+							Event: &bepb.BuildEvent_BazelEvent{BazelEvent: a},
+						},
 					},
-				},
-			})
-		}
+				})
+			}
 
-		if status.IsNotFoundError(err) {
-			break
+			if status.IsNotFoundError(err) {
+				break
+			}
+			if err != nil {
+				log.Errorf("Failed to read log chunks: %s", err)
+				break
+			}
+			log.Infof("Replayed log chunk %d", i)
 		}
-		if err != nil {
-			log.Errorf("Failed to read log chunks: %s", err)
-			break
-		}
-		log.Infof("Replayed log chunk %d", i)
 	}
 
 	if err := stream.CloseSend(); err != nil {
@@ -303,4 +325,78 @@ func copyArtifact(ctx context.Context, dst bspb.ByteStreamClient, src interfaces
 		return fmt.Errorf("upload blob to CAS: %w", err)
 	}
 	return nil
+}
+
+type EventSource interface {
+	Next(ctx context.Context) (*inpb.InvocationEvent, error)
+}
+
+type BlobstoreEventSource struct {
+	bs interfaces.Blobstore
+	pr *protofile.BufferedProtoReader
+}
+
+func NewBlobstoreEventSource(bs interfaces.Blobstore, invocationID string, attemptNumber int) *BlobstoreEventSource {
+	return &BlobstoreEventSource{
+		bs: bs,
+		pr: protofile.NewBufferedProtoReader(
+			bs,
+			build_event_handler.GetStreamIdFromInvocationIdAndAttempt(invocationID, uint64(attemptNumber)),
+			func() proto.Message { return &inpb.InvocationEvent{} },
+		),
+	}
+}
+
+func (e *BlobstoreEventSource) Next(ctx context.Context) (*inpb.InvocationEvent, error) {
+	msg, err := e.pr.ReadProto(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return msg.(*inpb.InvocationEvent), nil
+}
+
+type BuildEventJSONFileEventSource struct {
+	filename       string
+	f              *os.File
+	s              *bufio.Scanner
+	sequenceNumber int64
+}
+
+func NewBuildEventJSONFileEventSource(filename string) *BuildEventJSONFileEventSource {
+	return &BuildEventJSONFileEventSource{filename: filename}
+}
+
+func (e *BuildEventJSONFileEventSource) Next(ctx context.Context) (*inpb.InvocationEvent, error) {
+	if e.f == nil {
+		f, err := os.Open(e.filename)
+		if err != nil {
+			return nil, fmt.Errorf("open build event JSON file: %w", err)
+		}
+		e.f = f
+		e.s = bufio.NewScanner(f)
+		const bufsize = 1024 * 1024 * 10
+		e.s.Buffer(make([]byte, bufsize), bufsize)
+	}
+	// Scan until we either find the next line starting with '{', or we hit EOF,
+	// or we hit an error.
+	for e.s.Scan() {
+		line := e.s.Text()
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var be espb.BuildEvent
+		if err := protojson.Unmarshal([]byte(line), &be); err != nil {
+			return nil, fmt.Errorf("unmarshal build event: %w", err)
+		}
+		e.sequenceNumber++
+		return &inpb.InvocationEvent{
+			EventTime:      timestamppb.New(time.Now()),
+			BuildEvent:     &be,
+			SequenceNumber: e.sequenceNumber,
+		}, nil
+	}
+	if err := e.s.Err(); err != nil {
+		return nil, fmt.Errorf("scan build event JSON file: %w", err)
+	}
+	return nil, io.EOF
 }

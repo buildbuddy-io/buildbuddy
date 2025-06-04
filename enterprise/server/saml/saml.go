@@ -284,7 +284,7 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 			}
 			c.SAML = true
 
-			return claims.AuthContextFromClaims(ctx, c, err)
+			return claims.AuthContextWithJWT(ctx, c, err)
 		}
 	} else if slug := cookie.GetCookie(r, slugCookie); slug != "" {
 		return authutil.AuthContextWithError(ctx, status.PermissionDeniedErrorf("Error getting service provider for slug %s: %s", slug, err.Error()))
@@ -329,6 +329,7 @@ func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 			return nil, status.UnauthenticatedErrorf(authutil.UserNotFoundMsg)
 		}
 		claims.SAML = true
+		claims.CustomerSSO = true
 		return claims, nil
 	}
 	return nil, status.UnauthenticatedError("No SAML User found")

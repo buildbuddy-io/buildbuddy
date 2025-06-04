@@ -267,3 +267,20 @@ func TestManyNewWorkspaces(t *testing.T) {
 	// Check that all paths are unique.
 	assert.Len(t, allPaths, 1000)
 }
+
+func TestPreserveWorkspace_DoesNotPreserveOutputPaths(t *testing.T) {
+	ctx := context.Background()
+	ws := newWorkspace(t, &workspace.Opts{Preserve: true})
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			OutputPaths: []string{"foo.out"},
+		},
+	})
+	testfs.WriteAllFileContents(t, ws.Path(), map[string]string{
+		"foo.out": "foo",
+	})
+
+	err := ws.Clean()
+	require.NoError(t, err)
+	assert.Empty(t, actualFilePaths(t, ws))
+}

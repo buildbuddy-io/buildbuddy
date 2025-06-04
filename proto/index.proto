@@ -9,13 +9,15 @@ package index;
 enum ReplacementStrategy {
   UNKNOWN_REPLACEMENT_STRATEGY = 0;
   REPLACE_REPO = 1;
-  // TODO(tylerw): support INCREMENTAL
+  INCREMENTAL = 2;
 }
 
 message IndexRequest {
   context.RequestContext request_context = 1;
 
   git.GitRepo git_repo = 2;
+
+  // Required for, and only used by, REPLACE_REPO replacement_strategy
   git.RepoState repo_state = 3;
 
   // Required. The search namespace to operate in. Namespaces are logically
@@ -35,10 +37,30 @@ message IndexRequest {
   // complete. This is useful if you don't care about the results and can
   // tolerate errors.
   bool async = 6;
+
+  // Required for, and only used by, INCREMENTAL_STRATEGY replacement_strategy
+  IncrementalUpdate update = 7;
 }
 
 message IndexResponse {
   context.ResponseContext response_context = 1;
+}
+
+message RepoStatusRequest {
+  context.RequestContext request_context = 1;
+
+  // Required. See namespace field on IndexRequest above.
+  string namespace = 2;
+
+  // The URL of the repo
+  string repo_url = 3;
+}
+
+message RepoStatusResponse {
+  context.ResponseContext response_context = 1;
+
+  // The SHA of the most recently indexed commit
+  string last_indexed_commit_sha = 2;
 }
 
 message IngestAnnotationsRequest {
@@ -55,4 +77,37 @@ message IngestAnnotationsRequest {
 
 message IngestAnnotationsResponse {
   context.ResponseContext response_context = 1;
+}
+
+message IncrementalUpdate {
+  // The list of commits. The changes from the commits will be applied in order,
+  // in a single atomic batch. The commits must be ordered, with each commit
+  // following its direct parent.
+  repeated Commit commits = 1;
+}
+
+message Commit {
+  // The SHA of this commit
+  string sha = 1;
+  // The SHA of the parent of this commit
+  string parent_sha = 2;
+
+  // The paths, relative to the root of the repo, of the files deleted in this
+  // commit.
+  repeated string delete_filepaths = 4;
+
+  // The files which were added or updated in this commit.
+  // Currently, a file rename should be represented by an add of the new file
+  // and a delete of the old file. Deletes are processed before adds, so
+  // deleting and adding the same filepath in a single Commit will result in the
+  // added document existing after the update.
+  repeated File adds_and_updates = 3;
+}
+
+message File {
+  // The path, relative to the root of the repo, of this file.
+  string filepath = 1;
+
+  // The content of the file
+  bytes content = 2;
 }

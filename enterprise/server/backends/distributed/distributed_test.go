@@ -475,7 +475,6 @@ func TestReadOffsetLimit(t *testing.T) {
 }
 
 func TestReadWriteWithFailedNode(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -522,10 +521,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	// or distributedCaches so they should not be referenced
 	// below when reading / writing, although the running nodes
 	// still have reference to them via the Nodes list.
-	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-	err := dc3.Shutdown(shutdownCtx)
-	cancel()
-	assert.Nil(t, err)
+	waitForShutdown(dc3)
 
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
@@ -989,6 +985,11 @@ func TestGetMulti(t *testing.T) {
 }
 
 func TestHintedHandoff(t *testing.T) {
+	// TestHintedHandoff has flaked multiple times recently:
+	//   https://app.buildbuddy.io/invocation/831b22ac-123b-4190-9a32-d9f06a2719b9
+	//   https://app.buildbuddy.io/invocation/be67e9bc-5104-4538-a86c-86656f8af43d
+	//   https://app.buildbuddy.io/invocation/010bd6d5-eae4-4a02-a1ad-b81311c3a461
+	quarantine.SkipQuarantinedTest(t)
 	env, authenticator, ctx := getEnvAuthAndCtx(t)
 
 	// Authenticate as user1.
@@ -2231,6 +2232,89 @@ func TestTreeCacheLookaside(t *testing.T) {
 	assert.NotEqual(t, opCountBefore[peer1], len(memoryCache1.ops))
 	assert.NotEqual(t, opCountBefore[peer2], len(memoryCache2.ops))
 	assert.NotEqual(t, opCountBefore[peer3], len(memoryCache3.ops))
+}
+
+func TestReadThroughLocalCache(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:     1,
+		Nodes:                 []string{peer1, peer2, peer3},
+		DisableLocalLookup:    true,
+		ReadThroughLocalCache: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 1.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	baseCaches := []interfaces.Cache{
+		memoryCache1,
+		memoryCache2,
+		memoryCache3,
+	}
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure we can read it back from each node,
+		// both via the base cache and distributed cache for each node.
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, rn)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, baseCache, rn)
+		}
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Now read all of the digests again -- all should be served
+	// directly from the local cache.
+	for _, rn := range allResources {
+		for _, distributedCache := range distributedCaches {
+			readAndCompareDigest(t, ctx, distributedCache, rn)
+		}
+	}
+
+	assert.Equal(t, opCountBefore[peer1]+len(allResources), len(memoryCache1.ops))
+	assert.Equal(t, opCountBefore[peer2]+len(allResources), len(memoryCache2.ops))
+	assert.Equal(t, opCountBefore[peer3]+len(allResources), len(memoryCache3.ops))
+
 }
 
 type Op int

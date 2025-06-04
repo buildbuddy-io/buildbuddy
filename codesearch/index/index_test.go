@@ -3,7 +3,6 @@ package index
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"slices"
 	"strconv"
 	"testing"
@@ -17,12 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func hash(s string) uint64 {
-	h := fnv.New64a()
-	h.Write([]byte(s))
-	return h.Sum64()
-}
 
 var testSchema = schema.NewDocumentSchema(
 	[]types.FieldSchema{
@@ -62,8 +55,7 @@ func extractFieldMatches(tb testing.TB, r types.IndexReader, docMatches []types.
 	tb.Helper()
 	m := make(map[string][]uint64)
 	for _, docMatch := range docMatches {
-		storedDoc, err := r.GetStoredDocument(docMatch.Docid())
-		require.NoError(tb, err)
+		storedDoc := r.GetStoredDocument(docMatch.Docid())
 		id, err := strconv.ParseUint(string(storedDoc.Field("id").Contents()), 10, 64)
 		require.NoError(tb, err)
 		for _, fieldName := range docMatch.FieldNames() {
@@ -77,18 +69,21 @@ func extractFieldMatches(tb testing.TB, r types.IndexReader, docMatches []types.
 	return m
 }
 
+func mustOpenDB(t *testing.T, indexDir string) *pebble.DB {
+	t.Helper()
+	db, err := OpenPebbleDB(indexDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
 func TestDeletes(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	require.NoError(t, w.AddDocument(docWithID(t, 1)))
 	require.NoError(t, w.AddDocument(docWithID(t, 2)))
 	require.NoError(t, w.AddDocument(docWithID(t, 3)))
@@ -115,17 +110,10 @@ func TestDeletes(t *testing.T) {
 
 func TestIncrementalIndexing(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
@@ -171,14 +159,88 @@ func TestIncrementalIndexing(t *testing.T) {
 	assert.Equal(t, map[string][]uint64{"text": {1, 5}}, extractFieldMatches(t, r, matches))
 }
 
-func TestStoredVsUnstoredFields(t *testing.T) {
+func TestUpdateSameDocTwiceInSameBatch(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	w, err := NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 7, `one one one`)))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err := r.RawQuery("(:eq text one)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {7}}, extractFieldMatches(t, r, matches))
+
+	w, err = NewWriter(db, "testing-namespace")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+
+	// Update the document twice in the same batch, make sure the last update sticks
+	docV2 := docWithIDAndText(t, 7, `two two two`)
+	docV3 := docWithIDAndText(t, 7, `three three three`)
+	require.NoError(t, w.UpdateDocument(docV2.Field("id"), docV2))
+	require.NoError(t, w.UpdateDocument(docV3.Field("id"), docV3))
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err = r.RawQuery("(:eq text thr)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {7}}, extractFieldMatches(t, r, matches))
+
+	matches, err = r.RawQuery("(:eq text two)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{}, extractFieldMatches(t, r, matches))
+}
+
+func TestUpdateSameDocThriceInSameBatch(t *testing.T) {
+	// This test hits unique cases that "update twice" doesn't hit, related to
+	// updating the doc id / match field mappins when a document is updated multiple
+	// time in the same batch.
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	w, err := NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.AddDocument(docWithIDAndText(t, 7, `one one one`)))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err := r.RawQuery("(:eq text one)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {7}}, extractFieldMatches(t, r, matches))
+
+	w, err = NewWriter(db, "testing-namespace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	docV2 := docWithIDAndText(t, 7, `two two two`)
+	docV3 := docWithIDAndText(t, 7, `three three three`)
+	docV4 := docWithIDAndText(t, 7, `four four four`)
+	require.NoError(t, w.UpdateDocument(docV2.Field("id"), docV2))
+	require.NoError(t, w.UpdateDocument(docV3.Field("id"), docV3))
+	require.NoError(t, w.UpdateDocument(docV4.Field("id"), docV4))
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err = r.RawQuery("(:eq text fou)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {7}}, extractFieldMatches(t, r, matches))
+
+	matches, err = r.RawQuery("(:eq text thr)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{}, extractFieldMatches(t, r, matches))
+
+	matches, err = r.RawQuery("(:eq text two)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{}, extractFieldMatches(t, r, matches))
+}
+
+func TestStoredVsUnstoredFields(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	docSchema := schema.NewDocumentSchema(
 		[]types.FieldSchema{
@@ -189,7 +251,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	)
 	doc, err := docSchema.MakeDocument(
 		map[string][]byte{
-			"id":      []byte("1"),
+			"id":      []byte("7"),
 			"field_a": []byte("stored"),
 			"field_b": []byte("unstored"),
 		},
@@ -199,9 +261,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	}
 
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	assert.NoError(t, w.AddDocument(doc))
 	require.NoError(t, w.Flush())
@@ -210,37 +270,64 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	r := NewReader(ctx, db, "testing-namespace", docSchema)
 	matches, err := r.RawQuery(`(:eq field_a stored)`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_a": {1}}, extractFieldMatches(t, r, matches))
+	assert.Equal(t, map[string][]uint64{"field_a": {7}}, extractFieldMatches(t, r, matches))
 
 	// docs should be searchable by non-stored fields
 	matches, err = r.RawQuery(`(:eq field_b unstored)`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_b": {1}}, extractFieldMatches(t, r, matches))
+	assert.Equal(t, map[string][]uint64{"field_b": {7}}, extractFieldMatches(t, r, matches))
 
 	// docs should be searchable by both stored and non-stored fields
 	matches, err = r.RawQuery(`(:or (:eq field_b unstored) (:eq field_a stored))`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_b": {1}, "field_a": {1}}, extractFieldMatches(t, r, matches))
+	assert.Equal(t, map[string][]uint64{"field_b": {7}, "field_a": {7}}, extractFieldMatches(t, r, matches))
 
 	// stored document should only contain stored fields
-	rdoc, err := r.GetStoredDocument(1)
+	rdoc := r.GetStoredDocument(1)
+	assert.Equal(t, []byte("7"), rdoc.Field("id").Contents())
+	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
+	assert.Nil(t, rdoc.Field("field_b").Contents())
+}
+
+func TestGetStoredDocument(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	docSchema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.KeywordField, "field_a", true),
+		},
+	)
+	doc, err := docSchema.MakeDocument(
+		map[string][]byte{
+			"id":      []byte("50"),
+			"field_a": []byte("stored"),
+		},
+	)
 	require.NoError(t, err)
-	require.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
-	require.Nil(t, rdoc.Field("field_b").Contents())
+
+	w, err := NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+
+	assert.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", docSchema)
+
+	// stored document should only contain stored fields
+	rdoc := r.GetStoredDocument(1)
+	assert.Equal(t, []byte("50"), rdoc.Field("id").Contents())
+	assert.Equal(t, []byte("stored"), rdoc.Field("field_a").Contents())
 }
 
 func TestNamespaceSeparation(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
 	w, err := NewWriter(db, "namespace-a")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
@@ -277,16 +364,11 @@ func TestNamespaceSeparation(t *testing.T) {
 
 func TestSQuery(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
 	w, err := NewWriter(db, "testing-namespace")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 1, `one foo`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 2, `two bar`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(t, 3, `three baz`)))
@@ -321,6 +403,176 @@ func TestSQuery(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestMetadataDocs(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	commitSHA := "abc123"
+	repoURL := "github.com/buildbuddy-io/buildbuddy"
+
+	w, err := NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+
+	fields := map[string][]byte{
+		schema.IDField:        []byte(repoURL),
+		schema.LatestSHAField: []byte(commitSHA),
+	}
+
+	doc, err := schema.MetadataSchema().MakeDocument(fields)
+	require.NoError(t, err)
+
+	require.NoError(t, w.UpdateDocument(doc.Field(schema.IDField), doc))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", schema.MetadataSchema())
+	readDoc := r.GetStoredDocument(1)
+	assert.Equal(t, commitSHA, string(readDoc.Field(schema.LatestSHAField).Contents()))
+}
+
+func TestCompactDeletes(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	w, err := NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+
+	doc := docWithIDAndText(t, 8, `one`)
+	require.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	printDB(t, db)
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	delList, err := r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(0), delList.GetCardinality())
+
+	w, err = NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.UpdateDocument(doc.Field("id"), doc))
+	require.NoError(t, w.Flush())
+
+	printDB(t, db)
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	delList, err = r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), delList.GetCardinality())
+	assert.Equal(t, []uint64{1}, delList.ToPosting().ToArray())
+
+	oneList, err := r.postingList([]byte("one"), posting.NewFieldMap(), "text")
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1, (1<<32 | 1)}, oneList.ToPosting().ToArray())
+
+	printDB(t, db)
+
+	w, err = NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.CompactDeletes())
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	delList, err = r.postingList([]byte(types.DeletesField), posting.NewFieldMap(), types.DeletesField)
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{}, delList.ToPosting().ToArray())
+
+	oneList, err = r.postingList([]byte("one"), posting.NewFieldMap(), "text")
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1<<32 | 1}, oneList.ToPosting().ToArray())
+	printDB(t, db)
+}
+
+func TestDeleteMatchingDocuments(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	schema := schema.NewDocumentSchema(
+		[]types.FieldSchema{
+			schema.MustFieldSchema(types.KeywordField, "id", true),
+			schema.MustFieldSchema(types.TrigramField, "text", true),
+			schema.MustFieldSchema(types.KeywordField, "url", true),
+		},
+	)
+
+	doc1 := schema.MustMakeDocument(map[string][]byte{
+		"id":   []byte("1"),
+		"text": []byte("one"),
+		"url":  []byte("github.com/buildbuddy-io/buildbuddy"),
+	})
+	doc2 := schema.MustMakeDocument(map[string][]byte{
+		"id":   []byte("2"),
+		"text": []byte("one"),
+		"url":  []byte("github.com/buildbuddy-io/buildbuddy-internal"),
+	})
+
+	w, err := NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+
+	require.NoError(t, w.AddDocument(doc1))
+	require.NoError(t, w.AddDocument(doc2))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err := r.RawQuery(`(:eq text one)`)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {1, 2}}, extractFieldMatches(t, r, matches))
+
+	w, err = NewWriter(db, "testing-namespace")
+	require.NoError(t, err)
+	require.NoError(t, w.DeleteMatchingDocuments(schema.Field("url").MakeField([]byte("github.com/buildbuddy-io/buildbuddy"))))
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "testing-namespace", testSchema)
+	matches, err = r.RawQuery(`(:eq text one)`)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"text": {2}}, extractFieldMatches(t, r, matches))
+}
+
+func TestDropNamespace(t *testing.T) {
+	ctx := context.Background()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
+
+	w, err := NewWriter(db, "ns-a")
+	require.NoError(t, err)
+
+	doc := docWithIDAndText(t, 8, `one`)
+	require.NoError(t, w.AddDocument(doc))
+	require.NoError(t, w.Flush())
+
+	w, err = NewWriter(db, "ns-b")
+	require.NoError(t, err)
+
+	doc2 := docWithIDAndText(t, 9, `one`)
+	require.NoError(t, w.AddDocument(doc2))
+	require.NoError(t, w.Flush())
+
+	r := NewReader(ctx, db, "ns-a", testSchema)
+	matches, err := r.RawQuery("(:all)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"id": {8}, "text": {8}}, extractFieldMatches(t, r, matches))
+
+	r = NewReader(ctx, db, "ns-b", testSchema)
+	matches, err = r.RawQuery("(:all)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"id": {9}, "text": {9}}, extractFieldMatches(t, r, matches))
+
+	w, err = NewWriter(db, "ns-a")
+	require.NoError(t, err)
+	require.NoError(t, w.DropNamespace())
+	require.NoError(t, w.Flush())
+
+	r = NewReader(ctx, db, "ns-a", testSchema)
+	matches, err = r.RawQuery("(:all)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{}, extractFieldMatches(t, r, matches))
+
+	r = NewReader(ctx, db, "ns-b", testSchema)
+	matches, err = r.RawQuery("(:all)")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]uint64{"id": {9}, "text": {9}}, extractFieldMatches(t, r, matches))
+
+}
+
 func printDB(t testing.TB, db *pebble.DB) {
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},
@@ -336,12 +588,7 @@ func printDB(t testing.TB, db *pebble.DB) {
 }
 
 func TestDBFormat(t *testing.T) {
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	docSchema := schema.NewDocumentSchema(
 		[]types.FieldSchema{

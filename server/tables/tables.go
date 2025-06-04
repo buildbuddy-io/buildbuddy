@@ -294,8 +294,11 @@ type User struct {
 	// Profile information etc.
 	FirstName string
 	LastName  string
-	Email     string
-	ImageURL  string
+	// Email provided by the login provider.
+	// SSO integrations can send arbitrary e-mails so this should be
+	// used with care in the context of auth.
+	Email    string
+	ImageURL string
 
 	// GitHub token used for all non-login related GitHub features.
 	// Can be for the read-only or read-write BuildBuddy GitHub app.
@@ -312,12 +315,17 @@ func (u *User) TableName() string {
 }
 
 func (u *User) ToProto() *uspb.DisplayUser {
+	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
+	// Use the github username as the name, if no name is set.
+	if name == "" && strings.HasPrefix(u.SubID, "https://github.com/") {
+		name = strings.TrimPrefix(u.SubID, "https://github.com/")
+	}
 	return &uspb.DisplayUser{
 		UserId: &uspb.UserId{
 			Id: u.UserID,
 		},
 		Name: &uspb.Name{
-			Full:  strings.TrimSpace(u.FirstName + " " + u.LastName),
+			Full:  name,
 			First: u.FirstName,
 			Last:  u.LastName,
 		},

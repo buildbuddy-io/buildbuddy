@@ -1150,7 +1150,7 @@ func (sm *Replica) delete(wb pebble.Batch, req *rfpb.DeleteRequest) (*rfpb.Delet
 		return nil, err
 	}
 	if req.GetMatchAtime() != 0 && req.GetMatchAtime() != fileMetadata.GetLastAccessUsec() {
-		return nil, status.FailedPreconditionError("Atime mismatch")
+		return nil, status.FailedPreconditionErrorf("Atime mismatch, expect atime %d, got %d", req.GetMatchAtime(), fileMetadata.GetLastAccessUsec())
 	}
 	if err := sm.fileStorer.DeleteStoredFile(context.TODO(), sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
 		return nil, err

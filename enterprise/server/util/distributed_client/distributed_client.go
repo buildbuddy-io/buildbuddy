@@ -232,13 +232,22 @@ func (c *Proxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*dcpb.
 	}, nil
 }
 
-// ResourceIsolationString returns a compact representation of a resource's isolation that is suitable for logging.
-func ResourceIsolationString(r *rspb.ResourceName) string {
+type resourceIsolationStringer struct{ *rspb.ResourceName }
+
+func (r resourceIsolationStringer) String() string {
 	rep := filepath.Join(r.GetInstanceName(), digest.CacheTypeToPrefix(r.GetCacheType()), r.GetDigest().GetHash())
 	if !strings.HasSuffix(rep, "/") {
 		rep += "/"
 	}
 	return rep
+}
+
+// ResourceIsolationString lazily returns a compact representation of a
+// resource's isolation that is suitable for logging. This returns a
+// fmt.Stringer instead of a string because it avoids actual formatting if we
+// never log a message (maybe because the log level isn't enabled).
+func ResourceIsolationString(r *rspb.ResourceName) fmt.Stringer {
+	return resourceIsolationStringer{r}
 }
 
 func (c *Proxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb.DeleteResponse, error) {
@@ -598,13 +607,14 @@ func (r *distributedCacheReader) Close() error {
 }
 
 type streamWriteCloser struct {
-	cancelFunc    context.CancelFunc
-	stream        dcpb.DistributedCache_WriteClient
-	r             *rspb.ResourceName
-	key           *dcpb.Key
-	isolation     *dcpb.Isolation
-	handoffPeer   string
-	alreadyExists bool
+	cancelFunc         context.CancelFunc
+	stream             dcpb.DistributedCache_WriteClient
+	r                  *rspb.ResourceName
+	key                *dcpb.Key
+	isolation          *dcpb.Isolation
+	handoffPeer        string
+	alreadyExists      bool
+	closeAndRecvCalled bool
 }
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {
@@ -623,6 +633,7 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 	err := wc.stream.Send(req)
 	if err == io.EOF {
 		_, streamErr := wc.stream.CloseAndRecv()
+		wc.closeAndRecvCalled = true
 		if status.IsAlreadyExistsError(streamErr) {
 			wc.alreadyExists = true
 			err = nil
@@ -653,6 +664,7 @@ func (wc *streamWriteCloser) Commit() error {
 		return sendErr
 	}
 	_, err := wc.stream.CloseAndRecv()
+	wc.closeAndRecvCalled = true
 	if status.IsAlreadyExistsError(err) {
 		return nil
 	}
@@ -664,6 +676,10 @@ func (wc *streamWriteCloser) Commit() error {
 
 func (wc *streamWriteCloser) Close() error {
 	wc.cancelFunc()
+	if !wc.closeAndRecvCalled {
+		_, err := wc.stream.CloseAndRecv()
+		return err
+	}
 	return nil
 }
 

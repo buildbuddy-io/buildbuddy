@@ -50,12 +50,13 @@ var (
 	// To ensure we keep the connection alive, we start a timer and
 	// just repeat the last state change message after every
 	// execProgressCallbackPeriod. If this is set to 0, it is disabled.
-	execProgressCallbackPeriod = flag.Duration("executor.task_progress_publish_interval", 60*time.Second, "How often tasks should publish progress updates to the app.")
-	defaultTaskTimeout         = flag.Duration("executor.default_task_timeout", 8*time.Hour, "Timeout to use for tasks that do not have a timeout set explicitly.")
-	maxTaskTimeout             = flag.Duration("executor.max_task_timeout", 24*time.Hour, "Max timeout that can be requested by a task. A value <= 0 means unlimited. An error will be returned if a task requests a timeout greater than this value.")
-	slowTaskThreshold          = flag.Duration("executor.slow_task_threshold", 1*time.Hour, "Warn about tasks that take longer than this threshold.")
-	defaultTerminationGrace    = flag.Duration("executor.default_termination_grace_period", 0, "Default termination grace period for all actions. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
-	maxTerminationGracePeriod  = flag.Duration("executor.max_termination_grace_period", 1*time.Minute, "Max termination grace period that actions can request. An error will be returned if a task requests a grace period greater than this value. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
+	execProgressCallbackPeriod       = flag.Duration("executor.task_progress_publish_interval", 60*time.Second, "How often tasks should publish progress updates to the app.")
+	defaultTaskTimeout               = flag.Duration("executor.default_task_timeout", 8*time.Hour, "Timeout to use for tasks that do not have a timeout set explicitly.")
+	maxTaskTimeout                   = flag.Duration("executor.max_task_timeout", 24*time.Hour, "Max timeout that can be requested by a task. A value <= 0 means unlimited. An error will be returned if a task requests a timeout greater than this value.")
+	slowTaskThreshold                = flag.Duration("executor.slow_task_threshold", 1*time.Hour, "Warn about tasks that take longer than this threshold.")
+	defaultTerminationGrace          = flag.Duration("executor.default_termination_grace_period", 0, "Default termination grace period for all actions. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
+	maxTerminationGracePeriod        = flag.Duration("executor.max_termination_grace_period", 1*time.Minute, "Max termination grace period that actions can request. An error will be returned if a task requests a grace period greater than this value. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
+	checkActionResultBeforeExecution = flag.Bool("executor.check_action_result_before_execution", true, "If true, the executor will call GetActionResult to verify an action does not already exist before running it.")
 )
 
 const (
@@ -171,7 +172,7 @@ func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
 	return !isClientBazel(task)
 }
 
-func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream *operation.Publisher) (retry bool, err error) {
+func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream interfaces.Publisher) (retry bool, err error) {
 	// From here on in we use these liberally, so check that they are setup properly
 	// in the environment.
 	if s.env.GetActionCacheClient() == nil || s.env.GetByteStreamClient() == nil || s.env.GetContentAddressableStorageClient() == nil {
@@ -227,8 +228,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	md := &repb.ExecutedActionMetadata{
 		Worker:                   s.hostID,
 		QueuedTimestamp:          task.QueuedTimestamp,
-		WorkerStartTimestamp:     timestamppb.Now(),
-		WorkerCompletedTimestamp: timestamppb.Now(),
+		WorkerStartTimestamp:     timestamppb.New(s.env.GetClock().Now()),
+		WorkerCompletedTimestamp: timestamppb.New(s.env.GetClock().Now()),
 		ExecutorId:               s.id,
 		IoStats:                  &repb.IOStats{},
 		EstimatedTaskSize:        st.GetSchedulingMetadata().GetTaskSize(),
@@ -239,7 +240,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			return true, finalErr
 		}
 		resp := operation.ErrorResponse(finalErr)
-		md.WorkerCompletedTimestamp = timestamppb.Now()
+		md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 		if err := appendAuxiliaryMetadata(md, auxMetadata); err != nil {
 			log.CtxWarningf(ctx, "Failed to append ExecutionAuxiliaryMetadata: %s", err)
 		}
@@ -259,7 +260,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(status.WrapError(err, "validate command"))
 	}
 
-	if !req.GetSkipCacheLookup() {
+	if *checkActionResultBeforeExecution && !req.GetSkipCacheLookup() {
 		log.CtxDebugf(ctx, "Checking action cache for existing result.")
 		if err := stateChangeFn(repb.ExecutionStage_CACHE_CHECK, operation.InProgressExecuteResponse()); err != nil {
 			return true, err
@@ -303,7 +304,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(err)
 	}
 
-	md.InputFetchStartTimestamp = timestamppb.Now()
+	md.InputFetchStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 
 	log.CtxDebugf(ctx, "Downloading inputs.")
 	stage.Set("input_fetch")
@@ -312,8 +313,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(err)
 	}
 
-	md.InputFetchCompletedTimestamp = timestamppb.Now()
-	md.ExecutionStartTimestamp = timestamppb.Now()
+	md.InputFetchCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
+	md.ExecutionStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 	execTimeouts, err := parseTimeouts(task)
 	if err != nil {
 		// These errors are failure-specific. Pass through unchanged.
@@ -321,7 +322,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	auxMetadata.Timeout = durationpb.New(execTimeouts.TerminateAfter)
 
-	now := time.Now()
+	now := s.env.GetClock().Now()
 	terminateAt := now.Add(execTimeouts.TerminateAfter)
 	forceShutdownAt := now.Add(execTimeouts.ForceKillAfter)
 
@@ -419,8 +420,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			return finishWithErrFn(status.InternalErrorf("append auxiliary metadata: %s", err))
 		}
 	}
-	md.ExecutionCompletedTimestamp = timestamppb.Now()
-	md.OutputUploadStartTimestamp = timestamppb.Now()
+	md.ExecutionCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
+	md.OutputUploadStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 
 	actionResult := &repb.ActionResult{}
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
@@ -433,8 +434,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	if err := r.UploadOutputs(ctx, md.IoStats, executeResponse, cmdResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
-	md.OutputUploadCompletedTimestamp = timestamppb.Now()
-	md.WorkerCompletedTimestamp = timestamppb.Now()
+	md.OutputUploadCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
+	md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	actionResult.ExecutionMetadata = md
 
 	// If there's an error that we know the client won't retry, return an error

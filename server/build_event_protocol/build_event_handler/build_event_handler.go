@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -95,10 +96,6 @@ const (
 	// event stream.
 	firstExpectedSequenceNumber = 1
 
-	// Skip unimportant events if more than this many are received in a
-	// single build event stream.
-	maxEventCount = 100_000
-
 	// Max total pattern length to include in the Expanded event returned to the
 	// UI.
 	maxPatternLengthBytes = 10_000
@@ -110,7 +107,8 @@ var (
 	disablePersistArtifacts = flag.Bool("storage.disable_persist_cache_artifacts", false, "If disabled, buildbuddy will not persist cache artifacts in the blobstore. This may make older invocations not display properly.")
 	writeToOLAPDBEnabled    = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
 
-	cacheStatsFinalizationDelay = flag.Duration("cache_stats_finalization_delay", 500*time.Millisecond, "The time allowed for all metrics collectors across all apps to flush their local cache stats to the backing storage, before finalizing stats in the DB.")
+	buildEventFilterStartThreshold = flag.Int("app.build_event_filter_start_threshold", 100_000, "When looking up an invocation, start filtering out unimportant events after this many events have been processed.")
+	cacheStatsFinalizationDelay    = flag.Duration("cache_stats_finalization_delay", 500*time.Millisecond, "The time allowed for all metrics collectors across all apps to flush their local cache stats to the backing storage, before finalizing stats in the DB.")
 )
 
 var cacheArtifactsBlobstorePath = path.Join("artifacts", "cache")
@@ -123,6 +121,7 @@ type PersistArtifacts struct {
 type BuildEventHandler struct {
 	env              environment.Env
 	statsRecorder    *statsRecorder
+	webhookNotifier  *webhookNotifier
 	openChannels     *sync.WaitGroup
 	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
 
@@ -142,13 +141,12 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	h := &BuildEventHandler{
 		env:              env,
 		statsRecorder:    statsRecorder,
+		webhookNotifier:  webhookNotifier,
 		openChannels:     openChannels,
 		cancelFnsByInvID: sync.Map{},
 	}
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		h.Stop()
-		statsRecorder.Stop()
-		webhookNotifier.Stop()
 		return nil
 	})
 	return h
@@ -188,7 +186,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		collector:      b.env.GetMetricsCollector(),
-		apiTargetMap:   make(api_common.TargetMap),
+		apiTargetMap:   api_common.NewTargetMap( /* TargetSelector */ nil),
 
 		hasReceivedEventWithOptions: false,
 		hasReceivedStartedEvent:     false,
@@ -210,6 +208,8 @@ func (b *BuildEventHandler) Stop() {
 		cancelFn()
 		return true
 	})
+	b.statsRecorder.Stop()
+	b.webhookNotifier.Stop()
 }
 
 // invocationInfo represents an invocation ID as well as the JWT granting access
@@ -266,10 +266,11 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStats
 func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEValues) {
 	persist := &PersistArtifacts{}
 	if !*disablePersistArtifacts {
-		testOutputURIs := beValues.TestOutputURIs()
-		persist.URIs = make([]*url.URL, 0, len(testOutputURIs))
-		persist.URIs = append(persist.URIs, beValues.BuildToolLogURIs()...)
-		persist.URIs = append(persist.URIs, testOutputURIs...)
+		persist.URIs = slices.Concat(
+			beValues.BuildToolLogURIs(),
+			beValues.FailedTestOutputURIs(),
+			beValues.PassedTestOutputURIs(),
+		)
 	}
 
 	invocation := beValues.Invocation()
@@ -371,6 +372,15 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		log.CtxInfo(ctx, "Successfully wrote invocation to redis")
 	}
 
+	// Once we've flushed execution stats to ClickHouse for this invocation,
+	// clean up the invocation => execution links, since these are only needed
+	// for listing in-progress executions linked to an invocation, and this
+	// listing will now be queryable using ClickHouse.
+	defer func() {
+		if err := r.env.GetExecutionCollector().DeleteInvocationExecutionLinks(ctx, inv.InvocationID); err != nil {
+			log.CtxErrorf(ctx, "Failed to clean up reverse invocation links for invocation %q: %s", inv.InvocationID, err)
+		}
+	}()
 	for {
 		endIndex = startIndex + batchSize - 1
 		executions, err := r.env.GetExecutionCollector().GetExecutions(ctx, inv.InvocationID, int64(startIndex), int64(endIndex))
@@ -380,8 +390,8 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		if len(executions) == 0 {
 			break
 		}
-		err = r.env.GetOLAPDBHandle().FlushExecutionStats(ctx, storedInv, executions)
-		if err != nil {
+		if err := r.env.GetOLAPDBHandle().FlushExecutionStats(ctx, storedInv, executions); err != nil {
+			log.CtxErrorf(ctx, "Failed to flush executions to OLAP DB: %s", err)
 			break
 		}
 		log.CtxInfof(ctx, "successfully wrote %d executions", len(executions))
@@ -483,6 +493,8 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	ctx = r.env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, task.invocationInfo.jwt)
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(50) // Max concurrency when copying files from cache->blobstore.
+
+	artifactsUploaded := make(map[string]struct{}, 0)
 	for _, uri := range task.persist.URIs {
 		uri := uri
 		rn, err := digest.ParseDownloadResourceName(uri.Path)
@@ -493,6 +505,10 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		if rn.IsEmpty() {
 			continue
 		}
+		if _, seen := artifactsUploaded[rn.GetDigest().GetHash()]; seen {
+			continue
+		}
+		artifactsUploaded[rn.GetDigest().GetHash()] = struct{}{}
 		eg.Go(func() error {
 			// When persisting artifacts, make sure we associate the cache
 			// requests with the app, not bazel.
@@ -794,7 +810,7 @@ type EventChannel struct {
 	targetTracker  *target_tracker.TargetTracker
 	statsRecorder  *statsRecorder
 	collector      interfaces.MetricsCollector
-	apiTargetMap   api_common.TargetMap
+	apiTargetMap   *api_common.TargetMap
 
 	startedEvent                     *build_event_stream.BuildEvent_Started
 	bufferedEvents                   []*inpb.InvocationEvent
@@ -1246,7 +1262,7 @@ func (e *EventChannel) flushAPIFacets(iid string) error {
 		return nil
 	}
 
-	for label, target := range e.apiTargetMap {
+	for label, target := range e.apiTargetMap.Targets {
 		b, err := proto.Marshal(target)
 		if err != nil {
 			return err
@@ -1416,7 +1432,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		// use a ton of memory and are not displayable by the browser. If we
 		// detect a large number of events coming through, begin dropping non-
 		// important events so that this invocation can be displayed.
-		if len(events) >= maxEventCount && !accumulator.IsImportantEvent(event.GetBuildEvent()) {
+		if len(events) >= *buildEventFilterStartThreshold && !accumulator.IsImportantEvent(event.GetBuildEvent()) {
 			return nil
 		}
 		events = append(events, event)

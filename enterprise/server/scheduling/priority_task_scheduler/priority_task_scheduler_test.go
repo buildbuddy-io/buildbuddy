@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -332,7 +331,7 @@ func (e *FakeExecutor) HostID() string {
 	return "fake-host-id"
 }
 
-func (e *FakeExecutor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream *operation.Publisher) (retry bool, err error) {
+func (e *FakeExecutor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream interfaces.Publisher) (retry bool, err error) {
 	log.Debugf("FakeExecutor: starting task %q", st.GetExecutionTask().GetExecutionId())
 	fe := &FakeExecution{
 		ScheduledTask: st,

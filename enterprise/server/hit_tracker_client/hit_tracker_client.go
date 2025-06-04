@@ -3,7 +3,6 @@ package hit_tracker_client
 import (
 	"context"
 	"flag"
-	"fmt"
 	"sync"
 	"time"
 
@@ -242,7 +241,6 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 		return
 	}
 
-	alert.UnexpectedEvent(fmt.Sprintf("Exceeded maximum number of pending cache hits for group %s, dropping some.", string(groupID)))
 	metrics.RemoteHitTrackerUpdates.With(
 		prometheus.Labels{
 			metrics.GroupID:              string(groupID),

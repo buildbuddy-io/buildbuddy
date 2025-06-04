@@ -27,17 +27,14 @@ func New(ctx context.Context, ir types.IndexReader) types.Searcher {
 	return &CodeSearcher{ctx: ctx, indexReader: ir, log: subLog}
 }
 
-func (c *CodeSearcher) retrieveDocs(candidateDocIDs []uint64) ([]types.Document, error) {
+func (c *CodeSearcher) retrieveDocs(candidateDocIDs []uint64) []types.Document {
 	docs := make([]types.Document, len(candidateDocIDs))
 
 	for i, docID := range candidateDocIDs {
-		doc, err := c.indexReader.GetStoredDocument(docID)
-		if err != nil {
-			return nil, err
-		}
+		doc := c.indexReader.GetStoredDocument(docID)
 		docs[i] = doc
 	}
-	return docs, nil
+	return docs
 }
 
 func truncate(results []uint64, numResults, offset int) []uint64 {
@@ -105,10 +102,9 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 			continue
 		}
 		g.Go(func() error {
-			doc, err := c.indexReader.GetStoredDocument(docID)
-			if err != nil {
-				return err
-			}
+			// TODO(jdelfino): We throw away the stored document here, but then re-fetch it if
+			// this document makes the cut. Save it and plumb it back out to improve performance.
+			doc := c.indexReader.GetStoredDocument(docID)
 
 			score := scorer.Score(match, doc)
 			mu.Lock()
@@ -145,10 +141,8 @@ func (c *CodeSearcher) Search(q types.Query, numResults, offset int) ([]types.Do
 	if err != nil {
 		return nil, err
 	}
-	docs, err := c.retrieveDocs(topDocIDs)
-	if err != nil {
-		return nil, err
-	}
+	docs := c.retrieveDocs(topDocIDs)
+
 	if tracker := performance.TrackerFromContext(c.ctx); tracker != nil {
 		tracker.TrackOnce(performance.TOTAL_SEARCH_DURATION, int64(time.Since(searchStart)))
 	}

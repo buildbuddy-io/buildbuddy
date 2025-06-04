@@ -9,7 +9,6 @@ go_library(
         "//cli/add",
         "//cli/arg",
         "//cli/bazelisk",
-        "//cli/fix/langs",
         "//cli/fix/langs:gazelle",
         "//cli/fix/language",
         "//cli/log",

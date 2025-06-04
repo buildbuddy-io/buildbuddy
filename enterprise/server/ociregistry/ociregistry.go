@@ -295,7 +295,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 			http.Error(w, fmt.Sprintf("Error parsing resolved digest in %q: %s", resolvedRef.Context(), err), http.StatusInternalServerError)
 			return
 		}
-		err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef, hash, ociResourceType, writeBody)
+		err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody)
 		if err == nil {
 			return // Successfully served request from cache.
 		}
@@ -353,7 +353,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
-	err = ocicache.WriteBlobOrManifestToCacheAndWriter(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, hash, contentType, contentLength)
+	err = ocicache.WriteBlobOrManifestToCacheAndWriter(ctx, upresp.Body, w, bsClient, acClient, resolvedRef.Context(), ociResourceType, hash, contentType, contentLength)
 	if err != nil && err != context.Canceled {
 		log.CtxWarningf(ctx, "Error writing response body to cache for %q: %s", resolvedRef.Context(), err)
 	}
@@ -371,9 +371,9 @@ func writeBlobMetadataToResponse(ctx context.Context, w http.ResponseWriter, has
 	w.Header().Add(headerContentType, blobMetadata.GetContentType())
 }
 
-func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, hash gcr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
+func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
-		mc, err := ocicache.FetchManifestFromAC(ctx, acClient, ref, hash)
+		mc, err := ocicache.FetchManifestFromAC(ctx, acClient, repo, hash)
 		if err != nil {
 			return err
 		}
@@ -396,7 +396,7 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 		return nil
 	}
 
-	blobMetadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, ref)
+	blobMetadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
 	if err != nil {
 		return err
 	}

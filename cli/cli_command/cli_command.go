@@ -8,11 +8,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
+	"github.com/buildbuddy-io/buildbuddy/cli/index"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
 	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
+	"github.com/buildbuddy-io/buildbuddy/cli/search"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
 	"github.com/buildbuddy-io/buildbuddy/cli/versioncmd"
@@ -88,6 +90,16 @@ var Commands = []Command{
 		Name:    "remote-download",
 		Help:    "Fetches a remote asset via an intermediate cache.",
 		Handler: remote_download.HandleRemoteDownload,
+	},
+	{
+		Name:    "search",
+		Help:    "Searches for code in the remote codesearch index.",
+		Handler: search.HandleSearch,
+	},
+	{
+		Name:    "index",
+		Help:    "Sends updates to the remote codesearch index.",
+		Handler: index.HandleIndex,
 	},
 	{
 		Name:    "update",

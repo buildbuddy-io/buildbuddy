@@ -7,6 +7,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/util/lockingbuffer",
+        "//server/util/log",
         "//server/util/networking",
         "@com_github_stretchr_testify//require",
     ],

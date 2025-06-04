@@ -504,6 +504,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		CacheEventTypeLabel,
+		GroupID,
 	})
 
 	CacheNumHitsExported = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -682,6 +683,17 @@ var (
 	}, []string{
 		PartitionID,
 		CacheNameLabel,
+	})
+
+	DiskCachePartitionGroupSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_partition_group_size_bytes",
+		Help:      "Number of bytes in the partition, by group ID.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+		GroupID,
 	})
 
 	DiskCachePartitionCapacityBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -908,7 +920,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "lookaside_cache_eviction_age_msec",
-		Buckets:   durationMsecBuckets(time.Millisecond, 15*time.Minute, 10),
+		Buckets:   durationMsecBuckets(30*time.Minute, 24*time.Hour, 2),
 		Help:      "Age of items evicted from the cache, in **milliseconds**.",
 	}, []string{
 		LookasideCacheEvictionReason,

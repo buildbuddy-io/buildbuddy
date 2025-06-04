@@ -10,10 +10,14 @@ package parsed
 import (
 	"fmt"
 	"iter"
+	"os/user"
+	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 )
 
@@ -88,7 +92,11 @@ type Args interface {
 
 // Interface for argument classifications to implement
 type Classified interface {
-	arg() arguments.Argument
+	Arg() arguments.Argument
+
+	// lower case method to stop declaration of structs that satisfy Classified
+	// from outside the package.
+	classified()
 }
 
 // Interface for argument classifications to implement if they describe options
@@ -100,40 +108,46 @@ type IsOption interface {
 
 type UnsupportedArgument struct{ arguments.Argument }
 
-func (u *UnsupportedArgument) arg() arguments.Argument { return u.Argument }
+func (u *UnsupportedArgument) Arg() arguments.Argument { return u.Argument }
+func (u *UnsupportedArgument) classified()             {}
 
 type StartupOption struct{ options.Option }
 
-func (s *StartupOption) arg() arguments.Argument  { return s.Option }
+func (s *StartupOption) Arg() arguments.Argument  { return s.Option }
 func (s *StartupOption) AsOption() options.Option { return s.Option }
+func (s *StartupOption) classified()              {}
 
 type Command struct{ *arguments.PositionalArgument }
 
-func (c *Command) arg() arguments.Argument { return c.PositionalArgument }
+func (c *Command) Arg() arguments.Argument { return c.PositionalArgument }
+func (c *Command) classified()             {}
 
 type CommandOption struct{ options.Option }
 
-func (c *CommandOption) arg() arguments.Argument  { return c.Option }
+func (c *CommandOption) Arg() arguments.Argument  { return c.Option }
 func (c *CommandOption) AsOption() options.Option { return c.Option }
+func (c *CommandOption) classified()              {}
 
-type DoubleDash struct{ *arguments.PositionalArgument }
+type DoubleDash struct{ *arguments.DoubleDash }
 
-func (d *DoubleDash) arg() arguments.Argument { return d.PositionalArgument }
+func (d *DoubleDash) Arg() arguments.Argument { return d.DoubleDash }
+func (d *DoubleDash) classified()             {}
 
 type Target struct{ *arguments.PositionalArgument }
 
-func (t *Target) arg() arguments.Argument { return t.PositionalArgument }
+func (t *Target) Arg() arguments.Argument { return t.PositionalArgument }
+func (t *Target) classified()             {}
 
 type ExecArg struct{ *arguments.PositionalArgument }
 
-func (e *ExecArg) arg() arguments.Argument { return e.PositionalArgument }
+func (e *ExecArg) Arg() arguments.Argument { return e.PositionalArgument }
+func (e *ExecArg) classified()             {}
 
 // classifier tracks relevant context while iterating over a slice of
 // Arguments in command-line order. It is primarily intended for use
 // by the `Classify` and `Find` functions.
 type classifier struct {
 	command          *string
-	foundDoubleDash  bool
 	foundFirstTarget bool
 }
 
@@ -148,8 +162,6 @@ func (c *classifier) Accumulate(classified Classified) {
 	case *Command:
 		command := v.Value
 		c.command = &command
-	case *DoubleDash:
-		c.foundDoubleDash = true
 	case *Target:
 		c.foundFirstTarget = true
 	}
@@ -157,19 +169,19 @@ func (c *classifier) Accumulate(classified Classified) {
 
 func (c *classifier) Classify(arg arguments.Argument) Classified {
 	switch arg := arg.(type) {
+	case *arguments.DoubleDash:
+		return &DoubleDash{arg}
 	case *arguments.PositionalArgument:
 		switch {
 		case c.command == nil:
 			return &Command{arg}
-		case !c.foundDoubleDash && arg.Value == "--":
-			return &DoubleDash{arg}
 		case *c.command == "run" && c.foundFirstTarget:
 			return &ExecArg{arg}
 		default:
 			return &Target{arg}
 		}
 	case options.Option:
-		if c.command == nil {
+		if arg.Supports("startup") {
 			return &StartupOption{arg}
 		}
 		return &CommandOption{arg}
@@ -365,7 +377,7 @@ func (a *OrderedArgs) SplitExecutableArgs() ([]string, []string) {
 			}
 			bazelArgs = append(bazelArgs, c.Format()...)
 		default:
-			bazelArgs = append(bazelArgs, c.arg().Format()...)
+			bazelArgs = append(bazelArgs, c.Arg().Format()...)
 		}
 	}
 	return bazelArgs, executableArgs
@@ -413,6 +425,11 @@ func (a *OrderedArgs) Append(args ...arguments.Argument) error {
 	commandOptionInsertIndex := -1
 	for _, arg := range args {
 		switch arg := arg.(type) {
+		case *arguments.DoubleDash:
+			var err error
+			if startupOptionInsertIndex, commandOptionInsertIndex, err = a.appendDoubleDash(startupOptionInsertIndex, commandOptionInsertIndex); err != nil {
+				return err
+			}
 		case *arguments.PositionalArgument:
 			startupOptionInsertIndex, commandOptionInsertIndex = a.appendPositionalArgument(arg, startupOptionInsertIndex, commandOptionInsertIndex)
 		case options.Option:
@@ -427,6 +444,29 @@ func (a *OrderedArgs) Append(args ...arguments.Argument) error {
 	return nil
 }
 
+func (a *OrderedArgs) appendDoubleDash(startupOptionInsertIndex, commandOptionInsertIndex int) (int, int, error) {
+	if startupOptionInsertIndex == -1 {
+		if startupOptionInsertIndex, _ = Find[*Command](a.Args); startupOptionInsertIndex == -1 {
+			startupOptionInsertIndex = len(a.Args)
+		}
+	}
+	if startupOptionInsertIndex == len(a.Args) {
+		// There is no command; we cannot add a double dash.
+		return startupOptionInsertIndex, commandOptionInsertIndex, fmt.Errorf("Failed to append double-dash: double-dash is not supported when no command is present.")
+	}
+	if commandOptionInsertIndex == -1 {
+		if commandOptionInsertIndex, _ = Find[*DoubleDash](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
+			commandOptionInsertIndex = len(a.Args)
+		}
+	}
+
+	if commandOptionInsertIndex == len(a.Args) {
+		// only append if we don't already have a double-dash
+		a.Args = append(a.Args, &arguments.DoubleDash{})
+	}
+	return startupOptionInsertIndex, commandOptionInsertIndex, nil
+}
+
 func (a *OrderedArgs) appendPositionalArgument(arg *arguments.PositionalArgument, startupOptionInsertIndex, commandOptionInsertIndex int) (int, int) {
 	if startupOptionInsertIndex == -1 {
 		if startupOptionInsertIndex, _ = Find[*Command](a.Args); startupOptionInsertIndex == -1 {
@@ -439,14 +479,13 @@ func (a *OrderedArgs) appendPositionalArgument(arg *arguments.PositionalArgument
 		return startupOptionInsertIndex, len(a.Args)
 	}
 	if commandOptionInsertIndex == -1 {
-		if commandOptionInsertIndex, _ = Find[*Command](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
+		if commandOptionInsertIndex, _ = Find[*DoubleDash](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
 			commandOptionInsertIndex = len(a.Args)
 		}
 	}
-
 	if commandOptionInsertIndex == len(a.Args) {
 		if strings.HasPrefix(arg.GetValue(), "-") {
-			a.Args = append(a.Args, &arguments.PositionalArgument{Value: "--"})
+			a.Args = append(a.Args, &arguments.DoubleDash{})
 		} else {
 			// If there's no double dash, commandOptionInsertIndex needs to be
 			// incremented to still be len(p.Args) afer we append the argument for
@@ -492,7 +531,7 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 					startupOptionInsertIndex = len(a.Args)
 				}
 			}
-			if commandOptionInsertIndex, _ = Find[*Command](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
+			if commandOptionInsertIndex, _ = Find[*DoubleDash](a.Args[startupOptionInsertIndex:]); commandOptionInsertIndex == -1 {
 				commandOptionInsertIndex = len(a.Args)
 			}
 		}
@@ -503,15 +542,250 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 	return startupOptionInsertIndex, commandOptionInsertIndex, fmt.Errorf("Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.", option.Name(), command)
 }
 
-// Offset exists as a temporary hack while we continue to move away from
-// passing arguments around as strings. It returns the offset in the
-// string-based arg slice where the argument at this index is located.
-func (a *OrderedArgs) Offset(index int) int {
-	offset := 0
-	for _, arg := range a.Args[:index] {
-		offset += len(arg.Format())
+// ConsumeRCFileOptions removes all rc-file related options from the provided
+// args and appends an `ignore_all_rc_files` option to the startup options.
+// Returns a slice of all the rc files that should be parsed.
+func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []string, err error) {
+	if ignore, err := options.AccumulateValues(false, a.RemoveOptions("ignore_all_rc_files")...); err != nil {
+		return nil, fmt.Errorf("Failed to get value from 'ignore_all_rc_files' option: %s", err)
+	} else if ignore {
+		// Before we do anything, check whether --ignore_all_rc_files is already
+		// set. If so, return an empty list of RC files, since bazel will do the
+		// same.
+		a.RemoveOptions("system_rc", "workspace_rc", "home_rc")
+		return nil, nil
 	}
-	return offset
+
+	// Parse rc files in the order defined here:
+	// https://bazel.build/run/bazelrc#bazelrc-file-locations
+	for _, optName := range []string{"system_rc", "workspace_rc", " home_rc"} {
+		if v, err := options.AccumulateValues(true, a.RemoveOptions(optName)...); err != nil {
+			return nil, fmt.Errorf("Failed to get value from '%s' option: %s", optName, err)
+		} else if !v {
+			// When these flags are false, they have no effect on the list of
+			// rcFiles we should parse.
+			continue
+		}
+		switch optName {
+		case "system_rc":
+			rcFiles = append(rcFiles, "/etc/bazel.bazelrc")
+			rcFiles = append(rcFiles, `%ProgramData%\bazel.bazelrc`)
+		case "workspace_rc":
+			if workspaceDir != "" {
+				rcFiles = append(rcFiles, filepath.Join(workspaceDir, ".bazelrc"))
+			}
+		case "home_rc":
+			usr, err := user.Current()
+			if err == nil {
+				rcFiles = append(rcFiles, filepath.Join(usr.HomeDir, ".bazelrc"))
+			}
+		}
+	}
+	for _, indexedOption := range a.RemoveOptions("bazelrc") {
+		o := indexedOption.Option
+		if o.GetValue() == "/dev/null" {
+			// if we encounter --bazelrc=/dev/null, that means bazel will ignore
+			// subsequent --bazelrc args, so we ignore them as well.
+			break
+		}
+		rcFiles = append(rcFiles, o.GetValue())
+		continue
+	}
+	return rcFiles, nil
+}
+
+type Config struct {
+	ByPhase map[string][]arguments.Argument
+}
+
+func NewConfig() *Config {
+	return &Config{
+		ByPhase: make(map[string][]arguments.Argument),
+	}
+}
+
+// ExpandConfigs expands all the config options in the args, using the
+// provided config parameters to resolve them. It also expands the
+// `enable_platform_specific_config` option, if it exists.
+func (a *OrderedArgs) ExpandConfigs(
+	namedConfigs map[string]*Config,
+	defaultConfig *Config,
+) (*OrderedArgs, error) {
+	command := a.GetCommand()
+	expanded, err := a.expandConfigs(namedConfigs, defaultConfig)
+	if err != nil {
+		return nil, err
+	}
+	// Replace the last occurrence of `--enable_platform_specific_config` with
+	// `--config=<bazelOS>`, so long as the last occurrence evaluates as true.
+	opts := expanded.RemoveOptions(bazelrc.EnablePlatformSpecificConfigFlag)
+	if v, err := options.AccumulateValues(false, opts...); err != nil {
+		return nil, fmt.Errorf("Failed to get value from '%s' option: %s", bazelrc.EnablePlatformSpecificConfigFlag, err)
+	} else if v {
+		index := opts[len(opts)-1].Index
+		bazelOS := bazelrc.GetBazelOS()
+		if platformConfig, ok := namedConfigs[bazelOS]; ok {
+			phases := bazelrc.GetPhases(command)
+			expansion, err := platformConfig.appendArgsForConfig(nil, namedConfigs, phases, []string{bazelOS}, true)
+			if err != nil {
+				return nil, err
+			}
+			expanded.Args = slices.Insert(expanded.Args, index, expansion...)
+			// Remove all occurrences of the enable platform-specific config flag
+			// that may have been added when expanding the platform-specific config.
+			expanded.RemoveOptions(bazelrc.EnablePlatformSpecificConfigFlag)
+		}
+	}
+	return expanded, nil
+}
+
+// expandConfigs expands all the config options in the args, using the
+// provided config parameters to resolve them.
+func (a *OrderedArgs) expandConfigs(
+	namedConfigs map[string]*Config,
+	defaultConfig *Config,
+) (*OrderedArgs, error) {
+	// Expand startup args first, before any other args (including explicit
+	// startup args).
+	//
+	// startup config is guaranteed to only be startup options.
+	startupConfig := defaultConfig.ByPhase["startup"]
+
+	commandIndex, command := Find[*Command](a.Args)
+	if commandIndex == -1 {
+		// No command is a help command that does not expand anything but the startup config.
+		return &OrderedArgs{Args: slices.Concat(startupConfig, a.Args)}, nil
+	}
+	expanded := slices.Concat(startupConfig, a.Args[:commandIndex])
+	expanded = append(expanded, command.PositionalArgument)
+
+	// Always apply bazelrc rules in order of the precedence hierarchy. For
+	// example, for the "test" command, apply options in order of "always",
+	// then "common", then "build", then "test".
+	phases := bazelrc.GetPhases(command.GetValue())
+	log.Debugf("Bazel command: %q, rc rule classes: %v", command, phases)
+
+	// We'll refer to args in bazelrc which aren't expanded from a --config
+	// option as "default" args, like a .bazelrc line that just says
+	// "common -c dbg" or "build -c dbg" as opposed to something qualified like
+	// "build:dbg -c dbg".
+	//
+	// These default args take lower precedence than explicit command line args
+	// so we expand those first just after the command.
+	log.Debugf("Args before expanding default rc rules: %#v", arguments.FormatAll(expanded))
+	var err error
+	expanded, err = defaultConfig.appendArgsForConfig(expanded, namedConfigs, phases, []string{}, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
+	}
+	log.Debugf("Args after expanding default rc rules: %v", arguments.FormatAll(expanded))
+	expanded, err = appendExpansion(expanded, a.Args[commandIndex+1:], command.Value, namedConfigs, phases, []string{}, false)
+	if err != nil {
+		return nil, err
+	}
+	log.Debugf("Fully expanded args: %+v", arguments.FormatAll(expanded))
+
+	// Append to new OrderedArgs to make sure `--` is handled correctly.
+	expandedArgs := &OrderedArgs{}
+	if err := expandedArgs.Append(expanded...); err != nil {
+		return nil, err
+	}
+	return expandedArgs, err
+}
+
+// Expands and appends all applicable args from the provided Config to the
+// provided argument slice and returns it.
+func (c *Config) appendArgsForConfig(
+	expanded []arguments.Argument,
+	namedConfigs map[string]*Config,
+	phases []string,
+	configStack []string,
+	allowEmpty bool,
+) ([]arguments.Argument, error) {
+	empty := true
+	for _, phase := range phases {
+		toExpand, ok := c.ByPhase[phase]
+		if !ok {
+			continue
+		}
+		empty = false
+		var err error
+		expanded, err = appendExpansion(
+			expanded,
+			toExpand,
+			phase,
+			namedConfigs,
+			phases,
+			configStack,
+			true,
+		)
+		if err != nil {
+			return nil, err
+		}
+		log.Debugf("Expanded for phase %s: %#v", phase, arguments.FormatAll(expanded))
+	}
+	if empty && !allowEmpty {
+		// empty config names do not require supported phases
+		return nil, fmt.Errorf("config value not defined in any .rc file")
+	}
+	return expanded, nil
+}
+
+// appendExpansion expands and appends all args in `toExpand` to `expanded`.
+func appendExpansion(
+	expanded []arguments.Argument,
+	toExpand []arguments.Argument,
+	phase string,
+	namedConfigs map[string]*Config,
+	phases []string,
+	configStack []string,
+	removeDoubleDash bool,
+) ([]arguments.Argument, error) {
+	for _, a := range toExpand {
+		log.Debugf("Expanding '%+v'", a.Format())
+		switch a := a.(type) {
+		case *arguments.DoubleDash:
+			if removeDoubleDash {
+				continue
+			}
+			expanded = append(expanded, &arguments.DoubleDash{})
+		case options.Option:
+			// For the unconditional phases, only append the arg if it's supported by
+			// the command.
+			if bazelrc.IsUnconditionalCommandPhase(phase) && !a.Supports(phases[len(phases)-1]) {
+				if phase == bazelrc.AlwaysPhase {
+					log.Warnf("Inherited '%s' options: %v", bazelrc.AlwaysPhase, arguments.FormatAll(toExpand))
+					return nil, fmt.Errorf("%[1]s :: Unrecognized option %[1]s", a.Format()[0])
+				}
+				// TODO(zoey): return an error here if the option does not support any
+				// command; unknown options are disallowed in rc files.
+				log.Debugf("common rc rule: opt %q is unsupported by command %q; skipping", a.Name(), phases[len(phases)-1])
+				continue
+			}
+			if a.Name() != "config" {
+				expanded = append(expanded, a)
+				continue
+			}
+			// This is a config option; expand it.
+			if _, ok := a.(*options.RequiredValueOption); !ok {
+				return nil, fmt.Errorf("config options must be of '*RequiredValueOption', but was of type '%T'.", a)
+			}
+			config, ok := namedConfigs[a.GetValue()]
+			if !ok {
+				return nil, fmt.Errorf("config value '%s' is not defined in any .rc file", a.GetValue())
+			}
+			if slices.Index(configStack, a.GetValue()) != -1 {
+				return nil, fmt.Errorf("circular --config reference detected: %s", strings.Join(append(configStack, a.GetValue()), " -> "))
+			}
+			var err error
+			if expanded, err = config.appendArgsForConfig(expanded, namedConfigs, phases, append(configStack, a.GetValue()), false); err != nil {
+				return nil, fmt.Errorf("error expanding config '%s': %s", a.GetValue(), err)
+			}
+		case *arguments.PositionalArgument:
+			expanded = append(expanded, a)
+		}
+	}
+	return expanded, nil
 }
 
 func Partition(args []arguments.Argument) *PartitionedArgs {
@@ -635,6 +909,8 @@ func (a *PartitionedArgs) RemoveOptions(optionNames ...string) []*IndexedOption 
 func (a *PartitionedArgs) Append(args ...arguments.Argument) error {
 	for _, arg := range args {
 		switch arg := arg.(type) {
+		case *arguments.DoubleDash:
+			// skip
 		case *arguments.PositionalArgument:
 			switch {
 			case a.Command == nil:

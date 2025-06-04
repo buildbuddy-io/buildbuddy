@@ -149,7 +149,7 @@ func TestSelection(t *testing.T) {
 }
 
 func contextWithUnverifiedJWT(c *claims.Claims) context.Context {
-	authCtx := claims.AuthContextFromClaims(context.Background(), c, nil)
+	authCtx := claims.AuthContextWithJWT(context.Background(), c, nil)
 	jwt := authCtx.Value(authutil.ContextTokenStringKey).(string)
 	return context.WithValue(context.Background(), authutil.ContextTokenStringKey, jwt)
 }

@@ -766,7 +766,7 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 			name:            "no action filter, kythe enabled",
 			actionFilter:    nil,
 			kytheEnabled:    true,
-			expectedActions: []string{"Test all targets", config.KytheActionName},
+			expectedActions: []string{"Test all targets", config.CSIncrementalUpdateName, config.KytheActionName},
 		},
 		{
 			name:            "action filter, kythe disabled",
@@ -781,10 +781,16 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 			expectedActions: []string{"Test all targets"},
 		},
 		{
-			name:            "kythe action filter",
+			name:            "kythe-only action filter",
 			actionFilter:    []string{config.KytheActionName},
 			kytheEnabled:    true,
 			expectedActions: []string{config.KytheActionName},
+		},
+		{
+			name:            "all codesearch action filter",
+			actionFilter:    []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			kytheEnabled:    true,
+			expectedActions: []string{config.CSIncrementalUpdateName, config.KytheActionName},
 		},
 	}
 

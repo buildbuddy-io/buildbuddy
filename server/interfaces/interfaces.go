@@ -55,6 +55,7 @@ import (
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/genproto/googleapis/longrunning"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -116,7 +117,8 @@ type UserInfo interface {
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
-	IsSAML() bool
+	// IsCustomerSSO indicates whether the user logged in via a customer SSO integration (SAML/OIDC).
+	IsCustomerSSO() bool
 }
 
 // Authenticator constants
@@ -286,7 +288,6 @@ type Cache interface {
 
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
-	SupportsEncryption(ctx context.Context) bool
 }
 
 type StoppableCache interface {
@@ -653,6 +654,7 @@ type GitHubApp interface {
 
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
 	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
+	UpdateGitHubAppInstallation(ctx context.Context, req *ghpb.UpdateGitHubAppInstallationRequest) (*ghpb.UpdateGitHubAppInstallationResponse, error)
 
 	LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
@@ -722,9 +724,9 @@ type GitHubAppService interface {
 	// have an authenticated user context.
 	GetGitHubAppForAuthenticatedUser(ctx context.Context) (GitHubApp, error)
 	// GetGitHubAppForRepoURL returns the BB GitHub app corresponding to the app installation
-	// for the given URL. The installation must be both installed on GitHub and imported
+	// for the given owner. The installation must be both installed on GitHub and imported
 	// to BuildBuddy via (`LinkGitHubAppInstallation`).
-	GetGitHubAppForOwner(ctx context.Context, repoURL string) (GitHubApp, error)
+	GetGitHubAppForOwner(ctx context.Context, owner string) (GitHubApp, error)
 
 	InstallPath(ctx context.Context) (string, error)
 
@@ -939,6 +941,14 @@ type ExecutionNode interface {
 	GetExecutorHostId() string
 
 	GetAssignableMilliCpu() int64
+}
+
+type Publisher interface {
+	Context() context.Context
+	Send(op *longrunning.Operation) error
+	Ping() error
+	SetState(state repb.ExecutionProgress_ExecutionState) error
+	CloseAndRecv() (*repb.PublishOperationResponse, error)
 }
 
 type ExecutionSearchService interface {
@@ -1648,6 +1658,7 @@ type GossipService interface {
 type CodesearchService interface {
 	Search(ctx context.Context, req *cssrpb.SearchRequest) (*cssrpb.SearchResponse, error)
 	Index(ctx context.Context, req *csinpb.IndexRequest) (*csinpb.IndexResponse, error)
+	RepoStatus(ctx context.Context, req *csinpb.RepoStatusRequest) (*csinpb.RepoStatusResponse, error)
 	IngestAnnotations(ctx context.Context, req *csinpb.IngestAnnotationsRequest) (*csinpb.IngestAnnotationsResponse, error)
 	KytheProxy(ctx context.Context, req *cssrpb.KytheRequest) (*cssrpb.KytheResponse, error)
 }
@@ -1664,7 +1675,6 @@ type RegistryService interface {
 type AtimeUpdater interface {
 	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value)
 	EnqueueByResourceName(ctx context.Context, downloadString string)
-	EnqueueByFindMissingRequest(ctx context.Context, req *repb.FindMissingBlobsRequest)
 }
 
 type CPULeaser interface {

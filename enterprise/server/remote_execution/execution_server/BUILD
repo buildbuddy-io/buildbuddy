@@ -26,6 +26,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/cachetools",
+        "//server/remote_cache/capabilities_server",
         "//server/remote_cache/digest",
         "//server/remote_execution/config",
         "//server/tables",
@@ -60,6 +61,7 @@ go_test(
     srcs = ["execution_server_test.go"],
     deps = [
         ":execution_server",
+        "//enterprise/server/backends/redis_execution_collector",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/tasksize",
         "//enterprise/server/testutil/testredis",
@@ -70,7 +72,6 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:scheduler_go_proto",
-        "//proto:stored_invocation_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/real_environment",

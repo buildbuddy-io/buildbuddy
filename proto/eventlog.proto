@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/context.proto";
+import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package eventlog;
 
@@ -39,6 +40,7 @@ message GetEventLogChunkResponse {
 }
 
 message LiveEventLogChunk {
+  option (vtproto.mempool) = true;
   // The chunk id that this data will eventually be written to.
   // Technically, when written the tail could span to the following chunk, but
   // that is not relevant for our purposes here.

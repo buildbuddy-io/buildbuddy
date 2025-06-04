@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
@@ -386,11 +387,11 @@ func isSupportedCommand(command string) bool {
 	return false
 }
 
-// GetAPIKeyInteractively attempts to read an API key from the
+// GetAPIKey attempts to read an API key from the
 // BUILDBUDDY_API_KEY environment variable and, if not set, from the buildbuddy
 // config set at the key `buildbuddy.api-key` in .git/config. If neither is set,
-// will prompt the user to set it.
-func GetAPIKeyInteractively() (string, error) {
+// and we're running in a tty, this will prompt the user to set it.
+func GetAPIKey() (string, error) {
 	var err error
 	apiKey := os.Getenv("BUILDBUDDY_API_KEY")
 	if apiKey != "" {
@@ -403,16 +404,21 @@ func GetAPIKeyInteractively() (string, error) {
 		log.Debugf("API key read from `buildbuddy.api-key` in .git/config.")
 		return apiKey, nil
 	}
-	// If an API key is not set, prompt the user to set it in their cli config.
-	if _, err = HandleLogin([]string{}); err != nil {
-		return "", status.WrapError(err, "handle login")
+	// If an API key is not set, and we're running in a terminal, start the
+	// login flow.
+	if terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr) {
+		if _, err = HandleLogin([]string{}); err != nil {
+			return "", status.WrapError(err, "handle login")
+		}
+		apiKey, err = storage.ReadRepoConfig("api-key")
+		if err != nil {
+			return "", status.WrapError(err, "read api key from bb config")
+		}
+		if apiKey == "" {
+			return "", status.NotFoundErrorf("API key not set after login")
+		}
+		return apiKey, nil
+	} else {
+		return "", status.NotFoundErrorf("API key not set")
 	}
-	apiKey, err = storage.ReadRepoConfig("api-key")
-	if err != nil {
-		return "", status.WrapError(err, "read api key from bb config")
-	}
-	if apiKey == "" {
-		return "", status.NotFoundErrorf("API key not set after login")
-	}
-	return apiKey, nil
 }

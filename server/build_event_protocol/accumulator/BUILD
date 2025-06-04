@@ -14,6 +14,7 @@ go_library(
         "//server/build_event_protocol/invocation_format",
         "//server/remote_cache/digest",
         "//server/util/log",
+        "//server/util/proto",
         "//server/util/timeutil",
     ],
 )

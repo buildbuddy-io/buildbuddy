@@ -13,15 +13,19 @@ var (
 	fieldNameRegex = regexp.MustCompile(`^([a-zA-Z0-9][a-zA-Z0-9_]*)$`)
 
 	// The following field names are used in the indexed docs.
-	IDField       = "id"
-	FilenameField = "filename"
-	ContentField  = "content"
-	LanguageField = "language"
-	OwnerField    = "owner"
-	RepoField     = "repo"
-	SHAField      = "sha"
+	IDField        = "id"
+	FilenameField  = "filename"
+	ContentField   = "content"
+	LanguageField  = "language"
+	OwnerField     = "owner"
+	RepoField      = "repo"
+	SHAField       = "sha"
+	LatestSHAField = "latest_sha"
 
-	defaultSchema = NewDocumentSchema([]types.FieldSchema{
+	// TODO(jdelfino): Define CodeSchema and MetadataSchema types that implement the
+	// types.DocumentSchema interface. Then we can hide all the flexibility from the clients,
+	// without hardcoding a particular schema into the search core.
+	gitHubFileSchema = NewDocumentSchema([]types.FieldSchema{
 		MustFieldSchema(types.KeywordField, IDField, false),
 		MustFieldSchema(types.TrigramField, FilenameField, true),
 		MustFieldSchema(types.SparseNgramField, ContentField, true),
@@ -30,10 +34,20 @@ var (
 		MustFieldSchema(types.KeywordField, RepoField, true),
 		MustFieldSchema(types.KeywordField, SHAField, true),
 	})
+	metadataSchema = NewDocumentSchema([]types.FieldSchema{
+		// Repository URL
+		MustFieldSchema(types.KeywordField, IDField, false),
+		// Last indexed commit SHA
+		MustFieldSchema(types.KeywordField, LatestSHAField, true),
+	})
 )
 
-func DefaultSchema() types.DocumentSchema {
-	return defaultSchema
+func GitHubFileSchema() types.DocumentSchema {
+	return gitHubFileSchema
+}
+
+func MetadataSchema() types.DocumentSchema {
+	return metadataSchema
 }
 
 // Satisfies the types.FieldSchema interface.
@@ -139,6 +153,14 @@ func (d documentSchema) MakeDocument(data map[string][]byte) (types.Document, er
 		fields[name] = fieldSchema.MakeField(field_data)
 	}
 	return document(fields), nil
+}
+
+func (d documentSchema) MustMakeDocument(data map[string][]byte) types.Document {
+	doc, err := d.MakeDocument(data)
+	if err != nil {
+		panic(fmt.Sprintf("failed to create document: %v", err))
+	}
+	return doc
 }
 
 func NewDocumentSchema(schemas []types.FieldSchema) types.DocumentSchema {

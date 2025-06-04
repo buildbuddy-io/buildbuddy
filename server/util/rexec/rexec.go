@@ -143,10 +143,20 @@ func parsePairs(pairs []string) (map[string]string, error) {
 	return m, nil
 }
 
-// Prepare transfers the given Command and local input root directory to cache,
-// and populates the resulting digests into the given Action. An empty string
-// for input root means that an empty directory will be used as the input root.
-// A resource name pointing to the remote Action is returned.
+// Prepare uploads an Action and all of its dependencies to cache, populating
+// uploaded digests into the Action.
+//
+// The `Action.command_digest` field is optional. If it is set, the command
+// digest is expected to already have been uploaded. If it is not set, the given
+// Command is uploaded to cache, and the resulting command digest is set on the
+// Action.
+//
+// The `Action.input_root_digest` field is optional. If it is set, the input
+// root digest is expected to already have been uploaded. If it is not set, the
+// given local inputRootDir path is walked and recursively uploaded to cache,
+// and the resulting root directory digest is set on the Action. An empty string
+// for inputRootDir is treated as an empty directory, meaning the action will
+// run from an empty input root.
 //
 // TODO: The REAPI spec says platform properties and environment variables
 // "MUST" be sorted alphabetically by name. We should either automatically
@@ -154,14 +164,25 @@ func parsePairs(pairs []string) (map[string]string, error) {
 func Prepare(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, action *repb.Action, cmd *repb.Command, inputRootDir string) (*rspb.ResourceName, error) {
 	var commandDigest, inputRootDigest *repb.Digest
 	eg, egctx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
-		d, err := cachetools.UploadProto(egctx, env.GetByteStreamClient(), instanceName, digestFunction, cmd)
-		if err != nil {
-			return err
-		}
-		commandDigest = d
-		return nil
-	})
+	if action.CommandDigest != nil && cmd != nil {
+		return nil, status.InvalidArgumentErrorf("cannot specify both an Action.command_digest and a Command")
+	}
+	if action.CommandDigest == nil && cmd == nil {
+		return nil, status.InvalidArgumentErrorf("must specify either Action.command_digest or a Command")
+	}
+	if inputRootDir != "" && action.InputRootDigest != nil {
+		return nil, status.InvalidArgumentErrorf("cannot specify both an input root directory and Action.input_root_digest")
+	}
+	if cmd != nil {
+		eg.Go(func() error {
+			d, err := cachetools.UploadProto(egctx, env.GetByteStreamClient(), instanceName, digestFunction, cmd)
+			if err != nil {
+				return err
+			}
+			commandDigest = d
+			return nil
+		})
+	}
 	if inputRootDir != "" {
 		eg.Go(func() error {
 			d, _, err := cachetools.UploadDirectoryToCAS(egctx, env, instanceName, digestFunction, inputRootDir)
@@ -171,7 +192,9 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 			inputRootDigest = d
 			return nil
 		})
-	} else {
+	} else if action.InputRootDigest == nil {
+		// If running an action without an input root, set it to the digest of
+		// an empty directory, since the input_root_digest field is required.
 		d, err := digest.Compute(bytes.NewReader(nil), digestFunction)
 		if err != nil {
 			return nil, err
@@ -181,8 +204,12 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	action.CommandDigest = commandDigest
-	action.InputRootDigest = inputRootDigest
+	if commandDigest != nil {
+		action.CommandDigest = commandDigest
+	}
+	if inputRootDigest != nil {
+		action.InputRootDigest = inputRootDigest
+	}
 	actionDigest, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, digestFunction, action)
 	if err != nil {
 		return nil, err

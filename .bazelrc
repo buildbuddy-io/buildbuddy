@@ -28,6 +28,7 @@ common --config=anon-bes
 # Target+Exec platform configurations.
 #
 # We maintain separate configuration for each repo so that we can migrate them to bzlmod independently.
+common:target-darwin-arm64 --config=workspace-target-darwin-arm64
 common:target-linux-x86 --config=workspace-target-linux-x86
 common:target-linux-arm64 --config=workspace-target-linux-arm64
 
@@ -37,7 +38,10 @@ common:target-linux-arm64 --config=workspace-target-linux-arm64
 #
 # Exclude tests which require BuildBuddy Secrets from the default unauthenticated builds
 # These often require "include-secrets: true" exec property in their BUILD file.
-test --test_tag_filters=-docker,-bare,-secrets
+#
+# Don't run benchmarks by default; benchmarks should only run if we are
+# explicitly doing performance testing.
+common --test_tag_filters=-docker,-bare,-secrets,-performance
 
 # CI invocations from public repo should be publicly accessible.
 common:ci-shared --build_metadata=VISIBILITY=PUBLIC

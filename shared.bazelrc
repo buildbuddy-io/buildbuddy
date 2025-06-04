@@ -63,7 +63,7 @@ common --@aspect_rules_ts//ts:skipLibCheck=honor_tsconfig
 # Add `-test.v` to all Go tests so that each test func is reported as a separate test case
 # in the XML output.  This allows our webUI to display the run time of each test case
 # separately and let us know which tests is slow.
-test --test_env=GO_TEST_WRAP_TESTV=1
+common --test_env=GO_TEST_WRAP_TESTV=1
 
 # In rules_go v0.50.0, nogo static analysis was moved from GoCompilePkg to a couple of
 # actions: RunNogo and ValidateNogo. Among these, ValidateNogo is a validation action*.
@@ -79,7 +79,7 @@ common --experimental_use_validation_aspect=true
 # Don't show cached test results in the test summary
 # We have many tests that can fill up the console with cached results.
 # If you prefer to see cached results, set this to 'short' in user.bazelrc file.
-test --test_summary=terse
+common --test_summary=terse
 
 common:race --@io_bazel_rules_go//go/config:race
 
@@ -87,26 +87,25 @@ common:performance --compilation_mode=opt
 
 # Configurations used to debug flaky tests
 common:quarantine --config=remote-minimal
-test:quarantine --config=race
-test:quarantine --test_env=RUN_QUARANTINED_TESTS=true
+common:quarantine --config=race
+common:quarantine --test_env=RUN_QUARANTINED_TESTS=true
 
 # Configuration used to deflake tests
-common:deflake --config=remote-minimal
-test:deflake --runs_per_test=100
-test:deflake --test_output=errors
-test:deflake --test_runner_fail_fast
-test:deflake --notest_keep_going
-test:deflake --config=quarantine
+common:deflake --config=quarantine
+common:deflake --runs_per_test=100
+common:deflake --test_output=errors
+common:deflake --test_runner_fail_fast
+common:deflake --notest_keep_going
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
-test:webdriver-debug --test_arg=-webdriver_headless=false
-test:webdriver-debug --test_arg=-webdriver_end_of_test_delay=3s
+common:webdriver-debug --test_arg=-webdriver_headless=false
+common:webdriver-debug --test_arg=-webdriver_end_of_test_delay=3s
 # Forward X server display for local webdriver tests.
-test:webdriver-debug --test_env=DISPLAY
+common:webdriver-debug --test_env=DISPLAY
 # When debugging, only run one webdriver test at a time (it's overwhelming
 # otherwise).
-test:webdriver-debug --local_test_jobs=1
+common:webdriver-debug --local_test_jobs=1
 
 
 ###################################
@@ -172,7 +171,7 @@ common:local-rbe-linux --config=local
 
 # Build with --config=local-rbe-mac to target a local executor on macOS.
 common:local-rbe-mac --remote_executor=grpc://localhost:1985
-common:local-rbe-mac --config=local-rbe
+common:local-rbe-mac --config=target-darwin-arm64
 common:local-rbe-mac --config=local
 
 # Build with --config=dev to send build logs to the dev server
@@ -193,10 +192,14 @@ common:cache --config=cache-shared
 common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
 
 # Target+Exec Platforms configuration
+common:workspace-target-darwin-arm64 --platforms=@buildbuddy_toolchain//:platform_darwin_arm64
+common:workspace-target-darwin-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_darwin_arm64
 common:workspace-target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 common:workspace-target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 common:workspace-target-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
 common:workspace-target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
+common:bzlmod-target-darwin-arm64 --platforms=@buildbuddy_toolchain//:platform_darwin_arm64
+common:bzlmod-target-darwin-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_darwin_arm64
 common:bzlmod-target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64

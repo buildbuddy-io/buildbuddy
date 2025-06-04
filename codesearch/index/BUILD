@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "index",
-    srcs = ["index.go"],
+    srcs = [
+        "index.go",
+        "merger.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/index",
     visibility = ["//visibility:public"],
     deps = [

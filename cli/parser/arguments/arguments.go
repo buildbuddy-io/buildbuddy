@@ -9,7 +9,6 @@ package arguments
 // string representation of the arguments.
 type Argument interface {
 	GetValue() string
-	SetValue(value string)
 	Format() []string
 }
 
@@ -21,12 +20,18 @@ func (a *PositionalArgument) GetValue() string {
 	return a.Value
 }
 
-func (a *PositionalArgument) SetValue(value string) {
-	a.Value = value
-}
-
 func (a *PositionalArgument) Format() []string {
 	return []string{a.Value}
+}
+
+type DoubleDash struct{}
+
+func (a *DoubleDash) GetValue() string {
+	return "--"
+}
+
+func (a *DoubleDash) Format() []string {
+	return []string{a.GetValue()}
 }
 
 func FromConcrete[T Argument](args []T) []Argument {

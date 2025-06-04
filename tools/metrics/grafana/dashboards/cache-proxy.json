@@ -80,7 +80,7 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 129
+            "y": 137
           },
           "hiddenSeries": false,
           "id": 21,
@@ -187,7 +187,7 @@
             "h": 7,
             "w": 12,
             "x": 12,
-            "y": 129
+            "y": 137
           },
           "hiddenSeries": false,
           "id": 6270,
@@ -331,7 +331,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 136
+            "y": 144
           },
           "id": 5492,
           "options": {
@@ -378,7 +378,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 136
+            "y": 144
           },
           "hiddenSeries": false,
           "id": 932,
@@ -495,7 +495,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 2
+            "y": 10
           },
           "hiddenSeries": false,
           "id": 8754,
@@ -592,7 +592,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 2
+            "y": 10
           },
           "hiddenSeries": false,
           "id": 8755,
@@ -689,7 +689,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 10
+            "y": 18
           },
           "hiddenSeries": false,
           "id": 8756,
@@ -799,7 +799,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 10
+            "y": 18
           },
           "hiddenSeries": false,
           "id": 8757,
@@ -909,7 +909,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 18
+            "y": 26
           },
           "hiddenSeries": false,
           "id": 8022,
@@ -1019,7 +1019,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 18
+            "y": 26
           },
           "hiddenSeries": false,
           "id": 8751,
@@ -1129,7 +1129,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 26
+            "y": 34
           },
           "hiddenSeries": false,
           "id": 8128,
@@ -1243,7 +1243,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 26
+            "y": 34
           },
           "hiddenSeries": false,
           "id": 8752,
@@ -1363,7 +1363,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 26
+            "y": 34
           },
           "hiddenSeries": false,
           "id": 8753,
@@ -1483,7 +1483,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 34
+            "y": 42
           },
           "hiddenSeries": false,
           "id": 8758,
@@ -1584,7 +1584,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 34
+            "y": 42
           },
           "hiddenSeries": false,
           "id": 8759,
@@ -1691,7 +1691,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 34
+            "y": 42
           },
           "hiddenSeries": false,
           "id": 8760,
@@ -1792,7 +1792,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 42
+            "y": 50
           },
           "hiddenSeries": false,
           "id": 8761,
@@ -1893,7 +1893,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 42
+            "y": 50
           },
           "hiddenSeries": false,
           "id": 8762,
@@ -2000,7 +2000,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 42
+            "y": 50
           },
           "hiddenSeries": false,
           "id": 8763,
@@ -2132,7 +2132,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3
+            "y": 11
           },
           "hiddenSeries": false,
           "id": 8749,
@@ -2254,7 +2254,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3
+            "y": 11
           },
           "hiddenSeries": false,
           "id": 8750,
@@ -2384,7 +2384,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 4
+            "y": 12
           },
           "hiddenSeries": false,
           "id": 8773,
@@ -2506,7 +2506,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 4
+            "y": 12
           },
           "hiddenSeries": false,
           "id": 8779,
@@ -2622,7 +2622,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 4
+            "y": 12
           },
           "hiddenSeries": false,
           "id": 8774,
@@ -2735,7 +2735,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 132
+            "y": 5
           },
           "hiddenSeries": false,
           "id": 254,
@@ -2831,7 +2831,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 132
+            "y": 5
           },
           "hiddenSeries": false,
           "id": 251,
@@ -2956,7 +2956,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 140
+            "y": 13
           },
           "hiddenSeries": false,
           "id": 250,
@@ -3082,7 +3082,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 140
+            "y": 13
           },
           "hiddenSeries": false,
           "id": 252,
@@ -3208,7 +3208,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 148
+            "y": 21
           },
           "hiddenSeries": false,
           "id": 253,
@@ -3317,6 +3317,248 @@
           "yaxis": {
             "align": false
           }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "description": "",
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 21
+          },
+          "hiddenSeries": false,
+          "id": 8780,
+          "legend": {
+            "alignAsTable": false,
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "rightSide": true,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": false
+          },
+          "percentage": false,
+          "pluginVersion": "10.1.0",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [
+            {
+              "$$hashKey": "object:1261",
+              "alias": "hit_ratio",
+              "yaxis": 2
+            }
+          ],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=\"cache-proxy\"}[${window}])) by (status)\n",
+              "interval": "",
+              "legendFormat": "__auto",
+              "queryType": "randomWalk",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=\"cache-proxy\", status=\"hit\"}[${window}])) / sum(rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=\"cache-proxy\"}[${window}]))\n",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "hit_ratio",
+              "queryType": "randomWalk",
+              "range": true,
+              "refId": "B"
+            }
+          ],
+          "thresholds": [],
+          "timeRegions": [],
+          "title": "Lookaside cache hits and misses",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:1268",
+              "format": "reqps",
+              "logBase": 1,
+              "show": true
+            },
+            {
+              "$$hashKey": "object:1269",
+              "format": "none",
+              "logBase": 1,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "description": "",
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 29
+          },
+          "hiddenSeries": false,
+          "id": 8781,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "rightSide": true,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": false
+          },
+          "percentage": false,
+          "pluginVersion": "10.1.0",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.99, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_bucket{region=\"${region}\", job=\"cache-proxy\"}[${window}])))",
+              "interval": "",
+              "legendFormat": "{{eviction_reason}} P99",
+              "queryType": "randomWalk",
+              "range": true,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.95, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_bucket{region=\"${region}\", job=\"cache-proxy\"}[${window}])))",
+              "interval": "",
+              "legendFormat": "{{eviction_reason}} P95",
+              "range": true,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.5, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_bucket{region=\"${region}\", job=\"cache-proxy\"}[${window}])))",
+              "interval": "",
+              "legendFormat": "{{eviction_reason}} P50",
+              "range": true,
+              "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum by(eviction_reason) (increase(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_sum{region=\"${region}\", job=\"cache-proxy\"}[${window}])) / sum by(eviction_reason) (increase(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_count{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "{{eviction_reason}} avg",
+              "range": true,
+              "refId": "D"
+            }
+          ],
+          "thresholds": [],
+          "timeRegions": [],
+          "title": "Lookaside cache eviction age by reason",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:1865",
+              "format": "ms",
+              "logBase": 1,
+              "show": true
+            },
+            {
+              "$$hashKey": "object:1866",
+              "format": "reqps",
+              "logBase": 1,
+              "show": false
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
         }
       ],
       "targets": [
@@ -3362,7 +3604,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 133
+            "y": 141
           },
           "hiddenSeries": false,
           "id": 17,
@@ -3453,7 +3695,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 133
+            "y": 141
           },
           "hiddenSeries": false,
           "id": 19,
@@ -3546,7 +3788,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 141
+            "y": 149
           },
           "hiddenSeries": false,
           "id": 4,
@@ -3656,7 +3898,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 141
+            "y": 149
           },
           "hiddenSeries": false,
           "id": 9,
@@ -3795,7 +4037,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 150
+            "y": 158
           },
           "id": 6656,
           "options": {
@@ -3888,7 +4130,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 150
+            "y": 158
           },
           "id": 6834,
           "options": {
@@ -3943,7 +4185,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 158
+            "y": 166
           },
           "hiddenSeries": false,
           "id": 646,
@@ -4057,7 +4299,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 166
+            "y": 174
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -4208,7 +4450,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 174
+            "y": 182
           },
           "id": 1338,
           "options": {
@@ -4309,7 +4551,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 182
+            "y": 190
           },
           "id": 2135,
           "options": {
@@ -4405,7 +4647,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 190
+            "y": 198
           },
           "id": 6422,
           "options": {
@@ -4501,7 +4743,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 198
+            "y": 206
           },
           "id": 6428,
           "options": {
@@ -4633,7 +4875,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 206
+            "y": 214
           },
           "id": 6732,
           "options": {
@@ -4756,7 +4998,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 214
+            "y": 222
           },
           "id": 2182,
           "options": {
@@ -4828,7 +5070,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 222
+            "y": 230
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -4998,7 +5240,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 337
+            "y": 345
           },
           "id": 6580,
           "options": {
@@ -5118,7 +5360,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 345
+            "y": 353
           },
           "id": 3763,
           "options": {
@@ -5247,7 +5489,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 353
+            "y": 361
           },
           "id": 5574,
           "options": {
@@ -5401,7 +5643,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 361
+            "y": 369
           },
           "id": 3846,
           "options": {
@@ -5497,7 +5739,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 369
+            "y": 377
           },
           "id": 5160,
           "options": {
@@ -5593,7 +5835,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 377
+            "y": 385
           },
           "id": 5242,
           "options": {
@@ -5688,7 +5930,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 385
+            "y": 393
           },
           "id": 5324,
           "options": {
@@ -5783,7 +6025,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 393
+            "y": 401
           },
           "id": 5406,
           "options": {
@@ -5891,7 +6133,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 135
+            "y": 143
           },
           "id": 3929,
           "options": {
@@ -5984,7 +6226,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 135
+            "y": 143
           },
           "id": 4011,
           "options": {
@@ -6077,7 +6319,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 143
+            "y": 151
           },
           "id": 4093,
           "options": {
@@ -6170,7 +6412,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 143
+            "y": 151
           },
           "id": 4175,
           "options": {
@@ -6263,7 +6505,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 151
+            "y": 159
           },
           "id": 4257,
           "options": {
@@ -6356,7 +6598,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 151
+            "y": 159
           },
           "id": 4339,
           "options": {
@@ -6449,7 +6691,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 159
+            "y": 167
           },
           "id": 4421,
           "options": {
@@ -6542,7 +6784,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 159
+            "y": 167
           },
           "id": 4503,
           "options": {
@@ -6635,7 +6877,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 167
+            "y": 175
           },
           "id": 4585,
           "options": {
@@ -6728,7 +6970,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 167
+            "y": 175
           },
           "id": 4667,
           "options": {
@@ -6821,7 +7063,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 175
+            "y": 183
           },
           "id": 4749,
           "options": {
@@ -6914,7 +7156,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 175
+            "y": 183
           },
           "id": 4831,
           "options": {
@@ -7007,7 +7249,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 183
+            "y": 191
           },
           "id": 4913,
           "options": {
@@ -7090,7 +7332,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 192
+            "y": 200
           },
           "hiddenSeries": false,
           "id": 73,
@@ -7183,7 +7425,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 192
+            "y": 200
           },
           "hiddenSeries": false,
           "id": 79,
@@ -7322,7 +7564,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 201
+            "y": 209
           },
           "id": 2087,
           "options": {
@@ -7424,7 +7666,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 201
+            "y": 209
           },
           "id": 2039,
           "options": {
@@ -7515,7 +7757,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 137
+            "y": 145
           },
           "hiddenSeries": false,
           "id": 85,
@@ -7618,7 +7860,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 137
+            "y": 145
           },
           "hiddenSeries": false,
           "id": 87,
@@ -7712,7 +7954,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 146
+            "y": 154
           },
           "hiddenSeries": false,
           "id": 91,
@@ -7805,7 +8047,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 146
+            "y": 154
           },
           "hiddenSeries": false,
           "id": 93,
@@ -7975,7 +8217,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 11
+            "y": 19
           },
           "id": 1127,
           "options": {
@@ -8072,7 +8314,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 11
+            "y": 19
           },
           "id": 1166,
           "options": {
@@ -8182,7 +8424,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 19
+            "y": 27
           },
           "id": 1168,
           "options": {
@@ -8273,7 +8515,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 139
+            "y": 147
           },
           "hiddenSeries": false,
           "id": 578,

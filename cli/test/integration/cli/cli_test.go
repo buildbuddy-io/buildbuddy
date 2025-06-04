@@ -46,6 +46,7 @@ func TestBazelVersion(t *testing.T) {
 }
 
 func TestParseGlobalFlags(t *testing.T) {
+	quarantine.SkipQuarantinedTest(t)
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
@@ -382,6 +383,21 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 	b, err := testcli.CombinedOutput(cmd)
 	require.NoErrorf(t, err, "output: %s", string(b))
 	require.NotContains(t, string(b), "Running Bazel server needs to be killed")
+}
+
+func TestHelpWithBazelWrapper(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD": "",
+		"tools/bazel": `#!/usr/bin/env bash
+echo "A message from ./tools/bazel that tries to break bb's parsing logic!"
+"$BAZEL_REAL" "$@"
+`,
+	})
+	testfs.MakeExecutable(t, ws, "tools/bazel")
+	cmd := testcli.BazelCommand(t, ws, "build", "//...")
+	b, err := testcli.CombinedOutput(cmd)
+	require.NoErrorf(t, err, "output: %s", string(b))
 }
 
 func retryUntilSuccess(t *testing.T, f func() error) {

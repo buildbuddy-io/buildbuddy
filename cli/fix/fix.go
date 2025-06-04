@@ -15,8 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 
-	langs "github.com/buildbuddy-io/buildbuddy/cli/fix/langs"
-
 	gazelle "github.com/bazelbuild/bazel-gazelle/cmd/gazelle"
 	buildifier "github.com/bazelbuild/buildtools/buildifier"
 )
@@ -177,7 +175,7 @@ func walk(moduleOrWorkspaceFile string) error {
 // Collect the languages that support auto-generating WORKSPACE files.
 func getLanguages() []language.Language {
 	var languages []language.Language
-	for _, l := range langs.Languages {
+	for _, l := range gazelle.Languages {
 		if l, ok := l.(language.Language); ok {
 			languages = append(languages, l)
 		}

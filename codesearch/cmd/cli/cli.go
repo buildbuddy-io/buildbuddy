@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/cockroachdb/pebble"
 )
 
 var (
@@ -145,7 +144,7 @@ func handleIndex(args []string) {
 	if *reset {
 		os.RemoveAll(indexDir)
 	}
-	db, err := pebble.Open(indexDir, &pebble.Options{})
+	db, err := index.OpenPebbleDB(indexDir)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -179,22 +178,14 @@ func handleIndex(args []string) {
 				if err != nil {
 					return err
 				}
-				fields, err := github.ExtractFields(path, commitSHA, repoURL, buf)
-				if err != nil {
-					log.Info(err.Error())
-					return nil
-				}
-				doc, err := schema.DefaultSchema().MakeDocument(fields)
-				if err != nil {
-					log.Fatal(err.Error())
-				}
 
-				if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
-					log.Fatal(err.Error())
+				if err := github.AddFileToIndex(iw, repoURL, commitSHA, path, buf); err != nil {
+					log.Infof("Skipping file %s: %s", path, err)
 				}
 			}
 			return nil
 		})
+		github.SetLastIndexedCommitSha(iw, repoURL, commitSHA)
 	}
 
 	if err := iw.Flush(); err != nil {
@@ -205,13 +196,13 @@ func handleIndex(args []string) {
 func handleSearch(ctx context.Context, args []string) {
 	pat := args[0]
 
-	db, err := pebble.Open(indexDir, &pebble.Options{})
+	db, err := index.OpenPebbleDB(indexDir)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 	defer db.Close()
 
-	codesearcher := searcher.New(ctx, index.NewReader(ctx, db, getNamespace(), schema.DefaultSchema()))
+	codesearcher := searcher.New(ctx, index.NewReader(ctx, db, getNamespace(), schema.GitHubFileSchema()))
 	q, err := query.NewReQuery(ctx, pat)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -274,13 +265,14 @@ func handleSearch(ctx context.Context, args []string) {
 func handleSquery(ctx context.Context, args []string) {
 	pat := args[0]
 
-	db, err := pebble.Open(indexDir, &pebble.Options{})
+	db, err := index.OpenPebbleDB(indexDir)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 	defer db.Close()
 
-	ir := index.NewReader(ctx, db, getNamespace(), schema.DefaultSchema())
+	ir := index.NewReader(ctx, db, getNamespace(), schema.GitHubFileSchema())
+
 	matches, err := ir.RawQuery(pat)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -306,10 +298,7 @@ func handleSquery(ctx context.Context, args []string) {
 		}
 	}
 	for _, docID := range docIDs {
-		doc, err := ir.GetStoredDocument(docID)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
+		doc := ir.GetStoredDocument(docID)
 		filename := doc.Field(schema.FilenameField).Contents()
 		fmt.Printf("%d (%q) matched fields: %s\n", docID, filename, strings.Join(docFields[docID], ", "))
 	}

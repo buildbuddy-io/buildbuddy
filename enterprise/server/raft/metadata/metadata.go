@@ -80,6 +80,8 @@ type Config struct {
 
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
+
+	LogDBConfigType store.LogDBConfigType
 }
 
 // data needed to update last access time.
@@ -174,6 +176,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		GRPCPort:          *gRPCPort,
 		Partitions:        ps,
 		PartitionMappings: *partitionMappings,
+		LogDBConfigType:   store.LargeMemLogDBConfigType,
 	}
 	return New(env, rcConfig)
 }
@@ -202,7 +205,7 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 	rc.grpcAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.GRPCPort)
 	grpcListeningAddr := fmt.Sprintf("%s:%d", conf.ListenAddr, conf.GRPCPort)
 
-	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.Partitions)
+	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.Partitions, rc.conf.LogDBConfigType)
 	if err != nil {
 		return nil, err
 	}
@@ -232,8 +235,9 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	rc.eg = eg
 	rc.egCancel = cancelFunc
+	atimeWriteBatchSize := *atimeWriteBatchSize
 	rc.eg.Go(func() error {
-		return rc.processAccessTimeUpdates(gctx, rc.shutdown)
+		return rc.processAccessTimeUpdates(gctx, rc.shutdown, atimeWriteBatchSize)
 	})
 
 	return rc, nil
@@ -356,7 +360,7 @@ func (rc *Server) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
 		}
 	}
 }
-func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}) error {
+func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}, atimeWriteBatchSize int) error {
 	var keys []*sender.KeyMeta
 	timer := time.NewTimer(atimeFlushPeriod)
 	defer timer.Stop()
@@ -401,7 +405,7 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 				Key:  accessTimeUpdate.key,
 				Meta: rc.clock.Now().UnixMicro(),
 			})
-			if len(keys) >= *atimeWriteBatchSize {
+			if len(keys) >= atimeWriteBatchSize {
 				flush()
 			}
 		case <-timer.C:
@@ -682,8 +686,8 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 	return &mdpb.DeleteResponse{}, nil
 }
 
-func (rc *Server) TestingWaitForGC() {
-	rc.store.TestingWaitForGC()
+func (rc *Server) TestingWaitForGC(ctx context.Context) error {
+	return rc.store.TestingWaitForGC(ctx)
 }
 
 func (rc *Server) TestingFlush() {

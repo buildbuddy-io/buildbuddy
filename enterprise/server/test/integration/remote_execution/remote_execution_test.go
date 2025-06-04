@@ -493,9 +493,16 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 	}
 	opts := &rbetest.ExecuteOpts{APIKey: rbe.APIKey1}
 
+	// Note: output_paths are needed for affinity routing to work, and
+	// output_paths are also deleted between runs. So we always write the
+	// output to 'foo.out', and using a separate non-output path to check
+	// for runner persistence.
 	cmd := rbe.Execute(&repb.Command{
-		Arguments:   []string{"touch", "foo.txt"},
-		OutputPaths: []string{"foo.txt"},
+		Arguments: []string{"sh", "-ec", `
+			touch foo.out
+			echo foo > persistent.txt
+		`},
+		OutputPaths: []string{"foo.out"},
 		Platform:    platform,
 	}, opts)
 	res := cmd.Wait()
@@ -505,8 +512,11 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 	rbetest.WaitForAnyPooledRunner(t, ctx)
 
 	cmd = rbe.Execute(&repb.Command{
-		Arguments:   []string{"stat", "foo.txt"},
-		OutputPaths: []string{"foo.txt"},
+		Arguments: []string{"sh", "-ec", `
+			touch foo.out
+			stat persistent.txt
+		`},
+		OutputPaths: []string{"foo.out"},
 		Platform:    platform,
 	}, opts)
 	res = cmd.Wait()
@@ -546,8 +556,11 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 	}
 
 	cmd := rbe.Execute(&repb.Command{
-		Arguments:   []string{"touch", "foo.txt"},
-		OutputPaths: []string{"foo.txt"},
+		Arguments: []string{"sh", "-ec", `
+			touch foo.out
+			echo foo > persistent.txt
+		`},
+		OutputPaths: []string{"foo.out"},
 		Platform:    platform,
 	}, opts)
 	res := cmd.Wait()
@@ -557,8 +570,11 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 	rbetest.WaitForAnyPooledRunner(t, ctx)
 
 	cmd = rbe.Execute(&repb.Command{
-		Arguments:   []string{"stat", "foo.txt"},
-		OutputPaths: []string{"foo.txt"},
+		Arguments: []string{"sh", "-ec", `
+			touch foo.out
+			stat persistent.txt
+		`},
+		OutputPaths: []string{"foo.out"},
 		Platform:    platform,
 	}, opts)
 	res = cmd.Wait()
@@ -1700,7 +1716,39 @@ func TestRedisRestart(t *testing.T) {
 	)
 }
 
+type cancelInvocationTestCase struct {
+	name  string
+	flags map[string]any
+}
+
 func TestInvocationCancellation(t *testing.T) {
+	for _, tc := range []cancelInvocationTestCase{
+		{
+			name: "executions stored in redis",
+			flags: map[string]any{
+				"remote_execution.write_execution_progress_state_to_redis": true,
+				"remote_execution.write_executions_to_primary_db":          false,
+			},
+		},
+		{
+			name: "executions stored in DB",
+			flags: map[string]any{
+				"remote_execution.write_execution_progress_state_to_redis": false,
+				"remote_execution.write_executions_to_primary_db":          true,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testInvocationCancellation(t, tc)
+		})
+	}
+}
+
+func testInvocationCancellation(t *testing.T, tc cancelInvocationTestCase) {
+	for k, v := range tc.flags {
+		flags.Set(t, k, v)
+	}
+
 	rbe := rbetest.NewRBETestEnv(t)
 
 	bbServer := rbe.AddBuildBuddyServer()

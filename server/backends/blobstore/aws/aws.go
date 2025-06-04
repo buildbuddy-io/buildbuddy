@@ -41,6 +41,7 @@ var (
 	awsS3DisableSSL                = flag.Bool("storage.aws_s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.", flag.Deprecated("Specify a non-HTTPS endpoint instead."))
 	awsS3ForcePathStyle            = flag.Bool("storage.aws_s3.s3_force_path_style", false, "Force path style urls for objects, useful for configuring the use of MinIO.")
 	awsS3DisableChecksumValidation = flag.Bool("storage.aws_s3.disable_checksum_validation", false, "If true, disable checksum validation. Useful for non-AWS S3 API providers.")
+	awsS3MaxUploadParts            = flag.Int("storage.aws_s3.max_upload_parts", 0, "The maximum number of parts to split blobs into when performing multi-part uploads. When not specified, uploads over 5MB are split into 5MB parts.")
 )
 
 const (
@@ -115,8 +116,9 @@ func NewAwsS3BlobStore(ctx context.Context) (*AwsS3BlobStore, error) {
 			log.Debug("AWS blobstore forcing path style")
 			o.UsePathStyle = *awsS3ForcePathStyle
 			if *awsS3DisableChecksumValidation {
-				log.Debug("AWS request checksum calculation: only when required")
+				log.Debug("AWS request/response checksum calculation: only when required")
 				o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+				o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 			}
 		},
 	)
@@ -126,7 +128,11 @@ func NewAwsS3BlobStore(ctx context.Context) (*AwsS3BlobStore, error) {
 		client:     client,
 		bucket:     awsS3Bucket,
 		downloader: s3manager.NewDownloader(client),
-		uploader:   s3manager.NewUploader(client),
+		uploader: s3manager.NewUploader(client, func(uploader *s3manager.Uploader) {
+			if *awsS3MaxUploadParts != 0 {
+				uploader.MaxUploadParts = int32(*awsS3MaxUploadParts)
+			}
+		}),
 	}
 
 	// S3 access points can't modify or delete buckets

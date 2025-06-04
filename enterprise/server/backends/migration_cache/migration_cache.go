@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"math/rand"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -179,21 +180,6 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 	return c, nil
 }
 
-func (mc *MigrationCache) checkSafeToMigrate(ctx context.Context) error {
-	u, err := mc.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		// This is an anon user which is ok.
-		return nil
-	}
-	if !u.GetCacheEncryptionEnabled() {
-		return nil
-	}
-	if mc.src.SupportsEncryption(ctx) && !mc.dest.SupportsEncryption(ctx) {
-		return status.FailedPreconditionError("not safe to copy from encrypted cache to unencrypted cache")
-	}
-	return nil
-}
-
 func (mc *MigrationCache) doubleRead() bool {
 	return mc.doubleReadPercentage > 0 && rand.Float64() < mc.doubleReadPercentage
 }
@@ -262,9 +248,6 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 }
 
 func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return nil, err
-	}
 	srcMissing, srcErr := mc.src.FindMissing(ctx, resources)
 
 	if mc.doubleRead() {
@@ -300,9 +283,6 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 }
 
 func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return nil, err
-	}
 	srcData, srcErr := mc.src.GetMulti(ctx, resources)
 
 	go func() {
@@ -346,10 +326,6 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 }
 
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return err
-	}
-
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
@@ -469,12 +445,11 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 
 	if d.dest != nil {
 		eg.Go(func() error {
-			if d.doubleReadBuf == nil || len(d.doubleReadBuf) != len(p) {
-				d.doubleReadBuf = make([]byte, len(p))
-			}
+			// Grow never changes the length, so it will stay 0.
+			d.doubleReadBuf = slices.Grow(d.doubleReadBuf, len(p))
 
 			var dstN int
-			dstN, dstErr = io.ReadFull(d.dest, d.doubleReadBuf)
+			dstN, dstErr = io.ReadFull(d.dest, d.doubleReadBuf[:len(p)])
 			if dstErr == io.ErrUnexpectedEOF {
 				dstErr = io.EOF
 			}
@@ -561,10 +536,6 @@ func (d *doubleReader) Close() error {
 }
 
 func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return nil, err
-	}
-
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
@@ -661,19 +632,13 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 }
 
 type doubleWriter struct {
-	src          interfaces.CommittedWriteCloser
-	dest         *asyncWriter
-	destDeleteFn func()
+	src  interfaces.CommittedWriteCloser
+	dest *asyncWriter
 }
 
 func (d *doubleWriter) Write(data []byte) (int, error) {
-	_, destErr := d.dest.Write(data)
-	srcN, srcErr := d.src.Write(data)
-	if srcErr != nil && destErr == nil {
-		// If error during write to source cache (source of truth), must delete from destination cache
-		d.destDeleteFn()
-	}
-	return srcN, srcErr
+	d.dest.Write(data)
+	return d.src.Write(data)
 }
 
 func (d *doubleWriter) Commit() error {
@@ -778,10 +743,6 @@ func (aw *asyncWriter) Close() error {
 }
 
 func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return nil, err
-	}
-
 	if mc.asyncDestWrites {
 		// We will write to the destination cache in the background.
 		mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
@@ -801,20 +762,11 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 	dw := &doubleWriter{
 		src:  srcWriter,
 		dest: newAsyncWriter(destWriter),
-		destDeleteFn: func() {
-			deleteErr := mc.dest.Delete(ctx, r)
-			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration src write of %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
-			}
-		},
 	}
 	return dw, nil
 }
 
 func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
-	if err := mc.checkSafeToMigrate(ctx); err != nil {
-		return nil, err
-	}
 	srcBuf, srcErr := mc.src.Get(ctx, r)
 
 	go func() {
@@ -1064,8 +1016,4 @@ func (mc *MigrationCache) Stop() error {
 // decompressed bytes to another
 func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return mc.src.SupportsCompressor(compressor) && mc.dest.SupportsCompressor(compressor)
-}
-
-func (mc *MigrationCache) SupportsEncryption(ctx context.Context) bool {
-	return mc.src.SupportsEncryption(ctx) && mc.dest.SupportsEncryption(ctx)
 }
