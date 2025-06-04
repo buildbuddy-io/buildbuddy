@@ -15,9 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -206,7 +204,6 @@ func (h *HitTrackerFactory) groupID(ctx context.Context) groupID {
 
 func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.RequestMetadata, hit *hitpb.CacheHit) {
 	groupID := h.groupID(ctx)
-	requestMetadata = proto.Clone(requestMetadata).(*repb.RequestMetadata)
 
 	h.mu.Lock()
 	if h.shouldFlushSynchronously() {
@@ -233,19 +230,17 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 	h.mu.Unlock()
 	authHeaders := authutil.GetAuthHeaders(ctx, h.authenticator)
 	if groupHits.enqueue(hit, authHeaders) {
-		metrics.RemoteHitTrackerUpdates.With(
-			prometheus.Labels{
-				metrics.GroupID:              string(groupID),
-				metrics.EnqueueUpdateOutcome: "enqueued",
-			}).Add(float64(1))
+		metrics.RemoteHitTrackerUpdates.WithLabelValues(
+			string(groupID),
+			"enqueued",
+		).Add(1)
 		return
 	}
 
-	metrics.RemoteHitTrackerUpdates.With(
-		prometheus.Labels{
-			metrics.GroupID:              string(groupID),
-			metrics.EnqueueUpdateOutcome: "dropped_too_many_updates",
-		}).Add(float64(1))
+	metrics.RemoteHitTrackerUpdates.WithLabelValues(
+		string(groupID),
+		"dropped_too_many_updates",
+	).Add(1)
 }
 
 type TransferTimer struct {
@@ -363,11 +358,10 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 	hitsToSend.mu.Unlock()
 
 	_, err := h.client.Track(ctx, &trackRequest)
-	metrics.RemoteHitTrackerRequests.With(
-		prometheus.Labels{
-			metrics.GroupID:     string(groupID),
-			metrics.StatusLabel: gstatus.Code(err).String(),
-		}).Observe(float64(hitCount))
+	metrics.RemoteHitTrackerRequests.WithLabelValues(
+		string(groupID),
+		gstatus.Code(err).String(),
+	).Observe(float64(hitCount))
 	if err != nil {
 		log.CtxWarningf(ctx, "Error sending Track request to record cache hit-tracking state group %s: %v", groupID, err)
 	}
