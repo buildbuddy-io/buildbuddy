@@ -24,7 +24,7 @@ var (
 	zstdDecoderPool = NewZstdDecoderPool()
 
 	// These are used a bunch and the labels are constant so just do it once.
-	zstdCompressedBytesMetric = metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"})
+	zstdCompressedBytesMetric   = metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"})
 	zstdDecompressedBytesMetric = metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"})
 )
 
