@@ -594,7 +594,7 @@ func TestMergeActuallyMerges(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { closer.Close() })
 
-	expectedBytes, err := posting.Marshal(posting.NewList(1, (1<<32 | 1)))
+	expectedBytes, err := posting.NewList(1, (1<<32 | 1)).Marshal()
 	require.NoError(t, err)
 
 	assert.Equal(t, expectedBytes, plBytes)
