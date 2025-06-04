@@ -33,12 +33,11 @@ go_test(
     srcs = ["ocicache_test.go"],
     deps = [
         ":ocicache",
-        "//enterprise/server/clientidentity",
+        "//enterprise/server/testutil/enterprise_testenv",
         "//proto:ociregistry_go_proto",
         "//server/interfaces",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
-        "//server/util/random",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_containerregistry//pkg/crane",

@@ -5,18 +5,18 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
-	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/stretchr/testify/require"
+
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 )
 
 func TestCacheSecret(t *testing.T) {
@@ -85,15 +85,7 @@ func TestCacheSecret(t *testing.T) {
 
 func setupTestEnv(t *testing.T) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
-	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
-	key, err := random.RandomString(16)
-	require.NoError(t, err)
-	flags.Set(t, "app.client_identity.key", string(key))
-	require.NoError(t, err)
-	err = clientidentity.Register(te)
-	require.NoError(t, err)
-	require.NotNil(t, te.GetClientIdentityService())
-
+	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
