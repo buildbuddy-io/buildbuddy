@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -146,7 +147,7 @@ func TestManifestWrittenOnlyToAC(t *testing.T) {
 func TestWriteAndFetchBlob(t *testing.T) {
 	te := setupTestEnv(t)
 
-	layerBuf, repo, hash, contentType := createLayer(t)
+	layerBuf, repo, hash, contentType := createLayer(t, "write_and_fetch_blob", 1024)
 	contentLength := int64(len(layerBuf))
 	ctx := context.Background()
 	bsClient := te.GetByteStreamClient()
@@ -159,10 +160,32 @@ func TestWriteAndFetchBlob(t *testing.T) {
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 }
 
-func createLayer(t *testing.T) ([]byte, name.Repository, gcr.Hash, string) {
-	imageName := "create_layer"
+func TestNewBlobUploader(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "write_and_fetch_blob", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+	written, err := up.Write(layerBuf)
+	require.NoError(t, err)
+	require.Equal(t, len(layerBuf), written)
+	err = up.Close()
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, name.Repository, gcr.Hash, string) {
+	_, filebuf := testdigest.RandomCASResourceBuf(t, filesize)
+	filename, err := random.RandomString(32)
+	require.NoError(t, err)
 	image, err := crane.Image(map[string][]byte{
-		"/tmp/" + imageName: []byte(imageName),
+		"/tmp/" + filename: filebuf,
 	})
 	require.NoError(t, err)
 	imageRef, err := name.ParseReference("buildbuddy.io/" + imageName)
