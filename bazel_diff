@@ -1,0 +1,11 @@
+#!/bin/bash
+cd /private/var/tmp/_bazel_maggielou/9f1a3bff196f25f1cb6574eeb2d1301c/execroot/_main/bazel-out/darwin_arm64-opt/bin/cli/bazel-diff.runfiles/_main && \
+  exec env \
+    -u JAVA_RUNFILES \
+    -u RUNFILES_DIR \
+    -u RUNFILES_MANIFEST_FILE \
+    -u RUNFILES_MANIFEST_ONLY \
+    -u TEST_SRCDIR \
+    BUILD_WORKING_DIRECTORY=/Users/maggielou/bazel-diff \
+    BUILD_WORKSPACE_DIRECTORY=/Users/maggielou/bazel-diff \
+  /private/var/tmp/_bazel_maggielou/9f1a3bff196f25f1cb6574eeb2d1301c/execroot/_main/bazel-out/darwin_arm64-opt/bin/cli/bazel-diff "$@"
