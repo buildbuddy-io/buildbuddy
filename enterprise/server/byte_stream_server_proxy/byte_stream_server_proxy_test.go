@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -516,6 +517,8 @@ func TestSkipRemote(t *testing.T) {
 }
 
 func BenchmarkRead(b *testing.B) {
+	*log.LogLevel = "error"
+	log.Configure()
 	// Disable the atime updater as it can interfere with the request counter.
 	flags.Set(b, "cache_proxy.remote_atime_max_digests_per_group", 0)
 
@@ -569,6 +572,8 @@ func BenchmarkRead(b *testing.B) {
 }
 
 func BenchmarkWrite(b *testing.B) {
+	*log.LogLevel = "error"
+	log.Configure()
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(b)
 	proxyEnv := testenv.GetTestEnv(b)
