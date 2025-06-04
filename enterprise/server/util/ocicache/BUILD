@@ -39,6 +39,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/util/random",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_containerregistry//pkg/crane",
