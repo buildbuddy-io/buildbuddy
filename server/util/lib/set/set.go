@@ -3,6 +3,7 @@ package set
 import (
 	"iter"
 	"maps"
+	"slices"
 )
 
 // View is a (read-only) view of a data structure as a set.
@@ -28,11 +29,7 @@ type mapView[E comparable, V any] map[E]V
 
 // From creates a new Set containing all the provided elements.
 func From[E comparable](s ...E) Set[E] {
-	set := make(Set[E], len(s))
-	for _, e := range s {
-		set.Add(e)
-	}
-	return set
+	return FromSeq(slices.Values(s))
 }
 
 // FromSeq creates a new Set containing all terms in the provided sequence.
