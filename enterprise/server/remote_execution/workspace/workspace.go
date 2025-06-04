@@ -31,7 +31,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/gobwas/glob"
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
@@ -109,14 +108,25 @@ type Opts struct {
 
 // New creates a new workspace directly under the given parent directory.
 func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
-	id, err := uuid.NewRandom()
-	if err != nil {
-		return nil, status.UnavailableErrorf("failed to generate workspace ID")
-	}
-	rootDir := filepath.Join(parentDir, id.String())
 	dirPerms := fs.FileMode(0777)
-	if err := os.MkdirAll(rootDir, dirPerms); err != nil {
-		return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
+	var rootDir string
+	maxAttempts := 10
+	for i := 0; i < maxAttempts; i++ {
+		rootDir = filepath.Join(parentDir, newRandomBuildDirCandidate())
+		if err := os.Mkdir(rootDir, dirPerms); err == nil {
+			break
+		} else if !os.IsExist(err) {
+			return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
+		}
+		// Got unlucky and the random directory name already exists. This should
+		// never happen on Unix and rarely on Windows, so just try again.
+		if i == maxAttempts-1 {
+			return nil, status.UnavailableErrorf("failed to find random dir below %q in %d attempts", rootDir, maxAttempts)
+		}
+	}
+	rootDir, err := maybeCreatePlatformSpecificSubDir(rootDir)
+	if err != nil {
+		return nil, err
 	}
 
 	if opts.UseOverlayfs && opts.UseVFS {
@@ -126,6 +136,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 	var overlay *overlayfs.Overlay
 	if opts.UseOverlayfs {
 		overlayOpts := overlayfs.Opts{DirPerms: dirPerms}
+		var err error
 		overlay, err = overlayfs.Convert(context.TODO(), rootDir, overlayOpts)
 		if err != nil {
 			return nil, status.UnavailableErrorf("failed to create workspace overlayfs at %q: %s", rootDir, err)
