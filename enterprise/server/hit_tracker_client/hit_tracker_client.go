@@ -15,9 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -167,7 +165,7 @@ func (t *NoOpTransferTimer) Record(bytesTransferred int64, duration time.Duratio
 
 type HitTrackerClient struct {
 	ctx             context.Context
-	enqueueFn       func(context.Context, *repb.RequestMetadata, *hitpb.CacheHit)
+	enqueueFn       func(context.Context, *hitpb.CacheHit)
 	client          hitpb.HitTrackerServiceClient
 	requestMetadata *repb.RequestMetadata
 	cacheType       rspb.CacheType
@@ -204,15 +202,13 @@ func (h *HitTrackerFactory) groupID(ctx context.Context) groupID {
 	return groupID(claims.GetGroupID())
 }
 
-func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.RequestMetadata, hit *hitpb.CacheHit) {
+func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 	groupID := h.groupID(ctx)
-	requestMetadata = proto.Clone(requestMetadata).(*repb.RequestMetadata)
 
 	h.mu.Lock()
 	if h.shouldFlushSynchronously() {
 		h.mu.Unlock()
 		log.CtxInfof(ctx, "hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
-		hit.RequestMetadata = requestMetadata
 		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}}); err != nil {
 			log.CtxWarningf(ctx, "Error sending HitTrackerService.Track RPC: %v", err)
 		}
@@ -233,24 +229,22 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, requestMetadata *repb.R
 	h.mu.Unlock()
 	authHeaders := authutil.GetAuthHeaders(ctx, h.authenticator)
 	if groupHits.enqueue(hit, authHeaders) {
-		metrics.RemoteHitTrackerUpdates.With(
-			prometheus.Labels{
-				metrics.GroupID:              string(groupID),
-				metrics.EnqueueUpdateOutcome: "enqueued",
-			}).Add(float64(1))
+		metrics.RemoteHitTrackerUpdates.WithLabelValues(
+			string(groupID),
+			"enqueued",
+		).Add(1)
 		return
 	}
 
-	metrics.RemoteHitTrackerUpdates.With(
-		prometheus.Labels{
-			metrics.GroupID:              string(groupID),
-			metrics.EnqueueUpdateOutcome: "dropped_too_many_updates",
-		}).Add(float64(1))
+	metrics.RemoteHitTrackerUpdates.WithLabelValues(
+		string(groupID),
+		"dropped_too_many_updates",
+	).Add(1)
 }
 
 type TransferTimer struct {
 	ctx              context.Context
-	enqueueFn        func(context.Context, *repb.RequestMetadata, *hitpb.CacheHit)
+	enqueueFn        func(context.Context, *hitpb.CacheHit)
 	invocationID     string
 	requestMetadata  *repb.RequestMetadata
 	digest           *repb.Digest
@@ -271,7 +265,7 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 		Duration:         durationpb.New(time.Since(t.start)),
 		CacheRequestType: t.cacheRequestType,
 	}
-	t.enqueueFn(t.ctx, t.requestMetadata, hit)
+	t.enqueueFn(t.ctx, hit)
 	return nil
 }
 
@@ -363,11 +357,10 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 	hitsToSend.mu.Unlock()
 
 	_, err := h.client.Track(ctx, &trackRequest)
-	metrics.RemoteHitTrackerRequests.With(
-		prometheus.Labels{
-			metrics.GroupID:     string(groupID),
-			metrics.StatusLabel: gstatus.Code(err).String(),
-		}).Observe(float64(hitCount))
+	metrics.RemoteHitTrackerRequests.WithLabelValues(
+		string(groupID),
+		gstatus.Code(err).String(),
+	).Observe(float64(hitCount))
 	if err != nil {
 		log.CtxWarningf(ctx, "Error sending Track request to record cache hit-tracking state group %s: %v", groupID, err)
 	}
