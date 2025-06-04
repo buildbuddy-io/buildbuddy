@@ -3,6 +3,7 @@ package ocicache_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
@@ -139,4 +141,63 @@ func TestManifestWrittenOnlyToAC(t *testing.T) {
 
 	require.Equal(t, contentType, mc.ContentType)
 	require.Empty(t, cmp.Diff(raw, mc.Raw))
+}
+
+func TestWriteAndFetchBlob(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+	r := bytes.NewReader(layerBuf)
+
+	err := ocicache.WriteBlobToCache(ctx, r, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
+func createLayer(t *testing.T) ([]byte, name.Repository, gcr.Hash, string) {
+	imageName := "create_layer"
+	image, err := crane.Image(map[string][]byte{
+		"/tmp/" + imageName: []byte(imageName),
+	})
+	require.NoError(t, err)
+	imageRef, err := name.ParseReference("buildbuddy.io/" + imageName)
+	require.NoError(t, err)
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+	layer := layers[0]
+	hash, err := layer.Digest()
+	require.NoError(t, err)
+	layerRef := imageRef.Context().Digest(hash.String())
+	mediaType, err := layer.MediaType()
+	require.NoError(t, err)
+	contentType := string(mediaType)
+	rc, err := layer.Compressed()
+	require.NoError(t, err)
+	defer rc.Close()
+	layerBuf, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	return layerBuf, layerRef.Context(), hash, contentType
+}
+
+func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo name.Repository, hash gcr.Hash, contentType string) {
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
+	require.NoError(t, err)
+	require.Equal(t, contentType, metadata.GetContentType())
+	require.Equal(t, contentLength, metadata.GetContentLength())
+
+	out := &bytes.Buffer{}
+	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(layerBuf, out.Bytes()))
 }
