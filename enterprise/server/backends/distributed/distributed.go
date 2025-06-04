@@ -232,9 +232,9 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 			MaxSize: config.LookasideCacheSizeBytes,
 			OnEvict: func(key string, v lookasideCacheEntry, reason lru.EvictionReason) {
 				age := time.Since(time.UnixMilli(v.createdAtMillis))
-				metrics.LookasideCacheEvictionAgeMsec.With(prometheus.Labels{
-					metrics.LookasideCacheEvictionReason: convertEvictionReason(reason),
-				}).Observe(float64(age.Milliseconds()))
+				metrics.LookasideCacheEvictionAgeMsec.WithLabelValues(
+					convertEvictionReason(reason),
+				).Observe(float64(age.Milliseconds()))
 			},
 			SizeFn: func(v lookasideCacheEntry) int64 {
 				// []byte size + 8 bytes for the int64 timestamp.
@@ -1031,6 +1031,10 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		}
 	}
 
+	hitMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
+		"FindMissing",
+		metrics.HitStatusLabel,
+	)
 	lookups := 0
 	for {
 		// Each iteration through this outer loop sends a "batch" of requests in
@@ -1088,11 +1092,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 					hash := r.GetDigest().GetHash()
 					if _, ok := peerMissingHashes[hash]; !ok {
 						foundMap[hash] = struct{}{}
-						// Record which lookup round we found this resource in.
-						metrics.DistributedCachePeerLookups.With(prometheus.Labels{
-							metrics.DistributedCacheOperation: "FindMissing",
-							metrics.CacheHitMissStatus:        metrics.HitStatusLabel,
-						}).Observe(float64(lookups))
+						hitMetric.Observe(float64(lookups))
 					}
 				}
 				return nil
@@ -1112,18 +1112,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		}
 	}
 
-	// For every digest we didn't find, record an observation indicating how
-	// many lookups we did.
-	for _, r := range resources {
-		if _, ok := foundMap[r.GetDigest().GetHash()]; ok {
-			continue
-		}
-		metrics.DistributedCachePeerLookups.With(prometheus.Labels{
-			metrics.DistributedCacheOperation: "FindMissing",
-			metrics.CacheHitMissStatus:        metrics.MissStatusLabel,
-		}).Observe(float64(lookups))
-	}
-
 	// For every digest we found, if we did not find it
 	// on the first peer in our list, we want to backfill it.
 	backfills := make([]*backfillOrder, 0)
@@ -1141,6 +1129,18 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		d := r.GetDigest()
 		if _, ok := foundMap[d.GetHash()]; !ok {
 			missing = append(missing, d)
+		}
+	}
+
+	// For every resource we didn't find, record an observation indicating how
+	// many lookups we did.
+	if len(missing) > 0 {
+		missMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
+			"FindMissing",
+			metrics.MissStatusLabel,
+		)
+		for range len(missing) {
+			missMetric.Observe(float64(lookups))
 		}
 	}
 	return missing, nil
@@ -1177,10 +1177,10 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 		r, err := c.remoteReader(ctx, peer, rn, offset, limit)
 		if err == nil {
 			backfill()
-			metrics.DistributedCachePeerLookups.With(prometheus.Labels{
-				metrics.DistributedCacheOperation: metricsLabel,
-				metrics.CacheHitMissStatus:        metrics.HitStatusLabel,
-			}).Observe(float64(lookups))
+			metrics.DistributedCachePeerLookups.WithLabelValues(
+				metricsLabel,
+				metrics.HitStatusLabel,
+			).Observe(float64(lookups))
 			return r, err
 		}
 		if status.IsNotFoundError(err) {
@@ -1193,10 +1193,10 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 		ps.MarkPeerAsFailed(peer)
 
 	}
-	metrics.DistributedCachePeerLookups.With(prometheus.Labels{
-		metrics.DistributedCacheOperation: metricsLabel,
-		metrics.CacheHitMissStatus:        metrics.MissStatusLabel,
-	}).Observe(float64(lookups))
+	metrics.DistributedCachePeerLookups.WithLabelValues(
+		metricsLabel,
+		metrics.MissStatusLabel,
+	).Observe(float64(lookups))
 	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to read %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
