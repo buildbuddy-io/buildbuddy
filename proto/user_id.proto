@@ -10,7 +10,6 @@ message UserId {
 // The user's name, usually pulled (initially) from the authentication provider.
 message Name {
   string full = 1;
-
   string first = 2;
   string last = 3;
 }
@@ -23,6 +22,8 @@ message DisplayUser {
   string profile_image_url = 3;
   string email = 4;
   AccountType account_type = 5;
+  // Username provided by the authentication provider, if known.
+  string username = 6;
 }
 
 enum AccountType {
