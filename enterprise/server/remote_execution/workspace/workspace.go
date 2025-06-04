@@ -124,12 +124,9 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 			return nil, status.UnavailableErrorf("failed to find random dir below %q in %d attempts", rootDir, maxAttempts)
 		}
 	}
-	// On Windows, must root all executions under a subdirectory called _main (see newRandomBuildDirCandidate).
-	if runtime.GOOS == "windows" {
-		rootDir = filepath.Join(rootDir, "_main")
-		if err := os.Mkdir(rootDir, dirPerms); err != nil {
-			return nil, status.UnavailableErrorf("failed to create _main dir at %q: %s", rootDir, err)
-		}
+	rootDir, err := maybeCreatePlatformSpecificSubDir(rootDir)
+	if err != nil {
+		return nil, err
 	}
 
 	if opts.UseOverlayfs && opts.UseVFS {

@@ -9,3 +9,7 @@ import (
 func newRandomBuildDirCandidate() string {
 	return uuid.Must(uuid.NewRandom()).String()
 }
+
+func maybeCreatePlatformSpecificSubDir(dir string) (string, error) {
+	return dir, nil
+}
