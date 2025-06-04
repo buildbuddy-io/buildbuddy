@@ -1,0 +1,48 @@
+{
+    "repos": [
+        {
+            "url": "github.com/buildbuddy-io/buildbuddy",
+            "sha": "860f21b"
+        }
+    ],
+    "cases": [
+        {
+            "query": { "term": "buildfix" },
+            "penalize_unmatched": true,
+            "ideal_results": [
+                {
+                    "owner": "buildbuddy-io",
+                    "repo": "buildbuddy",
+                    "filename": "buildfix.sh",
+                    "match_count": 1,
+                    "snippet_line_numbers": [],
+                    "relevance": 2.0
+                },
+                {
+                    "owner": "buildbuddy-io",
+                    "repo": "buildbuddy",
+                    "filename": "tools/checkstyle/checkstyle.sh",
+                    "match_count": 1,
+                    "snippet_line_numbers": [79, 80, 81],
+                    "relevance": 1.0
+                },
+                {
+                    "owner": "buildbuddy-io",
+                    "repo": "buildbuddy",
+                    "filename": "proto/remote_asset.proto",
+                    "match_count": 1,
+                    "snippet_line_numbers": [14, 15],
+                    "relevance": 1.0
+                },
+                {
+                    "owner": "buildbuddy-io",
+                    "repo": "buildbuddy",
+                    "filename": "proto/remote_execution.proto",
+                    "match_count": 1,
+                    "snippet_line_numbers": [14, 15],
+                    "relevance": 1.0
+                }
+            ]
+        }
+    ]
+}
