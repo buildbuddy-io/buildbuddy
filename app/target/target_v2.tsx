@@ -355,13 +355,19 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                     event.testResult?.status ?? build_event_stream.TestStatus.NO_STATUS
                   )} ${this.getTab() == `#${index + 1}` ? "selected" : ""}`}>
                   Run {event.id?.testResult?.run ?? 0} (Attempt {event.id?.testResult?.attempt ?? 0}, Shard{" "}
-                  {event.id?.testResult?.shard ?? 0})
+                  {event.id?.testResult?.shard ?? 0}
+                  {event.testResult?.cachedLocally
+                    ? ", Cached locally"
+                    : event.testResult?.executionInfo?.cachedRemotely
+                      ? ", Cached remotely"
+                      : ""}
+                  )
                 </a>
               ))}
             </div>
           )}
           {resultEvents
-            .filter((value, index) => `#${index + 1}` == this.getTab())
+            .filter((_, index) => `#${index + 1}` == this.getTab())
             .map((buildEvent) => (
               <span>
                 <TargetTestDocumentCardComponent
