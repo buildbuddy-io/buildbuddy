@@ -35,9 +35,7 @@ func From[E comparable](s ...E) Set[E] {
 // FromSeq creates a new Set containing all terms in the provided sequence.
 func FromSeq[E comparable](s iter.Seq[E]) Set[E] {
 	set := make(Set[E])
-	for e := range s {
-		set.Add(e)
-	}
+	set.AddSeq(s)
 	return set
 }
 
@@ -62,10 +60,26 @@ func (s Set[E]) Add(e E) {
 	s[e] = struct{}{}
 }
 
+// AddSeq takes a sequence of elements and, for each element, adds it if it is
+// not yet a member of the set.
+func (s Set[E]) AddSeq(toAdd iter.Seq[E]) {
+	for e := range toAdd {
+		s.Add(e)
+	}
+}
+
 // Remove removes the provided element from the set if it is currently a
 // member of the set.
 func (s Set[E]) Remove(e E) {
 	delete(s, e)
+}
+
+// RemoveSeq takes a sequence of elements and, for each element, removes it if
+// it is currently a member of the set.
+func (s Set[E]) RemoveSeq(toRemove iter.Seq[E]) {
+	for e := range toRemove {
+		s.Remove(e)
+	}
 }
 
 // Contains returns true if the provided element is a member of the set, and

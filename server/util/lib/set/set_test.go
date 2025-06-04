@@ -240,6 +240,132 @@ func TestAdd(t *testing.T) {
 	}
 }
 
+func TestAddSeq(t *testing.T) {
+	for _, tc := range []struct {
+		Name     string
+		Input    set.Set[string]
+		ToAdd    []string
+		Expected set.Set[string]
+	}{
+		{
+			Name:  "Add to Empty",
+			Input: make(set.Set[string], 0),
+			ToAdd: []string{
+				"foo",
+			},
+			Expected: set.Set[string]{
+				"foo": {},
+			},
+		},
+		{
+			Name:  "Add Empty",
+			Input: set.Set[string]{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			},
+			ToAdd: []string{},
+			Expected: set.Set[string]{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			},
+		},
+		{
+			Name:  "Add Empty to Empty",
+			Input: make(set.Set[string], 0),
+			ToAdd: []string{},
+			Expected: set.Set[string]{},
+		},
+		{
+			Name: "Add distinct elements",
+			Input: set.Set[string]{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			},
+			ToAdd: []string{
+				"barbar",
+				"foofoo",
+			},
+			Expected: set.Set[string]{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+				"foofoo": {},
+				"barfoo": {},
+				"barbar": {},
+			},
+		},
+		{
+			Name: "Add repeated element",
+			Input: set.Set[string](map[string]struct{}{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			}),
+			ToAdd: []string{
+				"foo",
+				"bar",
+			},
+			Expected: set.Set[string]{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			},
+		},
+		{
+			Name: "Contains zero-value element",
+			Input: set.Set[string](map[string]struct{}{
+				"":       {},
+				"bar":    {},
+				"foobar": {},
+			}),
+			ToAdd: []string{
+				"foo",
+				"barfoo",
+			},
+			Expected: set.Set[string]{
+				"":       {},
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			},
+		},
+		{
+			Name: "Add zero-value element",
+			Input: set.Set[string](map[string]struct{}{
+				"bar":    {},
+				"foobar": {},
+			}),
+			ToAdd: []string{
+				"",
+				"foobar",
+				"barfoo",
+			},
+			Expected: set.Set[string]{
+				"":       {},
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			},
+		},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			tc.Input.AddSeq(slices.Values(tc.ToAdd))
+			if !cmp.Equal(tc.Input, tc.Expected) {
+				t.Errorf("Output did not match expectation.\nexpected: (-), actual: (+):\n%s", cmp.Diff(tc.Expected, tc.Input))
+			}
+		})
+	}
+}
+
 func TestRemove(t *testing.T) {
 	for _, tc := range []struct {
 		Name     string
@@ -319,6 +445,134 @@ func TestRemove(t *testing.T) {
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
 			tc.Input.Remove(tc.ToRemove)
+			if !cmp.Equal(tc.Input, tc.Expected) {
+				t.Errorf("Output did not match expectation.\nexpected: (-), actual: (+):\n%s", cmp.Diff(tc.Expected, tc.Input))
+			}
+		})
+	}
+}
+
+func TestRemoveSeq(t *testing.T) {
+	for _, tc := range []struct {
+		Name     string
+		Input    set.Set[string]
+		ToRemove []string
+		Expected set.Set[string]
+	}{
+		{
+			Name:     "Remove from Empty",
+			Input:    make(set.Set[string], 0),
+			ToRemove: []string{
+				"foo",
+			},
+			Expected: make(set.Set[string], 0),
+		},
+		{
+			Name:     "Remove from nil",
+			Input:    nil,
+			ToRemove: []string{
+				"foo",
+			},
+			Expected: nil,
+		},
+		{
+			Name:     "Remove Empty from Empty",
+			Input:    make(set.Set[string], 0),
+			ToRemove: []string{},
+			Expected: make(set.Set[string], 0),
+		},
+		{
+			Name:     "Remove Empty from nil",
+			Input:    nil,
+			ToRemove: []string{},
+			Expected: nil,
+		},
+		{
+			Name: "Remove empty",
+			Input: set.Set[string](map[string]struct{}{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			}),
+			ToRemove: []string{},
+			Expected: set.Set[string]{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			},
+		},
+		{
+			Name: "Remove extant elements",
+			Input: set.Set[string](map[string]struct{}{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			}),
+			ToRemove: []string{
+				"barfoo",
+				"foobar",
+			},
+			Expected: set.Set[string]{
+				"foo":    {},
+				"bar":    {},
+			},
+		},
+		{
+			Name: "Remove missing element",
+			Input: set.Set[string](map[string]struct{}{
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			}),
+			ToRemove: []string{
+				"foo",
+				"bar",
+			},
+			Expected: set.Set[string]{
+				"foobar": {},
+				"barfoo": {},
+			},
+		},
+		{
+			Name: "Contains zero-value element",
+			Input: set.Set[string](map[string]struct{}{
+				"":       {},
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+			}),
+			ToRemove: []string{
+				"foo",
+				"bar",
+			},
+			Expected: set.Set[string]{
+				"":       {},
+				"foobar": {},
+			},
+		},
+		{
+			Name: "Remove zero-value element",
+			Input: set.Set[string](map[string]struct{}{
+				"":       {},
+				"bar":    {},
+				"foobar": {},
+				"barbar": {},
+			}),
+			ToRemove: []string{
+				"",
+				"foobar",
+			},
+			Expected: set.Set[string]{
+				"bar":    {},
+				"barbar": {},
+			},
+		},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			tc.Input.RemoveSeq(slices.Values(tc.ToRemove))
 			if !cmp.Equal(tc.Input, tc.Expected) {
 				t.Errorf("Output did not match expectation.\nexpected: (-), actual: (+):\n%s", cmp.Diff(tc.Expected, tc.Input))
 			}
