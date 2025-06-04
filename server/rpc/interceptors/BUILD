@@ -25,6 +25,8 @@ go_library(
         "//server/util/uuid",
         "@com_github_grpc_ecosystem_go_grpc_middleware_providers_prometheus//:prometheus",
         "@com_github_prometheus_client_golang//prometheus",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",
