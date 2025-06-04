@@ -44,6 +44,7 @@ func FromSeq[E comparable](s iter.Seq[E]) Set[E] {
 	return set
 }
 
+// AsView returns a View of the keys in the provided map as a set.
 func AsView[E comparable, V any](m map[E]V) View[E] {
 	return mapView[E, V](m)
 }
