@@ -142,6 +142,7 @@ func ndcg(rels []float64, idealRels []float64) float64 {
 	}
 
 	log.Infof("Calculating nDCG for %d results", len(rels))
+	// TODO: sort by rel descending, or rely on the order of the input?
 	idealDcg := dcg(idealRels)
 	if idealDcg == 0 {
 		return 0.0

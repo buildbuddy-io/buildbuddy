@@ -43,6 +43,44 @@
                     "relevance": 1.0
                 }
             ]
+        },
+        {
+            "query": { "term": "AddDocument" },
+            "penalize_unmatched": true,
+            "ideal_results": [
+                {
+                    "owner": "buildbuddy-io",
+                    "repo": "buildbuddy",
+                    "filename": "codesearch/types/types.go",
+                    "match_count": 1,
+                    "snippet_line_numbers": [80, 81, 82],
+                    "relevance": 2.0
+                },
+                {
+                    "owner": "buildbuddy-io",
+                    "repo": "buildbuddy",
+                    "filename": "codesearch/index/index.go",
+                    "match_count": 2,
+                    "snippet_line_numbers": [415, 416, 418, 419],
+                    "relevance": 2.0
+                },
+                {
+                    "owner": "buildbuddy-io",
+                    "repo": "buildbuddy",
+                    "filename": "codesearch/index/index_test.go",
+                    "match_count": 34,
+                    "snippet_line_numbers": [],
+                    "relevance": 1.0
+                },
+                {
+                    "owner": "buildbuddy-io",
+                    "repo": "buildbuddy",
+                    "filename": "codesearch/searcher/searcher_test.go",
+                    "match_count": 1,
+                    "snippet_line_numbers": [90, 91, 92],
+                    "relevance": 1.0
+                }
+            ]
         }
     ]
 }
