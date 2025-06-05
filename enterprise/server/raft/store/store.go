@@ -2623,6 +2623,14 @@ func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddRepl
 			return status.FailedPreconditionErrorf("range %d is being removed from node %q", req.GetRange().GetRangeId(), node.GetNhid())
 		}
 	}
+
+	if remoteRD.GetStart() != nil && remoteRD.GetEnd() != nil {
+		overlapping := s.rangeMap.GetOverlapping(remoteRD.GetStart(), remoteRD.GetEnd())
+		if len(overlapping) > 0 {
+			overlapped := overlapping[0].Val
+			return status.FailedPreconditionErrorf("range %d [%q, %q) overlaps with range %d [%q, %q)", remoteRD.GetRangeId(), remoteRD.GetStart(), remoteRD.GetEnd(), overlapped.GetRangeId(), overlapped.GetStart(), overlapped.GetEnd())
+		}
+	}
 	return nil
 }
 
