@@ -30,7 +30,7 @@ var (
 
 	_ types.Query             = (*ReQuery)(nil)
 	_ types.HighlightedRegion = (*regionMatch)(nil)
-	_ types.Scorer            = (*reScorer)(nil)
+	_ types.Scorer            = (*fieldScorer)(nil)
 )
 
 func countNL(b []byte) int {
@@ -51,15 +51,6 @@ type region struct {
 	startOffset int
 	endOffset   int
 	lineNumber  int
-}
-
-type reScorer struct {
-	fieldMatchers map[string]*dfa.Regexp
-	skip          bool
-}
-
-func (s *reScorer) Skip() bool {
-	return s.skip
 }
 
 func match(re *dfa.Regexp, buf []byte) []region {
@@ -98,48 +89,6 @@ func match(re *dfa.Regexp, buf []byte) []region {
 	return results
 }
 
-func (s *reScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
-	// Special case: If there are no field matchers, everything matches.
-	// This happens for filter-only queries, like "language:java" where
-	// we know that the index query has already filtered the results precisely.
-	if len(s.fieldMatchers) == 0 {
-		return 1.0
-	}
-
-	docScore := 0.0
-	for fieldName := range s.fieldMatchers {
-		re := s.fieldMatchers[fieldName]
-		contents := doc.Field(fieldName).Contents()
-		if len(contents) == 0 {
-			// See note below on returning early.
-			return 0.0
-		}
-
-		matchingRegions := match(re.Clone(), contents)
-		f_qi_d := float64(len(matchingRegions))
-		if f_qi_d == 0 {
-			// Important note: If any of the field matchers fail entirely, it's not a match.
-			// This is only valid if all the field matchers are required, which was true at the
-			// time this check was added.
-			return 0.0
-		}
-		D := float64(len(strings.Fields(string(contents))))
-		k1, b := bm25Params(fieldName)
-		fieldScore := (f_qi_d * (k1 + 1)) / (f_qi_d + k1*(1-b+b*D))
-		docScore += fieldScore
-	}
-	return docScore
-}
-
-func bm25Params(fieldName string) (k1 float64, b float64) {
-	switch fieldName {
-	case filenameField:
-		return 1.2, 0.8
-	default:
-		return 1.4, 0.9
-	}
-}
-
 func extractLine(buf []byte, lineNumber int) []byte {
 	s := bufio.NewScanner(bytes.NewReader(buf))
 	currentLine := 0
@@ -153,7 +102,7 @@ func extractLine(buf []byte, lineNumber int) []byte {
 }
 
 type reHighlighter struct {
-	fieldMatchers map[string]*dfa.Regexp
+	contentMatcher *dfa.Regexp
 }
 
 type regionMatch struct {
@@ -199,9 +148,8 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 	results := make([]types.HighlightedRegion, 0)
 
 	field := doc.Field(contentField)
-	matcher, ok := h.fieldMatchers[contentField]
-	if ok {
-		for _, region := range match(matcher.Clone(), field.Contents()) {
+	if h.contentMatcher != nil {
+		for _, region := range match(h.contentMatcher.Clone(), field.Contents()) {
 			region := region
 			results = append(results, types.HighlightedRegion(regionMatch{
 				field:  field,
@@ -213,7 +161,9 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 	// HACK: if there are no matching regions, add a fake one that matches
 	// the first line of the file. This way filter-only queries will be able
 	// to display a highlighted region.
-	if len(results) == 0 && h.fieldMatchers[contentField] == nil {
+	// TODO(jdelfino): Need to rethink this. Can we rely on the scorer to filter out
+	// non-matches? I think yes...
+	if len(results) == 0 {
 		field := doc.Field(contentField)
 		results = append(results, types.HighlightedRegion(regionMatch{
 			field: field,
@@ -233,7 +183,8 @@ type ReQuery struct {
 	parsed string
 	squery string
 
-	fieldMatchers map[string]*dfa.Regexp
+	scorer         *fieldScorer
+	contentMatcher *dfa.Regexp
 }
 
 func expressionToSquery(expr string, fieldName string) (string, error) {
@@ -250,13 +201,10 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 
 	// A list of s-expression strings that must be satisfied by the query.
 	// (added to the query with AND)
-	requiredSClauses := make([]string, 0)
+	sClauses := make([]string, 0)
 
 	// Regex options that will be applied to the main query only.
 	regexFlags := "m" // always use multiline mode.
-
-	// Regexp matches (for highlighting) by fieldname.
-	fieldMatchers := make(map[string]*dfa.Regexp)
 
 	q, caseSensitive := filters.ExtractCaseSensitivity(q)
 	if !caseSensitive {
@@ -264,34 +212,42 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 	}
 
 	q, filename := filters.ExtractFilenameFilter(q)
+	scorer := &fieldScorer{
+		op: Noop,
+	}
+	var contentMatcher *dfa.Regexp
 
 	if len(filename) > 0 {
 		subQ, err := expressionToSquery(filename, filenameField)
 		if err != nil {
 			return nil, status.InvalidArgumentError(err.Error())
 		}
-		requiredSClauses = append(requiredSClauses, subQ)
+		sClauses = append(sClauses, subQ)
 		fileMatchRe, err := dfa.Compile(filename)
 		if err != nil {
 			return nil, status.InvalidArgumentError(err.Error())
 		}
-		fieldMatchers[filenameField] = fileMatchRe
+		scorer = andScorers(scorer, &fieldScorer{
+			op:        Match,
+			fieldName: filenameField,
+			weight:    1,
+			matcher:   fileMatchRe,
+		})
 	}
 
 	q, lang := filters.ExtractLanguageFilter(q)
 	if len(lang) > 0 {
 		subQ := fmt.Sprintf("(:eq language %s)", strconv.Quote(strings.ToLower(lang)))
-		requiredSClauses = append(requiredSClauses, subQ)
+		sClauses = append(sClauses, subQ)
 	}
 
 	q, repo := filters.ExtractRepoFilter(q)
 	if len(repo) > 0 {
 		subQ := fmt.Sprintf("(:eq repo %s)", strconv.Quote(repo))
-		requiredSClauses = append(requiredSClauses, subQ)
+		sClauses = append(sClauses, subQ)
 	}
 
 	q = strings.TrimSpace(q)
-	sQueries := make([]string, 0)
 	if len(q) > 0 {
 		flagString := "(?" + regexFlags + ")"
 
@@ -307,52 +263,67 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			if err != nil {
 				return nil, status.InvalidArgumentError(err.Error())
 			}
-			subQ := RegexpQuery(syn, token.WithMaxNgramLength(6), token.WithLowerCase(true)).SQuery(contentField)
-			sQueries = append(sQueries, subQ)
+			// TODO(jdelfino): This should really be derived from the tokenizer specified on the
+			// field in the schema.
+			subQContent := RegexpQuery(syn, token.WithMaxNgramLength(6), token.WithLowerCase(true)).SQuery(contentField)
+			subQFilename := RegexpQuery(syn).SQuery(filenameField)
+			sClauses = append(sClauses, "(:or "+subQContent+" "+subQFilename+")")
 		}
 
 		// Build a content matcher that will match any of the query terms.
-		for i, qTerm := range queryTerms {
-			queryTerms[i] = "(" + qTerm + ")"
-		}
-		q = flagString + strings.Join(queryTerms, "|")
-		re, err := dfa.Compile(q)
+		re, err := reForQueryTerms(queryTerms, flagString)
 		if err != nil {
-			return nil, status.InvalidArgumentError(err.Error())
+			return nil, err
 		}
-		fieldMatchers[contentField] = re
+
+		scorer = andScorers(scorer, orScorers(
+			&fieldScorer{
+				op:        Match,
+				fieldName: contentField,
+				weight:    2,
+				matcher:   re,
+			},
+			&fieldScorer{
+				op:        Match,
+				fieldName: filenameField,
+				weight:    1,
+				matcher:   re,
+			},
+		))
+		contentMatcher = re
+
 	}
 	subLog.Infof("parsed query: [%s]", q)
 
-	// Here we build the squery as a conjunction of all the clauses.
-	// If we ever add support for OR clauses between query terms, the scoring logic will need
-	// to be updated as well. The scorer currently assumes that all fieldMatchers must match.
-
 	squery := ""
-	if len(sQueries) == 1 {
-		squery = sQueries[0]
-	} else if len(sQueries) > 1 {
-		squery = "(:and " + strings.Join(sQueries, " ") + ")"
-	}
-
-	if len(requiredSClauses) > 0 {
-		var clauses string
-		if len(requiredSClauses) == 1 {
-			clauses = requiredSClauses[0]
-		} else {
-			clauses = strings.Join(requiredSClauses, " ")
-		}
-		squery = "(:and " + squery + " " + clauses + ")"
+	if len(sClauses) == 1 {
+		squery = sClauses[0]
+	} else if len(sClauses) > 1 {
+		squery = "(:and " + strings.Join(sClauses, " ") + ")"
 	}
 
 	req := &ReQuery{
-		ctx:           ctx,
-		log:           subLog,
-		squery:        squery,
-		parsed:        q,
-		fieldMatchers: fieldMatchers,
+		ctx:            ctx,
+		log:            subLog,
+		squery:         squery,
+		parsed:         q,
+		scorer:         scorer,
+		contentMatcher: contentMatcher,
 	}
 	return req, nil
+}
+
+func reForQueryTerms(queryTerms []string, flags string) (*dfa.Regexp, error) {
+	// Build a regexp that matches any of the query terms.
+	for i, qTerm := range queryTerms {
+		queryTerms[i] = "(" + qTerm + ")"
+	}
+	q := flags + strings.Join(queryTerms, "|")
+	re, err := dfa.Compile(q)
+	if err != nil {
+		return nil, status.InvalidArgumentError(err.Error())
+	}
+	return re, nil
 }
 
 func (req *ReQuery) SQuery() string {
@@ -364,17 +335,127 @@ func (req *ReQuery) ParsedQuery() string {
 }
 
 func (req *ReQuery) Scorer() types.Scorer {
-	return &reScorer{
-		fieldMatchers: req.fieldMatchers,
-		skip:          len(req.fieldMatchers) == 0,
-	}
+	return req.scorer
 }
 
 func (req *ReQuery) Highlighter() types.Highlighter {
-	return &reHighlighter{req.fieldMatchers}
+	return &reHighlighter{req.contentMatcher}
 }
 
 // TESTONLY: return field matchers to verify regexp params.
-func (req *ReQuery) TestOnlyFieldMatchers() map[string]*dfa.Regexp {
-	return req.fieldMatchers
+func (req *ReQuery) TestOnlyContentMatcher() *dfa.Regexp {
+	// TODO(jdelfino): Hm we can't verify the scorer as easily...
+	return req.contentMatcher
+}
+
+type scorerOp int
+
+const (
+	Match scorerOp = iota
+	Or
+	And
+	Noop
+)
+
+// fieldScorer scores documents based on how well they match the given scorers.
+// Scorers can be combined using AND and OR operations, which allows scoring to mirror
+// the structure of queries.
+// TODO(jdelfino): simplify to just be an array of scorers? or leave it generalized?
+type fieldScorer struct {
+	op        scorerOp
+	fieldName string
+	weight    int
+	matcher   *dfa.Regexp
+	children  []*fieldScorer
+}
+
+func (fs *fieldScorer) Skip() bool {
+	return fs.op == Noop
+}
+
+func (fs *fieldScorer) scoreInternal(doc types.Document) (matchCount, tokenCount int) {
+	// We adapt BM25 scoring to work with multiple fields by counting matches and tokens from each
+	// field, summing them up, then running BM25 on those numbers. Fields can be weighted - the
+	// counts from a field (both token and match) are duplicated `weight` times.
+	// This approach is meant to match the method describe here:
+	// https://www.researchgate.net/publication/221613382_Simple_BM25_extension_to_multiple_weighted_fields
+
+	switch fs.op {
+	case Match:
+		contents := doc.Field(fs.fieldName).Contents()
+		m := match(fs.matcher.Clone(), contents)
+		matchCount = len(m) * fs.weight
+		tokenCount = len(strings.Fields(string(contents))) * fs.weight
+		return matchCount, tokenCount
+	case Or:
+		// Sum up the scores of all children. Arguably, we could take the highest score,
+		// but it seems more useful to boost queries that match more terms.
+		matchCount = 0.0
+		tokenCount = 0.0
+		for _, child := range fs.children {
+			m, t := child.scoreInternal(doc)
+			matchCount += m
+			tokenCount += t
+		}
+		return matchCount, tokenCount
+	case And:
+		// Same os OR, but if any child scores 0, the overall score is 0.
+		matchCount = 0.0
+		tokenCount = 0.0
+
+		for _, child := range fs.children {
+			m, t := child.scoreInternal(doc)
+			if m == 0.0 {
+				return 0.0, 0.0
+			}
+			matchCount += m
+			tokenCount += t
+		}
+		return matchCount, tokenCount
+	case Noop:
+		return 1.0, 1.0
+	default:
+		return 0.0, 0.0 // Should never happen
+	}
+}
+
+func bm25Score(f_qi_d, D float64) float64 {
+	// See https://en.wikipedia.org/wiki/Okapi_BM25#The_ranking_function for
+	// the formula for BM25 scoring. k1 and b are left at "default" values here, and haven't been
+	// tuned.
+	k1 := 1.2
+	b := 0.75
+	return (f_qi_d * (k1 + 1)) / (f_qi_d + k1*(1-b+b*D))
+}
+
+func andScorers(a *fieldScorer, b *fieldScorer) *fieldScorer {
+	if a.op == Noop {
+		return b
+	}
+	if b.op == Noop {
+		return a
+	}
+	return &fieldScorer{
+		op:       And,
+		children: []*fieldScorer{a, b},
+	}
+}
+
+func orScorers(a *fieldScorer, b *fieldScorer) *fieldScorer {
+	if a.op == Noop {
+		return b
+	}
+	if b.op == Noop {
+		return a
+	}
+	return &fieldScorer{
+		op:       Or,
+		children: []*fieldScorer{a, b},
+	}
+}
+
+func (fs *fieldScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
+	matchCount, tokenCount := fs.scoreInternal(doc)
+	log.Infof("Scoring doc %s: matchCount=%d, tokenCount=%d", doc.Field(filenameField).Contents(), matchCount, tokenCount)
+	return bm25Score(float64(matchCount), float64(tokenCount))
 }

@@ -11,6 +11,7 @@ go_library(
     deps = [
         "//codesearch/dfa",
         "//codesearch/filters",
+        "//codesearch/schema",
         "//codesearch/token",
         "//codesearch/types",
         "//server/util/log",
