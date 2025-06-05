@@ -292,8 +292,8 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 
 // NewBlobUploader creates a WriteCloser that writes OCI blobs to the CAS.
 //
-// On Close, the BlobUploader will attempt to commit the OCI blob to the CAS (relying on the Byte Stream Server to detect and reject blobs that
-// do not match the given digest). It will also write blob metadata to the CAS and an AC entry pointing to the blob and its metadata.
+// Once contentLength bytes have been written, the blobUploader will commit the blob.
+// It is an error to attempt to Write after commit, and to write more than contentLength bytes.
 func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (io.WriteCloser, error) {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
