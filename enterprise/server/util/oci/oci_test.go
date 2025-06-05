@@ -438,7 +438,9 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 				upstreamCounter := atomic.Int32{}
 				registry := testregistry.Run(t, testregistry.Opts{
 					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-						upstreamCounter.Add(1)
+						if r.Method == http.MethodGet && r.URL.Path != "/v2/" {
+							upstreamCounter.Add(1)
+						}
 						return true
 					},
 				})
@@ -680,75 +682,77 @@ func TestResolve_WithCache(t *testing.T) {
 			},
 		},
 	} {
-		readManifests := false
 		writeLayers := false
 		readLayers := false
 		for _, writeManifests := range []bool{false, true} {
-			name := tc.name + fmt.Sprintf(
-				"/write_manifests_%t_read_manifests_%t_write_layers_%t_read_layers_%t",
-				writeManifests,
-				readManifests,
-				writeLayers,
-				readLayers,
-			)
-			t.Run(name, func(t *testing.T) {
-				te := setupTestEnvWithCache(t)
-				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-				flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-				flags.Set(t, "executor.container_registry.write_manifests_to_cache", writeManifests)
-				counter := atomic.Int32{}
-				registry := testregistry.Run(t, testregistry.Opts{
-					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-						if r.Method == http.MethodGet && r.URL.Path != "/v2/" {
-							counter.Add(1)
+			for _, readManifests := range []bool{false, true} {
+				name := tc.name + fmt.Sprintf(
+					"/write_manifests_%t_read_manifests_%t_write_layers_%t_read_layers_%t",
+					writeManifests,
+					readManifests,
+					writeLayers,
+					readLayers,
+				)
+				t.Run(name, func(t *testing.T) {
+					te := setupTestEnvWithCache(t)
+					flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+					flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+					flags.Set(t, "executor.container_registry.write_manifests_to_cache", writeManifests)
+					flags.Set(t, "executor.container_registry.read_manifests_from_cache", readManifests)
+					counter := atomic.Int32{}
+					registry := testregistry.Run(t, testregistry.Opts{
+						HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+							if r.Method == http.MethodGet && r.URL.Path != "/v2/" {
+								counter.Add(1)
+							}
+							return true
+						},
+					})
+					_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
+
+					index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+						Add: pushedImage,
+						Descriptor: v1.Descriptor{
+							Platform: &tc.imagePlatform,
+						},
+					})
+					registry.PushIndex(t, index, tc.imageName+"_index")
+
+					{
+						imageAddress := registry.ImageAddress(tc.args.imageName + "_image")
+						resolveCount := int32(1)
+						filesCount := int32(1)
+						resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, filesCount)
+
+						resolveCount = int32(1)
+						if writeManifests && readManifests {
+							resolveCount = int32(0)
 						}
-						return true
-					},
+						filesCount = int32(1)
+						if writeLayers && readLayers {
+							filesCount = int32(0)
+						}
+						resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, filesCount)
+					}
+
+					{
+						indexAddress := registry.ImageAddress(tc.args.imageName + "_index")
+						resolveCount := int32(2)
+						filesCount := int32(1)
+						resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, filesCount)
+
+						resolveCount = int32(2)
+						if writeManifests && readManifests {
+							resolveCount = int32(0)
+						}
+						filesCount = int32(1)
+						if writeLayers && readLayers {
+							filesCount = int32(0)
+						}
+						resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, filesCount)
+					}
 				})
-				_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
-
-				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-					Add: pushedImage,
-					Descriptor: v1.Descriptor{
-						Platform: &tc.imagePlatform,
-					},
-				})
-				registry.PushIndex(t, index, tc.imageName+"_index")
-
-				{
-					imageAddress := registry.ImageAddress(tc.args.imageName + "_image")
-					resolveCount := int32(1)
-					filesCount := int32(1)
-					resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, filesCount)
-
-					resolveCount = int32(1)
-					if writeManifests && readManifests {
-						resolveCount = int32(0)
-					}
-					filesCount = int32(1)
-					if writeLayers && readLayers {
-						filesCount = int32(0)
-					}
-					resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, filesCount)
-				}
-
-				{
-					indexAddress := registry.ImageAddress(tc.args.imageName + "_index")
-					resolveCount := int32(2)
-					filesCount := int32(1)
-					resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, filesCount)
-
-					resolveCount = int32(2)
-					if writeManifests && readManifests {
-						resolveCount = int32(0)
-					}
-					filesCount = int32(1)
-					if writeLayers && readLayers {
-						filesCount = int32(0)
-					}
-					resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, filesCount)
-				}
-			})
+			}
 		}
 	}
 }
