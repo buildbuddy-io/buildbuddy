@@ -700,8 +700,11 @@ func (r *dockerCommandContainer) Pause(ctx context.Context) error {
 
 func (r *dockerCommandContainer) Remove(ctx context.Context) error {
 	r.removed = true
-	if err := r.client.ContainerRemove(ctx, r.id, dockercontainer.RemoveOptions{Force: true}); err != nil {
-		return wrapDockerErr(err, fmt.Sprintf("failed to remove docker container %s", r.id))
+	if r.id != "" {
+		if err := r.client.ContainerRemove(ctx, r.id, dockercontainer.RemoveOptions{Force: true}); err != nil {
+			return wrapDockerErr(err, fmt.Sprintf("failed to remove docker container %s", r.id))
+		}
+		r.id = ""
 	}
 	return nil
 }
