@@ -104,46 +104,52 @@ func (s mapView[E, V]) Len() int {
 	return len(s)
 }
 
-// Intersection returns the intersection of this set and the passed conjunct.
+// Intersection returns the intersection of this set and the passed conjuncts.
 func Intersection[V View[E], E comparable](conjuncts ...V) iter.Seq[E] {
 	return func(yield func(E) bool) {
-		switch len(conjuncts) {
-		case 0:
+		if len(conjuncts) == 0 {
 			return
-		case 1:
+		} else if len(conjuncts) == 1 {
 			for e := range conjuncts[0].All() {
 				if !yield(e) {
 					return
 				}
 			}
-		default:
-			// intersect with the smallest set.
-			smallest := slices.MinFunc(conjuncts, func(a V, b V) int {
-				return cmp.Compare(a.Len(), b.Len())
-			})
-			for e := range smallest.All() {
-				intersects := true
-				for _, conjunct := range conjuncts {
-					if !conjunct.Contains(e) {
-						intersects = false
-						break
-					}
+			return
+		}
+		// intersect with the smallest set.
+		smallest := slices.MinFunc(conjuncts, func(a V, b V) int {
+			return cmp.Compare(a.Len(), b.Len())
+		})
+		for e := range smallest.All() {
+			intersects := true
+			for _, conjunct := range conjuncts {
+				if !conjunct.Contains(e) {
+					intersects = false
+					break
 				}
-				if !intersects {
-					continue
-				}
-				if !yield(e) {
-					return
-				}
+			}
+			if !intersects {
+				continue
+			}
+			if !yield(e) {
+				return
 			}
 		}
 	}
 }
 
-// Union returns the union of this set and the passed disjunct.
+// Union returns the union of this set and the passed disjuncts.
 func Union[V View[E], E comparable](disjuncts ...V) iter.Seq[E] {
 	return func(yield func(E) bool) {
 		if len(disjuncts) == 0 {
+			return
+		} else if len(disjuncts) == 1 {
+			for e := range disjuncts[0].All() {
+				if !yield(e) {
+					return
+				}
+			}
 			return
 		}
 		disjuncts := slices.Clone(disjuncts)
@@ -172,7 +178,8 @@ func Union[V View[E], E comparable](disjuncts ...V) iter.Seq[E] {
 	}
 }
 
-// Difference returns this set with all the elements in the subtrahend removed.
+// Difference returns the difference between the passed minuend and the union of
+// the passed subtrahends.
 func Difference[V View[E], E comparable](minuend View[E], subtrahends ...V) iter.Seq[E] {
 	return func(yield func(E) bool) {
 		for e := range minuend.All() {
