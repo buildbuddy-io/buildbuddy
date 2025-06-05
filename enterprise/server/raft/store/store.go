@@ -825,6 +825,12 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	}
 	s.rangeMu.Unlock()
 
+	if !loaded {
+		metrics.RaftRanges.With(prometheus.Labels{
+			metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+		}).Inc()
+	}
+
 	if err != nil {
 		s.log.Warningf("failed to add range %d: [%q, %q) gen %d failed: %s", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration(), err)
 		return
@@ -833,12 +839,6 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
 		return
-	}
-
-	if !loaded {
-		metrics.RaftRanges.With(prometheus.Labels{
-			metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-		}).Inc()
 	}
 
 	if rd.GetStart() == nil || rd.GetEnd() == nil {
@@ -1030,6 +1030,8 @@ func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 }
 
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
+	// This code will be called by all replicas in a range when
+	// doing a split, so we do not check for range leases here.
 	rIface, ok := s.replicas.Load(rangeID)
 	if !ok {
 		return nil, status.OutOfRangeErrorf("%s: replica for range %d not found", constants.RangeNotFoundMsg, rangeID)
