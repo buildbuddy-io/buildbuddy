@@ -414,6 +414,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	for _, doc := range docs {
 		regions := highlighter.Highlight(doc)
 		if len(regions) == 0 {
+			log.Warningf("No highlight regions found for doc: %s, dropping", doc.Field(schema.FilenameField).Contents())
 			continue
 		}
 
