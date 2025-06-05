@@ -106,17 +106,13 @@ func (s mapView[E, V]) Len() int {
 
 // Intersection returns the intersection of the passed conjuncts.
 func Intersection[V View[E], E comparable](conjuncts ...V) iter.Seq[E] {
+	if len(conjuncts) == 0 {
+		return slices.Values[[]E](nil)
+	}
+	if len(conjuncts) == 1 {
+		return conjuncts[0].All()
+	}
 	return func(yield func(E) bool) {
-		if len(conjuncts) == 0 {
-			return
-		} else if len(conjuncts) == 1 {
-			for e := range conjuncts[0].All() {
-				if !yield(e) {
-					return
-				}
-			}
-			return
-		}
 		// intersect with the smallest set.
 		smallest := slices.MinFunc(conjuncts, func(a V, b V) int {
 			return cmp.Compare(a.Len(), b.Len())
@@ -141,6 +137,12 @@ func Intersection[V View[E], E comparable](conjuncts ...V) iter.Seq[E] {
 
 // Union returns the union of the passed disjuncts.
 func Union[V View[E], E comparable](disjuncts ...V) iter.Seq[E] {
+	if len(disjuncts) == 0 {
+		return slices.Values[[]E](nil)
+	}
+	if len(disjuncts) == 1 {
+		return disjuncts[0].All()
+	}
 	return func(yield func(E) bool) {
 		if len(disjuncts) == 0 {
 			return
@@ -181,6 +183,9 @@ func Union[V View[E], E comparable](disjuncts ...V) iter.Seq[E] {
 // Difference returns the difference between the passed minuend and the union of
 // the passed subtrahends.
 func Difference[V View[E], E comparable](minuend View[E], subtrahends ...V) iter.Seq[E] {
+	if len(subtrahends) == 0 {
+		return minuend.All()
+	}
 	return func(yield func(E) bool) {
 		for e := range minuend.All() {
 			keep := true
