@@ -43,6 +43,7 @@ var (
 	writeManifestsToCache  = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
 	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from the cache after a HEAD request to the upstream registry.")
 	writeLayersToCache     = flag.Bool("executor.container_registry.write_layers_to_cache", false, "Write layers to the cache.")
+	readLayersFromCache    = flag.Bool("executor.container_registry.read_layers_from_cache", false, "Read layers from cache.")
 )
 
 type MirrorConfig struct {
@@ -750,6 +751,16 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		return nil, err
 	}
 
+	if *readLayersFromCache {
+		rc, err := l.fetchLayerFromCache()
+		if err != nil && !status.IsNotFoundError(err) {
+			log.CtxWarningf(l.image.ctx, "Error fetching layer from cache: %s", err)
+		}
+		if rc != nil && err == nil {
+			return rc, nil
+		}
+	}
+
 	upstream, err := l.remoteLayer.Compressed()
 	if err != nil {
 		return nil, err
@@ -813,4 +824,33 @@ func (l *layerFromDigest) MediaType() (types.MediaType, error) {
 		return "", err
 	}
 	return l.remoteLayer.MediaType()
+}
+
+func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
+	metadata, err := ocicache.FetchBlobMetadataFromCache(
+		l.image.ctx,
+		l.image.bsClient,
+		l.image.acClient,
+		l.repo,
+		l.digest,
+	)
+	if err != nil {
+		return nil, err
+	}
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+		err := ocicache.FetchBlobFromCache(
+			l.image.ctx,
+			pw,
+			l.image.bsClient,
+			l.digest,
+			metadata.GetContentLength(),
+		)
+		if err != nil {
+			log.Warningf("Error fetching blob from cache: %s", err)
+			pw.CloseWithError(err)
+		}
+	}()
+	return pr, nil
 }
