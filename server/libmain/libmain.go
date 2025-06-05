@@ -423,10 +423,10 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 
 	mux := env.GetMux()
 	// Register all of our HTTP handlers on the default mux.
-	mux.Handle("/", interceptors.WrapExternalHandler(env, staticFileServer))
+	mux.Handle("/", interceptors.WrapAuthenticatedExternalHandler(env, staticFileServer))
 	for _, appRoute := range appRoutes {
 		// this causes the muxer to handle redirects from e. g. /path -> /path/
-		mux.Handle(appRoute, interceptors.WrapExternalHandler(env, staticFileServer))
+		mux.Handle(appRoute, interceptors.WrapAuthenticatedExternalHandler(env, staticFileServer))
 	}
 	mux.Handle("/app/", interceptors.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
 	mux.Handle("/rpc/BuildBuddyService/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
