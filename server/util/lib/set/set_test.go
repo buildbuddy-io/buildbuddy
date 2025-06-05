@@ -258,7 +258,7 @@ func TestAddSeq(t *testing.T) {
 			},
 		},
 		{
-			Name:  "Add Empty",
+			Name: "Add Empty",
 			Input: set.Set[string]{
 				"foo":    {},
 				"bar":    {},
@@ -274,9 +274,9 @@ func TestAddSeq(t *testing.T) {
 			},
 		},
 		{
-			Name:  "Add Empty to Empty",
-			Input: make(set.Set[string], 0),
-			ToAdd: []string{},
+			Name:     "Add Empty to Empty",
+			Input:    make(set.Set[string], 0),
+			ToAdd:    []string{},
 			Expected: set.Set[string]{},
 		},
 		{
@@ -460,16 +460,16 @@ func TestRemoveSeq(t *testing.T) {
 		Expected set.Set[string]
 	}{
 		{
-			Name:     "Remove from Empty",
-			Input:    make(set.Set[string], 0),
+			Name:  "Remove from Empty",
+			Input: make(set.Set[string], 0),
 			ToRemove: []string{
 				"foo",
 			},
 			Expected: make(set.Set[string], 0),
 		},
 		{
-			Name:     "Remove from nil",
-			Input:    nil,
+			Name:  "Remove from nil",
+			Input: nil,
 			ToRemove: []string{
 				"foo",
 			},
@@ -516,8 +516,8 @@ func TestRemoveSeq(t *testing.T) {
 				"foobar",
 			},
 			Expected: set.Set[string]{
-				"foo":    {},
-				"bar":    {},
+				"foo": {},
+				"bar": {},
 			},
 		},
 		{
@@ -650,196 +650,316 @@ func TestContains(t *testing.T) {
 func TestIntersection(t *testing.T) {
 	for _, tc := range []struct {
 		Name     string
-		Input    set.Set[string]
-		Conjunct set.Set[string]
+		Input    []set.Set[string]
 		Expected []string
 	}{
 		{
-			Name:     "Empty intersects empty",
-			Input:    make(set.Set[string], 0),
-			Conjunct: make(set.Set[string], 0),
+			Name:     "No sets",
+			Input:    make([]set.Set[string], 0),
 			Expected: []string{},
 		},
 		{
-			Name:     "Nil intersects nil",
-			Input:    nil,
-			Conjunct: nil,
-			Expected: []string{},
-		},
-		{
-			Name:     "Empty intersects nil",
-			Input:    make(set.Set[string], 0),
-			Conjunct: nil,
-			Expected: []string{},
-		},
-		{
-			Name:     "Nil intersects empty",
-			Input:    nil,
-			Conjunct: make(set.Set[string], 0),
-			Expected: []string{},
-		},
-		{
-			Name:  "Empty intersects non-empty",
-			Input: make(set.Set[string], 0),
-			Conjunct: set.Set[string]{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
+			Name: "One set",
+			Input: []set.Set[string]{
+				{
+					"":       {},
+					"foo":    {},
+					"bar":    {},
+					"foobar": {},
+					"barfoo": {},
+				},
 			},
-			Expected: []string{},
-		},
-		{
-			Name: "Non-empty intersects empty",
-			Input: set.Set[string]{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
-			},
-			Conjunct: make(set.Set[string], 0),
-			Expected: []string{},
-		},
-		{
-			Name:  "Nil intersects non-empty",
-			Input: nil,
-			Conjunct: set.Set[string]{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
-			},
-			Expected: []string{},
-		},
-		{
-			Name: "Non-empty intersects nil",
-			Input: set.Set[string]{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
-			},
-			Conjunct: nil,
-			Expected: []string{},
-		},
-		{
-			Name: "Intersect with overlap",
-			Input: set.Set[string](map[string]struct{}{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
-				"barfoo": {},
-			}),
-			Conjunct: set.Set[string](map[string]struct{}{
-				"bar":    {},
-				"barfoo": {},
-				"barbar": {},
-			}),
 			Expected: []string{
+				"",
+				"foo",
 				"bar",
+				"foobar",
 				"barfoo",
 			},
 		},
 		{
-			Name: "Intersect with no overlap",
-			Input: set.Set[string](map[string]struct{}{
-				"foo":    {},
-				"barfoo": {},
-			}),
-			Conjunct: set.Set[string](map[string]struct{}{
-				"bar":    {},
-				"barbar": {},
-			}),
+			Name:     "Empty intersects empty",
+			Input:    []set.Set[string]{
+				make(set.Set[string], 0),
+				make(set.Set[string], 0),
+			},
 			Expected: []string{},
 		},
 		{
-			Name: "Intersect with zero-value overlap",
-			Input: set.Set[string](map[string]struct{}{
+			Name:     "Nil intersects nil",
+			Input:    []set.Set[string]{nil,
+			nil,
+		},
+		Expected: []string{},
+	},
+	{
+		Name:     "Empty intersects nil",
+		Input:    []set.Set[string]{
+			make(set.Set[string], 0),
+			nil,
+		},
+		Expected: []string{},
+	},
+	{
+		Name:     "Nil intersects empty",
+		Input:    []set.Set[string]{
+			nil,
+			make(set.Set[string], 0),
+		},
+		Expected: []string{},
+	},
+	{
+		Name:  "Empty intersects non-empty",
+		Input: []set.Set[string]{
+			make(set.Set[string], 0),
+			{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+			},
+		},
+		Expected: []string{},
+	},
+	{
+		Name: "Non-empty intersects empty",
+		Input: []set.Set[string]{
+			{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+			},
+			make(set.Set[string], 0),
+		},
+		Expected: []string{},
+	},
+	{
+		Name:  "Nil intersects non-empty",
+		Input: []set.Set[string]{
+			nil,
+			{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+			},
+		},
+		Expected: []string{},
+	},
+	{
+		Name: "Non-empty intersects nil",
+		Input: []set.Set[string]{
+			{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+			},
+			nil,
+		},
+		Expected: []string{},
+	},
+	{
+		Name: "Intersect with overlap",
+		Input: []set.Set[string]{
+			{
+				"foo":    {},
+				"bar":    {},
+				"foobar": {},
+				"barfoo": {},
+			},
+			{
+				"bar":    {},
+				"barfoo": {},
+				"barbar": {},
+			},
+		},
+		Expected: []string{
+			"bar",
+			"barfoo",
+		},
+	},
+	{
+		Name: "Intersect with no overlap",
+		Input: []set.Set[string]{
+			{
+				"foo":    {},
+				"barfoo": {},
+			},
+			{
+				"bar":    {},
+				"barbar": {},
+			},
+		},
+		Expected: []string{},
+	},
+	{
+		Name: "Intersect with zero-value overlap",
+		Input: []set.Set[string]{
+			{
 				"":       {},
 				"foo":    {},
 				"barfoo": {},
-			}),
-			Conjunct: set.Set[string](map[string]struct{}{
+			},
+			{
 				"":       {},
 				"bar":    {},
 				"barbar": {},
-			}),
-			Expected: []string{
-				"",
 			},
 		},
-		{
-			Name: "Intersect with zero-value no overlap",
-			Input: set.Set[string](map[string]struct{}{
+		Expected: []string{
+			"",
+		},
+	},
+	{
+		Name: "Intersect with zero-value no overlap",
+		Input: []set.Set[string]{
+			{
 				"":       {},
 				"foo":    {},
 				"barfoo": {},
-			}),
-			Conjunct: set.Set[string](map[string]struct{}{
+			},
+			{
 				"foo":    {},
 				"barbar": {},
-			}),
-			Expected: []string{
-				"foo",
 			},
 		},
-		{
-			Name: "Intersect with zero-value no overlap 2",
-			Input: set.Set[string](map[string]struct{}{
+		Expected: []string{
+			"foo",
+		},
+	},
+	{
+		Name: "Intersect with zero-value no overlap 2",
+		Input: []set.Set[string]{
+			{
 				"foo":    {},
 				"barfoo": {},
-			}),
-			Conjunct: set.Set[string](map[string]struct{}{
+			},
+			{
 				"":       {},
 				"foo":    {},
 				"barbar": {},
-			}),
-			Expected: []string{
-				"foo",
 			},
 		},
-	} {
-		t.Run(tc.Name, func(t *testing.T) {
-			s := tc.Input.Intersection(tc.Conjunct)
-			assert.ElementsMatch(t, slices.Collect(s), tc.Expected)
-		})
-	}
+		Expected: []string{
+			"foo",
+		},
+	},
+	{
+		Name: "Complex Intersect with many sets",
+		Input: []set.Set[string]{
+			{
+				"foo":    {},
+				"barfoo": {},
+				"barbar": {},
+				"barbarbar": {},
+			},
+			{
+				"":       {},
+				"foo":    {},
+				"foobar": {},
+				"barbar": {},
+			},
+			{
+				"":       {},
+				"foo":    {},
+				"foobar": {},
+				"barbar": {},
+			},
+			{
+				"":       {},
+				"foo":    {},
+				"foobar": {},
+				"barbar": {},
+			},
+			{
+				"":       {},
+				"foo":    {},
+				"barbar": {},
+				"barfoo": {},
+			},
+		},
+		Expected: []string{
+			"foo",
+			"barbar",
+		},
+	},
+} {
+	t.Run(tc.Name, func(t *testing.T) {
+		s := set.Intersection(tc.Input...)
+		assert.ElementsMatch(t, slices.Collect(s), tc.Expected)
+	})
+}
 }
 
 func TestUnion(t *testing.T) {
 	for _, tc := range []struct {
 		Name     string
-		Input    set.Set[string]
-		Disjunct set.Set[string]
+		Input    []set.Set[string]
 		Expected []string
 	}{
 		{
+			Name:     "No sets",
+			Input:    make([]set.Set[string], 0),
+			Expected: []string{},
+		},
+		{
+			Name: "One set",
+			Input: []set.Set[string]{
+				{
+					"":       {},
+					"foo":    {},
+					"bar":    {},
+					"foobar": {},
+					"barfoo": {},
+				},
+			},
+			Expected: []string{
+				"",
+				"foo",
+				"bar",
+				"foobar",
+				"barfoo",
+			},
+		},
+		{
 			Name:     "Empty union empty",
-			Input:    make(set.Set[string], 0),
-			Disjunct: make(set.Set[string], 0),
+			Input:    []set.Set[string]{
+				make(set.Set[string], 0),
+				make(set.Set[string], 0),
+			},
 			Expected: []string{},
 		},
 		{
 			Name:     "Nil union nil",
-			Input:    nil,
-			Disjunct: nil,
+			Input:    []set.Set[string]{
+				nil,
+				nil,
+			},
 			Expected: []string{},
 		},
 		{
 			Name:     "Empty union nil",
-			Input:    make(set.Set[string], 0),
-			Disjunct: nil,
+			Input:    []set.Set[string]{
+				make(set.Set[string], 0),
+				nil,
+			},
 			Expected: []string{},
 		},
 		{
 			Name:     "Nil union empty",
-			Input:    nil,
-			Disjunct: make(set.Set[string], 0),
+			Input:    []set.Set[string]{
+				nil,
+				make(set.Set[string], 0),
+			},
 			Expected: []string{},
 		},
 		{
 			Name:  "Empty union non-empty",
-			Input: make(set.Set[string], 0),
-			Disjunct: set.Set[string]{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
+			Input: []set.Set[string]{
+				make(set.Set[string], 0),
+				{
+					"foo":    {},
+					"bar":    {},
+					"foobar": {},
+				},
 			},
 			Expected: []string{
 				"foo",
@@ -849,12 +969,14 @@ func TestUnion(t *testing.T) {
 		},
 		{
 			Name: "Non-empty union empty",
-			Input: set.Set[string]{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
+			Input: []set.Set[string]{
+				{
+					"foo":    {},
+					"bar":    {},
+					"foobar": {},
+				},
+				make(set.Set[string], 0),
 			},
-			Disjunct: make(set.Set[string], 0),
 			Expected: []string{
 				"foo",
 				"bar",
@@ -863,11 +985,13 @@ func TestUnion(t *testing.T) {
 		},
 		{
 			Name:  "Nil union non-empty",
-			Input: nil,
-			Disjunct: set.Set[string]{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
+			Input: []set.Set[string]{
+				nil,
+				{
+					"foo":    {},
+					"bar":    {},
+					"foobar": {},
+				},
 			},
 			Expected: []string{
 				"foo",
@@ -877,12 +1001,14 @@ func TestUnion(t *testing.T) {
 		},
 		{
 			Name: "Non-empty union nil",
-			Input: set.Set[string]{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
+			Input: []set.Set[string]{
+				{
+					"foo":    {},
+					"bar":    {},
+					"foobar": {},
+				},
+				nil,
 			},
-			Disjunct: nil,
 			Expected: []string{
 				"foo",
 				"bar",
@@ -891,17 +1017,19 @@ func TestUnion(t *testing.T) {
 		},
 		{
 			Name: "Union with overlap",
-			Input: set.Set[string](map[string]struct{}{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
-				"barfoo": {},
-			}),
-			Disjunct: set.Set[string](map[string]struct{}{
-				"bar":    {},
-				"barfoo": {},
-				"barbar": {},
-			}),
+			Input: []set.Set[string]{
+				{
+					"foo":    {},
+					"bar":    {},
+					"foobar": {},
+					"barfoo": {},
+				},
+				{
+					"bar":    {},
+					"barfoo": {},
+					"barbar": {},
+				},
+			},
 			Expected: []string{
 				"foo",
 				"bar",
@@ -912,14 +1040,16 @@ func TestUnion(t *testing.T) {
 		},
 		{
 			Name: "Union with no overlap",
-			Input: set.Set[string](map[string]struct{}{
-				"foo":    {},
-				"barfoo": {},
-			}),
-			Disjunct: set.Set[string](map[string]struct{}{
-				"bar":    {},
-				"barbar": {},
-			}),
+			Input: []set.Set[string]{
+				{
+					"foo":    {},
+					"barfoo": {},
+				},
+				{
+					"bar":    {},
+					"barbar": {},
+				},
+			},
 			Expected: []string{
 				"foo",
 				"bar",
@@ -929,16 +1059,18 @@ func TestUnion(t *testing.T) {
 		},
 		{
 			Name: "Union with zero-value overlap",
-			Input: set.Set[string](map[string]struct{}{
-				"":       {},
-				"foo":    {},
-				"barfoo": {},
-			}),
-			Disjunct: set.Set[string](map[string]struct{}{
-				"":       {},
-				"bar":    {},
-				"barbar": {},
-			}),
+			Input: []set.Set[string]{
+				{
+					"":       {},
+					"foo":    {},
+					"barfoo": {},
+				},
+				{
+					"":       {},
+					"bar":    {},
+					"barbar": {},
+				},
+			},
 			Expected: []string{
 				"",
 				"foo",
@@ -949,15 +1081,17 @@ func TestUnion(t *testing.T) {
 		},
 		{
 			Name: "Union with zero-value no overlap",
-			Input: set.Set[string](map[string]struct{}{
-				"":       {},
-				"foo":    {},
-				"barfoo": {},
-			}),
-			Disjunct: set.Set[string](map[string]struct{}{
-				"foo":    {},
-				"barbar": {},
-			}),
+			Input: []set.Set[string]{
+				{
+					"":       {},
+					"foo":    {},
+					"barfoo": {},
+				},
+				{
+					"foo":    {},
+					"barbar": {},
+				},
+			},
 			Expected: []string{
 				"",
 				"foo",
@@ -967,15 +1101,17 @@ func TestUnion(t *testing.T) {
 		},
 		{
 			Name: "Union with zero-value no overlap 2",
-			Input: set.Set[string](map[string]struct{}{
-				"foo":    {},
-				"barfoo": {},
-			}),
-			Disjunct: set.Set[string](map[string]struct{}{
-				"":       {},
-				"foo":    {},
-				"barbar": {},
-			}),
+			Input: []set.Set[string]{
+				{
+					"foo":    {},
+					"barfoo": {},
+				},
+				{
+					"":       {},
+					"foo":    {},
+					"barbar": {},
+				},
+			},
 			Expected: []string{
 				"",
 				"foo",
@@ -983,9 +1119,52 @@ func TestUnion(t *testing.T) {
 				"barbar",
 			},
 		},
+		{
+			Name: "Complex union with many sets",
+			Input: []set.Set[string]{
+				{
+					"foo":    {},
+					"barbar": {},
+					"barfoo": {},
+					"barbarbar": {},
+				},
+				{
+					"":       {},
+					"foo":    {},
+					"foobar":    {},
+					"barbar": {},
+				},
+				nil,
+				{
+					"foo":    {},
+					"foobar":    {},
+					"barbar": {},
+					"foofoofoo": {},
+				},
+				{},
+				{
+					"":       {},
+					"foofoo":    {},
+					"bar":    {},
+					"barbar": {},
+					"foofoofoo": {},
+				},
+			},
+			Expected: []string{
+				"",
+				"foo",
+				"bar",
+				"foobar",
+				"barfoo",
+				"foofoo",
+				"barbar",
+				"foofoofoo",
+				"barbarbar",
+			},
+		},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
-			s := tc.Input.Union(tc.Disjunct)
+			s := set.Union(tc.Input...)
 			assert.ElementsMatch(t, slices.Collect(s), tc.Expected)
 		})
 	}
@@ -994,52 +1173,18 @@ func TestUnion(t *testing.T) {
 func TestDifference(t *testing.T) {
 	for _, tc := range []struct {
 		Name       string
-		Input      set.Set[string]
-		Subtrahend set.Set[string]
+		Minuend    set.Set[string]
+		Subtrahends []set.Set[string]
 		Expected   []string
 	}{
 		{
-			Name:       "Empty subtract empty",
-			Input:      make(set.Set[string], 0),
-			Subtrahend: make(set.Set[string], 0),
-			Expected:   []string{},
-		},
-		{
-			Name:       "Nil subtract nil",
-			Input:      nil,
-			Subtrahend: nil,
-			Expected:   []string{},
-		},
-		{
-			Name:       "Empty subtract nil",
-			Input:      make(set.Set[string], 0),
-			Subtrahend: nil,
-			Expected:   []string{},
-		},
-		{
-			Name:       "Nil subtract empty",
-			Input:      nil,
-			Subtrahend: make(set.Set[string], 0),
-			Expected:   []string{},
-		},
-		{
-			Name:  "Empty subtract non-empty",
-			Input: make(set.Set[string], 0),
-			Subtrahend: set.Set[string]{
+			Name:     "No subtrahends",
+			Minuend: set.Set[string]{
 				"foo":    {},
 				"bar":    {},
 				"foobar": {},
 			},
-			Expected: []string{},
-		},
-		{
-			Name: "Non-empty subtract empty",
-			Input: set.Set[string]{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
-			},
-			Subtrahend: make(set.Set[string], 0),
+			Subtrahends:    make([]set.Set[string], 0),
 			Expected: []string{
 				"foo",
 				"bar",
@@ -1047,23 +1192,85 @@ func TestDifference(t *testing.T) {
 			},
 		},
 		{
-			Name:  "Nil subtract non-empty",
-			Input: nil,
-			Subtrahend: set.Set[string]{
+			Name:       "Empty subtract empty",
+			Minuend:    make(set.Set[string], 0),
+			Subtrahends: []set.Set[string]{
+				make(set.Set[string], 0),
+			},
+			Expected:   []string{},
+		},
+		{
+			Name:       "Nil subtract nil",
+			Minuend:    nil,
+			Subtrahends: []set.Set[string]{
+				nil,
+			},
+			Expected:   []string{},
+		},
+		{
+			Name:       "Empty subtract nil",
+			Minuend:    make(set.Set[string], 0),
+			Subtrahends: nil,
+			Expected:   []string{},
+		},
+		{
+			Name:       "Nil subtract empty",
+			Minuend:    nil,
+			Subtrahends: []set.Set[string]{
+				make(set.Set[string], 0),
+			},
+			Expected:   []string{},
+		},
+		{
+			Name:    "Empty subtract non-empty",
+			Minuend: make(set.Set[string], 0),
+			Subtrahends: []set.Set[string]{
+				{
+					"foo":    {},
+					"bar":    {},
+					"foobar": {},
+				},
+			},
+			Expected: []string{},
+		},
+		{
+			Name: "Non-empty subtract empty",
+			Minuend: set.Set[string]{
 				"foo":    {},
 				"bar":    {},
 				"foobar": {},
+			},
+			Subtrahends: []set.Set[string]{
+				make(set.Set[string], 0),
+			},
+			Expected: []string{
+				"foo",
+				"bar",
+				"foobar",
+			},
+		},
+		{
+			Name:    "Nil subtract non-empty",
+			Minuend: nil,
+			Subtrahends: []set.Set[string]{
+				{
+					"foo":    {},
+					"bar":    {},
+					"foobar": {},
+				},
 			},
 			Expected: []string{},
 		},
 		{
 			Name: "Non-empty subtract nil",
-			Input: set.Set[string]{
+			Minuend: set.Set[string]{
 				"foo":    {},
 				"bar":    {},
 				"foobar": {},
 			},
-			Subtrahend: nil,
+			Subtrahends: []set.Set[string]{
+				nil,
+			},
 			Expected: []string{
 				"foo",
 				"bar",
@@ -1072,17 +1279,19 @@ func TestDifference(t *testing.T) {
 		},
 		{
 			Name: "Subtract with overlap",
-			Input: set.Set[string](map[string]struct{}{
+			Minuend: set.Set[string]{
 				"foo":    {},
 				"bar":    {},
 				"foobar": {},
 				"barfoo": {},
-			}),
-			Subtrahend: set.Set[string](map[string]struct{}{
-				"bar":    {},
-				"barfoo": {},
-				"barbar": {},
-			}),
+			},
+			Subtrahends: []set.Set[string]{
+				{
+					"bar":    {},
+					"barfoo": {},
+					"barbar": {},
+				},
+			},
 			Expected: []string{
 				"foo",
 				"foobar",
@@ -1090,14 +1299,16 @@ func TestDifference(t *testing.T) {
 		},
 		{
 			Name: "Subtract with no overlap",
-			Input: set.Set[string](map[string]struct{}{
+			Minuend: set.Set[string]{
 				"foo":    {},
 				"barfoo": {},
-			}),
-			Subtrahend: set.Set[string](map[string]struct{}{
-				"bar":    {},
-				"barbar": {},
-			}),
+			},
+			Subtrahends: []set.Set[string]{
+				{
+					"bar":    {},
+					"barbar": {},
+				},
+			},
 			Expected: []string{
 				"foo",
 				"barfoo",
@@ -1105,16 +1316,18 @@ func TestDifference(t *testing.T) {
 		},
 		{
 			Name: "Subtract with zero-value overlap",
-			Input: set.Set[string](map[string]struct{}{
+			Minuend: set.Set[string]{
 				"":       {},
 				"foo":    {},
 				"barfoo": {},
-			}),
-			Subtrahend: set.Set[string](map[string]struct{}{
-				"":       {},
-				"bar":    {},
-				"barbar": {},
-			}),
+			},
+			Subtrahends: []set.Set[string]{
+				{
+					"":       {},
+					"bar":    {},
+					"barbar": {},
+				},
+			},
 			Expected: []string{
 				"foo",
 				"barfoo",
@@ -1122,15 +1335,17 @@ func TestDifference(t *testing.T) {
 		},
 		{
 			Name: "Subtract with zero-value no overlap",
-			Input: set.Set[string](map[string]struct{}{
+			Minuend: set.Set[string]{
 				"":       {},
 				"foo":    {},
 				"barfoo": {},
-			}),
-			Subtrahend: set.Set[string](map[string]struct{}{
-				"foo":    {},
-				"barbar": {},
-			}),
+			},
+			Subtrahends: []set.Set[string]{
+				{
+					"foo":    {},
+					"barbar": {},
+				},
+			},
 			Expected: []string{
 				"",
 				"barfoo",
@@ -1138,55 +1353,100 @@ func TestDifference(t *testing.T) {
 		},
 		{
 			Name: "Subtract with zero-value no overlap 2",
-			Input: set.Set[string](map[string]struct{}{
+			Minuend: set.Set[string]{
 				"foo":    {},
 				"barfoo": {},
-			}),
-			Subtrahend: set.Set[string](map[string]struct{}{
-				"":       {},
-				"foo":    {},
-				"barbar": {},
-			}),
+			},
+			Subtrahends: []set.Set[string]{
+				{
+					"":       {},
+					"foo":    {},
+					"barbar": {},
+				},
+			},
 			Expected: []string{
 				"barfoo",
 			},
 		},
 		{
 			Name: "Subtract all",
-			Input: set.Set[string](map[string]struct{}{
+			Minuend: set.Set[string]{
 				"foo":    {},
 				"bar":    {},
 				"foobar": {},
 				"barfoo": {},
-			}),
-			Subtrahend: set.Set[string](map[string]struct{}{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
-				"barfoo": {},
-			}),
+			},
+			Subtrahends: []set.Set[string]{
+				{
+					"foo":    {},
+					"bar":    {},
+					"foobar": {},
+					"barfoo": {},
+				},
+			},
 			Expected: []string{},
 		},
 		{
 			Name: "Subtract more than all",
-			Input: set.Set[string](map[string]struct{}{
+			Minuend: set.Set[string]{
 				"foo":    {},
 				"bar":    {},
 				"foobar": {},
 				"barfoo": {},
-			}),
-			Subtrahend: set.Set[string](map[string]struct{}{
-				"foo":    {},
-				"bar":    {},
-				"foobar": {},
-				"barfoo": {},
-				"barbar": {},
-			}),
+			},
+			Subtrahends: []set.Set[string]{
+				{
+					"foo":    {},
+					"bar":    {},
+					"foobar": {},
+					"barfoo": {},
+					"barbar": {},
+				},
+			},
 			Expected: []string{},
+		},
+		{
+			Name: "Complex difference with many sets",
+			Minuend: set.Set[string]{
+				"": {},
+				"foo": {},
+				"bar": {},
+				"foobar": {},
+				"barfoo": {},
+				"foofoo": {},
+				"barbar": {},
+				"foofoofoo": {},
+				"barbarbar": {},
+			},
+			Subtrahends: []set.Set[string]{
+				{
+					"foo":    {},
+					"barbar": {},
+					"barfoo": {},
+					"barbarbar": {},
+				},
+				{
+					"":       {},
+					"foo":    {},
+					"barbar": {},
+				},
+				nil,
+				{},
+				{
+					"":       {},
+					"foofoo":    {},
+					"bar":    {},
+					"barbar": {},
+				},
+			},
+			Expected: []string{
+				"foobar",
+				"foofoofoo",
+			},
 		},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
-			s := tc.Input.Difference(tc.Subtrahend)
+			s := set.Difference(tc.Minuend, tc.Subtrahends...)
 			assert.ElementsMatch(t, slices.Collect(s), tc.Expected)
 		})
 	}

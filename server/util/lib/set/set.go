@@ -1,6 +1,7 @@
 package set
 
 import (
+	"cmp"
 	"iter"
 	"maps"
 	"slices"
@@ -10,9 +11,7 @@ import (
 type View[E comparable] interface {
 	All() iter.Seq[E]
 	Contains(E) bool
-	Intersection(View[E]) iter.Seq[E]
-	Union(View[E]) iter.Seq[E]
-	Difference(View[E]) iter.Seq[E]
+	Len() int
 }
 
 // nothing is an alias for struct{} for clarity/readability.
@@ -95,16 +94,44 @@ func (s mapView[E, V]) Contains(e E) bool {
 	return ok
 }
 
-// Intersection returns the intersection of this set and the passed conjunct.
-func (s Set[E]) Intersection(conjunct View[E]) iter.Seq[E] {
-	return KeyView(s).Intersection(conjunct)
+// Len returns the number of elements in the set.
+func (s Set[E]) Len() int {
+	return len(s)
+}
+
+// Len returns the number of elements in the set.
+func (s mapView[E, V]) Len() int {
+	return len(s)
 }
 
 // Intersection returns the intersection of this set and the passed conjunct.
-func (s mapView[E, V]) Intersection(conjunct View[E]) iter.Seq[E] {
+func Intersection[V View[E], E comparable](conjuncts ...V) iter.Seq[E] {
 	return func(yield func(E) bool) {
-		for e := range s {
-			if conjunct.Contains(e) {
+		switch len(conjuncts) {
+		case 0:
+			return
+		case 1:
+			for e := range conjuncts[0].All() {
+				if !yield(e) {
+					return
+				}
+			}
+		default:
+			// intersect with the smallest set.
+			smallest := slices.MinFunc(conjuncts, func(a V, b V) int {
+				return cmp.Compare(a.Len(), b.Len())
+			})
+			for e := range smallest.All() {
+				intersects := true
+				for _, conjunct := range conjuncts {
+					if !conjunct.Contains(e) {
+						intersects = false
+						break
+					}
+				}
+				if !intersects {
+					continue
+				}
 				if !yield(e) {
 					return
 				}
@@ -114,36 +141,49 @@ func (s mapView[E, V]) Intersection(conjunct View[E]) iter.Seq[E] {
 }
 
 // Union returns the union of this set and the passed disjunct.
-func (s Set[E]) Union(disjunct View[E]) iter.Seq[E] {
-	return KeyView(s).Union(disjunct)
-}
-
-// Union returns the union of this set and the passed disjunct.
-func (s mapView[E, V]) Union(disjunct View[E]) iter.Seq[E] {
+func Union[V View[E], E comparable](disjuncts ...V) iter.Seq[E] {
 	return func(yield func(E) bool) {
-		for e := range s {
-			if !yield(e) {
-				return
-			}
+		if len(disjuncts) == 0 {
+			return
 		}
-		for e := range disjunct.Difference(s) {
-			if !yield(e) {
-				return
+		disjuncts := slices.Clone(disjuncts)
+		// for len(disjuncts) > 2, it's more efficient to perform the union in
+		// descending order of set size.
+		slices.SortFunc(disjuncts, func(a V, b V) int {
+			return cmp.Compare(b.Len(), a.Len())
+		})
+		for i, disjunct := range disjuncts {
+			for e := range disjunct.All() {
+				newElement := true
+				for _, d := range disjuncts[0:i] {
+					if d.Contains(e) {
+						newElement = false
+						break
+					}
+				}
+				if !newElement {
+					continue
+				}
+				if !yield(e) {
+					return
+				}
 			}
 		}
 	}
 }
 
 // Difference returns this set with all the elements in the subtrahend removed.
-func (s Set[E]) Difference(subtrahend View[E]) iter.Seq[E] {
-	return KeyView(s).Difference(subtrahend)
-}
-
-// Difference returns this set with all the elements in the subtrahend removed.
-func (s mapView[E, V]) Difference(subtrahend View[E]) iter.Seq[E] {
+func Difference[V View[E], E comparable](minuend View[E], subtrahends ...V) iter.Seq[E] {
 	return func(yield func(E) bool) {
-		for e := range s {
-			if subtrahend.Contains(e) {
+		for e := range minuend.All() {
+			keep := true
+			for _, subtrahend := range subtrahends {
+				if subtrahend.Contains(e) {
+					keep = false
+					break
+				}
+			}
+			if !keep {
 				continue
 			}
 			if !yield(e) {
