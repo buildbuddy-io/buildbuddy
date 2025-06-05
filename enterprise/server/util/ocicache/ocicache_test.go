@@ -303,6 +303,49 @@ func TestReadThroughCacher_PartialReadPreventsCommit(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestReadThroughCacher_ReturnsEOF(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "read_through_cacher", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+	r := io.NopCloser(bytes.NewReader(layerBuf))
+
+	cacher, err := ocicache.NewBlobReadThroughCacher(ctx, r, bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+
+	readout := &bytes.Buffer{}
+	readbuf := make([]byte, 128)
+	for {
+		n, err := cacher.Read(readbuf)
+		if err != nil {
+			require.ErrorIs(t, err, io.EOF)
+			break
+		}
+		require.Greater(t, n, 0)
+		_, err = readout.Write(readbuf[:n])
+		require.NoError(t, err)
+	}
+	require.Empty(t, cmp.Diff(layerBuf, readout.Bytes()))
+
+	// metadata not present before close
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
+	require.Error(t, err)
+	require.Nil(t, metadata)
+
+	// blob not present before close
+	fetchout := &bytes.Buffer{}
+	err = ocicache.FetchBlobFromCache(ctx, fetchout, bsClient, hash, contentLength)
+	require.Error(t, err)
+
+	err = cacher.Close()
+	require.NoError(t, err)
+
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+}
+
 func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, name.Repository, gcr.Hash, string) {
 	_, filebuf := testdigest.RandomCASResourceBuf(t, filesize)
 	filename, err := random.RandomString(32)

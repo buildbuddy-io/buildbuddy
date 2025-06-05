@@ -390,25 +390,25 @@ type readThroughCacher struct {
 
 func (r *readThroughCacher) Read(p []byte) (int, error) {
 	n, err := r.rc.Read(p)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return n, err
 	}
 	if n <= 0 {
-		return n, nil
+		return n, err
 	}
 	if r.writeErr != nil {
-		return n, nil
+		return n, err
 	}
-	written, err := r.wc.Write(p[:n])
-	if err != nil {
-		log.Warningf("Error writing to cache: %s", err)
-		r.writeErr = err
-		return n, nil
+	written, writeErr := r.wc.Write(p[:n])
+	if writeErr != nil {
+		log.Warningf("Error writing to cache: %s", writeErr)
+		r.writeErr = writeErr
+		return n, err
 	}
 	if written < n {
 		r.writeErr = io.ErrShortWrite
 	}
-	return n, nil
+	return n, err
 }
 
 func (r *readThroughCacher) Close() error {
