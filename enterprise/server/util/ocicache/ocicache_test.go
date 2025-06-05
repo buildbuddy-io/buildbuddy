@@ -181,6 +181,9 @@ func TestBlobUploader(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(layerBuf)-256, written)
 
+	// Blob committed as soon as all bytes are written, should be available even before close.
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
 	err = up.Close()
 	require.NoError(t, err)
 
@@ -208,11 +211,15 @@ func TestBlobUploader_PartialWriteFails(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 256, written)
 	err = up.Close()
-	require.Error(t, err)
+	require.NoError(t, err)
 
 	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
 	require.Error(t, err)
 	require.Nil(t, metadata)
+
+	out := &bytes.Buffer{}
+	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
+	require.Error(t, err)
 }
 
 func TestBlobUploader_BlobExists(t *testing.T) {
@@ -239,6 +246,34 @@ func TestBlobUploader_BlobExists(t *testing.T) {
 	}
 }
 
+func TestBlobUpload_WriteTooManyBytes(t *testing.T) {
+	te := setupTestEnv(t)
+
+	layerBuf, repo, hash, contentType := createLayer(t, "blob_uploader_too_many_bytes", 1024)
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, 512)
+	require.NoError(t, err)
+
+	written, err := up.Write(layerBuf)
+	require.Error(t, err)
+	require.Equal(t, len(layerBuf), written)
+
+	err = up.Close()
+	require.NoError(t, err)
+
+	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
+	require.Error(t, err)
+	require.Nil(t, metadata)
+
+	out := &bytes.Buffer{}
+	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, int64(len(layerBuf)))
+	require.Error(t, err)
+
+}
+
 func TestReadThroughCacher(t *testing.T) {
 	te := setupTestEnv(t)
 
@@ -256,15 +291,7 @@ func TestReadThroughCacher(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(layerBuf, readout))
 
-	// metadata not present before close
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
-	require.Error(t, err)
-	require.Nil(t, metadata)
-
-	// blob not present before close
-	fetchout := &bytes.Buffer{}
-	err = ocicache.FetchBlobFromCache(ctx, fetchout, bsClient, hash, contentLength)
-	require.Error(t, err)
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 
 	err = cacher.Close()
 	require.NoError(t, err)
@@ -290,7 +317,6 @@ func TestReadThroughCacher_PartialReadPreventsCommit(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 256, n)
 
-	// Errors committing and closing the writer will be logged but not returned.
 	err = cacher.Close()
 	require.NoError(t, err)
 
@@ -330,15 +356,7 @@ func TestReadThroughCacher_ReturnsEOF(t *testing.T) {
 	}
 	require.Empty(t, cmp.Diff(layerBuf, readout.Bytes()))
 
-	// metadata not present before close
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
-	require.Error(t, err)
-	require.Nil(t, metadata)
-
-	// blob not present before close
-	fetchout := &bytes.Buffer{}
-	err = ocicache.FetchBlobFromCache(ctx, fetchout, bsClient, hash, contentLength)
-	require.Error(t, err)
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 
 	err = cacher.Close()
 	require.NoError(t, err)

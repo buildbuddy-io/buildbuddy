@@ -334,13 +334,36 @@ type blobUploader struct {
 	hash          gcr.Hash
 	contentType   string
 	contentLength int64
+
+	bytesWritten int64
+	committed    bool
 }
 
 func (b *blobUploader) Write(p []byte) (int, error) {
-	return b.uw.Write(p)
+	if b.committed {
+		return 0, status.FailedPreconditionError("blobUploader already committed, cannot receive writes")
+	}
+	written, err := b.uw.Write(p)
+	b.bytesWritten += int64(written)
+	if err != nil {
+		return written, err
+	}
+	if b.bytesWritten == b.contentLength {
+		if err := b.commit(); err != nil {
+			return written, status.WrapError(err, "Error committing blob on write")
+		}
+	}
+	if b.bytesWritten > b.contentLength {
+		return written, status.OutOfRangeError("blobUploader has written more bytes than expected")
+	}
+	return written, err
 }
 
 func (b *blobUploader) commit() error {
+	if b.committed {
+		return status.FailedPreconditionError("blobUploader already committed, cannot commit again")
+	}
+	b.committed = true
 	if err := b.uw.Commit(); err != nil {
 		return err
 	}
@@ -356,14 +379,7 @@ func (b *blobUploader) commit() error {
 }
 
 func (b *blobUploader) Close() error {
-	err := b.commit()
-	if err != nil {
-		log.CtxWarningf(b.ctx, "Error committing blob: %s", err)
-	}
-	if err := b.uw.Close(); err != nil {
-		return err
-	}
-	return err
+	return b.uw.Close()
 }
 
 // NewBlobReadThroughCacher creates a ReadCloser that will write bytes to the CAS as they are read from the input ReadCloser.
