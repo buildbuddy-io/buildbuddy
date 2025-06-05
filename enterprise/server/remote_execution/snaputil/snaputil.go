@@ -51,6 +51,18 @@ const (
 	ChunkSourceLocalFilecache
 	// ChunkSourceRemoteCache means the chunk was fetched from the remote cache
 	ChunkSourceRemoteCache
+
+	// Values for platform.RemoteSnapshotSavePolicyPropertyName:
+	// Every run will save a remote snapshot.
+	AlwaysSaveRemoteSnapshot = "always"
+	// Default. Only the first run on a non-main ref will save a remote snapshot.
+	// All runs on main refs will save a remote snapshot.
+	OnlySaveFirstNonMainRemoteSnapshot = "first-non-main-ref"
+	// Will only save a remote snapshot on a non-main ref if there are no remote
+	// snapshots available. If there is a fallback main snapshot, still will not save
+	// a remote snapshot.
+	// All runs on main refs will save a remote snapshot.
+	OnlySaveNonMainRemoteSnapshotIfNoneAvailable = "none-available"
 )
 
 func (s ChunkSource) String() string {
