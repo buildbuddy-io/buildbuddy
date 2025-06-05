@@ -318,6 +318,10 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	return img, nil
 }
 
+// fetchImageFromCacheOrRemote first tries to fetch the manifest for the given image reference from the cache,
+// then falls back to fetching from the upstream remote registry.
+// If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
+// to fetch a child image matching the given platform.
 func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, remoteOpts []remote.Option) (gcr.Image, error) {
 	if *readManifestsFromCache {
 		desc, err := remote.Head(digestOrTagRef, remoteOpts...)
@@ -336,33 +340,18 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		)
 		if err != nil && !status.IsNotFoundError(err) {
 			log.Warningf("Error fetching manifest from cache: %s", err)
-		} else if err == nil {
-			switch desc.MediaType {
-			case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
-				return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
-			case types.OCIImageIndex, types.DockerManifestList:
-				index := &indexFromRawManifest{
-					repo:        digestOrTagRef.Context(),
-					desc:        *desc,
-					rawManifest: mc.GetRaw(),
-					ctx:         ctx,
-					acClient:    acClient,
-					bsClient:    bsClient,
-				}
-				return index.imageByPlatform(platform)
-			case types.OCIManifestSchema1, types.DockerManifestSchema2:
-			default:
-				log.Warningf("Unexpected media type in index manifest: %q", desc.MediaType)
-			}
-			return &imageFromRawManifest{
-				repo:        digestOrTagRef.Context(),
-				desc:        *desc,
-				rawManifest: mc.GetRaw(),
-				ctx:         ctx,
-				acClient:    acClient,
-				bsClient:    bsClient,
-				remoteOpts:  remoteOpts,
-			}, nil
+		}
+		if mc != nil && err == nil {
+			return imageFromDescriptorAndManifest(
+				ctx,
+				digestOrTagRef.Context(),
+				*desc,
+				mc.GetRaw(),
+				platform,
+				acClient,
+				bsClient,
+				remoteOpts,
+			)
 		}
 	}
 
@@ -387,28 +376,51 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
 		}
 	}
+	return imageFromDescriptorAndManifest(
+		ctx,
+		digestOrTagRef.Context(),
+		remoteDesc.Descriptor,
+		remoteDesc.Manifest,
+		platform,
+		acClient,
+		bsClient,
+		remoteOpts,
+	)
+}
 
-	switch remoteDesc.MediaType {
-	case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
-		return nil, status.UnknownErrorf("unsupported MediaType %q", remoteDesc.MediaType)
-	case types.OCIImageIndex, types.DockerManifestList:
-		index := &indexFromRawManifest{
-			repo:        digestOrTagRef.Context(),
-			desc:        remoteDesc.Descriptor,
-			rawManifest: remoteDesc.Manifest,
-			ctx:         ctx,
-			acClient:    acClient,
-			bsClient:    bsClient,
-		}
-		return index.imageByPlatform(platform)
-	case types.OCIManifestSchema1, types.DockerManifestSchema2:
-	default:
-		log.Warningf("Unexpected media type in index manifest: %q", remoteDesc.MediaType)
+// imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
+// finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
+// and otherwise returns an error.
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, remoteOpts []remote.Option) (gcr.Image, error) {
+	if desc.MediaType.IsSchema1() {
+		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	}
+
+	if desc.MediaType.IsIndex() {
+		indexManifest, err := gcr.ParseIndexManifest(bytes.NewReader(rawManifest))
+		if err != nil {
+			return nil, status.UnknownErrorf("error parsing index manifest: %s", err)
+		}
+
+		desc, err := findFirstImageManifest(*indexManifest, platform)
+		if err != nil {
+			return nil, status.UnknownErrorf("Could not find child image for platform in index: %s", err)
+		}
+		ref := repo.Digest(desc.Digest.String())
+		return fetchImageFromCacheOrRemote(
+			ctx,
+			ref,
+			platform,
+			acClient,
+			bsClient,
+			remoteOpts,
+		)
+	}
+
 	return &imageFromRawManifest{
-		repo:        digestOrTagRef.Context(),
-		desc:        remoteDesc.Descriptor,
-		rawManifest: remoteDesc.Manifest,
+		repo:        repo,
+		desc:        desc,
+		rawManifest: rawManifest,
 		ctx:         ctx,
 		acClient:    acClient,
 		bsClient:    bsClient,
@@ -494,138 +506,58 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
-// indexFromRawManifest exists for Resolver.Resolve(...) to be able to
-// find the image in an index that best matches the given platform.
-type indexFromRawManifest struct {
-	repo        gcrname.Repository
-	desc        gcr.Descriptor
-	rawManifest []byte
-
-	ctx        context.Context
-	acClient   repb.ActionCacheClient
-	bsClient   bspb.ByteStreamClient
-	remoteOpts []remote.Option
-}
-
-func (i *indexFromRawManifest) Digest() (gcr.Hash, error) {
-	return i.desc.Digest, nil
-}
-
-func (i *indexFromRawManifest) MediaType() (types.MediaType, error) {
-	return i.desc.MediaType, nil
-}
-
-func (i *indexFromRawManifest) Size() (int64, error) {
-	return i.desc.Size, nil
-}
-
-func (i *indexFromRawManifest) RawManifest() ([]byte, error) {
-	return i.rawManifest, nil
-}
-
-func (i *indexFromRawManifest) IndexManifest() (*gcr.IndexManifest, error) {
-	return gcr.ParseIndexManifest(bytes.NewReader(i.rawManifest))
-}
-
-// Image finds the child with the input digest and converts it to a go-containerregistry Image.
-// If the child is itself an image index, that is an error.
-func (i *indexFromRawManifest) Image(digest gcr.Hash) (gcr.Image, error) {
-	desc, err := i.childByHash(digest)
-	if err != nil {
-		return nil, err
-	}
-
-	switch desc.MediaType {
-	case types.DockerManifestSchema1, types.DockerManifestSchema1Signed:
-		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
-	case types.OCIImageIndex, types.DockerManifestList:
-		return nil, status.UnknownErrorf("fetching image manifest from index, but encountered an index manifest")
-	case types.OCIManifestSchema1, types.DockerManifestSchema2:
-	default:
-		log.Warningf("Unexpected media type in index manifest: %q", desc.MediaType)
-	}
-
-	return fetchImageFromCacheOrRemote(
-		i.ctx,
-		i.repo.Digest(desc.Digest.String()),
-		defaultPlatform,
-		i.acClient,
-		i.bsClient,
-		i.remoteOpts,
-	)
-}
-
-func (i *indexFromRawManifest) ImageIndex(h gcr.Hash) (gcr.ImageIndex, error) {
-	return nil, status.UnimplementedError("indexFromRawManifest.ImageIndex(...) not implemented")
-}
-
-// imageByPlatform finds the first child entry in the index manifest
-// that matches the given platform and converts its manifest into an Image.
-// If the child entry does not, in fact, point to an OCI image, an error is returned.
-//
-// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
-func (i *indexFromRawManifest) imageByPlatform(platform gcr.Platform) (gcr.Image, error) {
-	desc, err := i.childByPlatform(platform)
-	if err != nil {
-		return nil, err
-	}
-	return i.Image(desc.Digest)
-}
-
-// childPlatform finds the first child entry in the index rawManifest
-// that matches the given platform.
-//
-// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
-func (i *indexFromRawManifest) childByPlatform(platform gcr.Platform) (*gcr.Descriptor, error) {
-	index, err := i.IndexManifest()
-	if err != nil {
-		return nil, err
-	}
-	for _, childDesc := range index.Manifests {
-		// If platform is missing from child descriptor, assume it's amd64/linux.
-		p := defaultPlatform
-		if childDesc.Platform != nil {
-			p = *childDesc.Platform
+func findFirstImageManifest(indexManifest gcr.IndexManifest, platform gcr.Platform) (*gcr.Descriptor, error) {
+	matcher := platformMatcher(platform)
+	for _, manifest := range indexManifest.Manifests {
+		if !manifest.MediaType.IsImage() {
+			continue
 		}
-
-		if matchesPlatform(p, platform) {
-			return &childDesc, nil
+		if matcher(manifest) {
+			return &manifest, nil
 		}
 	}
-	return nil, status.NotFoundErrorf("no child with platform %+v in index", platform)
+	return nil, status.NotFoundError("Could not find image manifest for platform")
 }
 
-// matchesPlatform returns true if the given platform satisfies the required platform.
+// platformMatcher creates Matcher that checks if the given descriptors' platform matches the required platforms.
 //
-// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
-func matchesPlatform(given, required gcr.Platform) bool {
-	// Required fields that must be identical.
-	if given.Architecture != required.Architecture || given.OS != required.OS {
-		return false
-	}
+// The given platform matches the required platform if
+// - architecture and OS are identical.
+// - OS version and variant are identical if provided.
+// - features and OS features of the required platform are subsets of those of the given platform.
+//
+// Adapted from matchesPlatform(...) in https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
+func platformMatcher(required gcr.Platform) func(gcr.Descriptor) bool {
+	return func(desc gcr.Descriptor) bool {
+		given := desc.Platform
+		// Required fields that must be identical.
+		if given.Architecture != required.Architecture || given.OS != required.OS {
+			return false
+		}
 
-	// Optional fields that may be empty, but must be identical if provided.
-	if required.OSVersion != "" && given.OSVersion != required.OSVersion {
-		return false
-	}
-	if required.Variant != "" && given.Variant != required.Variant {
-		return false
-	}
+		// Optional fields that may be empty, but must be identical if provided.
+		if required.OSVersion != "" && given.OSVersion != required.OSVersion {
+			return false
+		}
+		if required.Variant != "" && given.Variant != required.Variant {
+			return false
+		}
 
-	// Verify required platform's features are a subset of given platform's features.
-	if !isSubset(given.OSFeatures, required.OSFeatures) {
-		return false
-	}
-	if !isSubset(given.Features, required.Features) {
-		return false
-	}
+		// Verify required platform's features are a subset of given platform's features.
+		if !isSubset(given.OSFeatures, required.OSFeatures) {
+			return false
+		}
+		if !isSubset(given.Features, required.Features) {
+			return false
+		}
 
-	return true
+		return true
+	}
 }
 
 // isSubset checks if the required array of strings is a subset of the given lst.
 //
-// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
+// Copied from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
 func isSubset(lst, required []string) bool {
 	set := make(map[string]bool)
 	for _, value := range lst {
@@ -639,23 +571,6 @@ func isSubset(lst, required []string) bool {
 	}
 
 	return true
-}
-
-// childByHash finds the first child entry in the index manifest
-// that matches the given digest.
-//
-// Taken from https://github.com/google/go-containerregistry/blob/v0.20.3/pkg/v1/remote/index.go
-func (i *indexFromRawManifest) childByHash(h gcr.Hash) (*gcr.Descriptor, error) {
-	index, err := i.IndexManifest()
-	if err != nil {
-		return nil, err
-	}
-	for _, childDesc := range index.Manifests {
-		if h == childDesc.Digest {
-			return &childDesc, nil
-		}
-	}
-	return nil, status.NotFoundError("could not find child hash in index manifest")
 }
 
 type imageFromRawManifest struct {
