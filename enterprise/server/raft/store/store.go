@@ -2590,6 +2590,8 @@ func (s *Store) getConfigChangeID(ctx context.Context, rangeID uint64) (uint64, 
 	return membership.ConfigChangeID, nil
 }
 
+// CheckRangeOverlaps checks whether there is an open range overlapped with the
+// [start, end) in the request.
 func (s *Store) CheckRangeOverlaps(ctx context.Context, req *rfpb.CheckRangeOverlapsRequest) (*rfpb.CheckRangeOverlapsResponse, error) {
 	if req.GetStart() == nil || req.GetEnd() == nil {
 		return nil, status.FailedPreconditionError("req.Start or req.End cannot be nil")
@@ -2641,6 +2643,12 @@ func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddRepl
 	if err != nil {
 		return status.InternalErrorf("failed to get the client for the node %q: %s", node.GetNhid(), err)
 	}
+
+	// Check the target node doesn't have an overlapping range. An overlapping
+	// range can be caused by a slow node that hasn't committed the split txn.
+	// Since we don't support range merge operations, we don't need to worry
+	// about the case where overlapping ranges occur between the check and when
+	// the replica is added to the node.
 	if remoteRD.GetStart() != nil && remoteRD.GetEnd() != nil {
 		rsp, err := c.CheckRangeOverlaps(ctx, &rfpb.CheckRangeOverlapsRequest{
 			Start: remoteRD.GetStart(),
