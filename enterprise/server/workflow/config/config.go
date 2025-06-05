@@ -196,7 +196,7 @@ func buildWithKythe(dirName string) string {
 	// we'll need to handle this eventually.
 	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
 	return fmt.Sprintf(`
-BZL_MAJOR_VERSION=$(bazel --version | cut -d' ' -f2 | xargs | cut -d'.' -f1)
+BZL_MAJOR_VERSION=$(bazel info release | cut -d' ' -f2 | xargs | cut -d'.' -f1)
 
 if [ $BZL_MAJOR_VERSION -lt 7 ]; then
     BZLMOD_DEFAULT=0
