@@ -37,6 +37,10 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
   render() {
     const isBazelInvocation = this.props.model.isBazelInvocation();
 
+    const cumulativeMetrics = this.props.model.buildMetrics?.cumulativeMetrics;
+    const numAnalyses = cumulativeMetrics?.numAnalyses ?? 0;
+    const numBuilds = cumulativeMetrics?.numBuilds ?? 0;
+
     return (
       <div className="card">
         <Info className="icon purple" />
@@ -154,6 +158,14 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                     <div className="invocation-section-title">Packages</div>
                     <div>
                       {format.formatWithCommas(this.props.model.buildMetrics?.packageMetrics?.packagesLoaded)} packages
+                    </div>
+                  </div>
+                )}
+                {cumulativeMetrics && (
+                  <div className="invocation-section">
+                    <div className="invocation-section-title">Analysis Cache Age</div>
+                    <div>
+                      {`${numAnalyses} ${numAnalyses === 1 ? "analysis" : "analyses"}, ${numBuilds} ${numBuilds === 1 ? "build" : "builds"}`}
                     </div>
                   </div>
                 )}
