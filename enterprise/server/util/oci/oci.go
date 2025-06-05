@@ -39,7 +39,7 @@ var (
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 	allowedPrivateIPs      = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
-	useCachePercent        = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls to use the cache (individaul cache flags must also be enabled).")
+	useCachePercent        = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls to use the cache (individual cache flags must also be enabled).")
 	writeManifestsToCache  = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
 	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from the cache after a HEAD request to the upstream registry.")
 
