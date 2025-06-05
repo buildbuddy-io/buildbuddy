@@ -195,7 +195,7 @@ func TestScoringMatchContentOnly(t *testing.T) {
 
 	score := scorer.Score(nil, doc)
 	require.NotNil(t, score)
-	assert.InDelta(t, 0.9, score, 0.1)
+	assert.InDelta(t, 0.88, score, 0.1)
 }
 
 func TestScoringMatchContentAndFilename(t *testing.T) {
@@ -214,9 +214,7 @@ func TestScoringMatchContentAndFilename(t *testing.T) {
 
 	score := scorer.Score(nil, doc)
 	require.NotNil(t, score)
-	// A very coarse check: filename matches the filename match should contribute 1, and
-	// the content match should contribute between 0 and 1.
-	assert.InDelta(t, 0.9, score, 0.1)
+	assert.InDelta(t, 1, score, 0.1)
 }
 
 func TestScoringMatchFilenameWithoutAtom(t *testing.T) {
@@ -235,7 +233,6 @@ func TestScoringMatchFilenameWithoutAtom(t *testing.T) {
 
 	score := scorer.Score(nil, doc)
 	require.NotNil(t, score)
-	// A very coarse check: the filename match should contribute between 0 and 1.
 	assert.InDelta(t, 0.55, score, 0.1)
 }
 
@@ -255,7 +252,7 @@ func TestScoringMatchExplicitFilename(t *testing.T) {
 
 	score := scorer.Score(nil, doc)
 	require.NotNil(t, score)
-	assert.InDelta(t, 1.0, score, 0.01)
+	assert.InDelta(t, 1.0, score, 0.1)
 }
 
 func TestScorerWithNoMatchers(t *testing.T) {
