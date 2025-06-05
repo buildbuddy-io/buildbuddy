@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -41,8 +42,9 @@ var (
 
 // Flags specific to `bb execute`.
 var (
-	inputRoot   = flags.String("input_root", "", "Input root directory. By default, the action will have no inputs.")
-	outputPaths = flag.New(flags, "output_path", []string{}, "Path to an expected output file or directory. The path should be relative to the workspace root. This flag can be specified more than once.")
+	inputRoot       = flags.String("input_root", "", "Input root directory. By default, the action will have no inputs. Incompatible with --input_root_digest.")
+	inputRootDigest = flags.String("input_root_digest", "", "Digest of the input root directory. This is useful to re-run an existing action. Users can also use `bb download` to fetch the input tree locally. Incompatible with --input_root.")
+	outputPaths     = flag.New(flags, "output_path", []string{}, "Path to an expected output file or directory. The path should be relative to the workspace root. This flag can be specified more than once.")
 	// Note: bazel has remote_default_exec_properties but it has somewhat
 	// confusing semantics, so we call this "exec_properties" to avoid
 	// confusion.
@@ -151,6 +153,21 @@ func execute(cmdArgs []string) error {
 	start := time.Now()
 	stageStart := start
 	log.Debugf("Preparing action for %s", cmd)
+	if *inputRootDigest != "" && *inputRoot != "" {
+		return fmt.Errorf("cannot set both --input_root and --input_root_digest; please use one or the other")
+	}
+	if *inputRootDigest != "" {
+		ird := *inputRootDigest
+		if !strings.HasPrefix(ird, "/blobs/") {
+			ird = fmt.Sprintf("/blobs/%s", ird)
+		}
+		rn, err := digest.ParseDownloadResourceName(ird)
+		if err != nil {
+			return fmt.Errorf("parse input root digest: %w", err)
+		}
+		log.Debugf("Using input root digest %q", ird)
+		action.InputRootDigest = rn.GetDigest()
+	}
 	arn, err := rexec.Prepare(ctx, env, *instanceName, df, action, cmd, *inputRoot)
 	if err != nil {
 		return err
