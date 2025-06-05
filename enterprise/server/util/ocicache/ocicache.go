@@ -390,9 +390,6 @@ type readThroughCacher struct {
 
 func (r *readThroughCacher) Read(p []byte) (int, error) {
 	n, err := r.rc.Read(p)
-	if err != nil && err != io.EOF {
-		return n, err
-	}
 	if n <= 0 {
 		return n, err
 	}
@@ -408,6 +405,7 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 	if written < n {
 		r.writeErr = io.ErrShortWrite
 	}
+
 	return n, err
 }
 
