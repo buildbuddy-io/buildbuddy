@@ -104,7 +104,7 @@ func (s mapView[E, V]) Len() int {
 	return len(s)
 }
 
-// Intersection returns the intersection of this set and the passed conjuncts.
+// Intersection returns the intersection of the passed conjuncts.
 func Intersection[V View[E], E comparable](conjuncts ...V) iter.Seq[E] {
 	return func(yield func(E) bool) {
 		if len(conjuncts) == 0 {
@@ -139,7 +139,7 @@ func Intersection[V View[E], E comparable](conjuncts ...V) iter.Seq[E] {
 	}
 }
 
-// Union returns the union of this set and the passed disjuncts.
+// Union returns the union of the passed disjuncts.
 func Union[V View[E], E comparable](disjuncts ...V) iter.Seq[E] {
 	return func(yield func(E) bool) {
 		if len(disjuncts) == 0 {
