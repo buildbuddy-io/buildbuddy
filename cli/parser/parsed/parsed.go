@@ -118,6 +118,12 @@ type IsOption interface {
 	AsOption() options.Option
 }
 
+// Interface to use as a constraint in the option retrieval methods.
+type ClassifiedOption interface {
+	Classified
+	IsOption
+}
+
 // Argument classifications
 
 type UnsupportedArgument struct{ arguments.Argument }
@@ -414,10 +420,7 @@ func (a *OrderedArgs) GetCommandOptionsByName(optionName string) []*IndexedOptio
 	return getOptionsByName[*CommandOption](a, optionName)
 }
 
-func getOptionsByName[DesiredOption interface {
-	Classified
-	IsOption
-}](a *OrderedArgs, optionName string) []*IndexedOption {
+func getOptionsByName[DesiredOption ClassifiedOption](a *OrderedArgs, optionName string) []*IndexedOption {
 	var matchedOptions []*IndexedOption
 	for i, c := range Classify(a.Args) {
 		if c, ok := c.(DesiredOption); ok && c.AsOption().Name() == optionName {
@@ -435,16 +438,13 @@ func (a *OrderedArgs) RemoveCommandOptions(optionNames ...string) []*IndexedOpti
 	return removeOptions[*CommandOption, *DoubleDash](a, optionNames...)
 }
 
-func removeOptions[Option interface {
-	Classified
-	IsOption
-}, Terminates Classified](a *OrderedArgs, optionNames ...string) []*IndexedOption {
+func removeOptions[DesiredOption ClassifiedOption, Terminates Classified](a *OrderedArgs, optionNames ...string) []*IndexedOption {
 	toRemove := set.From(optionNames...)
 	var removed []*IndexedOption
 	c := &classifier{}
 	for i := 0; i < len(a.Args); i++ {
 		switch v := c.ClassifyAndAccumulate(a.Args[i]).(type) {
-		case Option:
+		case DesiredOption:
 			if toRemove.Contains(v.AsOption().Name()) {
 				a.Args = slices.Delete(a.Args, i, i+1)
 				removed = append(removed, &IndexedOption{Option: v.AsOption(), Index: i})
