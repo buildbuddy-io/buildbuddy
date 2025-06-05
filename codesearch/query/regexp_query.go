@@ -212,7 +212,6 @@ func orScorers(a *fieldScorer, b *fieldScorer) *fieldScorer {
 
 func (fs *fieldScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
 	matchCount, tokenCount := fs.scoreInternal(doc)
-	log.Infof("Scoring doc %s: matchCount=%d, tokenCount=%d", doc.Field(filenameField).Contents(), matchCount, tokenCount)
 	return bm25Score(float64(matchCount), float64(tokenCount))
 }
 
