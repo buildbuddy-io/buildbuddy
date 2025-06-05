@@ -42,11 +42,6 @@ var (
 	useCachePercent        = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls to use the cache (individual cache flags must also be enabled).")
 	writeManifestsToCache  = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
 	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from the cache after a HEAD request to the upstream registry.")
-
-	defaultPlatform = gcr.Platform{
-		Architecture: "amd64",
-		OS:           "linux",
-	}
 )
 
 type MirrorConfig struct {
@@ -506,6 +501,8 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 	return t.inner.RoundTrip(in)
 }
 
+// findFirstImageManifest returns the first image descriptor in the index manifest
+// whose platform matches the given platform. See platformMatcher(...).
 func findFirstImageManifest(indexManifest gcr.IndexManifest, platform gcr.Platform) (*gcr.Descriptor, error) {
 	matcher := platformMatcher(platform)
 	for _, manifest := range indexManifest.Manifests {
@@ -573,6 +570,12 @@ func isSubset(lst, required []string) bool {
 	return true
 }
 
+var _ gcr.Image = (*imageFromRawManifest)(nil)
+
+// imageFromRawManifest implements the go-containerregistry Image interface.
+// It allows us to construct an Image from a raw manifest from either the cache
+// or an upstream remote registry.
+// It also allows us to read layers from and write layers to the cache.
 type imageFromRawManifest struct {
 	repo        gcrname.Repository
 	desc        gcr.Descriptor
@@ -706,9 +709,10 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error)
 	}, nil
 }
 
-// layerFromDigest exists for two reasons:
-// 1. To (eventually) cache compressed bytes as they are read.
-// 2. To guarantee DiffID() does not make extraneous requests to the upstream registry.
+var _ gcr.Layer = (*layerFromDigest)(nil)
+
+// layerFromDigest implements the go-containerregistry Layer interface.
+// It allows us to read layers from and write layers to the cache.
 type layerFromDigest struct {
 	digest gcr.Hash
 	repo   gcrname.Repository
