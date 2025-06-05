@@ -52,7 +52,7 @@ func dropZeroScores(docIDs []uint64, scoreMap map[uint64]float64) []uint64 {
 	// Precondition: docIDs is sorted in descending order of score.
 	for i, docID := range docIDs {
 		if scoreMap[docID] <= 0.0 {
-			log.Infof("Dropping %d zero scores: %v", len(docIDs)-i, docIDs[i:])
+			log.Infof("Dropping %d zero scores", len(docIDs)-i)
 			return docIDs[:i]
 		}
 	}
