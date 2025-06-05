@@ -328,6 +328,9 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 		off += int64(readSize)
 		chunkOffset += c.chunkSizeBytes
 	}
+	metrics.COWBytesRead.With(prometheus.Labels{
+		metrics.FileName: c.name,
+	}).Add(float64(n))
 	return n, nil
 }
 
@@ -423,6 +426,9 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		p = p[writeSize:]
 		chunkOffset += c.chunkSizeBytes
 	}
+	metrics.COWBytesWritten.With(prometheus.Labels{
+		metrics.FileName: c.name,
+	}).Add(float64(n))
 	return n, nil
 }
 
