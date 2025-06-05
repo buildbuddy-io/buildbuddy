@@ -156,6 +156,7 @@ func (fs *fieldScorer) scoreInternal(doc types.Document) (matchCount, tokenCount
 	case Noop:
 		return 1.0, 1.0
 	default:
+		log.Warningf("Unknown scorer operation %d", fs.op)
 		return 0.0, 0.0 // Should never happen
 	}
 }
