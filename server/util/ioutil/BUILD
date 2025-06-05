@@ -1,9 +1,23 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "ioutil",
     srcs = ["ioutil.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/ioutil",
     visibility = ["//visibility:public"],
-    deps = ["//server/interfaces"],
+    deps = [
+        "//server/interfaces",
+        "//server/util/status",
+    ],
+)
+
+go_test(
+    name = "ioutil_test",
+    size = "small",
+    srcs = ["ioutil_test.go"],
+    deps = [
+        ":ioutil",
+        "//server/testutil/testdigest",
+        "@com_github_stretchr_testify//require",
+    ],
 )
