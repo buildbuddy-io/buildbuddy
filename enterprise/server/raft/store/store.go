@@ -2588,6 +2588,18 @@ func (s *Store) getConfigChangeID(ctx context.Context, rangeID uint64) (uint64, 
 	return membership.ConfigChangeID, nil
 }
 
+func (s *Store) CheckRangeOverlaps(ctx context.Context, req *rfpb.CheckRangeOverlapsRequest) (*rfpb.CheckRangeOverlapsResponse, error) {
+	if req.GetStart() == nil || req.GetEnd() == nil {
+		return nil, status.FailedPreconditionError("req.Start or req.End cannot be nil")
+	}
+	overlapping := s.rangeMap.GetOverlapping(req.GetStart(), req.GetEnd())
+	rsp := &rfpb.CheckRangeOverlapsResponse{}
+	for _, overlapped := range overlapping {
+		rsp.Ranges = append(rsp.Ranges, overlapped.Val)
+	}
+	return rsp, nil
+}
+
 func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddReplicaRequest) error {
 	// Check the request looks valid.
 	if len(req.GetRange().GetReplicas()) == 0 {
@@ -2623,14 +2635,23 @@ func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddRepl
 			return status.FailedPreconditionErrorf("range %d is being removed from node %q", req.GetRange().GetRangeId(), node.GetNhid())
 		}
 	}
-
+	c, err := s.apiClient.Get(ctx, node.GetGrpcAddress())
+	if err != nil {
+		return status.InternalErrorf("failed to get the client for the node %q: %s", node.GetNhid(), err)
+	}
 	if remoteRD.GetStart() != nil && remoteRD.GetEnd() != nil {
-		overlapping := s.rangeMap.GetOverlapping(remoteRD.GetStart(), remoteRD.GetEnd())
-		if len(overlapping) > 0 {
-			overlapped := overlapping[0].Val
-			return status.FailedPreconditionErrorf("range %d [%q, %q) overlaps with range %d [%q, %q)", remoteRD.GetRangeId(), remoteRD.GetStart(), remoteRD.GetEnd(), overlapped.GetRangeId(), overlapped.GetStart(), overlapped.GetEnd())
+		rsp, err := c.CheckRangeOverlaps(ctx, &rfpb.CheckRangeOverlapsRequest{
+			Start: remoteRD.GetStart(),
+			End:   remoteRD.GetEnd(),
+		})
+		if err != nil {
+			return status.InternalErrorf("failed to check range overlap on node %q: %s", node.GetNhid(), err)
+		}
+		if len(rsp.GetRanges()) > 0 {
+			return status.FailedPreconditionErrorf("node %q has overlapping ranges, e.g. [%q, %q)", node.GetNhid(), rsp.GetRanges()[0].GetStart(), rsp.GetRanges()[0].GetEnd())
 		}
 	}
+
 	return nil
 }
 
