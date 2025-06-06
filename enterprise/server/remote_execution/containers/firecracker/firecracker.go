@@ -989,7 +989,9 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		} else if savePolicy == snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable {
 			shouldCacheRemotely = !c.hasRemoteSnapshot(ctx, loader)
 		} else {
-			// By default, only save a remote snapshot if a remote snapshot for the primary git branch key
+			// By default (applies if save policy is unset or invalid) or if
+			// savePolicy=OnlySaveFirstNonMainRemoteSnapshot,
+			// only save a remote snapshot if a remote snapshot for the primary git branch key
 			// doesn't already exist.
 			shouldCacheRemotely = !c.hasRemoteSnapshotForKey(ctx, loader, c.SnapshotKeySet().GetBranchKey())
 		}
@@ -3049,34 +3051,15 @@ func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader sna
 		return false
 	}
 
-	checkCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	allKeys := []*fcpb.SnapshotKey{c.SnapshotKeySet().GetBranchKey()}
 	allKeys = append(allKeys, c.SnapshotKeySet().GetFallbackKeys()...)
 
-	resultCh := make(chan bool, len(allKeys))
-	wg := sync.WaitGroup{}
 	for _, k := range allKeys {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			hasSnapshot := c.hasRemoteSnapshotForKey(checkCtx, loader, k)
-			resultCh <- hasSnapshot
-			if hasSnapshot {
-				cancel()
-			}
-		}()
-	}
-
-	wg.Wait()
-
-	for range len(allKeys) {
-		hasSS := <-resultCh
-		if hasSS {
+		if hasSnapshot := c.hasRemoteSnapshotForKey(ctx, loader, k); hasSnapshot {
 			return true
 		}
 	}
+
 	return false
 }
 
