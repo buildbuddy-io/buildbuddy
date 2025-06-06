@@ -179,17 +179,17 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	return err
 }
 
-// ByteStreamWriteHandler enapsulates an on-going ByteStream write to a cache,
+// writeHandler enapsulates an on-going ByteStream write to a cache,
 // freeing the caller of having to manage writing and committing-to the cache
 // tracking cache hits, verifying checksums, etc. Here is how it must be used:
 //   - A new WriteHandler may be obtained by providing the first frame of the
-//     stream to the ByteStreamServer.BeginWrite() function. This function will
-//     return a new ByteStreamWriteHandler, or an error.
-//   - If a ByteStreamWriteHandler is returned from BeginWrite(),
-//     ByteStreamWriteHandler.Close() must be called to free system resources
+//     stream to the ByteStreamServer.beginWrite() function. This function will
+//     return a new writeHandler, or an error.
+//   - If a writeHandler is returned from beginWrite(),
+//     writeHandler.Close() must be called to free system resources
 //     when the write is finished.
 //   - Each subsequent frame should be passed to
-//     ByteStreamWriteHandler.Write(), which will return an error on error
+//     writeHandler.Write(), which will return an error on error
 //     (note: io.EOF indicates the cache believes the write is finished), or an
 //     optional WriteResponse that should be sent to the client if the client
 //     indicated the write is finished. This function will return (nil, nil) if
