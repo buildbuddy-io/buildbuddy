@@ -964,24 +964,40 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	vmd := c.getVMMetadata().CloneVT()
 	vmd.LastExecutedTask = c.getVMTask()
 
+	savePolicy := platform.FindEffectiveValue(c.task, platform.RemoteSnapshotSavePolicyPropertyName)
+
+	// NOTE: Even if a remote snapshot is not saved, we'll still save a local snapshot and workloads
+	// should hit an executor with a local snapshot due to affinity routing on
+	// the git branch key.
 	shouldCacheRemotely := false
 	if c.supportsRemoteSnapshots {
-		// Only save a remote snapshot if a remote snapshot for the primary git branch key
-		// doesn't already exist. Otherwise, only save a local snapshot. Workloads
-		// should hit an executor with a local snapshot due to affinity routing on
-		// the git branch key.
-		//
-		// We want to always save the master snapshot remotely, because it is used as
-		// a fallback for runs on other branches, and we want the latest master snapshot available
-		// to all executors. `!c.hasFallbackKeys()` is a good proxy for whether we're
-		// running on the master snapshot.
-		hasRemoteSnapshotForBranchKey := c.hasRemoteSnapshotForBranchKey(ctx)
-		shouldCacheRemotely = !c.hasFallbackKeys() || !hasRemoteSnapshotForBranchKey || !*snaputil.EnableLocalSnapshotSharing
-		if !shouldCacheRemotely {
-			log.CtxInfof(ctx, "Not saving remote snapshot")
-		} else if hasRemoteSnapshotForBranchKey {
-			log.CtxInfof(ctx, "Saving remote snapshot even though one already exists. Snapshot keys: %v", c.snapshotKeySet)
+		loader, err := snaploader.New(c.env)
+		if err != nil {
+			return status.WrapError(err, "could not initialize snaploader when checking for remote snapshot: %s")
 		}
+
+		// We want to always save the main snapshot remotely, because it is used as
+		// a fallback for runs on other branches, and we want the latest main snapshot available
+		// to all executors.
+		// The main snapshot is the fallback key for non-main branches,
+		// so if a run does not have a fallback key, it's likely running on
+		// the main branch.
+		isLikelyMainSnapshot := !c.hasFallbackKeys()
+
+		if savePolicy == snaputil.AlwaysSaveRemoteSnapshot || isLikelyMainSnapshot {
+			shouldCacheRemotely = true
+		} else if savePolicy == snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable {
+			shouldCacheRemotely = !c.hasRemoteSnapshot(ctx, loader)
+		} else {
+			// By default (applies if save policy is unset or invalid) or if
+			// savePolicy=OnlySaveFirstNonMainRemoteSnapshot,
+			// only save a remote snapshot if a remote snapshot for the primary git branch key
+			// doesn't already exist.
+			shouldCacheRemotely = !c.hasRemoteSnapshotForKey(ctx, loader, c.SnapshotKeySet().GetBranchKey())
+		}
+	}
+	if !shouldCacheRemotely {
+		log.CtxInfof(ctx, "Not saving remote snapshot under policy %s, for keys %s", savePolicy, c.SnapshotKeySet().String())
 	}
 
 	opts := &snaploader.CacheSnapshotOptions{
@@ -3028,21 +3044,27 @@ func (c *FirecrackerContainer) machineHasBalloon(ctx context.Context) bool {
 	return err == nil
 }
 
-// hasRemoteSnapshotForBranchKey returns whether a remote snapshot exists for the current
-// `snapshotKeySet.BranchKey`.
-//
-// This function does not consider fallback snapshot keys, because snapshots
-// for the branch key are assumed to be the most up-to-date.
-func (c *FirecrackerContainer) hasRemoteSnapshotForBranchKey(ctx context.Context) bool {
+// hasRemoteSnapshot returns whether a remote snapshot exists for any
+// valid snapshot keys, including fallback keys.
+func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader snaploader.Loader) bool {
 	if !c.supportsRemoteSnapshots {
 		return false
 	}
-	loader, err := snaploader.New(c.env)
-	if err != nil {
-		log.Warningf("Could not initialize snaploader when checking for remote snapshot: %s", err)
-		return false
+
+	allKeys := []*fcpb.SnapshotKey{c.SnapshotKeySet().GetBranchKey()}
+	allKeys = append(allKeys, c.SnapshotKeySet().GetFallbackKeys()...)
+
+	for _, k := range allKeys {
+		if hasSnapshot := c.hasRemoteSnapshotForKey(ctx, loader, k); hasSnapshot {
+			return true
+		}
 	}
-	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: c.SnapshotKeySet().GetBranchKey()}, c.supportsRemoteSnapshots)
+
+	return false
+}
+
+func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, loader snaploader.Loader, key *fcpb.SnapshotKey) bool {
+	_, err := loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, c.supportsRemoteSnapshots)
 	return err == nil
 }
 
