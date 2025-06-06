@@ -216,6 +216,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		ExecutorHostname:      s.hostname,
 		Experiments:           task.GetExperiments(),
 	}
+	actionMetrics.AuxMetadata = auxMetadata
 	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest.GetDigest())
 	stateChangeFn := operation.StateChangeFunc(func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
 		if stage == repb.ExecutionStage_COMPLETED {
@@ -488,6 +489,8 @@ type ActionMetrics struct {
 	Error error
 	// Result is the action execution result.
 	Result *repb.ActionResult
+	// AuxMetadata is the execution auxiliary metadata.
+	AuxMetadata *espb.ExecutionAuxiliaryMetadata
 }
 
 func (m *ActionMetrics) Report(ctx context.Context) {
@@ -516,6 +519,9 @@ func (m *ActionMetrics) Report(ctx context.Context) {
 		observeStageDuration(groupID, "execution", md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
 		observeStageDuration(groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
 		observeStageDuration(groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
+	}
+	if md != nil && m.AuxMetadata != nil {
+		observeStageDuration(groupID, "worker_queued", m.AuxMetadata.GetWorkerQueuedTimestamp(), md.GetWorkerStartTimestamp())
 	}
 	// If the isolation type supports it, report PSI metrics.
 	if md != nil && (m.Isolation == string(platform.PodmanContainerType) || m.Isolation == string(platform.OCIContainerType)) {
