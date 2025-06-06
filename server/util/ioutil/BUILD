@@ -18,6 +18,7 @@ go_test(
     srcs = ["ioutil_test.go"],
     deps = [
         ":ioutil",
+        "//server/interfaces",
         "//server/testutil/testdigest",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
