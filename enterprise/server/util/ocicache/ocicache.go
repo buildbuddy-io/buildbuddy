@@ -290,11 +290,11 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 	return writeBlobMetadataToCache(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
 }
 
-// NewBlobUploader creates a WriteCloser that writes OCI blobs to the CAS.
+// NewBlobUploader creates a CommittedWriteCloser that writes OCI blobs to the CAS.
 //
 // Once contentLength bytes have been written, the blobUploader will commit the blob.
 // It is an error to attempt to Write after commit, and to write more than contentLength bytes.
-func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (io.WriteCloser, error) {
+func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (interfaces.CommittedWriteCloser, error) {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -335,31 +335,17 @@ type blobUploader struct {
 	contentType   string
 	contentLength int64
 
-	bytesWritten int64
-	committed    bool
+	committed bool
 }
 
 func (b *blobUploader) Write(p []byte) (int, error) {
 	if b.committed {
 		return 0, status.FailedPreconditionError("blobUploader already committed, cannot receive writes")
 	}
-	written, err := b.uw.Write(p)
-	b.bytesWritten += int64(written)
-	if err != nil {
-		return written, err
-	}
-	if b.bytesWritten == b.contentLength {
-		if err := b.commit(); err != nil {
-			return written, status.WrapError(err, "Error committing blob on write")
-		}
-	}
-	if b.bytesWritten > b.contentLength {
-		return written, status.OutOfRangeError("blobUploader has written more bytes than expected")
-	}
-	return written, err
+	return b.uw.Write(p)
 }
 
-func (b *blobUploader) commit() error {
+func (b *blobUploader) Commit() error {
 	if b.committed {
 		return status.FailedPreconditionError("blobUploader already committed, cannot commit again")
 	}
@@ -387,39 +373,47 @@ func (b *blobUploader) Close() error {
 //
 // Closing the ReadThroughCacher closes the input ReadCloser and the underlying BlobUploader.
 func NewBlobReadThroughCacher(ctx context.Context, rc io.ReadCloser, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, contentLength int64) (io.ReadCloser, error) {
-	wc, err := NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
+	cache, err := NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
 	if err != nil {
 		return nil, err
 	}
 	return &readThroughCacher{
-		rc: rc,
-		wc: wc,
+		rc:    rc,
+		cache: cache,
 	}, nil
 }
 
 type readThroughCacher struct {
-	rc io.ReadCloser
-	wc io.WriteCloser
+	rc    io.ReadCloser
+	cache interfaces.CommittedWriteCloser
 
-	writeErr error
+	cacheErr error
 }
 
 func (r *readThroughCacher) Read(p []byte) (int, error) {
 	n, err := r.rc.Read(p)
-	if n <= 0 {
+	if r.cacheErr != nil {
 		return n, err
 	}
-	if r.writeErr != nil {
-		return n, err
+
+	if n > 0 {
+		written, writeErr := r.cache.Write(p[:n])
+		if writeErr != nil {
+			log.Warningf("Error writing to cache: %s", writeErr)
+			r.cacheErr = writeErr
+			return n, err
+		}
+		if written < n {
+			r.cacheErr = io.ErrShortWrite
+			return n, err
+		}
 	}
-	written, writeErr := r.wc.Write(p[:n])
-	if writeErr != nil {
-		log.Warningf("Error writing to cache: %s", writeErr)
-		r.writeErr = writeErr
-		return n, err
-	}
-	if written < n {
-		r.writeErr = io.ErrShortWrite
+
+	if err == io.EOF {
+		if err := r.cache.Commit(); err != nil {
+			log.Warningf("Error committing blob to cache: %s", err)
+			r.cacheErr = err
+		}
 	}
 
 	return n, err
@@ -427,7 +421,7 @@ func (r *readThroughCacher) Read(p []byte) (int, error) {
 
 func (r *readThroughCacher) Close() error {
 	err := r.rc.Close()
-	if err := r.wc.Close(); err != nil {
+	if err := r.cache.Close(); err != nil {
 		log.Warningf("Error closing cache writer: %s", err)
 	}
 	return err

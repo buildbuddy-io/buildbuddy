@@ -16,10 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/crane"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/stretchr/testify/require"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
+	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
@@ -64,7 +64,7 @@ func TestCacheSecret(t *testing.T) {
 			require.NoError(t, err)
 
 			acClient := te.GetActionCacheClient()
-			ref, err := name.ParseReference("buildbuddy.io/" + tc.imageName)
+			ref, err := gcrname.ParseReference("buildbuddy.io/" + tc.imageName)
 			require.NoError(t, err)
 
 			flags.Set(t, "oci.cache.secret", tc.writeSecret)
@@ -118,7 +118,7 @@ func TestManifestWrittenOnlyToAC(t *testing.T) {
 	require.NoError(t, err)
 
 	acClient := te.GetActionCacheClient()
-	ref, err := name.ParseReference("buildbuddy.io/" + imageName)
+	ref, err := gcrname.ParseReference("buildbuddy.io/" + imageName)
 	require.NoError(t, err)
 
 	var out bytes.Buffer
@@ -176,23 +176,29 @@ func TestBlobUploader(t *testing.T) {
 	written, err := up.Write(layerBuf[:256])
 	require.NoError(t, err)
 	require.Equal(t, 256, written)
+	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
 
 	written, err = up.Write(layerBuf[256:])
 	require.NoError(t, err)
 	require.Equal(t, len(layerBuf)-256, written)
+	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
 
-	// Blob committed as soon as all bytes are written, should be available even before close.
+	err = up.Commit()
+	require.NoError(t, err)
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	// Second commit fails, but can still fetch blob.
+	err = up.Commit()
+	require.Error(t, err)
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 
 	err = up.Close()
 	require.NoError(t, err)
-
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 
 	// Second close fails, but can still fetch blob.
 	err = up.Close()
 	require.Error(t, err)
-
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 }
 
@@ -213,6 +219,12 @@ func TestBlobUploader_PartialWriteFails(t *testing.T) {
 	err = up.Close()
 	require.NoError(t, err)
 
+	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
+}
+
+func blobDoesNotExist(t *testing.T, ctx context.Context, te *testenv.TestEnv, repo gcrname.Repository, hash gcr.Hash, contentLength int64) {
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
 	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
 	require.Error(t, err)
 	require.Nil(t, metadata)
@@ -239,39 +251,16 @@ func TestBlobUploader_BlobExists(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, len(layerBuf), written)
 
+		err = up.Commit()
+		require.NoError(t, err)
+
+		fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
 		err = up.Close()
 		require.NoError(t, err)
 
 		fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 	}
-}
-
-func TestBlobUpload_WriteTooManyBytes(t *testing.T) {
-	te := setupTestEnv(t)
-
-	layerBuf, repo, hash, contentType := createLayer(t, "blob_uploader_too_many_bytes", 1024)
-	ctx := context.Background()
-	bsClient := te.GetByteStreamClient()
-	acClient := te.GetActionCacheClient()
-
-	up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, 512)
-	require.NoError(t, err)
-
-	written, err := up.Write(layerBuf)
-	require.Error(t, err)
-	require.Equal(t, len(layerBuf), written)
-
-	err = up.Close()
-	require.NoError(t, err)
-
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
-	require.Error(t, err)
-	require.Nil(t, metadata)
-
-	out := &bytes.Buffer{}
-	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, int64(len(layerBuf)))
-	require.Error(t, err)
-
 }
 
 func TestReadThroughCacher(t *testing.T) {
@@ -320,13 +309,7 @@ func TestReadThroughCacher_PartialReadPreventsCommit(t *testing.T) {
 	err = cacher.Close()
 	require.NoError(t, err)
 
-	metadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
-	require.Error(t, err)
-	require.Nil(t, metadata)
-
-	out := &bytes.Buffer{}
-	err = ocicache.FetchBlobFromCache(ctx, out, bsClient, hash, contentLength)
-	require.Error(t, err)
+	blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
 }
 
 func TestReadThroughCacher_ReturnsEOF(t *testing.T) {
@@ -348,9 +331,11 @@ func TestReadThroughCacher_ReturnsEOF(t *testing.T) {
 		n, err := cacher.Read(readbuf)
 		if err != nil {
 			require.ErrorIs(t, err, io.EOF)
+			fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 			break
 		}
 		require.Greater(t, n, 0)
+		blobDoesNotExist(t, ctx, te, repo, hash, contentLength)
 		_, err = readout.Write(readbuf[:n])
 		require.NoError(t, err)
 	}
@@ -364,7 +349,7 @@ func TestReadThroughCacher_ReturnsEOF(t *testing.T) {
 	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 }
 
-func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, name.Repository, gcr.Hash, string) {
+func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, gcrname.Repository, gcr.Hash, string) {
 	_, filebuf := testdigest.RandomCASResourceBuf(t, filesize)
 	filename, err := random.RandomString(32)
 	require.NoError(t, err)
@@ -372,7 +357,7 @@ func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, name.R
 		"/tmp/" + filename: filebuf,
 	})
 	require.NoError(t, err)
-	imageRef, err := name.ParseReference("buildbuddy.io/" + imageName)
+	imageRef, err := gcrname.ParseReference("buildbuddy.io/" + imageName)
 	require.NoError(t, err)
 	layers, err := image.Layers()
 	require.NoError(t, err)
@@ -392,7 +377,7 @@ func createLayer(t *testing.T, imageName string, filesize int64) ([]byte, name.R
 	return layerBuf, layerRef.Context(), hash, contentType
 }
 
-func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo name.Repository, hash gcr.Hash, contentType string) {
+func fetchAndCheckBlob(t *testing.T, te *testenv.TestEnv, layerBuf []byte, repo gcrname.Repository, hash gcr.Hash, contentType string) {
 	contentLength := int64(len(layerBuf))
 	ctx := context.Background()
 	bsClient := te.GetByteStreamClient()
