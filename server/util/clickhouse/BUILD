@@ -24,5 +24,6 @@ go_library(
         "@io_gorm_driver_clickhouse//:clickhouse",
         "@io_gorm_gorm//:gorm",
         "@io_gorm_gorm//logger",
+        "@io_gorm_gorm//utils",
     ],
 )

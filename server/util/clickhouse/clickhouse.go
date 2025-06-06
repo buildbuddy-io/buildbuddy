@@ -29,6 +29,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	gormclickhouse "gorm.io/driver/clickhouse"
+	gormutils "gorm.io/gorm/utils"
 )
 
 const (
@@ -39,10 +40,11 @@ const (
 )
 
 var (
-	dataSource      = flag.String("olap_database.data_source", "", "The clickhouse database to connect to, specified a a connection string", flag.Secret)
-	maxOpenConns    = flag.Int("olap_database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
-	maxIdleConns    = flag.Int("olap_database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
-	connMaxLifetime = flag.Duration("olap_database.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
+	dataSource         = flag.String("olap_database.data_source", "", "The clickhouse database to connect to, specified a a connection string", flag.Secret)
+	maxOpenConns       = flag.Int("olap_database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
+	maxIdleConns       = flag.Int("olap_database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
+	connMaxLifetime    = flag.Duration("olap_database.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
+	slowQueryThreshold = flag.Duration("olap_database.slow_query_threshold", 1*time.Second, "OLAP queries longer than this duration will be logged with a 'Slow SQL' warning.")
 
 	autoMigrateDB             = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 	printSchemaChangesAndExit = flag.Bool("olap_database.print_schema_changes_and_exit", false, "If set, print schema changes from auto-migration, then exit the program.")
@@ -309,6 +311,13 @@ func (h *DBHandle) InsertAuditLog(ctx context.Context, entry *schema.AuditLog) e
 	return nil
 }
 
+func (h *DBHandle) InsertUsages(ctx context.Context, usages []schema.RawUsage) error {
+	if err := h.insertWithRetrier(ctx, (&schema.RawUsage{}).TableName(), len(usages), &usages); err != nil {
+		return status.UnavailableErrorf("failed to insert %d usage(s), err: %s", len(usages), err)
+	}
+	return nil
+}
+
 func recordMetricsAfterFn(db *gorm.DB) {
 	if db.DryRun || db.Statement == nil {
 		return
@@ -370,6 +379,10 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.InternalErrorf("failed to open gorm clickhouse db: %s", err)
 	}
+	db.Logger = &sqlLogger{
+		SlowThreshold: *slowQueryThreshold,
+		LogLevel:      logger.Warn,
+	}
 	gormutil.InstrumentMetrics(db, gormRecordOpStartTimeCallbackKey, recordMetricsBeforeFn, gormRecordMetricsCallbackKey, recordMetricsAfterFn)
 	if *autoMigrateDB || *printSchemaChangesAndExit {
 		sqlStrings := make([]string, 0)
@@ -398,4 +411,59 @@ func Register(env *real_environment.RealEnv) error {
 	env.SetOLAPDBHandle(dbh)
 	log.Info("Successfully configured OLAP database.")
 	return nil
+}
+
+// sqlLogger implements GORM's logger.Interface using zerolog.
+type sqlLogger struct {
+	SlowThreshold time.Duration
+	LogLevel      logger.LogLevel
+}
+
+func (l *sqlLogger) Info(ctx context.Context, format string, args ...any) {
+	log.CtxInfof(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+}
+func (l *sqlLogger) Warn(ctx context.Context, format string, args ...any) {
+	log.CtxWarningf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+}
+func (l *sqlLogger) Error(ctx context.Context, format string, args ...any) {
+	log.CtxErrorf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+}
+
+// Trace is called after every SQL query. If `database.log_queries` is true then
+// it will always log the query. Otherwise it will only log slow or failed
+// queries. NotFound errors are ignored.
+func (l *sqlLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	if l.LogLevel <= logger.Silent {
+		return
+	}
+	duration := time.Since(begin)
+	getInfo := func() string {
+		sql, rows := fc()
+		rowsVal := any(rows)
+		if rows <= 0 {
+			// rows < 0 means the query does not have an associated row count.
+			rowsVal = "-"
+		}
+		return fmt.Sprintf("(duration: %s) (rows: %v) %s", duration, rowsVal, sql)
+	}
+	switch {
+	case err != nil && l.LogLevel >= logger.Error && !errors.Is(err, gorm.ErrRecordNotFound):
+		log.CtxErrorf(ctx, "SQL: error (%s): %s %s", gormutils.FileWithLineNum(), err, getInfo())
+	case duration > l.SlowThreshold && l.SlowThreshold != 0 && l.LogLevel >= logger.Warn:
+		log.CtxWarningf(ctx, "SQL: slow query (over %s) (%s): %s", l.SlowThreshold, gormutils.FileWithLineNum(), getInfo())
+	case l.LogLevel == logger.Info:
+		log.CtxInfof(ctx, "SQL: OK (%s) %s", gormutils.FileWithLineNum(), getInfo())
+	}
+}
+
+func (l *sqlLogger) LogMode(level logger.LogLevel) logger.Interface {
+	clone := *l
+	clone.LogLevel = level
+	return &clone
+}
+
+// ParamsFilter implements gorm's ParamsFilter interface, ensuring that queries
+// are logged without parameter values showing up in the logs.
+func (l *sqlLogger) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
+	return sql, nil
 }

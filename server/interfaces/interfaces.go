@@ -410,6 +410,7 @@ type OLAPDBHandle interface {
 	FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error
 	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
 	InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error
+	InsertUsages(ctx context.Context, usages []schema.RawUsage) error
 	BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []interface{})
 }
 

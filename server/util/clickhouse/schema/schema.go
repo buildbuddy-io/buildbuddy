@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -47,6 +48,7 @@ func getAllTables() []Table {
 		&Execution{},
 		&TestTargetStatus{},
 		&AuditLog{},
+		&RawUsage{},
 	}
 	return tbls
 }
@@ -397,6 +399,53 @@ func (i *AuditLog) TableName() string {
 
 func (i *AuditLog) TableOptions() string {
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, event_time_usec, audit_log_id)", getEngine())
+}
+
+// RawUsage contains usage data which may potentially contain duplicate rows.
+// Use the Usage view to get unique usage counts.
+//
+// See http://go/usage-v2 for details.
+type RawUsage struct {
+	// GroupID is the BuildBuddy group ID to which the usage is attributed.
+	GroupID string `gorm:"type:String"`
+
+	// SKU is the usage counter type. It is formatted using UPPER_SNAKE_CASE.
+	SKU string `gorm:"type:LowCardinality(String)"`
+
+	// Labels contains an arbitrary additional labels used to further qualify
+	// the SKU. This should only be used in cases where there may be a large
+	// number of possible dimensions (too many to be represented as a SKU) but
+	// the frequency of usage for each combination of dimensions is expected to
+	// be relatively low.
+	Labels map[string]string `gorm:"type:Map(LowCardinality(String), LowCardinality(String))"`
+
+	// PeriodStart is the start of the period during which the usage occurred.
+	// Currently, usage is collected in 1-minute intervals.
+	PeriodStart time.Time `gorm:"type:DateTime64(6, 'UTC')"`
+
+	// CollectionKey is used by the collection system to deduplicate flushed
+	// usage rows.
+	CollectionKey string `gorm:"type:LowCardinality(String)"`
+
+	// Count is the number of units of usage measured.
+	Count int64
+}
+
+func (u *RawUsage) TableName() string {
+	return "RawUsage"
+}
+
+func (i *RawUsage) TableOptions() string {
+	return "ENGINE=" + getEngine() +
+		" ORDER BY (group_id, sku, labels, period_start, collection_region)"
+}
+
+func (i *RawUsage) ExcludedFields() []string {
+	return nil
+}
+
+func (i *RawUsage) AdditionalFields() []string {
+	return nil
 }
 
 // hasProjection checks whether a projection exist in the clickhouse
