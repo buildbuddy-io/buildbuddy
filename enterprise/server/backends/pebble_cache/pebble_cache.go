@@ -1409,15 +1409,15 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
-	if len(sampledSizeByGroup) > 0 {
+	if len(estimatedSizeByGroup) > 0 {
 		sortedKeys := make([]string, 0, len(estimatedSizeByGroup))
-		for k, _ := range sampledSizeByGroup {
+		for k, _ := range estimatedSizeByGroup {
 			sortedKeys = append(sortedKeys, k)
 		}
 		sort.Strings(sortedKeys)
 		buf += "\n[All partitions] Approximate size by group:\n"
 		for _, g := range sortedKeys {
-			if s, ok := sampledSizeByGroup[g]; ok {
+			if s, ok := estimatedSizeByGroup[g]; ok {
 				buf += fmt.Sprintf("  %s: %d bytes\n", g, s)
 			}
 		}
