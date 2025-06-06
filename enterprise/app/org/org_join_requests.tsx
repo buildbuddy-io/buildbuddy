@@ -4,6 +4,7 @@ import FilledButton, { OutlinedButton } from "../../../app/components/button/but
 import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { user_id } from "../../../proto/user_id_ts_proto";
+import { user } from "../../../proto/user_ts_proto";
 
 export interface OrgJoinRequestsComponentProps {
   user: User;
@@ -76,31 +77,66 @@ export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComp
         <div className="container narrow">
           <h2 className="org-join-requests-header">New user requests</h2>
           <div className="org-join-requests-grid">
-            {this.state.users?.map((groupUser) => (
-              <React.Fragment key={groupUser.user?.userId?.id}>
-                <div>
-                  <div className="email">{groupUser.user?.email}</div>
-                  <div className="name">
-                    {groupUser.user?.name?.first} {groupUser.user?.name?.last}
+            {this.state.users
+              ?.filter((groupUser) => groupUser.user)
+              .map((groupUser) => (
+                <React.Fragment key={groupUser.user?.userId?.id}>
+                  <div>
+                    <div className="account">{accountLabel(groupUser.user)}</div>
+                    <div className="name">{groupUser.user?.name?.full}</div>
                   </div>
-                </div>
-                <div className="approve-reject-buttons">
-                  <FilledButton
-                    onClick={() => this.applyMembershipAction(groupUser.user?.userId || {}, ADD)}
-                    disabled={this.state.isLoading}>
-                    Approve
-                  </FilledButton>
-                  <OutlinedButton
-                    onClick={() => this.applyMembershipAction(groupUser.user?.userId || {}, REMOVE)}
-                    disabled={this.state.isLoading}>
-                    Reject
-                  </OutlinedButton>
-                </div>
-              </React.Fragment>
-            ))}
+                  <div className="approve-reject-buttons">
+                    <FilledButton
+                      onClick={() => this.applyMembershipAction(groupUser.user?.userId || {}, ADD)}
+                      disabled={this.state.isLoading}>
+                      Approve
+                    </FilledButton>
+                    <OutlinedButton
+                      onClick={() => this.applyMembershipAction(groupUser.user?.userId || {}, REMOVE)}
+                      disabled={this.state.isLoading}>
+                      Reject
+                    </OutlinedButton>
+                  </div>
+                </React.Fragment>
+              ))}
           </div>
         </div>
       </div>
     );
+  }
+}
+
+/**
+ * getAccountLabel returns an unambiguous string that identifies both the oauth
+ * provider and the user ID within that provider, so that when looking at an org
+ * join request, it's clear exactly which account and account type is making the
+ * request.
+ */
+function accountLabel(user: user_id.DisplayUser | null | undefined) {
+  if (!user) return null;
+  let account = "Unknown account";
+  if (user.username) {
+    account = user.username;
+  } else if (user.email) {
+    account = user.email;
+  } else {
+    account = `BuildBuddy User ${user.userId?.id}`;
+  }
+
+  return `${account} (${accountTypeLabel(user.accountType)})`;
+}
+
+function accountTypeLabel(accountType: user_id.AccountType) {
+  switch (accountType) {
+    case user_id.AccountType.GOOGLE:
+      return "Google";
+    case user_id.AccountType.GITHUB:
+      return "GitHub";
+    case user_id.AccountType.SAML:
+      return "SAML";
+    case user_id.AccountType.OIDC:
+      return "OIDC";
+    default:
+      return "Unknown account type";
   }
 }
