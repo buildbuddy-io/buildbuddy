@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -128,4 +129,42 @@ func ReadTryFillBuffer(r io.Reader, buf []byte) (int, error) {
 		return n, nil
 	}
 	return n, err
+}
+
+func TeeReadCloser(r io.Reader, w io.Writer) io.ReadCloser {
+	return &teeReadCloser{
+		tee: io.TeeReader(r, w),
+		r:   r,
+		w:   w,
+	}
+}
+
+type teeReadCloser struct {
+	tee io.Reader
+	r   io.Reader
+	w   io.Writer
+}
+
+func (t *teeReadCloser) Read(p []byte) (int, error) {
+	return t.tee.Read(p)
+}
+
+// Close closes both the reader and the writer and returns the first error encountered.
+func (t *teeReadCloser) Close() error {
+	var firstErr error
+	if closer, ok := t.r.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			firstErr = err
+		}
+	}
+	if closer, ok := t.w.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			if firstErr != nil {
+				log.Errorf("Erroring closing writer in teeReadCloser: %s", err)
+			} else {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
 }
