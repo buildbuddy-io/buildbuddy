@@ -99,7 +99,7 @@ type Env interface {
 	GetGitHubStatusService() interfaces.GitHubStatusService
 	GetLocalCASServer() repb.ContentAddressableStorageServer
 	GetCASServer() repb.ContentAddressableStorageServer
-	GetLocalByteStreamServer() interfaces.ByteStreamServer
+	GetLocalByteStreamServer() bspb.ByteStreamServer
 	GetByteStreamServer() bspb.ByteStreamServer
 	GetLocalActionCacheServer() repb.ActionCacheServer
 	GetActionCacheServer() repb.ActionCacheServer
