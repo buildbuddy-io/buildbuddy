@@ -399,12 +399,14 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, la
 				AND period_start_usec = ?
 				AND origin = ?
 				AND client = ?
+				AND server = ?
 			`+dbh.SelectForUpdateModifier(),
 			tu.Region,
 			tu.GroupID,
 			tu.PeriodStartUsec,
 			tu.Origin,
 			tu.Client,
+			tu.Server,
 		).Take(&tables.Usage{})
 		if err != nil && !db.IsRecordNotFound(err) {
 			return err
@@ -528,6 +530,9 @@ func encodeCollection(c *Collection) string {
 	if c.UsageLabels.Client != "" {
 		s += "&client=" + url.QueryEscape(c.UsageLabels.Client)
 	}
+	if c.UsageLabels.Server != "" {
+		s += "&server=" + url.QueryEscape(c.UsageLabels.Server)
+	}
 	return s
 }
 
@@ -545,6 +550,7 @@ func decodeCollection(s string) (*Collection, url.Values, error) {
 			// Note: these need to match the DB field names.
 			Origin: q.Get("origin"),
 			Client: q.Get("client"),
+			Server: q.Get("server"),
 		},
 	}
 	return c, q, nil
