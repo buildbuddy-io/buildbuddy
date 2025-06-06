@@ -175,15 +175,16 @@ var (
 	timeout            = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
 
 	// Flags to configure setting up git repo
-	triggerEvent    = flag.String("trigger_event", "", "Event type that triggered the action runner.")
-	pushedRepoURL   = flag.String("pushed_repo_url", "", "URL of the pushed repo. This is required.")
-	pushedBranch    = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
-	commitSHA       = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
-	prNumber        = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
-	patchURIs       = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
-	gitCleanExclude = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
-	gitFetchFilters = flag.Slice("git_fetch_filters", []string{}, "Filters to apply to `git fetch` commands.")
-	gitFetchDepth   = flag.Int("git_fetch_depth", smartFetchDepth, "Depth to use for `git fetch` commands.")
+	skipAutomaticCheckout = flag.Bool("skip_auto_checkout", false, "Whether to skip the automatic GitHub setup steps on the remote runner.")
+	triggerEvent          = flag.String("trigger_event", "", "Event type that triggered the action runner.")
+	pushedRepoURL         = flag.String("pushed_repo_url", "", "URL of the pushed repo. This is required.")
+	pushedBranch          = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	commitSHA             = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
+	prNumber              = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
+	patchURIs             = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
+	gitCleanExclude       = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
+	gitFetchFilters       = flag.Slice("git_fetch_filters", []string{}, "Filters to apply to `git fetch` commands.")
+	gitFetchDepth         = flag.Int("git_fetch_depth", smartFetchDepth, "Depth to use for `git fetch` commands.")
 	// Flags to configure merge-with-base behavior
 	targetRepoURL = flag.String("target_repo_url", "", "If different from pushed_repo_url, indicates a fork (`pushed_repo_url`) is being merged into this repo.")
 	targetBranch  = flag.String("target_branch", "", "If different from pushed_branch, pushed_branch should be merged into this branch in the target repo.")
@@ -832,6 +833,14 @@ func run() error {
 // to be called after the current invocation has completed, to avoid blocking
 // the invocation status from being reported.
 func (ws *workspace) prepareRunnerForNextInvocation(ctx context.Context, taskWorkspaceDir string) {
+	//If we don't run our automatic GitHub setup, we can't guarantee the user
+	// cloned a git repo or that it's at the path we expect. These git cleanup
+	// and bazel checks will likely fail, so skip them. The user should run
+	// cleanup steps themselves.
+	if *skipAutomaticCheckout {
+		return
+	}
+
 	log := ws.log
 
 	log.Printf("%s%s%s Starting cleanup", ansiGray, formatNowUTC(), ansiReset)
@@ -1041,8 +1050,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	backendLog.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
 
-	if err := ws.setup(ctx); err != nil {
-		return status.WrapError(err, "failed to set up git repo")
+	if !*skipAutomaticCheckout {
+		if err := ws.setup(ctx); err != nil {
+			return status.WrapError(err, "failed to set up git repo")
+		}
 	}
 	action, err := getActionToRun()
 	if err != nil {
