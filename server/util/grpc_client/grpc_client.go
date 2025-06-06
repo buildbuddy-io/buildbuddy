@@ -37,12 +37,15 @@ const (
 )
 
 var (
-	poolSize = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
+	poolSize          = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
+	reconnectInterval = flag.Duration("grpc_client.transient_failure_reconnect_interval", 30*time.Second, "Attempt to reconnect gRPC client connections that are in the TRANSIENT_FAILURE state for longer than this duration.")
 )
 
 type clientConn struct {
 	*grpc.ClientConn
-	wasEverReady atomic.Bool
+	wasEverReady  atomic.Bool
+	lastReconnect time.Time
+	mu            sync.Mutex // protects lastReconnect
 }
 
 type ClientConnPool struct {
@@ -57,12 +60,18 @@ func (p *ClientConnPool) Check(ctx context.Context) error {
 		connState := c.GetState()
 		if connState == connectivity.Ready {
 			goodConns++
-			continue
 		}
 		if connState == connectivity.Idle {
 			c.Connect()
 			goodConns++
-			continue
+		}
+		if connState == connectivity.TransientFailure {
+			c.mu.Lock()
+			if c.lastReconnect.Add(*reconnectInterval).Before(time.Now()) {
+				c.lastReconnect = time.Now()
+				c.Connect()
+			}
+			c.mu.Unlock()
 		}
 	}
 	if goodConns == 0 {
