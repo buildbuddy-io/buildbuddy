@@ -130,14 +130,14 @@ func ReadTryFillBuffer(r io.Reader, buf []byte) (int, error) {
 	return n, err
 }
 
-// NewBestEffortWriter wraps the given Writer.
-// Calls to Write will always succeed.
-// If a write call to the wrapped writer fails, the BestEffortWriter will not make any more write calls on the wrapper writer.
-// Calling Err() on the BestEffortWriter returns the first error encountered, if any.
 func NewBestEffortWriter(w io.Writer) *BestEffortWriter {
 	return &BestEffortWriter{w: w}
 }
 
+// BestEffortWriter wraps a Writer.
+// Calls to Write will always succeed.
+// If a write call to the wrapped writer fails, the BestEffortWriter will not make any more write calls on the wrapper writer.
+// Calling Err() on the BestEffortWriter returns the first error encountered, if any.
 type BestEffortWriter struct {
 	w   io.Writer
 	err error
