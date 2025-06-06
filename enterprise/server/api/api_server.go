@@ -586,7 +586,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		ExecProperties: execProps,
 		RemoteHeaders:  req.GetRemoteHeaders(),
 		RunRemotely:    true,
-		RunnerFlags:    []string{fmt.Sprintf("--skip_automatic_checkout=%v", req.GetSkipAutomaticCheckout())},
+		RunnerFlags:    []string{fmt.Sprintf("--skip_auto_checkout=%v", req.GetSkipAutoCheckout())},
 	})
 	if err != nil {
 		return nil, err

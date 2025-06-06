@@ -60,7 +60,7 @@ message RunRequest {
   bool use_system_git_credentials = 9;
 
   // Whether to skip the automatic GitHub setup steps on the remote runner.
-  bool skip_automatic_checkout = 12;
+  bool skip_auto_checkout = 12;
 }
 
 message Step {

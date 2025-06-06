@@ -175,7 +175,7 @@ var (
 	timeout            = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
 
 	// Flags to configure setting up git repo
-	skipAutomaticCheckout = flag.Bool("skip_automatic_checkout", false, "Whether to skip the automatic GitHub setup steps on the remote runner.")
+	skipAutomaticCheckout = flag.Bool("skip_auto_checkout", false, "Whether to skip the automatic GitHub setup steps on the remote runner.")
 	triggerEvent          = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	pushedRepoURL         = flag.String("pushed_repo_url", "", "URL of the pushed repo. This is required.")
 	pushedBranch          = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")

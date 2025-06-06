@@ -94,7 +94,7 @@ var (
 	disableRetry    = RemoteFlagset.Bool("disable_retry", false, "By default, transient errors are automatically retried. This behavior can be disabled, if a command is non-idempotent for example.")
 	// TODO(Maggie): If skipping automatic checkout, remove requirements that clients
 	// pass github-related fields.
-	skipAutomaticCheckout = RemoteFlagset.Bool("skip_automatic_checkout", false, "Whether to skip the automatic GitHub checkout steps on the remote runner.")
+	skipAutomaticCheckout = RemoteFlagset.Bool("skip_auto_checkout", false, "Whether to skip the automatic GitHub checkout steps on the remote runner.")
 )
 
 func consoleCursorMoveUp(y int) {
@@ -907,7 +907,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				Run: opts.Command,
 			},
 		},
-		RunnerFlags: []string{fmt.Sprintf("--skip_automatic_checkout=%v", *skipAutomaticCheckout)},
+		RunnerFlags: []string{fmt.Sprintf("--skip_auto_checkout=%v", *skipAutomaticCheckout)},
 	}
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
