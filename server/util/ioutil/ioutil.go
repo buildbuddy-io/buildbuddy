@@ -131,16 +131,6 @@ func ReadTryFillBuffer(r io.Reader, buf []byte) (int, error) {
 	return n, err
 }
 
-// TeeReadCacher returns a ReadCloser that behaves like a TeeReader:
-// every byte read from the input ReadCloser is written to the cache.
-//
-// Cache writes are best-effort: if the TeeReadCacher encounters any errors writing to the cache,
-// it will log it, attempt no more cache writes, but still allow reads.
-//
-// When the TeeReadCacher encounters EOF, it will call commit on the cache.
-// The cache commit is best-effort: errors will be logged but otherwise ignored.
-//
-// Closing the TeeReadCacher will also close the given ReadCloser and CommittedWriteCloser.
 func TeeReadCacher(rc io.ReadCloser, cache interfaces.CommittedWriteCloser) (io.ReadCloser, error) {
 	if rc == nil {
 		return nil, status.FailedPreconditionError("cannot create teeReadCacher from nil ReadCloser")
@@ -191,7 +181,6 @@ func (t *teeReadCacher) Read(p []byte) (int, error) {
 		t.committed = true
 		if err := t.cache.Commit(); err != nil {
 			log.Warningf("Error commiting to cache in teeReadCacher: %s", err)
-			t.cacheErr = err
 		}
 	}
 

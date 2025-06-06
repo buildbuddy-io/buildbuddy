@@ -18,7 +18,6 @@ go_test(
     srcs = ["ioutil_test.go"],
     deps = [
         ":ioutil",
-        "//server/interfaces",
         "//server/testutil/testdigest",
         "//server/util/status",
         "@com_github_google_go_cmp//cmp",
