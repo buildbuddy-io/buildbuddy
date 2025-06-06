@@ -2902,9 +2902,9 @@ func (e *partitionEvictor) writePartitionMetadata(db pebble.IPebbleDB, md *sgpb.
 func (e *partitionEvictor) flushPartitionMetadata(db pebble.IPebbleDB) error {
 	sizeBytes, _, casCount, acCount := e.Counts()
 	return e.writePartitionMetadata(db, &sgpb.PartitionMetadata{
-		SizeBytes:   sizeBytes,
-		CasCount:    casCount,
-		AcCount:     acCount,
+		SizeBytes: sizeBytes,
+		CasCount:  casCount,
+		AcCount:   acCount,
 	})
 }
 
