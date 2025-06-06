@@ -153,6 +153,41 @@ func TestTeeReadCacher_IgnoreCacheErrors(t *testing.T) {
 	})
 }
 
+func TestTeeReadCacher_MustEncounterEOF(t *testing.T) {
+	w := &bytes.Buffer{}
+	committed := false
+	cache := ioutil.NewCustomCommitWriteCloser(w)
+	cache.CommitFn = func(_ int64) error {
+		committed = true
+		return nil
+	}
+	_, buf := testdigest.RandomCASResourceBuf(t, 1024)
+
+	rc := io.NopCloser(bytes.NewReader(buf))
+
+	tee, err := ioutil.TeeReadCacher(rc, cache)
+	require.NoError(t, err)
+	readbuf := make([]byte, 1024)
+	n, err := tee.Read(readbuf)
+	require.NoError(t, err)
+	require.Equal(t, 1024, n)
+	require.False(t, committed)
+	require.Equal(t, 1024, w.Len())
+	require.Empty(t, cmp.Diff(buf, readbuf))
+	require.Empty(t, cmp.Diff(buf, w.Bytes()))
+
+	n, err = tee.Read(readbuf)
+	require.Error(t, err)
+	require.ErrorIs(t, err, io.EOF)
+	require.Zero(t, n)
+	require.True(t, committed)
+	require.Equal(t, 1024, w.Len())
+	require.Empty(t, cmp.Diff(buf, w.Bytes()))
+
+	err = tee.Close()
+	require.NoError(t, err)
+}
+
 type testCache struct {
 	w interfaces.CommittedWriteCloser
 
