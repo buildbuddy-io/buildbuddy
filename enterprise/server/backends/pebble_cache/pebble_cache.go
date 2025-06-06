@@ -1357,7 +1357,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 	return nil
 }
 
-func computedEstimatedSizeByGroup(sizeByGroup map[string]int64, totalSizeBytes int64) map[string]int64 {
+func computeEstimatedSizeByGroup(sizeByGroup map[string]int64, totalSizeBytes int64) map[string]int64 {
 	out := make(map[string]int64, len(sizeByGroup))
 	totalSampledSize := int64(0)
 	for _, s := range sizeByGroup {
@@ -1404,7 +1404,7 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 		totalCASCount += casCount
 		totalACCount += acCount
 	}
-	estimatedSizeByGroup := computedEstimatedSizeByGroup(sampledSizeByGroup, totalSizeBytes)
+	estimatedSizeByGroup := computeEstimatedSizeByGroup(sampledSizeByGroup, totalSizeBytes)
 	buf += fmt.Sprintf("Min DB version: %d, Max DB version: %d, Active version: %d\n", p.minDatabaseVersion(), p.maxDatabaseVersion(), p.activeDatabaseVersion())
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
@@ -2812,7 +2812,7 @@ func (e *partitionEvictor) updateMetrics() {
 		metrics.CacheNameLabel: e.cacheName,
 		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
 
-	estimatedSizeByGroup := computedEstimatedSizeByGroup(e.sizeByGroup, e.sizeBytes)
+	estimatedSizeByGroup := computeEstimatedSizeByGroup(e.sizeByGroup, e.sizeBytes)
 	for g, sizeBytes := range estimatedSizeByGroup {
 		metrics.DiskCacheSampledPartitionGroupSizeBytes.With(prometheus.Labels{
 			metrics.PartitionID:    e.part.ID,
