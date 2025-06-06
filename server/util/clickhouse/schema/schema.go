@@ -230,6 +230,10 @@ type Execution struct {
 
 	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
 
+	// If an executionID is retried, the RunID will differ for each retry attempt.
+	// Can be unset for executions that aren't retried.
+	RunID string
+
 	// Long string fields
 	OutputPath     string
 	StatusMessage  string
@@ -313,6 +317,7 @@ func (e *Execution) AdditionalFields() []string {
 		"SelfHosted",
 		"ExecutorHostname",
 		"Experiments",
+		"RunID",
 	}
 }
 
