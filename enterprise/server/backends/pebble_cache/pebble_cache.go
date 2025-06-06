@@ -1357,6 +1357,20 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 	return nil
 }
 
+func computedEstimatedSizeByGroup(sizeByGroup map[string]int64, totalSizeBytes int64) map[string]int64 {
+	out := make(map[string]int64, len(sizeByGroup))
+	totalSampledSize := int64(0)
+	for _, s := range sizeByGroup {
+		totalSampledSize += s
+	}
+	totalSampledSize = max(1, totalSampledSize)
+	sampleScalingFactor := float64(totalSizeBytes) / float64(totalSampledSize)
+	for k, v := range sizeByGroup {
+		out[k] = int64(float64(v) * sampleScalingFactor)
+	}
+	return out
+}
+
 func (p *PebbleCache) Statusz(ctx context.Context) string {
 	db, err := p.leaser.DB()
 	if err != nil {
@@ -1381,23 +1395,22 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	}
 	var totalSizeBytes, totalCASCount, totalACCount int64
 	sampledSizeByGroup := make(map[string]int64)
-	totalSampledSize := int64(0)
 	for _, e := range evictors {
 		sizeBytes, sbg, casCount, acCount := e.Counts()
 		for g, s := range sbg {
 			sampledSizeByGroup[g] += s
-			totalSampledSize += s
 		}
 		totalSizeBytes += sizeBytes
 		totalCASCount += casCount
 		totalACCount += acCount
 	}
+	estimatedSizeByGroup := computedEstimatedSizeByGroup(sampledSizeByGroup, totalSizeBytes)
 	buf += fmt.Sprintf("Min DB version: %d, Max DB version: %d, Active version: %d\n", p.minDatabaseVersion(), p.maxDatabaseVersion(), p.activeDatabaseVersion())
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
 	if len(sampledSizeByGroup) > 0 {
-		sortedKeys := make([]string, 0, len(sampledSizeByGroup))
+		sortedKeys := make([]string, 0, len(estimatedSizeByGroup))
 		for k, _ := range sampledSizeByGroup {
 			sortedKeys = append(sortedKeys, k)
 		}
@@ -1408,7 +1421,6 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 				buf += fmt.Sprintf("  %s: %d bytes\n", g, s)
 			}
 		}
-		buf += fmt.Sprintf("Based on total sample size of %d bytes\n", totalSampledSize)
 	}
 
 	buf += "</pre>"
@@ -2709,6 +2721,13 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			}
 			iter.Close()
 			iter = newIter
+			// Decay away sampled partition sizes over time.  This value is kinda arbitrary,
+			// but was chosen based on the default sampler refresh period of 5 minutes to
+			// ensure that samples mostly decay within an hour (normally it's faster than this,
+			// assuming eviction is firing on all cylinders).
+			for k, v := range e.sizeByGroup {
+				e.sizeByGroup[k] = int64(float64(v) * 0.8)
+			}
 		}
 		totalCount += 1
 		if !iter.Valid() {
@@ -2792,7 +2811,9 @@ func (e *partitionEvictor) updateMetrics() {
 		metrics.PartitionID:    e.part.ID,
 		metrics.CacheNameLabel: e.cacheName,
 		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
-	for g, sizeBytes := range e.sizeByGroup {
+
+	estimatedSizeByGroup := computedEstimatedSizeByGroup(e.sizeByGroup, e.sizeBytes)
+	for g, sizeBytes := range estimatedSizeByGroup {
 		metrics.DiskCacheSampledPartitionGroupSizeBytes.With(prometheus.Labels{
 			metrics.PartitionID:    e.part.ID,
 			metrics.CacheNameLabel: e.cacheName,
