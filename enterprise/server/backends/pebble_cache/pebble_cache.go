@@ -89,7 +89,6 @@ var (
 	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
 	enableTableBloomFilter    = flag.Bool("cache.pebble.enable_table_bloom_filter", true, "If true, write bloom filter data with pebble SSTables.")
 	enableAutoRatchet         = flag.Bool("cache.pebble.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to latest version.")
-	groupTrackingMinTimeUsec  = flag.Int64("cache.pebble.min_time_for_group_tracking_usec", math.MaxInt64, "If a file was created after this timestamp, we will count it when tracking cache space usage by group.")
 
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UnspecifiedKeyVersion), "The key version new data will be written with. If negative, will write to the highest existing version in the database, or the highest known version if a new database is created.")
 	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
@@ -1381,11 +1380,13 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 		buf += fmt.Sprintf("Estimated pebble DB disk usage: %d bytes\n", diskEstimateBytes)
 	}
 	var totalSizeBytes, totalCASCount, totalACCount int64
-	sizeByGroup := make(map[string]int64)
+	sampledSizeByGroup := make(map[string]int64)
+	totalSampledSize := int64(0)
 	for _, e := range evictors {
 		sizeBytes, sbg, casCount, acCount := e.Counts()
 		for g, s := range sbg {
-			sizeByGroup[g] += s
+			sampledSizeByGroup[g] += s
+			totalSampledSize += s
 		}
 		totalSizeBytes += sizeBytes
 		totalCASCount += casCount
@@ -1395,21 +1396,19 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
-	if len(sizeByGroup) > 0 {
-		extra := totalSizeBytes
-		sortedKeys := make([]string, 0, len(sizeByGroup))
-		for k, _ := range sizeByGroup {
+	if len(sampledSizeByGroup) > 0 {
+		sortedKeys := make([]string, 0, len(sampledSizeByGroup))
+		for k, _ := range sampledSizeByGroup {
 			sortedKeys = append(sortedKeys, k)
 		}
 		sort.Strings(sortedKeys)
-		buf += "\n[All partitions] Size by group:\n"
+		buf += "\n[All partitions] Approximate size by group:\n"
 		for _, g := range sortedKeys {
-			if s, ok := sizeByGroup[g]; ok {
+			if s, ok := sampledSizeByGroup[g]; ok {
 				buf += fmt.Sprintf("  %s: %d bytes\n", g, s)
-				extra -= s
 			}
 		}
-		buf += fmt.Sprintf("Extra space (from before counting began): %d bytes\n", extra)
+		buf += fmt.Sprintf("Based on total sample size of %d bytes\n", totalSampledSize)
 	}
 
 	buf += "</pre>"
@@ -2588,14 +2587,13 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 
 	start := time.Now()
 	log.Infof("Pebble Cache [%s]: Initializing cache partition %q...", pe.cacheName, part.ID)
-	sizeBytes, sizeByGroup, casCount, acCount, err := pe.computeSize()
+	sizeBytes, casCount, acCount, err := pe.computeSize()
 	if err != nil {
 		return nil, err
 	}
 	pe.sizeBytes = sizeBytes
 	pe.casCount = casCount
 	pe.acCount = acCount
-	pe.sizeByGroup = sizeByGroup
 	pe.lru.UpdateSizeBytes(sizeBytes)
 
 	log.Infof("Pebble Cache [%s]: Initialized cache partition %q AC: %d, CAS: %d, Size: %d [bytes] in %s", pe.cacheName, part.ID, pe.acCount, pe.casCount, pe.sizeBytes, time.Since(start))
@@ -2739,6 +2737,8 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			continue
 		}
 
+		e.sizeByGroup[fileMetadata.GetFileRecord().GetIsolation().GetGroupId()] += fileMetadata.GetStoredSizeBytes()
+
 		e.maybeAddToSampleChan(iter, fileMetadata, quitChan, timer)
 
 		iter.Next()
@@ -2793,7 +2793,7 @@ func (e *partitionEvictor) updateMetrics() {
 		metrics.CacheNameLabel: e.cacheName,
 		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
 	for g, sizeBytes := range e.sizeByGroup {
-		metrics.DiskCachePartitionGroupSizeBytes.With(prometheus.Labels{
+		metrics.DiskCacheSampledPartitionGroupSizeBytes.With(prometheus.Labels{
 			metrics.PartitionID:    e.part.ID,
 			metrics.CacheNameLabel: e.cacheName,
 			metrics.GroupID:        g}).Set(float64(sizeBytes))
@@ -2809,10 +2809,6 @@ func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, lastModifyUsec i
 		deltaCount = -1
 	}
 
-	if lastModifyUsec > *groupTrackingMinTimeUsec {
-		e.sizeByGroup[groupID] += deltaSize
-	}
-
 	switch cacheType {
 	case rspb.CacheType_CAS:
 		e.casCount += deltaCount
@@ -2825,10 +2821,10 @@ func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, lastModifyUsec i
 	e.lru.UpdateSizeBytes(e.sizeBytes)
 }
 
-func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, map[string]int64, int64, int64, error) {
+func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, int64, error) {
 	db, err := e.dbGetter.DB()
 	if err != nil {
-		return 0, nil, 0, 0, err
+		return 0, 0, 0, err
 	}
 	defer db.Close()
 	iter, err := db.NewIter(&pebble.IterOptions{
@@ -2836,7 +2832,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, map[str
 		UpperBound: end,
 	})
 	if err != nil {
-		return 0, nil, 0, 0, err
+		return 0, 0, 0, err
 	}
 	defer iter.Close()
 	iter.SeekLT(start)
@@ -2844,20 +2840,16 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, map[str
 	casCount := int64(0)
 	acCount := int64(0)
 	totalSizeBytes := int64(0)
-	totalSizeByGroup := make(map[string]int64)
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
 	for iter.Next() {
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-			return 0, nil, 0, 0, err
+			return 0, 0, 0, err
 		}
 
 		sizeBytes := getSizeOnLocalDisk(iter.Key(), fileMetadata, true)
 		totalSizeBytes += sizeBytes
-		if fileMetadata.GetLastModifyUsec() > *groupTrackingMinTimeUsec {
-			totalSizeByGroup[fileMetadata.GetFileRecord().GetIsolation().GetGroupId()] += sizeBytes
-		}
 
 		// identify and count CAS vs AC files.
 		if bytes.Contains(iter.Key(), casDir) {
@@ -2870,7 +2862,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, map[str
 		fileMetadata.ResetVT()
 	}
 
-	return totalSizeBytes, totalSizeByGroup, casCount, acCount, nil
+	return totalSizeBytes, casCount, acCount, nil
 }
 
 func partitionMetadataKey(partID string) []byte {
@@ -2894,15 +2886,6 @@ func (e *partitionEvictor) lookupPartitionMetadata() (*sgpb.PartitionMetadata, e
 		return nil, err
 	}
 
-	// Because we enabled group ID-based tracking in the cache without
-	// performing a migration, we had to set an arbitrary timestamp after
-	// which we started tracking.  If we have to reset that to a new time
-	// in the future for whatever reason, we need to clear past tracking
-	// data (or else it may never get removed from the "total size").
-	if partitionMD.GetSizeByGroup() == nil || *groupTrackingMinTimeUsec > e.clock.Now().UnixMicro() {
-		partitionMD.SizeByGroup = make(map[string]int64)
-	}
-
 	return partitionMD, nil
 }
 
@@ -2917,31 +2900,30 @@ func (e *partitionEvictor) writePartitionMetadata(db pebble.IPebbleDB, md *sgpb.
 }
 
 func (e *partitionEvictor) flushPartitionMetadata(db pebble.IPebbleDB) error {
-	sizeBytes, sizeByGroup, casCount, acCount := e.Counts()
+	sizeBytes, _, casCount, acCount := e.Counts()
 	return e.writePartitionMetadata(db, &sgpb.PartitionMetadata{
 		SizeBytes:   sizeBytes,
-		SizeByGroup: sizeByGroup,
 		CasCount:    casCount,
 		AcCount:     acCount,
 	})
 }
 
-func (e *partitionEvictor) computeSize() (int64, map[string]int64, int64, int64, error) {
+func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	if !*forceCalculateMetadata {
 		partitionMD, err := e.lookupPartitionMetadata()
 		if err == nil {
 			log.Infof("[%s] Loaded partition %q metadata from cache: %+v", e.cacheName, e.part.ID, partitionMD)
-			return partitionMD.GetSizeBytes(), partitionMD.GetSizeByGroup(), partitionMD.GetCasCount(), partitionMD.GetAcCount(), nil
+			return partitionMD.GetSizeBytes(), partitionMD.GetCasCount(), partitionMD.GetAcCount(), nil
 		} else if !status.IsNotFoundError(err) {
-			return 0, nil, 0, 0, err
+			return 0, 0, 0, err
 		}
 	}
 
 	start := append([]byte(e.partitionKeyPrefix()+"/"), keys.MinByte...)
 	end := append([]byte(e.partitionKeyPrefix()+"/"), keys.MaxByte...)
-	totalSizeBytes, totalSizeByGroup, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
+	totalSizeBytes, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
 	if err != nil {
-		return 0, nil, 0, 0, err
+		return 0, 0, 0, err
 	}
 
 	partitionMD := &sgpb.PartitionMetadata{
@@ -2954,14 +2936,14 @@ func (e *partitionEvictor) computeSize() (int64, map[string]int64, int64, int64,
 
 	db, err := e.dbGetter.DB()
 	if err != nil {
-		return 0, nil, 0, 0, err
+		return 0, 0, 0, err
 	}
 	defer db.Close()
 	if err := e.writePartitionMetadata(db, partitionMD); err != nil {
-		return 0, nil, 0, 0, err
+		return 0, 0, 0, err
 	}
 
-	return totalSizeBytes, totalSizeByGroup, totalCasCount, totalAcCount, nil
+	return totalSizeBytes, totalCasCount, totalAcCount, nil
 }
 
 func (e *partitionEvictor) Counts() (int64, map[string]int64, int64, int64) {
