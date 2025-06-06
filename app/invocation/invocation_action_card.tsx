@@ -38,6 +38,7 @@ import { MessageClass, timestampToDate } from "../util/proto";
 import { copyToClipboard } from "../util/clipboard";
 import Popup from "../components/popup/popup";
 import Menu, { MenuItem } from "../components/menu/menu";
+import { quote } from "shell-quote";
 
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
 
@@ -515,14 +516,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  /** Return true if the string needs quoting and, if so, quote it safely. */
-  private shellQuote(arg: string): string {
-    // If the arg has no spaces or shell meta chars, leave it unchanged.
-    if (!/[^\w@%+=:,./-]/.test(arg)) return arg;
-    // Wrap in single-quotes and escape internal single-quotes.
-    return `'${arg.replace(/'/g, `'\\''`)}'`;
-  }
-
   /** Build a fully-formed `bb execute` command for this action. */
   private buildBbExecuteCommand(): string {
     const { action, command } = this.state;
@@ -533,7 +526,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     // Remote executor / instance (derived from invocation options if present)
     const remoteExec = this.props.model.stringCommandLineOption("remote_executor");
-    if (remoteExec) parts.push(`--remote_executor=${this.shellQuote(remoteExec)}`);
+    if (remoteExec) parts.push(`--remote_executor=${quote([remoteExec])}`);
 
     const digestFn =
       build.bazel.remote.execution.v2.DigestFunction.Value[this.props.model.getDigestFunction()].toLowerCase();
@@ -543,26 +536,25 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (invocationId) parts.push(`--invocation_id=${invocationId}`);
 
     const remoteInstance = this.props.model.optionsMap.get("remote_instance_name");
-    if (remoteInstance) parts.push(`--remote_instance_name=${this.shellQuote(remoteInstance)}`);
+    if (remoteInstance) parts.push(`--remote_instance_name=${quote([remoteInstance])}`);
 
     // Timeout
     if (action.timeout?.seconds) parts.push(`--remote_timeout=${action.timeout.seconds}s`);
 
-    if (action.inputRootDigest)
-      parts.push(`--input_root_digest=${digestToString(action.inputRootDigest)}`);
+    if (action.inputRootDigest) parts.push(`--input_root_digest=${digestToString(action.inputRootDigest)}`);
 
     // Env vars
     for (const env of command.environmentVariables) {
-      parts.push(`--action_env=${this.shellQuote(`${env.name}=${env.value}`)}`);
+      parts.push(`--action_env=${quote([`${env.name}=${env.value}`])}`);
     }
 
     // Platform props
     for (const prop of command.platform?.properties ?? []) {
-      parts.push(`--exec_properties=${this.shellQuote(`${prop.name}=${prop.value}`)}`);
+      parts.push(`--exec_properties=${quote([`${prop.name}=${prop.value}`])}`);
     }
 
     // Expected outputs
-    const addOutPath = (p: string) => parts.push(`--output_path=${this.shellQuote(p)}`);
+    const addOutPath = (p: string) => parts.push(`--output_path=${quote([p])}`);
     if (command.outputPaths.length) command.outputPaths.forEach(addOutPath);
     else {
       command.outputFiles.forEach(addOutPath);
@@ -570,7 +562,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
 
     // Separator and original argv
-    parts.push("--", ...command.arguments.map((a) => this.shellQuote(a)));
+    parts.push("--", ...command.arguments.map((a) => quote([a])));
 
     return parts.join(" \\\n\t");
   }

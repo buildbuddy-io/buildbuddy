@@ -72,5 +72,9 @@
         }
       }
     }
+  },
+  "dependencies": {
+    "@types/shell-quote": "^1.7.5",
+    "shell-quote": "^1.8.3"
   }
 }
