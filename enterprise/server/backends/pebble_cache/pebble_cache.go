@@ -114,7 +114,7 @@ var (
 	// Their defaults must be vars so we can take their addresses)
 	DefaultAtimeUpdateThreshold     = 10 * time.Minute
 	DefaultAtimeBufferSize          = 100000
-	DefaultNumAtimeUpdateWorkers    = 5
+	DefaultNumAtimeUpdateWorkers    = 16
 	DefaultSampleBufferSize         = 8000
 	DefaultSamplesPerBatch          = 10000
 	DefaultSamplerIterRefreshPeriod = 5 * time.Minute
