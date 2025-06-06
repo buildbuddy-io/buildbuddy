@@ -8,7 +8,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 )
@@ -71,28 +70,20 @@ func TestBestEffortWriter(t *testing.T) {
 	require.Empty(t, cmp.Diff(bytesToWrite[:22], w.Bytes()))
 
 	written, err = b.Write(bytesToWrite[22:])
-	require.Error(t, err)
+	require.NoError(t, err)
+	require.Equal(t, len(bytesToWrite)-22, written)
 	require.Error(t, b.Err())
-	// Write will return the error from the underlying writer,
-	// and store it for access with Err().
-	// Later calls will fail with a FailedPreconditionError.
-	require.Equal(t, err.Error(), b.Err().Error())
-	require.Zero(t, written)
 	require.Empty(t, cmp.Diff(bytesToWrite[:22], w.Bytes()))
 
 	written, err = b.Write(bytesToWrite[22:])
-	require.Error(t, err)
-	// Now that the BestEffortWriter has encountered an error,
-	// all subsequent writes will fail with FailedPreconditionError.
-	require.True(t, status.IsFailedPreconditionError(err))
+	require.NoError(t, err)
+	require.Equal(t, len(bytesToWrite)-22, written)
 	require.Error(t, b.Err())
-	require.Zero(t, written)
 	require.Empty(t, cmp.Diff(bytesToWrite[:22], w.Bytes()))
 
 	written, err = b.Write(bytesToWrite[:0])
-	require.Error(t, err)
-	require.True(t, status.IsFailedPreconditionError(err))
-	require.Error(t, b.Err())
+	require.NoError(t, err)
 	require.Zero(t, written)
+	require.Error(t, b.Err())
 	require.Empty(t, cmp.Diff(bytesToWrite[:22], w.Bytes()))
 }
