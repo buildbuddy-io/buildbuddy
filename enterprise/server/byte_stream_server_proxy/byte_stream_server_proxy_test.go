@@ -590,7 +590,8 @@ func BenchmarkReadThroughCache(b *testing.B) {
 	}
 
 	for _, zstd := range []bool{false, true} {
-		// The largest size is such after compression, it's bigger than 5MiB.
+		// The largest size is such after compression, it's bigger than 5MiB,
+		// just to be bigger than 4MiB, which we often use as max buffer size.
 		for _, size := range []int64{10_000, 3_000_000, 20_000_000} {
 			b.Run(fmt.Sprintf("zstd=%v/size=%v", zstd, size), func(b *testing.B) {
 				b.ReportAllocs()
