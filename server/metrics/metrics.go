@@ -504,6 +504,7 @@ var (
 	}, []string{
 		CacheTypeLabel,
 		CacheEventTypeLabel,
+		GroupID,
 	})
 
 	CacheNumHitsExported = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -1503,6 +1504,24 @@ var (
 		FileName,
 		EventName,
 		Stage,
+	})
+
+	COWBytesRead = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_bytes_read",
+		Help:      "Total number of bytes read from COW chunked files.",
+	}, []string{
+		FileName,
+	})
+
+	COWBytesWritten = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_bytes_written",
+		Help:      "Total number of bytes written to COW chunked files.",
+	}, []string{
+		FileName,
 	})
 
 	MaxRecyclableResourceUsageEvent = promauto.NewCounterVec(prometheus.CounterOpts{

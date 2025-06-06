@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -223,7 +224,7 @@ func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stre
 
 func recordReadMetrics(cacheStatus string, proxyRequestType string, err error, bytesRead int) {
 	labels := prometheus.Labels{
-		metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.StatusLabel:           strconv.Itoa(int(gstatus.Code(err))),
 		metrics.CacheHitMissStatus:    cacheStatus,
 		metrics.CacheProxyRequestType: proxyRequestType,
 	}
@@ -373,7 +374,7 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 
 func recordWriteMetrics(bytesWritten int64, err error, proxyRequestType string) {
 	labels := prometheus.Labels{
-		metrics.StatusLabel:           fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.StatusLabel:           strconv.Itoa(int(gstatus.Code(err))),
 		metrics.CacheHitMissStatus:    metrics.MissStatusLabel,
 		metrics.CacheProxyRequestType: proxyRequestType,
 	}

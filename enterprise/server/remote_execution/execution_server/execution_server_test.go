@@ -550,6 +550,12 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		usageStats.Timeline = &repb.UsageTimeline{
 			StartTime: tspb.New(workerStartTime),
 		}
+		usageStats.NetworkStats = &repb.NetworkStats{
+			BytesSent:       1000,
+			PacketsSent:     3000,
+			BytesReceived:   2000,
+			PacketsReceived: 4000,
+		}
 	} else {
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
 			ExecutorGroupId: executorGroupID,
@@ -689,6 +695,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.PredictedFreeDiskBytes = 3003
 		expectedExecution.EffectiveIsolationType = "firecracker"
 		expectedExecution.EffectiveTimeoutUsec = 11000000
+		expectedExecution.NetworkBytesSent = 1000
+		expectedExecution.NetworkBytesReceived = 2000
+		expectedExecution.NetworkPacketsSent = 3000
+		expectedExecution.NetworkPacketsReceived = 4000
 	}
 	diff := cmp.Diff(
 		expectedExecution,

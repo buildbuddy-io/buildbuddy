@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"flag"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/url"
@@ -576,6 +577,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		RepoState: &gitpb.RepoState{
 			CommitSha: req.GetCommitSha(),
 			Branch:    req.GetBranch(),
+			Patch:     req.GetPatches(),
 		},
 		Steps:          steps,
 		Async:          req.GetAsync(),
@@ -584,6 +586,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		ExecProperties: execProps,
 		RemoteHeaders:  req.GetRemoteHeaders(),
 		RunRemotely:    true,
+		RunnerFlags:    []string{fmt.Sprintf("--skip_auto_checkout=%v", req.GetSkipAutoCheckout())},
 	})
 	if err != nil {
 		return nil, err

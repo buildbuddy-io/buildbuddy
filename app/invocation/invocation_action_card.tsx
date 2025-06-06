@@ -870,6 +870,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
               <div>Disk write operations: {format.count(usageStats.cgroupIoStats.wios)}</div>
             </>
           )}
+          {usageStats.networkStats && (
+            <>
+              <div>Network bytes received: {format.bytes(usageStats.networkStats.bytesReceived)}</div>
+              <div>Network packets received: {format.count(usageStats.networkStats.packetsReceived)}</div>
+              <div>Network bytes sent: {format.bytes(usageStats.networkStats.bytesSent)}</div>
+              <div>Network packets sent: {format.count(usageStats.networkStats.packetsSent)}</div>
+            </>
+          )}
         </div>
         {usageStats.cpuPressure && this.renderPSI("CPU", usageStats.cpuPressure)}
         {usageStats.memoryPressure && this.renderPSI("Memory", usageStats.memoryPressure)}

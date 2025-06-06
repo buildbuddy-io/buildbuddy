@@ -38,6 +38,9 @@ func NewServer(maxSizeBytes int64, fs filestore.Store) (*Server, error) {
 func (rc *Server) evict(key string, md *sgpb.FileMetadata, reason lru.EvictionReason) {
 	log.Infof("Evicted %+v (REASON: %s)", md, reason)
 
+	if inlineMetadata := md.GetStorageMetadata().GetInlineMetadata(); inlineMetadata != nil {
+		return
+	}
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
 		if err := rc.fs.DeleteStoredBlob(context.Background(), gcsMetadata); err != nil {
 			log.Errorf("Error deleting blob: %s", err)

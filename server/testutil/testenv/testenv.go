@@ -189,6 +189,11 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 		t.Fatal(err)
 	}
 	te.SetDBHandle(dbHandle)
+	t.Cleanup(func() {
+		if err := dbHandle.Close(); err != nil {
+			t.Fatalf("Error closing database handle: %s", err)
+		}
+	})
 	te.SetInvocationDB(invocationdb.NewInvocationDB(te, dbHandle))
 
 	if *useClickHouse {

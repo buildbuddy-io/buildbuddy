@@ -92,6 +92,9 @@ var (
 	runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
 	script          = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
 	disableRetry    = RemoteFlagset.Bool("disable_retry", false, "By default, transient errors are automatically retried. This behavior can be disabled, if a command is non-idempotent for example.")
+	// TODO(Maggie): If skipping automatic checkout, remove requirements that clients
+	// pass github-related fields.
+	skipAutomaticCheckout = RemoteFlagset.Bool("skip_auto_checkout", false, "Whether to skip the automatic GitHub checkout steps on the remote runner.")
 )
 
 func consoleCursorMoveUp(y int) {
@@ -904,6 +907,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				Run: opts.Command,
 			},
 		},
+		RunnerFlags: []string{fmt.Sprintf("--skip_auto_checkout=%v", *skipAutomaticCheckout)},
 	}
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
@@ -1202,7 +1206,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 
 	// If an API key was not set in the command line, attempt to read from config.
 	if apiKey == "" {
-		apiKey, err = login.GetAPIKeyInteractively()
+		apiKey, err = login.GetAPIKey()
 		if err != nil {
 			log.Warnf("Failed to enter login flow. Manually trigger with `bb login` or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`.")
 			return 1, err

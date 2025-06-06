@@ -137,7 +137,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		return e
 	}
 
-	errCh := make(chan error)
+	errCh := make(chan error, 1)
 	inCh := make(chan *pepb.PublishBuildToolEventStreamRequest)
 
 	// Listen on request stream in the background
@@ -148,15 +148,23 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 				errCh <- err
 				return
 			}
-			inCh <- in
+			// Recv can return multiple messages back to back so rather than
+			// worrying about buffering the messages bail out if the context
+			// is done.
+			select {
+			case inCh <- in:
+			case <-stream.Context().Done():
+				return
+			}
+
 		}
 	}()
 
-	var channelDone <-chan struct{}
+	channelCtx := ctx
 	for {
 		select {
-		case <-channelDone:
-			return disconnectWithErr(status.FromContextError(channel.Context()))
+		case <-channelCtx.Done():
+			return disconnectWithErr(status.FromContextError(channelCtx))
 		case err := <-errCh:
 			if err == io.EOF {
 				if s.synchronous {
@@ -176,7 +184,11 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			log.CtxWarningf(ctx, "Error receiving build event stream %+v: %s", streamID, err)
 			return disconnectWithErr(err)
 		case in := <-inCh:
-			if streamID == nil && in.GetOrderedBuildEvent().GetStreamId().GetInvocationId() != "" {
+			if streamID == nil {
+				if in.GetOrderedBuildEvent().GetStreamId().GetInvocationId() == "" {
+					return status.FailedPreconditionError("Missing invocation ID")
+				}
+
 				streamID = in.GetOrderedBuildEvent().GetStreamId()
 				ctx = log.EnrichContext(ctx, log.InvocationIDKey, streamID.GetInvocationId())
 				newChannel, err := s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.GetInvocationId())
@@ -186,7 +198,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 				}
 				log.CtxInfo(ctx, "Opened invocation channel")
 				channel = newChannel
-				channelDone = channel.Context().Done()
+				channelCtx = channel.Context()
 				defer channel.Close()
 			}
 

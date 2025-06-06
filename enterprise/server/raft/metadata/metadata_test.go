@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -276,7 +275,6 @@ func TestGetAndSet(t *testing.T) {
 }
 
 func TestCacheShutdown(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	rc1 := caches[0]
@@ -330,7 +328,6 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 
@@ -340,9 +337,6 @@ func TestDistributedRanges(t *testing.T) {
 	wrote := make([]*sgpb.FileMetadata, 0)
 	for i := 0; i < 10; i++ {
 		rc := caches[rand.Intn(len(caches))]
-
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
 
 		md := randomFileMetadata(t, 100)
 		_, err := rc.Set(ctx, &mdpb.SetRequest{
@@ -360,8 +354,6 @@ func TestDistributedRanges(t *testing.T) {
 
 	for _, md := range wrote {
 		rc := caches[rand.Intn(len(caches))]
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
 
 		getRsp, err := rc.Get(ctx, &mdpb.GetRequest{
 			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
@@ -424,12 +416,13 @@ func TestFindMissingMetadata(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
-	t.Skip()
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
 	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
 	flags.Set(t, "cache.raft.min_eviction_age", 0)
 	flags.Set(t, "cache.raft.samples_per_batch", 50)
+	flags.Set(t, "cache.raft.sample_pool_size", 10)
+	flags.Set(t, "cache.raft.eviction_batch_size", 1)
 	flags.Set(t, "cache.raft.local_size_update_period", 100*time.Millisecond)
 	flags.Set(t, "cache.raft.partition_usage_delta_bytes_threshold", 100)
 
@@ -507,7 +500,10 @@ func TestLRU(t *testing.T) {
 		resourceKeys = append(resourceKeys, md.GetFileRecord())
 	}
 
-	rc1.TestingWaitForGC()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	err = rc1.TestingWaitForGC(ctx)
+	require.NoError(t, err)
 	waitForShutdown(t, caches...)
 
 	caches = startNodes(t, configs)
@@ -520,6 +516,7 @@ func TestLRU(t *testing.T) {
 	for _, r := range resourceKeys[:quartile] {
 		perfectLRUEvictees[r] = struct{}{}
 	}
+	log.Infof("perfectLRUEvictees num: %d", len(perfectLRUEvictees))
 	// We expect no more than x keys to have been evicted
 	// We expect *most* of the keys evicted to be older
 	evictedCount := 0
@@ -554,6 +551,8 @@ func TestLRU(t *testing.T) {
 		}
 	}
 
+	require.Greater(t, evictedCount, 0)
+
 	avgEvictedAgeSeconds := evictedAgeTotal.Seconds() / float64(evictedCount)
 	avgKeptAgeSeconds := keptAgeTotal.Seconds() / float64(keptCount)
 
@@ -561,8 +560,13 @@ func TestLRU(t *testing.T) {
 	log.Printf("evictedAgeTotal: %s, keptAgeTotal: %s", evictedAgeTotal, keptAgeTotal)
 	log.Printf("avg evictedAge: %f, avg keptAge: %f", avgEvictedAgeSeconds, avgKeptAgeSeconds)
 
-	// Check that mostly (80%) of evictions were perfect
-	require.GreaterOrEqual(t, perfectEvictionCount, int(.80*float64(evictedCount)))
+	// Check that mostly (80%) of evictions were perfect:
+	// Note: perfectEvictionCount <= len(perfectLRUEvictees) is always true.
+	// Therefore, perfectEvictionCount >= 0.8 * evictedCount is only true when
+	// 0.8 * evictedCount < len(perfectLRUEvictees). When 0.8 * evictedCount >=
+	// len(perfectLRUEvictees), we have
+	// perfectEvictionCount == len(perfectLRUEvictees).
+	require.GreaterOrEqual(t, float64(perfectEvictionCount), math.Min(math.Floor(.80*float64(evictedCount)), float64(len(perfectLRUEvictees))))
 	// Check that total number of evictions was < quartile*2, so not too much
 	// good stuff was evicted.
 	require.LessOrEqual(t, evictedCount, quartile*2)

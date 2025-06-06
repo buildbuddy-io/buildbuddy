@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -40,7 +41,6 @@ func makeGitClient() (github.GitClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("Repo root: %s", repoRoot)
 
 	return github.NewCommandLineGitClient(repoRoot), nil
 }
@@ -71,29 +71,55 @@ func getRepoInfo(gc github.GitClient) (*git.RepoURL, string, error) {
 	return parseRepoURL, headSHA, nil
 }
 
-func indexRepo() error {
-	ctx := context.Background()
-
-	gc, err := makeGitClient()
-	if err != nil {
-		return err
+func buildIndexRequest(gc github.GitClient, repoURL *git.RepoURL, headSHA, lastIndexSHA string) (*inpb.IndexRequest, error) {
+	req := &inpb.IndexRequest{
+		GitRepo: &gitpb.GitRepo{
+			RepoUrl:  repoURL.String(),
+			Username: repoURL.Owner,
+		},
 	}
+
+	if lastIndexSHA != "" {
+		update, err := github.ComputeIncrementalUpdate(gc, lastIndexSHA, headSHA)
+		if err != nil {
+			if status.IsFailedPreconditionError(err) {
+				log.Printf("Failed to compute incremental update, falling back to full re-index: %s", err)
+			} else {
+				return nil, fmt.Errorf("failed to compute incremental update: %w", err)
+			}
+		} else if update == nil {
+			log.Printf("No new commits found since last index (%s), skipping indexing.", lastIndexSHA)
+			return nil, nil
+		} else {
+			req.ReplacementStrategy = inpb.ReplacementStrategy_INCREMENTAL
+			req.Update = update
+			return req, nil
+		}
+	} else {
+		log.Printf("No previous index found for repo %s, performing full re-index.", repoURL)
+	}
+
+	req.ReplacementStrategy = inpb.ReplacementStrategy_REPLACE_REPO
+	req.RepoState = &gitpb.RepoState{
+		CommitSha: headSHA,
+	}
+	req.Async = true // Don't wait for full re-indexes to complete.
+	// Access token will be added by the server based on user auth.
+	return req, nil
+}
+
+func indexRepo(gc github.GitClient, client bbspb.BuildBuddyServiceClient) error {
+	ctx := context.Background()
 
 	parsedRepoURL, headSHA, err := getRepoInfo(gc)
 	if err != nil {
 		return err
 	}
 
-	if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil && apiKey != "" {
+	if apiKey, err := login.GetAPIKey(); err == nil && apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 
-	conn, err := grpc_client.DialSimple(*target)
-	if err != nil {
-		return err
-	}
-
-	client := bbspb.NewBuildBuddyServiceClient(conn)
 	rsp, err := client.RepoStatus(ctx, &inpb.RepoStatusRequest{
 		RepoUrl: parsedRepoURL.String(),
 	})
@@ -101,27 +127,27 @@ func indexRepo() error {
 		return fmt.Errorf("failed to get repo status: %w", err)
 	}
 
-	update, err := github.ComputeIncrementalUpdate(gc, rsp.GetLastIndexedCommitSha(), headSHA)
+	update, err := buildIndexRequest(gc, parsedRepoURL, headSHA, rsp.GetLastIndexedCommitSha())
 	if err != nil {
-		return fmt.Errorf("incremental update aborted: %w", err)
+		return fmt.Errorf("failed to create index request: %w", err)
+	}
+	if update == nil {
+		return nil
 	}
 
-	req := &inpb.IndexRequest{
-		GitRepo: &gitpb.GitRepo{
-			RepoUrl: parsedRepoURL.String(),
-		},
-		ReplacementStrategy: inpb.ReplacementStrategy_INCREMENTAL,
-		Update:              update,
-	}
-
-	_, err = client.Index(ctx, req)
+	_, err = client.Index(ctx, update)
 	if err != nil {
 		return err
 	}
 
-	firstSha := update.Commits[0].GetSha()
-	lastSha := update.Commits[len(update.Commits)-1].GetSha()
-	log.Printf("Completed incremental update for %s, %s..%s", parsedRepoURL.String(), firstSha, lastSha)
+	if update.ReplacementStrategy == inpb.ReplacementStrategy_REPLACE_REPO {
+		log.Printf("Re-indexing entire repo %s at commit %s", parsedRepoURL.String(), headSHA)
+	} else {
+		commits := update.GetUpdate().GetCommits()
+		firstSha := commits[0].GetSha()
+		lastSha := commits[len(commits)-1].GetSha()
+		log.Printf("Completed incremental update for %s, %s..%s", parsedRepoURL.String(), firstSha, lastSha)
+	}
 	return nil
 }
 
@@ -139,7 +165,18 @@ func HandleIndex(args []string) (int, error) {
 		return 1, nil
 	}
 
-	if err := indexRepo(); err != nil {
+	gc, err := makeGitClient()
+	if err != nil {
+		return 1, err
+	}
+
+	conn, err := grpc_client.DialSimple(*target)
+	if err != nil {
+		return 1, err
+	}
+	client := bbspb.NewBuildBuddyServiceClient(conn)
+
+	if err := indexRepo(gc, client); err != nil {
 		log.Print(err)
 		return 1, nil
 	}

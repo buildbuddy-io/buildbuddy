@@ -7,6 +7,7 @@ on:
 
 jobs:
   build:
+    name: Build + Test Windows executor
     runs-on: windows-2022
     if: "!contains(github.event.head_commit.message, 'ci skip')"
     steps:
@@ -32,7 +33,7 @@ jobs:
       #         Write-Host "Error: Directory not found: $vs2022Path"
       #     }
 
-      - name: Build
+      - name: Build & test
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GO_REPOSITORY_USE_HOST_CACHE: 1
@@ -51,6 +52,7 @@ jobs:
             $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey")
           }
           bazelisk --output_user_root=D:/0 --windows_enable_symlinks build --config=untrusted-ci-windows @authArgs //enterprise/server/cmd/executor:executor
+          bazelisk --output_user_root=D:/0 --windows_enable_symlinks test --config=untrusted-ci-windows @authArgs //enterprise/server/remote_execution/workspace:workspace_test
 
       - name: Save caches
         uses: ./.github/actions/cache-save

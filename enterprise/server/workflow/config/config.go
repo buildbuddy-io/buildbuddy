@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,9 +25,13 @@ const (
 	// YAML contents, relative to the repository root.
 	FilePath = "buildbuddy.yaml"
 
-	// KytheActionName is the name used for actions automatically
-	// run by us if code search is enabled.
-	KytheActionName = "Generate CodeSearch Index"
+	// KytheActionName is the name used for an action that generates Kythe annotations
+	// This action is run automatically if codesearch is enabled.
+	KytheActionName = "Generate Kythe Annotations"
+
+	// CSIncrementalUpdateName is the name used for an action that sends an incremental update
+	// to the codesearch indexer. This action is run automatically if codesearch is enabled.
+	CSIncrementalUpdateName = "Codesearch Incremental Update"
 )
 
 type BuildBuddyConfig struct {
@@ -172,7 +177,7 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
-const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.74-buildbuddy.tar.gz"
+const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.75-buildbuddy.tar.gz"
 
 func checkoutKythe(dirName, downloadURL string) string {
 	buf := fmt.Sprintf(`
@@ -185,10 +190,49 @@ fi`, dirName, downloadURL)
 }
 
 func buildWithKythe(dirName string) string {
+	// TODO(jdelfino): This script doesn't pass any extra flags to Bazel, beyond those needed to
+	// enable Kythe. This means the build will fail or be invalid if the normal build workflow
+	// passes any important flags. While passing flags on the command line is discouraged,
+	// we'll need to handle this eventually.
 	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
 	return fmt.Sprintf(`
+BZL_MAJOR_VERSION=$(bazel info release | cut -d' ' -f2 | xargs | cut -d'.' -f1)
+
+if [ $BZL_MAJOR_VERSION -lt 7 ]; then
+    BZLMOD_DEFAULT=0
+else
+    BZLMOD_DEFAULT=1
+fi
+
+# starlark-semantics will print out enable_bzlmod if it differs from the default.
+if ! bazel info starlark-semantics | grep -q "enable_bzlmod" ; then
+    BZLMOD_ENABLED=$BZLMOD_DEFAULT
+else
+    BZLMOD_ENABLED=$(( 1 - $BZLMOD_DEFAULT ))
+fi
+
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build --override_repository kythe_release="$KYTHE_DIR" %s //...`, dirName, bazelConfigFlags)
+
+if [ "$BZLMOD_ENABLED" -eq 1 ]; then
+    # with bzlmod enabled, override_repository will not work unless the repository is already defined
+	# inject_repository will work, but was added in Bazel 8, so we need to handle <8 by
+	# manually adding to MODULE.bazel.
+    if [ $BZL_MAJOR_VERSION -lt 8 ]; then
+        echo "Adding kythe repository to MODULE.bazel"
+        echo -e '\nbazel_dep(name = "kythe", version = "0.0.75")' >> MODULE.bazel
+        echo "local_path_override(module_name=\"kythe\", path=\"$KYTHE_DIR\")" >> MODULE.bazel
+	else
+        KYTHE_ARGS="--inject_repository=kythe_release=$KYTHE_DIR"
+	fi
+else
+    # override_repository always works if bzlmod is disabled.
+	KYTHE_ARGS="--override_repository=kythe_release=$KYTHE_DIR"
+fi
+echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
+set -x
+bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...
+unset -x`, dirName, bazelConfigFlags)
+
 }
 
 func prepareKytheOutputs(dirName string) string {
@@ -238,6 +282,39 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 			},
 			{
 				Run: prepareKytheOutputs(kytheDirName),
+			},
+		},
+	}
+}
+
+func sendIncrementalUpdate(apiTarget, repoURL string) string {
+	// TODO(jdelfino): Remove explicit CLI installation once buildbuddy-internal/#5060 is resolved
+	buf := fmt.Sprintf(`
+curl -fsSL https://install.buildbuddy.io | bash
+git fetch --force --filter=blob:none --unshallow origin
+bb index --target %s --repo-url %s`, apiTarget, repoURL)
+	return buf
+}
+
+func CodesearchIncrementalUpdateAction(apiTarget *url.URL, repoURL, targetRepoDefaultBranch string) *Action {
+	var pushTriggerBranches []string
+	if targetRepoDefaultBranch != "" {
+		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
+	}
+	return &Action{
+		Name: CSIncrementalUpdateName,
+		Triggers: &Triggers{
+			Push: &PushTrigger{Branches: pushTriggerBranches},
+		},
+		ContainerImage: `ubuntu-22.04`,
+		ResourceRequests: ResourceRequests{
+			CPU:    "2",
+			Memory: "4GB",
+			Disk:   "10GB",
+		},
+		Steps: []*rnpb.Step{
+			{
+				Run: sendIncrementalUpdate(apiTarget.String(), repoURL),
 			},
 		},
 	}

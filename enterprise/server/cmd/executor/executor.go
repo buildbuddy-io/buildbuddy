@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -287,6 +288,9 @@ func main() {
 	if *deleteBuildRootOnStartup {
 		deleteBuildRoot(rootContext, runner.GetBuildRoot())
 	}
+	if err := os.MkdirAll(runner.GetBuildRoot(), 0755); err != nil {
+		log.Fatalf("Unable to create build root directory %q: %s", runner.GetBuildRoot(), err)
+	}
 
 	// Run any startup commands.
 	for i, startupCommand := range *startupCommands {
@@ -402,10 +406,13 @@ func deleteBuildRoot(ctx context.Context, rootDir string) {
 	}, func(timeTaken time.Duration) {})
 	defer stop()
 
+	mounts, err := disk.ChildMounts(ctx, rootDir)
+	if err == nil && len(mounts) > 0 {
+		// TODO(bduffany): see what gets logged here in practice, and if it
+		// looks safe, unmount these instead of just logging.
+		log.Warningf("Build root directory still has mounted filesystems: %s", strings.Join(mounts, ", "))
+	}
 	if err := disk.ForceRemove(ctx, rootDir); err != nil {
 		log.Warningf("Failed to remove build root dir: %s", err)
-	}
-	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
-		log.Warningf("Failed to create build root dir: %s", err)
 	}
 }

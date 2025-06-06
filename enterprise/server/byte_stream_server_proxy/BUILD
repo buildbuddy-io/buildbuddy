@@ -44,6 +44,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/compression",
+        "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
         "//server/util/testing/flags",

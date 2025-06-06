@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -357,6 +358,10 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
 			executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
 			executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
+			executionProto.NetworkBytesSent = md.GetUsageStats().GetNetworkStats().GetBytesSent()
+			executionProto.NetworkBytesReceived = md.GetUsageStats().GetNetworkStats().GetBytesReceived()
+			executionProto.NetworkPacketsSent = md.GetUsageStats().GetNetworkStats().GetPacketsSent()
+			executionProto.NetworkPacketsReceived = md.GetUsageStats().GetNetworkStats().GetPacketsReceived()
 
 			executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
 			executionProto.Experiments = auxMeta.GetExperiments()
@@ -1484,9 +1489,9 @@ func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, po
 }
 
 func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error {
-	ids, err := s.executionIDs(ctx, invocationID)
+	ids, err := s.getInProgressExecutionIDsForInvocation(ctx, invocationID)
 	if err != nil {
-		return status.InternalErrorf("failed to lookup execution IDs for invocation %q: %s", invocationID, err)
+		return status.InternalErrorf("get in-progress execution IDs for invocation %q: %s", invocationID, err)
 	}
 	numCancelled := 0
 	for _, id := range ids {
@@ -1550,13 +1555,32 @@ func (s *ExecutionServer) markInvocationAsDisconnected(ctx context.Context, invo
 	return inv, nil
 }
 
-func (s *ExecutionServer) executionIDs(ctx context.Context, invocationID string) ([]string, error) {
+func (s *ExecutionServer) getInProgressExecutionIDsForInvocation(ctx context.Context, invocationID string) ([]string, error) {
+	var ids []string
+
+	if *writeExecutionProgressStateToRedis {
+		executions, err := s.env.GetExecutionCollector().GetInProgressExecutions(ctx, invocationID)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to get in-progress executions for invocation %q: %s", invocationID, err)
+		} else {
+			for _, e := range executions {
+				ids = append(ids, e.GetExecutionId())
+			}
+		}
+	}
+
+	if !*writeExecutionsToPrimaryDB {
+		if *writeExecutionProgressStateToRedis {
+			return ids, nil
+		}
+		return nil, status.UnimplementedErrorf("could not get in-progress execution IDs for invocation: in-progressexecution storage is not configured")
+	}
+
 	dbh := s.env.GetDBHandle()
 	rq := dbh.NewQuery(ctx, "execution_server_get_executions_for_invocation").Raw(
 		`SELECT execution_id FROM "Executions" WHERE invocation_id = ? AND stage != ?`,
 		invocationID,
 		repb.ExecutionStage_COMPLETED)
-	ids := make([]string, 0)
 	err := db.ScanEach(rq, func(ctx context.Context, e *tables.Execution) error {
 		ids = append(ids, e.ExecutionID)
 		return nil
@@ -1564,5 +1588,7 @@ func (s *ExecutionServer) executionIDs(ctx context.Context, invocationID string)
 	if err != nil {
 		return nil, err
 	}
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
 	return ids, nil
 }

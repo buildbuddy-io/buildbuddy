@@ -145,9 +145,9 @@ func authenticateWithRegistry(ctx context.Context, resolver *oci.Resolver, conta
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// Resolve the image to ensure that the credentials are valid.
-	if _, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds); err != nil {
-		return status.WrapError(err, "resolve image")
+	// Authenticate with the remote registry using these credentials to ensure they are valid.
+	if err := resolver.AuthenticateWithRegistry(ctx, containerImage, oci.RuntimePlatform(), creds); err != nil {
+		return status.WrapError(err, "authentice with registry")
 	}
 	return nil
 }

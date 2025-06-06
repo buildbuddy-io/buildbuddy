@@ -10,7 +10,7 @@ actions:
         branches:
           - "*"
     steps:
-      - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare"
+      - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare"
   - name: Test with BzlMod
     container_image: ubuntu-22.04
     resource_requests:
@@ -93,18 +93,6 @@ actions:
           - "master"
     steps:
       - run: "bazel test //... --config=linux-workflows --config=performance --test_tag_filters=+performance"
-  # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
-  - name: Docker tests
-    container_image: ubuntu-22.04
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    steps:
-      - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=+docker --build_tag_filters=+docker"
   - name: Baremetal tests
     container_image: ubuntu-22.04
     triggers:

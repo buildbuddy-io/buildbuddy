@@ -607,13 +607,14 @@ func (r *distributedCacheReader) Close() error {
 }
 
 type streamWriteCloser struct {
-	cancelFunc    context.CancelFunc
-	stream        dcpb.DistributedCache_WriteClient
-	r             *rspb.ResourceName
-	key           *dcpb.Key
-	isolation     *dcpb.Isolation
-	handoffPeer   string
-	alreadyExists bool
+	cancelFunc         context.CancelFunc
+	stream             dcpb.DistributedCache_WriteClient
+	r                  *rspb.ResourceName
+	key                *dcpb.Key
+	isolation          *dcpb.Isolation
+	handoffPeer        string
+	alreadyExists      bool
+	closeAndRecvCalled bool
 }
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {
@@ -632,6 +633,7 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 	err := wc.stream.Send(req)
 	if err == io.EOF {
 		_, streamErr := wc.stream.CloseAndRecv()
+		wc.closeAndRecvCalled = true
 		if status.IsAlreadyExistsError(streamErr) {
 			wc.alreadyExists = true
 			err = nil
@@ -662,6 +664,7 @@ func (wc *streamWriteCloser) Commit() error {
 		return sendErr
 	}
 	_, err := wc.stream.CloseAndRecv()
+	wc.closeAndRecvCalled = true
 	if status.IsAlreadyExistsError(err) {
 		return nil
 	}
@@ -673,6 +676,10 @@ func (wc *streamWriteCloser) Commit() error {
 
 func (wc *streamWriteCloser) Close() error {
 	wc.cancelFunc()
+	if !wc.closeAndRecvCalled {
+		_, err := wc.stream.CloseAndRecv()
+		return err
+	}
 	return nil
 }
 

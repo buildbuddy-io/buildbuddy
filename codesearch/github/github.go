@@ -38,9 +38,11 @@ const (
 	maxAllowedChanges = 1000
 )
 
-// TODO(tylerw): this should come from a flag?
 var (
-	skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
+	// TODO(tylerw): this should come from a flag?
+	skipMime    = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
+	regexpSha   = regexp.MustCompile("^[0-9a-f]{5,40}$")
+	filepathSha = regexp.MustCompile("^:[0-9]{6} [0-9]{6}")
 )
 
 func lastIndexedDocKey(repoURL *git.RepoURL) []byte {
@@ -49,7 +51,7 @@ func lastIndexedDocKey(repoURL *git.RepoURL) []byte {
 
 func makeFileId(repoURL *git.RepoURL, name string) []byte {
 	uniqueID := xxhash.Sum64String(repoURL.Owner + repoURL.Repo + name)
-	idBytes := []byte(fmt.Sprintf("%d", uniqueID))
+	idBytes := fmt.Appendf(nil, "%d", uniqueID)
 	return idBytes
 }
 
@@ -73,7 +75,6 @@ func makeLastIndexedDoc(repoURL *git.RepoURL, commitSHA string) types.Document {
 func AddFileToIndex(w types.IndexWriter, repoURL *git.RepoURL, commitSHA, filename string, fileContent []byte) error {
 	err := validateFile(fileContent)
 	if err != nil {
-		log.Infof("File %s can't be indexed, skipping: %v", filename, err)
 		return err
 	}
 
@@ -271,6 +272,8 @@ func processDiffTreeLine(gc GitClient, line string, commit *inpb.Commit) error {
 }
 
 // ComputeIncrementalUpdate generates an incremental update payload for the codesearch indexer.
+// If no updates are found, it returns nil with no error.
+//
 // The information is extracted using the git command line client on a local clone of a repo.
 // The payload contains a list of commits, the file contents for each added/modified file, and a list
 // of deleted filenames.
@@ -284,10 +287,10 @@ func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.Inc
 	changes := strings.Split(strings.TrimSpace(changesStr), "\n")
 
 	if len(changes) > maxAllowedChanges {
-		return nil, fmt.Errorf("too many changes in commit range %s..%s: %d", firstSha, lastSha, len(changes))
+		return nil, status.FailedPreconditionErrorf("too many changes in commit range %s..%s: %d", firstSha, lastSha, len(changes))
 	}
 	if len(changes) == 0 || (len(changes) == 1 && len(changes[0]) == 0) {
-		return nil, fmt.Errorf("no commits found between %s and %s", firstSha, lastSha)
+		return nil, nil
 	}
 
 	result := &inpb.IncrementalUpdate{
@@ -298,11 +301,8 @@ func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.Inc
 
 	for _, line := range changes {
 		line := strings.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
 
-		if line[0] != ':' {
+		if regexpSha.MatchString(line) {
 			// Commit line
 			currentCommit = &inpb.Commit{
 				Sha:       line,
@@ -310,10 +310,10 @@ func ComputeIncrementalUpdate(gc GitClient, firstSha, lastSha string) (*inpb.Inc
 			}
 			result.Commits = append(result.Commits, currentCommit)
 			sha = line
-		} else {
+		} else if filepathSha.MatchString(line) {
 			// Diff line
 			processDiffTreeLine(gc, line, currentCommit)
-		}
+		} // else: ignore other lines
 	}
 	return result, nil
 }

@@ -2,7 +2,7 @@
 # See README for details.
 
 # debian 12
-FROM mirror.gcr.io/debian@sha256:723a457777ce1b4bebda7c1252131e9779dd775f9b536ed35175a2ba57f2f23f
+FROM mirror.gcr.io/debian@sha256:7ca9335a5953654f8feb8b846ad3dd78309a838d62b090c785d1f5908c2d59d2
 
 RUN apt-get update && \
     apt-get install -y \
@@ -19,10 +19,10 @@ RUN apt-get update && \
     apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
-RUN DOCKER_VERSION="5:28.0.4-1~debian.12~bookworm" && \
+RUN DOCKER_VERSION="5:28.2.2-1~debian.12~bookworm" && \
     CONTAINERD_DEB_VERSION="1.7.27-1" && \
-    DOCKER_BUILDX_VERSION="0.22.0-1~debian.12~bookworm" && \
-    DOCKER_COMPOSE_VERSION="2.34.0-1~debian.12~bookworm" && \
+    DOCKER_BUILDX_VERSION="0.24.0-1~debian.12~bookworm" && \
+    DOCKER_COMPOSE_VERSION="2.36.2-1~debian.12~bookworm" && \
     apt-get update && \
     apt-get install -y \
     curl ca-certificates apt-transport-https && \
@@ -53,8 +53,7 @@ RUN DOCKER_VERSION="5:28.0.4-1~debian.12~bookworm" && \
     /usr/bin/containerd-shim \
     /usr/bin/containerd-shim-runc-v1 \
     /usr/bin/ctr \
-    # Not currently updating these binaries manually, so leave them in.
     # rootlesskit
-    # /usr/bin/rootlesskit \
+    /usr/bin/rootlesskit \
     # runc
-    # /usr/bin/runc
+    /usr/bin/runc

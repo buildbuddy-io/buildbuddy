@@ -85,7 +85,7 @@ var (
 	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
 	deletesPerEviction        = flag.Int("cache.pebble.deletes_per_eviction", 10, "Maximum number keys to delete in one eviction attempt before resampling.")
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
-	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 1500, "Maximum number of entries to evict per second (per partition).")
+	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 2500, "Maximum number of entries to evict per second (per partition).")
 	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
 	enableTableBloomFilter    = flag.Bool("cache.pebble.enable_table_bloom_filter", true, "If true, write bloom filter data with pebble SSTables.")
 	enableAutoRatchet         = flag.Bool("cache.pebble.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to latest version.")
@@ -114,7 +114,7 @@ var (
 	// Their defaults must be vars so we can take their addresses)
 	DefaultAtimeUpdateThreshold     = 10 * time.Minute
 	DefaultAtimeBufferSize          = 100000
-	DefaultNumAtimeUpdateWorkers    = 5
+	DefaultNumAtimeUpdateWorkers    = 16
 	DefaultSampleBufferSize         = 8000
 	DefaultSamplesPerBatch          = 10000
 	DefaultSamplerIterRefreshPeriod = 5 * time.Minute
@@ -504,6 +504,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 		MaxConcurrentCompactions: func() int { return 18 },
 		MemTableSize:             64 << 20, // 64 MB
 		EventListener: &pebble.EventListener{
+			BackgroundError: mc.BackgroundError,
 			WriteStallBegin: mc.WriteStallBegin,
 			WriteStallEnd:   mc.WriteStallEnd,
 			DiskSlow:        mc.DiskSlow,
@@ -2195,8 +2196,9 @@ type zstdCompressor struct {
 	cacheName string
 
 	interfaces.CommittedWriteCloser
-	compressBuf []byte
-	bufferPool  *bytebufferpool.VariableSizePool
+	compressBuf     []byte
+	poolCompressBuf []byte // Buffer we must return to the pool on close.
+	bufferPool      *bytebufferpool.VariableSizePool
 
 	numDecompressedBytes int
 	numCompressedBytes   int
@@ -2208,11 +2210,14 @@ func NewZstdCompressor(cacheName string, wc interfaces.CommittedWriteCloser, bp 
 		cacheName:            cacheName,
 		CommittedWriteCloser: wc,
 		compressBuf:          compressBuf,
+		poolCompressBuf:      compressBuf,
 		bufferPool:           bp,
 	}
 }
 
 func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
+	// CompressZstd can allocate a new buffer if the given compressBuf is not large enough
+	// to fit the compressed bytes.
 	z.compressBuf = compression.CompressZstd(z.compressBuf, decompressedBytes)
 	compressedBytesWritten, err := z.CommittedWriteCloser.Write(z.compressBuf)
 	if err != nil {
@@ -2232,7 +2237,7 @@ func (z *zstdCompressor) Close() error {
 		With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: z.cacheName}).
 		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
 
-	z.bufferPool.Put(z.compressBuf)
+	z.bufferPool.Put(z.poolCompressBuf)
 	return z.CommittedWriteCloser.Close()
 }
 

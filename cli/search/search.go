@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/logrusorgru/aurora"
 	"google.golang.org/grpc/metadata"
@@ -44,7 +43,7 @@ func searchCode(args []string) error {
 	}
 
 	ctx := context.Background()
-	if apiKey, err := storage.ReadRepoConfig("api-key"); err == nil && apiKey != "" {
+	if apiKey, err := login.GetAPIKey(); err == nil && apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 

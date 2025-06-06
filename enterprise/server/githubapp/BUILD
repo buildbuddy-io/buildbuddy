@@ -9,9 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/webhooks/github",
         "//enterprise/server/webhooks/webhook_data",
-        "//proto:git_go_proto",
         "//proto:github_go_proto",
-        "//proto:index_go_proto",
         "//proto:repo_go_proto",
         "//proto:workflow_go_proto",
         "//server/backends/github",

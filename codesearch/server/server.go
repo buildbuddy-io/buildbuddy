@@ -68,7 +68,7 @@ func New(env environment.Env, rootDirectory, scratchDirectory string) (*codesear
 	if err := disk.EnsureDirectoryExists(scratchDirectory); err != nil {
 		return nil, err
 	}
-	db, err := pebble.Open(rootDirectory, &pebble.Options{})
+	db, err := index.OpenPebbleDB(rootDirectory)
 	if err != nil {
 		return nil, err
 	}
@@ -174,8 +174,8 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 	for i, commit := range commits {
 		// We currently only support sequential commits, with no gaps.
 		// We could do a topological sort, but we just don't need that right now.
-		if i > 1 && commit.GetParentSha() != commits[i-1].GetSha() {
-			return nil, status.InvalidArgumentErrorf("commits must be sequential. Commit %s is not preceded by its parent", commit.GetSha())
+		if i >= 1 && commit.GetParentSha() != commits[i-1].GetSha() {
+			return nil, status.InvalidArgumentErrorf("commits must be sequential. Commit %s has parent %s, but is not preceded by that commit", commit.GetSha(), commit.GetParentSha())
 		}
 		if commit.GetParentSha() == lastIndexedSHA {
 			firstIndexToProcess = i
@@ -327,7 +327,7 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		unlockFn := css.repoLocks.Lock(lockKey)
 		defer unlockFn()
 
-		log.Infof("Starting indexing %s@%s", repoURL, commitSHA)
+		log.Infof("Starting indexing %q@%s", repoURL, commitSHA)
 
 		var err error
 		switch req.GetReplacementStrategy() {
@@ -369,7 +369,10 @@ func (css *codesearchServer) RepoStatus(ctx context.Context, req *inpb.RepoStatu
 
 	rev, err := github.GetLastIndexedCommitSha(r, repoURL)
 	if err != nil {
-		return nil, err
+		// If there's no status, return an empty commit SHA, but don't error.
+		if !status.IsNotFoundError(err) {
+			return nil, err
+		}
 	}
 
 	return &inpb.RepoStatusResponse{
@@ -411,6 +414,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	for _, doc := range docs {
 		regions := highlighter.Highlight(doc)
 		if len(regions) == 0 {
+			log.Warningf("No highlight regions found for doc: %s, dropping", doc.Field(schema.FilenameField).Contents())
 			continue
 		}
 

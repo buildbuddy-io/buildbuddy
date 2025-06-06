@@ -50,12 +50,13 @@ var (
 	// To ensure we keep the connection alive, we start a timer and
 	// just repeat the last state change message after every
 	// execProgressCallbackPeriod. If this is set to 0, it is disabled.
-	execProgressCallbackPeriod = flag.Duration("executor.task_progress_publish_interval", 60*time.Second, "How often tasks should publish progress updates to the app.")
-	defaultTaskTimeout         = flag.Duration("executor.default_task_timeout", 8*time.Hour, "Timeout to use for tasks that do not have a timeout set explicitly.")
-	maxTaskTimeout             = flag.Duration("executor.max_task_timeout", 24*time.Hour, "Max timeout that can be requested by a task. A value <= 0 means unlimited. An error will be returned if a task requests a timeout greater than this value.")
-	slowTaskThreshold          = flag.Duration("executor.slow_task_threshold", 1*time.Hour, "Warn about tasks that take longer than this threshold.")
-	defaultTerminationGrace    = flag.Duration("executor.default_termination_grace_period", 0, "Default termination grace period for all actions. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
-	maxTerminationGracePeriod  = flag.Duration("executor.max_termination_grace_period", 1*time.Minute, "Max termination grace period that actions can request. An error will be returned if a task requests a grace period greater than this value. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
+	execProgressCallbackPeriod       = flag.Duration("executor.task_progress_publish_interval", 60*time.Second, "How often tasks should publish progress updates to the app.")
+	defaultTaskTimeout               = flag.Duration("executor.default_task_timeout", 8*time.Hour, "Timeout to use for tasks that do not have a timeout set explicitly.")
+	maxTaskTimeout                   = flag.Duration("executor.max_task_timeout", 24*time.Hour, "Max timeout that can be requested by a task. A value <= 0 means unlimited. An error will be returned if a task requests a timeout greater than this value.")
+	slowTaskThreshold                = flag.Duration("executor.slow_task_threshold", 1*time.Hour, "Warn about tasks that take longer than this threshold.")
+	defaultTerminationGrace          = flag.Duration("executor.default_termination_grace_period", 0, "Default termination grace period for all actions. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
+	maxTerminationGracePeriod        = flag.Duration("executor.max_termination_grace_period", 1*time.Minute, "Max termination grace period that actions can request. An error will be returned if a task requests a grace period greater than this value. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
+	checkActionResultBeforeExecution = flag.Bool("executor.check_action_result_before_execution", true, "If true, the executor will call GetActionResult to verify an action does not already exist before running it.")
 )
 
 const (
@@ -215,6 +216,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		ExecutorHostname:      s.hostname,
 		Experiments:           task.GetExperiments(),
 	}
+	actionMetrics.AuxMetadata = auxMetadata
 	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest.GetDigest())
 	stateChangeFn := operation.StateChangeFunc(func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
 		if stage == repb.ExecutionStage_COMPLETED {
@@ -259,7 +261,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return finishWithErrFn(status.WrapError(err, "validate command"))
 	}
 
-	if !req.GetSkipCacheLookup() {
+	if *checkActionResultBeforeExecution && !req.GetSkipCacheLookup() {
 		log.CtxDebugf(ctx, "Checking action cache for existing result.")
 		if err := stateChangeFn(repb.ExecutionStage_CACHE_CHECK, operation.InProgressExecuteResponse()); err != nil {
 			return true, err
@@ -487,6 +489,8 @@ type ActionMetrics struct {
 	Error error
 	// Result is the action execution result.
 	Result *repb.ActionResult
+	// AuxMetadata is the execution auxiliary metadata.
+	AuxMetadata *espb.ExecutionAuxiliaryMetadata
 }
 
 func (m *ActionMetrics) Report(ctx context.Context) {
@@ -515,6 +519,9 @@ func (m *ActionMetrics) Report(ctx context.Context) {
 		observeStageDuration(groupID, "execution", md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
 		observeStageDuration(groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
 		observeStageDuration(groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
+	}
+	if md != nil && m.AuxMetadata != nil {
+		observeStageDuration(groupID, "worker_queued", m.AuxMetadata.GetWorkerQueuedTimestamp(), md.GetWorkerStartTimestamp())
 	}
 	// If the isolation type supports it, report PSI metrics.
 	if md != nil && (m.Isolation == string(platform.PodmanContainerType) || m.Isolation == string(platform.OCIContainerType)) {

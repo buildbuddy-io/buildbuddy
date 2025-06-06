@@ -23,14 +23,17 @@ var (
 	altRepoURL = &git.RepoURL{Host: "github.com", Owner: "buildbuddy-io", Repo: "buildbuddy-internal"}
 )
 
+func mustOpenDB(t *testing.T, indexDir string) *pebble.DB {
+	t.Helper()
+	db, err := index.OpenPebbleDB(indexDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
 func TestLastIndexedCommit(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	commitSHA := "abc123"
 
@@ -48,12 +51,7 @@ func TestLastIndexedCommit(t *testing.T) {
 
 func TestLastIndexedCommitUpdated(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	commitSHA := "abc123"
 	repoURL, err := git.ParseGitHubRepoURL("github.com/buildbuddy-io/buildbuddy")
@@ -86,12 +84,7 @@ func TestLastIndexedCommitUpdated(t *testing.T) {
 
 func TestLastIndexedCommitUnset(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	commitSHA := "abc123"
 
@@ -115,12 +108,7 @@ func TestLastIndexedCommitUnset(t *testing.T) {
 
 func TestAddFileToIndex(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	w, err := index.NewWriter(db, "testing-namespace")
 	if err != nil {
@@ -148,12 +136,7 @@ func TestAddFileToIndex(t *testing.T) {
 
 func TestAddFileToIndexWrongMimeType(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	w, err := index.NewWriter(db, "testing-namespace")
 	if err != nil {
@@ -175,12 +158,7 @@ func TestAddFileToIndexWrongMimeType(t *testing.T) {
 
 func TestAddFileToIndexInvalidUTF8(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	w, err := index.NewWriter(db, "testing-namespace")
 	if err != nil {
@@ -211,10 +189,7 @@ func mustApplyCommit(t *testing.T, db *pebble.DB, commit *inpb.Commit) {
 
 func TestProcessCommit_AddsOnly(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	require.NoError(t, err)
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	mustApplyCommit(t, db, &inpb.Commit{
 		Sha: "abc123",
@@ -231,10 +206,7 @@ func TestProcessCommit_AddsOnly(t *testing.T) {
 
 func TestProcessCommit_DeletesOnly(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	require.NoError(t, err)
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	// Add a file first
 	mustApplyCommit(t, db, &inpb.Commit{
@@ -260,10 +232,7 @@ func TestProcessCommit_DeletesOnly(t *testing.T) {
 
 func TestProcessCommit_DeleteThenReAdd(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	require.NoError(t, err)
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	filename := "foo/bar/baz.go"
 
@@ -303,10 +272,7 @@ func TestProcessCommit_DeleteThenReAdd(t *testing.T) {
 
 func TestProcessCommit_NonOverlappingAddsAndDeletes(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	require.NoError(t, err)
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	mustApplyCommit(t, db, &inpb.Commit{
 		Sha: "abc123",
@@ -323,10 +289,7 @@ func TestProcessCommit_NonOverlappingAddsAndDeletes(t *testing.T) {
 
 func TestProcessCommit_OverlappingAddsAndDeletes(t *testing.T) {
 	ctx := context.Background()
-	indexDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(indexDir, nil)
-	require.NoError(t, err)
-	defer db.Close()
+	db := mustOpenDB(t, testfs.MakeTempDir(t))
 
 	filename := "foo/bar/baz.go"
 
@@ -430,22 +393,22 @@ def456
 }
 
 func TestComputeIncrementalUpdate_MultipleCommits(t *testing.T) {
-	sha1 := "abc123"
-	sha2 := "def456"
-	sha3 := "ghi789"
-	sha4 := "jkl012"
+	sha1 := "aaa123"
+	sha2 := "bbb456"
+	sha3 := "ccc789"
+	sha4 := "ddd012"
 
 	fakeClient := &fakeGitClient{
 		t: t,
 		commands: map[string]string{
 			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", sha1, sha4): `
-def456
+bbb456
 
 :100644 100644 bcd1234 0123456 M	file0
-ghi789
+ccc789
 
 :000000 100644 0000000 1234567 A	file1
-jkl012
+ddd012
 
 :100644 100644 abcd123 1234567 R86	file1	file2
 `,
@@ -533,6 +496,43 @@ func TestComputeIncrementalUpdate_NoChanges(t *testing.T) {
 	}
 
 	result, err := ComputeIncrementalUpdate(fakeClient, firstSHA, lastSHA)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, result)
+}
+
+func TestComputeIncrementalUpdate_WithWarnings(t *testing.T) {
+	firstSHA := "abc123"
+	lastSHA := "def456"
+
+	fakeClient := &fakeGitClient{
+		t: t,
+		commands: map[string]string{
+			fmt.Sprintf("whatchanged --first-parent --format=%%H --reverse %s..%s", firstSHA, lastSHA): `
+warning: fetch normally indicates which branches had a forced update,
+but that check has been disabled; to re-enable, use '--show-forced-updates'
+flag or run 'git config fetch.showForcedUpdates true'
+def456
+
+:100644 100644 bcd1234 0123456 M	file0
+`,
+		},
+		files: map[string][]byte{
+			"file0": []byte("file0 content"),
+		},
+	}
+
+	result, err := ComputeIncrementalUpdate(fakeClient, firstSHA, lastSHA)
+	require.NoError(t, err)
+
+	assert.Equal(t, &inpb.IncrementalUpdate{
+		Commits: []*inpb.Commit{
+			{
+				Sha:       "def456",
+				ParentSha: "abc123",
+				AddsAndUpdates: []*inpb.File{
+					{Filepath: "file0", Content: []byte("file0 content")},
+				},
+			},
+		},
+	}, result)
 }

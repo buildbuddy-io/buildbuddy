@@ -643,6 +643,9 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// the token below.
 	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt, true /*=checkExpiry*/); err == nil {
 		claims, err := claims.ClaimsFromSubID(ctx, a.env, ut.GetSubID())
+		if claims != nil && auth.getSlug() != "" {
+			claims.CustomerSSO = true
+		}
 		return claims, ut, err
 	}
 
@@ -686,6 +689,9 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 
 	cookie.SetLoginCookie(w, jwt, issuer, sessionID, newToken.Expiry.Unix())
 	claims, err := claims.ClaimsFromSubID(ctx, a.env, ut.GetSubID())
+	if claims != nil && auth.getSlug() != "" {
+		claims.CustomerSSO = true
+	}
 	return claims, ut, err
 }
 

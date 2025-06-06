@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -30,7 +31,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/gobwas/glob"
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
@@ -95,7 +95,7 @@ type Workspace struct {
 
 type Opts struct {
 	// Preserve specifies whether to preserve all files in the workspace except
-	// for output dirs.
+	// for output paths.
 	Preserve    bool
 	CleanInputs string
 	// UseOverlayfs specifies whether the workspace should use overlayfs to
@@ -108,14 +108,25 @@ type Opts struct {
 
 // New creates a new workspace directly under the given parent directory.
 func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
-	id, err := uuid.NewRandom()
-	if err != nil {
-		return nil, status.UnavailableErrorf("failed to generate workspace ID")
-	}
-	rootDir := filepath.Join(parentDir, id.String())
 	dirPerms := fs.FileMode(0777)
-	if err := os.MkdirAll(rootDir, dirPerms); err != nil {
-		return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
+	var rootDir string
+	maxAttempts := 10
+	for i := 0; i < maxAttempts; i++ {
+		rootDir = filepath.Join(parentDir, newRandomBuildDirCandidate())
+		if err := os.Mkdir(rootDir, dirPerms); err == nil {
+			break
+		} else if !os.IsExist(err) {
+			return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
+		}
+		// Got unlucky and the random directory name already exists. This should
+		// never happen on Unix and rarely on Windows, so just try again.
+		if i == maxAttempts-1 {
+			return nil, status.UnavailableErrorf("failed to find random dir below %q in %d attempts", rootDir, maxAttempts)
+		}
+	}
+	rootDir, err := maybeCreatePlatformSpecificSubDir(rootDir)
+	if err != nil {
+		return nil, err
 	}
 
 	if opts.UseOverlayfs && opts.UseVFS {
@@ -125,6 +136,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 	var overlay *overlayfs.Overlay
 	if opts.UseOverlayfs {
 		overlayOpts := overlayfs.Opts{DirPerms: dirPerms}
+		var err error
 		overlay, err = overlayfs.Convert(context.TODO(), rootDir, overlayOpts)
 		if err != nil {
 			return nil, status.UnavailableErrorf("failed to create workspace overlayfs at %q: %s", rootDir, err)
@@ -523,33 +535,21 @@ func (ws *Workspace) Clean() error {
 	// as-is.
 	if ws.Opts.Preserve {
 		cmd := ws.task.GetCommand()
-		for _, path := range cmd.GetOutputFiles() {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
+		outputPaths := slices.Concat(cmd.GetOutputFiles(), cmd.GetOutputDirectories(), cmd.GetOutputPaths())
+		for _, outputPath := range outputPaths {
+			if err := os.RemoveAll(filepath.Join(ws.Path(), outputPath)); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean workspace: %s", err)
 			}
-			// In case this output path was specified as an input path previously,
-			// delete it from known files.
-			delete(ws.Inputs, path)
-			// TODO: If we remove an output file whose path previously pointed to
-			// a directory, then we need to remove all `inputs` under that directory.
-		}
-		for _, outputDirPath := range cmd.GetOutputDirectories() {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), outputDirPath)); err != nil && !os.IsNotExist(err) {
-				return status.UnavailableErrorf("Failed to clean workspace: %s", err)
-			}
-			// Need to delete any known input files which lived under that
-			// output directory.
-			// TODO: This nested loop impl may slow down the action if there are a lot
-			// of output directories. If this turns out to be an issue, might need to
-			// optimize this further.
+			// If the output path was a directory, we need to delete any known
+			// input files which lived under that output directory.
 			for inputPath := range ws.Inputs {
-				if isParent(outputDirPath, inputPath) {
+				if isParent(outputPath, inputPath) {
 					delete(ws.Inputs, inputPath)
 				}
 			}
-			// In case this output dir previously pointed to an input file, delete it
-			// from the inputs index (this should be pretty uncommon).
-			delete(ws.Inputs, outputDirPath)
+			// In case this output path previously pointed to an input file,
+			// delete it from the inputs index (this should be pretty uncommon).
+			delete(ws.Inputs, outputPath)
 		}
 		return nil
 	}

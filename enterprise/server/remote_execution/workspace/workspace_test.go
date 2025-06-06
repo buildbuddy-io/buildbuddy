@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -43,7 +45,7 @@ func keepmePaths(paths []string) map[string]struct{} {
 	expected := map[string]struct{}{}
 	for _, path := range paths {
 		if strings.Contains(path, "KEEPME") {
-			expected[path] = struct{}{}
+			expected[filepath.FromSlash(path)] = struct{}{}
 		}
 	}
 	return expected
@@ -243,4 +245,42 @@ func TestCleanInputsIfNecessary_CleanMatching(t *testing.T) {
 		t, keepmePaths(filePaths), actualFilePaths(t, ws),
 		"expected all KEEPME filePaths (and no others) in the workspace after cleanup",
 	)
+}
+
+func TestManyNewWorkspaces(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	root := testfs.MakeTempDir(t)
+	// https://github.com/bazelbuild/bazel/blob/819aa9688229e244dc90dda1278d7444d910b48a/src/main/java/com/google/devtools/build/lib/rules/cpp/ShowIncludesFilter.java#L101
+	expectedPath := regexp.MustCompile(`.*execroot\\(?P<headerPath>.*)`)
+	allPaths := make(map[string]struct{})
+	for i := 0; i < 1000; i++ {
+		ws, err := workspace.New(te, root, &workspace.Opts{})
+		require.NoError(t, err)
+		if runtime.GOOS == "windows" {
+			matches := expectedPath.FindStringSubmatch(ws.Path())
+			assert.NotNil(t, matches)
+			idx := expectedPath.SubexpIndex("headerPath")
+			assert.Equal(t, "_main", matches[idx])
+		}
+		allPaths[ws.Path()] = struct{}{}
+	}
+	// Check that all paths are unique.
+	assert.Len(t, allPaths, 1000)
+}
+
+func TestPreserveWorkspace_DoesNotPreserveOutputPaths(t *testing.T) {
+	ctx := context.Background()
+	ws := newWorkspace(t, &workspace.Opts{Preserve: true})
+	ws.SetTask(ctx, &repb.ExecutionTask{
+		Command: &repb.Command{
+			OutputPaths: []string{"foo.out"},
+		},
+	})
+	testfs.WriteAllFileContents(t, ws.Path(), map[string]string{
+		"foo.out": "foo",
+	})
+
+	err := ws.Clean()
+	require.NoError(t, err)
+	assert.Empty(t, actualFilePaths(t, ws))
 }

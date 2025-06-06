@@ -15,7 +15,6 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/authutil",
         "//server/util/log",
-        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//status",
     ],
 )

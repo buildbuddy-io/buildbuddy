@@ -1,5 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//cli:__subpackages__"])
+
+# gazelle:ignore
+
 go_library(
     name = "gazelle",
     # keep
@@ -38,19 +42,3 @@ go_library(
         "@com_github_pmezard_go_difflib//difflib",
     ],
 )
-
-go_library(
-    name = "langs",
-    srcs = ["langs.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/fix/langs",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//cli/fix/golang",
-        "//cli/fix/typescript",
-        "@bazel_gazelle//language",
-        "@bazel_gazelle//language/bazel/visibility",
-        "@bazel_gazelle//language/proto",
-    ],
-)
-
-package(default_visibility = ["//cli:__subpackages__"])

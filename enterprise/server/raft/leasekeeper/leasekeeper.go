@@ -136,7 +136,6 @@ type leaseAgent struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	eg        *errgroup.Group
-	once      *sync.Once
 	broadcast chan<- events.Event
 
 	updates *boundedstack.BoundedStack[*leaseInstruction]
@@ -250,12 +249,6 @@ func (la *leaseAgent) queueInstruction(instruction *leaseInstruction) {
 	if la.isStopped() {
 		return
 	}
-	la.once.Do(func() {
-		la.eg.Go(func() error {
-			la.runloop()
-			return nil
-		})
-	})
 	la.updates.Push(instruction)
 }
 
@@ -266,17 +259,21 @@ func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replic
 	if err != nil {
 		alert.UnexpectedEvent("unexpected_boundedstack_error", err)
 	}
-	return &leaseAgent{
+	la := &leaseAgent{
 		replicaID: r.ReplicaID(),
 		log:       lk.log,
 		l:         rangelease.New(lk.nodeHost, lk.session, lk.log, lk.liveness, rd.GetRangeId(), r),
 		ctx:       gctx,
 		cancel:    cancel,
 		eg:        eg,
-		once:      &sync.Once{},
 		broadcast: lk.broadcast,
 		updates:   updates,
 	}
+	la.eg.Go(func() error {
+		la.runloop()
+		return nil
+	})
+	return la
 }
 
 func (lk *LeaseKeeper) watchLeases() {

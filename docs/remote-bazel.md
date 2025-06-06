@@ -324,6 +324,25 @@ response to check for completion of the remote run.
 
 You can use the `GetLog` API to fetch logs for your remote run.
 
+#### Applying git patches
+
+If using the CLI, it will automatically upload local git diffs to the remote runner
+to ensure the remote git workspace matches your local one.
+
+If using the `Run` API, you can pass patch sets as Base64-encoded strings.
+
+```bash
+PATCH=$(git diff | base64 | tr -d '\n')
+curl -d '{
+    "repo": "git@github.com:buildbuddy-io/buildbuddy.git",
+    "patches": ["'"$PATCH"'"],
+    ...
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/Run
+```
+
 ### Retry behavior
 
 By default, Remote Bazel runs are assumed to be idempotent and are automatically

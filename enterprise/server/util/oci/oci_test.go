@@ -4,21 +4,27 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"sync/atomic"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -331,38 +337,158 @@ func TestResolve(t *testing.T) {
 			},
 		},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			te := testenv.GetTestEnv(t)
-			flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
-			registry := testregistry.Run(t, tc.opts)
-			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
+		for _, useCachePercent := range []int{0, 100} {
+			t.Run(tc.name+fmt.Sprintf("/use_cache_percent_%d", useCachePercent), func(t *testing.T) {
+				te := testenv.GetTestEnv(t)
+				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
+				registry := testregistry.Run(t, tc.opts)
+				_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
 
-			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-				Add: pushedImage,
-				Descriptor: v1.Descriptor{
-					Platform: &tc.imagePlatform,
-				},
-			})
-			registry.PushIndex(t, index, tc.imageName+"_index")
+				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+					Add: pushedImage,
+					Descriptor: v1.Descriptor{
+						Platform: &tc.imagePlatform,
+					},
+				})
+				registry.PushIndex(t, index, tc.imageName+"_index")
 
-			for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
-				pulledImage, err := newResolver(t, te).Resolve(
-					context.Background(),
-					registry.ImageAddress(nameToResolve),
-					tc.args.platform,
-					tc.args.credentials,
-				)
-				if tc.checkError != nil {
-					require.True(t, tc.checkError(err))
-					return
+				for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
+					pulledImage, err := newResolver(t, te).Resolve(
+						context.Background(),
+						registry.ImageAddress(nameToResolve),
+						tc.args.platform,
+						tc.args.credentials,
+					)
+					if tc.checkError != nil {
+						require.True(t, tc.checkError(err))
+						continue
+					}
+					require.NoError(t, err)
+					layers, err := pulledImage.Layers()
+					require.NoError(t, err)
+					require.Equal(t, 1, len(layers))
+					require.Empty(t, cmp.Diff(tc.imageFiles, layerFiles(t, layers[0])))
 				}
-				require.NoError(t, err)
-				layers, err := pulledImage.Layers()
-				require.NoError(t, err)
-				require.Equal(t, 1, len(layers))
-				require.Empty(t, cmp.Diff(tc.imageFiles, layerFiles(t, layers[0])))
-			}
-		})
+			})
+		}
+	}
+}
+
+// TestResolve_Layers_DiffIDs tests for a specific regression that led to an incident:
+//
+// Layer.DiffID() returns the SHA256 of the uncompressed bytes for the layer.
+// The go-containerregistry library can retrieve this information from the image's config file.
+// If it is not present, however, it will fetch the entire uncompresed layer from the upstream
+// server and compute the SHA256.
+//
+// This test ensures that calling Image.Layers() or Layer.DiffID() does not result in
+// HTTP requests to the server.
+func TestResolve_Layers_DiffIDs(t *testing.T) {
+	for _, tc := range []resolveTestCase{
+		{
+			name: "resolving an existing image without credentials succeeds",
+
+			imageName: "resolve_existing",
+			imageFiles: map[string][]byte{
+				"/name": []byte("resolving an existing image without credentials succeeds"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_existing",
+				platform: &rgpb.Platform{
+					Arch: runtime.GOARCH,
+					Os:   runtime.GOOS,
+				},
+			},
+		},
+		{
+			name: "resolving a platform-specific image without including the variant succeeds",
+
+			imageName: "resolve_platform_variant",
+			imageFiles: map[string][]byte{
+				"/name":    []byte("resolving a platform-specific image without including the variant succeeds"),
+				"/variant": []byte("v8"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: "arm64",
+				OS:           "linux",
+				Variant:      "v8",
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_platform_variant",
+				platform: &rgpb.Platform{
+					Arch: "arm64",
+					Os:   "linux",
+				},
+			},
+		},
+	} {
+		for _, useCachePercent := range []int{0, 100} {
+			name := tc.name + "/use_cache_percent_" + strconv.Itoa(useCachePercent)
+			t.Run(name, func(t *testing.T) {
+				te := testenv.GetTestEnv(t)
+				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
+				upstreamCounter := atomic.Int32{}
+				registry := testregistry.Run(t, testregistry.Opts{
+					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+						if r.Method == http.MethodGet && r.URL.Path != "/v2/" {
+							upstreamCounter.Add(1)
+						}
+						return true
+					},
+				})
+				_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image")
+
+				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+					Add: pushedImage,
+					Descriptor: v1.Descriptor{
+						Platform: &tc.imagePlatform,
+					},
+				})
+				registry.PushIndex(t, index, tc.imageName+"_index")
+
+				for _, nameToResolve := range []string{tc.args.imageName + "_image", tc.args.imageName + "_index"} {
+					pulledImage, err := newResolver(t, te).Resolve(
+						context.Background(),
+						registry.ImageAddress(nameToResolve),
+						tc.args.platform,
+						tc.args.credentials,
+					)
+					require.NoError(t, err)
+
+					beforeLayersCount := upstreamCounter.Load()
+					layers, err := pulledImage.Layers()
+					require.NoError(t, err)
+
+					afterLayersCount := upstreamCounter.Load()
+					require.Zero(t, afterLayersCount-beforeLayersCount)
+
+					// To make the DiffID() request counts always be zero,
+					// fetch the config file here. Otherwise the first
+					// Layer.DiffID() call will make a request to fetch the config file.
+					beforeConfigFileCount := upstreamCounter.Load()
+					_, err = pulledImage.ConfigFile()
+					require.NoError(t, err)
+					afterConfigFileCount := upstreamCounter.Load()
+					require.Equal(t, int32(1), afterConfigFileCount-beforeConfigFileCount)
+
+					for _, layer := range layers {
+						beforeDiffIDCount := upstreamCounter.Load()
+						_, err := layer.DiffID()
+						require.NoError(t, err)
+						afterDiffIDCount := upstreamCounter.Load()
+						require.Zero(t, afterDiffIDCount-beforeDiffIDCount)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -505,4 +631,169 @@ func TestAllowPrivateIPs(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestResolve_WithCache enumerates all the different combinations of read/write flags for manifests and layers,
+// resolves images and indexes with those flags set, and validates the number of requests made to the upstream registry.
+//
+// Currently caching is not implemented end-to-end, so each Resolve(...) call will make the same number of upstream requests.
+func TestResolve_WithCache(t *testing.T) {
+	for _, tc := range []resolveTestCase{
+		{
+			name: "resolving an existing image without credentials succeeds",
+
+			imageName: "resolve_existing",
+			imageFiles: map[string][]byte{
+				"/name": []byte("resolving an existing image without credentials succeeds"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_existing",
+				platform: &rgpb.Platform{
+					Arch: runtime.GOARCH,
+					Os:   runtime.GOOS,
+				},
+			},
+		},
+		{
+			name: "resolving a platform-specific image without including the variant succeeds",
+
+			imageName: "resolve_platform_variant",
+			imageFiles: map[string][]byte{
+				"/name":    []byte("resolving a platform-specific image without including the variant succeeds"),
+				"/variant": []byte("v8"),
+			},
+			imagePlatform: v1.Platform{
+				Architecture: "arm64",
+				OS:           "linux",
+				Variant:      "v8",
+			},
+
+			args: resolveArgs{
+				imageName: "resolve_platform_variant",
+				platform: &rgpb.Platform{
+					Arch: "arm64",
+					Os:   "linux",
+				},
+			},
+		},
+	} {
+		writeLayers := false
+		readLayers := false
+		for _, writeManifests := range []bool{false, true} {
+			for _, readManifests := range []bool{false, true} {
+				name := tc.name + fmt.Sprintf(
+					"/write_manifests_%t_read_manifests_%t_write_layers_%t_read_layers_%t",
+					writeManifests,
+					readManifests,
+					writeLayers,
+					readLayers,
+				)
+				t.Run(name, func(t *testing.T) {
+					te := setupTestEnvWithCache(t)
+					flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+					flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+					flags.Set(t, "executor.container_registry.write_manifests_to_cache", writeManifests)
+					flags.Set(t, "executor.container_registry.read_manifests_from_cache", readManifests)
+					counter := atomic.Int32{}
+					registry := testregistry.Run(t, testregistry.Opts{
+						HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+							if r.Method == http.MethodGet && r.URL.Path != "/v2/" {
+								counter.Add(1)
+							}
+							return true
+						},
+					})
+					_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles)
+
+					index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+						Add: pushedImage,
+						Descriptor: v1.Descriptor{
+							Platform: &tc.imagePlatform,
+						},
+					})
+					registry.PushIndex(t, index, tc.imageName+"_index")
+
+					{
+						imageAddress := registry.ImageAddress(tc.args.imageName + "_image")
+						resolveCount := int32(1)
+						filesCount := int32(1)
+						resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, filesCount)
+
+						resolveCount = int32(1)
+						if writeManifests && readManifests {
+							resolveCount = int32(0)
+						}
+						filesCount = int32(1)
+						if writeLayers && readLayers {
+							filesCount = int32(0)
+						}
+						resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, filesCount)
+					}
+
+					{
+						indexAddress := registry.ImageAddress(tc.args.imageName + "_index")
+						resolveCount := int32(2)
+						filesCount := int32(1)
+						resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, filesCount)
+
+						resolveCount = int32(2)
+						if writeManifests && readManifests {
+							resolveCount = int32(0)
+						}
+						filesCount = int32(1)
+						if writeLayers && readLayers {
+							filesCount = int32(0)
+						}
+						resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, filesCount)
+					}
+				})
+			}
+		}
+	}
+}
+
+func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	require.NoError(t, err)
+	err = clientidentity.Register(te)
+	require.NoError(t, err)
+	require.NotNil(t, te.GetClientIdentityService())
+
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	return te
+}
+
+func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, counter *atomic.Int32, resolveCount, filesCount int32) {
+	beforeResolve := counter.Load()
+	pulledImage, err := newResolver(t, te).Resolve(
+		context.Background(),
+		imageAddress,
+		tc.args.platform,
+		tc.args.credentials,
+	)
+	require.NoError(t, err)
+	require.Equal(t, resolveCount, counter.Load()-beforeResolve)
+
+	beforeLayers := counter.Load()
+	layers, err := pulledImage.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+	require.Zero(t, beforeLayers-counter.Load())
+
+	beforeFiles := counter.Load()
+	files := layerFiles(t, layers[0])
+	require.Equal(t, filesCount, counter.Load()-beforeFiles)
+
+	require.Empty(t, cmp.Diff(tc.imageFiles, files))
 }

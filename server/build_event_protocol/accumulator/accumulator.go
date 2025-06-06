@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -113,7 +114,7 @@ func (v *BEValues) maybeExtractOutputFile(files ...*build_event_stream.File) {
 		}
 		if m := bytestreamURIPattern.FindStringSubmatch(file.GetUri()); len(m) >= 1 {
 			digestHash := m[1]
-			v.outputFilesMap[digestHash] = file
+			v.outputFilesMap[digestHash] = proto.Clone(file).(*build_event_stream.File)
 		}
 		// Special case: check for kythe output files.
 		if file.GetName() == KytheOutputName {

@@ -579,6 +579,9 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 }
 
 func BenchmarkEnqueue(b *testing.B) {
+	*log.LogLevel = "error"
+	log.Configure()
+
 	numToEnqueue := 10_000
 	instances := []string{"instance-1", "instance-2", "instance-3"}
 	digests := []*repb.Digest{digest0, digest1, digest2, digest3, digest4, digest5, digest6, digest7, digest8, digest9}

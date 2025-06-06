@@ -91,12 +91,10 @@ common:quarantine --config=race
 common:quarantine --test_env=RUN_QUARANTINED_TESTS=true
 
 # Configuration used to deflake tests
-common:deflake --config=remote-minimal
+common:deflake --config=quarantine
 common:deflake --runs_per_test=100
-common:deflake --test_output=errors
 common:deflake --test_runner_fail_fast
 common:deflake --notest_keep_going
-common:deflake --config=quarantine
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
@@ -172,7 +170,7 @@ common:local-rbe-linux --config=local
 
 # Build with --config=local-rbe-mac to target a local executor on macOS.
 common:local-rbe-mac --remote_executor=grpc://localhost:1985
-common:local-rbe-mac --config=local-rbe
+common:local-rbe-mac --config=target-darwin-arm64
 common:local-rbe-mac --config=local
 
 # Build with --config=dev to send build logs to the dev server
@@ -193,10 +191,14 @@ common:cache --config=cache-shared
 common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
 
 # Target+Exec Platforms configuration
+common:workspace-target-darwin-arm64 --platforms=@buildbuddy_toolchain//:platform_darwin_arm64
+common:workspace-target-darwin-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_darwin_arm64
 common:workspace-target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 common:workspace-target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 common:workspace-target-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
 common:workspace-target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
+common:bzlmod-target-darwin-arm64 --platforms=@buildbuddy_toolchain//:platform_darwin_arm64
+common:bzlmod-target-darwin-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_darwin_arm64
 common:bzlmod-target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
@@ -212,12 +214,20 @@ common:remote-shared --verbose_failures
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared
 common:remote-prod-shared --remote_executor=grpcs://buildbuddy.buildbuddy.io
+# Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
+# but performance tests should not be run remotely since the environment
+# is not consistent or stable.
+common:remote-prod-shared --test_tag_filters=-performance
 
 # Flags shared for dev BES, RBE and cache
 # Note: Dev BES needed to override the default prod BES urls.
 common:remote-dev-shared --config=dev
 common:remote-dev-shared --config=remote-shared
 common:remote-dev-shared --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+# Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
+# but performance tests should not be run remotely since the environment
+# is not consistent or stable.
+common:remote-dev-shared --test_tag_filters=-performance
 
 # Build with --config=remote to use BuildBuddy RBE, generally as a human from
 # the command line. Other configs shoudn't embed this.

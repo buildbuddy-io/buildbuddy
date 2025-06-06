@@ -197,7 +197,7 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 	matches := uuidPattern.FindStringSubmatch(pathOrId)
 	invocationId := matches[1]
 	// This is an invocation ID, try to fetch its corresponding log.
-	apiKey, err := login.GetAPIKeyInteractively()
+	apiKey, err := login.GetAPIKey()
 	if err != nil {
 		return nil, err
 	}

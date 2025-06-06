@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/cockroachdb/pebble"
 )
 
 var (
@@ -145,7 +144,7 @@ func handleIndex(args []string) {
 	if *reset {
 		os.RemoveAll(indexDir)
 	}
-	db, err := pebble.Open(indexDir, &pebble.Options{})
+	db, err := index.OpenPebbleDB(indexDir)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -197,7 +196,7 @@ func handleIndex(args []string) {
 func handleSearch(ctx context.Context, args []string) {
 	pat := args[0]
 
-	db, err := pebble.Open(indexDir, &pebble.Options{})
+	db, err := index.OpenPebbleDB(indexDir)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -266,7 +265,7 @@ func handleSearch(ctx context.Context, args []string) {
 func handleSquery(ctx context.Context, args []string) {
 	pat := args[0]
 
-	db, err := pebble.Open(indexDir, &pebble.Options{})
+	db, err := index.OpenPebbleDB(indexDir)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
