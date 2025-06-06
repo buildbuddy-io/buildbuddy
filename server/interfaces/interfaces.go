@@ -54,7 +54,6 @@ import (
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/genproto/googleapis/longrunning"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -1758,31 +1757,4 @@ type ExperimentFlagProvider interface {
 	String(ctx context.Context, flagName string, defaultValue string, opts ...any) string
 	Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64
 	Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64
-}
-
-// ByteStreamWriteHandler enapsulates an on-going ByteStream write to a cache,
-// freeing the caller of having to manage writing and committing-to the cache
-// tracking cache hits, verifying checksums, etc. Here is how it must be used:
-//   - A new WriteHandler may be obtained by providing the first frame of the
-//     stream to the ByteStreamServer.BeginWrite() function. This function will
-//     return a new ByteStreamWriteHandler, or an error.
-//   - If a ByteStreamWriteHandler is returned from BeginWrite(),
-//     ByteStreamWriteHandler.Close() must be called to free system resources
-//     when the write is finished.
-//   - Each subsequent frame should be passed to
-//     ByteStreamWriteHandler.Write(), which will return an error on error
-//     (note: io.EOF indicates the cache believes the write is finished), or an
-//     optional WriteResponse that should be sent to the client if the client
-//     indicated the write is finished. This function will return (nil, nil) if
-//     the frame was processed successfully, but the write is not finished yet.
-type ByteStreamWriteHandler interface {
-	Write(req *bspb.WriteRequest) (*bspb.WriteResponse, error)
-	Close() error
-}
-
-// Wrapper around a bspb.ByteStreamServer that exposes a ByteStreamWriteHandler
-// in addition to the gRPC streaming interfaces.
-type ByteStreamServer interface {
-	bspb.ByteStreamServer
-	BeginWrite(ctx context.Context, req *bspb.WriteRequest) (ByteStreamWriteHandler, error)
 }
