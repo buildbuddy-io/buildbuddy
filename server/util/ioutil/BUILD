@@ -18,7 +18,6 @@ go_test(
     deps = [
         ":ioutil",
         "//server/testutil/testdigest",
-        "//server/util/status",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
     ],
