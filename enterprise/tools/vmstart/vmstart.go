@@ -61,8 +61,6 @@ var (
 	// the group ID that owns the snapshot.
 	remoteSnapshotKeyJSON = flag.String("remote_snapshot_key", "", "JSON struct containing a remote snapshot key that the VM should be resumed from.")
 
-	saveSnapshot = flag.Bool("save_snapshot", false, "Whether to save a snapshot of the VM at the end of execution.")
-
 	tty  = flag.Bool("tty", false, "Enable debug terminal. This doesn't always work when resuming from snapshot.")
 	repl = flag.Bool("repl", false, "Start a basic REPL for running bash commands with Exec().")
 )
@@ -270,21 +268,19 @@ func run(ctx context.Context, env environment.Env) error {
 		}
 	}
 
-	if *saveSnapshot {
-		sigc := make(chan os.Signal, 1)
-		signal.Notify(sigc, syscall.SIGTERM)
-		go func() {
-			for {
-				<-sigc
-				log.Errorf("Capturing snapshot...")
-				if err := c.Pause(ctx); err != nil {
-					log.Errorf("Error dumping snapshot: %s", err)
-				} else {
-					log.Printf("Saved snapshot")
-				}
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc, syscall.SIGTERM)
+	go func() {
+		for {
+			<-sigc
+			log.Errorf("Capturing snapshot...")
+			if err := c.Pause(ctx); err != nil {
+				log.Errorf("Error dumping snapshot: %s", err)
+			} else {
+				log.Printf("Saved snapshot")
 			}
-		}()
-	}
+		}
+	}()
 
 	go func() {
 		env.GetHealthChecker().WaitForGracefulShutdown()
