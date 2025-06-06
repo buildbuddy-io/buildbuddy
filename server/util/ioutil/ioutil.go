@@ -205,3 +205,30 @@ func (t *teeReadCacher) Close() error {
 	}
 	return err
 }
+
+// NewBestEffortWriter wraps the given Writer.
+// If a write call to the given writer fails, subsequent writes will fail with an error.
+// Calling Err() on the BestEffortWriter returns the first error encountered, if any.
+func NewBestEffortWriter(w io.Writer) *BestEffortWriter {
+	return &BestEffortWriter{w: w}
+}
+
+type BestEffortWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (b *BestEffortWriter) Write(p []byte) (int, error) {
+	if b.err != nil {
+		return 0, status.FailedPreconditionErrorf("BestEffortWriter already encountered error, cannot receive writes: %s", b.err)
+	}
+	written, err := b.w.Write(p)
+	if err != nil {
+		b.err = err
+	}
+	return written, err
+}
+
+func (b *BestEffortWriter) Err() error {
+	return b.err
+}
