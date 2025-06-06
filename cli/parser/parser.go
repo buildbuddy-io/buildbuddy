@@ -120,27 +120,22 @@ func NewParser(optionDefinitions []*options.Definition) *Parser {
 }
 
 func (p *Parser) ForceAddOptionDefinition(d *options.Definition) {
-	if d.Supports("startup") {
-		p.StartupOptionParser.ForceAdd(d)
-	}
-	addedToCommonParser := false
-	for cmd := range d.SupportedCommands() {
-		if cmd != "startup" {
-			p.StartupOptionParser.Subcommands.Add(cmd)
-			if !addedToCommonParser {
-				// non-startup flags support the "common" and "always" bazelrc classifiers
-				d.AddSupportedCommand("common")
-				d.AddSupportedCommand("always")
-				p.CommandOptionParser.ForceAdd(d)
-			}
-		}
-	}
+	// addOptionDefinition does not return an error if force is true.
+	_ = p.addOptionDefinitionImpl(d, true)
 }
 
 func (p *Parser) AddOptionDefinition(d *options.Definition) error {
+	return p.addOptionDefinitionImpl(d, false)
+}
+
+func (p *Parser) addOptionDefinitionImpl(d *options.Definition, force bool) error {
 	if d.Supports("startup") {
-		if err := p.StartupOptionParser.Add(d); err != nil {
-			return nil
+		if force {
+			p.StartupOptionParser.ForceAdd(d)
+		} else {
+			if err := p.StartupOptionParser.Add(d); err != nil {
+				return nil
+			}
 		}
 	}
 	addedToCommonParser := false
@@ -151,8 +146,12 @@ func (p *Parser) AddOptionDefinition(d *options.Definition) error {
 				// non-startup flags support the "common" and "always" bazelrc classifiers
 				d.AddSupportedCommand("common")
 				d.AddSupportedCommand("always")
-				if err := p.CommandOptionParser.Add(d); err != nil {
-					return err
+				if force {
+					p.CommandOptionParser.ForceAdd(d)
+				} else {
+					if err := p.CommandOptionParser.Add(d); err != nil {
+						return err
+					}
 				}
 				addedToCommonParser = true
 			}
