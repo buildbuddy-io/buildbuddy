@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -157,8 +158,12 @@ func (t *teeReadCloser) Close() error {
 		}
 	}
 	if closer, ok := t.w.(io.Closer); ok {
-		if err := closer.Close(); err != nil && firstErr == nil {
-			firstErr = err
+		if err := closer.Close(); err != nil {
+			if firstErr != nil {
+				log.Errorf("Erroring closing writer in teeReadCloser: %s", err)
+			} else {
+				firstErr = err
+			}
 		}
 	}
 	return firstErr
