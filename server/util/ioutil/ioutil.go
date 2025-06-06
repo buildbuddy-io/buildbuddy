@@ -4,7 +4,6 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -129,70 +128,6 @@ func ReadTryFillBuffer(r io.Reader, buf []byte) (int, error) {
 		return n, nil
 	}
 	return n, err
-}
-
-func TeeReadCacher(rc io.ReadCloser, cache interfaces.CommittedWriteCloser) (io.ReadCloser, error) {
-	if rc == nil {
-		return nil, status.FailedPreconditionError("cannot create teeReadCacher from nil ReadCloser")
-	}
-	if cache == nil {
-		return nil, status.FailedPreconditionError("cannot create teeReadCacher from nil cache")
-	}
-	return &teeReadCacher{
-		rc:    rc,
-		cache: cache,
-	}, nil
-}
-
-type teeReadCacher struct {
-	rc    io.ReadCloser
-	cache interfaces.CommittedWriteCloser
-
-	cacheErr  error
-	committed bool
-}
-
-func (t *teeReadCacher) Read(p []byte) (int, error) {
-	n, err := t.rc.Read(p)
-
-	if t.committed {
-		log.Warning("teeReadCacher already committed, cannot write to cache")
-		return n, err
-	}
-
-	if t.cacheErr != nil {
-		// Already encountered error writing, do not attempt to write or commit.
-		return n, err
-	}
-
-	if n > 0 {
-		written := 0
-		written, t.cacheErr = t.cache.Write(p[:n])
-		if t.cacheErr != nil {
-			log.Warningf("teeReadCacher error writing to cache: %s", t.cacheErr)
-			return n, err
-		}
-		if written < n {
-			t.cacheErr = io.ErrShortWrite
-		}
-	}
-
-	if err == io.EOF {
-		t.committed = true
-		if err := t.cache.Commit(); err != nil {
-			log.Warningf("Error commiting to cache in teeReadCacher: %s", err)
-		}
-	}
-
-	return n, err
-}
-
-func (t *teeReadCacher) Close() error {
-	err := t.rc.Close()
-	if err := t.cache.Close(); err != nil {
-		log.Warningf("Error closing cache writer in teeReadCacher: %s", err)
-	}
-	return err
 }
 
 // NewBestEffortWriter wraps the given Writer.
