@@ -455,8 +455,7 @@ body {
   background-color: #fff;
 }
 
-.card.card-hovered,
-.card:hover {
+a.card:hover {
   box-shadow: var(--shadow-6);
 }
 
@@ -562,11 +561,11 @@ body {
   display: none;
 }
 
-.card-hovered.card-success {
+.card.card-success:hover {
   border-left: 6px solid #7cb342;
 }
 
-.card-hovered.card-failure {
+.card.card-failure:hover {
   border-left: 6px solid #e53935;
 }
 
