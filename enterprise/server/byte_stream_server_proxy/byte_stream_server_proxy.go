@@ -121,6 +121,10 @@ func (s *ByteStreamServerProxy) readRemoteOnly(ctx context.Context, req *bspb.Re
 		log.CtxInfof(ctx, "error reading from remote: %s", err)
 		return err
 	}
+	return flushToClient(ctx, remoteReadStream, stream)
+}
+
+func flushToClient(ctx context.Context, remoteReadStream bspb.ByteStream_ReadClient, stream bspb.ByteStream_ReadServer) error {
 	for {
 		message, err := remoteReadStream.Recv()
 		if err == io.EOF {
@@ -149,77 +153,97 @@ func writeRequest(resourceName string, data []byte, offset int64, finishWrite bo
 	}
 }
 
+type readThroughCacheStream struct {
+	// This is just here so we can pass this to local.Write
+	bspb.ByteStream_WriteServer
+
+	ctx      context.Context
+	remote   bspb.ByteStream_ReadClient
+	client   bspb.ByteStream_ReadServer
+	uploadRN string
+
+	localWriteOffset   int64
+	remoteRecvErr      error
+	clientSendErr      error
+	localWriteFinished bool
+}
+
+// Recv turns a ReadResponse from a remote read into a WriteRequest that gets
+// returned to a local write.
+func (r *readThroughCacheStream) Recv() (*bspb.WriteRequest, error) {
+	resp, err := r.remote.Recv()
+	if err != nil {
+		r.remoteRecvErr = err
+		if err == io.EOF {
+			return writeRequest(r.uploadRN, nil, r.localWriteOffset, true), nil
+		}
+		return nil, err
+	}
+
+	if err := r.client.Send(resp); err != nil {
+		// If the client isn't listening any more, quit here and don't write to
+		// local
+		r.clientSendErr = err
+		return nil, err
+	}
+	req := writeRequest(r.uploadRN, resp.GetData(), r.localWriteOffset, false)
+	r.localWriteOffset += int64(len(resp.GetData()))
+	return req, nil
+}
+
+func (r *readThroughCacheStream) SendAndClose(resp *bspb.WriteResponse) error {
+	// Ignore the local write response
+	r.localWriteFinished = true
+	return nil
+}
+
+func (r *readThroughCacheStream) Context() context.Context { return r.ctx }
+
 func (s *ByteStreamServerProxy) readRemoteWriteLocal(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
-
-	remoteReadStream, err := s.remote.Read(ctx, req)
-	if err != nil {
-		log.CtxInfof(ctx, "error reading from remote: %s", err)
-		return err
-	}
-
-	// Retrieve first frame from read stream
-	rsp, err := remoteReadStream.Recv()
-	if err == io.EOF {
-		return nil
-	}
-	if err != nil {
-		log.CtxInfof(ctx, "Error streaming from remote for read-remote-write-local: %s", err)
-		return err
-	}
 
 	// Rewrite the resource name so we can write to the local server
 	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	if err != nil {
 		return err
 	}
-	uploadRN := rn.NewUploadString()
-
-	// Open the local writer (if possible).
-	localWriteOffset := req.GetReadOffset()
-	var localWriter interfaces.ByteStreamWriteHandler
-	if req.GetReadOffset() == 0 {
-		localWriter, err = s.local.BeginWrite(ctx, writeRequest(uploadRN, rsp.GetData(), localWriteOffset, false))
-		if err != nil {
-			log.CtxDebugf(ctx, "Error opening local ByteStreamServer write stream: %v", err)
-		} else {
-			defer localWriter.Close()
-		}
+	remoteReadStream, err := s.remote.Read(ctx, req)
+	if err != nil {
+		log.CtxInfof(ctx, "error reading from remote: %s", err)
+		return err
 	}
 
-	for {
-		// Write to local cache
-		if localWriter != nil {
-			_, err = localWriter.Write(writeRequest(uploadRN, rsp.GetData(), localWriteOffset, false))
-			if err != nil {
-				log.CtxDebugf(ctx, "Error writing to local ByteStreamServer: %v", err)
-				localWriter = nil
-			}
-		}
-
-		// Send frame to client
-		localWriteOffset += int64(len(rsp.GetData()))
-		if err = stream.Send(rsp); err != nil {
-			return err
-		}
-
-		// Retreive the next frame and handle errors
-		rsp, err = remoteReadStream.Recv()
-		if err == io.EOF {
-			if localWriter != nil {
-				_, err = localWriter.Write(writeRequest(uploadRN, []byte{}, localWriteOffset, true))
-				if err != nil {
-					log.CtxDebugf(ctx, "Error writing to local ByteStreamServer: %v", err)
-				}
-			}
-			return nil
-		}
-		if err != nil {
-			log.CtxInfof(ctx, "Error streaming from remote for read through: %s", err)
-			return err
-		}
+	readThrough := &readThroughCacheStream{
+		ctx:      ctx,
+		remote:   remoteReadStream,
+		client:   stream,
+		uploadRN: rn.NewUploadString(),
 	}
+	localErr := s.local.Write(readThrough)
+
+	if localErr != nil {
+		log.CtxDebugf(ctx, "Error writing to local ByteStreamServer: %v", err)
+	}
+	if readThrough.clientSendErr != nil {
+		return readThrough.clientSendErr
+	}
+	if readThrough.remoteRecvErr == io.EOF {
+		return nil
+	} else if readThrough.remoteRecvErr != nil {
+		log.CtxInfof(ctx, "Error streaming from remote for read through: %s", err)
+		return readThrough.remoteRecvErr
+	}
+	// The local write returned but remoteRecvErr != EOF, which means the read
+	// isn't done, so flush the rest.
+	if err := flushToClient(ctx, remoteReadStream, stream); err != nil {
+		return err
+	}
+	if localErr == nil && !readThrough.localWriteFinished {
+		// Only log this if the local write didn't fail.
+		log.CtxInfo(ctx, "remote read done but local write is not")
+	}
+	return nil
 }
 
 func recordReadMetrics(cacheStatus string, proxyRequestType string, err error, bytesRead int) {
@@ -269,24 +293,8 @@ func (s *ByteStreamServerProxy) writeRemoteOnly(ctx context.Context, stream bspb
 	if err != nil {
 		return err
 	}
-	for {
-		req, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		err = remoteStream.Send(req)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if req.GetFinishWrite() {
-			break
-		}
+	if err := flushToRemote(stream, remoteStream); err != nil {
+		return err
 	}
 	resp, err := remoteStream.CloseAndRecv()
 	if err != nil {
@@ -299,75 +307,99 @@ func (s *ByteStreamServerProxy) writeLocalOnly(stream bspb.ByteStream_WriteServe
 	return s.local.Write(stream)
 }
 
-// TODO(iain): investigate performance of making the local write async
+type forwardingWriteStream struct {
+	bspb.ByteStream_WriteServer
+	remote          bspb.ByteStream_WriteClient
+	recvErr         error
+	remoteSendErr   error
+	finishWriteSent bool
+	localFinished   bool
+}
+
+func (s *forwardingWriteStream) Recv() (*bspb.WriteRequest, error) {
+	req, err := s.ByteStream_WriteServer.Recv()
+	if err != nil {
+		s.recvErr = err
+		return nil, err
+	}
+	s.remoteSendErr = s.remote.Send(req)
+	if s.remoteSendErr != nil {
+		// Tell the local server to abandon the request since the remote request
+		// finished or failed. We could instead let local finish when remote
+		// finishes early (with EOF). This might take longer, but we would have
+		// the blob locally. For now, we rely on the fact that if someone needs
+		// this blob, we'll then read it from remote and write it locally.
+		return nil, io.EOF
+	}
+	if req.GetFinishWrite() {
+		s.finishWriteSent = true
+	}
+	return req, nil
+}
+
+func (s *forwardingWriteStream) SendAndClose(resp *bspb.WriteResponse) error {
+	// Ignore the local response
+	s.localFinished = true
+	return nil
+}
+
 func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
-	// Grab the first frame from the client so the local writer can be created
-	req, err := stream.Recv()
-	if err == io.EOF {
-		log.CtxInfof(ctx, "Unexpected EOF reading first frame: %v", err)
-		return nil
-	}
+	remoteStream, err := s.remote.Write(ctx)
 	if err != nil {
 		return err
 	}
+	forwarding := &forwardingWriteStream{ByteStream_WriteServer: stream, remote: remoteStream}
+	localErr := s.local.Write(forwarding)
 
-	localWriteStream, err := s.local.BeginWrite(ctx, req)
-	if err == nil {
-		defer localWriteStream.Close()
-	} else {
-		if !status.IsAlreadyExistsError(err) {
-			log.CtxWarningf(ctx, "Error opening local write stream: %v", err)
-		}
+	if forwarding.recvErr != nil {
+		return forwarding.recvErr
 	}
-
-	remoteWriteStream, err := s.remote.Write(ctx)
-	if err != nil {
-		return err
+	if localErr != nil {
+		log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", err)
 	}
-
-	for {
-		// Send to the local ByteStreamServer (if available)
-		localDone := req.GetFinishWrite()
-		if localWriteStream != nil {
-			if _, err := localWriteStream.Write(req); err != nil {
-				localWriteStream = nil
-				if err == io.EOF {
-					localDone = true
-				} else {
-					log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", err)
-				}
-			}
-		}
-
-		// Send to the remote ByteStreamServer
-		remoteDone := req.GetFinishWrite()
-		if err := remoteWriteStream.Send(req); err != nil {
-			if err == io.EOF {
-				remoteDone = true
-			} else {
-				return err
-			}
-		}
-
-		// Handle stream-finished cases
-		if remoteDone {
-			if localWriteStream != nil && !localDone {
-				log.CtxInfo(ctx, "remote write done but local write is not")
-			}
-			resp, err := remoteWriteStream.CloseAndRecv()
-			if err != nil {
-				return err
-			}
-			err = stream.SendAndClose(resp)
-			return err
-		} else if localDone {
+	if forwarding.remoteSendErr != nil && forwarding.remoteSendErr != io.EOF {
+		// Remote failed, so fail the whole request
+		return forwarding.remoteSendErr
+	}
+	if !forwarding.finishWriteSent && forwarding.remoteSendErr == nil {
+		// Local write returned, but remoteSendErr != EOF so we need to forward
+		// the rest.
+		if localErr == nil {
 			log.CtxInfo(ctx, "local write done but remote write is not")
 		}
+		if err := flushToRemote(stream, remoteStream); err != nil {
+			return err
+		}
+	}
+	if localErr == nil && !forwarding.localFinished {
+		// Only log this if the local write didn't fail.
+		log.CtxInfo(ctx, "remote write done but local write is not")
+	}
+	resp, err := remoteStream.CloseAndRecv()
+	if err != nil {
+		return err
+	}
+	return stream.SendAndClose(resp)
+}
 
-		// Finally, receive the next frame from the client
-		req, err = stream.Recv()
+func flushToRemote(stream bspb.ByteStream_WriteServer, remoteStream bspb.ByteStream_WriteClient) error {
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
 		if err != nil {
 			return err
+		}
+		err = remoteStream.Send(req)
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if req.GetFinishWrite() {
+			return nil
 		}
 	}
 }
