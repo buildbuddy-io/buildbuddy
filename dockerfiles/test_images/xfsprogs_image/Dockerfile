@@ -1,4 +1,5 @@
-FROM mirror.gcr.io/alpine@sha256:c5b1261d6d3e43071626931fc004f70149baeba2c8ec672bd4f27761f8e1ad6b
+FROM mirror.gcr.io/alpine
 
-RUN apk add bash xfsprogs
+# We need gcc for gcov, which is needed during 'bazel coverage'
+RUN apk add gcc bash mount xfsprogs xfsprogs-extra
 
