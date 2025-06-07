@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 )
 
 type Args interface {
@@ -66,16 +67,29 @@ type Args interface {
 	// a "run" command.
 	GetExecArgs() []*arguments.PositionalArgument
 
-	// GetOptionsByName returns a slice of all options whose definitions have
-	// names that match optionName in the order in which they appear in Args.
-	// The accompanying index is the index at which they are located in Args.
-	GetOptionsByName(optionName string) []*IndexedOption
+	// GetStartupOptionsByName returns a slice of all startup options whose
+	// definitions have names that match optionName in the order in which they
+	// appear in Args. The accompanying index is the index at which they are
+	// located in Args.
+	GetStartupOptionsByName(optionName string) []*IndexedOption
 
-	// RemoveOption removes all options whose definitions have names that match
-	// optionName and returns a slice of all removed options, if any, in the order
-	// in which they appeared in the args. The accompanying index is the index at
-	// which they were removed in Args.
-	RemoveOptions(...string) []*IndexedOption
+	// GetCommandOptionsByName returns a slice of all command options whose
+	// definitions have names that match optionName in the order in which they
+	// appear in Args. The accompanying index is the index at which they are
+	// located in Args.
+	GetCommandOptionsByName(optionName string) []*IndexedOption
+
+	// RemoveStartupOptions removes all startup options whose definitions have
+	// names that match optionName and returns a slice of all removed options, if
+	// any, in the order in which they appeared in the args. The accompanying
+	// index is the index at which they were removed in Args.
+	RemoveStartupOptions(...string) []*IndexedOption
+
+	// RemoveCommandOptions removes all command options whose definitions have
+	// names that match optionName and returns a slice of all removed options, if
+	// any, in the order in which they appeared in the args. The accompanying
+	// index is the index at which they were removed in Args.
+	RemoveCommandOptions(...string) []*IndexedOption
 
 	// Append appends the given arguments by inserting them in the last valid
 	// location for that type of argument. Startup options
@@ -102,6 +116,12 @@ type Classified interface {
 // Interface for argument classifications to implement if they describe options
 type IsOption interface {
 	AsOption() options.Option
+}
+
+// Interface to use as a constraint in the option retrieval methods.
+type ClassifiedOption interface {
+	Classified
+	IsOption
 }
 
 // Argument classifications
@@ -383,38 +403,57 @@ func (a *OrderedArgs) SplitExecutableArgs() ([]string, []string) {
 	return bazelArgs, executableArgs
 }
 
-// IndexedOption is used by Args.GetOptionsByName and Args.RemoveOptions to
-// couple options with their associated indices when returning them.
+// IndexedOption is used by Args.GetStartupOptionsByName,
+// Args.GetCommandOptionsByName, Args.RemoveStartupOptions, and
+// Args.RemoveCommandOptions to couple options with their associated indices
+// when returning them.
 type IndexedOption struct {
 	options.Option
 	Index int
 }
 
-func (a *OrderedArgs) GetOptionsByName(optionName string) []*IndexedOption {
+func (a *OrderedArgs) GetStartupOptionsByName(optionName string) []*IndexedOption {
+	return getOptionsByName[*StartupOption](a, optionName)
+}
+
+func (a *OrderedArgs) GetCommandOptionsByName(optionName string) []*IndexedOption {
+	return getOptionsByName[*CommandOption](a, optionName)
+}
+
+func getOptionsByName[DesiredOption ClassifiedOption](a *OrderedArgs, optionName string) []*IndexedOption {
 	var matchedOptions []*IndexedOption
 	for i, c := range Classify(a.Args) {
-		if c, ok := c.(IsOption); ok && c.AsOption().Name() == optionName {
+		if c, ok := c.(DesiredOption); ok && c.AsOption().Name() == optionName {
 			matchedOptions = append(matchedOptions, &IndexedOption{Option: c.AsOption(), Index: i})
 		}
 	}
 	return matchedOptions
 }
 
-func (a *OrderedArgs) RemoveOptions(optionNames ...string) []*IndexedOption {
-	toRemove := make(map[string]struct{}, len(optionNames))
-	for _, n := range optionNames {
-		toRemove[n] = struct{}{}
-	}
+func (a *OrderedArgs) RemoveStartupOptions(optionNames ...string) []*IndexedOption {
+	return removeOptions[*StartupOption, *Command](a, optionNames...)
+}
+
+func (a *OrderedArgs) RemoveCommandOptions(optionNames ...string) []*IndexedOption {
+	return removeOptions[*CommandOption, *DoubleDash](a, optionNames...)
+}
+
+func removeOptions[DesiredOption ClassifiedOption, Terminates Classified](a *OrderedArgs, optionNames ...string) []*IndexedOption {
+	toRemove := set.From(optionNames...)
 	var removed []*IndexedOption
+	c := &classifier{}
 	for i := 0; i < len(a.Args); i++ {
-		if o, ok := a.Args[i].(options.Option); ok {
-			if _, ok := toRemove[o.Name()]; ok {
+		switch v := c.ClassifyAndAccumulate(a.Args[i]).(type) {
+		case DesiredOption:
+			if toRemove.Contains(v.AsOption().Name()) {
 				a.Args = slices.Delete(a.Args, i, i+1)
-				removed = append(removed, &IndexedOption{Option: o, Index: i})
+				removed = append(removed, &IndexedOption{Option: v.AsOption(), Index: i})
 				// account for the fact that the next element is now at index i instead
 				// of i+1
 				i--
 			}
+		case Terminates:
+			return removed
 		}
 	}
 	return removed
@@ -546,20 +585,20 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 // args and appends an `ignore_all_rc_files` option to the startup options.
 // Returns a slice of all the rc files that should be parsed.
 func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []string, err error) {
-	if ignore, err := options.AccumulateValues(false, a.RemoveOptions("ignore_all_rc_files")...); err != nil {
+	if ignore, err := options.AccumulateValues(false, a.RemoveStartupOptions("ignore_all_rc_files")...); err != nil {
 		return nil, fmt.Errorf("Failed to get value from 'ignore_all_rc_files' option: %s", err)
 	} else if ignore {
 		// Before we do anything, check whether --ignore_all_rc_files is already
 		// set. If so, return an empty list of RC files, since bazel will do the
 		// same.
-		a.RemoveOptions("system_rc", "workspace_rc", "home_rc")
+		a.RemoveStartupOptions("system_rc", "workspace_rc", "home_rc")
 		return nil, nil
 	}
 
 	// Parse rc files in the order defined here:
 	// https://bazel.build/run/bazelrc#bazelrc-file-locations
 	for _, optName := range []string{"system_rc", "workspace_rc", " home_rc"} {
-		if v, err := options.AccumulateValues(true, a.RemoveOptions(optName)...); err != nil {
+		if v, err := options.AccumulateValues(true, a.RemoveStartupOptions(optName)...); err != nil {
 			return nil, fmt.Errorf("Failed to get value from '%s' option: %s", optName, err)
 		} else if !v {
 			// When these flags are false, they have no effect on the list of
@@ -581,7 +620,7 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 			}
 		}
 	}
-	for _, indexedOption := range a.RemoveOptions("bazelrc") {
+	for _, indexedOption := range a.RemoveStartupOptions("bazelrc") {
 		o := indexedOption.Option
 		if o.GetValue() == "/dev/null" {
 			// if we encounter --bazelrc=/dev/null, that means bazel will ignore
@@ -618,7 +657,7 @@ func (a *OrderedArgs) ExpandConfigs(
 	}
 	// Replace the last occurrence of `--enable_platform_specific_config` with
 	// `--config=<bazelOS>`, so long as the last occurrence evaluates as true.
-	opts := expanded.RemoveOptions(bazelrc.EnablePlatformSpecificConfigFlag)
+	opts := expanded.RemoveCommandOptions(bazelrc.EnablePlatformSpecificConfigFlag)
 	if v, err := options.AccumulateValues(false, opts...); err != nil {
 		return nil, fmt.Errorf("Failed to get value from '%s' option: %s", bazelrc.EnablePlatformSpecificConfigFlag, err)
 	} else if v {
@@ -633,7 +672,7 @@ func (a *OrderedArgs) ExpandConfigs(
 			expanded.Args = slices.Insert(expanded.Args, index, expansion...)
 			// Remove all occurrences of the enable platform-specific config flag
 			// that may have been added when expanding the platform-specific config.
-			expanded.RemoveOptions(bazelrc.EnablePlatformSpecificConfigFlag)
+			expanded.RemoveCommandOptions(bazelrc.EnablePlatformSpecificConfigFlag)
 		}
 	}
 	return expanded, nil
@@ -862,13 +901,18 @@ func (a *PartitionedArgs) GetExecArgs() []*arguments.PositionalArgument {
 	return a.ExecArgs
 }
 
-func (a *PartitionedArgs) GetOptionsByName(optionName string) []*IndexedOption {
+func (a *PartitionedArgs) GetStartupOptionsByName(optionName string) []*IndexedOption {
 	var matchedOptions []*IndexedOption
 	for i, o := range a.StartupOptions {
 		if o.Name() == optionName {
 			matchedOptions = append(matchedOptions, &IndexedOption{Option: o, Index: i})
 		}
 	}
+	return matchedOptions
+}
+
+func (a *PartitionedArgs) GetCommandOptionsByName(optionName string) []*IndexedOption {
+	var matchedOptions []*IndexedOption
 	for i, o := range a.CommandOptions {
 		if o.Name() == optionName {
 			matchedOptions = append(matchedOptions, &IndexedOption{Option: o, Index: i + len(a.StartupOptions) + 1})
@@ -877,11 +921,8 @@ func (a *PartitionedArgs) GetOptionsByName(optionName string) []*IndexedOption {
 	return matchedOptions
 }
 
-func (a *PartitionedArgs) RemoveOptions(optionNames ...string) []*IndexedOption {
-	toRemove := make(map[string]struct{}, len(optionNames))
-	for _, n := range optionNames {
-		toRemove[n] = struct{}{}
-	}
+func (a *PartitionedArgs) RemoveStartupOptions(optionNames ...string) []*IndexedOption {
+	toRemove := set.From(optionNames...)
 	var removed []*IndexedOption
 	for i := 0; i < len(a.StartupOptions); {
 		o := a.StartupOptions[i]
@@ -893,6 +934,12 @@ func (a *PartitionedArgs) RemoveOptions(optionNames ...string) []*IndexedOption 
 			i--
 		}
 	}
+	return removed
+}
+
+func (a *PartitionedArgs) RemoveCommandOptions(optionNames ...string) []*IndexedOption {
+	toRemove := set.From(optionNames...)
+	var removed []*IndexedOption
 	for i := 0; i < len(a.CommandOptions); {
 		o := a.CommandOptions[i]
 		if _, ok := toRemove[o.Name()]; ok {

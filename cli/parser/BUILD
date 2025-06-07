@@ -17,6 +17,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",
         "//server/util/disk",
+        "//server/util/lib/set",
         "//server/util/proto",
     ],
 )
