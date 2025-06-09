@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -141,19 +142,110 @@ func NewBestEffortWriter(w io.Writer) *BestEffortWriter {
 type BestEffortWriter struct {
 	w   io.Writer
 	err error
+
+	committed bool
 }
 
 func (b *BestEffortWriter) Write(p []byte) (int, error) {
 	if b.err != nil {
 		return len(p), nil
 	}
-	_, err := b.w.Write(p)
+	written, err := b.w.Write(p)
 	if err != nil {
 		b.err = err
+	}
+	if written < len(p) {
+		b.err = io.ErrShortWrite
+	}
+	if b.err != nil {
+		log.Warningf("BestEffortWriter write error: %s", b.err)
 	}
 	return len(p), nil
 }
 
+func (b *BestEffortWriter) Commit() error {
+	if b.committed {
+		return nil
+	}
+	if b.err != nil {
+		return nil
+	}
+	b.committed = true
+	if committer, ok := b.w.(interfaces.Committer); ok {
+		if err := committer.Commit(); err != nil {
+			b.err = err
+			log.Warningf("Error committing BestEffortWriter: %s", err)
+		}
+	}
+	return nil
+}
+
+func (b *BestEffortWriter) Close() error {
+	if closer, ok := b.w.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			log.Warningf("Error closing BestEffortWriter: %s", err)
+		}
+	}
+	return nil
+}
+
 func (b *BestEffortWriter) Err() error {
 	return b.err
+}
+
+// BestEffortReader returns a ReadCloser that behaves like an io.TeeReader:
+// each read from the given reader will be written to the given writer.
+// Any write errors will be ignored. BestEffortTeeReader will not make any
+// writes after encountering the first write error.
+//
+// If the given writer is also a Committer, BestEffortTeeReader will call Commit
+// upon receiving EOF from the given reader.
+func BestEffortTeeReader(r io.Reader, w io.Writer) (io.ReadCloser, error) {
+	if r == nil {
+		return nil, status.FailedPreconditionError("Cannot construct BestEffortTeeReader with nil reader")
+	}
+	if w == nil {
+		return nil, status.FailedPreconditionError("Cannot construct BestEffortTeeReader with nil writer")
+	}
+	return &bestEffortTeeReader{
+		r: r,
+		w: NewBestEffortWriter(w),
+	}, nil
+}
+
+type bestEffortTeeReader struct {
+	r io.Reader
+	w *BestEffortWriter
+}
+
+func (t *bestEffortTeeReader) Read(p []byte) (int, error) {
+	n, err := t.r.Read(p)
+	if t.w.Err() != nil {
+		return n, err
+	}
+
+	if n > 0 {
+		t.w.Write(p[:n])
+		if t.w.Err() != nil {
+			return n, err
+		}
+	}
+
+	if err == io.EOF {
+		t.w.Commit()
+	}
+
+	return n, err
+
+}
+
+// Close closes both the underlying reader and writer (if they are Closers).
+// Errors closing the writer will be logged but not returned.
+func (t *bestEffortTeeReader) Close() error {
+	var err error
+	if closer, ok := t.r.(io.Closer); ok {
+		err = closer.Close()
+	}
+	t.w.Close()
+	return err
 }
