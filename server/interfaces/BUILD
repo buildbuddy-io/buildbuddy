@@ -49,6 +49,7 @@ go_library(
         "@com_github_prometheus_client_model//io/prometheus/client:go",
         "@io_gorm_gorm//:gorm",
         "@org_golang_google_genproto//googleapis/longrunning",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//health/grpc_health_v1",
     ],
