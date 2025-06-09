@@ -44,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1175,6 +1176,17 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			Value: "true",
 		})
 	}
+
+	customPlatformProps := make([]*repb.Platform_Property, 0, len(workflowAction.PlatformProperties))
+	for k, v := range workflowAction.PlatformProperties {
+		customPlatformProps = append(customPlatformProps, &repb.Platform_Property{
+			Name:  k,
+			Value: v,
+		})
+	}
+	cmd.Platform.Properties = append(cmd.Platform.Properties, customPlatformProps...)
+	rexec.NormalizeCommand(cmd)
+
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, cmd)
 	if err != nil {
 		return nil, err

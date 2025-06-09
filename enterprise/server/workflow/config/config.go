@@ -39,23 +39,24 @@ type BuildBuddyConfig struct {
 }
 
 type Action struct {
-	Name              string            `yaml:"name"`
-	Triggers          *Triggers         `yaml:"triggers"`
-	OS                string            `yaml:"os"`
-	Arch              string            `yaml:"arch"`
-	Pool              string            `yaml:"pool"`
-	SelfHosted        bool              `yaml:"self_hosted"`
-	ContainerImage    string            `yaml:"container_image"`
-	ResourceRequests  ResourceRequests  `yaml:"resource_requests"`
-	Priority          int               `yaml:"priority"`
-	User              string            `yaml:"user"`
-	GitCleanExclude   []string          `yaml:"git_clean_exclude"`
-	GitFetchFilters   []string          `yaml:"git_fetch_filters"`
-	GitFetchDepth     *int              `yaml:"git_fetch_depth"`
-	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
-	Env               map[string]string `yaml:"env"`
-	Steps             []*rnpb.Step      `yaml:"steps"`
-	Timeout           *time.Duration    `yaml:"timeout"`
+	Name               string            `yaml:"name"`
+	Triggers           *Triggers         `yaml:"triggers"`
+	OS                 string            `yaml:"os"`
+	Arch               string            `yaml:"arch"`
+	Pool               string            `yaml:"pool"`
+	SelfHosted         bool              `yaml:"self_hosted"`
+	ContainerImage     string            `yaml:"container_image"`
+	ResourceRequests   ResourceRequests  `yaml:"resource_requests"`
+	Priority           int               `yaml:"priority"`
+	User               string            `yaml:"user"`
+	GitCleanExclude    []string          `yaml:"git_clean_exclude"`
+	GitFetchFilters    []string          `yaml:"git_fetch_filters"`
+	GitFetchDepth      *int              `yaml:"git_fetch_depth"`
+	BazelWorkspaceDir  string            `yaml:"bazel_workspace_dir"`
+	Env                map[string]string `yaml:"env"`
+	PlatformProperties map[string]string `yaml:"platform_properties"`
+	Steps              []*rnpb.Step      `yaml:"steps"`
+	Timeout            *time.Duration    `yaml:"timeout"`
 
 	// DEPRECATED: Used `Steps` instead
 	DeprecatedBazelCommands []string `yaml:"bazel_commands"`
