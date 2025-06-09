@@ -202,3 +202,42 @@ func TestMergeExecutionUpdatesWithRepeatedFields(t *testing.T) {
 		}
 	}
 }
+
+func TestInvocationExecutionLinkDuplicates(t *testing.T) {
+	rdb := testredis.Start(t)
+	collector := redis_execution_collector.New(rdb.Client())
+
+	executionID := "execution-123"
+	invocationID := "invocation-123"
+	invocationUUID := "invocation123"
+
+	// Create an in-progress execution and add an invocation link.
+	ctx := context.Background()
+	err := collector.UpdateInProgressExecution(ctx, &repb.StoredExecution{
+		ExecutionId:    executionID,
+		InvocationUuid: invocationUUID,
+		Stage:          int64(repb.ExecutionStage_COMPLETED),
+	})
+	require.NoError(t, err)
+	err = collector.AddExecutionInvocationLink(ctx, &sipb.StoredInvocationLink{
+		ExecutionId:  executionID,
+		InvocationId: invocationID,
+	}, true /*=storeReverseLink*/)
+	require.NoError(t, err)
+
+	// Add the same link again; should log a warning.
+	err = collector.AddExecutionInvocationLink(ctx, &sipb.StoredInvocationLink{
+		ExecutionId:  executionID,
+		InvocationId: invocationID,
+	}, true /*=storeReverseLink*/)
+	require.NoError(t, err)
+
+	// When getting invocations by execution ID or executions by invocation ID,
+	// only one value should be returned.
+	executions, err := collector.GetInProgressExecutions(ctx, invocationID)
+	require.NoError(t, err)
+	require.Len(t, executions, 1)
+	invocations, err := collector.GetExecutionInvocationLinks(ctx, executionID)
+	require.NoError(t, err)
+	require.Len(t, invocations, 1)
+}
