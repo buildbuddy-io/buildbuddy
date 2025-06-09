@@ -28,6 +28,13 @@ export interface TraceViewProps {
 // value.
 const SCROLL_WIDTH_LIMIT = 18_000_000;
 
+// When jumping to a matched span via the search bar, ensure that the span is
+// large enough on screen so it can be seen and interacted with. If the span is
+// smaller than this in pixel width, we zoom in to make it at least this wide.
+// Conversely, if the span is very large, we attempt to zoom out (down to the
+// "normal" min-zoom level) so that more context is visible.
+const MIN_SPAN_PIXEL_WIDTH = 40;
+
 const FILTER_URL_PARAM = "timingFilter";
 
 /**
@@ -67,6 +74,41 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
   private hovercardRef = React.createRef<EventHovercard>();
 
   private unobserveResize?: () => void;
+
+  constructor(props: TraceViewProps) {
+    super(props);
+
+    // Build a flattened list of all events (from the first panel – events
+    // panel) sorted by thread_id and timestamp so that we can quickly iterate
+    // to the next match.
+    const eventsPanel = this.model.panels[0];
+    if (eventsPanel) {
+      for (let sectionIndex = 0; sectionIndex < eventsPanel.sections.length; sectionIndex++) {
+        const section = eventsPanel.sections[sectionIndex];
+        if (!section.tracks) continue;
+        for (let trackIndex = 0; trackIndex < section.tracks.length; trackIndex++) {
+          const track = section.tracks[trackIndex];
+          for (const event of track.events) {
+            this.searchableEvents.push({ event, sectionIndex, trackIndex });
+          }
+        }
+      }
+      // Ensure events are ordered by thread_id and timestamp
+      this.searchableEvents.sort((a, b) =>
+        a.event.tid != b.event.tid ? a.event.tid - b.event.tid : a.event.ts - b.event.ts
+      );
+    }
+  }
+
+  // Index of the most recently highlighted search result in `this.searchableEvents`.
+  // A value of -1 indicates that the next search should start from the
+  // beginning.
+  private searchIndex = -1;
+
+  // Flat list of all events in the events panel sorted by timestamp, along
+  // with their section and track indices, so we can efficiently jump to the
+  // next match when the user presses Enter.
+  private readonly searchableEvents: { event: TraceEvent; sectionIndex: number; trackIndex: number }[] = [];
 
   componentDidMount() {
     const fontFamily = window.getComputedStyle(document.body).fontFamily;
@@ -118,7 +160,13 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
    */
   private update(dt = 0) {
     this.canvasXPerModelX.min = this.panels[0].container.clientWidth / this.model.xMax;
-    this.canvasXPerModelX.max = SCROLL_WIDTH_LIMIT / this.model.xMax;
+    // Don't decrease `max` if it has been increased past the default limit as a
+    // result of user interaction (e.g. zooming in after a search match). This
+    // ensures that once the user zooms in beyond the default scroll width
+    // limit, they can keep zooming in instead of being clamped back down on
+    // every animation frame.
+    const defaultMax = SCROLL_WIDTH_LIMIT / this.model.xMax;
+    this.canvasXPerModelX.max = Math.max(this.canvasXPerModelX.max, defaultMax);
     this.canvasXPerModelX.step(dt, { threshold: 1e-9 });
 
     for (const panel of this.panels) {
@@ -262,7 +310,16 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
 
   private updateFilter = (value: string) => {
     router.setQueryParam(FILTER_URL_PARAM, value);
+    // Reset search state when the filter changes.
+    this.searchIndex = -1;
+    if (this.panels.length) {
+      this.panels[0].highlightEvent = undefined;
+    }
     this.update();
+    // Automatically jump to the first match when the filter changes.
+    this.scrollToNextMatch();
+    // Force a React re-render so match counter gets updated.
+    this.forceUpdate();
   };
 
   private onCanvasMouseDown(e: React.MouseEvent, panelIndex: number) {
@@ -282,6 +339,134 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     }
   }
 
+  // Callback for keydown events in the search input.
+  private onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      this.scrollToNextMatch();
+    }
+  };
+
+  // Returns true if the given event matches the provided filter string.
+  private eventMatchesFilter(event: TraceEvent, filter: string): boolean {
+    if (!filter) return true;
+    const f = filter.toLowerCase();
+    return (
+      event.name.toLowerCase().includes(f) ||
+      event.cat.toLowerCase().includes(f) ||
+      event.args?.target?.toLowerCase().includes(f) ||
+      event.args?.mnemonic?.toLowerCase().includes(f) ||
+      event.out?.toLowerCase().includes(f)
+    );
+  }
+
+  // Scrolls to and highlights the next event that matches the current search filter.
+  private scrollToNextMatch() {
+    const filter = this.getFilter();
+    if (!filter) return;
+
+    // Find the next matching event after `this.searchIndex`.
+    const total = this.searchableEvents.length;
+    if (!total) return;
+
+    let nextIndex = this.searchIndex;
+    for (let i = 0; i < total; i++) {
+      nextIndex = (nextIndex + 1) % total;
+      const { event } = this.searchableEvents[nextIndex];
+      if (this.eventMatchesFilter(event, filter)) {
+        this.highlightAndScrollToEvent(nextIndex);
+        // Re-render to update match counter.
+        this.forceUpdate();
+        return;
+      }
+    }
+  }
+
+  // Highlights the event at `searchableEvents[index]` and scrolls it into view.
+  private highlightAndScrollToEvent(index: number) {
+    this.searchIndex = index;
+    const { event, sectionIndex, trackIndex } = this.searchableEvents[index];
+
+    // Highlight
+    if (this.panels.length) {
+      const eventsPanel = this.panels[0];
+      eventsPanel.highlightEvent = event;
+    }
+
+    // Calculate scroll positions & adjust zoom level so that the matched span
+    // is clearly visible.
+    const eventsPanelModel = this.model.panels[0];
+    const panelContainer = this.panels[0].container;
+
+    // Adjust zoom so that the span has a reasonable on-screen width.
+    if (event.dur && event.dur > 0) {
+      const currentScale = this.canvasXPerModelX.value;
+      const currentPixelWidth = event.dur * currentScale;
+
+      let desiredScale = currentScale;
+
+      // Zoom in if span is too small.
+      if (currentPixelWidth < MIN_SPAN_PIXEL_WIDTH) {
+        desiredScale = MIN_SPAN_PIXEL_WIDTH / event.dur;
+      }
+      // Zoom out (all the way to min) if span is extremely large relative to
+      // the viewport width.
+      else if (currentPixelWidth > panelContainer.clientWidth) {
+        desiredScale = this.canvasXPerModelX.min;
+      }
+
+      // Clamp within allowed range.
+      desiredScale = clamp(desiredScale, this.canvasXPerModelX.min, this.canvasXPerModelX.max);
+
+      // If the desired scale exceeds the current maximum, raise the maximum
+      // so that the user can continue zooming in after the search jump.
+      if (desiredScale > this.canvasXPerModelX.max) {
+        this.canvasXPerModelX.max = desiredScale;
+      }
+
+      if (Math.abs(desiredScale - currentScale) > 1e-6) {
+        // Instantly apply the desired scale (without animation) so scrolling
+        // calculations below are based on the final zoom level. We update
+        // both value and target to keep the AnimatedValue in sync.
+        this.canvasXPerModelX.value = desiredScale;
+        this.canvasXPerModelX.target = desiredScale;
+      }
+    }
+
+    // Vertical scrolling – center the track.
+    let trackTop =
+      constants.TIMESTAMP_HEADER_SIZE +
+      eventsPanelModel.sections[sectionIndex].y +
+      constants.SECTION_LABEL_HEIGHT +
+      constants.SECTION_LABEL_PADDING_BOTTOM +
+      trackIndex * (constants.TRACK_HEIGHT + constants.TRACK_VERTICAL_GAP);
+
+    const desiredScrollY = clamp(
+      trackTop - panelContainer.clientHeight / 2,
+      0,
+      panelContainer.scrollHeight - panelContainer.clientHeight
+    );
+
+    this.panels[0].scrollY = desiredScrollY;
+    panelContainer.scrollTop = desiredScrollY;
+
+    // Horizontal scrolling – center the event start.
+    const scale = this.canvasXPerModelX.value;
+    const desiredScrollX = clamp(
+      event.ts * scale - panelContainer.clientWidth / 2,
+      0,
+      scale * this.model.xMax - panelContainer.clientWidth
+    );
+
+    for (const panel of this.panels) {
+      panel.scrollX = desiredScrollX;
+      panel.container.scrollLeft = desiredScrollX;
+    }
+
+    // Redraw immediately.
+    this.update();
+  }
+
   render() {
     return (
       <div
@@ -292,14 +477,33 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
             "--scrollbar-size": `${constants.SCROLLBAR_SIZE}px`,
           } as CSSProperties),
         }}>
-        {!this.props.filterHidden && (
-          <FilterInput
-            className="filter"
-            onChange={(e) => this.updateFilter(e.target.value)}
-            value={this.getFilter()}
-            placeholder="Filter..."
-          />
-        )}
+        {!this.props.filterHidden &&
+          (() => {
+            const filter = this.getFilter();
+            let totalMatches = 0;
+            let currentMatch = 0;
+            for (let i = 0; i < this.searchableEvents.length; i++) {
+              const { event } = this.searchableEvents[i];
+              if (this.eventMatchesFilter(event, filter)) {
+                totalMatches++;
+                if (i === this.searchIndex) {
+                  currentMatch = totalMatches;
+                }
+              }
+            }
+            const counterText = `${currentMatch}/${totalMatches}`;
+
+            return (
+              <FilterInput
+                className="filter"
+                onChange={(e) => this.updateFilter(e.target.value)}
+                onKeyDown={this.onSearchKeyDown}
+                value={filter}
+                placeholder="Search..."
+                rightElement={counterText}
+              />
+            );
+          })()}
         <div className="trace-viewer-panels">
           {this.model.panels.map((panel, i) => (
             <div
