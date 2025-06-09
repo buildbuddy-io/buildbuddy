@@ -4,7 +4,6 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -157,9 +156,6 @@ func (b *BestEffortWriter) Write(p []byte) (int, error) {
 	if written < len(p) {
 		b.err = io.ErrShortWrite
 	}
-	if b.err != nil {
-		log.Warningf("BestEffortWriter write error: %s", b.err)
-	}
 	return len(p), nil
 }
 
@@ -174,7 +170,6 @@ func (b *BestEffortWriter) Commit() error {
 	if committer, ok := b.w.(interfaces.Committer); ok {
 		if err := committer.Commit(); err != nil {
 			b.err = err
-			log.Warningf("Error committing BestEffortWriter: %s", err)
 		}
 	}
 	return nil
@@ -182,9 +177,7 @@ func (b *BestEffortWriter) Commit() error {
 
 func (b *BestEffortWriter) Close() error {
 	if closer, ok := b.w.(io.Closer); ok {
-		if err := closer.Close(); err != nil {
-			log.Warningf("Error closing BestEffortWriter: %s", err)
-		}
+		b.err = closer.Close()
 	}
 	return nil
 }
