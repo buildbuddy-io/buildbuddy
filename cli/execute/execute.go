@@ -31,6 +31,7 @@ var flags = flag.NewFlagSet("execute", flag.ContinueOnError)
 
 // Bazel-equivalent flags.
 var (
+	besResultUrl   = flags.String("bes_results_url", "https://app.buildbuddy.io/invocation", "URL to the BuildBuddy invocation page for this action. Is only shown if --invocation_id is set.")
 	target         = flags.String("remote_executor", login.DefaultApiTarget, "Remote execution service target.")
 	instanceName   = flags.String("remote_instance_name", "", "Value to pass as an instance_name in the remote execution API.")
 	digestFunction = flags.String("digest_function", "sha256", "Digest function used for content-addressable storage. Can be `\"sha256\" or \"blake3\"`.")
@@ -98,11 +99,39 @@ func HandleExecute(args []string) (int, error) {
 	return 0, nil
 }
 
+func getDefaultAPIKey() (string, error) {
+	if os.Getenv("BB_ALLOW_EMPTY_API_KEY") != "" {
+		// Allow empty API keys for testing purposes.
+		return "", nil
+	}
+	apiKey, err := login.GetAPIKey()
+	if err != nil {
+		return "", fmt.Errorf("failed to get BuildBuddy API key: %w, Please run `bb login`.", err)
+	}
+	if apiKey == "" {
+		return "", fmt.Errorf("failed to get BuildBuddy API key: empty api key, Please run `bb login`.")
+	}
+	return apiKey, nil
+}
+
 func execute(cmdArgs []string) error {
 	ctx := context.Background()
 	md, err := mdutil.Parse(*remoteHeaders...)
 	if err != nil {
 		return err
+	}
+	keys := md.Get("x-buildbuddy-api-key")
+	if len(keys) == 0 || (len(keys) == 1 || keys[0] == "") {
+		apiKey, err := getDefaultAPIKey()
+		if err != nil {
+			return err
+		}
+		if apiKey != "" {
+			md.Append("x-buildbuddy-api-key", apiKey)
+		}
+	}
+	if len(keys) > 1 {
+		log.Warnf("Multiple x-buildbuddy-api-key headers found in --remote_header: %d", len(keys))
 	}
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
@@ -178,6 +207,9 @@ func execute(cmdArgs []string) error {
 		log.Debugf("Action resource name: %s", acrn.DownloadString())
 	} else {
 		log.Debugf("Failed to compute action resource name: %s", err)
+	}
+	if *invocationID != "" && *besResultUrl != "" {
+		log.Printf("Execution URL: %s/%s?executionFilter=%s#execution", *besResultUrl, *invocationID, acrn.GetDigest().GetHash())
 	}
 	stageStart = time.Now()
 	log.Debug("Starting /Execute request")

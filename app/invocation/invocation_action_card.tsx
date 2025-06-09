@@ -524,6 +524,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const parts: string[] = ["bb execute"];
     parts.push(`--remote_header=x-buildbuddy-api-key=$BB_API_KEY`);
 
+    // Setting this flag will tell the CLI to print a URL to the Execution.
+    const besResultsUrl = this.props.model.stringCommandLineOption("bes_results_url");
+    if (besResultsUrl) parts.push(`--bes_results_url=${shlex.quote(besResultsUrl)}`);
+
     // Remote executor / instance (derived from invocation options if present)
     const remoteExec = this.props.model.stringCommandLineOption("remote_executor");
     if (remoteExec) parts.push(`--remote_executor=${shlex.quote(remoteExec)}`);
