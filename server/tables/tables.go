@@ -316,9 +316,10 @@ func (u *User) TableName() string {
 
 func (u *User) ToProto() *uspb.DisplayUser {
 	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
-	// Use the github username as the name, if no name is set.
-	if name == "" && strings.HasPrefix(u.SubID, "https://github.com/") {
-		name = strings.TrimPrefix(u.SubID, "https://github.com/")
+	// Parse username from subscriber ID (for known providers).
+	username := ""
+	if strings.HasPrefix(u.SubID, "https://github.com/") {
+		username = strings.TrimPrefix(u.SubID, "https://github.com/")
 	}
 	return &uspb.DisplayUser{
 		UserId: &uspb.UserId{
@@ -332,6 +333,7 @@ func (u *User) ToProto() *uspb.DisplayUser {
 		ProfileImageUrl: u.ImageURL,
 		Email:           u.Email,
 		AccountType:     subIDToAccountType(u.SubID),
+		Username:        username,
 	}
 }
 

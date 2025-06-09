@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -516,7 +517,7 @@ func TestSkipRemote(t *testing.T) {
 	requestCounter.Store(0)
 }
 
-func BenchmarkRead(b *testing.B) {
+func BenchmarkReadAlwaysPresent(b *testing.B) {
 	*log.LogLevel = "error"
 	log.Configure()
 	// Disable the atime updater as it can interfere with the request counter.
@@ -571,7 +572,90 @@ func BenchmarkRead(b *testing.B) {
 	}
 }
 
-func BenchmarkWrite(b *testing.B) {
+func BenchmarkReadThroughCache(b *testing.B) {
+	*log.LogLevel = "error"
+	log.Configure()
+	// Disable the atime updater as it can interfere with the request counter.
+	flags.Set(b, "cache_proxy.remote_atime_max_digests_per_group", 0)
+
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(b)
+	proxyEnv := testenv.GetTestEnv(b)
+	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, b)
+	proxy := runBSProxy(ctx, bs, proxyEnv, b)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	if err != nil {
+		b.Errorf("error attaching user prefix: %v", err)
+	}
+
+	for _, zstd := range []bool{false, true} {
+		// The largest size is such after compression, it's bigger than 5MiB,
+		// just to be bigger than 4MiB, which we often use as max buffer size.
+		for _, size := range []int64{10_000, 3_000_000, 20_000_000} {
+			b.Run(fmt.Sprintf("zstd=%v/size=%v", zstd, size), func(b *testing.B) {
+				b.ReportAllocs()
+				requestCounter.Store(0)
+				i := 0
+				for b.Loop() {
+					i++
+					b.StopTimer()
+					rnProto, data := testdigest.RandomCASResourceBuf(b, size)
+					if zstd {
+						data = compression.CompressZstd(nil, data)
+						rnProto.Compressor = repb.Compressor_ZSTD
+					}
+					rn, err := digest.CASResourceNameFromProto(rnProto)
+					require.NoError(b, err)
+					writeStream, err := bs.Write(ctx)
+					require.NoError(b, err)
+					require.NoError(b, writeStream.Send(&bspb.WriteRequest{
+						ResourceName: rn.NewUploadString(),
+						WriteOffset:  0,
+						Data:         data,
+						FinishWrite:  true,
+					}))
+					resp, err := writeStream.CloseAndRecv()
+					require.NoError(b, err)
+					if !zstd {
+						require.Equal(b, int64(len(data)), resp.GetCommittedSize())
+					} else {
+						// With compression, the committed size won't be equal
+						// to the input size. It can even be bigger when the
+						// input is small.
+						require.Less(b, int64(0), resp.GetCommittedSize())
+					}
+					b.StartTimer()
+
+					downloadBuf := make([]byte, 0, len(data))
+					downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: rn.DownloadString()})
+					require.NoError(b, err)
+					for {
+						res, err := downloadStream.Recv()
+						if err == io.EOF {
+							break
+						}
+						require.NoError(b, err)
+						downloadBuf = append(downloadBuf, res.Data...)
+					}
+					b.StopTimer()
+					if zstd {
+						data, err = compression.DecompressZstd(nil, data)
+						require.NoError(b, err)
+						downloadBuf, err = compression.DecompressZstd(nil, downloadBuf)
+						require.NoError(b, err)
+					}
+					require.Equal(b, data, downloadBuf)
+					require.Equal(b, int32(i*2), requestCounter.Load())
+					b.StartTimer()
+
+				}
+			})
+		}
+	}
+}
+
+func BenchmarkWriteAlreadyExists(b *testing.B) {
 	*log.LogLevel = "error"
 	log.Configure()
 	ctx := testContext()
@@ -607,5 +691,74 @@ func BenchmarkWrite(b *testing.B) {
 		require.Equal(b, int64(len(dataString)), resp.GetCommittedSize())
 		require.Equal(b, int32(i), requestCounter.Load())
 		i++
+	}
+}
+
+func BenchmarkWriteUnique(b *testing.B) {
+	*log.LogLevel = "error"
+	log.Configure()
+	ctx := testContext()
+	remoteEnv := testenv.GetTestEnv(b)
+	proxyEnv := testenv.GetTestEnv(b)
+	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, b)
+	proxy := runBSProxy(ctx, bs, proxyEnv, b)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv.GetAuthenticator())
+	if err != nil {
+		b.Errorf("error attaching user prefix: %v", err)
+	}
+
+	i := 1
+	for _, zstd := range []bool{false, true} {
+		// The largest size is such after compression, it's bigger than 5MiB,
+		// which is the batchSize below.
+		for _, size := range []int64{10_000, 3_000_000, 20_000_000} {
+			b.Run(fmt.Sprintf("zstd=%v/size=%v", zstd, size), func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					b.StopTimer()
+					rnProto, data := testdigest.NewRandomResourceAndBuf(b, size, rspb.CacheType_CAS, strconv.Itoa(i))
+					if zstd {
+						data = compression.CompressZstd(nil, data)
+						rnProto.Compressor = repb.Compressor_ZSTD
+					}
+					rn, err := digest.CASResourceNameFromProto(rnProto)
+					require.NoError(b, err)
+					uploadString := rn.NewUploadString()
+					b.StartTimer()
+
+					writeStream, err := proxy.Write(ctx)
+					require.NoError(b, err)
+
+					// Use a batch size bigger than 4MiB, which we often use
+					// for the max buffer size,
+					batchSize := 5_000_000
+					written := int64(0)
+					for len(data) > 0 {
+						batch := min(len(data), batchSize)
+						require.NoError(b, writeStream.Send(&bspb.WriteRequest{
+							ResourceName: uploadString,
+							WriteOffset:  written,
+							Data:         data[:batch],
+							FinishWrite:  batch == len(data),
+						}))
+						written += int64(batch)
+						data = data[batch:]
+					}
+					resp, err := writeStream.CloseAndRecv()
+					require.NoError(b, err)
+					require.Equal(b, int32(i), requestCounter.Load())
+					i++
+					if !zstd {
+						require.Equal(b, int64(size), resp.GetCommittedSize())
+					} else {
+						// With compression, the committed size won't be equal
+						// to the input size. It can even be bigger when the
+						// input is small.
+						require.Less(b, int64(0), resp.GetCommittedSize())
+					}
+				}
+			})
+		}
 	}
 }

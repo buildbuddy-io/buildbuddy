@@ -796,122 +796,185 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 	}
 }
 
-func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	cfg := getExecutorConfig(t)
-
-	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
-	filecacheRoot := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
-	require.NoError(t, err)
-	fc.WaitForDirectoryScanToComplete()
-	env.SetFileCache(fc)
-
-	var containersToCleanup []*firecracker.FirecrackerContainer
-	t.Cleanup(func() {
-		for _, vm := range containersToCleanup {
-			err := vm.Remove(ctx)
-			assert.NoError(t, err)
-		}
-	})
-
-	instanceName := "test-instance-name"
-	task := &repb.ExecutionTask{
-		Command: &repb.Command{
-			// Note: platform must match in order to share snapshots
-			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
-				{Name: "recycle-runner", Value: "true"},
-			}},
-			Arguments: []string{"./buildbuddy_ci_runner"},
-			// Simulate that this is for a PR branch, because master snapshots
-			// are always saved to the remote cache.
-			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-				{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "master"},
-				{Name: "GIT_BRANCH", Value: "my-pr"},
-			},
+func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
+	tests := []struct {
+		name               string
+		branch             string
+		snapshotSavePolicy string
+	}{
+		{
+			name:               "Always save - on main",
+			branch:             "main",
+			snapshotSavePolicy: snaputil.AlwaysSaveRemoteSnapshot,
 		},
-		ExecuteRequest: &repb.ExecuteRequest{
-			InstanceName: instanceName,
+		{
+			name:               "Always save - on feature branch",
+			branch:             "pr-branch",
+			snapshotSavePolicy: snaputil.AlwaysSaveRemoteSnapshot,
+		},
+		{
+			name:               "Only save first non-main snapshot - on main",
+			branch:             "main",
+			snapshotSavePolicy: snaputil.OnlySaveFirstNonMainRemoteSnapshot,
+		},
+		{
+			name:               "Only save first non-main snapshot - on feature branch",
+			branch:             "pr-branch",
+			snapshotSavePolicy: snaputil.OnlySaveFirstNonMainRemoteSnapshot,
+		},
+		{
+			name:               "Only save non-main snapshot if no snapshots available - on main",
+			branch:             "main",
+			snapshotSavePolicy: snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable,
+		},
+		{
+			name:               "Only save non-main snapshot if no snapshots available - on feature branch",
+			branch:             "pr-branch",
+			snapshotSavePolicy: snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable,
 		},
 	}
 
-	runAndSnapshotVM := func(workDir string, stringToLog string, expectedOutput string, snapshotKeyOverride *fcpb.SnapshotKey) string {
-		opts := firecracker.ContainerOpts{
-			ContainerImage:         busyboxImage,
-			ActionWorkingDirectory: workDir,
-			VMConfiguration: &fcpb.VMConfiguration{
-				NumCpus:           1,
-				MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
-				EnableNetworking:  false,
-				ScratchDiskSizeMb: 100,
-			},
-			ExecutorConfig:      cfg,
-			OverrideSnapshotKey: snapshotKeyOverride,
-		}
-		vm, err := firecracker.NewContainer(ctx, env, task, opts)
-		require.NoError(t, err)
-		containersToCleanup = append(containersToCleanup, vm)
-		require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage))
-		err = vm.Create(ctx, workDir)
-		require.NoError(t, err)
-		cmd := appendToLog(stringToLog)
-		res := vm.Exec(ctx, cmd, nil /*=stdio*/)
-		require.NoError(t, res.Error)
-		require.Equal(t, expectedOutput, string(res.Stdout))
-		require.NotEmpty(t, res.VMMetadata.GetSnapshotId())
-		err = vm.Pause(ctx)
-		require.NoError(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			rootDir := testfs.MakeTempDir(t)
+			cfg := getExecutorConfig(t)
 
-		return vm.SnapshotID()
+			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+			filecacheRoot := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			env.SetFileCache(fc)
+
+			var containersToCleanup []*firecracker.FirecrackerContainer
+			t.Cleanup(func() {
+				for _, vm := range containersToCleanup {
+					err := vm.Remove(ctx)
+					assert.NoError(t, err)
+				}
+			})
+
+			instanceName := "test-instance-name"
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					// Note: platform must match in order to share snapshots
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+						{Name: platform.RemoteSnapshotSavePolicyPropertyName, Value: tc.snapshotSavePolicy},
+					}},
+					Arguments: []string{"./buildbuddy_ci_runner"},
+					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+						{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "main"},
+						{Name: "GIT_BRANCH", Value: tc.branch},
+					},
+				},
+				ExecuteRequest: &repb.ExecuteRequest{
+					InstanceName: instanceName,
+				},
+			}
+
+			runAndSnapshotVM := func(workDir string, stringToLog string, expectedOutput string, snapshotKeyOverride *fcpb.SnapshotKey, task *repb.ExecutionTask) string {
+				opts := firecracker.ContainerOpts{
+					ContainerImage:         busyboxImage,
+					ActionWorkingDirectory: workDir,
+					VMConfiguration: &fcpb.VMConfiguration{
+						NumCpus:           1,
+						MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+						EnableNetworking:  false,
+						ScratchDiskSizeMb: 100,
+					},
+					ExecutorConfig:      cfg,
+					OverrideSnapshotKey: snapshotKeyOverride,
+				}
+				vm, err := firecracker.NewContainer(ctx, env, task, opts)
+				require.NoError(t, err)
+				containersToCleanup = append(containersToCleanup, vm)
+				require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage))
+				err = vm.Create(ctx, workDir)
+				require.NoError(t, err)
+				cmd := appendToLog(stringToLog)
+				res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				require.Equal(t, expectedOutput, string(res.Stdout))
+				require.NotEmpty(t, res.VMMetadata.GetSnapshotId())
+				err = vm.Pause(ctx)
+				require.NoError(t, err)
+
+				return vm.SnapshotID()
+			}
+
+			// Create a snapshot for the main branch.
+			mainTask := task.CloneVT()
+			mainTask.Command.EnvironmentVariables = []*repb.Command_EnvironmentVariable{
+				{
+					Name:  "GIT_BRANCH",
+					Value: "main",
+				},
+			}
+			mainWorkDir := testfs.MakeDirAll(t, rootDir, "work")
+			runAndSnapshotVM(mainWorkDir, "Main", "Main\n", nil, mainTask)
+
+			// Create a snapshot on the branch specified by the test case.
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			baseSnapshotId := runAndSnapshotVM(workDir, "Test Branch 1", "Main\nTest Branch 1\n", nil, task)
+
+			// Start a VM from the snapshot. Artifacts should be stored locally in the filecache.
+			// The log should contain data written to the original snapshot
+			// and the current VM.
+			workDirForkLocalFetch := testfs.MakeDirAll(t, rootDir, "work-fork-local-fetch")
+			runAndSnapshotVM(workDirForkLocalFetch, "Test Branch 2", "Main\nTest Branch 1\nTest Branch 2\n", nil, task)
+
+			// Start another VM from the locally cached snapshot. The log should contain
+			// data from the most recent run, as well as the current run.
+			workDirForkLocalFetch2 := testfs.MakeDirAll(t, rootDir, "work-fork-local-fetch")
+			runAndSnapshotVM(workDirForkLocalFetch2, "Test Branch 3", "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\n", nil, task)
+
+			// Clear the local filecache. Vms should still be able to unpause the snapshot
+			// by pulling artifacts from the remote cache
+			err = os.RemoveAll(filecacheRoot)
+			require.NoError(t, err)
+			filecacheRoot2 := testfs.MakeTempDir(t)
+			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize, false)
+			require.NoError(t, err)
+			fc2.WaitForDirectoryScanToComplete()
+			env.SetFileCache(fc2)
+
+			// Start a VM from the remote snapshot.
+
+			// Unless we're on the main branch or remote snapshot writes are always
+			// requested, we don't expect to see changes applied from the last
+			// couple runs that only wrote local snapshots, now that the local
+			// snapshots are gone.
+			var expectedOutput string
+			if tc.branch == "main" || tc.snapshotSavePolicy == snaputil.AlwaysSaveRemoteSnapshot {
+				expectedOutput = "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\nTest Branch 4\n"
+			} else if tc.snapshotSavePolicy == snaputil.OnlySaveFirstNonMainRemoteSnapshot {
+				expectedOutput = "Main\nTest Branch 1\nTest Branch 4\n"
+			} else if tc.snapshotSavePolicy == snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable {
+				expectedOutput = "Main\nTest Branch 4\n"
+			}
+			workDirForkRemoteFetch := testfs.MakeDirAll(t, rootDir, "work-fork-remote-fetch")
+			runAndSnapshotVM(workDirForkRemoteFetch, "Test Branch 4", expectedOutput, nil, task)
+
+			if tc.snapshotSavePolicy != snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable {
+				// Should still be able to start from the original snapshot if we use
+				// a snapshot key containing the original VM's snapshot ID.
+				// Note that when using a snapshot ID as the key, we only include the
+				// snapshot_id and instance_name fields.
+				// The log should contain data written to the original snapshot
+				// and the current VM, but not from any of the other VMs, including the master
+				// snapshot
+				workDirForkOriginalSnapshot := testfs.MakeDirAll(t, rootDir, "work-fork-og-snapshot")
+				originalSnapshotKey := &fcpb.SnapshotKey{
+					InstanceName: instanceName,
+					SnapshotId:   baseSnapshotId,
+				}
+				runAndSnapshotVM(workDirForkOriginalSnapshot, "Fork from original vm", "Main\nTest Branch 1\nFork from original vm\n", originalSnapshotKey, task)
+			}
+		})
 	}
-
-	// Create a snapshot. Data written to this snapshot should be cached remotely,
-	// and persist when other VMs reuse the snapshot.
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	baseSnapshotId := runAndSnapshotVM(workDir, "Cache Remotely", "Cache Remotely\n", nil)
-
-	// Start a VM from the snapshot. Artifacts should be stored locally in the filecache.
-	// The log should contain data written to the original snapshot
-	// and the current VM.
-	workDirForkLocalFetch := testfs.MakeDirAll(t, rootDir, "work-fork-local-fetch")
-	runAndSnapshotVM(workDirForkLocalFetch, "Cache Locally", "Cache Remotely\nCache Locally\n", nil)
-
-	// Start another VM from the locally cached snapshot. The log should contain
-	// data from the most recent run, as well as the current run.
-	workDirForkLocalFetch2 := testfs.MakeDirAll(t, rootDir, "work-fork-local-fetch")
-	runAndSnapshotVM(workDirForkLocalFetch2, "Cache Locally 2", "Cache Remotely\nCache Locally\nCache Locally 2\n", nil)
-
-	// Clear the local filecache. Vms should still be able to unpause the snapshot
-	// by pulling artifacts from the remote cache
-	err = os.RemoveAll(filecacheRoot)
-	require.NoError(t, err)
-	filecacheRoot2 := testfs.MakeTempDir(t)
-	fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize, false)
-	require.NoError(t, err)
-	fc2.WaitForDirectoryScanToComplete()
-	env.SetFileCache(fc2)
-
-	// Start a VM from the remote snapshot. The log should contain data from the
-	// first run, which was saved remotely, but not the two most recent runs which
-	// were only cached locally.
-	workDirForkRemoteFetch := testfs.MakeDirAll(t, rootDir, "work-fork-remote-fetch")
-	runAndSnapshotVM(workDirForkRemoteFetch, "Cache Locally 3", "Cache Remotely\nCache Locally 3\n", nil)
-
-	// Should still be able to start from the original snapshot if we use
-	// a snapshot key containing the original VM's snapshot ID.
-	// Note that when using a snapshot ID as the key, we only include the
-	// snapshot_id and instance_name fields.
-	// The log should contain data written to the original snapshot
-	// and the current VM, but not from any of the other VMs, including the master
-	// snapshot
-	workDirForkOriginalSnapshot := testfs.MakeDirAll(t, rootDir, "work-fork-og-snapshot")
-	originalSnapshotKey := &fcpb.SnapshotKey{
-		InstanceName: instanceName,
-		SnapshotId:   baseSnapshotId,
-	}
-	runAndSnapshotVM(workDirForkOriginalSnapshot, "Fork from original vm", "Cache Remotely\nFork from original vm\n", originalSnapshotKey)
 }
 
 func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {

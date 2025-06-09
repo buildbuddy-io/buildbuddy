@@ -70,33 +70,40 @@ type SeriesMetadata = {
 //   ...,
 //   "args": {"cpu": 0.84}
 // }
-const TIME_SERIES_METADATA = new Map<string, SeriesMetadata>([
+const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
   // Event names/arg keys from Bazel profiles.
   // These are defined by bazel / not controlled by us.
-  ["action count", { argKey: "action" }],
-  ["CPU usage (Bazel)", { argKey: "cpu", unit: "cores" }],
-  ["Memory usage (Bazel)", { argKey: "memory", unit: "MB" }],
-  ["CPU usage (total)", { argKey: "system cpu", displayName: "CPU usage (System)", unit: "cores" }],
-  ["Memory usage (total)", { argKey: "system memory", unit: "MB" }],
-  ["System load average", { argKey: "load" }],
+  [
+    "action count",
+    [
+      { argKey: "action", displayName: "Action count" },
+      { argKey: "local action cache", displayName: "Local action cache hits" },
+    ],
+  ],
+  ["action count (local)", [{ argKey: "local action", displayName: "Action count (local)" }]],
+  ["CPU usage (Bazel)", [{ argKey: "cpu", unit: "cores" }]],
+  ["Memory usage (Bazel)", [{ argKey: "memory", unit: "MB" }]],
+  ["CPU usage (total)", [{ argKey: "system cpu", displayName: "CPU usage (System)", unit: "cores" }]],
+  ["Memory usage (total)", [{ argKey: "system memory", unit: "MB" }]],
+  ["System load average", [{ argKey: "load" }]],
   [
     "Network Up usage (total)",
-    { argKey: "system network up (Mbps)", displayName: "Network Up usage (System)", unit: "Mbps" },
+    [{ argKey: "system network up (Mbps)", displayName: "Network Up usage (System)", unit: "Mbps" }],
   ],
   [
     "Network Down usage (total)",
-    { argKey: "system network down (Mbps)", displayName: "Network Down usage (System)", unit: "Mbps" },
+    [{ argKey: "system network down (Mbps)", displayName: "Network Down usage (System)", unit: "Mbps" }],
   ],
 
   // Event names/arg keys from executor profiles.
   // These are controlled by us, and defined in
   // enterprise/server/execution_service/execution_service.go
-  ["CPU usage (cores)", { argKey: "cpu" }],
-  ["Memory usage (KB)", { argKey: "memory" }],
-  ["Disk read bandwidth (MB/s)", { argKey: "disk-read-bw" }],
-  ["Disk read IOPS", { argKey: "disk-read-iops" }],
-  ["Disk write bandwidth (MB/s)", { argKey: "disk-write-bw" }],
-  ["Disk write IOPS", { argKey: "disk-write-iops" }],
+  ["CPU usage (cores)", [{ argKey: "cpu" }]],
+  ["Memory usage (KB)", [{ argKey: "memory" }]],
+  ["Disk read bandwidth (MB/s)", [{ argKey: "disk-read-bw" }]],
+  ["Disk read IOPS", [{ argKey: "disk-read-iops" }]],
+  ["Disk write bandwidth (MB/s)", [{ argKey: "disk-write-bw" }]],
+  ["Disk write IOPS", [{ argKey: "disk-write-iops" }]],
 ]);
 
 const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).map(([name], index) => [name, index]));
@@ -242,24 +249,48 @@ export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
 
   const timelines: TimeSeries[] = [];
   let name = null;
-  let timeSeries: TimeSeries | null = null;
+  let currentSeries = new Map<string, TimeSeries>();
+  let currentMetadata: SeriesMetadata[] = [];
   for (const event of events as TimeSeriesEvent[]) {
     if (name === null || event.name !== name) {
       // Encountered new type of time series data
       name = event.name;
-      timeSeries = {
-        name: TIME_SERIES_METADATA.get(name)?.displayName || name,
-        events: [],
-        unit: TIME_SERIES_METADATA.get(name)?.unit,
-      };
-      timelines.push(timeSeries);
-    }
-    for (const key in event.args) {
-      if (key == TIME_SERIES_METADATA.get(event.name)?.argKey) {
-        event.value = event.args[key];
+      currentSeries.clear();
+
+      currentMetadata = TIME_SERIES_METADATA.get(name) || [];
+      if (!currentMetadata.length) {
+        // Should not happen because we already filtered events above.
+        continue;
+      }
+      for (const m of currentMetadata) {
+        const timeSeries = {
+          name: m.displayName || name,
+          events: [],
+          unit: m.unit,
+        };
+        timelines.push(timeSeries);
+        currentSeries.set(m.argKey, timeSeries);
       }
     }
-    timeSeries!.events.push(event);
+    for (const m of currentMetadata) {
+      const argVal = event.args[m.argKey];
+      if (!argVal) {
+        continue; // Skip events that don't have the expected argKey
+      }
+      const timeSeries = currentSeries.get(m.argKey);
+      if (event.value) {
+        // If the event already has a value, clone it to avoid modifying the original event.
+        const tsEvent = {
+          ...event,
+          value: argVal,
+        };
+        timeSeries?.events.push(tsEvent);
+      } else {
+        // Otherwise, add the value to the event to avoid additiona allocation.
+        event.value = argVal;
+        timeSeries?.events.push(event);
+      }
+    }
   }
   return timelines;
 }
