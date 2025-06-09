@@ -40,6 +40,7 @@ go_library(
         "//server/util/query_builder",
         "//server/util/random",
         "//server/util/retry",
+        "//server/util/rexec",
         "//server/util/status",
         "//server/util/subdomain",
         "@com_github_google_go_github_v59//github",
