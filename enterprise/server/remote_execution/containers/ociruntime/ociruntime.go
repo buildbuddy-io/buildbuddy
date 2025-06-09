@@ -63,6 +63,7 @@ var (
 	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 	capAdd      = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
 	mounts      = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
+	devices     = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -1166,6 +1167,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 		})
 	}
 	spec.Mounts = append(spec.Mounts, *mounts...)
+	spec.Linux.Devices = append(spec.Linux.Devices, *devices...)
 	return &spec, nil
 }
 
