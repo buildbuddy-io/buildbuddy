@@ -361,7 +361,7 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	}
 	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
 		WriteWithTailCloser: cw,
-		terminalWriter:      sw,
+		Terminal:            sw,
 	}
 	eventLogWriter.chunkstoreWriter = cw
 
@@ -429,32 +429,32 @@ type WriteWithTailCloser interface {
 // N lines.
 type ANSICursorBufferWriter struct {
 	WriteWithTailCloser
-	terminalWriter *terminal.ScreenWriter
+	Terminal *terminal.ScreenWriter
 }
 
 func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, error) {
 	if len(p) == 0 {
 		return w.WriteWithTailCloser.WriteWithTail(ctx, p, nil)
 	}
-	if _, err := w.terminalWriter.Write(p); err != nil {
+	if _, err := w.Terminal.Write(p); err != nil {
 		return 0, err
 	}
-	if !w.terminalWriter.AccumulatingOutput() {
+	if !w.Terminal.AccumulatingOutput() {
 		// We aren't accumulating scrolled-out output, which means this isn't using
 		// curses. Just render the terminal and write the rendered output.
-		n, err := w.WriteWithTailCloser.WriteWithTail(ctx, []byte(w.terminalWriter.Render()), []byte{})
+		n, err := w.WriteWithTailCloser.WriteWithTail(ctx, []byte(w.Terminal.Render()), []byte{})
 		if err != nil {
 			return 0, err
 		}
-		w.terminalWriter.Reset(0)
+		w.Terminal.Reset(0)
 		return n, err
 	}
-	if w.terminalWriter.WriteErr != nil {
-		return 0, w.terminalWriter.WriteErr
+	if w.Terminal.WriteErr != nil {
+		return 0, w.Terminal.WriteErr
 	}
-	popped := w.terminalWriter.OutputAccumulator.String()
-	w.terminalWriter.OutputAccumulator.Reset()
-	return w.WriteWithTailCloser.WriteWithTail(ctx, []byte(popped), []byte(w.terminalWriter.Render()))
+	popped := w.Terminal.OutputAccumulator.String()
+	w.Terminal.OutputAccumulator.Reset()
+	return w.WriteWithTailCloser.WriteWithTail(ctx, []byte(popped), []byte(w.Terminal.Render()))
 }
 
 func (w *ANSICursorBufferWriter) Close(ctx context.Context) error {
