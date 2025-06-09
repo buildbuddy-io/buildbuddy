@@ -1200,7 +1200,7 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 	{
 		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
-				Key:   []byte("bzzz"),
+				Key:   []byte("azzz"),
 				Value: []byte("just-an-innocent-write"),
 			},
 		}))
@@ -1216,7 +1216,7 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 		txid2 := []byte("TX2")
 		badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
-				Key:   []byte("bzzzz"),
+				Key:   []byte("azzzz"),
 				Value: []byte("baz"),
 			},
 		}).ToProto()
@@ -1237,6 +1237,35 @@ func TestTransactionLockingMappedRange(t *testing.T) {
 	err = proto.Unmarshal(buf, gotRD)
 	require.NoError(t, err)
 	require.True(t, proto.Equal(rd, gotRD))
+
+	// should be able to write to [a, b)
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("azzz"),
+				Value: []byte("just-an-innocent-write"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+
+	// should be able to write to [a, c) in a txn
+	{
+		wb = repl.DB().NewBatch()
+		txid2 := []byte("TX2")
+		badCmd, _ := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("azzzz"),
+				Value: []byte("baz"),
+			},
+		}).ToProto()
+		_, err = repl.PrepareTransaction(wb, txid2, badCmd)
+		require.NoError(t, err)
+		require.NoError(t, wb.Close())
+	}
 }
 
 func TestTransactionPrepareAndRollback(t *testing.T) {

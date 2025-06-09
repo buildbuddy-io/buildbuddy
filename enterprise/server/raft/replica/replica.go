@@ -501,6 +501,7 @@ func (sm *Replica) releaseLocks(wb pebble.Batch, txid []byte) {
 			delete(sm.lockedKeys, keyString)
 		}
 	}
+	sm.mappedRangeLockingTXID = nil
 }
 
 func (sm *Replica) loadTxnIntoMemory(txid []byte, batchReq *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
