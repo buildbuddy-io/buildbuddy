@@ -2444,6 +2444,8 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	if err := addLocalRangeEdits(leftRange, updatedLeftRange, leftBatch); err != nil {
 		return nil, err
 	}
+	// lock the left range
+	leftBatch.SetLockMappedRange(true)
 
 	rightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -2472,6 +2474,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 
 	metaStmt := tb.AddStatement()
 	metaStmt.SetRangeDescriptor(mrd).SetBatch(metaBatch)
+
 	if err := s.txnCoordinator.RunTxn(ctx, tb); err != nil {
 		return nil, err
 	}
