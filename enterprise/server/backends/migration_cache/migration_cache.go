@@ -632,114 +632,50 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 }
 
 type doubleWriter struct {
-	src  interfaces.CommittedWriteCloser
-	dest *asyncWriter
+	src          interfaces.CommittedWriteCloser
+	dest         interfaces.CommittedWriteCloser
+	wg           sync.WaitGroup
+	destWriteErr error
 }
 
 func (d *doubleWriter) Write(data []byte) (int, error) {
-	d.dest.Write(data)
+	if d.destWriteErr == nil {
+		d.wg.Add(1)
+		defer d.wg.Wait()
+		go func() {
+			defer d.wg.Done()
+			_, d.destWriteErr = d.dest.Write(data)
+		}()
+	}
 	return d.src.Write(data)
 }
 
 func (d *doubleWriter) Commit() error {
-	d.dest.Commit()
+	if d.destWriteErr != nil {
+		log.Warningf("Migration writer not committing because of write error: %s", d.destWriteErr)
+	} else {
+		d.wg.Add(1)
+		defer d.wg.Wait()
+		go func() {
+			defer d.wg.Done()
+			if err := d.dest.Commit(); err != nil {
+				log.Warningf("Migration writer commit err: %s", err)
+			}
+		}()
+	}
 	return d.src.Commit()
 }
 
 func (d *doubleWriter) Close() error {
-	err := d.src.Close()
-	// The destination writer might be closing in the background, so close it
-	// second to give it time to finish.
-	d.dest.Close()
-	return err
-}
-
-// asyncWriter is an interfaces.CommittedWriteCloser which doesn't block on
-// Write and Commit calls. Upon Close, it blocks until all pending writes and a
-// possible commit have completed. Its methods never return errors, so it's
-// only suitable for use when writing to a destination cache.
-type asyncWriter struct {
-	ops      chan asyncOp
-	done     chan struct{}
-	finished bool
-}
-
-type asyncOp struct {
-	data          []byte
-	commit, close bool
-}
-
-func newAsyncWriter(cwc interfaces.CommittedWriteCloser) *asyncWriter {
-	aw := &asyncWriter{
-		// Small buffer to avoid total stalls
-		ops:  make(chan asyncOp, 10),
-		done: make(chan struct{}),
-	}
-	go aw.run(cwc)
-	return aw
-}
-
-func (aw *asyncWriter) run(cwc interfaces.CommittedWriteCloser) {
-	defer close(aw.done)
-	var writeErr error
-	for op := range aw.ops {
-		if op.commit {
-			if writeErr == nil {
-				if err := cwc.Commit(); err != nil {
-					log.Warningf("Migration writer commit err: %s", err)
-				}
-			} else {
-				log.Warningf("Migration writer not committing because of write error: %s", writeErr)
-			}
+	d.wg.Add(1)
+	defer d.wg.Wait()
+	go func() {
+		defer d.wg.Done()
+		if err := d.dest.Close(); err != nil {
+			log.Warningf("Migration writer close err: %s", err)
 		}
-		if op.close || op.commit {
-			// Close even on commits, because close always comes after commit.
-			if err := cwc.Close(); err != nil {
-				log.Warningf("Migration writer close err: %s", err)
-			}
-			return
-		}
-		if writeErr != nil {
-			// ignore writes after an error
-			continue
-		}
-		n, err := cwc.Write(op.data)
-		if err != nil {
-			writeErr = err
-		}
-		if n != len(op.data) {
-			writeErr = io.ErrShortWrite
-		}
-	}
-}
-
-func (aw *asyncWriter) Write(data []byte) (int, error) {
-	if aw.finished {
-		log.Warning("asyncWriter attempting writes after commit or close")
-		return 0, io.ErrClosedPipe
-	}
-	aw.ops <- asyncOp{data: data}
-	return len(data), nil
-}
-
-func (aw *asyncWriter) finish(op asyncOp) {
-	if !aw.finished {
-		aw.finished = true
-		aw.ops <- op
-		close(aw.ops)
-	}
-}
-
-func (aw *asyncWriter) Commit() error {
-	aw.finish(asyncOp{commit: true})
-	return nil
-}
-
-func (aw *asyncWriter) Close() error {
-	aw.finish(asyncOp{close: true})
-	// wait for all the ops to be done, so clients can read their writes
-	<-aw.done
-	return nil
+	}()
+	return d.src.Close()
 }
 
 func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
@@ -758,12 +694,10 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 		log.Warningf("Migration failure creating dest %v writer: %s", r.GetDigest(), dstErr)
 		return srcWriter, nil
 	}
-
-	dw := &doubleWriter{
+	return &doubleWriter{
 		src:  srcWriter,
-		dest: newAsyncWriter(destWriter),
-	}
-	return dw, nil
+		dest: destWriter,
+	}, nil
 }
 
 func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
