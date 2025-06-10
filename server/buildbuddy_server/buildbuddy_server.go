@@ -1761,6 +1761,13 @@ func (s *BuildBuddyServer) RepoStatus(ctx context.Context, req *csinpb.RepoStatu
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) DropNamespace(ctx context.Context, req *csinpb.DropNamespaceRequest) (*csinpb.DropNamespaceResponse, error) {
+	if css := s.env.GetCodesearchService(); css != nil {
+		return css.DropNamespace(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCacheMetadataRequest) (*capb.GetCacheMetadataResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {

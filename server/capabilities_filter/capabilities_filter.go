@@ -131,6 +131,7 @@ var (
 		"KytheProxy",
 		"Index",
 		"RepoStatus",
+		"DropNamespace",
 		// Workspace management
 		"GetWorkspace",
 		"SaveWorkspace",
