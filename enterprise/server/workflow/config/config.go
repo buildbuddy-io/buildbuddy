@@ -244,7 +244,7 @@ find -L bazel-out/ -name *.go.kzip -print0 | xargs -r0 zipmerge output.go.kzip
 find -L bazel-out/ -name *.protobuf.kzip -print0 | xargs -r0 zipmerge output.protobuf.kzip
 
 if [ -f output.go.kzip ]; then
-  "$KYTHE_DIR"/indexers/go_indexer -continue output.go.kzip >> kythe_entries
+  "$KYTHE_DIR"/indexers/go_indexer -continue -use_compilation_corpus_for_all output.go.kzip >> kythe_entries
 fi
 if [ -f output.protobuf.kzip ]; then
   "$KYTHE_DIR"/indexers/proto_indexer -index_file output.protobuf.kzip >> kythe_entries
