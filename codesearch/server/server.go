@@ -264,6 +264,11 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 		if len(parts) == 1 {
 			continue
 		}
+
+		if file.FileInfo().IsDir() {
+			continue
+		}
+
 		filename := filepath.Join(parts[1:]...)
 
 		rc, err := file.Open()
