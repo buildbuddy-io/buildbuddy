@@ -10,7 +10,8 @@ enum ReplacementStrategy {
   UNKNOWN_REPLACEMENT_STRATEGY = 0;
   // Download and fully reindex a single repository.
   REPLACE_REPO = 1;
-  // Apply an incremental update, using data included in the request to update the index.
+  // Apply an incremental update, using data included in the request to update
+  // the index.
   INCREMENTAL = 2;
 }
 

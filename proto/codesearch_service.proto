@@ -10,7 +10,8 @@ option go_package = "codesearch_service";
 service CodesearchService {
   rpc Index(index.IndexRequest) returns (index.IndexResponse);
   rpc RepoStatus(index.RepoStatusRequest) returns (index.RepoStatusResponse);
-  rpc DropNamespace(index.DropNamespaceRequest) returns (index.DropNamespaceResponse);
+  rpc DropNamespace(index.DropNamespaceRequest)
+      returns (index.DropNamespaceResponse);
   rpc Search(search.SearchRequest) returns (search.SearchResponse);
   rpc IngestAnnotations(index.IngestAnnotationsRequest)
       returns (index.IngestAnnotationsResponse);

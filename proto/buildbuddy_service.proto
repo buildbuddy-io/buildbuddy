@@ -235,7 +235,8 @@ service BuildBuddyService {
   rpc KytheProxy(search.KytheRequest) returns (search.KytheResponse);
   rpc Index(index.IndexRequest) returns (index.IndexResponse);
   rpc RepoStatus(index.RepoStatusRequest) returns (index.RepoStatusResponse);
-  rpc DropNamespace(index.DropNamespaceRequest) returns (index.DropNamespaceResponse);
+  rpc DropNamespace(index.DropNamespaceRequest)
+      returns (index.DropNamespaceResponse);
 
   // Encryption API
   rpc SetEncryptionConfig(encryption.SetEncryptionConfigRequest)
