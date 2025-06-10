@@ -2740,11 +2740,6 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 				continue
 			}
 		}
-		var key filestore.PebbleKey
-		if _, err := key.FromBytes(iter.Key()); err != nil {
-			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read key: %s", e.cacheName, err)
-			continue
-		}
 
 		err = proto.Unmarshal(iter.Value(), fileMetadata)
 		if err != nil {
