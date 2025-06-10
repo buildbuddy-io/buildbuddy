@@ -1760,8 +1760,10 @@ type ExperimentFlagProvider interface {
 	Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64
 }
 
-// Wrapper around a bspb.ByteStreamServer so we can distinguish between the
-// bytestream proxy and the local bytestream server represented by this.
+// ByteStreamServer is a subset of bspb.ByteStreamServer that is required
+// by the byte_stream_server_proxy for writing to and reading from the local
+// cache.
 type ByteStreamServer interface {
-	bspb.ByteStreamServer
+	Read(*bspb.ReadRequest, bspb.ByteStream_ReadServer) error
+	Write(bspb.ByteStream_WriteServer) error
 }
