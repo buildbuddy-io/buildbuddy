@@ -523,7 +523,7 @@ func TestAddRangeBack(t *testing.T) {
 			Range:     rd,
 			ReplicaId: replicaToRemove.GetReplicaId(),
 		})
-		if rsp != nil {
+		if rsp.GetRange() != nil {
 			rd = rsp.GetRange()
 		}
 		if err != nil {
