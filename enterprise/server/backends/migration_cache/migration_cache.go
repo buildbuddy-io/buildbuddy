@@ -652,14 +652,14 @@ func (d *doubleWriter) Write(data []byte) (int, error) {
 
 func (d *doubleWriter) Commit() error {
 	if d.destWriteErr != nil {
-		log.Warningf("Migration writer not committing because of write error: %s", d.destWriteErr)
+		log.Warningf("Migration destination writer not committing because of write error: %s", d.destWriteErr)
 	} else {
 		d.wg.Add(1)
 		defer d.wg.Wait()
 		go func() {
 			defer d.wg.Done()
 			if err := d.dest.Commit(); err != nil {
-				log.Warningf("Migration writer commit err: %s", err)
+				log.Warningf("Migration destination writer commit err: %s", err)
 			}
 		}()
 	}
@@ -672,7 +672,7 @@ func (d *doubleWriter) Close() error {
 	go func() {
 		defer d.wg.Done()
 		if err := d.dest.Close(); err != nil {
-			log.Warningf("Migration writer close err: %s", err)
+			log.Warningf("Migration destination writer close err: %s", err)
 		}
 	}()
 	return d.src.Close()
