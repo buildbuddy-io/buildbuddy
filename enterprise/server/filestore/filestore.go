@@ -279,9 +279,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 			hashStr = fmt.Sprintf("%x", h.Sum(nil))
 		}
 
-		filePath := hashStr + "/" + strconv.Itoa(int(pmk.digestFunction)) + "/" + pmk.isolation + "/" + pmk.encryptionKeyID
-		partDir := PartitionDirectoryPrefix + pmk.partID
-		filePath = partDir + "/" + filePath + "v5"
+		filePath := PartitionDirectoryPrefix + pmk.partID + "/" + hashStr + "/" + strconv.Itoa(int(pmk.digestFunction)) + "/" + pmk.isolation + "/" + pmk.encryptionKeyID + "v5"
 		return []byte(filePath), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
