@@ -8,7 +8,9 @@ package index;
 
 enum ReplacementStrategy {
   UNKNOWN_REPLACEMENT_STRATEGY = 0;
+  // Download and fully reindex a single repository.
   REPLACE_REPO = 1;
+  // Apply an incremental update, using data included in the request to update the index.
   INCREMENTAL = 2;
 }
 
@@ -29,8 +31,7 @@ message IndexRequest {
   // Ex. "gr12345" or "anon", or "public" or "foobarbaz".
   string namespace = 4;
 
-  // The strategy to use when indexing this repo.
-  // By default the server will assume REPLACE_REPO.
+  // Required. The strategy to use when indexing this repo.
   ReplacementStrategy replacement_strategy = 5;
 
   // If true, the request will return immediately, even before indexing is
@@ -61,6 +62,17 @@ message RepoStatusResponse {
 
   // The SHA of the most recently indexed commit
   string last_indexed_commit_sha = 2;
+}
+
+message DropNamespaceRequest {
+  context.RequestContext request_context = 1;
+
+  // Required. See namespace field on IndexRequest above.
+  string namespace = 2;
+}
+
+message DropNamespaceResponse {
+  context.ResponseContext response_context = 1;
 }
 
 message IngestAnnotationsRequest {

@@ -355,6 +355,31 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 	return rsp, nil
 }
 
+func (css *codesearchServer) DropNamespace(ctx context.Context, req *inpb.DropNamespaceRequest) (*inpb.DropNamespaceResponse, error) {
+	namespace, err := css.getUserNamespace(ctx, req.GetNamespace())
+	if err != nil {
+		return nil, err
+	}
+
+	log.Infof("Dropping namespace %s", namespace)
+	writer, err := index.NewWriter(css.db, namespace)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to create index writer for namespace %s: %v", namespace, err)
+	}
+
+	if err := writer.DropNamespace(); err != nil {
+		return nil, status.InternalErrorf("failed to drop namespace %s: %v", namespace, err)
+	}
+
+	err = writer.Flush()
+	if err != nil {
+		return nil, status.InternalErrorf("failed to flush index writer for namespace %s: %v", namespace, err)
+	}
+
+	log.Infof("Dropped namespace %s", namespace)
+	return &inpb.DropNamespaceResponse{}, nil
+}
+
 func (css *codesearchServer) RepoStatus(ctx context.Context, req *inpb.RepoStatusRequest) (*inpb.RepoStatusResponse, error) {
 	namespace, err := css.getUserNamespace(ctx, req.GetNamespace())
 	if err != nil {
