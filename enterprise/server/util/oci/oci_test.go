@@ -693,11 +693,14 @@ func TestResolve_WithCache(t *testing.T) {
 		for _, readManifests := range []bool{false, true} {
 			for _, writeManifests := range []bool{false, true} {
 				for _, writeLayers := range []bool{false, true} {
-					tc := base
-					tc.readManifests = readManifests
-					tc.writeManifests = writeManifests
-					tc.writeLayers = writeLayers
-					testCasesWithFlags = append(testCasesWithFlags, tc)
+					for _, readLayers := range []bool{false, true} {
+						tc := base
+						tc.readManifests = readManifests
+						tc.writeManifests = writeManifests
+						tc.writeLayers = writeLayers
+						tc.readLayers = readLayers
+						testCasesWithFlags = append(testCasesWithFlags, tc)
+					}
 				}
 			}
 		}
@@ -718,6 +721,7 @@ func TestResolve_WithCache(t *testing.T) {
 			flags.Set(t, "executor.container_registry.write_manifests_to_cache", tc.writeManifests)
 			flags.Set(t, "executor.container_registry.read_manifests_from_cache", tc.readManifests)
 			flags.Set(t, "executor.container_registry.write_layers_to_cache", tc.writeLayers)
+			flags.Set(t, "executor.container_registry.read_layers_from_cache", tc.readLayers)
 			counter := atomic.Int32{}
 			registry := testregistry.Run(t, testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
