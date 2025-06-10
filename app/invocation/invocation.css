@@ -638,7 +638,6 @@
   font-weight: 700;
   font-size: 18px;
   color: #212121;
-  margin-bottom: 16px;
 }
 
 .action-header {
@@ -654,6 +653,23 @@
   display: flex;
   margin-bottom: 16px;
   color: #212121;
+}
+
+.action-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.action-header .base-button {
+  flex-shrink: 0;
+}
+
+.action-header .base-button .icon.copy-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
 }
 
 .action-section > div {
