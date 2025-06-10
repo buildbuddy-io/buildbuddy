@@ -500,6 +500,7 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 func layerFiles(t *testing.T, layer v1.Layer) map[string][]byte {
 	rc, err := layer.Uncompressed()
 	require.NoError(t, err)
+	defer func() { err := rc.Close(); require.NoError(t, err) }()
 	tr := tar.NewReader(rc)
 	contents := map[string][]byte{}
 	for {
@@ -514,8 +515,6 @@ func layerFiles(t *testing.T, layer v1.Layer) map[string][]byte {
 			contents[header.Name] = buf.Bytes()
 		}
 	}
-	err = rc.Close()
-	require.NoError(t, err)
 	return contents
 }
 
