@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"io"
@@ -101,7 +102,9 @@ func (t *metricsTransport) RoundTrip(in *http.Request) (out *http.Response, err 
 	}
 	resp.Body = &instrumentedReadCloser{
 		ReadCloser: resp.Body,
+		ctx:        in.Context(),
 		host:       hostLabel,
+		path:       in.URL.Path,
 		method:     in.Method,
 		statusCode: resp.StatusCode,
 	}
@@ -111,7 +114,10 @@ func (t *metricsTransport) RoundTrip(in *http.Request) (out *http.Response, err 
 type instrumentedReadCloser struct {
 	io.ReadCloser
 
+	ctx context.Context
+
 	host       string
+	path       string
 	method     string
 	statusCode int
 	bytesRead  int
@@ -125,6 +131,7 @@ func (rc *instrumentedReadCloser) Read(p []byte) (int, error) {
 
 func (rc *instrumentedReadCloser) Close() error {
 	err := rc.ReadCloser.Close()
+	log.CtxDebugf(rc.ctx, "%s %s %.64s %d %d", rc.method, rc.host, rc.path, rc.statusCode, rc.bytesRead)
 	metrics.HTTPClientResponseSizeBytes.With(prometheus.Labels{
 		metrics.HTTPHostLabel:         rc.host,
 		metrics.HTTPMethodLabel:       rc.method,
