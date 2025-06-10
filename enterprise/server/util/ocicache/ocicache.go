@@ -112,6 +112,9 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 		return nil, status.InternalErrorf("could not unmarshal metadata for manifest in %q: %s", repo, err)
 	}
 	manifestHit(ctx)
+	metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
+		metrics.OCIResourceTypeLabel: metrics.OCIManifest,
+	}).Observe(float64(len(mc.Raw)))
 	return &mc, nil
 }
 
