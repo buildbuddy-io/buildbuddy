@@ -233,7 +233,7 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeHandler) erro
 	return nil
 }
 
-func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteRequest) (*writeHandler, error) {
+func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteRequest) (*writeHandler, error) {
 	if err := checkInitialPreconditions(req); err != nil {
 		return nil, err
 	}
@@ -424,7 +424,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		}
 
 		if streamState == nil {
-			streamState, err = s.BeginWrite(ctx, req)
+			streamState, err = s.beginWrite(ctx, req)
 			if status.IsAlreadyExistsError(err) {
 				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 				return s.handleAlreadyExists(ctx, hitTracker, stream, req)
