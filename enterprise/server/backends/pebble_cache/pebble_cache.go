@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1410,11 +1411,7 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
 	if len(estimatedSizeByGroup) > 0 {
-		sortedKeys := make([]string, 0, len(estimatedSizeByGroup))
-		for k, _ := range estimatedSizeByGroup {
-			sortedKeys = append(sortedKeys, k)
-		}
-		sort.Strings(sortedKeys)
+		sortedKeys := slices.Sorted(maps.Keys(estimatedSizeByGroup))
 		buf += "\n[All partitions] Approximate size by group:\n"
 		for _, g := range sortedKeys {
 			if s, ok := estimatedSizeByGroup[g]; ok {
