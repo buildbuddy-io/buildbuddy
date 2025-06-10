@@ -820,8 +820,6 @@ func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
 // updateDatabaseVersion updates the min and max versions of the database.
 // Both the stored metadata and instance variables are updated.
 func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.PebbleKeyVersion) error {
-	versionKey := p.databaseVersionKey()
-
 	p.versionMu.Lock()
 	defer p.versionMu.Unlock()
 
@@ -850,7 +848,8 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 		return err
 	}
 	defer db.Close()
-	if err := db.Set(versionKey, buf, pebble.Sync); err != nil {
+
+	if err := db.Set(p.databaseVersionKey(), buf, pebble.Sync); err != nil {
 		return err
 	}
 
