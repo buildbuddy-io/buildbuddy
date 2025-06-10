@@ -758,12 +758,12 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	if *writeLayersToCache {
 		mediaType, err := l.MediaType()
 		if err != nil {
-			log.CtxWarningf(l.image.ctx, "Could not fetch media type for layer: %s", err)
+			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
 			return upstream, nil
 		}
 		contentLength, err := l.Size()
 		if err != nil {
-			log.CtxWarningf(l.image.ctx, "Could not fetch size for layer: %s", err)
+			log.CtxWarningf(l.image.ctx, "Could not get size for layer: %s", err)
 			return upstream, nil
 		}
 		rc, err := ocicache.NewBlobReadThroughCacher(
