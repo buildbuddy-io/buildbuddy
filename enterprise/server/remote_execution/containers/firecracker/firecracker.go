@@ -93,6 +93,7 @@ var (
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
 	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
+	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DnsOverride{}, "DNS entries to override in the guest.")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -522,7 +523,11 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 		HostCpuid:         getCPUID(),
 	}
-	vmConfig.BootArgs = getBootArgs(vmConfig)
+	var err error
+	vmConfig.BootArgs, err = getBootArgs(vmConfig, *dnsOverrides)
+	if err != nil {
+		return nil, status.WrapError(err, "get boot args")
+	}
 	opts := ContainerOpts{
 		VMConfiguration:        vmConfig,
 		ContainerImage:         args.Props.ContainerImage,
@@ -1085,7 +1090,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 
-	if err := c.setupNetworking(ctx); err != nil {
+	if err := c.setupNetworking(ctx, *dnsOverrides); err != nil {
 		return err
 	}
 
@@ -1438,7 +1443,7 @@ func (c *FirecrackerContainer) getChroot() string {
 	return filepath.Join(c.jailerRoot, "firecracker", c.id, "root")
 }
 
-func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
+func getBootArgs(vmConfig *fcpb.VMConfiguration, dnsOverrides []*networking.DnsOverride) (string, error) {
 	kernelArgs := []string{
 		"ro",
 		"console=ttyS0",
@@ -1484,19 +1489,22 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	if platform.VFSEnabled() {
 		initArgs = append(initArgs, "-enable_vfs")
 	}
-	return strings.Join(append(initArgs, kernelArgs...), " ")
+	return strings.Join(append(initArgs, kernelArgs...), " "), nil
 }
 
 // getConfig returns the firecracker config for the current container and given
 // filesystem image paths. The image paths are not expected to be in the chroot;
 // they will be hardlinked to the chroot when starting the machine (see
 // NaiveChrootStrategy).
-func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
+func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerFS, scratchFS, workspaceFS string, dnsOverrides []*networking.DnsOverride) (*fcclient.Config, error) {
 	var netnsPath string
 	if c.network != nil {
 		netnsPath = c.network.NamespacePath()
 	}
-	bootArgs := getBootArgs(c.vmConfig)
+	bootArgs, err := getBootArgs(c.vmConfig, dnsOverrides)
+	if err != nil {
+		return nil, status.WrapError(err, "get boot args")
+	}
 	jailerCfg, err := c.getJailerConfig(ctx, c.executorConfig.GuestKernelImagePath)
 	if err != nil {
 		return nil, status.WrapError(err, "get jailer config")
@@ -1562,9 +1570,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 					HostDevName: tapDeviceName,
 					MacAddress:  tapDeviceMac,
 				},
-				// We only use MMDS for the dockerd config,
-				// which is only needed if dockerd is enabled.
-				AllowMMDS: c.vmConfig.InitDockerd,
+				AllowMMDS: true,
 			},
 		}
 	}
@@ -1678,7 +1684,7 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	return walkErr
 }
 
-func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
+func (c *FirecrackerContainer) setupNetworking(ctx context.Context, dnsOverrides []*networking.DnsOverride) error {
 	if !c.vmConfig.EnableNetworking {
 		return nil
 	}
@@ -1692,7 +1698,7 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 		}
 	}
 
-	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP)
+	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP, dnsOverrides)
 	if err != nil {
 		return status.UnavailableErrorf("create VM network: %s", err)
 	}
@@ -1960,11 +1966,11 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 
-	if err := c.setupNetworking(ctx); err != nil {
+	if err := c.setupNetworking(ctx, *dnsOverrides); err != nil {
 		return err
 	}
 
-	fcCfg, err := c.getConfig(ctx, rootFSPath, containerFSPath, scratchFSPath, workspacePlaceholderPath)
+	fcCfg, err := c.getConfig(ctx, rootFSPath, containerFSPath, scratchFSPath, workspacePlaceholderPath, *dnsOverrides)
 	if err != nil {
 		return err
 	}
@@ -1980,14 +1986,26 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger()),
 	}
+
+	// The /init script unconditionally checks for this key if networking is
+	// enabled and will fail if it isn't set, so make sure to always set it,
+	// even if it's empty.
+	metadata := map[string]string{}
+	if c.vmConfig.EnableNetworking {
+		marshalledOverrides, err := json.Marshal(*dnsOverrides)
+		if err != nil {
+			return status.WrapError(err, "marshall dns overrides")
+		}
+		metadata["dns_overrides"] = string(marshalledOverrides)
+	}
 	if c.vmConfig.InitDockerd {
 		dockerDaemonConfig, err := getDockerDaemonConfig()
 		if err != nil {
 			return status.UnavailableErrorf("get Docker daemon config: %s", err)
 		}
-		metadata := map[string]string{
-			"dockerd_daemon_json": string(dockerDaemonConfig),
-		}
+		metadata["dockerd_daemon_json"] = string(dockerDaemonConfig)
+	}
+	if len(metadata) > 0 {
 		machineOpts = append(machineOpts, withMetadata(metadata))
 	}
 	if c.isBalloonEnabled() {
