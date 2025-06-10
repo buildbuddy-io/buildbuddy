@@ -25,7 +25,7 @@ import (
 type ByteStreamServerProxy struct {
 	atimeUpdater  interfaces.AtimeUpdater
 	authenticator interfaces.Authenticator
-	local         bspb.ByteStreamClient
+	local         bspb.ByteStreamServer
 	remote        bspb.ByteStreamClient
 }
 
