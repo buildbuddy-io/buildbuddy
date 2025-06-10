@@ -375,11 +375,11 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 	invalid := false
 	if r.GetCacheType() == rspb.CacheType_CAS && r.GetDigest().GetSizeBytes() != int64(len(data)) {
 		invalid = true
-	} else if strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
+	} else if instance := r.GetInstanceName(); strings.HasPrefix(instance, content_addressable_storage_server.TreeCacheRemoteInstanceName) {
 		// If this is a TreeCache entry that we wrote; pull the size
 		// from the remote instance name.
-		parts := strings.Split(r.GetInstanceName(), "/")
-		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+		i := strings.LastIndex(instance, "/") + 1
+		if s, err := strconv.Atoi(instance[i:]); err == nil {
 			if s != len(data) {
 				invalid = true
 			}
@@ -1130,11 +1130,11 @@ func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) 
 	if rn.GetCacheType() == rspb.CacheType_CAS {
 		// If this is a CAS object, size the buffer to fit exactly.
 		buf = bytes.NewBuffer(make([]byte, 0, int(rn.GetDigest().GetSizeBytes())))
-	} else if strings.HasPrefix(rn.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
+	} else if instance := rn.GetInstanceName(); strings.HasPrefix(instance, content_addressable_storage_server.TreeCacheRemoteInstanceName) {
 		// If this is a TreeCache entry that we wrote; pull the size
 		// from the remote instance name.
-		parts := strings.Split(rn.GetInstanceName(), "/")
-		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+		i := strings.LastIndex(instance, "/") + 1
+		if s, err := strconv.Atoi(instance[i:]); err == nil {
 			buf = bytes.NewBuffer(make([]byte, 0, min(s, maxInitialByteBufferSize)))
 		} else {
 			buf = new(bytes.Buffer)
