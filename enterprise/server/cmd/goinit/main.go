@@ -326,7 +326,7 @@ func main() {
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
 
-	die(copyFile("/init", "/mnt/init", 0555))
+	die(os.Link("/init", "/mnt/init"))
 
 	log.Debugf("switching root!")
 	die(chdir("/mnt"))
