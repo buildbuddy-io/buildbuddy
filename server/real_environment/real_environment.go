@@ -96,7 +96,7 @@ type RealEnv struct {
 	buildEventServer                 pepb.PublishBuildEventServer
 	localCASServer                   repb.ContentAddressableStorageServer
 	casServer                        repb.ContentAddressableStorageServer
-	localByteStreamServer            interfaces.ByteStreamServer
+	localByteStreamServer            bspb.ByteStreamClient
 	byteStreamServer                 bspb.ByteStreamServer
 	localActionCacheServer           repb.ActionCacheServer
 	actionCacheServer                repb.ActionCacheServer
@@ -547,10 +547,10 @@ func (r *RealEnv) SetCASServer(casServer repb.ContentAddressableStorageServer) {
 	r.casServer = casServer
 }
 
-func (r *RealEnv) GetLocalByteStreamServer() interfaces.ByteStreamServer {
+func (r *RealEnv) GetLocalByteStreamServer() bspb.ByteStreamClient {
 	return r.localByteStreamServer
 }
-func (r *RealEnv) SetLocalByteStreamServer(localByteStreamServer interfaces.ByteStreamServer) {
+func (r *RealEnv) SetLocalByteStreamServer(localByteStreamServer bspb.ByteStreamClient) {
 	r.localByteStreamServer = localByteStreamServer
 }
 

@@ -54,7 +54,6 @@ import (
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/genproto/googleapis/longrunning"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -1758,12 +1757,4 @@ type ExperimentFlagProvider interface {
 	String(ctx context.Context, flagName string, defaultValue string, opts ...any) string
 	Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64
 	Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64
-}
-
-// ByteStreamServer is a subset of bspb.ByteStreamServer that is required
-// by the byte_stream_server_proxy for writing to and reading from the local
-// cache.
-type ByteStreamServer interface {
-	Read(*bspb.ReadRequest, bspb.ByteStream_ReadServer) error
-	Write(bspb.ByteStream_WriteServer) error
 }
