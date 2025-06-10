@@ -37,13 +37,6 @@ const (
 
 	maxManifestSize = 10000000
 
-	hitLabel    = "hit"
-	missLabel   = "miss"
-	uploadLabel = "upload"
-
-	actionCacheLabel = "action_cache"
-	casLabel         = "cas"
-
 	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
@@ -68,37 +61,46 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 			},
 		},
 	}
-	updateCacheEventMetric(actionCacheLabel, uploadLabel)
 	return cachetools.UploadActionResult(ctx, acClient, arRN, ar)
 }
 
-func updateCacheEventMetric(cacheType, eventType string) {
+func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
 	metrics.OCIRegistryCacheEvents.With(prometheus.Labels{
-		metrics.CacheTypeLabel:      cacheType,
-		metrics.CacheEventTypeLabel: eventType,
+		metrics.OCIResourceTypeLabel: ociResourceTypeLabel,
+		metrics.CacheEventTypeLabel:  cacheEventType,
 	}).Inc()
+}
+
+func manifestMiss(ctx context.Context) {
+	log.CtxDebug(ctx, "oci cache manifest miss")
+	updateCacheEventMetric(metrics.OCIManifest, metrics.MissStatusLabel)
+}
+
+func manifestHit(ctx context.Context) {
+	log.CtxDebug(ctx, "oci cache manifest hit")
+	updateCacheEventMetric(metrics.OCIManifest, metrics.HitStatusLabel)
 }
 
 func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash) (*ocipb.OCIManifestContent, error) {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
+		manifestMiss(ctx)
 		return nil, err
 	}
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
+		manifestMiss(ctx)
 		return nil, err
 	}
 	meta := ar.GetExecutionMetadata()
 	if meta == nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
+		manifestMiss(ctx)
 		log.CtxWarningf(ctx, "Missing execution metadata for manifest in %q", repo)
 		return nil, status.InternalErrorf("missing execution metadata for manifest in %q", repo)
 	}
 	aux := meta.GetAuxiliaryMetadata()
 	if aux == nil || len(aux) != 1 {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
+		manifestMiss(ctx)
 		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest in %q", repo)
 		return nil, status.InternalErrorf("missing auxiliary metadata for manifest in %q", repo)
 	}
@@ -106,10 +108,10 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	var mc ocipb.OCIManifestContent
 	err = any.UnmarshalTo(&mc)
 	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
+		manifestMiss(ctx)
 		return nil, status.InternalErrorf("could not unmarshal metadata for manifest in %q: %s", repo, err)
 	}
-	updateCacheEventMetric(actionCacheLabel, hitLabel)
+	manifestHit(ctx)
 	return &mc, nil
 }
 
@@ -143,12 +145,10 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	}
 	arKeyBytes, err := proto.Marshal(arKey)
 	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return nil, err
 	}
 	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
 	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return nil, err
 	}
 	arRN := digest.NewACResourceName(
@@ -158,10 +158,8 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	)
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
-		updateCacheEventMetric(actionCacheLabel, missLabel)
 		return nil, err
 	}
-	updateCacheEventMetric(actionCacheLabel, hitLabel)
 
 	var blobMetadataCASDigest *repb.Digest
 	var blobCASDigest *repb.Digest
@@ -176,7 +174,6 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 		}
 	}
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
-		updateCacheEventMetric(casLabel, missLabel)
 		return nil, status.NotFoundErrorf("missing blob metadata digest or blob digest for %s", repo)
 	}
 	blobMetadataRN := digest.NewCASResourceName(
@@ -187,11 +184,19 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	blobMetadata := &ocipb.OCIBlobMetadata{}
 	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
 	if err != nil {
-		updateCacheEventMetric(casLabel, missLabel)
 		return nil, err
 	}
-	updateCacheEventMetric(casLabel, hitLabel)
 	return blobMetadata, nil
+}
+
+func blobMiss(ctx context.Context) {
+	log.CtxDebug(ctx, "oci cache blob miss")
+	updateCacheEventMetric(metrics.OCIBlob, metrics.MissStatusLabel)
+}
+
+func blobHit(ctx context.Context) {
+	log.CtxDebug(ctx, "oci cache blob hit")
+	updateCacheEventMetric(metrics.OCIBlob, metrics.HitStatusLabel)
 }
 
 func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash gcr.Hash, contentLength int64) error {
@@ -209,14 +214,14 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	mw := io.MultiWriter(w, counter)
 	defer func() {
 		metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
-			metrics.CacheTypeLabel: casLabel,
+			metrics.OCIResourceTypeLabel: metrics.OCIBlob,
 		}).Observe(float64(counter.Count()))
 	}()
 	if err := cachetools.GetBlob(ctx, bsClient, blobRN, mw); err != nil {
-		updateCacheEventMetric(casLabel, missLabel)
+		blobMiss(ctx)
 		return err
 	}
-	updateCacheEventMetric(casLabel, hitLabel)
+	blobHit(ctx)
 	return nil
 }
 
@@ -225,7 +230,6 @@ func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClien
 		ContentLength: contentLength,
 		ContentType:   contentType,
 	}
-	updateCacheEventMetric(casLabel, uploadLabel)
 	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", cacheDigestFunction, blobMetadata)
 	if err != nil {
 		return err
@@ -267,7 +271,6 @@ func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClien
 		actionResultInstanceName,
 		cacheDigestFunction,
 	)
-	updateCacheEventMetric(actionCacheLabel, uploadLabel)
 	return cachetools.UploadActionResult(ctx, acClient, arRN, ar)
 }
 
@@ -282,7 +285,6 @@ func WriteBlobToCache(ctx context.Context, r io.Reader, bsClient bspb.ByteStream
 		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	updateCacheEventMetric(casLabel, uploadLabel)
 	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, r)
 	if err != nil {
 		return err
@@ -305,7 +307,6 @@ func NewBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, acClie
 		cacheDigestFunction,
 	)
 	blobRN.SetCompressor(repb.Compressor_ZSTD)
-	updateCacheEventMetric(casLabel, uploadLabel)
 	uw, err := cachetools.NewUploadWriter(ctx, bsClient, blobRN)
 	if err != nil {
 		return nil, err
