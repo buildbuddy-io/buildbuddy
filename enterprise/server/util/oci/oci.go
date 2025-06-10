@@ -42,6 +42,7 @@ var (
 	useCachePercent        = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls to use the cache (individual cache flags must also be enabled).")
 	writeManifestsToCache  = flag.Bool("executor.container_registry.write_manifests_to_cache", false, "Write resolved manifests to the cache.")
 	readManifestsFromCache = flag.Bool("executor.container_registry.read_manifests_from_cache", false, "Read manifests from the cache after a HEAD request to the upstream registry.")
+	writeLayersToCache     = flag.Bool("executor.container_registry.write_layers_to_cache", false, "Write layers to the cache.")
 )
 
 type MirrorConfig struct {
@@ -749,7 +750,39 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	return l.remoteLayer.Compressed()
+	upstream, err := l.remoteLayer.Compressed()
+	if err != nil {
+		return nil, err
+	}
+
+	if *writeLayersToCache {
+		mediaType, err := l.MediaType()
+		if err != nil {
+			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
+			return upstream, nil
+		}
+		contentLength, err := l.Size()
+		if err != nil {
+			log.CtxWarningf(l.image.ctx, "Could not get size for layer: %s", err)
+			return upstream, nil
+		}
+		rc, err := ocicache.NewBlobReadThroughCacher(
+			l.image.ctx,
+			upstream,
+			l.image.bsClient,
+			l.image.acClient,
+			l.repo,
+			l.digest,
+			string(mediaType),
+			contentLength,
+		)
+		if err != nil {
+			return upstream, nil
+		}
+		return rc, nil
+	}
+
+	return upstream, nil
 }
 
 // Uncompressed fetches the compressed bytes from the upstream server
