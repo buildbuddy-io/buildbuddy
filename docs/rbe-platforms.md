@@ -82,6 +82,14 @@ and a short-lived token can be generated with `aws ecr get-login-password --regi
 --remote_exec_header=x-buildbuddy-platform.container-registry-password="$(aws ecr get-login-password --region REGION)"
 ```
 
+Amazon Public ECR is distinct from Amazon ECR and uses a different command to generate
+short-lived tokens: `aws ecr-public get-login-password --region REGION`:
+
+```bash
+--remote_exec_header=x-buildbuddy-platform.container-registry-username=AWS
+--remote_exec_header=x-buildbuddy-platform.container-registry-password="$(aws ecr-public get-login-password --region REGION)"
+```
+
 Some cloud providers may also allow the use of long-lived tokens, which
 can also be used in remote headers. For example, GCR allows setting a
 username of `_json_key` and then using a service account's
