@@ -732,9 +732,12 @@ type layerFromDigest struct {
 	repo   gcrname.Repository
 	image  *imageFromRawManifest
 
-	puller      *remote.Puller
-	desc        *gcr.Descriptor
-	remoteLayer gcr.Layer
+	puller *remote.Puller
+	desc   *gcr.Descriptor
+
+	remoteLayerOnce sync.Once
+	remoteLayerErr  error
+	remoteLayer     gcr.Layer
 }
 
 func (l *layerFromDigest) Digest() (gcr.Hash, error) {
@@ -746,16 +749,18 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 }
 
 func (l *layerFromDigest) fetchRemoteLayer() error {
-	if l.remoteLayer != nil {
-		return nil
-	}
-	ref := l.repo.Digest(l.digest.String())
-	remoteLayer, err := l.puller.Layer(l.image.ctx, ref)
-	if err != nil {
-		return err
-	}
-	l.remoteLayer = remoteLayer
-	return nil
+	l.remoteLayerOnce.Do(func() {
+		if l.remoteLayer != nil {
+			return
+		}
+		ref := l.repo.Digest(l.digest.String())
+		remoteLayer, err := l.puller.Layer(l.image.ctx, ref)
+		if err != nil {
+			l.remoteLayerErr = err
+		}
+		l.remoteLayer = remoteLayer
+	})
+	return l.remoteLayerErr
 }
 
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
