@@ -166,7 +166,7 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 
 	requestContext := requestcontext.ProtoRequestContextFromContext(ctx)
 	effectiveGroup := akg.GetGroupID()
-	if requestContext.GetGroupId() != "" {
+	if requestContext != nil && requestContext.GetGroupId() != "" {
 		if slices.Contains(allowedGroups, requestContext.GetGroupId()) {
 			effectiveGroup = requestContext.GetGroupId()
 		} else {
@@ -198,11 +198,8 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	}
 
 	requestContext := requestcontext.ProtoRequestContextFromContext(ctx)
-	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4191):
-	// return an error here once we have a better understanding of why the
-	// request context can be missing.
 	if requestContext == nil {
-		log.CtxInfof(ctx, "Request is missing request context")
+		return nil, status.InternalErrorf("Request is missing request context")
 	} else if requestContext.GetGroupId() == "" {
 		log.CtxInfof(ctx, "Request context group ID is empty")
 	}
@@ -263,11 +260,6 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
 	enforceIPRules := false
-
-	if effectiveGroup == "" && len(u.Groups) > 0 {
-		// If no effective group is specified, use the first group in the list.
-		effectiveGroup = u.Groups[0].Group.GroupID
-	}
 
 	var capabilities []cappb.Capability
 	for _, g := range u.Groups {

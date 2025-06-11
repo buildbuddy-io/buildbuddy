@@ -285,16 +285,16 @@ func RequestID(next http.Handler) http.Handler {
 }
 
 func parseRequestContext(r *http.Request) (*ctxpb.RequestContext, error) {
+	reqCtx := &ctxpb.RequestContext{}
 	q := r.URL.Query()
 	if !q.Has("request_context") {
-		return nil, nil
+		return reqCtx, nil
 	}
 	val := q.Get("request_context")
 	b, err := base64.StdEncoding.DecodeString(val)
 	if err != nil {
 		return nil, err
 	}
-	reqCtx := &ctxpb.RequestContext{}
 	if err := proto.Unmarshal(b, reqCtx); err != nil {
 		return nil, err
 	}
@@ -306,11 +306,16 @@ func RequestContextFromURL(next http.Handler) http.Handler {
 		reqCtx, err := parseRequestContext(r)
 		if err != nil {
 			log.Warningf("Failed to parse request_context param: %s", err)
-		} else if reqCtx != nil {
-			// On initial page loads, the request context hasn't been set by the frontend
-			// yet, but the group ID may be available from this cookie.
+		}
+		if reqCtx != nil {
 			if reqCtx.GetGroupId() == "" {
-				reqCtx.GroupId = cookie.GetCookie(r, cookie.SelectedGroupID)
+				// On initial page loads, the request context hasn't been set by the frontend
+				// yet, but the group ID may be available from this cookie.
+				cookieGI := cookie.GetCookie(r, cookie.SelectedGroupID)
+				if cookieGI != "" {
+					log.Infof("Request context group ID not set, using cookie value")
+				}
+				reqCtx.GroupId = cookieGI
 			}
 			ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), reqCtx)
 			r = r.WithContext(ctx)
