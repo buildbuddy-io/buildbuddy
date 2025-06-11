@@ -313,8 +313,6 @@ const (
 	CacheProxyRequestType = "proxy_request_type"
 
 	OCIResourceTypeLabel = "oci_resource_type"
-	OCIManifest          = "manifest"
-	OCIBlob              = "blob"
 )
 
 // Label value constants
@@ -326,6 +324,9 @@ const (
 
 	LocalOnlyCacheProxyRequestLabel = "local_only"
 	DefaultCacheProxyRequestLabel   = "default"
+
+	OCIManifestResourceTypeLabel = "manifest"
+	OCIBlobResourceTypeLabel     = "blob"
 )
 
 // Other constants

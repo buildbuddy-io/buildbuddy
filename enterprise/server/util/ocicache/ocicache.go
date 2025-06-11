@@ -73,12 +73,12 @@ func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
 
 func manifestMiss(ctx context.Context) {
 	log.CtxDebug(ctx, "oci cache manifest miss")
-	updateCacheEventMetric(metrics.OCIManifest, metrics.MissStatusLabel)
+	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.MissStatusLabel)
 }
 
 func manifestHit(ctx context.Context) {
 	log.CtxDebug(ctx, "oci cache manifest hit")
-	updateCacheEventMetric(metrics.OCIManifest, metrics.HitStatusLabel)
+	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.HitStatusLabel)
 }
 
 func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash) (*ocipb.OCIManifestContent, error) {
@@ -191,12 +191,12 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 
 func blobMiss(ctx context.Context) {
 	log.CtxDebug(ctx, "oci cache blob miss")
-	updateCacheEventMetric(metrics.OCIBlob, metrics.MissStatusLabel)
+	updateCacheEventMetric(metrics.OCIBlobResourceTypeLabel, metrics.MissStatusLabel)
 }
 
 func blobHit(ctx context.Context) {
 	log.CtxDebug(ctx, "oci cache blob hit")
-	updateCacheEventMetric(metrics.OCIBlob, metrics.HitStatusLabel)
+	updateCacheEventMetric(metrics.OCIBlobResourceTypeLabel, metrics.HitStatusLabel)
 }
 
 func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash gcr.Hash, contentLength int64) error {
@@ -214,7 +214,7 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	mw := io.MultiWriter(w, counter)
 	defer func() {
 		metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
-			metrics.OCIResourceTypeLabel: metrics.OCIBlob,
+			metrics.OCIResourceTypeLabel: metrics.OCIBlobResourceTypeLabel,
 		}).Observe(float64(counter.Count()))
 	}()
 	if err := cachetools.GetBlob(ctx, bsClient, blobRN, mw); err != nil {
