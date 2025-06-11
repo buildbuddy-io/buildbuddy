@@ -198,8 +198,11 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	}
 
 	requestContext := requestcontext.ProtoRequestContextFromContext(ctx)
+	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4191):
+	// return an error here once we have a better understanding of why the
+	// request context can be missing.
 	if requestContext == nil {
-		return nil, status.InternalErrorf("Request is missing request context")
+		log.CtxInfof(ctx, "Request is missing request context")
 	} else if requestContext.GetGroupId() == "" {
 		log.CtxInfof(ctx, "Request context group ID is empty")
 	}
