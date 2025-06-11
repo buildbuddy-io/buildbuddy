@@ -625,6 +625,7 @@ func (i *imageFromRawManifest) Size() (int64, error) {
 // in the rawConfigFile field, then in the manifest's Config section,
 // then from the upstream registry.
 func (i *imageFromRawManifest) RawConfigFile() ([]byte, error) {
+	log.CtxDebug(i.ctx, "RawConfigFile")
 	if i.rawConfigFile != nil {
 		return i.rawConfigFile, nil
 	}
