@@ -90,6 +90,7 @@ var (
 	enableTableBloomFilter    = flag.Bool("cache.pebble.enable_table_bloom_filter", true, "If true, write bloom filter data with pebble SSTables.")
 	enableAutoRatchet         = flag.Bool("cache.pebble.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to latest version.")
 	groupSizeSampleRate       = flag.Float64("cache.pebble.group_size_sample_rate", .01, "Compute estimated size per-group in partitions by sampling at this rate.")
+	groupSizeSampleDecayRate  = flag.Float64("cache.pebble.group_size_sample_rate", .9, "Constant factor used to decay away partition size estimates.")
 
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UnspecifiedKeyVersion), "The key version new data will be written with. If negative, will write to the highest existing version in the database, or the highest known version if a new database is created.")
 	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
@@ -2725,7 +2726,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			// ensure that samples mostly decay within a couple hours (normally it's faster
 			// than this, assuming eviction is firing on all cylinders).
 			for k, v := range e.sizeByGroup {
-				e.sizeByGroup[k] = int64(float64(v) * 0.9)
+				e.sizeByGroup[k] = int64(float64(v) * (*groupSizeSampleDecayRate))
 			}
 		}
 		totalCount += 1
@@ -2750,7 +2751,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			continue
 		}
 
-		if r := rand.Float64(); r <= *groupSizeSampleRate {
+		if rand.Float64() <= *groupSizeSampleRate {
 			keyBytes := make([]byte, len(iter.Key()))
 			copy(keyBytes, iter.Key())
 			sizeBytes := getSizeOnLocalDisk(keyBytes, fileMetadata, e.includeMetadataSize)
