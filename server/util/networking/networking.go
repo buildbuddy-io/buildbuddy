@@ -761,8 +761,11 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 		{"FORWARD", "-i", device, "-o", vp.hostDevice, "-j", "ACCEPT"},
 	}...)
 
-	for _, rule := range iptablesRules {
-		if err := runCommand(ctx, append([]string{"iptables", "--wait", "-A"}, rule...)...); err != nil {
+	// Insert elements in reverse order to the top of the table, to preserve
+	// the current ordering of the rules in the slice.
+	for i := len(iptablesRules) - 1; i >= 0; i-- {
+		rule := iptablesRules[i]
+		if err := runCommand(ctx, append([]string{"iptables", "--wait", "-I"}, rule...)...); err != nil {
 			return nil, err
 		}
 		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
