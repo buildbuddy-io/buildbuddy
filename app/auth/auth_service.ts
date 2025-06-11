@@ -212,7 +212,6 @@ export class AuthService {
     let groupId = this.user?.selectedGroup?.id || "";
     rpcService.requestContext.groupId = groupId;
     this.setCookie(SELECTED_GROUP_ID_COOKIE, groupId);
-
   }
 
   async setSelectedGroupId(groupId: string, groupURL: string, { reload = false }: { reload?: boolean } = {}) {
