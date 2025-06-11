@@ -743,13 +743,15 @@ func TestResolve_WithCache(t *testing.T) {
 
 			{
 				imageAddress := registry.ImageAddress(tc.args.imageName + "_image")
-				resolveCount := int32(1)
+				// initial GET /v2/, then GET on manifest
+				resolveCount := int32(2)
 				filesCount := int32(1)
 				resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, filesCount)
 
-				resolveCount = int32(1)
+				resolveCount = int32(2)
 				if tc.writeManifests && tc.readManifests {
-					resolveCount = int32(0)
+					// initial GET /v2/ request
+					resolveCount = int32(1)
 				}
 				filesCount = int32(1)
 				if tc.writeLayers && tc.readLayers {
@@ -760,13 +762,13 @@ func TestResolve_WithCache(t *testing.T) {
 
 			{
 				indexAddress := registry.ImageAddress(tc.args.imageName + "_index")
-				resolveCount := int32(2)
+				resolveCount := int32(3)
 				filesCount := int32(1)
 				resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, filesCount)
 
-				resolveCount = int32(2)
+				resolveCount = int32(3)
 				if tc.writeManifests && tc.readManifests {
-					resolveCount = int32(0)
+					resolveCount = int32(1)
 				}
 				filesCount = int32(1)
 				if tc.writeLayers && tc.readLayers {
