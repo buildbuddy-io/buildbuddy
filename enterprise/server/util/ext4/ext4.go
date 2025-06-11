@@ -13,9 +13,11 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -63,13 +65,20 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
 		return status.InternalErrorf("%s: %s", err, out)
 	}
-	if cmd.ProcessState != nil && span.IsRecording() {
-		span.SetAttributes(
-			attribute.Int64(
-				"cpu_millis",
-				(cmd.ProcessState.UserTime()+cmd.ProcessState.SystemTime()).Milliseconds()),
-			attribute.Int64("directory_bytes", sizeBytes),
-		)
+	if cmd.ProcessState != nil {
+		if span.IsRecording() {
+			span.SetAttributes(
+				attribute.Int64(
+					"cpu_millis",
+					(cmd.ProcessState.UserTime()+cmd.ProcessState.SystemTime()).Milliseconds()),
+				attribute.Int64("directory_bytes", sizeBytes),
+			)
+		}
+		if rusage, _ := cmd.ProcessState.SysUsage().(*syscall.Rusage); rusage != nil {
+			metrics.FirecrackerWorkspaceDiskWriteOps.With(prometheus.Labels{
+				metrics.CommandName: "mke2fs",
+			}).Add(float64(rusage.Oublock))
+		}
 	}
 	return nil
 }
@@ -201,6 +210,13 @@ func ImageToDirectory(ctx context.Context, inputFile, outputDir string, paths []
 	cmd.Stdin = strings.NewReader(strings.Join(requests, "\n"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return status.InternalErrorf("%s: %s", err, out)
+	}
+	if cmd.ProcessState != nil {
+		if rusage, _ := cmd.ProcessState.SysUsage().(*syscall.Rusage); rusage != nil {
+			metrics.FirecrackerWorkspaceDiskWriteOps.With(prometheus.Labels{
+				metrics.CommandName: "debugfs",
+			}).Add(float64(rusage.Oublock))
+		}
 	}
 	return nil
 }

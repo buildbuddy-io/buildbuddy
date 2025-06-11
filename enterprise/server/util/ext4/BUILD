@@ -9,9 +9,11 @@ go_library(
     target_compatible_with = ["@platforms//os:linux"],
     deps = select({
         "@io_bazel_rules_go//go/platform:linux": [
+            "//server/metrics",
             "//server/util/log",
             "//server/util/status",
             "//server/util/tracing",
+            "@com_github_prometheus_client_golang//prometheus",
             "@io_opentelemetry_go_otel//attribute",
         ],
         "//conditions:default": [],
