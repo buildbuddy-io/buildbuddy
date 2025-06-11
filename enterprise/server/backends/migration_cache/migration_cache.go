@@ -88,6 +88,8 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
+	// fmt.Println("VANJAAAAAAAAAAAAAAAA - creating migration cache")
+	// fmt.Println("VANJAAAAAAAAAAAAAAAA - flag provider is nil:", env.GetExperimentFlagProvider() == nil)
 	return &MigrationCache{
 		env:                         env,
 		src:                         srcCache,
@@ -201,6 +203,7 @@ const (
 func (mc *MigrationCache) srcAndDest(ctx context.Context) (src, dest interfaces.Cache, reverse bool) {
 	if mc.flagProvider != nil {
 		state := mc.flagProvider.String(ctx, MigrationStateFlag, SrcOnly)
+		// fmt.Println("VANJAAAAAAAAAAA - migration state:", state, " groupID:", groupID(ctx))
 		switch state {
 		case SrcOnly:
 			return mc.src, nil, false
@@ -217,21 +220,27 @@ func (mc *MigrationCache) srcAndDest(ctx context.Context) (src, dest interfaces.
 
 func (mc *MigrationCache) doubleRead(ctx context.Context) bool {
 	if mc.flagProvider != nil {
-		return mc.flagProvider.Boolean(ctx, DoubleReadFlag, false)
+		dr := mc.flagProvider.Boolean(ctx, DoubleReadFlag, false)
+		// fmt.Println("VANJAAAAAAAAAAA - double read:", dr, " groupID:", groupID(ctx))
+		return dr
 	}
 	return mc.doubleReadPercentage > 0 && rand.Float64() < mc.doubleReadPercentage
 }
 
 func (mc *MigrationCache) asyncWrite(ctx context.Context) bool {
 	if mc.flagProvider != nil {
-		return mc.flagProvider.Boolean(ctx, AsyncDestWriteFlag, false)
+		aw := mc.flagProvider.Boolean(ctx, AsyncDestWriteFlag, false)
+		// fmt.Println("VANJAAAAAAAAAAA - async write:", aw, " groupID:", groupID(ctx))
+		return aw
 	}
 	return mc.asyncDestWrites
 }
 
 func (mc *MigrationCache) decompressRead(ctx context.Context) bool {
 	if mc.flagProvider != nil {
-		return mc.flagProvider.Boolean(ctx, DecompressReadFlag, false)
+		dr := mc.flagProvider.Boolean(ctx, DecompressReadFlag, false)
+		// fmt.Println("VANJAAAAAAAAAAA - decompress read:", dr, " groupID:", groupID(ctx))
+		return dr
 	}
 	return mc.decompressPercentage > 0 && rand.Float64() < mc.decompressPercentage
 }
