@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
@@ -586,10 +587,13 @@ type imageFromRawManifest struct {
 	desc        gcr.Descriptor
 	rawManifest []byte
 
-	ctx           context.Context
-	acClient      repb.ActionCacheClient
-	bsClient      bspb.ByteStreamClient
-	puller        *remote.Puller
+	ctx      context.Context
+	acClient repb.ActionCacheClient
+	bsClient bspb.ByteStreamClient
+	puller   *remote.Puller
+
+	rawConfigOnce sync.Once
+	rawConfigErr  error
 	rawConfigFile []byte
 }
 
@@ -625,35 +629,40 @@ func (i *imageFromRawManifest) Size() (int64, error) {
 // in the rawConfigFile field, then in the manifest's Config section,
 // then from the upstream registry.
 func (i *imageFromRawManifest) RawConfigFile() ([]byte, error) {
-	if i.rawConfigFile != nil {
-		return i.rawConfigFile, nil
-	}
+	i.rawConfigOnce.Do(func() {
+		if i.rawConfigFile != nil {
+			return
+		}
 
-	manifest, err := i.Manifest()
-	if err != nil {
-		return nil, err
-	}
-	if manifest.Config.Data != nil {
-		return manifest.Config.Data, nil
-	}
-	layer := layerFromDigest{
-		digest: manifest.Config.Digest,
-		repo:   i.repo,
-		image:  i,
-		puller: i.puller,
-	}
+		manifest, err := i.Manifest()
+		if err != nil {
+			i.rawConfigErr = err
+			return
+		}
+		if manifest.Config.Data != nil {
+			i.rawConfigFile = manifest.Config.Data
+			return
+		}
+		layer := layerFromDigest{
+			digest: manifest.Config.Digest,
+			repo:   i.repo,
+			image:  i,
+			puller: i.puller,
+		}
 
-	rc, err := layer.Uncompressed()
-	if err != nil {
-		return nil, err
-	}
-	defer rc.Close()
-	rawConfigFile, err := io.ReadAll(rc)
-	if err != nil {
-		return nil, err
-	}
-	i.rawConfigFile = rawConfigFile
-	return i.rawConfigFile, nil
+		rc, err := layer.Uncompressed()
+		if err != nil {
+			i.rawConfigErr = err
+		}
+		defer rc.Close()
+		rawConfigFile, err := io.ReadAll(rc)
+		if err != nil {
+			i.rawConfigErr = err
+			return
+		}
+		i.rawConfigFile = rawConfigFile
+	})
+	return i.rawConfigFile, i.rawConfigErr
 }
 
 func (i *imageFromRawManifest) ConfigFile() (*gcr.ConfigFile, error) {
