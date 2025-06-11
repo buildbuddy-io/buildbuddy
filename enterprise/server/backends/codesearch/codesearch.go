@@ -122,10 +122,6 @@ func (css *CodesearchService) RepoStatus(ctx context.Context, req *inpb.RepoStat
 	return css.client.RepoStatus(ctx, req)
 }
 
-func (css *CodesearchService) DropNamespace(ctx context.Context, req *inpb.DropNamespaceRequest) (*inpb.DropNamespaceResponse, error) {
-	return css.client.DropNamespace(ctx, req)
-}
-
 func (css *CodesearchService) IngestAnnotations(ctx context.Context, req *inpb.IngestAnnotationsRequest) (*inpb.IngestAnnotationsResponse, error) {
 	return css.client.IngestAnnotations(ctx, req)
 }

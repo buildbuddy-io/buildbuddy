@@ -13,6 +13,8 @@ enum ReplacementStrategy {
   // Apply an incremental update, using data included in the request to update
   // the index.
   INCREMENTAL = 2;
+  // Drop an entire namespace
+  DROP_NAMESPACE = 3;
 }
 
 message IndexRequest {
@@ -63,17 +65,6 @@ message RepoStatusResponse {
 
   // The SHA of the most recently indexed commit
   string last_indexed_commit_sha = 2;
-}
-
-message DropNamespaceRequest {
-  context.RequestContext request_context = 1;
-
-  // Required. See namespace field on IndexRequest above.
-  string namespace = 2;
-}
-
-message DropNamespaceResponse {
-  context.ResponseContext response_context = 1;
 }
 
 message IngestAnnotationsRequest {

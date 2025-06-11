@@ -309,7 +309,7 @@ func TestDropNamespace(t *testing.T) {
 	sha := "def456"
 	bootstrapIndex(t, ctx, server, "github.com/buildbuddy-io/buildbuddy", sha)
 
-	_, err := server.DropNamespace(ctx, &inpb.DropNamespaceRequest{})
+	_, err := server.Index(ctx, &inpb.IndexRequest{ReplacementStrategy: inpb.ReplacementStrategy_DROP_NAMESPACE})
 	require.NoError(t, err)
 
 	response, err := server.RepoStatus(context.Background(), &inpb.RepoStatusRequest{

@@ -152,6 +152,7 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("Starting incremental update %q@%s", repoURL)
 
 	r := index.NewReader(ctx, css.db, req.GetNamespace(), schema.MetadataSchema())
 	lastIndexedSHA, err := github.GetLastIndexedCommitSha(r, repoURL)
@@ -217,7 +218,6 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 	// the previously indexed version of the repository. Note that a namespace can include multiple
 	// repos, so implementing this would require explicit iteration and deletion of each document
 	// tagged with the given repo URL.
-
 	commitSHA := req.GetRepoState().GetCommitSha()
 	username := req.GetGitRepo().GetUsername()
 	accessToken := req.GetGitRepo().GetAccessToken()
@@ -226,6 +226,7 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("Starting index of %q@%s", repoURL, commitSHA)
 
 	archiveURL, err := apiArchiveURL(repoURL.String(), commitSHA, username, accessToken)
 	if err != nil {
@@ -297,13 +298,6 @@ func (css *codesearchServer) fullyReindex(_ context.Context, req *inpb.IndexRequ
 }
 
 func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
-	commitSHA := req.GetRepoState().GetCommitSha()
-
-	repoURL, err := git.ParseGitHubRepoURL(req.GetGitRepo().GetRepoUrl())
-	if err != nil {
-		return nil, err
-	}
-
 	// Validate namespace against side-channel auth
 	validatedNamespace, err := css.getUserNamespace(ctx, req.GetNamespace())
 	if err != nil {
@@ -327,14 +321,14 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		unlockFn := css.repoLocks.Lock(lockKey)
 		defer unlockFn()
 
-		log.Infof("Starting indexing %q@%s", repoURL, commitSHA)
-
 		var err error
 		switch req.GetReplacementStrategy() {
 		case inpb.ReplacementStrategy_INCREMENTAL:
 			rsp, err = css.incrementalUpdate(ctx, req)
 		case inpb.ReplacementStrategy_REPLACE_REPO:
 			rsp, err = css.fullyReindex(ctx, req)
+		case inpb.ReplacementStrategy_DROP_NAMESPACE:
+			rsp, err = css.dropNamespace(ctx, req)
 		default:
 			return status.InvalidArgumentErrorf("Invalid replacement strategy %s", req.GetReplacementStrategy())
 		}
@@ -355,29 +349,25 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 	return rsp, nil
 }
 
-func (css *codesearchServer) DropNamespace(ctx context.Context, req *inpb.DropNamespaceRequest) (*inpb.DropNamespaceResponse, error) {
-	namespace, err := css.getUserNamespace(ctx, req.GetNamespace())
-	if err != nil {
-		return nil, err
-	}
+func (css *codesearchServer) dropNamespace(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+	log.Infof("Dropping namespace %s", req.GetNamespace())
 
-	log.Infof("Dropping namespace %s", namespace)
-	writer, err := index.NewWriter(css.db, namespace)
+	writer, err := index.NewWriter(css.db, req.GetNamespace())
 	if err != nil {
-		return nil, status.InternalErrorf("failed to create index writer for namespace %s: %v", namespace, err)
+		return nil, status.InternalErrorf("failed to create index writer for namespace %s: %v", req.GetNamespace(), err)
 	}
 
 	if err := writer.DropNamespace(); err != nil {
-		return nil, status.InternalErrorf("failed to drop namespace %s: %v", namespace, err)
+		return nil, status.InternalErrorf("failed to drop namespace %s: %v", req.GetNamespace(), err)
 	}
 
 	err = writer.Flush()
 	if err != nil {
-		return nil, status.InternalErrorf("failed to flush index writer for namespace %s: %v", namespace, err)
+		return nil, status.InternalErrorf("failed to flush index writer for namespace %s: %v", req.GetNamespace(), err)
 	}
 
-	log.Infof("Dropped namespace %s", namespace)
-	return &inpb.DropNamespaceResponse{}, nil
+	log.Infof("Dropped namespace %s", req.GetNamespace())
+	return &inpb.IndexResponse{}, nil
 }
 
 func (css *codesearchServer) RepoStatus(ctx context.Context, req *inpb.RepoStatusRequest) (*inpb.RepoStatusResponse, error) {
