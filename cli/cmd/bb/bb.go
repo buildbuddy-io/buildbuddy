@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	register_cli_commands "github.com/buildbuddy-io/buildbuddy/cli/cli_command/register"
 	sidecarmain "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar"
 )
 
@@ -73,6 +74,9 @@ func run() (exitCode int, err error) {
 	if err != nil {
 		log.Printf("Failed to bump open file limits: %s", err)
 	}
+
+	// Register all known cli commands so that we can query or iterate them later.
+	register_cli_commands.Register()
 
 	// Expand command shortcuts like b=>build, t=>test, etc.
 	args = shortcuts.HandleShortcuts(args)
