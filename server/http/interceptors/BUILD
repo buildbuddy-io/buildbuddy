@@ -16,6 +16,7 @@ go_library(
         "//server/util/alert",
         "//server/util/clientip",
         "//server/util/compression",
+        "//server/util/cookie",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/region",

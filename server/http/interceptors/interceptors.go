@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
@@ -306,6 +307,11 @@ func RequestContextFromURL(next http.Handler) http.Handler {
 		if err != nil {
 			log.Warningf("Failed to parse request_context param: %s", err)
 		} else if reqCtx != nil {
+			// On initial page loads, the request context hasn't been set by the frontend
+			// yet, but the group ID may be available from this cookie.
+			if reqCtx.GetGroupId() == "" {
+				reqCtx.GroupId = cookie.GetCookie(r, cookie.SelectedGroupID)
+			}
 			ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), reqCtx)
 			r = r.WithContext(ctx)
 		}

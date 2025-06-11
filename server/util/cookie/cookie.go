@@ -17,6 +17,7 @@ const (
 	sessionDurationCookie = "Session-Duration-Seconds"
 	AuthIssuerCookie      = "Authorization-Issuer"
 	RedirCookie           = "Redirect-Url"
+	SelectedGroupID       = "Selected-Group-ID"
 
 	loginCookieDuration = 365 * 24 * time.Hour
 )

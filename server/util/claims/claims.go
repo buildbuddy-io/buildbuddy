@@ -263,6 +263,12 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
 	enforceIPRules := false
+
+	if effectiveGroup == "" && len(u.Groups) > 0 {
+		// If no effective group is specified, use the first group in the list.
+		effectiveGroup = u.Groups[0].Group.GroupID
+	}
+
 	var capabilities []cappb.Capability
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
