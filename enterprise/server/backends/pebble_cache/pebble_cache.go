@@ -242,6 +242,7 @@ type PebbleCache struct {
 	numAtimeUpdateWorkers int
 	minEvictionAge        time.Duration
 
+	versionMu        *sync.RWMutex // PROTECTS(minDBVersion,maxDBVersion)
 	activeKeyVersion int64
 	minDBVersion     filestore.PebbleKeyVersion
 	maxDBVersion     filestore.PebbleKeyVersion
@@ -622,6 +623,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		atimeBufferSize:             *opts.AtimeBufferSize,
 		numAtimeUpdateWorkers:       *opts.NumAtimeUpdateWorkers,
 		minEvictionAge:              *opts.MinEvictionAge,
+		versionMu:                   &sync.RWMutex{},
 		activeKeyVersion:            *opts.ActiveKeyVersion,
 		env:                         env,
 		db:                          db,
@@ -767,13 +769,12 @@ func olderThanThreshold(t time.Time, threshold time.Duration) bool {
 	return age >= threshold
 }
 
+var _dbVersionKey = append(SystemKeyPrefix[:], []byte("database-version")...)
+
 // databaseVersionKey returns the key bytes of a key where a serialized,
 // database-wide version metadata proto is stored.
 func (p *PebbleCache) databaseVersionKey() []byte {
-	var key []byte
-	key = append(key, SystemKeyPrefix...)
-	key = append(key, []byte("database-version")...)
-	return key
+	return _dbVersionKey
 }
 
 // databaseVersionKey returns the database-wide version metadata which
@@ -802,14 +803,14 @@ func (p *PebbleCache) DatabaseVersionMetadata() (*sgpb.VersionMetadata, error) {
 // It is safe to call this function in a loop -- the underlying metadata will
 // only be fetched on cache startup and when updated.
 func (p *PebbleCache) minDatabaseVersion() filestore.PebbleKeyVersion {
-	unlockFn := p.locker.RLock(string(p.databaseVersionKey()))
-	defer unlockFn()
+	p.versionMu.RLock()
+	defer p.versionMu.RUnlock()
 	return p.minDBVersion
 }
 
 func (p *PebbleCache) maxDatabaseVersion() filestore.PebbleKeyVersion {
-	unlockFn := p.locker.RLock(string(p.databaseVersionKey()))
-	defer unlockFn()
+	p.versionMu.RLock()
+	defer p.versionMu.RUnlock()
 	return p.maxDBVersion
 }
 
@@ -820,9 +821,8 @@ func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
 // updateDatabaseVersion updates the min and max versions of the database.
 // Both the stored metadata and instance variables are updated.
 func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.PebbleKeyVersion) error {
-	versionKey := p.databaseVersionKey()
-	unlockFn := p.locker.Lock(string(versionKey))
-	defer unlockFn()
+	p.versionMu.Lock()
+	defer p.versionMu.Unlock()
 
 	oldVersionMetadata, err := p.DatabaseVersionMetadata()
 	if err != nil {
@@ -849,7 +849,8 @@ func (p *PebbleCache) updateDatabaseVersions(minVersion, maxVersion filestore.Pe
 		return err
 	}
 	defer db.Close()
-	if err := db.Set(versionKey, buf, pebble.Sync); err != nil {
+
+	if err := db.Set(p.databaseVersionKey(), buf, pebble.Sync); err != nil {
 		return err
 	}
 
