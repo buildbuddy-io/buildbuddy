@@ -93,20 +93,10 @@ func run() (exitCode int, err error) {
 		return exitCode, err
 	}
 
-	cliCmd := args[0]
-	for _, c := range cli_command.Commands {
-		isAlias := false
-		for _, alias := range c.Aliases {
-			if cliCmd == alias {
-				isAlias = true
-			}
-		}
-
-		if isAlias || cliCmd == c.Name {
-			// If the first argument is a cli command, trim it from `args`
-			args = args[1:]
-			return c.Handler(args)
-		}
+	if c := cli_command.GetCommand(args[0]); c != nil {
+		// If the first argument is a cli command, trim it from `args`
+		args = args[1:]
+		return c.Handler(args)
 	}
 
 	// If none of the CLI subcommand handlers were triggered, assume we should
