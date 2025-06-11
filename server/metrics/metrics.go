@@ -311,6 +311,8 @@ const (
 	// only use its local cache to fulfil the request. If "default", the proxy
 	// should fall back to the remote cache as the source of truth.
 	CacheProxyRequestType = "proxy_request_type"
+
+	OCIResourceTypeLabel = "oci_resource_type"
 )
 
 // Label value constants
@@ -322,6 +324,9 @@ const (
 
 	LocalOnlyCacheProxyRequestLabel = "local_only"
 	DefaultCacheProxyRequestLabel   = "default"
+
+	OCIManifestResourceTypeLabel = "manifest"
+	OCIBlobResourceTypeLabel     = "blob"
 )
 
 // Other constants
@@ -3322,9 +3327,9 @@ var (
 		Subsystem: "ociregistry",
 		Name:      "cache_download_size_bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Number of bytes downloaded from the cache by the OCI registry mirror (only tracking CAS currently)",
+		Help:      "Number of bytes downloaded from the cache by the OCI registry mirror",
 	}, []string{
-		CacheTypeLabel,
+		OCIResourceTypeLabel,
 	})
 
 	OCIRegistryCacheEvents = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3333,7 +3338,7 @@ var (
 		Name:      "cache_events",
 		Help:      "Number of cache events handled.",
 	}, []string{
-		CacheTypeLabel,
+		OCIResourceTypeLabel,
 		CacheEventTypeLabel,
 	})
 )
