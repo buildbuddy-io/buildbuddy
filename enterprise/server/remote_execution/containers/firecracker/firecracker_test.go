@@ -1252,6 +1252,9 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 	// Disable local snapshot sharing with filecache to simplify the setup.
 	flags.Set(t, "executor.enable_local_snapshot_sharing", false)
 
+	// Enable cache proxy cluster-local snapshot storage
+	flags.Set(t, "executor.store_snapshots_in_local_cluster_only", true)
+
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{runProxy: true})
 	rootDir := testfs.MakeTempDir(t)
