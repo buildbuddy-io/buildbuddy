@@ -925,6 +925,7 @@ func TestResolve_Concurrency(t *testing.T) {
 		}(layer)
 	}
 	layerWG.Wait()
+	close(layerChan)
 	require.Empty(t, cmp.Diff(expected, counter.snapshot()))
 
 	for result := range layerChan {
