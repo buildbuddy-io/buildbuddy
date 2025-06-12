@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -184,6 +185,13 @@ func (mc *MigrationCache) doubleRead() bool {
 	return mc.doubleReadPercentage > 0 && rand.Float64() < mc.doubleReadPercentage
 }
 
+func groupID(ctx context.Context) string {
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		return c.GroupID
+	}
+	return interfaces.AuthAnonymousUser
+}
+
 func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	srcContains, srcErr := mc.src.Contains(ctx, r)
 
@@ -196,12 +204,19 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 			if dstErr != nil {
 				log.Warningf("Migration dest %v contains failed: %s", r.GetDigest(), dstErr)
 			} else if srcContains && !dstContains {
-				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "contains"}).Inc()
+				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
+					metrics.CacheRequestType: "contains",
+					metrics.GroupID:          groupID(ctx),
+				}).Inc()
 				if mc.logNotFoundErrors {
 					log.Warningf("Migration digest %v src contains, dest does not", r.GetDigest())
 				}
+				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 			} else if srcContains && dstContains {
-				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "contains"}).Inc()
+				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
+					metrics.CacheRequestType: "contains",
+					metrics.GroupID:          groupID(ctx),
+				}).Inc()
 			}
 		}()
 	}
@@ -234,13 +249,19 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 	if doubleRead {
 		if dstErr != nil {
 			if status.IsNotFoundError(dstErr) {
-				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "metadata"}).Inc()
+				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
+					metrics.CacheRequestType: "metadata",
+					metrics.GroupID:          groupID(ctx),
+				}).Inc()
 			}
 			if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
 				log.Warningf("Migration dest %v metadata failed: %s", r.GetDigest(), dstErr)
 			}
 		} else {
-			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "metadata"}).Inc()
+			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
+				metrics.CacheRequestType: "metadata",
+				metrics.GroupID:          groupID(ctx),
+			}).Inc()
 		}
 	}
 
@@ -261,9 +282,15 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 			}
 			missingOnlyInDest, _ := digest.Diff(srcMissing, dstMissing)
 			if len(missingOnlyInDest) == 0 {
-				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
+				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
+					metrics.CacheRequestType: "findMissing",
+					metrics.GroupID:          groupID(ctx),
+				}).Inc()
 			} else if len(missingOnlyInDest) > 0 {
-				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
+				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
+					metrics.CacheRequestType: "findMissing",
+					metrics.GroupID:          groupID(ctx),
+				}).Inc()
 				if mc.logNotFoundErrors {
 					log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
 				}
@@ -299,10 +326,16 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 					log.Warningf("Migration dest GetMulti of %v failed: %s", resources, dstErr)
 				}
 				if status.IsNotFoundError(dstErr) {
-					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
+					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
+						metrics.CacheRequestType: "getMulti",
+						metrics.GroupID:          groupID(ctx),
+					}).Inc()
 				}
 			} else {
-				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
+				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
+					metrics.CacheRequestType: "getMulti",
+					metrics.GroupID:          groupID(ctx),
+				}).Inc()
 			}
 		}
 		if doubleRead && dstErr == nil {
@@ -556,7 +589,10 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 				shouldDecompressAndVerify = false
 				return nil
 			}
-			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
+			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
+				metrics.CacheRequestType: "reader",
+				metrics.GroupID:          groupID(ctx),
+			}).Inc()
 			if shouldDecompressAndVerify {
 				dr, err := compression.NewZstdDecompressingReader(destReader)
 				if err != nil {
@@ -580,7 +616,10 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	shouldLogErr := mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)
 	if dstErr != nil && !bothCacheNotFound {
 		if status.IsNotFoundError(dstErr) {
-			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
+			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
+				metrics.CacheRequestType: "reader",
+				metrics.GroupID:          groupID(ctx),
+			}).Inc()
 		}
 		if shouldLogErr {
 			log.Warningf("%v reader failed for dest cache: %s", r.GetDigest(), dstErr)
@@ -713,7 +752,10 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 			_, dstErr := mc.dest.Get(ctx, r)
 			if dstErr != nil {
 				if status.IsNotFoundError(dstErr) {
-					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
+					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
+						metrics.CacheRequestType: "get",
+						metrics.GroupID:          groupID(ctx),
+					}).Inc()
 					mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
 				} else {
 					if mc.logNotFoundErrors {
@@ -722,7 +764,10 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 					mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 				}
 			} else {
-				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
+				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
+					metrics.CacheRequestType: "get",
+					metrics.GroupID:          groupID(ctx),
+				}).Inc()
 			}
 		} else {
 			mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
@@ -872,8 +917,14 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 
 	ctLabel := cacheTypeLabel(c.d.GetCacheType())
-	metrics.MigrationBlobsCopied.With(prometheus.Labels{metrics.CacheTypeLabel: ctLabel}).Inc()
-	metrics.MigrationBytesCopied.With(prometheus.Labels{metrics.CacheTypeLabel: ctLabel}).Add(float64(n))
+	metrics.MigrationBlobsCopied.With(prometheus.Labels{
+		metrics.CacheTypeLabel: ctLabel,
+		metrics.GroupID:        groupID(ctx),
+	}).Inc()
+	metrics.MigrationBytesCopied.With(prometheus.Labels{
+		metrics.CacheTypeLabel: ctLabel,
+		metrics.GroupID:        groupID(ctx),
+	}).Add(float64(n))
 	log.Debugf("Migration successfully copied to dest cache: digest %v", c.d)
 }
 
