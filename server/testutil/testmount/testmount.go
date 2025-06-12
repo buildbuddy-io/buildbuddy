@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"syscall"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // RunWithLimitedMountPermissions executes the test suite in a child process,
@@ -42,4 +44,15 @@ func RunWithLimitedMountPermissions(m *testing.M) {
 		log.Fatal(err)
 	}
 	os.Exit(cmd.ProcessState.ExitCode())
+}
+
+// Mount mounts a filesystem to the given target directory and unmounts when
+// the test completes.
+func Mount(t *testing.T, source, target, fstype string, flags uintptr, data string) {
+	err := syscall.Mount(source, target, fstype, flags, data)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := syscall.Unmount(target, 0)
+		require.NoError(t, err, "clean up mount %q", target)
+	})
 }
