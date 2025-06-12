@@ -11,6 +11,7 @@ go_library(
         "//server/util/bazel_request",
         "//server/util/claims",
         "//server/util/flag",
+        "//server/util/log",
         "//server/util/statusz",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk_contrib_providers_flagd//pkg",
