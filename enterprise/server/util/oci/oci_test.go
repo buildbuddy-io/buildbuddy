@@ -812,8 +812,8 @@ func TestResolve_WithCache(t *testing.T) {
 	}
 }
 
-// TestResolve_Concurrency makes calls to Images and Layers from multiple goroutines
-// to make sure these implementations do not make extraneous requests to the remote registry.
+// TestResolve_Concurrency fetches layer contents from multiple goroutines
+// to make sure doing so does not make unnecessary requests to the remote registry.
 func TestResolve_Concurrency(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
