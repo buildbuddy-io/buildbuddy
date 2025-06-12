@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
@@ -244,7 +245,6 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	log.CtxInfof(ctx, "Authenticating with registry %q", imageRef.Context().RegistryStr())
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-
 	_, err = remote.Head(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -266,6 +266,10 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	log.CtxInfof(ctx, "Resolving image in registry %q", imageRef.Context().RegistryStr())
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	puller, err := remote.NewPuller(remoteOpts...)
+	if err != nil {
+		return nil, status.InternalErrorf("error creating puller: %s", err)
+	}
 
 	useCache := false
 	if *useCachePercent >= 100 {
@@ -285,11 +289,11 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 			},
 			r.env.GetActionCacheClient(),
 			r.env.GetByteStreamClient(),
-			remoteOpts,
+			puller,
 		)
 	}
 
-	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
+	remoteDesc, err := puller.Get(ctx, imageRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
@@ -319,9 +323,9 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // then falls back to fetching from the upstream remote registry.
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
-func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, remoteOpts []remote.Option) (gcr.Image, error) {
+func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) (gcr.Image, error) {
 	if *readManifestsFromCache {
-		desc, err := remote.Head(digestOrTagRef, remoteOpts...)
+		desc, err := puller.Head(ctx, digestOrTagRef)
 		if err != nil {
 			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 				return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
@@ -347,12 +351,12 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 				platform,
 				acClient,
 				bsClient,
-				remoteOpts,
+				puller,
 			)
 		}
 	}
 
-	remoteDesc, err := remote.Get(digestOrTagRef, remoteOpts...)
+	remoteDesc, err := puller.Get(ctx, digestOrTagRef)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
@@ -381,14 +385,14 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		platform,
 		acClient,
 		bsClient,
-		remoteOpts,
+		puller,
 	)
 }
 
 // imageFromDescriptorAndManifest returns an Image from the given manifest (if the manifest is an image manifest),
 // finds a child image matching the given platform (and fetches a manifest for it) if the given manifest is an index,
 // and otherwise returns an error.
-func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, remoteOpts []remote.Option) (gcr.Image, error) {
+func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) (gcr.Image, error) {
 	if desc.MediaType.IsSchema1() {
 		return nil, status.UnknownErrorf("unsupported MediaType %q", desc.MediaType)
 	}
@@ -410,19 +414,19 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 			platform,
 			acClient,
 			bsClient,
-			remoteOpts,
+			puller,
 		)
 	}
 
-	return &imageFromRawManifest{
-		repo:        repo,
-		desc:        desc,
-		rawManifest: rawManifest,
-		ctx:         ctx,
-		acClient:    acClient,
-		bsClient:    bsClient,
-		remoteOpts:  remoteOpts,
-	}, nil
+	return newImageFromRawManifest(
+		ctx,
+		repo,
+		desc,
+		rawManifest,
+		acClient,
+		bsClient,
+		puller,
+	), nil
 }
 
 func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, credentials Credentials) []remote.Option {
@@ -572,6 +576,42 @@ func isSubset(lst, required []string) bool {
 	return true
 }
 
+func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) *imageFromRawManifest {
+	i := &imageFromRawManifest{
+		repo:        repo,
+		desc:        desc,
+		rawManifest: rawManifest,
+		ctx:         ctx,
+		acClient:    acClient,
+		bsClient:    bsClient,
+		puller:      puller,
+	}
+	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
+		manifest, err := i.Manifest()
+		if err != nil {
+			return nil, err
+		}
+		if manifest.Config.Data != nil {
+			return manifest.Config.Data, nil
+		}
+		layer := newLayerFromDigest(
+			i.repo,
+			manifest.Config.Digest,
+			i,
+			i.puller,
+			nil,
+		)
+
+		rc, err := layer.Uncompressed()
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+		return io.ReadAll(rc)
+	})
+	return i
+}
+
 var _ gcr.Image = (*imageFromRawManifest)(nil)
 
 // imageFromRawManifest implements the go-containerregistry Image interface.
@@ -583,11 +623,12 @@ type imageFromRawManifest struct {
 	desc        gcr.Descriptor
 	rawManifest []byte
 
-	ctx           context.Context
-	acClient      repb.ActionCacheClient
-	bsClient      bspb.ByteStreamClient
-	remoteOpts    []remote.Option
-	rawConfigFile []byte
+	ctx      context.Context
+	acClient repb.ActionCacheClient
+	bsClient bspb.ByteStreamClient
+	puller   *remote.Puller
+
+	fetchRawConfigOnce func() ([]byte, error)
 }
 
 func (i *imageFromRawManifest) Digest() (gcr.Hash, error) {
@@ -622,35 +663,7 @@ func (i *imageFromRawManifest) Size() (int64, error) {
 // in the rawConfigFile field, then in the manifest's Config section,
 // then from the upstream registry.
 func (i *imageFromRawManifest) RawConfigFile() ([]byte, error) {
-	if i.rawConfigFile != nil {
-		return i.rawConfigFile, nil
-	}
-
-	manifest, err := i.Manifest()
-	if err != nil {
-		return nil, err
-	}
-	if manifest.Config.Data != nil {
-		return manifest.Config.Data, nil
-	}
-	layer := layerFromDigest{
-		digest:     manifest.Config.Digest,
-		repo:       i.repo,
-		image:      i,
-		remoteOpts: i.remoteOpts,
-	}
-
-	rc, err := layer.Uncompressed()
-	if err != nil {
-		return nil, err
-	}
-	defer rc.Close()
-	rawConfigFile, err := io.ReadAll(rc)
-	if err != nil {
-		return nil, err
-	}
-	i.rawConfigFile = rawConfigFile
-	return i.rawConfigFile, nil
+	return i.fetchRawConfigOnce()
 }
 
 func (i *imageFromRawManifest) ConfigFile() (*gcr.ConfigFile, error) {
@@ -676,13 +689,13 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 	}
 	layers := make([]gcr.Layer, 0, len(m.Layers))
 	for _, layerDesc := range m.Layers {
-		layer := &layerFromDigest{
-			digest:     layerDesc.Digest,
-			repo:       i.repo,
-			image:      i,
-			remoteOpts: i.remoteOpts,
-			desc:       &layerDesc,
-		}
+		layer := newLayerFromDigest(
+			i.repo,
+			layerDesc.Digest,
+			i,
+			i.puller,
+			&layerDesc,
+		)
 
 		layers = append(layers, layer)
 	}
@@ -690,12 +703,13 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 }
 
 func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
-	return &layerFromDigest{
-		digest:     digest,
-		repo:       i.repo,
-		image:      i,
-		remoteOpts: i.remoteOpts,
-	}, nil
+	return newLayerFromDigest(
+		i.repo,
+		digest,
+		i,
+		i.puller,
+		nil,
+	), nil
 }
 
 func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
@@ -703,12 +717,27 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error)
 	if err != nil {
 		return nil, err
 	}
+	return newLayerFromDigest(
+		i.repo,
+		digest,
+		i,
+		i.puller,
+		nil,
+	), nil
+}
+
+func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFromRawManifest, puller *remote.Puller, desc *gcr.Descriptor) *layerFromDigest {
 	return &layerFromDigest{
-		digest:     digest,
-		repo:       i.repo,
-		image:      i,
-		remoteOpts: i.remoteOpts,
-	}, nil
+		repo:   repo,
+		digest: digest,
+		image:  image,
+		puller: puller,
+		desc:   desc,
+		createRemoteLayer: sync.OnceValues(func() (gcr.Layer, error) {
+			ref := repo.Digest(digest.String())
+			return puller.Layer(image.ctx, ref)
+		}),
+	}
 }
 
 var _ gcr.Layer = (*layerFromDigest)(nil)
@@ -716,13 +745,14 @@ var _ gcr.Layer = (*layerFromDigest)(nil)
 // layerFromDigest implements the go-containerregistry Layer interface.
 // It allows us to read layers from and write layers to the cache.
 type layerFromDigest struct {
-	digest gcr.Hash
 	repo   gcrname.Repository
+	digest gcr.Hash
 	image  *imageFromRawManifest
 
-	remoteOpts  []remote.Option
-	desc        *gcr.Descriptor
-	remoteLayer gcr.Layer
+	puller *remote.Puller
+	desc   *gcr.Descriptor
+
+	createRemoteLayer func() (gcr.Layer, error)
 }
 
 func (l *layerFromDigest) Digest() (gcr.Hash, error) {
@@ -733,21 +763,9 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 	return partial.BlobToDiffID(l.image, l.digest)
 }
 
-func (l *layerFromDigest) fetchRemoteLayer() error {
-	if l.remoteLayer != nil {
-		return nil
-	}
-	ref := l.repo.Digest(l.digest.String())
-	remoteLayer, err := remote.Layer(ref, l.remoteOpts...)
-	if err != nil {
-		return err
-	}
-	l.remoteLayer = remoteLayer
-	return nil
-}
-
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
-	if err := l.fetchRemoteLayer(); err != nil {
+	remoteLayer, err := l.createRemoteLayer()
+	if err != nil {
 		return nil, err
 	}
 
@@ -761,7 +779,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		}
 	}
 
-	upstream, err := l.remoteLayer.Compressed()
+	upstream, err := remoteLayer.Compressed()
 	if err != nil {
 		return nil, err
 	}
@@ -810,20 +828,22 @@ func (l *layerFromDigest) Size() (int64, error) {
 	if l.desc != nil {
 		return l.desc.Size, nil
 	}
-	if err := l.fetchRemoteLayer(); err != nil {
+	remoteLayer, err := l.createRemoteLayer()
+	if err != nil {
 		return 0, err
 	}
-	return l.remoteLayer.Size()
+	return remoteLayer.Size()
 }
 
 func (l *layerFromDigest) MediaType() (types.MediaType, error) {
 	if l.desc != nil {
 		return l.desc.MediaType, nil
 	}
-	if err := l.fetchRemoteLayer(); err != nil {
+	remoteLayer, err := l.createRemoteLayer()
+	if err != nil {
 		return "", err
 	}
-	return l.remoteLayer.MediaType()
+	return remoteLayer.MediaType()
 }
 
 func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
