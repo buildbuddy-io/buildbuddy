@@ -1529,6 +1529,15 @@ var (
 		FileName,
 	})
 
+	FirecrackerWorkspaceDiskWriteOps = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "workspace_conversion_disk_write_ops",
+		Help:      "Total number of disk write operations performed converting Firecracker action workspaces to/from ext4 images.",
+	}, []string{
+		CommandName,
+	})
+
 	MaxRecyclableResourceUsageEvent = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
