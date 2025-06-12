@@ -64,14 +64,11 @@ func setExperimentProvider(b *testing.B, te *real_environment.RealEnv) {
 
 func getAnonContext(t testing.TB, env environment.Env) context.Context {
 	ctx := env.GetAuthenticator().AuthContextFromAPIKey(context.Background(), "user1")
-	// ctx := context.Background()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	if err != nil {
 		t.Fatalf("error attaching user prefix: %v", err)
 	}
 	return ctx
-	// Use a simple Claims to speed up migration_cache.groupID()
-	// return claims.AuthContextWithJWT(ctx, &claims.Claims{}, nil)
 }
 
 func getTestEnv(b *testing.B) *real_environment.RealEnv {
