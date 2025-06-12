@@ -594,12 +594,13 @@ func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc 
 		if manifest.Config.Data != nil {
 			return manifest.Config.Data, nil
 		}
-		layer := layerFromDigest{
-			digest: manifest.Config.Digest,
-			repo:   i.repo,
-			image:  i,
-			puller: i.puller,
-		}
+		layer := newLayerFromDigest(
+			i.repo,
+			manifest.Config.Digest,
+			i,
+			i.puller,
+			nil,
+		)
 
 		rc, err := layer.Uncompressed()
 		if err != nil {
@@ -688,13 +689,13 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 	}
 	layers := make([]gcr.Layer, 0, len(m.Layers))
 	for _, layerDesc := range m.Layers {
-		layer := &layerFromDigest{
-			digest: layerDesc.Digest,
-			repo:   i.repo,
-			image:  i,
-			puller: i.puller,
-			desc:   &layerDesc,
-		}
+		layer := newLayerFromDigest(
+			i.repo,
+			layerDesc.Digest,
+			i,
+			i.puller,
+			&layerDesc,
+		)
 
 		layers = append(layers, layer)
 	}
@@ -702,12 +703,13 @@ func (i *imageFromRawManifest) Layers() ([]gcr.Layer, error) {
 }
 
 func (i *imageFromRawManifest) LayerByDigest(digest gcr.Hash) (gcr.Layer, error) {
-	return &layerFromDigest{
-		digest: digest,
-		repo:   i.repo,
-		image:  i,
-		puller: i.puller,
-	}, nil
+	return newLayerFromDigest(
+		i.repo,
+		digest,
+		i,
+		i.puller,
+		nil,
+	), nil
 }
 
 func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error) {
@@ -715,12 +717,27 @@ func (i *imageFromRawManifest) LayerByDiffID(diffID gcr.Hash) (gcr.Layer, error)
 	if err != nil {
 		return nil, err
 	}
+	return newLayerFromDigest(
+		i.repo,
+		digest,
+		i,
+		i.puller,
+		nil,
+	), nil
+}
+
+func newLayerFromDigest(repo gcrname.Repository, digest gcr.Hash, image *imageFromRawManifest, puller *remote.Puller, desc *gcr.Descriptor) *layerFromDigest {
 	return &layerFromDigest{
+		repo:   repo,
 		digest: digest,
-		repo:   i.repo,
-		image:  i,
-		puller: i.puller,
-	}, nil
+		image:  image,
+		puller: puller,
+		desc:   desc,
+		createRemoteLayer: sync.OnceValues(func() (gcr.Layer, error) {
+			ref := repo.Digest(digest.String())
+			return puller.Layer(image.ctx, ref)
+		}),
+	}
 }
 
 var _ gcr.Layer = (*layerFromDigest)(nil)
@@ -728,16 +745,14 @@ var _ gcr.Layer = (*layerFromDigest)(nil)
 // layerFromDigest implements the go-containerregistry Layer interface.
 // It allows us to read layers from and write layers to the cache.
 type layerFromDigest struct {
-	digest gcr.Hash
 	repo   gcrname.Repository
+	digest gcr.Hash
 	image  *imageFromRawManifest
 
 	puller *remote.Puller
 	desc   *gcr.Descriptor
 
-	remoteLayerOnce sync.Once
-	remoteLayerErr  error
-	remoteLayer     gcr.Layer
+	createRemoteLayer func() (gcr.Layer, error)
 }
 
 func (l *layerFromDigest) Digest() (gcr.Hash, error) {
@@ -748,23 +763,9 @@ func (l *layerFromDigest) DiffID() (gcr.Hash, error) {
 	return partial.BlobToDiffID(l.image, l.digest)
 }
 
-func (l *layerFromDigest) fetchRemoteLayer() error {
-	l.remoteLayerOnce.Do(func() {
-		if l.remoteLayer != nil {
-			return
-		}
-		ref := l.repo.Digest(l.digest.String())
-		remoteLayer, err := l.puller.Layer(l.image.ctx, ref)
-		if err != nil {
-			l.remoteLayerErr = err
-		}
-		l.remoteLayer = remoteLayer
-	})
-	return l.remoteLayerErr
-}
-
 func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
-	if err := l.fetchRemoteLayer(); err != nil {
+	remoteLayer, err := l.createRemoteLayer()
+	if err != nil {
 		return nil, err
 	}
 
@@ -778,7 +779,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		}
 	}
 
-	upstream, err := l.remoteLayer.Compressed()
+	upstream, err := remoteLayer.Compressed()
 	if err != nil {
 		return nil, err
 	}
@@ -827,20 +828,22 @@ func (l *layerFromDigest) Size() (int64, error) {
 	if l.desc != nil {
 		return l.desc.Size, nil
 	}
-	if err := l.fetchRemoteLayer(); err != nil {
+	remoteLayer, err := l.createRemoteLayer()
+	if err != nil {
 		return 0, err
 	}
-	return l.remoteLayer.Size()
+	return remoteLayer.Size()
 }
 
 func (l *layerFromDigest) MediaType() (types.MediaType, error) {
 	if l.desc != nil {
 		return l.desc.MediaType, nil
 	}
-	if err := l.fetchRemoteLayer(); err != nil {
+	remoteLayer, err := l.createRemoteLayer()
+	if err != nil {
 		return "", err
 	}
-	return l.remoteLayer.MediaType()
+	return remoteLayer.MediaType()
 }
 
 func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
