@@ -114,6 +114,12 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	if aid := rmd.GetActionId(); len(aid) > 0 {
 		options.attributes["action_id"] = aid
 	}
+	if mnemonic := rmd.GetActionMnemonic(); mnemonic != "" {
+		options.attributes["action_mnemonic"] = mnemonic
+	}
+	if targetID := rmd.GetTargetId(); targetID != "" {
+		options.attributes["target_id"] = targetID
+	}
 	for _, optI := range opts {
 		if opt, ok := optI.(Option); ok {
 			opt(options)
