@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -440,12 +441,10 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 				te := testenv.GetTestEnv(t)
 				flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 				flags.Set(t, "executor.container_registry.use_cache_percent", useCachePercent)
-				upstreamCounter := atomic.Int32{}
+				counter := newRequestCounter()
 				registry := testregistry.Run(t, testregistry.Opts{
 					HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-						if r.Method == http.MethodGet && r.URL.Path != "/v2/" {
-							upstreamCounter.Add(1)
-						}
+						counter.Inc(r)
 						return true
 					},
 				})
@@ -468,28 +467,31 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 					)
 					require.NoError(t, err)
 
-					beforeLayersCount := upstreamCounter.Load()
+					counter.reset()
+
 					layers, err := pulledImage.Layers()
 					require.NoError(t, err)
 
-					afterLayersCount := upstreamCounter.Load()
-					require.Zero(t, afterLayersCount-beforeLayersCount)
+					expected := map[string]int{}
+					require.Empty(t, cmp.Diff(expected, counter.snapshot()))
+
+					configDigest, err := pulledImage.ConfigName()
+					require.NoError(t, err)
+					expected = map[string]int{
+						http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
+					}
 
 					// To make the DiffID() request counts always be zero,
 					// fetch the config file here. Otherwise the first
 					// Layer.DiffID() call will make a request to fetch the config file.
-					beforeConfigFileCount := upstreamCounter.Load()
 					_, err = pulledImage.ConfigFile()
 					require.NoError(t, err)
-					afterConfigFileCount := upstreamCounter.Load()
-					require.Equal(t, int32(1), afterConfigFileCount-beforeConfigFileCount)
+					require.Empty(t, cmp.Diff(expected, counter.snapshot()))
 
 					for _, layer := range layers {
-						beforeDiffIDCount := upstreamCounter.Load()
 						_, err := layer.DiffID()
 						require.NoError(t, err)
-						afterDiffIDCount := upstreamCounter.Load()
-						require.Zero(t, afterDiffIDCount-beforeDiffIDCount)
+						require.Empty(t, cmp.Diff(expected, counter.snapshot()))
 					}
 				}
 			})
@@ -722,12 +724,10 @@ func TestResolve_WithCache(t *testing.T) {
 			flags.Set(t, "executor.container_registry.read_manifests_from_cache", tc.readManifests)
 			flags.Set(t, "executor.container_registry.write_layers_to_cache", tc.writeLayers)
 			flags.Set(t, "executor.container_registry.read_layers_from_cache", tc.readLayers)
-			counter := atomic.Int32{}
+			counter := newRequestCounter()
 			registry := testregistry.Run(t, testregistry.Opts{
 				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-					if r.Method == http.MethodGet && r.URL.Path != "/v2/" {
-						counter.Add(1)
-					}
+					counter.Inc(r)
 					return true
 				},
 			})
@@ -743,36 +743,70 @@ func TestResolve_WithCache(t *testing.T) {
 
 			{
 				imageAddress := registry.ImageAddress(tc.args.imageName + "_image")
-				resolveCount := int32(1)
-				filesCount := int32(1)
-				resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, filesCount)
+				pushedLayers, err := pushedImage.Layers()
+				require.NoError(t, err)
+				require.Len(t, pushedLayers, 1)
+				layerDigest, err := pushedLayers[0].Digest()
+				require.NoError(t, err)
+				expected := map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
+				}
+				if tc.readManifests {
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
+				}
+				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
-				resolveCount = int32(1)
-				if tc.writeManifests && tc.readManifests {
-					resolveCount = int32(0)
+				expected = map[string]int{http.MethodGet + " /v2/": 1}
+				if tc.readManifests {
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
 				}
-				filesCount = int32(1)
-				if tc.writeLayers && tc.readLayers {
-					filesCount = int32(0)
+				if !(tc.writeManifests && tc.readManifests) {
+					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
 				}
-				resolveAndCheck(t, tc, te, imageAddress, &counter, resolveCount, filesCount)
+				if !(tc.writeLayers && tc.readLayers) {
+					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_image/blobs/"+layerDigest.String()] = 1
+				}
+				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 			}
 
 			{
 				indexAddress := registry.ImageAddress(tc.args.imageName + "_index")
-				resolveCount := int32(2)
-				filesCount := int32(1)
-				resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, filesCount)
+				imageDigest, err := pushedImage.Digest()
+				require.NoError(t, err)
+				pushedLayers, err := pushedImage.Layers()
+				require.NoError(t, err)
+				require.Len(t, pushedLayers, 1)
+				layerDigest, err := pushedLayers[0].Digest()
+				require.NoError(t, err)
+				expected := map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():     1,
+				}
+				if tc.readManifests {
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
+				}
 
-				resolveCount = int32(2)
-				if tc.writeManifests && tc.readManifests {
-					resolveCount = int32(0)
+				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
+
+				expected = map[string]int{http.MethodGet + " /v2/": 1}
+				if tc.readManifests {
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
 				}
-				filesCount = int32(1)
-				if tc.writeLayers && tc.readLayers {
-					filesCount = int32(0)
+				if !(tc.writeManifests && tc.readManifests) {
+					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
+					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
+
 				}
-				resolveAndCheck(t, tc, te, indexAddress, &counter, resolveCount, filesCount)
+				if !(tc.writeLayers && tc.readLayers) {
+					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/blobs/"+layerDigest.String()] = 1
+				}
+				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 			}
 		})
 	}
@@ -795,8 +829,8 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	return te
 }
 
-func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, counter *atomic.Int32, resolveCount, filesCount int32) {
-	beforeResolve := counter.Load()
+func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *requestCounter) {
+	counter.reset()
 	pulledImage, err := newResolver(t, te).Resolve(
 		context.Background(),
 		imageAddress,
@@ -804,17 +838,44 @@ func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imag
 		tc.args.credentials,
 	)
 	require.NoError(t, err)
-	require.Equal(t, resolveCount, counter.Load()-beforeResolve)
 
-	beforeLayers := counter.Load()
 	layers, err := pulledImage.Layers()
 	require.NoError(t, err)
 	require.Len(t, layers, 1)
-	require.Zero(t, beforeLayers-counter.Load())
 
-	beforeFiles := counter.Load()
 	files := layerFiles(t, layers[0])
-	require.Equal(t, filesCount, counter.Load()-beforeFiles)
-
 	require.Empty(t, cmp.Diff(tc.imageFiles, files))
+
+	require.Empty(t, cmp.Diff(expected, counter.snapshot()))
+}
+
+type requestCounter struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func newRequestCounter() *requestCounter {
+	return &requestCounter{counts: make(map[string]int)}
+}
+
+func (c *requestCounter) Inc(r *http.Request) {
+	c.mu.Lock()
+	c.counts[r.Method+" "+r.URL.Path]++
+	c.mu.Unlock()
+}
+
+func (c *requestCounter) snapshot() map[string]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	snap := make(map[string]int, len(c.counts))
+	for k, v := range c.counts {
+		snap[k] = v
+	}
+	return snap
+}
+
+func (c *requestCounter) reset() {
+	c.mu.Lock()
+	c.counts = map[string]int{}
+	c.mu.Unlock()
 }
