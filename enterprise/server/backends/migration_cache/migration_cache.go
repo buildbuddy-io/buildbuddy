@@ -211,7 +211,6 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 				if mc.logNotFoundErrors {
 					log.Warningf("Migration digest %v src contains, dest does not", r.GetDigest())
 				}
-				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 			} else if srcContains && dstContains {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "contains",
