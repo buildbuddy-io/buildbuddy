@@ -36,12 +36,13 @@ var (
 )
 
 type MigrationCache struct {
-	env                  environment.Env
-	src                  interfaces.Cache
-	dest                 interfaces.Cache
-	doubleReadPercentage float64
-	decompressPercentage float64
-	logNotFoundErrors    bool
+	env environment.Env
+
+	// The fields in defaultConfigDoNotUseDirectly should not be used by
+	// request handlers. Instead use the result of the config() method.
+	defaultConfigDoNotUseDirectly config
+
+	logNotFoundErrors bool
 
 	eg       *errgroup.Group
 	quitChan chan struct{}
@@ -51,7 +52,6 @@ type MigrationCache struct {
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
 	numCopiesDropped            *atomic.Int64
-	asyncDestWrites             bool
 
 	flagProvider interfaces.ExperimentFlagProvider
 }
@@ -89,11 +89,14 @@ func Register(env *real_environment.RealEnv) error {
 
 func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
 	return &MigrationCache{
-		env:                         env,
-		src:                         srcCache,
-		dest:                        destCache,
-		doubleReadPercentage:        migrationConfig.DoubleReadPercentage,
-		decompressPercentage:        migrationConfig.DecompressPercentage,
+		env: env,
+		defaultConfigDoNotUseDirectly: config{
+			src:                  srcCache,
+			dest:                 destCache,
+			asyncDestWrites:      migrationConfig.AsyncDestWrites,
+			doubleReadPercentage: migrationConfig.DoubleReadPercentage,
+			decompressPercentage: migrationConfig.DecompressPercentage,
+		},
 		logNotFoundErrors:           migrationConfig.LogNotFoundErrors,
 		copyChan:                    make(chan *copyData, migrationConfig.CopyChanBufferSize),
 		maxCopiesPerSec:             migrationConfig.MaxCopiesPerSec,
@@ -101,7 +104,6 @@ func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, sr
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
 		numCopiesDropped:            &atomic.Int64{},
 		numCopyWorkers:              migrationConfig.NumCopyWorkers,
-		asyncDestWrites:             migrationConfig.AsyncDestWrites,
 		flagProvider:                env.GetExperimentFlagProvider(),
 	}
 }
@@ -210,18 +212,18 @@ type config struct {
 
 func (mc *MigrationCache) config(ctx context.Context) *config {
 	c := &config{
-		src:                  mc.src,
-		dest:                 mc.dest,
-		asyncDestWrites:      mc.asyncDestWrites,
-		doubleReadPercentage: mc.doubleReadPercentage,
-		decompressPercentage: mc.decompressPercentage,
+		src:                  mc.defaultConfigDoNotUseDirectly.src,
+		dest:                 mc.defaultConfigDoNotUseDirectly.dest,
+		asyncDestWrites:      mc.defaultConfigDoNotUseDirectly.asyncDestWrites,
+		doubleReadPercentage: mc.defaultConfigDoNotUseDirectly.doubleReadPercentage,
+		decompressPercentage: mc.defaultConfigDoNotUseDirectly.decompressPercentage,
 	}
 	if mc.flagProvider == nil {
 		return c
 	}
 	m := mc.flagProvider.Object(ctx, MigrationCacheConfigFlag, nil)
 	if m == nil {
-		log.CtxInfof(ctx, "No migration cache config found in experiment flags, using defaults: %+v", c)
+		log.CtxWarningf(ctx, "No migration cache config found in experiment flags, using defaults: %+v", c)
 		return c
 	}
 
@@ -229,16 +231,16 @@ func (mc *MigrationCache) config(ctx context.Context) *config {
 		if state, ok := v.(string); ok {
 			switch state {
 			case SrcOnly:
-				c.src = mc.src
+				c.src = mc.defaultConfigDoNotUseDirectly.src
 				c.dest = nil
 			case SrcPrimary:
-				c.src = mc.src
-				c.dest = mc.dest
+				c.src = mc.defaultConfigDoNotUseDirectly.src
+				c.dest = mc.defaultConfigDoNotUseDirectly.dest
 			case DestPrimary:
-				c.src = mc.dest
-				c.dest = mc.src
+				c.src = mc.defaultConfigDoNotUseDirectly.dest
+				c.dest = mc.defaultConfigDoNotUseDirectly.src
 			case DestOnly:
-				c.src = mc.dest
+				c.src = mc.defaultConfigDoNotUseDirectly.dest
 				c.dest = nil
 			default:
 				log.CtxWarningf(ctx, "Unknown migration cache state: %s", state)
@@ -1093,7 +1095,7 @@ func (mc *MigrationCache) Stop() error {
 
 	var wg sync.WaitGroup
 	var srcShutdownErr, dstShutdownErr error
-	if src, canStopSrc := mc.src.(interfaces.StoppableCache); canStopSrc {
+	if src, canStopSrc := mc.defaultConfigDoNotUseDirectly.src.(interfaces.StoppableCache); canStopSrc {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -1104,7 +1106,7 @@ func (mc *MigrationCache) Stop() error {
 		}()
 	}
 
-	if dest, canStopDest := mc.dest.(interfaces.StoppableCache); canStopDest {
+	if dest, canStopDest := mc.defaultConfigDoNotUseDirectly.dest.(interfaces.StoppableCache); canStopDest {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -1127,5 +1129,6 @@ func (mc *MigrationCache) Stop() error {
 // compressor, in order to reduce complexity around trying to double read/write compressed bytes to one cache and
 // decompressed bytes to another
 func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
-	return mc.src.SupportsCompressor(compressor) && mc.dest.SupportsCompressor(compressor)
+	return mc.defaultConfigDoNotUseDirectly.src.SupportsCompressor(compressor) &&
+		mc.defaultConfigDoNotUseDirectly.dest.SupportsCompressor(compressor)
 }
