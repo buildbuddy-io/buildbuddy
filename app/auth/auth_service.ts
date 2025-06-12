@@ -191,6 +191,7 @@ export class AuthService {
       ),
       isImpersonating: response.isImpersonating,
       subdomainGroupID: response.subdomainGroupId,
+      codesearchAllowed: response.experiments?.codesearchAllowed ?? false,
     });
   }
 

@@ -221,9 +221,10 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 
 	if efp := env.GetExperimentFlagProvider(); efp != nil {
 		config.FlipLogoOnHover = efp.Boolean(ctx, "flip-logo-on-hover", false /*=default*/)
-		if *codeSearchEnabled {
-			config.CodeSearchEnabled = efp.Boolean(ctx, "codesearch-allowed", false /*=default*/)
-		}
+		// These variables are only updated when the app is reloaded.
+		// This means that global experiments can be handled here, but experiments that
+		// are user or group specific should be included in the experiments field of
+		// GetUserResponse. This is because these variables are only refreshed on a page reload.
 	}
 
 	configJSON, err := protojson.Marshal(&config)

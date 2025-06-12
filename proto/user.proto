@@ -24,6 +24,10 @@ message SelectedGroup {
   Access access = 2;
 }
 
+message Experiments {
+  bool codesearch_allowed = 1;
+}
+
 message GetUserResponse {
   reserved 5;
 
@@ -62,6 +66,8 @@ message GetUserResponse {
 
   // True if the user is using impersonation to access a group.
   bool is_impersonating = 10;
+
+  Experiments experiments = 11;
 }
 
 message CreateUserRequest {

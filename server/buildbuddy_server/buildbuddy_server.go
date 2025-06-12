@@ -418,6 +418,12 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	if err != nil {
 		return nil, err
 	}
+
+	cs := false
+	if efp := s.env.GetExperimentFlagProvider(); efp != nil {
+		cs = efp.Boolean(ctx, "codesearch_allowed", false /*=default*/)
+	}
+
 	return &uspb.GetUserResponse{
 		DisplayUser:     tu.ToProto(),
 		UserGroup:       groups,
@@ -430,6 +436,9 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		GithubLinked:     tu.GithubToken != "",
 		SubdomainGroupId: subdomainGroupID,
 		IsImpersonating:  u.IsImpersonating(),
+		Experiments: &uspb.Experiments{
+			CodesearchAllowed: cs,
+		},
 	}, nil
 }
 
