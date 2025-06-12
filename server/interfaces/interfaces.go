@@ -1757,4 +1757,5 @@ type ExperimentFlagProvider interface {
 	String(ctx context.Context, flagName string, defaultValue string, opts ...any) string
 	Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64
 	Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64
+	Object(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) map[string]any
 }
