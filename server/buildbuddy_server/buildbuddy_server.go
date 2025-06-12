@@ -422,7 +422,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 
 	cs := false
 	if efp := s.env.GetExperimentFlagProvider(); efp != nil {
-		// On an initial page load, the group id may not be set in the claims yet.
+		// HACK: On an initial page load, the group id may not be set in the claims yet.
 		// Add it in here so the experiment flags are resolved correctly.
 		clm, err := claims.ClaimsFromContext(ctx)
 		if err == nil {
