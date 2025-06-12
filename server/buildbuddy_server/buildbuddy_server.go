@@ -421,7 +421,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 
 	cs := false
 	if efp := s.env.GetExperimentFlagProvider(); efp != nil {
-		cs = efp.Boolean(ctx, "codesearch_allowed", false /*=default*/)
+		cs = efp.Boolean(ctx, "codesearch-allowed", false /*=default*/)
 	}
 
 	return &uspb.GetUserResponse{
