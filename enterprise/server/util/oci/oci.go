@@ -418,15 +418,15 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 		)
 	}
 
-	return &imageFromRawManifest{
-		repo:        repo,
-		desc:        desc,
-		rawManifest: rawManifest,
-		ctx:         ctx,
-		acClient:    acClient,
-		bsClient:    bsClient,
-		puller:      puller,
-	}, nil
+	return newImageFromRawManifest(
+		ctx,
+		repo,
+		desc,
+		rawManifest,
+		acClient,
+		bsClient,
+		puller,
+	), nil
 }
 
 func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, credentials Credentials) []remote.Option {
@@ -576,6 +576,41 @@ func isSubset(lst, required []string) bool {
 	return true
 }
 
+func newImageFromRawManifest(ctx context.Context, repo gcrname.Repository, desc gcr.Descriptor, rawManifest []byte, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) *imageFromRawManifest {
+	i := &imageFromRawManifest{
+		repo:        repo,
+		desc:        desc,
+		rawManifest: rawManifest,
+		ctx:         ctx,
+		acClient:    acClient,
+		bsClient:    bsClient,
+		puller:      puller,
+	}
+	i.fetchRawConfigOnce = sync.OnceValues(func() ([]byte, error) {
+		manifest, err := i.Manifest()
+		if err != nil {
+			return nil, err
+		}
+		if manifest.Config.Data != nil {
+			return manifest.Config.Data, nil
+		}
+		layer := layerFromDigest{
+			digest: manifest.Config.Digest,
+			repo:   i.repo,
+			image:  i,
+			puller: i.puller,
+		}
+
+		rc, err := layer.Uncompressed()
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+		return io.ReadAll(rc)
+	})
+	return i
+}
+
 var _ gcr.Image = (*imageFromRawManifest)(nil)
 
 // imageFromRawManifest implements the go-containerregistry Image interface.
@@ -592,9 +627,7 @@ type imageFromRawManifest struct {
 	bsClient bspb.ByteStreamClient
 	puller   *remote.Puller
 
-	rawConfigOnce sync.Once
-	rawConfigErr  error
-	rawConfigFile []byte
+	fetchRawConfigOnce func() ([]byte, error)
 }
 
 func (i *imageFromRawManifest) Digest() (gcr.Hash, error) {
@@ -629,40 +662,7 @@ func (i *imageFromRawManifest) Size() (int64, error) {
 // in the rawConfigFile field, then in the manifest's Config section,
 // then from the upstream registry.
 func (i *imageFromRawManifest) RawConfigFile() ([]byte, error) {
-	i.rawConfigOnce.Do(func() {
-		if i.rawConfigFile != nil {
-			return
-		}
-
-		manifest, err := i.Manifest()
-		if err != nil {
-			i.rawConfigErr = err
-			return
-		}
-		if manifest.Config.Data != nil {
-			i.rawConfigFile = manifest.Config.Data
-			return
-		}
-		layer := layerFromDigest{
-			digest: manifest.Config.Digest,
-			repo:   i.repo,
-			image:  i,
-			puller: i.puller,
-		}
-
-		rc, err := layer.Uncompressed()
-		if err != nil {
-			i.rawConfigErr = err
-		}
-		defer rc.Close()
-		rawConfigFile, err := io.ReadAll(rc)
-		if err != nil {
-			i.rawConfigErr = err
-			return
-		}
-		i.rawConfigFile = rawConfigFile
-	})
-	return i.rawConfigFile, i.rawConfigErr
+	return i.fetchRawConfigOnce()
 }
 
 func (i *imageFromRawManifest) ConfigFile() (*gcr.ConfigFile, error) {
