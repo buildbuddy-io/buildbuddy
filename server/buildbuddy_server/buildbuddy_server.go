@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -421,6 +422,15 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 
 	cs := false
 	if efp := s.env.GetExperimentFlagProvider(); efp != nil {
+		// On an initial page load, the group id may not be set in the claims yet.
+		// Add it in here so the experiment flags are resolved correctly.
+		clm, err := claims.ClaimsFromContext(ctx)
+		if err == nil {
+			if clm.GetGroupID() == "" {
+				clm.GroupID = selectedGroupID
+				ctx = claims.AuthContext(ctx, clm)
+			}
+		}
 		cs = efp.Boolean(ctx, "codesearch-allowed", false /*=default*/)
 	}
 
