@@ -21,6 +21,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/digest",
         "//server/util/background",
+        "//server/util/claims",
         "//server/util/compression",
         "//server/util/disk",
         "//server/util/flag",
