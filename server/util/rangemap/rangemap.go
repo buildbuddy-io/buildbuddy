@@ -107,6 +107,34 @@ func (rm *RangeMap[T]) Remove(start, end []byte) error {
 	return nil
 }
 
+// Add adds a range to RangeMap. When there are overlapping ranges, if all
+// overlapping ranges meet condition checkFn(v) == true, then we will remove all
+// overlapping ranges and then add the range; Otherwise, the range will be ignored.
+func (rm *RangeMap[T]) AddAndRemoveOverlapping(start, end []byte, value T, checkFn func(v T) bool) (bool, error) {
+	overlappingRanges := rm.GetOverlapping(start, end)
+	// If this range overlaps, we'll check it against the overlapping
+	// ranges and possibly delete them or if they are newer, then we'll
+	// ignore this update.
+	for _, overlappingRange := range overlappingRanges {
+		v := overlappingRange.Val
+		if checkFn(v) {
+			return false, nil
+		}
+	}
+
+	// If we got here, all overlapping ranges are older, so we're gonna
+	// delete them and replace with the new one.
+	for _, overlappingRange := range overlappingRanges {
+		log.Debugf("Removing (outdated) overlapping range: [%q, %q)", overlappingRange.Start, overlappingRange.End)
+		rm.Remove(overlappingRange.Start, overlappingRange.End)
+	}
+	_, err := rm.Add(start, end, value)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // Get returns the range with the specific start and end. Returns nil if the
 // range is not found.
 func (rm *RangeMap[T]) Get(start, end []byte) *RangeWithVal[T] {

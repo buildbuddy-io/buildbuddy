@@ -65,26 +65,16 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 
 	r := rc.rangeMap.Get(start, end)
 	if r == nil {
-		overlappingRanges := rc.rangeMap.GetOverlapping(start, end)
-		// If this range overlaps, we'll check it against the overlapping
-		// ranges and possibly delete them or if they are newer, then we'll
-		// ignore this update.
-		for _, overlappingRange := range overlappingRanges {
-			v := overlappingRange.Val.Get()
-			if v.GetGeneration() >= newDescriptor.GetGeneration() {
-				log.Debugf("Ignoring rangeDescriptor %+v, because current has same or later generation: %+v", newDescriptor, v)
-				return nil
-			}
+		checkFn := func(r *lockingRangeDescriptor) bool {
+			v := r.Get()
+			return v.GetGeneration() < newDescriptor.GetGeneration()
 		}
-
-		// If we got here, all overlapping ranges are older, so we're gonna
-		// delete them and replace with the new one.
-		for _, overlappingRange := range overlappingRanges {
-			log.Debugf("Removing (outdated) overlapping range: [%q, %q)", overlappingRange.Start, overlappingRange.End)
-			rc.rangeMap.Remove(overlappingRange.Start, overlappingRange.End)
+		added, err := rc.rangeMap.AddAndRemoveOverlapping(start, end, newLockingRangeDescriptor(newDescriptor), checkFn)
+		if added {
+			log.Debugf("Adding new range: %d [%q, %q)", newDescriptor.GetRangeId(), start, end)
+		} else {
+			log.Debugf("Ignoring rangeDescriptor %+v, because current has same or later generation", newDescriptor)
 		}
-		log.Debugf("Adding new range: %d [%q, %q)", newDescriptor.GetRangeId(), start, end)
-		_, err := rc.rangeMap.Add(start, end, newLockingRangeDescriptor(newDescriptor))
 		return err
 	} else {
 		lr := r.Val
