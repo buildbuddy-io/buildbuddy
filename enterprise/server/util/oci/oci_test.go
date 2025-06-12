@@ -472,16 +472,13 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 					layers, err := pulledImage.Layers()
 					require.NoError(t, err)
 
-					expected := map[requestKey]int{}
+					expected := map[string]int{}
 					require.Empty(t, cmp.Diff(expected, counter.snapshot()))
 
 					configDigest, err := pulledImage.ConfigName()
 					require.NoError(t, err)
-					expected = map[requestKey]int{
-						requestKey{
-							Method: http.MethodGet,
-							Path:   "/v2/" + nameToResolve + "/blobs/" + configDigest.String(),
-						}: 1,
+					expected = map[string]int{
+						http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
 					}
 
 					// To make the DiffID() request counts always be zero,
@@ -751,51 +748,25 @@ func TestResolve_WithCache(t *testing.T) {
 				require.Len(t, pushedLayers, 1)
 				layerDigest, err := pushedLayers[0].Digest()
 				require.NoError(t, err)
-				expected := map[requestKey]int{
-					requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/",
-					}: 1,
-					requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/" + tc.args.imageName + "_image/manifests/latest",
-					}: 1,
-					requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(),
-					}: 1,
+				expected := map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
 				}
 				if tc.readManifests {
-					expected[requestKey{
-						Method: http.MethodHead,
-						Path:   "/v2/" + tc.args.imageName + "_image/manifests/latest",
-					}] = 1
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
-				expected = map[requestKey]int{
-					requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/",
-					}: 1,
-				}
+				expected = map[string]int{http.MethodGet + " /v2/": 1}
 				if tc.readManifests {
-					expected[requestKey{
-						Method: http.MethodHead,
-						Path:   "/v2/" + tc.args.imageName + "_image/manifests/latest",
-					}] = 1
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
 				}
 				if !(tc.writeManifests && tc.readManifests) {
-					expected[requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/" + tc.args.imageName + "_image/manifests/latest",
-					}] = 1
+					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_image/manifests/latest"] = 1
 				}
 				if !(tc.writeLayers && tc.readLayers) {
-					expected[requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(),
-					}] = 1
+					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_image/blobs/"+layerDigest.String()] = 1
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 			}
@@ -809,68 +780,31 @@ func TestResolve_WithCache(t *testing.T) {
 				require.Len(t, pushedLayers, 1)
 				layerDigest, err := pushedLayers[0].Digest()
 				require.NoError(t, err)
-				expected := map[requestKey]int{
-					requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/",
-					}: 1,
-					requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/" + tc.args.imageName + "_index/manifests/latest",
-					}: 1,
-					requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(),
-					}: 1,
-					requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String(),
-					}: 1,
+				expected := map[string]int{
+					http.MethodGet + " /v2/": 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():     1,
 				}
 				if tc.readManifests {
-					expected[requestKey{
-						Method: http.MethodHead,
-						Path:   "/v2/" + tc.args.imageName + "_index/manifests/latest",
-					}] = 1
-					expected[requestKey{
-						Method: http.MethodHead,
-						Path:   "/v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(),
-					}] = 1
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
 				}
 
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
-				expected = map[requestKey]int{
-					requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/",
-					}: 1,
-				}
+				expected = map[string]int{http.MethodGet + " /v2/": 1}
 				if tc.readManifests {
-					expected[requestKey{
-						Method: http.MethodHead,
-						Path:   "/v2/" + tc.args.imageName + "_index/manifests/latest",
-					}] = 1
-					expected[requestKey{
-						Method: http.MethodHead,
-						Path:   "/v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(),
-					}] = 1
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
+					expected[http.MethodHead+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
 				}
 				if !(tc.writeManifests && tc.readManifests) {
-					expected[requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/" + tc.args.imageName + "_index/manifests/latest",
-					}] = 1
-					expected[requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(),
-					}] = 1
+					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/manifests/latest"] = 1
+					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/manifests/"+imageDigest.String()] = 1
+
 				}
 				if !(tc.writeLayers && tc.readLayers) {
-					expected[requestKey{
-						Method: http.MethodGet,
-						Path:   "/v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String(),
-					}] = 1
+					expected[http.MethodGet+" /v2/"+tc.args.imageName+"_index/blobs/"+layerDigest.String()] = 1
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 			}
@@ -895,7 +829,7 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	return te
 }
 
-func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[requestKey]int, counter *requestCounter) {
+func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *requestCounter) {
 	counter.reset()
 	pulledImage, err := newResolver(t, te).Resolve(
 		context.Background(),
@@ -915,31 +849,25 @@ func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imag
 	require.Empty(t, cmp.Diff(expected, counter.snapshot()))
 }
 
-// a small key type
-type requestKey struct {
-	Method string
-	Path   string
-}
-
 type requestCounter struct {
 	mu     sync.Mutex
-	counts map[requestKey]int
+	counts map[string]int
 }
 
 func newRequestCounter() *requestCounter {
-	return &requestCounter{counts: make(map[requestKey]int)}
+	return &requestCounter{counts: make(map[string]int)}
 }
 
 func (c *requestCounter) Inc(r *http.Request) {
 	c.mu.Lock()
-	c.counts[requestKey{r.Method, r.URL.Path}]++
+	c.counts[r.Method+" "+r.URL.Path]++
 	c.mu.Unlock()
 }
 
-func (c *requestCounter) snapshot() map[requestKey]int {
+func (c *requestCounter) snapshot() map[string]int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	snap := make(map[requestKey]int, len(c.counts))
+	snap := make(map[string]int, len(c.counts))
 	for k, v := range c.counts {
 		snap[k] = v
 	}
@@ -948,6 +876,6 @@ func (c *requestCounter) snapshot() map[requestKey]int {
 
 func (c *requestCounter) reset() {
 	c.mu.Lock()
-	c.counts = map[requestKey]int{}
+	c.counts = map[string]int{}
 	c.mu.Unlock()
 }
