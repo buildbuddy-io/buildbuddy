@@ -2,6 +2,7 @@ package disk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -9,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 
@@ -104,44 +104,6 @@ func DeleteFile(ctx context.Context, fullPath string) error {
 	return os.Remove(fullPath)
 }
 
-// ChildMounts returns the mount points of all filesystems mounted under the
-// given path. It does not include the given path itself.
-func ChildMounts(ctx context.Context, path string) ([]string, error) {
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
-	defer spn.End()
-
-	// TODO: implement for other platforms.
-	if runtime.GOOS != "linux" {
-		return nil, status.UnimplementedErrorf("not yet implemented for OS %q", runtime.GOOS)
-	}
-
-	// Use abs path so that we can use a prefix check to see if a mount point
-	// listed in /proc/self/mountinfo is a child of the given path.
-	prefix, err := filepath.Abs(path)
-	if err != nil {
-		return nil, err
-	}
-	prefix += string(os.PathSeparator)
-
-	b, err := os.ReadFile("/proc/self/mountinfo")
-	if err != nil {
-		return nil, err
-	}
-
-	var out []string
-	for line := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 5 {
-			continue
-		}
-		mountPoint := fields[4]
-		if strings.HasPrefix(mountPoint, prefix) {
-			out = append(out, mountPoint)
-		}
-	}
-	return out, nil
-}
-
 // ForceRemove attempts to delete a directory using os.RemoveAll. If that fails,
 // it will attempt to traverse the directory and update permissions so that the
 // directory can be removed, then retry os.RemoveAll. This fallback approach is
@@ -171,6 +133,34 @@ func ForceRemove(ctx context.Context, path string) error {
 		return err
 	}
 	return os.RemoveAll(path)
+}
+
+func isParent(parent, child string) bool {
+	return strings.HasPrefix(filepath.Clean(child), filepath.Clean(parent)+string(os.PathSeparator))
+}
+
+// forceUnlink attempts to unlink the given path (non-recursively). It ignores
+// NotExist errors. It attempts to change the parent directory permissions to
+// 0777 if needed in order to unlink the entry.
+func forceUnlink(path string) error {
+	if err := os.Remove(path); err == nil || errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if !errors.Is(err, os.ErrPermission) {
+		return err
+	}
+	// Try changing parent directory permissions.
+	parent := filepath.Dir(path)
+	if err := os.Chmod(parent, 0777); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// Parent disappeared - that means the child (probably) is gone too.
+			return nil
+		}
+		return fmt.Errorf("chmod parent %q: %w", parent, err)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func FileExists(ctx context.Context, fullPath string) (bool, error) {

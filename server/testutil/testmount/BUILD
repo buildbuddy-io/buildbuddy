@@ -7,4 +7,5 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testmount",
     target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
+    deps = ["@com_github_stretchr_testify//require"],
 )
