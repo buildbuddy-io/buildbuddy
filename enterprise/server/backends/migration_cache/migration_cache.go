@@ -210,7 +210,7 @@ type config struct {
 	doubleReadPercentage, decompressPercentage float64
 }
 
-func (mc *MigrationCache) config(ctx context.Context) *config {
+func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 	c := &config{
 		src:                  mc.defaultConfigDoNotUseDirectly.src,
 		dest:                 mc.defaultConfigDoNotUseDirectly.dest,
@@ -219,12 +219,11 @@ func (mc *MigrationCache) config(ctx context.Context) *config {
 		decompressPercentage: mc.defaultConfigDoNotUseDirectly.decompressPercentage,
 	}
 	if mc.flagProvider == nil {
-		return c
+		return c, nil
 	}
 	m := mc.flagProvider.Object(ctx, MigrationCacheConfigFlag, nil)
 	if m == nil {
-		log.CtxWarningf(ctx, "No migration cache config found in experiment flags, using defaults: %+v", c)
-		return c
+		return nil, status.InternalError("No migration cache config found in experiment flags")
 	}
 
 	if v, ok := m[MigrationStateField]; ok {
@@ -243,34 +242,34 @@ func (mc *MigrationCache) config(ctx context.Context) *config {
 				c.src = mc.defaultConfigDoNotUseDirectly.dest
 				c.dest = nil
 			default:
-				log.CtxWarningf(ctx, "Unknown migration cache state: %s", state)
+				return nil, status.InternalErrorf("Unknown migration cache state: %s", state)
 			}
 		} else {
-			log.CtxWarningf(ctx, "MigrationStateField is not a string: %T(%v)", v, v)
+			return nil, status.InternalErrorf("MigrationStateField is not a string: %T(%v)", v, v)
 		}
 	}
 	if v, ok := m[AsyncDestWriteField]; ok {
 		if asyncDestWrites, ok := v.(bool); ok {
 			c.asyncDestWrites = asyncDestWrites
 		} else {
-			log.CtxWarningf(ctx, "AsyncDestWriteField is not a bool: %T(%v)", v, v)
+			return nil, status.InternalErrorf("AsyncDestWriteField is not a bool: %T(%v)", v, v)
 		}
 	}
 	if v, ok := m[DoubleReadPercentageField]; ok {
 		if doubleReadPercentage, ok := v.(float64); ok {
 			c.doubleReadPercentage = doubleReadPercentage
 		} else {
-			log.CtxWarningf(ctx, "DoubleReadPercentageField is not a float64: %T(%v)", v, v)
+			return nil, status.InternalErrorf("DoubleReadPercentageField is not a float64: %T(%v)", v, v)
 		}
 	}
 	if v, ok := m[DecompressReadPercentageField]; ok {
 		if decompressPercentage, ok := v.(float64); ok {
 			c.decompressPercentage = decompressPercentage
 		} else {
-			log.CtxWarningf(ctx, "DecompressReadPercentageField is not a float64: %T(%v)", v, v)
+			return nil, status.InternalErrorf("DecompressReadPercentageField is not a float64: %T(%v)", v, v)
 		}
 	}
-	return c
+	return c, nil
 }
 
 func (c *config) doubleRead() bool {
@@ -289,7 +288,10 @@ func groupID(ctx context.Context) string {
 }
 
 func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	conf := mc.config(ctx)
+	conf, err := mc.config(ctx)
+	if err != nil {
+		return false, err
+	}
 	srcContains, srcErr := conf.src.Contains(ctx, r)
 
 	if conf.dest != nil && conf.doubleRead() {
@@ -321,7 +323,10 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 }
 
 func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
-	conf := mc.config(ctx)
+	conf, err := mc.config(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if conf.dest == nil {
 		return conf.src.Metadata(ctx, r)
 	}
@@ -370,7 +375,10 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 }
 
 func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	conf := mc.config(ctx)
+	conf, err := mc.config(ctx)
+	if err != nil {
+		return nil, err
+	}
 	srcMissing, srcErr := conf.src.FindMissing(ctx, resources)
 
 	if conf.dest != nil && conf.doubleRead() {
@@ -412,7 +420,10 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 }
 
 func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	conf := mc.config(ctx)
+	conf, err := mc.config(ctx)
+	if err != nil {
+		return nil, err
+	}
 	srcData, srcErr := conf.src.GetMulti(ctx, resources)
 	if conf.dest == nil {
 		return srcData, srcErr
@@ -465,7 +476,10 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 }
 
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
-	conf := mc.config(ctx)
+	conf, err := mc.config(ctx)
+	if err != nil {
+		return err
+	}
 	if conf.dest == nil {
 		return conf.src.SetMulti(ctx, kvs)
 	}
@@ -514,7 +528,10 @@ func deleteMulti(ctx context.Context, dest interfaces.Cache, kvs map[*rspb.Resou
 }
 
 func (mc *MigrationCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
-	conf := mc.config(ctx)
+	conf, err := mc.config(ctx)
+	if err != nil {
+		return err
+	}
 	if conf.dest == nil {
 		return conf.src.Delete(ctx, r)
 	}
@@ -683,7 +700,10 @@ func (d *doubleReader) Close() error {
 }
 
 func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	conf := mc.config(ctx)
+	conf, err := mc.config(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if conf.dest == nil {
 		return conf.src.Reader(ctx, r, uncompressedOffset, limit)
 	}
@@ -836,7 +856,10 @@ func (d *doubleWriter) Close() error {
 }
 
 func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	conf := mc.config(ctx)
+	conf, err := mc.config(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if conf.dest == nil {
 		return conf.src.Writer(ctx, r)
 	}
@@ -862,7 +885,10 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 }
 
 func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
-	conf := mc.config(ctx)
+	conf, err := mc.config(ctx)
+	if err != nil {
+		return nil, err
+	}
 	srcBuf, srcErr := conf.src.Get(ctx, r)
 	if conf.dest == nil {
 		return srcBuf, srcErr
