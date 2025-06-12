@@ -3,7 +3,7 @@ package migration_cache
 import (
 	"context"
 	"io"
-	"math/rand"
+	"math/rand/v2"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -88,8 +88,6 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
-	// fmt.Println("VANJAAAAAAAAAAAAAAAA - creating migration cache")
-	// fmt.Println("VANJAAAAAAAAAAAAAAAA - flag provider is nil:", env.GetExperimentFlagProvider() == nil)
 	return &MigrationCache{
 		env:                         env,
 		src:                         srcCache,
@@ -189,10 +187,11 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 // Flags and values for experiments which control the migration cache.
 // Exported for testing.
 const (
-	MigrationStateFlag = "migration-cache-state"
-	AsyncDestWriteFlag = "migration-cache-async-dest-write"
-	DoubleReadFlag     = "migration-cache-double-read"
-	DecompressReadFlag = "migration-cache-decompress-read"
+	MigrationCacheConfigFlag      = "migration-cache-config"
+	MigrationStateField           = "state"
+	AsyncDestWriteField           = "async-dest-write"
+	DoubleReadPercentageField     = "double-read-percentage"
+	DecompressReadPercentageField = "decompress-read-percentage"
 
 	SrcOnly     = "src-only"
 	SrcPrimary  = "src-primary"
@@ -200,49 +199,84 @@ const (
 	DestPrimary = "dest-primary"
 )
 
-func (mc *MigrationCache) srcAndDest(ctx context.Context) (src, dest interfaces.Cache, reverse bool) {
-	if mc.flagProvider != nil {
-		state := mc.flagProvider.String(ctx, MigrationStateFlag, SrcOnly)
-		// fmt.Println("VANJAAAAAAAAAAA - migration state:", state, " groupID:", groupID(ctx))
-		switch state {
-		case SrcOnly:
-			return mc.src, nil, false
-		case SrcPrimary:
-			return mc.src, mc.dest, false
-		case DestPrimary:
-			return mc.dest, mc.src, true
-		case DestOnly:
-			return mc.dest, nil, true
+// config is the migration configuration for a single request. It defaults to
+// the global configuration, but can be overridden with values from the
+// experiment flag provider.
+type config struct {
+	src, dest                                  interfaces.Cache
+	asyncDestWrites                            bool
+	doubleReadPercentage, decompressPercentage float64
+}
+
+func (mc *MigrationCache) config(ctx context.Context) *config {
+	c := &config{
+		src:                  mc.src,
+		dest:                 mc.dest,
+		asyncDestWrites:      mc.asyncDestWrites,
+		doubleReadPercentage: mc.doubleReadPercentage,
+		decompressPercentage: mc.decompressPercentage,
+	}
+	if mc.flagProvider == nil {
+		return c
+	}
+	m := mc.flagProvider.Object(ctx, MigrationCacheConfigFlag, nil)
+	if m == nil {
+		log.CtxInfof(ctx, "No migration cache config found in experiment flags, using defaults: %+v", c)
+		return c
+	}
+
+	if v, ok := m[MigrationStateField]; ok {
+		if state, ok := v.(string); ok {
+			switch state {
+			case SrcOnly:
+				c.src = mc.src
+				c.dest = nil
+			case SrcPrimary:
+				c.src = mc.src
+				c.dest = mc.dest
+			case DestPrimary:
+				c.src = mc.dest
+				c.dest = mc.src
+			case DestOnly:
+				c.src = mc.dest
+				c.dest = nil
+			default:
+				log.CtxWarningf(ctx, "Unknown migration cache state: %s", state)
+			}
+		} else {
+			log.CtxWarningf(ctx, "MigrationStateField is not a string: %T(%v)", v, v)
 		}
 	}
-	return mc.src, mc.dest, false
+	if v, ok := m[AsyncDestWriteField]; ok {
+		if asyncDestWrites, ok := v.(bool); ok {
+			c.asyncDestWrites = asyncDestWrites
+		} else {
+			log.CtxWarningf(ctx, "AsyncDestWriteField is not a bool: %T(%v)", v, v)
+		}
+	}
+	if v, ok := m[DoubleReadPercentageField]; ok {
+		if doubleReadPercentage, ok := v.(float64); ok {
+			c.doubleReadPercentage = doubleReadPercentage
+		} else {
+			log.CtxWarningf(ctx, "DoubleReadPercentageField is not a float64: %T(%v)", v, v)
+		}
+	}
+	if v, ok := m[DecompressReadPercentageField]; ok {
+		if decompressPercentage, ok := v.(float64); ok {
+			c.decompressPercentage = decompressPercentage
+		} else {
+			log.CtxWarningf(ctx, "DecompressReadPercentageField is not a float64: %T(%v)", v, v)
+		}
+	}
+	return c
 }
 
-func (mc *MigrationCache) doubleRead(ctx context.Context) bool {
-	if mc.flagProvider != nil {
-		dr := mc.flagProvider.Boolean(ctx, DoubleReadFlag, false)
-		// fmt.Println("VANJAAAAAAAAAAA - double read:", dr, " groupID:", groupID(ctx))
-		return dr
-	}
-	return mc.doubleReadPercentage > 0 && rand.Float64() < mc.doubleReadPercentage
+func (c *config) doubleRead() bool {
+	return c.doubleReadPercentage > 0 && rand.Float64() < c.doubleReadPercentage
 }
 
-func (mc *MigrationCache) asyncWrite(ctx context.Context) bool {
-	if mc.flagProvider != nil {
-		aw := mc.flagProvider.Boolean(ctx, AsyncDestWriteFlag, false)
-		// fmt.Println("VANJAAAAAAAAAAA - async write:", aw, " groupID:", groupID(ctx))
-		return aw
-	}
-	return mc.asyncDestWrites
-}
-
-func (mc *MigrationCache) decompressRead(ctx context.Context) bool {
-	if mc.flagProvider != nil {
-		dr := mc.flagProvider.Boolean(ctx, DecompressReadFlag, false)
-		// fmt.Println("VANJAAAAAAAAAAA - decompress read:", dr, " groupID:", groupID(ctx))
-		return dr
-	}
-	return mc.decompressPercentage > 0 && rand.Float64() < mc.decompressPercentage
+func (c *config) decompressRead() bool {
+	return c.decompressPercentage > 0 && rand.Float64() < c.decompressPercentage
 }
 
 func groupID(ctx context.Context) string {
@@ -253,15 +287,15 @@ func groupID(ctx context.Context) string {
 }
 
 func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	src, dest, reverse := mc.srcAndDest(ctx)
-	srcContains, srcErr := src.Contains(ctx, r)
+	conf := mc.config(ctx)
+	srcContains, srcErr := conf.src.Contains(ctx, r)
 
-	if dest != nil && mc.doubleRead(ctx) {
+	if conf.dest != nil && conf.doubleRead() {
 		go func() {
 			// Timeout is slightly larger than p99.9 latency.
 			ctx, cancel := background.ExtendContextForFinalization(ctx, 2*time.Second)
 			defer cancel()
-			dstContains, dstErr := dest.Contains(ctx, r)
+			dstContains, dstErr := conf.dest.Contains(ctx, r)
 			if dstErr != nil {
 				log.Warningf("Migration dest %v contains failed: %s", r.GetDigest(), dstErr)
 			} else if srcContains && !dstContains {
@@ -272,7 +306,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 				if mc.logNotFoundErrors {
 					log.Warningf("Migration digest %v src contains, dest does not", r.GetDigest())
 				}
-				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, reverse)
+				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 			} else if srcContains && dstContains {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "contains",
@@ -286,9 +320,9 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 }
 
 func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
-	src, dest, _ := mc.srcAndDest(ctx)
-	if dest == nil {
-		return src.Metadata(ctx, r)
+	conf := mc.config(ctx)
+	if conf.dest == nil {
+		return conf.src.Metadata(ctx, r)
 	}
 
 	eg, gctx := errgroup.WithContext(ctx)
@@ -296,14 +330,14 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 	var srcMetadata *interfaces.CacheMetadata
 
 	eg.Go(func() error {
-		srcMetadata, srcErr = src.Metadata(gctx, r)
+		srcMetadata, srcErr = conf.src.Metadata(gctx, r)
 		return srcErr
 	})
 
-	doubleRead := mc.doubleRead(ctx)
+	doubleRead := conf.doubleRead()
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = dest.Metadata(gctx, r)
+			_, dstErr = conf.dest.Metadata(gctx, r)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -335,15 +369,15 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 }
 
 func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	src, dest, reverse := mc.srcAndDest(ctx)
-	srcMissing, srcErr := src.FindMissing(ctx, resources)
+	conf := mc.config(ctx)
+	srcMissing, srcErr := conf.src.FindMissing(ctx, resources)
 
-	if dest != nil && mc.doubleRead(ctx) {
+	if conf.dest != nil && conf.doubleRead() {
 		go func() {
 			// Timeout is slightly larger than p99.9 latency.
 			ctx, cancel := background.ExtendContextForFinalization(ctx, 2*time.Second)
 			defer cancel()
-			dstMissing, dstErr := dest.FindMissing(ctx, resources)
+			dstMissing, dstErr := conf.dest.FindMissing(ctx, resources)
 			if dstErr != nil {
 				log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
 			}
@@ -367,7 +401,7 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 				}
 				for _, r := range resources {
 					if _, missing := missingSet[r.GetDigest().GetHash()]; missing {
-						mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, reverse)
+						mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
 					}
 				}
 			}
@@ -377,9 +411,9 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 }
 
 func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	src, dest, reverse := mc.srcAndDest(ctx)
-	srcData, srcErr := src.GetMulti(ctx, resources)
-	if dest == nil {
+	conf := mc.config(ctx)
+	srcData, srcErr := conf.src.GetMulti(ctx, resources)
+	if conf.dest == nil {
 		return srcData, srcErr
 	}
 
@@ -387,11 +421,11 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 		// Timeout is slightly larger than p99.9 latency.
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 		defer cancel()
-		doubleRead := mc.doubleRead(ctx)
+		doubleRead := conf.doubleRead()
 		var dstErr error
 		var dstData map[*repb.Digest][]byte
 		if doubleRead {
-			dstData, dstErr = dest.GetMulti(ctx, resources)
+			dstData, dstErr = conf.dest.GetMulti(ctx, resources)
 			if dstErr != nil {
 				if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
 					log.Warningf("Migration dest GetMulti of %v failed: %s", resources, dstErr)
@@ -413,15 +447,15 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 			for _, r := range resources {
 				if _, inDest := dstData[r.GetDigest()]; !inDest {
 					if srcErr != nil {
-						mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, reverse)
+						mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 					} else if _, inSrc := srcData[r.GetDigest()]; inSrc {
-						mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, reverse)
+						mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
 					}
 				}
 			}
 		} else {
 			for _, r := range resources {
-				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, reverse)
+				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 			}
 		}
 	}()
@@ -430,28 +464,28 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 }
 
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
-	src, dest, _ := mc.srcAndDest(ctx)
-	if dest == nil {
-		return src.SetMulti(ctx, kvs)
+	conf := mc.config(ctx)
+	if conf.dest == nil {
+		return conf.src.SetMulti(ctx, kvs)
 	}
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
 	// Double write data to both caches
 	eg.Go(func() error {
-		srcErr = src.SetMulti(gctx, kvs)
+		srcErr = conf.src.SetMulti(gctx, kvs)
 		return srcErr
 	})
 
 	eg.Go(func() error {
-		dstErr = dest.SetMulti(gctx, kvs)
+		dstErr = conf.dest.SetMulti(gctx, kvs)
 		return nil // don't fail if there's an error from this cache
 	})
 
 	if err := eg.Wait(); err != nil {
 		if dstErr == nil {
 			// If error during write to source cache (source of truth), must delete from destination cache
-			deleteMulti(ctx, dest, kvs)
+			deleteMulti(ctx, conf.dest, kvs)
 		}
 		return err
 	}
@@ -479,20 +513,20 @@ func deleteMulti(ctx context.Context, dest interfaces.Cache, kvs map[*rspb.Resou
 }
 
 func (mc *MigrationCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
-	src, dest, _ := mc.srcAndDest(ctx)
-	if dest == nil {
-		return src.Delete(ctx, r)
+	conf := mc.config(ctx)
+	if conf.dest == nil {
+		return conf.src.Delete(ctx, r)
 	}
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
 	eg.Go(func() error {
-		srcErr = src.Delete(gctx, r)
+		srcErr = conf.src.Delete(gctx, r)
 		return srcErr
 	})
 
 	eg.Go(func() error {
-		dstErr = dest.Delete(gctx, r)
+		dstErr = conf.dest.Delete(gctx, r)
 		return nil // don't fail if there's an error from this cache
 	})
 
@@ -648,9 +682,9 @@ func (d *doubleReader) Close() error {
 }
 
 func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	src, dest, reverse := mc.srcAndDest(ctx)
-	if dest == nil {
-		return src.Reader(ctx, r, uncompressedOffset, limit)
+	conf := mc.config(ctx)
+	if conf.dest == nil {
+		return conf.src.Reader(ctx, r, uncompressedOffset, limit)
 	}
 
 	eg := &errgroup.Group{}
@@ -659,16 +693,16 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	var decompressor io.WriteCloser
 	pr, pw := io.Pipe()
 
-	doubleRead := mc.doubleRead(ctx)
+	doubleRead := conf.doubleRead()
 
 	shouldDecompressAndVerify := false
 	if doubleRead && r.GetCompressor() == repb.Compressor_ZSTD {
-		shouldDecompressAndVerify = mc.decompressRead(ctx)
+		shouldDecompressAndVerify = conf.decompressRead()
 	}
 
 	if doubleRead {
 		eg.Go(func() error {
-			destReader, dstErr = dest.Reader(ctx, r, uncompressedOffset, limit)
+			destReader, dstErr = conf.dest.Reader(ctx, r, uncompressedOffset, limit)
 			if dstErr != nil {
 				shouldDecompressAndVerify = false
 				return nil
@@ -693,7 +727,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		})
 	}
 
-	srcReader, srcErr := src.Reader(ctx, r, uncompressedOffset, limit)
+	srcReader, srcErr := conf.src.Reader(ctx, r, uncompressedOffset, limit)
 	eg.Wait()
 
 	bothCacheNotFound := status.IsNotFoundError(srcErr) && status.IsNotFoundError(dstErr)
@@ -720,7 +754,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		return nil, srcErr
 	}
 
-	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, reverse)
+	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 
 	dr := &doubleReader{
 		src:          srcReader,
@@ -801,21 +835,21 @@ func (d *doubleWriter) Close() error {
 }
 
 func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	src, dest, reverse := mc.srcAndDest(ctx)
-	if dest == nil {
-		return src.Writer(ctx, r)
+	conf := mc.config(ctx)
+	if conf.dest == nil {
+		return conf.src.Writer(ctx, r)
 	}
-	if mc.asyncWrite(ctx) {
+	if conf.asyncDestWrites {
 		// We will write to the destination cache in the background.
-		mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, reverse)
-		return src.Writer(ctx, r)
+		mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
+		return conf.src.Writer(ctx, r)
 	}
 
-	srcWriter, srcErr := src.Writer(ctx, r)
+	srcWriter, srcErr := conf.src.Writer(ctx, r)
 	if srcErr != nil {
 		return nil, srcErr
 	}
-	destWriter, dstErr := dest.Writer(ctx, r)
+	destWriter, dstErr := conf.dest.Writer(ctx, r)
 	if dstErr != nil {
 		log.Warningf("Migration failure creating dest %v writer: %s", r.GetDigest(), dstErr)
 		return srcWriter, nil
@@ -827,9 +861,9 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 }
 
 func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
-	src, dest, reverse := mc.srcAndDest(ctx)
-	srcBuf, srcErr := src.Get(ctx, r)
-	if dest == nil {
+	conf := mc.config(ctx)
+	srcBuf, srcErr := conf.src.Get(ctx, r)
+	if conf.dest == nil {
 		return srcBuf, srcErr
 	}
 
@@ -838,21 +872,21 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 5*time.Second)
 		defer cancel()
 		// Double read some proportion to guarantee that data is consistent between caches
-		doubleRead := mc.doubleRead(ctx)
+		doubleRead := conf.doubleRead()
 		if doubleRead {
-			_, dstErr := dest.Get(ctx, r)
+			_, dstErr := conf.dest.Get(ctx, r)
 			if dstErr != nil {
 				if status.IsNotFoundError(dstErr) {
 					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 						metrics.CacheRequestType: "get",
 						metrics.GroupID:          groupID(ctx),
 					}).Inc()
-					mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, reverse)
+					mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
 				} else {
 					if mc.logNotFoundErrors {
 						log.Warningf("Double read of %q failed. src err %s, dest err %s", r, srcErr, dstErr)
 					}
-					mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, reverse)
+					mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 				}
 			} else {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
@@ -861,7 +895,7 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 				}).Inc()
 			}
 		} else {
-			mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, reverse)
+			mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 		}
 	}()
 
@@ -869,13 +903,9 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 	return srcBuf, srcErr
 }
 
-func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.ResourceName, onlyCopyMissing bool, reverse bool) {
-	dest := mc.dest
-	if reverse {
-		dest = mc.src
-	}
+func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.ResourceName, onlyCopyMissing bool, conf *config) {
 	if onlyCopyMissing {
-		alreadyCopied, err := dest.Contains(ctx, r)
+		alreadyCopied, err := conf.dest.Contains(ctx, r)
 		if err != nil {
 			log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
 			return
@@ -890,9 +920,9 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.Resou
 	log.Debugf("Migration attempting copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
 	select {
 	case mc.copyChan <- &copyData{
-		d:       r,
-		ctx:     ctx,
-		reverse: reverse,
+		d:    r,
+		ctx:  ctx,
+		conf: conf,
 	}:
 	default:
 		log.Debugf("Migration dropping copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
@@ -913,9 +943,10 @@ func (mc *MigrationCache) Set(ctx context.Context, r *rspb.ResourceName, data []
 }
 
 type copyData struct {
-	d       *rspb.ResourceName
-	ctx     context.Context
-	reverse bool // if true, copy from dest to src cache, otherwise copy from src to dest cache
+	d   *rspb.ResourceName
+	ctx context.Context
+	// Configuration for the request that triggered the copy
+	conf *config
 }
 
 func (mc *MigrationCache) copyDataInBackground() error {
@@ -972,15 +1003,11 @@ func (mc *MigrationCache) monitorCopyChanFullness() {
 }
 
 func (mc *MigrationCache) copy(c *copyData) {
-	src, dest := mc.src, mc.dest
-	if c.reverse {
-		src, dest = dest, src
-	}
 	ctx, cancel := background.ExtendContextForFinalization(c.ctx, 10*time.Second)
 	c.ctx = ctx
 	defer cancel()
 
-	destContains, err := dest.Contains(c.ctx, c.d)
+	destContains, err := c.conf.dest.Contains(c.ctx, c.d)
 	if err != nil {
 		log.Warningf("Migration copy err: Could not call contains on dest cache %v: %s", c.d, err)
 		return
@@ -990,7 +1017,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 		return
 	}
 
-	srcReader, err := src.Reader(c.ctx, c.d, 0, 0)
+	srcReader, err := c.conf.src.Reader(c.ctx, c.d, 0, 0)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("Migration copy err: Could not create %v reader from src cache: %s", c.d, err)
@@ -999,7 +1026,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 	defer srcReader.Close()
 
-	destWriter, err := dest.Writer(c.ctx, c.d)
+	destWriter, err := c.conf.dest.Writer(c.ctx, c.d)
 	if err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer for dest cache: %s", c.d, err)
 		return

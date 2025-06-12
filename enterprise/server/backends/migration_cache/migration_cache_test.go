@@ -55,25 +55,15 @@ func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.Tes
 
 func setMigrationState(t *testing.T, migrationState string) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		migration_cache.MigrationStateFlag: {
+		migration_cache.MigrationCacheConfigFlag: {
 			State:          memprovider.Enabled,
 			DefaultVariant: "singleton",
-			Variants:       map[string]any{"singleton": migrationState},
-		},
-		migration_cache.DoubleReadFlag: {
-			State:          memprovider.Enabled,
-			DefaultVariant: "singleton",
-			Variants:       map[string]any{"singleton": true},
-		},
-		migration_cache.DecompressReadFlag: {
-			State:          memprovider.Enabled,
-			DefaultVariant: "singleton",
-			Variants:       map[string]any{"singleton": false},
-		},
-		migration_cache.AsyncDestWriteFlag: {
-			State:          memprovider.Enabled,
-			DefaultVariant: "singleton",
-			Variants:       map[string]any{"singleton": false},
+			Variants: map[string]any{"singleton": map[string]any{
+				migration_cache.MigrationStateField:           migrationState,
+				migration_cache.AsyncDestWriteField:           false,
+				migration_cache.DoubleReadPercentageField:     1.0,
+				migration_cache.DecompressReadPercentageField: 0.0,
+			}},
 		},
 	})
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
