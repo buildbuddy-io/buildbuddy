@@ -820,20 +820,28 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	var err error
 	s.rangeMu.Lock()
 	s.openRanges[rd.GetRangeId()] = rd
+
+	overlappingRanges := s.rangeMap.GetOverlapping(rd.GetStart(), rd.GetEnd())
+
+	if existing, ok := s.openRanges[rd.GetRangeId()]; ok {
+		if existing.GetStart() != nil && existing.GetEnd() != nil {
+			s.rangeMap.Remove(existing.GetStart(), existing.GetEnd())
+		}
+	}
 	if rd.GetStart() != nil && rd.GetEnd() != nil {
 		_, err = s.rangeMap.Add(rd.GetStart(), rd.GetEnd(), rd)
 	}
 	s.rangeMu.Unlock()
 
+	if err != nil {
+		s.log.Warningf("failed to add range %d: [%q, %q) gen %d failed: %s", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration(), err)
+		return
+	}
+
 	if !loaded {
 		metrics.RaftRanges.With(prometheus.Labels{
 			metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
 		}).Inc()
-	}
-
-	if err != nil {
-		s.log.Warningf("failed to add range %d: [%q, %q) gen %d failed: %s", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration(), err)
-		return
 	}
 
 	if len(rd.GetReplicas()) == 0 {
@@ -2596,7 +2604,9 @@ func (s *Store) CheckRangeOverlaps(ctx context.Context, req *rfpb.CheckRangeOver
 	if req.GetStart() == nil || req.GetEnd() == nil {
 		return nil, status.FailedPreconditionError("req.Start or req.End cannot be nil")
 	}
+	s.rangeMu.RLock()
 	overlapping := s.rangeMap.GetOverlapping(req.GetStart(), req.GetEnd())
+	s.rangeMu.RUnlock()
 	rsp := &rfpb.CheckRangeOverlapsResponse{}
 	for _, overlapped := range overlapping {
 		rsp.Ranges = append(rsp.Ranges, overlapped.Val)
