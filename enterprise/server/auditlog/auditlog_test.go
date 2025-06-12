@@ -239,6 +239,7 @@ func TestChildGroupAuth(t *testing.T) {
 	grp1AuditKey, err := env.GetAuthDB().CreateAPIKey(
 		ctx1, us1Group.GroupID, "audit",
 		[]cappb.Capability{cappb.Capability_AUDIT_LOG_READ},
+		0, /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	group1AuditorCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, grp1AuditKey.Value)
@@ -249,6 +250,7 @@ func TestChildGroupAuth(t *testing.T) {
 	grp2AuditKey, err := env.GetAuthDB().CreateAPIKey(
 		ctx2, us2Group.GroupID, "audit",
 		[]cappb.Capability{cappb.Capability_AUDIT_LOG_READ},
+		0, /*=expiresIn*/
 		false /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 

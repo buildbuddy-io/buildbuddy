@@ -30,6 +30,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	crand "crypto/rand"
 
@@ -99,7 +100,7 @@ func TestSessionInsertUpdateDeleteRead(t *testing.T) {
 	}
 }
 
-func TestKeyExpiration(t *testing.T) {
+func TestImpersonationKeys(t *testing.T) {
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 	ctx := context.Background()
 	env := setupEnv(t)
@@ -157,9 +158,130 @@ func TestKeyExpiration(t *testing.T) {
 	require.NoError(t, err)
 
 	fakeClock.Advance(2 * time.Hour)
+
 	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
 	require.Error(t, err)
 	require.True(t, status.IsUnauthenticatedError(err))
+}
+
+func TestGroupKeyExpiration(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	ctx := context.Background()
+	env := setupEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	// Get a random admin user.
+	var admin *tables.User
+	for _, u := range users {
+		if role.Role(u.Groups[0].Role) == role.Admin {
+			admin = u
+			break
+		}
+	}
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	req := &akpb.CreateApiKeyRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: admin.Groups[0].Group.GroupID},
+		ExpiresIn:      durationpb.New(1 * time.Hour),
+	}
+	rsp, err := env.GetBuildBuddyServer().CreateApiKey(authCtx, req)
+	require.NoError(t, err)
+
+	// Verify the new API key is usable and retrievable.
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
+	require.NoError(t, err)
+	key, err := adb.GetAPIKey(authCtx, rsp.GetApiKey().GetId())
+	require.NoError(t, err)
+	require.Equal(t, rsp.GetApiKey().GetValue(), key.Value)
+	keys, err := adb.GetAPIKeys(authCtx, admin.Groups[0].Group.GroupID)
+	require.NoError(t, err)
+	require.Contains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
+
+	// Expire the key; should no longer be usable or retrievable.
+	fakeClock.Advance(2 * time.Hour)
+
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
+	require.Error(t, err)
+	require.True(t, status.IsUnauthenticatedError(err))
+	_, err = adb.GetAPIKey(authCtx, rsp.GetApiKey().GetId())
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+	keys, err = adb.GetAPIKeys(authCtx, admin.Groups[0].Group.GroupID)
+	require.NoError(t, err)
+	require.NotContains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
+}
+
+func TestUserKeyExpiration(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	ctx := context.Background()
+	env := setupEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	// Get a random admin user.
+	var admin *tables.User
+	for _, u := range users {
+		if role.Role(u.Groups[0].Role) == role.Admin {
+			admin = u
+			break
+		}
+	}
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	// Enable user-owned keys.
+	g, err := env.GetUserDB().GetGroupByID(authCtx, admin.Groups[0].Group.GroupID)
+	require.NoError(t, err)
+	g.UserOwnedKeysEnabled = true
+	_, err = env.GetUserDB().UpdateGroup(authCtx, g)
+	require.NoError(t, err)
+
+	req := &akpb.CreateApiKeyRequest{
+		RequestContext: &ctxpb.RequestContext{
+			UserId:  &uidpb.UserId{Id: admin.UserID},
+			GroupId: admin.Groups[0].Group.GroupID,
+		},
+		ExpiresIn: durationpb.New(1 * time.Hour),
+	}
+	rsp, err := env.GetBuildBuddyServer().CreateUserApiKey(authCtx, req)
+	require.NoError(t, err)
+
+	// Verify the new API key is usable and retrievable.
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
+	require.NoError(t, err)
+	key, err := adb.GetAPIKey(authCtx, rsp.GetApiKey().GetId())
+	require.NoError(t, err)
+	require.Equal(t, rsp.GetApiKey().GetValue(), key.Value)
+	keys, err := adb.GetUserAPIKeys(authCtx, admin.UserID, admin.Groups[0].Group.GroupID)
+	require.NoError(t, err)
+	require.Contains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
+
+	// Expire the key; should no longer be usable or retrievable.
+	fakeClock.Advance(2 * time.Hour)
+
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
+	require.Error(t, err)
+	require.True(t, status.IsUnauthenticatedError(err))
+	_, err = adb.GetAPIKey(authCtx, rsp.GetApiKey().GetId())
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+	keys, err = adb.GetUserAPIKeys(authCtx, admin.UserID, admin.Groups[0].Group.GroupID)
+	require.NoError(t, err)
+	require.NotContains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
 }
 
 func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
@@ -768,4 +890,12 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	env := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, env) // provisions AuthDB and UserDB
 	return env
+}
+
+func apiKeyIDs(keys []*tables.APIKey) []string {
+	ids := make([]string, len(keys))
+	for i, k := range keys {
+		ids[i] = k.APIKeyID
+	}
+	return ids
 }
