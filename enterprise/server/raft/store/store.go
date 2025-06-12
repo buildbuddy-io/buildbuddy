@@ -818,18 +818,18 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
 
 	var err error
+	added := false
 	s.rangeMu.Lock()
 	s.openRanges[rd.GetRangeId()] = rd
 
-	overlappingRanges := s.rangeMap.GetOverlapping(rd.GetStart(), rd.GetEnd())
-
-	if existing, ok := s.openRanges[rd.GetRangeId()]; ok {
-		if existing.GetStart() != nil && existing.GetEnd() != nil {
-			s.rangeMap.Remove(existing.GetStart(), existing.GetEnd())
-		}
-	}
 	if rd.GetStart() != nil && rd.GetEnd() != nil {
-		_, err = s.rangeMap.Add(rd.GetStart(), rd.GetEnd(), rd)
+		checkFn := func(v *rfpb.RangeDescriptor) bool {
+			return v.GetGeneration() < rd.GetGeneration()
+		}
+		added, err = s.rangeMap.AddAndRemoveOverlapping(rd.GetStart(), rd.GetEnd(), rd, checkFn)
+		if !added {
+			s.log.Debugf("UpdateRange: Ignoring rangeDescriptor %+v, because current has same or later generation", rd)
+		}
 	}
 	s.rangeMu.Unlock()
 
