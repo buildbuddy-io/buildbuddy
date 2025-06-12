@@ -139,7 +139,7 @@ func CleanDirectory(ctx context.Context, dir string) error {
 			for skippedPath := range skip {
 				if isParent(entry.path, skippedPath) {
 					skipped = true
-					continue
+					break
 				}
 			}
 			if skipped {
