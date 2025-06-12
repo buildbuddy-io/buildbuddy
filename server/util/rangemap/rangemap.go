@@ -117,7 +117,7 @@ func (rm *RangeMap[T]) AddAndRemoveOverlapping(start, end []byte, value T, check
 	// ignore this update.
 	for _, overlappingRange := range overlappingRanges {
 		v := overlappingRange.Val
-		if checkFn(v) {
+		if !checkFn(v) {
 			return false, nil
 		}
 	}
