@@ -191,6 +191,7 @@ export class AuthService {
       ),
       isImpersonating: response.isImpersonating,
       subdomainGroupID: response.subdomainGroupId,
+      codesearchAllowed: response.experiments?.codesearchAllowed ?? false,
     });
   }
 
@@ -209,7 +210,9 @@ export class AuthService {
     let match = document.cookie.match("(^|[^;]+)\\s*" + cookieName + "\\s*=\\s*([^;]+)");
     let userIdFromCookie = match ? match.pop() : "";
     rpcService.requestContext.userId = new user_id.UserId({ id: userIdFromCookie });
-    rpcService.requestContext.groupId = this.user?.selectedGroup?.id || "";
+    let groupId = this.user?.selectedGroup?.id || "";
+    rpcService.requestContext.groupId = groupId;
+    this.setCookie(SELECTED_GROUP_ID_COOKIE, groupId);
   }
 
   async setSelectedGroupId(groupId: string, groupURL: string, { reload = false }: { reload?: boolean } = {}) {
