@@ -849,33 +849,15 @@ func TestResolve_Concurrency(t *testing.T) {
 	require.NoError(t, err)
 
 	imageAddress := registry.ImageAddress(imageName + "_image")
-	expected := map[requestKey]int{
-		requestKey{
-			Method: http.MethodGet,
-			Path:   "/v2/",
-		}: 1,
-		requestKey{
-			Method: http.MethodGet,
-			Path:   "/v2/" + imageName + "_image/manifests/latest",
-		}: 1,
-		requestKey{
-			Method: http.MethodHead,
-			Path:   "/v2/" + imageName + "_image/manifests/latest",
-		}: 1,
-		requestKey{
-			Method: http.MethodGet,
-			Path:   "/v2/" + imageName + "_image/blobs/" + configDigest.String(),
-		}: 1,
-		requestKey{
-			Method: http.MethodHead,
-			Path:   "/v2/" + imageName + "_image/blobs/" + configDigest.String(),
-		}: 1,
+	expected := map[string]int{
+		http.MethodGet + " /v2/": 1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
+		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
 	}
 	for digest, _ := range pushedDigestToFiles {
-		expected[requestKey{
-			Method: http.MethodGet,
-			Path:   "/v2/" + imageName + "_image/blobs/" + digest.String(),
-		}] = 1
+		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.reset()
 	pulledImage, err := newResolver(t, te).Resolve(
