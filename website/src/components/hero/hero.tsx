@@ -26,8 +26,8 @@ function Component(props) {
           <div className={common.subtitle}>
             {props.subtitle || (
               <>
-                BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to
-                build and test software 10x faster.
+                BuildBuddy is the developer productivity platform built for Bazel — the open source build system that
+                allows you to build and test software 10x faster.
               </>
             )}
           </div>
