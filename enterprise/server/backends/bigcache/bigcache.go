@@ -1,9 +1,11 @@
 package bigcache
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
@@ -198,13 +201,13 @@ func (c *Cache) gcsObjectIsPastTTL(gcsMetadata *sgpb.StorageMetadata_GCSMetadata
 	return c.opts.Clock.Since(time.UnixMicro(customTimeUsec))+buffer > time.Duration(c.opts.GCSTTLDays*24)*time.Hour
 }
 
-func (c *Cache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*sgpb.FileRecord, error) {
-	rn := digest.ResourceNameFromProto(r)
-	if err := rn.Validate(); err != nil {
+func (c *Cache) makeFileRecord(ctx context.Context, pr *rspb.ResourceName) (*sgpb.FileRecord, error) {
+	r := digest.ResourceNameFromProto(pr)
+	if err := r.Validate(); err != nil {
 		return nil, err
 	}
 
-	groupID, partID := c.lookupGroupAndPartitionID(ctx, rn.GetInstanceName())
+	groupID, partID := c.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
 	encryptionEnabled, err := c.encryptionEnabled(ctx)
 	if err != nil {
 		return nil, err
@@ -221,14 +224,14 @@ func (c *Cache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*sgpb
 
 	return &sgpb.FileRecord{
 		Isolation: &sgpb.Isolation{
-			CacheType:          rn.GetCacheType(),
-			RemoteInstanceName: rn.GetInstanceName(),
+			CacheType:          r.GetCacheType(),
+			RemoteInstanceName: r.GetInstanceName(),
 			PartitionId:        partID,
 			GroupId:            groupID,
 		},
-		Digest:         rn.GetDigest(),
-		DigestFunction: rn.GetDigestFunction(),
-		Compressor:     rn.GetCompressor(),
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
+		Compressor:     r.GetCompressor(),
 		Encryption:     encryption,
 	}, nil
 }
@@ -402,17 +405,92 @@ func (c *Cache) writerWithSizeHint(ctx context.Context, r *rspb.ResourceName, si
 
 // Normal cache-like operations
 func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	return false, nil
+	missing, err := c.FindMissing(ctx, []*rspb.ResourceName{r})
+	if err != nil {
+		return false, err
+	}
+	return len(missing) == 0, nil
 }
+
 func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
-	return nil, status.UnimplementedError("not yet")
+	fileRecord, err := c.makeFileRecord(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	mds, err := c.lookupMetadatas(ctx, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	if len(mds) != 1 {
+		return nil, status.NotFoundErrorf("Found %d records for metadata: %+v", len(mds), r)
+	}
+	md := mds[0]
+	return &interfaces.CacheMetadata{
+		StoredSizeBytes:    md.GetStoredSizeBytes(),
+		DigestSizeBytes:    md.GetFileRecord().GetDigest().GetSizeBytes(),
+		LastModifyTimeUsec: md.GetLastModifyUsec(),
+		LastAccessTimeUsec: md.GetLastAccessUsec(),
+	}, nil
 }
+
 func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	return nil, status.UnimplementedError("not yet")
+	req := &mdpb.FindRequest{
+		FileRecords: make([]*sgpb.FileRecord, len(resources)),
+	}
+	for i, r := range resources {
+		fileRecord, err := c.makeFileRecord(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		req.FileRecords[i] = fileRecord
+	}
+	rsp, err := c.opts.MetadataClient.Find(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	missing := make([]*repb.Digest, 0)
+	for i, findRsp := range rsp.GetFindResponses() {
+		if !findRsp.GetPresent() {
+			missing = append(missing, resources[i].GetDigest())
+		}
+	}
+	return missing, nil
 }
+
+// Below, in Get(), this value is the max initial allocatable buffer size.
+// Set it somewhat conservatively so that we're not DOSed by someone crafting
+// remote_instance_names that match this just to use memory.
+const maxInitialByteBufferSize = (1024 * 1024 * 4)
+
 func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
-	return nil, status.UnimplementedError("not yet")
+	rc, err := c.Reader(ctx, r, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	var buf *bytes.Buffer
+
+	// TODO(tylerw): move this function to cachetools or something?
+	if r.GetCacheType() == rspb.CacheType_CAS {
+		// If this is a CAS object, size the buffer to fit exactly.
+		buf = bytes.NewBuffer(make([]byte, 0, int(r.GetDigest().GetSizeBytes())))
+	} else if strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
+		// If this is a TreeCache entry that we wrote; pull the size
+		// from the remote instance name.
+		parts := strings.Split(r.GetInstanceName(), "/")
+		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+			buf = bytes.NewBuffer(make([]byte, 0, min(s, maxInitialByteBufferSize)))
+		} else {
+			buf = new(bytes.Buffer)
+		}
+	} else {
+		buf = new(bytes.Buffer)
+	}
+	_, err = io.Copy(buf, rc)
+	return buf.Bytes(), err
 }
+
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	return nil, status.UnimplementedError("not yet")
 }
