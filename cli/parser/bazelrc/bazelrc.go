@@ -3,7 +3,6 @@ package bazelrc
 import (
 	"bufio"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 )
 
@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	bazelCommands = map[string]struct{}{
+	bazelCommands = set.Set[string]{
 		"analyze-profile":    {},
 		"aquery":             {},
 		"build":              {},
@@ -62,17 +62,18 @@ var (
 		"coverage": "test",
 	}
 
-	unconditionalCommandPhases = map[string]struct{}{
+	unconditionalCommandPhases = set.Set[string]{
 		CommonPhase: {},
 		AlwaysPhase: {},
 	}
 
-	allPhases = func() map[string]struct{} {
-		v := maps.Clone(bazelCommands)
-		maps.Insert(v, maps.All(unconditionalCommandPhases))
-		v["startup"] = struct{}{}
-		return v
-	}()
+	allPhases = set.FromSeq(
+		set.Union(
+			bazelCommands,
+			unconditionalCommandPhases,
+			set.From("startup"),
+		),
+	)
 
 	StartupFlagNoRc = map[string]struct{}{
 		"ignore_all_rc_files": {},
@@ -268,11 +269,15 @@ func GetBazelOS() string {
 	}
 }
 
+// BazelCommands returns a view of the set of bazel commands.
+func BazelCommands() set.View[string] {
+	return set.KeyView(bazelCommands)
+}
+
 // IsBazelCommand returns whether the given string is recognized as a bazel
 // command.
 func IsBazelCommand(command string) bool {
-	_, ok := bazelCommands[command]
-	return ok
+	return bazelCommands.Contains(command)
 }
 
 // Parent returns the parent command of the given command, if one exists.

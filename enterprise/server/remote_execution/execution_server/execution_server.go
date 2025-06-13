@@ -259,7 +259,7 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 	// execution is complete.
 	redisErr := s.insertInvocationLinkInRedis(ctx, executionID, invocationID, linkType)
 	if redisErr != nil {
-		log.CtxWarningf(ctx, "failed to add invocation link(exeuction_id: %q invocation_id: %q, link_type: %d) in redis", executionID, invocationID, linkType)
+		log.CtxWarningf(ctx, "Failed to add invocation link (invocation_id: %q, link_type: %d) in redis", invocationID, linkType)
 	}
 
 	if !*writeExecutionsToPrimaryDB {
@@ -645,13 +645,13 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
-		return "", nil, err
+		return "", nil, status.UnavailableErrorf("create execution: %s", err)
 	}
 
 	// Don't associate teed requests with the original invocation.
 	if !opts.teedRequest {
 		if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
-			return "", nil, err
+			return "", nil, status.UnavailableErrorf("link execution to invocation: %s", err)
 		}
 	}
 
@@ -718,14 +718,19 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, props.OS, props.Pool, props.WorkflowID, props.PoolType)
 	if err != nil {
-		return "", nil, err
+		return "", nil, status.WrapError(err, "get executor pool info")
+	}
+	var hostnamePrefix string
+	if exp := s.env.GetExperimentFlagProvider(); exp != nil {
+		hostnamePrefix = exp.String(ctx, "remote_execution.executor_hostname_prefix", "")
+		log.CtxInfof(ctx, "Using executor hostname prefix %q", hostnamePrefix)
 	}
 
 	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()
 
 	if s.enableRedisAvailabilityMonitoring {
 		if err := s.streamPubSub.CreateMonitoredChannel(ctx, redisKeyForMonitoredTaskStatusStream(executionID)); err != nil {
-			return "", nil, err
+			return "", nil, status.UnavailableErrorf("create pubsub channel for execution updates: %s", err)
 		}
 	}
 
@@ -733,6 +738,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Os:                props.OS,
 		Arch:              props.Arch,
 		Pool:              pool.Name,
+		HostnamePrefix:    hostnamePrefix,
 		TaskSize:          taskSize,
 		DefaultTaskSize:   defaultTaskSize,
 		MeasuredTaskSize:  measuredSize,
@@ -818,7 +824,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
 			metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
 			if err := s.insertInvocationLink(ctx, ee, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
-				return err
+				return status.UnavailableErrorf("link merged execution to invocation: %s", err)
 			}
 		}
 	}
@@ -831,7 +837,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		newExecutionID, err := s.Dispatch(ctx, req, action)
 		if err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
-			return err
+			return status.WrapError(err, "dispatch execution")
 		}
 		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, newExecutionID)
 		executionID = newExecutionID
@@ -846,7 +852,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		hedgedExecutionID, err := s.dispatchHedge(ctx, req, action)
 		if err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for action %q and invocation %q: %s", downloadString, invocationID, err)
-			return err
+			return status.WrapError(err, "dispatch hedged execution")
 		}
 		log.CtxInfof(ctx, "Dispatched new hedged execution %q for action %q and invocation %q", hedgedExecutionID, downloadString, invocationID)
 		metrics.RemoteExecutionHedgedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
@@ -994,7 +1000,8 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 			op, err := operation.Assemble(
 				req.GetName(),
 				operation.Metadata(repb.ExecutionStage_COMPLETED, actionResource.GetDigest()),
-				operation.ErrorResponse(msg.Err))
+				operation.ErrorResponse(status.UnavailableErrorf("receive execution update: %s", msg.Err)),
+			)
 			if err != nil {
 				return err
 			}

@@ -36,6 +36,10 @@ import (
 
 var (
 	sessionLifetime = flag.Duration("cache.raft.client_session_lifetime", 1*time.Hour, "The duration of a client session before it's reset")
+	// This value should be approximately 10x the config.RTTMilliseconds,
+	// but we want to include a little more time for the operation itself to
+	// complete.
+	singleRaftOpTimeout = flag.Duration("cache.raft.op_timeout", 1*time.Second, "The duration of timeout for a single raft operation")
 )
 
 const (
@@ -138,10 +142,7 @@ func (c *APIClient) HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDe
 }
 
 func singleOpTimeout(ctx context.Context) time.Duration {
-	// This value should be approximately 10x the config.RTTMilliseconds,
-	// but we want to include a little more time for the operation itself to
-	// complete.
-	const maxTimeout = time.Second
+	maxTimeout := *singleRaftOpTimeout
 	if deadline, ok := ctx.Deadline(); ok {
 		dur := time.Until(deadline)
 		if dur <= 0 {

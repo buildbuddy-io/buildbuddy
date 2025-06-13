@@ -523,7 +523,7 @@ func TestAddRangeBack(t *testing.T) {
 			Range:     rd,
 			ReplicaId: replicaToRemove.GetReplicaId(),
 		})
-		if rsp != nil {
+		if rsp.GetRange() != nil {
 			rd = rsp.GetRange()
 		}
 		if err != nil {
@@ -786,6 +786,9 @@ func getReplica(t testing.TB, s *testutil.TestingStore, rangeID uint64) *replica
 
 func TestSplitNonMetaRange(t *testing.T) {
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)

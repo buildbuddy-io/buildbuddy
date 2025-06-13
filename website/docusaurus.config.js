@@ -192,7 +192,6 @@ module.exports = {
           position: "left",
           type: "dropdown",
           items: [
-            { label: "Blog", href: "/blog" },
             { label: "GitHub", href: "https://github.com/buildbuddy-io/buildbuddy" },
             { label: "Community", href: "http://community.buildbuddy.io/" },
             { label: "Security", href: "/security" },
@@ -214,16 +213,16 @@ module.exports = {
           position: "left",
         },
         {
+          label: "Blog",
+          href: "/blog/",
+          target: "_self",
+          position: "left",
+        },
+        {
           href: "/pricing",
           target: "_self",
           label: "Pricing",
           position: "left",
-        },
-        {
-          href: "/contact",
-          target: "_self",
-          label: "Contact",
-          position: "right",
         },
         {
           href: "https://app.buildbuddy.io/",
@@ -301,11 +300,6 @@ module.exports = {
             {
               label: "Pricing",
               href: "/pricing",
-              target: "_self",
-            },
-            {
-              label: "Blog",
-              href: "/blog/",
               target: "_self",
             },
             {

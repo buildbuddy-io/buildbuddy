@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
@@ -124,15 +125,24 @@ func (c *collector) AddExecutionInvocationLink(ctx context.Context, link *sipb.S
 	key := getExecutionInvocationLinksKey(link.GetExecutionId())
 	pipe := c.rdb.TxPipeline()
 	s := string(b)
-	pipe.SAdd(ctx, key, s)
+	executionInvocationLinkCmd := pipe.SAdd(ctx, key, s)
 	pipe.Expire(ctx, key, executionInvocationLinkExpiration)
+	var invocationExecutionLinkCmd *redis.IntCmd
 	if bidirectional {
 		key := getInvocationExecutionLinksKey(link.GetInvocationId())
-		pipe.SAdd(ctx, key, s)
+		invocationExecutionLinkCmd = pipe.SAdd(ctx, key, s)
 		pipe.Expire(ctx, key, invocationExecutionLinkExpiration)
 	}
-	_, err = pipe.Exec(ctx)
-	return err
+	if _, err = pipe.Exec(ctx); err != nil {
+		return err
+	}
+	if executionInvocationLinkCmd.Val() == 0 {
+		log.CtxInfof(ctx, "Ignoring duplicate execution-invocation link (execution_id: %q, invocation_id: %q)", link.GetExecutionId(), link.GetInvocationId())
+	}
+	if invocationExecutionLinkCmd != nil && invocationExecutionLinkCmd.Val() == 0 {
+		log.CtxInfof(ctx, "Ignoring duplicate invocation-execution link (execution_id: %q, invocation_id: %q)", link.GetExecutionId(), link.GetInvocationId())
+	}
+	return nil
 }
 
 func (c *collector) GetExecutionInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error) {

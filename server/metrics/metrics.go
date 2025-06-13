@@ -311,6 +311,8 @@ const (
 	// only use its local cache to fulfil the request. If "default", the proxy
 	// should fall back to the remote cache as the source of truth.
 	CacheProxyRequestType = "proxy_request_type"
+
+	OCIResourceTypeLabel = "oci_resource_type"
 )
 
 // Label value constants
@@ -322,6 +324,9 @@ const (
 
 	LocalOnlyCacheProxyRequestLabel = "local_only"
 	DefaultCacheProxyRequestLabel   = "default"
+
+	OCIManifestResourceTypeLabel = "manifest"
+	OCIBlobResourceTypeLabel     = "blob"
 )
 
 // Other constants
@@ -685,11 +690,11 @@ var (
 		CacheNameLabel,
 	})
 
-	DiskCachePartitionGroupSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	DiskCacheSampledPartitionGroupSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
-		Name:      "disk_cache_partition_group_size_bytes",
-		Help:      "Number of bytes in the partition, by group ID.",
+		Name:      "disk_cache_sampled_partition_group_size_bytes",
+		Help:      "Number of bytes seen while sampling the partition for eviction, by group ID.",
 	}, []string{
 		PartitionID,
 		CacheNameLabel,
@@ -788,6 +793,7 @@ var (
 		Help:      "Number of not found errors from the destination cache during a cache migration.",
 	}, []string{
 		CacheRequestType,
+		GroupID,
 	})
 
 	MigrationDoubleReadHitCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -797,6 +803,7 @@ var (
 		Help:      "Number of double reads where the source and destination caches hold the same digests during a cache migration.",
 	}, []string{
 		CacheRequestType,
+		GroupID,
 	})
 
 	MigrationCopyChanSize = promauto.NewGauge(prometheus.GaugeOpts{
@@ -813,6 +820,7 @@ var (
 		Help:      "Number of bytes copied from the source to destination cache during a cache migration.",
 	}, []string{
 		CacheTypeLabel,
+		GroupID,
 	})
 
 	MigrationBlobsCopied = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -822,6 +830,7 @@ var (
 		Help:      "Number of blobs copied from the source to destination cache during a cache migration.",
 	}, []string{
 		CacheTypeLabel,
+		GroupID,
 	})
 
 	TreeCacheLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -1522,6 +1531,15 @@ var (
 		Help:      "Total number of bytes written to COW chunked files.",
 	}, []string{
 		FileName,
+	})
+
+	FirecrackerWorkspaceDiskWriteOps = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "workspace_conversion_disk_write_ops",
+		Help:      "Total number of disk write operations performed converting Firecracker action workspaces to/from ext4 images.",
+	}, []string{
+		CommandName,
 	})
 
 	MaxRecyclableResourceUsageEvent = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3322,9 +3340,9 @@ var (
 		Subsystem: "ociregistry",
 		Name:      "cache_download_size_bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Number of bytes downloaded from the cache by the OCI registry mirror (only tracking CAS currently)",
+		Help:      "Number of bytes downloaded from the cache by the OCI registry mirror",
 	}, []string{
-		CacheTypeLabel,
+		OCIResourceTypeLabel,
 	})
 
 	OCIRegistryCacheEvents = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -3333,7 +3351,7 @@ var (
 		Name:      "cache_events",
 		Help:      "Number of cache events handled.",
 	}, []string{
-		CacheTypeLabel,
+		OCIResourceTypeLabel,
 		CacheEventTypeLabel,
 	})
 )

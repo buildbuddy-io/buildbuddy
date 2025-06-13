@@ -707,6 +707,18 @@ type BoolOrEnum struct {
 	e *string
 }
 
+func NewBoolOrEnum[T bool | string](value T) *BoolOrEnum {
+	p := any(&value)
+	switch p := p.(type) {
+	case *bool:
+		return &BoolOrEnum{b: p}
+	case *string:
+		return &BoolOrEnum{e: p}
+	}
+	// This should never happen
+	return nil
+}
+
 func (b *BoolOrEnum) GetBool() (bool, bool) {
 	if b.b == nil {
 		return false, false

@@ -179,6 +179,21 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	return err
 }
 
+// writeHandler enapsulates an on-going ByteStream write to a cache,
+// freeing the caller of having to manage writing and committing-to the cache
+// tracking cache hits, verifying checksums, etc. Here is how it must be used:
+//   - A new WriteHandler may be obtained by providing the first frame of the
+//     stream to the ByteStreamServer.beginWrite() function. This function will
+//     return a new writeHandler, or an error.
+//   - If a writeHandler is returned from beginWrite(),
+//     writeHandler.Close() must be called to free system resources
+//     when the write is finished.
+//   - Each subsequent frame should be passed to
+//     writeHandler.Write(), which will return an error on error
+//     (note: io.EOF indicates the cache believes the write is finished), or an
+//     optional WriteResponse that should be sent to the client if the client
+//     indicated the write is finished. This function will return (nil, nil) if
+//     the frame was processed successfully, but the write is not finished yet.
 type writeHandler struct {
 	// Top-level writer that handles incoming bytes.
 	writer io.Writer
@@ -218,7 +233,7 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeHandler) erro
 	return nil
 }
 
-func (s *ByteStreamServer) BeginWrite(ctx context.Context, req *bspb.WriteRequest) (interfaces.ByteStreamWriteHandler, error) {
+func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteRequest) (*writeHandler, error) {
 	if err := checkInitialPreconditions(req); err != nil {
 		return nil, err
 	}
@@ -398,7 +413,7 @@ func (w *writeHandler) Close() error {
 // `complete` or not.
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
-	var streamState interfaces.ByteStreamWriteHandler
+	var streamState *writeHandler
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -409,7 +424,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		}
 
 		if streamState == nil {
-			streamState, err = s.BeginWrite(ctx, req)
+			streamState, err = s.beginWrite(ctx, req)
 			if status.IsAlreadyExistsError(err) {
 				hitTracker := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 				return s.handleAlreadyExists(ctx, hitTracker, stream, req)

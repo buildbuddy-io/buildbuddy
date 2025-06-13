@@ -10,10 +10,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -21,6 +24,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
+	"github.com/stretchr/testify/require"
 
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -37,12 +43,39 @@ func init() {
 	log.Configure()
 }
 
-func getAnonContext(t testing.TB, env environment.Env) context.Context {
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
+func setExperimentProvider(b *testing.B, te *real_environment.RealEnv) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		migration_cache.MigrationCacheConfigFlag: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "singleton",
+			Variants: map[string]any{"singleton": map[string]any{
+				migration_cache.MigrationStateField:           migration_cache.SrcPrimary,
+				migration_cache.AsyncDestWriteField:           false,
+				migration_cache.DoubleReadPercentageField:     1.0,
+				migration_cache.DecompressReadPercentageField: 0.0,
+			}},
+		},
+	})
+	require.NoError(b, openfeature.SetProviderAndWait(testProvider))
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(b, err)
+	te.SetExperimentFlagProvider(fp)
+}
+
+func getUserContext(t testing.TB, env environment.Env) context.Context {
+	ctx := env.GetAuthenticator().AuthContextFromAPIKey(context.Background(), "user1")
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	if err != nil {
 		t.Fatalf("error attaching user prefix: %v", err)
 	}
 	return ctx
+}
+
+func getTestEnv(b *testing.B) *real_environment.RealEnv {
+	te := testenv.GetTestEnv(b)
+	setExperimentProvider(b, te)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("user1", "group1")))
+	return te
 }
 
 type digestBuf struct {
@@ -260,11 +293,10 @@ func getAllCaches(b *testing.B, te environment.Env) []*namedCache {
 	}
 	return caches
 }
-
 func BenchmarkSet(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000, 1_000_000}
-	te := testenv.GetTestEnv(b)
-	ctx := getAnonContext(b, te)
+	te := getTestEnv(b)
+	ctx := getUserContext(b, te)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
@@ -283,8 +315,8 @@ func BenchmarkSet(b *testing.B) {
 
 func BenchmarkRead(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
-	te := testenv.GetTestEnv(b)
-	ctx := getAnonContext(b, te)
+	te := getTestEnv(b)
+	ctx := getUserContext(b, te)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
@@ -298,9 +330,8 @@ func BenchmarkRead(b *testing.B) {
 
 func BenchmarkGetSingle(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
-	// sizes := []int64{10}
-	te := testenv.GetTestEnv(b)
-	ctx := getAnonContext(b, te)
+	te := getTestEnv(b)
+	ctx := getUserContext(b, te)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
@@ -316,8 +347,8 @@ func BenchmarkGetSingle(b *testing.B) {
 
 func BenchmarkGetMulti(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
-	te := testenv.GetTestEnv(b)
-	ctx := getAnonContext(b, te)
+	te := getTestEnv(b)
+	ctx := getUserContext(b, te)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
@@ -331,8 +362,8 @@ func BenchmarkGetMulti(b *testing.B) {
 
 func BenchmarkFindMissing(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
-	te := testenv.GetTestEnv(b)
-	ctx := getAnonContext(b, te)
+	te := getTestEnv(b)
+	ctx := getUserContext(b, te)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {

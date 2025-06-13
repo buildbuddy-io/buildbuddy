@@ -191,7 +191,7 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (ret
 	}()
 	start := time.Now()
 	h.mu.RLock()
-	lastRecord := h.lastLivenessRecord
+	lastRecord := h.lastLivenessRecord.CloneVT()
 	h.mu.RUnlock()
 
 	alreadyValid := false

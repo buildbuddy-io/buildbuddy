@@ -23,11 +23,14 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs.")
-var EnableRemoteSnapshotSharing = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs.")
-var RemoteSnapshotReadonly = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
-var EnableBalloon = flag.Bool("executor.firecracker_enable_balloon", false, "Enable memory balloon support when snapshotting firecracker VMs.")
-var VerboseLogging = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
+var (
+	EnableLocalSnapshotSharing       = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs.")
+	EnableRemoteSnapshotSharing      = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs.")
+	RemoteSnapshotReadonly           = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
+	EnableBalloon                    = flag.Bool("executor.firecracker_enable_balloon", false, "Enable memory balloon support when snapshotting firecracker VMs.")
+	VerboseLogging                   = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
+	storeSnapshotsInLocalClusterOnly = flag.Bool("executor.store_snapshots_in_local_cluster_only", false, "If true, snapshots are only stored in the cache proxy in the cluster where this executor is running.")
+)
 
 // ChunkSource represents how a snapshot chunk was initialized
 type ChunkSource int
@@ -51,6 +54,18 @@ const (
 	ChunkSourceLocalFilecache
 	// ChunkSourceRemoteCache means the chunk was fetched from the remote cache
 	ChunkSourceRemoteCache
+
+	// Values for platform.RemoteSnapshotSavePolicyPropertyName:
+	// Every run will save a remote snapshot.
+	AlwaysSaveRemoteSnapshot = "always"
+	// Default. Only the first run on a non-main ref will save a remote snapshot.
+	// All runs on main refs will save a remote snapshot.
+	OnlySaveFirstNonMainRemoteSnapshot = "first-non-main-ref"
+	// Will only save a remote snapshot on a non-main ref if there are no remote
+	// snapshots available. If there is a fallback main snapshot, still will not save
+	// a remote snapshot.
+	// All runs on main refs will save a remote snapshot.
+	OnlySaveNonMainRemoteSnapshotIfNoneAvailable = "none-available"
 )
 
 func (s ChunkSource) String() string {
@@ -100,10 +115,8 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	}
 	defer f.Close()
 
-	// If the proxy is enabled, snapshots are not saved to the remote cache to minimize
-	// high network transfer. Snapshots can't be shared across different machine
-	// types, so there's no reason to support snapshot sharing across clusters.
-	ctx = proxy_util.SetSkipRemote(ctx)
+	// Modify the context for snapshot fetch.
+	ctx = GetSnapshotAccessContext(ctx)
 
 	r := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
@@ -173,10 +186,8 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	}
 	defer file.Close()
 
-	// If the proxy is enabled, skip writing snapshots to the remote cache to minimize
-	// high network transfer. Snapshots can't be shared across different machine
-	// types, so there's no reason to support snapshot sharing across clusters.
-	ctx = proxy_util.SetSkipRemote(ctx)
+	// Modify the context for snapshot storage.
+	ctx = GetSnapshotAccessContext(ctx)
 
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
 	if err == nil && bytesUploaded > 0 {
@@ -261,4 +272,14 @@ func ChunkSourceLabel(c ChunkSource) string {
 // there will be separate containerfs and scratchfs.
 func IsChunkedSnapshotSharingEnabled() bool {
 	return *EnableRemoteSnapshotSharing || *EnableLocalSnapshotSharing
+}
+
+// If possible, avoid writing snapshots to the remote cache to minimize high
+// network transfer. Snapshots can't be shared across different machine types,
+// so there's not always a need to support snapshot sharing across clusters.
+func GetSnapshotAccessContext(ctx context.Context) context.Context {
+	if *storeSnapshotsInLocalClusterOnly {
+		return proxy_util.SetSkipRemote(ctx)
+	}
+	return ctx
 }

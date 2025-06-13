@@ -297,3 +297,26 @@ func TestRepoStatus_OutOfOrder(t *testing.T) {
 	assert.True(t, status.IsInvalidArgumentError(err))
 	assert.Nil(t, rsp)
 }
+
+func TestDropNamespace(t *testing.T) {
+	// DropNamespace functionality is tested more exhaustively in the index tests,
+	// so here we just make sure the plumbing is correct - the request goes through,
+	// the generation is committed, etc. We should see that repo status was deleted.
+
+	ctx := context.Background()
+	server := mustMakeServer(t)
+
+	sha := "def456"
+	bootstrapIndex(t, ctx, server, "github.com/buildbuddy-io/buildbuddy", sha)
+
+	_, err := server.Index(ctx, &inpb.IndexRequest{ReplacementStrategy: inpb.ReplacementStrategy_DROP_NAMESPACE})
+	require.NoError(t, err)
+
+	response, err := server.RepoStatus(context.Background(), &inpb.RepoStatusRequest{
+		RepoUrl: "github.com/buildbuddy-io/buildbuddy",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, &inpb.RepoStatusResponse{
+		LastIndexedCommitSha: "",
+	}, response)
+}

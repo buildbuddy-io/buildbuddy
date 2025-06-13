@@ -8,8 +8,13 @@ package index;
 
 enum ReplacementStrategy {
   UNKNOWN_REPLACEMENT_STRATEGY = 0;
+  // Download and fully reindex a single repository.
   REPLACE_REPO = 1;
+  // Apply an incremental update, using data included in the request to update
+  // the index.
   INCREMENTAL = 2;
+  // Drop an entire namespace
+  DROP_NAMESPACE = 3;
 }
 
 message IndexRequest {
@@ -29,8 +34,7 @@ message IndexRequest {
   // Ex. "gr12345" or "anon", or "public" or "foobarbaz".
   string namespace = 4;
 
-  // The strategy to use when indexing this repo.
-  // By default the server will assume REPLACE_REPO.
+  // Required. The strategy to use when indexing this repo.
   ReplacementStrategy replacement_strategy = 5;
 
   // If true, the request will return immediately, even before indexing is

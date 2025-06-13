@@ -45,7 +45,7 @@ func TestNegativeStarlarkFlagWithValue(t *testing.T) {
 
 			p, err := GetParser()
 			require.NoError(t, err)
-			defer delete(p.ByName, "@io_bazel_rules_docker//transitions:enable")
+			defer delete(p.CommandOptionParser.ByName, "@io_bazel_rules_docker//transitions:enable")
 			parsedArgs, err := ParseArgs(test.Args)
 			require.NoError(t, err)
 			expandedArgs, err := resolveArgs(parsedArgs, ws)
@@ -84,7 +84,7 @@ func TestParseBazelrc_Simple(t *testing.T) {
 
 			p, err := GetParser()
 			require.NoError(t, err)
-			defer delete(p.ByName, "@io_bazel_rules_docker//transitions:enable")
+			defer delete(p.CommandOptionParser.ByName, "@io_bazel_rules_docker//transitions:enable")
 			parsedArgs, err := ParseArgs(test.Args)
 			require.NoError(t, err)
 			expandedArgs, err := resolveArgs(parsedArgs, ws)

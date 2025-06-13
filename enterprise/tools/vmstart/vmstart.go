@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -54,13 +53,12 @@ var (
 	apiKey              = flag.String("api_key", "", "The API key to use to interact with the remote cache.")
 	actionDigest        = flag.String("action_digest", "", "The optional digest of the action you want to mount.")
 
-	// Note: this key can be copied and pasted from logs:
-	//
-	//  "INFO: Fetched remote snapshot manifest {...}" // copy this JSON
+	// Note: this key can be copied and pasted from the Executions tab from a
+	// remote run invocation. It's in the snowman menu next to `Saved to snapshot ID`.
 	//
 	// At the shell, paste it in single quotes: -remote_snapshot_key='<paste>'
 	// Make sure to also set -api_key for proper auth. The API key must match
-	// the group ID in the logs.
+	// the group ID that owns the snapshot.
 	remoteSnapshotKeyJSON = flag.String("remote_snapshot_key", "", "JSON struct containing a remote snapshot key that the VM should be resumed from.")
 
 	tty  = flag.Bool("tty", false, "Enable debug terminal. This doesn't always work when resuming from snapshot.")
@@ -107,20 +105,12 @@ func getToolEnv() *real_environment.RealEnv {
 	return re
 }
 
-func parseSnapshotKeyJSON(in string) (*RemoteSnapshotKey, *fcpb.SnapshotKey, error) {
-	k := &RemoteSnapshotKey{}
-	if err := json.Unmarshal([]byte(in), k); err != nil {
-		return nil, nil, status.WrapError(err, "unmarshal snapshot key JSON")
+func parseSnapshotKeyJSON(in string) (*fcpb.SnapshotKey, error) {
+	k := &fcpb.SnapshotKey{}
+	if err := protojson.Unmarshal([]byte(in), k); err != nil {
+		return nil, status.WrapError(err, "unmarshal SnapshotKey")
 	}
-	b, err := json.Marshal(k.Key)
-	if err != nil {
-		return nil, nil, status.WrapError(err, "marshal SnapshotKey")
-	}
-	pk := &fcpb.SnapshotKey{}
-	if err := protojson.Unmarshal(b, pk); err != nil {
-		return nil, nil, status.WrapError(err, "unmarshal SnapshotKey")
-	}
-	return k, pk, nil
+	return k, nil
 }
 
 func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, actionDigest *digest.CASResourceName) (*repb.Action, *repb.Command, error) {
@@ -241,7 +231,7 @@ func run(ctx context.Context, env environment.Env) error {
 			return status.WrapError(err, "make platform")
 		}
 		task := &repb.ExecutionTask{Command: &repb.Command{Platform: p}}
-		_, key, err := parseSnapshotKeyJSON(*remoteSnapshotKeyJSON)
+		key, err := parseSnapshotKeyJSON(*remoteSnapshotKeyJSON)
 		if err != nil {
 			return err
 		}

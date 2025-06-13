@@ -14,13 +14,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/prometheus/client_golang/prometheus"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -382,15 +379,7 @@ func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, b
 		if !writeBody {
 			return nil
 		}
-		// TODO(dan): Move AC byte-counting logic to ocicache.FetchManifestFromAC.
-		counter := &ioutil.Counter{}
-		mw := io.MultiWriter(w, counter)
-		defer func() {
-			metrics.OCIRegistryCacheDownloadSizeBytes.With(prometheus.Labels{
-				metrics.CacheTypeLabel: actionCacheLabel,
-			}).Observe(float64(counter.Count()))
-		}()
-		if _, err := io.Copy(mw, bytes.NewReader(mc.GetRaw())); err != nil {
+		if _, err := io.Copy(w, bytes.NewReader(mc.GetRaw())); err != nil {
 			return err
 		}
 		return nil

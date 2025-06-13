@@ -202,19 +202,22 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
       }
     }
 
-    const filteredActions = this.state.executions
+    const filter = this.props.filter?.toLowerCase();
+    const filteredExecutions = this.state.executions
       .filter(
-        (action) =>
-          !this.props.filter ||
-          `${action.actionDigest?.hash ?? ""}/${action.actionDigest?.sizeBytes ?? ""}`
+        (execution) =>
+          !filter ||
+          execution.targetLabel?.toLowerCase()?.includes(filter) ||
+          execution.actionMnemonic?.toLowerCase()?.includes(filter) ||
+          execution.commandSnippet?.toLowerCase()?.includes(filter) ||
+          `${execution.actionDigest?.hash ?? ""}/${execution.actionDigest?.sizeBytes ?? ""}`
             .toLowerCase()
-            .includes(this.props.filter.toLowerCase()) ||
-          action.commandSnippet.toLowerCase().includes(this.props.filter.toLowerCase())
+            .includes(filter)
       )
       .filter(
-        (action) =>
+        (execution) =>
           this.state.statusFilter === "all" ||
-          getExecutionStatus(action).name.toLowerCase().startsWith(this.state.statusFilter)
+          getExecutionStatus(execution).name.toLowerCase().startsWith(this.state.statusFilter)
       );
 
     return (
@@ -286,15 +289,15 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
               </div>
             </div>
             <div>
-              {filteredActions.length ? (
+              {filteredExecutions.length ? (
                 <InvocationExecutionTable
-                  executions={filteredActions.sort(this.sort.bind(this)).slice(0, this.state.limit)}
+                  executions={filteredExecutions.sort(this.sort.bind(this)).slice(0, this.state.limit)}
                   invocationIdProvider={() => this.props.model.getInvocationId()}></InvocationExecutionTable>
               ) : (
                 <div className="invocation-execution-empty-actions">No matching actions.</div>
               )}
             </div>
-            {filteredActions.length > this.state.limit && (
+            {filteredExecutions.length > this.state.limit && (
               <div className="more-buttons">
                 <OutlinedButton onClick={this.handleMoreClicked.bind(this)}>See more executions</OutlinedButton>
                 <OutlinedButton onClick={this.handleAllClicked.bind(this)}>See all executions</OutlinedButton>

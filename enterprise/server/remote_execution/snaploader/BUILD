@@ -11,7 +11,6 @@ go_library(
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/snaputil",
-        "//enterprise/server/util/proxy_util",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
