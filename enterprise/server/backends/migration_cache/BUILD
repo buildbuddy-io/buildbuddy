@@ -40,6 +40,7 @@ go_test(
     deps = [
         ":migration_cache",
         "//enterprise/server/backends/pebble_cache",
+        "//enterprise/server/experiments",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/backends/disk_cache",
@@ -52,6 +53,8 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/prefix",
         "//server/util/status",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
     ],

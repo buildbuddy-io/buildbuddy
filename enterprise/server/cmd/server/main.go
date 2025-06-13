@@ -178,6 +178,9 @@ func main() {
 
 	libmain.StartMonitoringHandler(realEnv)
 
+	if err := experiments.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := gcs_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
@@ -297,9 +300,6 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := ociregistry.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := experiments.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 
