@@ -201,8 +201,8 @@
 
 .button.buttonGradient:hover:before {
   filter: blur(10px);
-    margin-top: 4px;
-    opacity: 1;
+  margin-top: 4px;
+  opacity: 1;
 }
 
 .button.buttonPrimary:disabled {
