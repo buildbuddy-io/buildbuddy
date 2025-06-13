@@ -37,6 +37,7 @@ write_file(
                         # TODO(sluongng): this should be fixed on rules_go side
                         # https://github.com/bazelbuild/rules_go/issues/3619
                         "cgo[\\\\,\\/]github.com[\\\\,\\/]shirou[\\\\,\\/]gopsutil[\\\\,\\/]": "third_party cgo",
+                        "experimental/": "experimental_stuff",
                     },
                 }
                 for analyzer in ANALYZERS + [
