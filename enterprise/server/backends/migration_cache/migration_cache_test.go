@@ -1344,7 +1344,7 @@ func testOnlyOneCache(t *testing.T, reverse bool) {
 	require.False(t, contains)
 
 	// destination should never have been called
-	require.Equal(t, 0, destCache.calls.Load())
+	require.Equal(t, int64(0), destCache.calls.Load())
 }
 
 func TestOnlySrc(t *testing.T) {
