@@ -79,7 +79,7 @@
 /* Titles */
 
 .title {
-  font-size: 56px;
+  font-size: 64px;
   line-height: 64px;
   font-weight: 800;
   text-wrap: balance;
@@ -109,7 +109,7 @@
 
 @media (max-width: 600px) {
   .title.title {
-    font-size: 48px;
+    font-size: 52px;
     line-height: 52px;
   }
 }
@@ -146,7 +146,7 @@
   background-color: transparent;
   border: 1px solid #eee;
   padding: 18px 32px;
-  border-radius: 64px;
+  border-radius: 8px;
   font-weight: 600;
   font-family: inherit;
   font-size: 16px;
@@ -178,14 +178,14 @@
   border: 12px solid transparent;
   background-clip: padding-box;
   content: "";
-  filter: blur(36px);
+  filter: blur(8px);
   height: calc(100%);
   opacity: 0.8;
   position: absolute;
   width: 100%;
   background-image: linear-gradient(-65deg, rgb(73, 162, 245), rgb(216, 106, 211));
   z-index: -2;
-  border-radius: 100px;
+  border-radius: 8px;
 }
 
 .button.buttonGradient:after {
@@ -196,11 +196,13 @@
   height: calc(100% + 2px);
   width: calc(100% + 2px);
   z-index: -1;
-  border-radius: 100px;
+  border-radius: 9px;
 }
 
 .button.buttonGradient:hover:before {
-  filter: blur(8px);
+  filter: blur(10px);
+    margin-top: 4px;
+    opacity: 1;
 }
 
 .button.buttonPrimary:disabled {

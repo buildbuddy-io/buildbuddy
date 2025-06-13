@@ -20,6 +20,11 @@ div.ossContainer.ossContainer {
   color: rgba(255, 255, 255, 0.7);
 }
 
+.heart {
+  font-size: 0.7em;
+  padding: 4px;
+  vertical-align: middle;
+}
 @media (max-width: 460px) {
   div.heart {
     display: block;

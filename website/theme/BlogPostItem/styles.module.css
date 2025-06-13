@@ -14,7 +14,7 @@ h1,
 h1 {
   font-size: 48px;
   font-weight: 700;
-  letter-spacing: initial;
+  letter-spacing: -0.04em;
 }
 
 .blogPostDate {
