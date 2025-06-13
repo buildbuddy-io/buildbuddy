@@ -17,9 +17,10 @@ type SayHiParams struct {
 }
 
 func SayHi(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[SayHiParams]) (*mcp.CallToolResultFor[SayHiParams], error) {
+	log.Printf("SayHi was called! cc: %+v, params: %+v", cc, params)
 	return &mcp.CallToolResultFor[SayHiParams]{
 		Content: []*mcp.Content{
-			mcp.NewTextContent("Hi " + params.Name),
+			mcp.NewTextContent("Helllooooooooooooo " + params.Name + "-buddy"),
 		},
 	}, nil
 }
@@ -32,10 +33,10 @@ func main() {
 	}
 
 	server1 := mcp.NewServer("greeter1", "v0.0.1", nil)
-	server1.AddTools(mcp.NewTool("greet1", "say hi", SayHi))
+	server1.AddTools(mcp.NewTool("greet1", "say hi buddy", SayHi))
 
 	server2 := mcp.NewServer("greeter2", "v0.0.1", nil)
-	server2.AddTools(mcp.NewTool("greet2", "say hello", SayHi))
+	server2.AddTools(mcp.NewTool("greet2", "say hello buddy", SayHi))
 
 	log.Printf("MCP servers serving at %s\n", *httpAddr)
 	handler := mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
@@ -50,5 +51,7 @@ func main() {
 			return nil
 		}
 	})
-	http.ListenAndServe(*httpAddr, handler)
+	if err := http.ListenAndServe(*httpAddr, handler); err != nil {
+		log.Fatalf("error in ListenAndServe: %s", err)
+	}
 }
