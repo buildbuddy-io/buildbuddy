@@ -75,6 +75,7 @@ import (
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
+	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var (
@@ -1037,9 +1038,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 	if c.snapshot == nil || c.snapshot.GetVMMetadata() == nil {
 		return &fcpb.VMMetadata{
-			VmId:        c.id,
-			SnapshotId:  c.snapshotID,
-			SnapshotKey: c.SnapshotKeySet().GetBranchKey(),
+			VmId:         c.id,
+			SnapshotId:   c.snapshotID,
+			SnapshotKey:  c.SnapshotKeySet().GetBranchKey(),
+			CreationTime: tspb.New(c.currentTaskInitTime),
 		}
 	}
 	return c.snapshot.GetVMMetadata()
@@ -1053,6 +1055,7 @@ func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
 		ActionDigest:          c.task.GetExecuteRequest().GetActionDigest(),
 		ExecuteResponseDigest: d,
 		SnapshotId:            c.snapshotID, // Unique ID pertaining to this execution run
+		FinishTime:            tspb.Now(),
 	}
 }
 

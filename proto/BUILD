@@ -211,6 +211,7 @@ proto_library(
     srcs = ["firecracker.proto"],
     deps = [
         ":remote_execution_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
