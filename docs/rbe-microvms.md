@@ -92,9 +92,17 @@ sh_test(
 )
 ```
 
-Then, subsequent runs of this test should be able to take advantage of a
+Then, subsequent runs of this test are likely, but not guaranteed, to use a
 warm microVM, with Docker already up and running, and the `ubuntu:20.04`
-image already cached from when we ran the previous action.
+image already cached.
+
+This works across test targets, as long as their platform properties, including
+`exec_properties` are identical. To create separate microVMs, add any unique
+execution property, like `"test.recycle_key_i_made_up": "foo"`.
+
+MicroVMs may be used by many test runs, and can survive for very long. To start
+a fresh instance, add an execution property or modify an existing one, like
+`"test.recycle_version": "3"`.
 
 :::tip
 
