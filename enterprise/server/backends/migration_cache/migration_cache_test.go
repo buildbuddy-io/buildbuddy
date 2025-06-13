@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -96,56 +97,56 @@ func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, 
 // errorCache lets us mock errors to test error handling
 type errorCache struct {
 	interfaces.Cache
-	calls int
+	calls atomic.Int64
 }
 
 func (c *errorCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
-	c.calls++
+	c.calls.Add(1)
 	return errors.New("error cache set err")
 }
 
 func (c *errorCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
-	c.calls++
+	c.calls.Add(1)
 	return errors.New("error cache set multi err")
 }
 
 func (c *errorCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
-	c.calls++
+	c.calls.Add(1)
 	return nil, errors.New("error cache get err")
 }
 
 func (c *errorCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
-	c.calls++
+	c.calls.Add(1)
 	return nil, errors.New("error cache get multi err")
 }
 
 func (c *errorCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
-	c.calls++
+	c.calls.Add(1)
 	return errors.New("error cache delete err")
 }
 
 func (c *errorCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	c.calls++
+	c.calls.Add(1)
 	return false, errors.New("error cache contains err")
 }
 
 func (c *errorCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
-	c.calls++
+	c.calls.Add(1)
 	return nil, errors.New("error cache find missing err")
 }
 
 func (c *errorCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
-	c.calls++
+	c.calls.Add(1)
 	return nil, errors.New("error cache metadata err")
 }
 
 func (c *errorCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	c.calls++
+	c.calls.Add(1)
 	return nil, errors.New("error cache writer err")
 }
 
 func (c *errorCache) Reader(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
-	c.calls++
+	c.calls.Add(1)
 	return nil, errors.New("error cache reader err")
 }
 
@@ -973,10 +974,28 @@ func TestFindMissing_DestErr(t *testing.T) {
 	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
+	// Hack to fix a data race below. When the destination cache fails,
+	// it logs the request resource names using proto text formatting, which
+	// calls ProtoReflect(), which stores an atomic pointer. This happens in
+	// parallel with require.ElementsMatch() below, which uses deepequal to
+	// compare values which reads the pointer without using atomic operations.
+	// Calling ProtoReflect() initializes the pointer here instead of in the
+	// goroutine in FindMissing.
+	// TODO(vanja) try using the synctest package once we upgrade to 1.25
+	_ = notSetR1.GetDigest().ProtoReflect()
+	_ = notSetR2.GetDigest().ProtoReflect()
+
 	// Should return data from src cache without error
 	rns := digest.ResourceNames(rspb.CacheType_CAS, "", []*repb.Digest{r.GetDigest(), notSetR1.GetDigest(), notSetR2.GetDigest()})
 	missing, err := mc.FindMissing(ctx, rns)
 	require.NoError(t, err)
+	for range 5 {
+		if destCache.calls.Load() > 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	require.Equal(t, int64(2), destCache.calls.Load(), "Expected dest cache to be called twice (Set and FindMissing)")
 	require.ElementsMatch(t, []*repb.Digest{notSetR1.GetDigest(), notSetR2.GetDigest()}, missing)
 }
 
@@ -1325,7 +1344,7 @@ func testOnlyOneCache(t *testing.T, reverse bool) {
 	require.False(t, contains)
 
 	// destination should never have been called
-	require.Equal(t, 0, destCache.calls)
+	require.Equal(t, 0, destCache.calls.Load())
 }
 
 func TestOnlySrc(t *testing.T) {
