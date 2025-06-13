@@ -71,6 +71,14 @@ func TestPrimitiveFlags(t *testing.T) {
 				"big":   99.9999999,
 			},
 		},
+		"object_flag": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "foo",
+			Variants: map[string]any{
+				"foo": map[string]any{"foo": "foo value"},
+				"bar": nil,
+			},
+		},
 	})
 
 	fp, err := experiments.NewFlagProvider("test-name")
@@ -80,6 +88,7 @@ func TestPrimitiveFlags(t *testing.T) {
 	require.Equal(t, "value-is-foo", fp.String(ctx, "string_flag", "default"))
 	require.Equal(t, int64(1), fp.Int64(ctx, "int_flag", 0))
 	require.Equal(t, 99.9999999, fp.Float64(ctx, "float_flag", 1.0))
+	require.Equal(t, map[string]any{"foo": "foo value"}, fp.Object(ctx, "object_flag", nil))
 }
 
 func writeFlagConfig(t testing.TB, data string) string {

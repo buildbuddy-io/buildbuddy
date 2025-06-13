@@ -670,6 +670,16 @@ func filterToDebugExecutorID(nodes []*executionNode, task *repb.ExecutionTask) (
 	return id, nil
 }
 
+func filterToHostnamePrefix(nodes []*executionNode, prefix string) []*executionNode {
+	var out []*executionNode
+	for _, n := range nodes {
+		if strings.HasPrefix(n.GetHost(), prefix) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 type nodePoolKey struct {
 	groupID string
 	os      string
@@ -1500,6 +1510,10 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 		if !nodeCanFitTask(node, task.metadata.GetTaskSize()) {
 			continue
 		}
+		// Filter to tasks with a compatible hostname prefix.
+		if prefix := task.metadata.GetHostnamePrefix(); prefix != "" && !strings.HasPrefix(node.GetHost(), prefix) {
+			continue
+		}
 
 		// Don't try to re-assign tasks intended to run on a specific executor.
 		fullTask := &repb.ExecutionTask{}
@@ -1874,10 +1888,11 @@ type enqueueTaskReservationOpts struct {
 func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRequest *scpb.EnqueueTaskReservationRequest, task *repb.ExecutionTask, opts enqueueTaskReservationOpts) error {
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, enqueueRequest.GetTaskId())
 
+	groupID := enqueueRequest.GetSchedulingMetadata().GetExecutorGroupId()
 	os := enqueueRequest.GetSchedulingMetadata().GetOs()
 	arch := enqueueRequest.GetSchedulingMetadata().GetArch()
 	pool := enqueueRequest.GetSchedulingMetadata().GetPool()
-	groupID := enqueueRequest.GetSchedulingMetadata().GetExecutorGroupId()
+	hostnamePrefix := enqueueRequest.GetSchedulingMetadata().GetHostnamePrefix()
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 
@@ -1947,10 +1962,18 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			if len(candidateNodes) == 0 {
 				return errTaskSizeTooLarge(pool, os, arch, enqueueRequest.GetTaskSize())
 			}
+			// NOTE: if adding more filtering here, also update the filtering in
+			// sampleUnclaimedTasks, to ensure that executors not matching the
+			// filters cannot steal this task.
 			var debugExecutorID string
 			debugExecutorID, candidateNodes = filterToDebugExecutorID(candidateNodes, task)
 			if len(candidateNodes) == 0 {
 				return status.WrapError(error_util.RequestedExecutorNotFoundError(), fmt.Sprintf("enqueue on debug-executor-id %s", debugExecutorID))
+			}
+			candidateNodes = filterToHostnamePrefix(candidateNodes, hostnamePrefix)
+			if len(candidateNodes) == 0 {
+				log.CtxWarningf(ctx, "No executors found matching hostname prefix %q in pool %q with os %q with arch %q", hostnamePrefix, pool, os, arch)
+				return status.UnavailableErrorf("no executors found matching hostname prefix")
 			}
 			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
 		}

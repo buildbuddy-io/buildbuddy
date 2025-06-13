@@ -720,6 +720,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if err != nil {
 		return "", nil, status.WrapError(err, "get executor pool info")
 	}
+	var hostnamePrefix string
+	if exp := s.env.GetExperimentFlagProvider(); exp != nil {
+		hostnamePrefix = exp.String(ctx, "remote_execution.executor_hostname_prefix", "")
+		log.CtxInfof(ctx, "Using executor hostname prefix %q", hostnamePrefix)
+	}
 
 	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()
 
@@ -733,6 +738,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Os:                props.OS,
 		Arch:              props.Arch,
 		Pool:              pool.Name,
+		HostnamePrefix:    hostnamePrefix,
 		TaskSize:          taskSize,
 		DefaultTaskSize:   defaultTaskSize,
 		MeasuredTaskSize:  measuredSize,

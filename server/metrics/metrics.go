@@ -793,6 +793,7 @@ var (
 		Help:      "Number of not found errors from the destination cache during a cache migration.",
 	}, []string{
 		CacheRequestType,
+		GroupID,
 	})
 
 	MigrationDoubleReadHitCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -802,6 +803,7 @@ var (
 		Help:      "Number of double reads where the source and destination caches hold the same digests during a cache migration.",
 	}, []string{
 		CacheRequestType,
+		GroupID,
 	})
 
 	MigrationCopyChanSize = promauto.NewGauge(prometheus.GaugeOpts{
@@ -818,6 +820,7 @@ var (
 		Help:      "Number of bytes copied from the source to destination cache during a cache migration.",
 	}, []string{
 		CacheTypeLabel,
+		GroupID,
 	})
 
 	MigrationBlobsCopied = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -827,6 +830,7 @@ var (
 		Help:      "Number of blobs copied from the source to destination cache during a cache migration.",
 	}, []string{
 		CacheTypeLabel,
+		GroupID,
 	})
 
 	TreeCacheLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{

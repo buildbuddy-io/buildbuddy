@@ -812,6 +812,122 @@ func TestResolve_WithCache(t *testing.T) {
 	}
 }
 
+// TestResolve_Concurrency fetches layer contents from multiple goroutines
+// to make sure doing so does not make unnecessary requests to the remote registry.
+func TestResolve_Concurrency(t *testing.T) {
+	te := setupTestEnvWithCache(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+	flags.Set(t, "executor.container_registry.write_manifests_to_cache", true)
+	flags.Set(t, "executor.container_registry.read_manifests_from_cache", true)
+	flags.Set(t, "executor.container_registry.write_layers_to_cache", true)
+	flags.Set(t, "executor.container_registry.read_layers_from_cache", true)
+	counter := newRequestCounter()
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+	imageName := "test_resolve_concurrency"
+	_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, imageName+"_image")
+	pushedLayers, err := pushedImage.Layers()
+	require.NoError(t, err)
+	pushedDigestToFiles := make(map[v1.Hash]map[string][]byte, len(pushedLayers))
+	pushedDigestToDiffID := make(map[v1.Hash]v1.Hash, len(pushedLayers))
+	for _, pushedLayer := range pushedLayers {
+		digest, err := pushedLayer.Digest()
+		require.NoError(t, err)
+		files := layerFiles(t, pushedLayer)
+		pushedDigestToFiles[digest] = files
+		diffID, err := pushedLayer.DiffID()
+		require.NoError(t, err)
+		pushedDigestToDiffID[digest] = diffID
+	}
+
+	configDigest, err := pushedImage.ConfigName()
+	require.NoError(t, err)
+
+	imageAddress := registry.ImageAddress(imageName + "_image")
+	expected := map[string]int{
+		http.MethodGet + " /v2/": 1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
+		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
+	}
+	for digest, _ := range pushedDigestToFiles {
+		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
+	}
+	counter.reset()
+	pulledImage, err := newResolver(t, te).Resolve(
+		context.Background(),
+		imageAddress,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+
+	layers, err := pulledImage.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, len(pushedLayers))
+
+	var layerWG sync.WaitGroup
+	layerChan := make(chan layerResult, len(layers))
+	for _, layer := range layers {
+		layerWG.Add(1)
+		go func(layer v1.Layer) {
+			defer layerWG.Done()
+			digest, digestErr := layer.Digest()
+			diffID, diffIDErr := layer.DiffID()
+			rc, err := layer.Compressed()
+			if err != nil {
+				layerChan <- layerResult{
+					digest:        digest,
+					digestErr:     digestErr,
+					diffID:        diffID,
+					diffIDErr:     diffIDErr,
+					compressedErr: err,
+				}
+				return
+			}
+			defer rc.Close()
+			compressed, err := io.ReadAll(rc)
+			layerChan <- layerResult{
+				digest:        digest,
+				digestErr:     digestErr,
+				diffID:        diffID,
+				diffIDErr:     diffIDErr,
+				compressed:    compressed,
+				compressedErr: err,
+			}
+		}(layer)
+	}
+	layerWG.Wait()
+	close(layerChan)
+	require.Empty(t, cmp.Diff(expected, counter.snapshot()))
+
+	for result := range layerChan {
+		require.NoError(t, result.digestErr)
+		require.NoError(t, result.diffIDErr)
+		require.NoError(t, result.compressedErr)
+		pushedDiffID := pushedDigestToDiffID[result.digest]
+		require.Equal(t, pushedDiffID, result.diffID)
+	}
+}
+
+type layerResult struct {
+	digest        v1.Hash
+	digestErr     error
+	diffID        v1.Hash
+	diffIDErr     error
+	compressed    []byte
+	compressedErr error
+}
+
 func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
