@@ -32,15 +32,17 @@ var (
 	storeSnapshotsInLocalClusterOnly = flag.Bool("executor.store_snapshots_in_local_cluster_only", false, "If true, snapshots are only stored in the cache proxy in the cluster where this executor is running.")
 )
 
-// ChunkSource represents how a snapshot chunk was initialized
-type ChunkSource int
-
 const (
 	// MemoryFileName is the fixed file name of the memory snapshot file.
 	// We rely on this name to locate the memory file in snapshots. Do not
 	// change!
 	MemoryFileName = "memory"
+)
 
+// ChunkSource represents how a snapshot chunk was initialized
+type ChunkSource int
+
+const (
 	// ChunkSourceUnmapped means the lazy chunk has not been initialized yet
 	ChunkSourceUnmapped ChunkSource = iota
 	// ChunkSourceHole means the chunk was initialized as a hole - i.e. it started
@@ -54,8 +56,10 @@ const (
 	ChunkSourceLocalFilecache
 	// ChunkSourceRemoteCache means the chunk was fetched from the remote cache
 	ChunkSourceRemoteCache
+)
 
-	// Values for platform.RemoteSnapshotSavePolicyPropertyName:
+// Values for platform.RemoteSnapshotSavePolicyPropertyName:
+const (
 	// Every run will save a remote snapshot.
 	AlwaysSaveRemoteSnapshot = "always"
 	// Default. Only the first run on a non-main ref will save a remote snapshot.
