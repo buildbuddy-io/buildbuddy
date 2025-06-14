@@ -574,7 +574,7 @@ func observeStageDuration(ctx context.Context, groupID string, stage string, sta
 	}
 	duration := endTime.Sub(startTime)
 	if duration > 20*time.Hour {
-		log.CtxInfof(ctx, "Stage %q took longer than 20h. Start = %v; End = %v", duration, start, end)
+		log.CtxInfof(ctx, "Stage %q took longer than 20h. Duration = %v; Start = %v; End = %v", stage, duration, start, end)
 	}
 	metrics.RemoteExecutionExecutedActionMetadataDurationsUsec.With(prometheus.Labels{
 		metrics.GroupID:                  metricsutil.FilteredGroupIDLabel(groupID),
