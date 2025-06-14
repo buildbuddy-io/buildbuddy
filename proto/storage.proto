@@ -19,6 +19,7 @@ message Encryption {
 }
 
 message FileRecord {
+  option (vtproto.mempool) = true;
   Isolation isolation = 1;
   build.bazel.remote.execution.v2.Digest digest = 2;
   build.bazel.remote.execution.v2.Compressor.Value compressor = 3;
@@ -27,6 +28,7 @@ message FileRecord {
 }
 
 message StorageMetadata {
+  option (vtproto.mempool) = true;
   message FileMetadata {
     string filename = 1;
   }
