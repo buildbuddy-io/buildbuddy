@@ -88,6 +88,11 @@ var (
 	}
 )
 
+type DnsOverride struct {
+	HostnameToOverride string `yaml:"hostname_to_override"`
+	RedirectToIP       string `yaml:"redirect_to_ip"`
+}
+
 // runCommand runs the provided command, prepending sudo if the calling user is
 // not already root. Output and errors are returned.
 func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
@@ -654,7 +659,7 @@ type vethPair struct {
 //
 // The Cleanup method must be called on the returned struct to clean up all
 // resources associated with it.
-func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err error) {
+func setupVethPair(ctx context.Context, netns *Namespace, dnsOverrides []*DnsOverride) (_ *vethPair, err error) {
 	// Keep a list of cleanup work to be done.
 	var cleanupStack cleanupStack
 	// If we return an error from this func then we need to clean up any
@@ -736,8 +741,13 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 		})
 	}
 
+	allowedPrivateIPs := *taskAllowedPrivateIPs
+	for _, override := range dnsOverrides {
+		allowedPrivateIPs = append(allowedPrivateIPs, override.RedirectToIP)
+	}
+
 	var iptablesRules [][]string
-	for _, allow := range *taskAllowedPrivateIPs {
+	for _, allow := range allowedPrivateIPs {
 		if allow == "default" {
 			defaultIP, err := DefaultIP(ctx)
 			if err != nil {
@@ -875,7 +885,7 @@ type VMNetwork struct {
 
 // CreateVMNetwork initializes a network namespace, networking
 // interfaces, and host configuration required for VM networking.
-func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (_ *VMNetwork, err error) {
+func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string, dnsOverrides []*DnsOverride) (_ *VMNetwork, err error) {
 	var cleanupStack cleanupStack
 	defer func() {
 		// If we failed to fully set up the network, make sure to clean up any
@@ -895,7 +905,7 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (
 	})
 
 	// Create a veth pair with one end in the namespace.
-	vethPair, err := setupVethPair(ctx, netns)
+	vethPair, err := setupVethPair(ctx, netns, dnsOverrides)
 	if err != nil {
 		return nil, status.WrapError(err, "setup veth pair")
 	}
@@ -1048,7 +1058,8 @@ func CreateContainerNetwork(ctx context.Context, loopbackOnly bool) (_ *Containe
 	var vethPair *vethPair
 	if !loopbackOnly {
 		// Create a veth pair with one end in the namespace.
-		vp, err := setupVethPair(ctx, netns)
+		// Currently DNS overrides are only supported in firecracker.
+		vp, err := setupVethPair(ctx, netns, nil /*dnsOverrides*/)
 		if err != nil {
 			return nil, status.WrapError(err, "setup veth pair")
 		}
