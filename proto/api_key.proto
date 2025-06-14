@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "proto/capability.proto";
 import "proto/context.proto";
+import "google/protobuf/duration.proto";
 
 package api_key;
 
@@ -62,6 +63,9 @@ message CreateApiKeyRequest {
 
   // True if this API key should be visible to developers.
   bool visible_to_developers = 5;
+
+  // Optional. Duration after which the API key should no longer be valid.
+  google.protobuf.Duration expires_in = 7;
 }
 
 message CreateApiKeyResponse {
