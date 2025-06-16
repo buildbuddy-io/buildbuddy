@@ -1982,8 +1982,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                   } else {
                     rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
                   }
-                }}
-              >
+                }}>
                 <Download /> Download File
               </OutlinedButton>
             </div>
@@ -2253,8 +2252,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                     onClick={() =>
                       window.open(applicableInstallation?.url + `/permissions/update`, "_blank") &&
                       this.updateState({ installationsResponse: undefined })
-                    }
-                  >
+                    }>
                     <Key className="icon white" /> Permissions
                   </FilledButton>
                 )}
