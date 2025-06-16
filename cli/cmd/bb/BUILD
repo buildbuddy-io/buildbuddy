@@ -12,6 +12,7 @@ go_library(
         "//cli/arg",
         "//cli/bazelisk",
         "//cli/cli_command",
+        "//cli/cli_command/register",
         "//cli/cmd/sidecar",
         "//cli/help",
         "//cli/log",
