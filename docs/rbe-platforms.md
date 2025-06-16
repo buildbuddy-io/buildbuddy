@@ -221,7 +221,7 @@ The following properties allow customizing the behavior of the runner:
   default. This option may be useful to improve performance in some
   situations, but is not generally recommended for most actions as it
   reduces action hermeticity. Available options are `true` and `false`.
-- `runner-recycling-max-wait`: when recycling a runner, how long to wait for a 
+- `runner-recycling-max-wait`: when recycling a runner, how long to wait for a
   recycled runner before also trying to schedule on another machine. Values must
   be formatted as positive durations. For example, `500ms` or `3s`. This value
   may be ignored or clamped to a specific range.
