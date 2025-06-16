@@ -91,7 +91,7 @@ func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, 
 		time.Sleep(delay)
 	}
 
-	require.FailNowf(t, "timeout", "Timed out waiting for data to be copied to dest cache")
+	require.FailNowf(t, "timeout", "Timed out waiting for %v to be copied to dest cache", r)
 }
 
 // errorCache lets us mock errors to test error handling
@@ -807,15 +807,21 @@ func TestContains(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	config := &migration_cache.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
+	mc.Start()
+	defer mc.Stop()
 
 	r, buf := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_AC, remoteInstanceName)
-	err = mc.Set(ctx, r, buf)
+	err = srcCache.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	contains, err := mc.Contains(ctx, r)
 	require.NoError(t, err)
 	require.True(t, contains)
+
+	waitForCopy(t, ctx, destCache, r)
 
 	notWrittenResource, _ := testdigest.RandomCASResourceBuf(t, 100)
 	contains, err = mc.Contains(ctx, notWrittenResource)
@@ -855,15 +861,21 @@ func TestMetadata(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
+	config := &migration_cache.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
+	mc.Start()
+	defer mc.Stop()
 
 	r, buf := testdigest.RandomCASResourceBuf(t, 100)
-	err = mc.Set(ctx, r, buf)
+	err = srcCache.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	md, err := mc.Metadata(ctx, r)
 	require.NoError(t, err)
 	require.Equal(t, int64(100), md.StoredSizeBytes)
+
+	waitForCopy(t, ctx, destCache, r)
 
 	notWrittenResource, _ := testdigest.RandomCASResourceBuf(t, 100)
 	md, err = mc.Metadata(ctx, notWrittenResource)
