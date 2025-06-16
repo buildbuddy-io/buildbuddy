@@ -24,6 +24,10 @@ go_test(
     name = "txn_test",
     srcs = ["txn_test.go"],
     tags = ["block-network"],
+    exec_properties = {
+        "test.EstimatedComputeUnits": "8",
+        "test.workload-isolation-type": "firecracker",
+    },
     deps = [
         ":txn",
         "//enterprise/server/raft/constants",
