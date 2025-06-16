@@ -514,7 +514,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
     const that = this;
 
-     this.editor.addAction({
+    this.editor.addAction({
       id: "code-search-definition-action",
       label: "Go to definition",
       precondition: this.goToDefKey.get(),
@@ -1689,7 +1689,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   navigateToAnchor(a: kythe.proto.Anchor) {
-    console.log("Navigating to anchor", a);
     const path = a.parent.split("?path=")[1];
     const line = a.span?.start?.lineNumber;
     if (!line) {
@@ -1880,8 +1879,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                   } else {
                     rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
                   }
-                }}
-              >
+                }}>
                 <Download /> Download File
               </OutlinedButton>
             </div>
@@ -2150,8 +2148,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                     onClick={() =>
                       window.open(applicableInstallation?.url + `/permissions/update`, "_blank") &&
                       this.updateState({ installationsResponse: undefined })
-                    }
-                  >
+                    }>
                     <Key className="icon white" /> Permissions
                   </FilledButton>
                 )}
