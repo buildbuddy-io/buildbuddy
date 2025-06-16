@@ -18,6 +18,11 @@ type Sequenceable[E any] interface {
 }
 
 // Sequence turns a Sequenceable into an iter.Seq.
+//
+// As with all sequences returned by this library, so long as the parameters are
+// stateless, the returned sequence will be stateless. If the parameter is a
+// slice, it is not cloned, so changing the underlying slice will change the
+// elements of the returned sequence.
 func Sequence[E any, S Sequenceable[E]](s S) iter.Seq[E] {
 	if s == nil {
 		return EmptySeq[E]
@@ -33,11 +38,14 @@ func Sequence[E any, S Sequenceable[E]](s S) iter.Seq[E] {
 	}
 }
 
-// EmptySeq is the empty sequence.
+// EmptySeq is the (stateless) empty sequence.
 func EmptySeq[E any](func(E) bool) {}
 
 // Chain chains two Sequenceable types together into one sequence and returns
 // the result.
+// 
+// As with all sequences returned by this library, so long as the parameters are
+// stateless, the returned sequence will be stateless.
 // NOTE: as of writing, go's type inference does not work on this function, so
 // the element type must be specified as a type parameter. However, if
 // https://github.com/golang/go/issues/73527 is ever accepted/addressed, the
@@ -60,6 +68,9 @@ func Chain[E any, S1 Sequenceable[E], S2 Sequenceable[E]](s1 S1, s2 S2) iter.Seq
 // Fmap maps a function over the passed sequence, which is to say it returns the
 // result of calling the passed function on each of the elements in the passed
 // sequence as a sequence.
+// 
+// As with all sequences returned by this library, so long as the parameters are
+// stateless, the returned sequence will be stateless.
 func Fmap[I any, O any, S Sequenceable[I]](s S, f func(I) O) iter.Seq[O] {
 	return func(yield func(O) bool) {
 		for e := range Sequence[I](s) {
@@ -76,6 +87,9 @@ func Fmap[I any, O any, S Sequenceable[I]](s S, f func(I) O) iter.Seq[O] {
 // the element type must be specified as a type parameter. However, if
 // https://github.com/golang/go/issues/73527 is ever accepted/addressed, the
 // explicit type specification will no longer be needed.
+// 
+// As with all sequences returned by this library, so long as the parameters are
+// stateless, the returned sequence will be stateless.
 func Truncate[E any, S Sequenceable[E]](s S, n uint) iter.Seq[E] {
 	return func(yield func(E) bool) {
 		i := uint(0)
@@ -113,6 +127,9 @@ func setupRepeat[E any, S Sequenceable[E]](s S) (*[]E, iter.Seq[E]) {
 // to store the elements on the first pass so that they can be repeated on
 // subsequent passes. If the passed sequence is zero-length, the returned
 // sequence will also be zero-length.
+// 
+// As with all sequences returned by this library, so long as the parameters are
+// stateless, the returned sequence will be stateless.
 // NOTE: as of writing, go's type inference does not work on this function, so
 // the element type must be specified as a type parameter. However, if
 // https://github.com/golang/go/issues/73527 is ever accepted/addressed, the
@@ -142,6 +159,9 @@ func Repeat[E any, S Sequenceable[E]](s S) iter.Seq[E] {
 // sequences can not be iterated multiple times, it will allocate a slice (if it
 // is not passed one) to store the elements on the first pass so that it can
 // repeat them on subsequent passes if N is greater than one.
+// 
+// As with all sequences returned by this library, so long as the parameters are
+// stateless, the returned sequence will be stateless.
 // NOTE: as of writing, go's type inference does not work on this function, so
 // the element type must be specified as a type parameter. However, if
 // https://github.com/golang/go/issues/73527 is ever accepted/addressed, the
@@ -250,6 +270,9 @@ func ComposeFilters[E any](filters ...func(E) bool) func(E) bool {
 
 // Filter filters out all elements from the passed sequence for which any of the
 // passed functions return false.
+//
+// As with all sequences returned by this library, so long as the parameters are
+// stateless, the returned sequence will be stateless.
 func Filter[E any, S Sequenceable[E]](s S, filter func(E) bool) iter.Seq[E] {
 	if filter == nil {
 		return Sequence[E](s)
