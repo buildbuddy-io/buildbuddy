@@ -190,7 +190,7 @@ message VMMetadata {
     string snapshot_id = 5;
 
     // The approximate finish time of the task.
-    google.protobuf.Timestamp finish_time = 6;
+    google.protobuf.Timestamp completed_timestamp = 6;
   }
 
   // The last task to execute on this VM. When resuming from snapshot, this
@@ -204,7 +204,7 @@ message VMMetadata {
   SnapshotKey snapshot_key = 4;
 
   // The time at which the VM was created.
-  google.protobuf.Timestamp creation_time = 5;
+  google.protobuf.Timestamp created_timestamp = 5;
 }
 
 // SnapshotVersionMetadata contains the version ID to be used for snapshots.
