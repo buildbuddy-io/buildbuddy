@@ -16,7 +16,7 @@
   height: 300px;
   overflow-y: auto;
   overflow-x: hidden;
-  border: 2px solid #fafafa
+  border: 2px solid #fafafa;
 }
 
 .xrefs-header {

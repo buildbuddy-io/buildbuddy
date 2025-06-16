@@ -278,7 +278,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         return;
       }
       this.navigateToAnchor(def.anchor);
-    })
+    });
   }
 
   fetchXrefsByPosition(pos: monaco.Position) {
@@ -291,7 +291,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
     this.fetchXrefs(decor.targetTicket, (response) => {
       this.setState({ xrefs: response.crossReferencesReply ?? undefined });
-    })
+    });
   }
 
   async fetchDecorations(filename: string) {
@@ -327,7 +327,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           }
           // slight hack: store the kythe reference in the "after" injected text property - it has
           // a field that holds a generic object.
-          displayOptions.after = {attachedData: x};
+          displayOptions.after = { attachedData: x };
 
           return {
             range: monacoRange,
@@ -454,8 +454,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return undefined;
     }
 
-    let minMatch = decorInRange.min((decor)=> {
-     if (!decor.options.after?.attachedData) {
+    let minMatch = decorInRange.min((decor) => {
+      if (!decor.options.after?.attachedData) {
         return Number.POSITIVE_INFINITY;
       }
       const data = decor.options.after.attachedData as kythe.proto.DecorationsReply.Reference;
@@ -1731,7 +1731,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       });
 
       fileToRefsMap.set(key, uniqueLineRefs);
-
     }
 
     return (
@@ -1745,8 +1744,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 className="xrefs-file"
                 onClick={() => {
                   this.fetchIfNeededAndNavigate(path, "", 1);
-                }}
-              >
+                }}>
                 {path} ({entry[1].length} result{entry[1].length > 1 ? "s" : ""})
               </div>
               <div className="xrefs-snippet">
@@ -1755,8 +1753,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                     <div
                       onClick={() => {
                         this.navigateToAnchor(a.anchor!);
-                      }}
-                    >
+                      }}>
                       <span className="xrefs-snippet-line">{a.anchor?.span?.start?.lineNumber}: </span>
                       <span>{a.anchor?.snippet}</span>
                     </div>
