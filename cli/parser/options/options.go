@@ -3,11 +3,13 @@ package options
 import (
 	"fmt"
 	"iter"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 
 	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
 )
@@ -101,7 +103,7 @@ type Definition struct {
 	requiresValue bool
 
 	// The list of commands that support this option.
-	supportedCommands map[string]struct{}
+	supportedCommands set.Set[string]
 
 	// pluginID is the ID of the bb cli plugin associated with this option
 	// definition, if applicable (or a pseudo-plugin ID for so-called "built-in"
@@ -145,7 +147,7 @@ func (d *Definition) SupportedCommands() iter.Seq[string] {
 
 func (d *Definition) Supports(command string) bool {
 	for cmd, ok := command, true; ok; cmd, ok = bazelrc.Parent(cmd) {
-		if _, ok := d.supportedCommands[cmd]; ok {
+		if d.supportedCommands.Contains(cmd) {
 			return true
 		}
 	}
@@ -155,11 +157,9 @@ func (d *Definition) Supports(command string) bool {
 
 func (d *Definition) AddSupportedCommand(commands ...string) {
 	if d.supportedCommands == nil {
-		d.supportedCommands = make(map[string]struct{}, 1)
+		d.supportedCommands = make(set.Set[string], 1)
 	}
-	for _, command := range commands {
-		d.supportedCommands[command] = struct{}{}
-	}
+	d.supportedCommands.AddSeq(slices.Values(commands))
 }
 
 func (d *Definition) PluginID() string {
@@ -180,15 +180,7 @@ func WithPluginID(pluginID string) DefinitionOpt {
 
 func WithSupportFor(commands ...string) DefinitionOpt {
 	return func(d *Definition) {
-		if len(commands) == 0 {
-			return
-		}
-		if d.supportedCommands == nil {
-			d.supportedCommands = make(map[string]struct{}, len(commands))
-		}
-		for _, command := range commands {
-			d.supportedCommands[command] = struct{}{}
-		}
+		d.AddSupportedCommand(commands...)
 	}
 }
 
@@ -263,11 +255,9 @@ func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 		multi:             info.GetAllowsMultiple(),
 		hasNegative:       info.GetHasNegativeFlag(),
 		requiresValue:     info.GetRequiresValue(),
-		supportedCommands: make(map[string]struct{}, len(info.GetCommands())),
+		supportedCommands: make(set.Set[string], len(info.GetCommands())),
 	}
-	for _, cmd := range info.GetCommands() {
-		d.supportedCommands[cmd] = struct{}{}
-	}
+	d.AddSupportedCommand(info.GetCommands()...)
 	return d
 }
 
