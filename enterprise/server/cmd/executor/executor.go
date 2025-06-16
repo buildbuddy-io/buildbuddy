@@ -228,7 +228,7 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	}
 
 	// Identify ourselves in gRPC requests to the app.
-	usageutil.SetClientType(*clientType)
+	usageutil.SetServerName(*clientType)
 
 	initializeCacheClientsOrDie(*appTarget, *cacheTarget, *cacheTargetTrafficPercent, realEnv)
 
