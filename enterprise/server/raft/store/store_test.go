@@ -1234,6 +1234,7 @@ func TestUpReplicate(t *testing.T) {
 			break
 		}
 	}
+	log.Info("replicas upreplicated")
 	r2 := getReplica(t, s3, 2)
 	waitForReplicaToCatchUp(t, ctx, r2, desiredAppliedIndex)
 	waitStart := time.Now()

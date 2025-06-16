@@ -46,6 +46,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/elastic/gosigar"
@@ -131,6 +132,7 @@ type Store struct {
 
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
+	rangeMap   *rangemap.RangeMap[*rfpb.RangeDescriptor]
 
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
@@ -268,6 +270,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 		rangeMu:    sync.RWMutex{},
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
+		rangeMap:   rangemap.New[*rfpb.RangeDescriptor](),
 
 		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, listener, eventsChan, lkSession),
 		replicas:    sync.Map{},
@@ -814,9 +817,26 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.log.Debugf("Update range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
 
+	var err error
+	added := false
 	s.rangeMu.Lock()
 	s.openRanges[rd.GetRangeId()] = rd
+
+	if rd.GetStart() != nil && rd.GetEnd() != nil {
+		checkFn := func(v *rfpb.RangeDescriptor) bool {
+			return v.GetGeneration() < rd.GetGeneration()
+		}
+		added, err = s.rangeMap.AddAndRemoveOverlapping(rd.GetStart(), rd.GetEnd(), rd, checkFn)
+		if !added {
+			s.log.Debugf("UpdateRange: Ignoring rangeDescriptor %+v, because current has same or later generation", rd)
+		}
+	}
 	s.rangeMu.Unlock()
+
+	if err != nil {
+		s.log.Warningf("failed to add range %d: [%q, %q) gen %d failed: %s", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration(), err)
+		return
+	}
 
 	if !loaded {
 		metrics.RaftRanges.With(prometheus.Labels{
@@ -829,7 +849,7 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
-	if rd.GetStart() == nil && rd.GetEnd() == nil {
+	if rd.GetStart() == nil || rd.GetEnd() == nil {
 		s.log.Debugf("range %d has no bounds (yet?)", rd.GetRangeId())
 		return
 	}
@@ -864,6 +884,9 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	s.rangeMu.Lock()
 	delete(s.openRanges, rd.GetRangeId())
+	if rd.GetStart() != nil && rd.GetEnd() != nil {
+		s.rangeMap.Remove(rd.GetStart(), rd.GetEnd())
+	}
 	s.rangeMu.Unlock()
 
 	metrics.RaftRanges.With(prometheus.Labels{
@@ -2575,6 +2598,22 @@ func (s *Store) getConfigChangeID(ctx context.Context, rangeID uint64) (uint64, 
 	return membership.ConfigChangeID, nil
 }
 
+// CheckRangeOverlaps checks whether there is an open range overlapped with the
+// [start, end) in the request.
+func (s *Store) CheckRangeOverlaps(ctx context.Context, req *rfpb.CheckRangeOverlapsRequest) (*rfpb.CheckRangeOverlapsResponse, error) {
+	if req.GetStart() == nil || req.GetEnd() == nil {
+		return nil, status.FailedPreconditionError("req.Start or req.End cannot be nil")
+	}
+	s.rangeMu.RLock()
+	overlapping := s.rangeMap.GetOverlapping(req.GetStart(), req.GetEnd())
+	s.rangeMu.RUnlock()
+	rsp := &rfpb.CheckRangeOverlapsResponse{}
+	for _, overlapped := range overlapping {
+		rsp.Ranges = append(rsp.Ranges, overlapped.Val)
+	}
+	return rsp, nil
+}
+
 func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddReplicaRequest) error {
 	// Check the request looks valid.
 	if len(req.GetRange().GetReplicas()) == 0 {
@@ -2610,6 +2649,35 @@ func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddRepl
 			return status.FailedPreconditionErrorf("range %d is being removed from node %q", req.GetRange().GetRangeId(), node.GetNhid())
 		}
 	}
+	c, err := s.apiClient.Get(ctx, node.GetGrpcAddress())
+	if err != nil {
+		return status.InternalErrorf("failed to get the client for the node %q: %s", node.GetNhid(), err)
+	}
+
+	// Check the target node doesn't have an overlapping range. An overlapping
+	// range can be caused by a slow node that hasn't committed the split txn.
+	// Since we don't support range merge operations, we don't need to worry
+	// about the case where overlapping ranges occur between the check and when
+	// the replica is added to the node.
+	if remoteRD.GetStart() != nil && remoteRD.GetEnd() != nil {
+		rsp, err := c.CheckRangeOverlaps(ctx, &rfpb.CheckRangeOverlapsRequest{
+			Start: remoteRD.GetStart(),
+			End:   remoteRD.GetEnd(),
+		})
+		if err != nil {
+			return status.InternalErrorf("failed to check range overlap on node %q: %s", node.GetNhid(), err)
+		}
+
+		for _, overlap := range rsp.GetRanges() {
+			// If the range was added to the node, but the range descriptor was
+			// not successfully updated to meta range, don't consider it as an
+			// overlap range.
+			if overlap.GetRangeId() != remoteRD.GetRangeId() || bytes.Equal(overlap.GetStart(), remoteRD.GetStart()) || bytes.Equal(overlap.GetEnd(), remoteRD.GetEnd()) {
+				return status.FailedPreconditionErrorf("node %q has overlapping ranges, e.g. range_id: %d: [%q, %q)", node.GetNhid(), overlap.GetRangeId(), overlap.GetStart(), overlap.GetEnd())
+			}
+		}
+	}
+
 	return nil
 }
 
