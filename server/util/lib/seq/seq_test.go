@@ -167,7 +167,7 @@ func TestFmap(t *testing.T) {
 func TestTruncate(t *testing.T) {
 	for name, tc := range map[string]struct {
 		input    []string
-		n        uint
+		n        int
 		expected []string
 	}{
 		"empty with zero": {
@@ -424,7 +424,7 @@ func TestRepeat(t *testing.T) {
 func TestRepeatN(t *testing.T) {
 	for name, tc := range map[string]struct {
 		input    []string
-		n        uint
+		n        int
 		expected []string
 	}{
 		"empty 0 times": {

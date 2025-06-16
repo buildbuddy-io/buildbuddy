@@ -88,19 +88,23 @@ func Fmap[I any, O any, S Sequenceable[I]](s S, f func(I) O) iter.Seq[O] {
 }
 
 // Truncate truncates the passed sequence after N elements. If the sequence is
-// fewer than N elements in length, it will be returned unchanged.
+// fewer than N elements in length, it will be returned unchanged. If N is less
+// than one, the empty sequence is returned
+// 
+// As with all sequences returned by this library, so long as the parameters are
+// stateless, the returned sequence will be stateless.
 // NOTE: as of writing, go's type inference does not work on this function, so
 // the element type must be specified as a type parameter. However, if
 // https://github.com/golang/go/issues/73527 is ever accepted/addressed, the
 // explicit type specification will no longer be needed.
-// 
-// As with all sequences returned by this library, so long as the parameters are
-// stateless, the returned sequence will be stateless.
-func Truncate[E any, S Sequenceable[E]](s S, n uint) iter.Seq[E] {
+func Truncate[E any, S Sequenceable[E]](s S, n int) iter.Seq[E] {
+	if n < 1 {
+		return EmptySeq[E]
+	}
 	return func(yield func(E) bool) {
-		i := uint(0)
+		i := 0
 		for e := range Sequence[E](s) {
-			if i == n {
+			if i >= n {
 				return
 			}
 			if !yield(e) {
@@ -164,7 +168,8 @@ func Repeat[E any, S Sequenceable[E]](s S) iter.Seq[E] {
 // RepeatN repeats the passed sequence the specified number of times. Since
 // sequences can not be iterated multiple times, it will allocate a slice (if it
 // is not passed one) to store the elements on the first pass so that it can
-// repeat them on subsequent passes if N is greater than one.
+// repeat them on subsequent passes if N is greater than one. If N is less than
+// one, the empty sequence is returned.
 // 
 // As with all sequences returned by this library, so long as the parameters are
 // stateless, the returned sequence will be stateless.
@@ -172,11 +177,11 @@ func Repeat[E any, S Sequenceable[E]](s S) iter.Seq[E] {
 // the element type must be specified as a type parameter. However, if
 // https://github.com/golang/go/issues/73527 is ever accepted/addressed, the
 // explicit type specification will no longer be needed.
-func RepeatN[E any, S Sequenceable[E]](s S, n uint) iter.Seq[E] {
-	switch n {
-	case 0:
+func RepeatN[E any, S Sequenceable[E]](s S, n int) iter.Seq[E] {
+	switch {
+	case n < 1:
 		return EmptySeq[E]
-	case 1:
+	case n == 1:
 		return Sequence[E](s)
 	default:
 		return func(yield func(E) bool) {
@@ -189,7 +194,7 @@ func RepeatN[E any, S Sequenceable[E]](s S, n uint) iter.Seq[E] {
 			if len(*elements) == 0 {
 				return
 			}
-			for i := uint(1); i < n; i++ {
+			for i := 1; i < n; i++ {
 				for _, e := range *elements {
 					if !yield(e) {
 						return
