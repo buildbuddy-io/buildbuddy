@@ -23,11 +23,11 @@ go_library(
 go_test(
     name = "txn_test",
     srcs = ["txn_test.go"],
-    tags = ["block-network"],
     exec_properties = {
         "test.EstimatedComputeUnits": "8",
         "test.workload-isolation-type": "firecracker",
     },
+    tags = ["block-network"],
     deps = [
         ":txn",
         "//enterprise/server/raft/constants",
