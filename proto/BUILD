@@ -2617,6 +2617,7 @@ ts_proto_library(
     proto = ":firecracker_proto",
     deps = [
         ":remote_execution_ts_proto",
+        ":timestamp_ts_proto",
     ],
 )
 
