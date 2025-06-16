@@ -1193,8 +1193,6 @@ func TestUpReplicate(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2}
 	sf.StartShard(t, ctx, stores...)
 
-	log.Info("shard started")
-
 	{ // Verify that there are 2 replicas for range 1
 		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
 		replicas := getMembership(t, s, ctx, 1)
@@ -1212,8 +1210,6 @@ func TestUpReplicate(t *testing.T) {
 		require.Equal(t, 2, len(rd.GetReplicas()))
 	}
 
-	log.Info("two replicas")
-
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	r, err := s.GetReplica(2)
 	require.NoError(t, err)
@@ -1221,7 +1217,6 @@ func TestUpReplicate(t *testing.T) {
 	require.NoError(t, err)
 
 	s3 := sf.NewStore(t)
-	log.Info("new store created")
 	for {
 		// advance the clock to trigger scan replicas
 		clock.Advance(61 * time.Second)
