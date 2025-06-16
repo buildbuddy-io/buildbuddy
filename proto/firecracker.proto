@@ -204,7 +204,7 @@ message VMMetadata {
   SnapshotKey snapshot_key = 4;
 
   // The time at which the VM was created.
-  google.protobuf.Timestamp creation_time = 5;
+  google.protobuf.Timestamp created_timestamp = 5;
 }
 
 // SnapshotVersionMetadata contains the version ID to be used for snapshots.
