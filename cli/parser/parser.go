@@ -571,7 +571,7 @@ func runBazelHelpWithCache() (string, error) {
 // `ignore_all_rc_files` option to the startup options, parses those rc-files
 // into Configs using the default parser, and expands all config options (as
 // well as any `enable_platform_specific_config` option, if one exists) using
-// those coonfigs, and returns the result.
+// those configs, and returns the result.
 func ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
 	ws, err := workspace.Path()
 	if err != nil {
@@ -580,16 +580,28 @@ func ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
 	return resolveArgs(parsedArgs, ws)
 }
 
-// resolveArgs removes all rc-file options from the args, appends an
-// `ignore_all_rc_files` option to the startup options, parses those rc-files
-// into Configs using the default parser, and expands all config options (as
-// well as any `enable_platform_specific_config` option, if one exists) using
-// those coonfigs, and returns the result.
 func resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs, error) {
 	p, err := GetParser()
 	if err != nil {
 		return nil, err
 	}
+	return p.resolveArgs(parsedArgs, ws)
+}
+
+// ResolveArgs removes all rc-file options from the args, appends an
+// `ignore_all_rc_files` option to the startup options, parses those rc-files
+// into Configs, and expands all config options (as well as any
+// `enable_platform_specific_config` option, if one exists) using
+// those configs, and returns the result.
+func (p *Parser) ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
+	ws, err := workspace.Path()
+	if err != nil {
+		log.Debugf("Could not determine workspace dir: %s", err)
+	}
+	return p.resolveArgs(parsedArgs, ws)
+}
+
+func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs, error) {
 	configs, defaultConfig, err := p.consumeAndParseRCFiles(parsedArgs, ws)
 	if err != nil {
 		return nil, err
