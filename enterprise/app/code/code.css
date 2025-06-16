@@ -17,10 +17,14 @@
   overflow-y: auto;
   overflow-x: hidden;
 <<<<<<< HEAD
+<<<<<<< HEAD
   border: 2px solid #fafafa;
 =======
   border: 2px solid #fafafa
 >>>>>>> 355144be80 (ui stuff)
+=======
+  border: 2px solid #fafafa;
+>>>>>>> d33e1ea939 (prettier)
 }
 
 .xrefs-header {
