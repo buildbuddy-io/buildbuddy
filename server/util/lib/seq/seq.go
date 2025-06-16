@@ -3,7 +3,7 @@
 // that it turns out that not all of a list was needed, as these functions
 // evaluate the sequences they are passed lazily and do not allocate slices for
 // intermediary values.
-// 
+//
 // Guarantees:
 // - All sequences returned by functions in this library are stateless as long
 // as the parameters passed to the functions are stateless.
@@ -49,7 +49,7 @@ func EmptySeq[E any](func(E) bool) {}
 
 // Chain chains two Sequenceable types together into one sequence and returns
 // the result.
-// 
+//
 // As with all sequences returned by this library, so long as the parameters are
 // stateless, the returned sequence will be stateless.
 // NOTE: as of writing, go's type inference does not work on this function, so
@@ -74,7 +74,7 @@ func Chain[E any, S1 Sequenceable[E], S2 Sequenceable[E]](s1 S1, s2 S2) iter.Seq
 // Fmap maps a function over the passed sequence, which is to say it returns the
 // result of calling the passed function on each of the elements in the passed
 // sequence as a sequence.
-// 
+//
 // As with all sequences returned by this library, so long as the parameters are
 // stateless, the returned sequence will be stateless.
 func Fmap[I any, O any, S Sequenceable[I]](s S, f func(I) O) iter.Seq[O] {
@@ -90,7 +90,7 @@ func Fmap[I any, O any, S Sequenceable[I]](s S, f func(I) O) iter.Seq[O] {
 // Truncate truncates the passed sequence after N elements. If the sequence is
 // fewer than N elements in length, it will be returned unchanged. If N is less
 // than one, the empty sequence is returned
-// 
+//
 // As with all sequences returned by this library, so long as the parameters are
 // stateless, the returned sequence will be stateless.
 // NOTE: as of writing, go's type inference does not work on this function, so
@@ -137,7 +137,7 @@ func setupRepeat[E any, S Sequenceable[E]](s S) (*[]E, iter.Seq[E]) {
 // to store the elements on the first pass so that they can be repeated on
 // subsequent passes. If the passed sequence is zero-length, the returned
 // sequence will also be zero-length.
-// 
+//
 // As with all sequences returned by this library, so long as the parameters are
 // stateless, the returned sequence will be stateless.
 // NOTE: as of writing, go's type inference does not work on this function, so
@@ -170,7 +170,7 @@ func Repeat[E any, S Sequenceable[E]](s S) iter.Seq[E] {
 // is not passed one) to store the elements on the first pass so that it can
 // repeat them on subsequent passes if N is greater than one. If N is less than
 // one, the empty sequence is returned.
-// 
+//
 // As with all sequences returned by this library, so long as the parameters are
 // stateless, the returned sequence will be stateless.
 // NOTE: as of writing, go's type inference does not work on this function, so
