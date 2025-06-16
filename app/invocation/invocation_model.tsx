@@ -237,21 +237,25 @@ export default class InvocationModel {
     }
   }
 
-  getUser(possessive: boolean) {
+  getUser() {
     let invocationUser = this.invocation.user;
     if (invocationUser) {
-      return possessive ? `${invocationUser}'s` : invocationUser;
+      return invocationUser;
     }
+    // TODO: shouldn't the server be populating invocation.user based on these?
+    let username = this.workspaceStatusMap.get("BUILD_USER") || this.clientEnvMap.get("USER") || "";
+    if (username === "<REDACTED>") {
+      return "";
+    }
+    return username;
+  }
 
-    let username = this.workspaceStatusMap.get("BUILD_USER") || this.clientEnvMap.get("USER");
-    if (username == "<REDACTED>") {
-      return "Loading";
+  getUserPossessivePrefix() {
+    const user = this.getUser();
+    if (!user) {
+      return "";
     }
-
-    if (!username) {
-      return possessive ? "Unknown user's" : "Unknown user";
-    }
-    return possessive ? `${username}'s` : username;
+    return `${user}'s `;
   }
 
   /**
@@ -288,7 +292,7 @@ export default class InvocationModel {
   }
 
   getHost() {
-    return this.invocation.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
+    return this.invocation.host || this.workspaceStatusMap.get("BUILD_HOST") || "";
   }
 
   getTags(): invocation.Invocation.Tag[] {

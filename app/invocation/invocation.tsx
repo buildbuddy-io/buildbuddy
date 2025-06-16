@@ -145,9 +145,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
     // Update title and favicon
     if (this.state.model) {
-      document.title = `${this.state.model.getUser(
-        true
-      )} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
+      document.title = `${this.state.model.getUserPossessivePrefix()}${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
       faviconService.setFaviconForType(this.state.model.getFaviconType());
     }
     // If in progress or queued, schedule another fetch of the invocation (and

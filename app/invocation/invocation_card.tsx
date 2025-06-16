@@ -180,9 +180,8 @@ export default class InvocationCardComponent extends React.Component<Props, Stat
         : "Disconnected build";
     }
 
-    return `${this.props.invocation.user || "Unknown user"}'s ${this.props.invocation.command} ${format.truncateList(
-      this.props.invocation.pattern
-    )}`;
+    const userPrefix = this.props.invocation.user ? `${this.props.invocation.user}'s ` : "";
+    return userPrefix + `${this.props.invocation.command} ${format.truncateList(this.props.invocation.pattern)}`;
   }
 
   getDuration() {
