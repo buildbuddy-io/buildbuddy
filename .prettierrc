@@ -6,5 +6,4 @@
   "singleQuote": false,
   "printWidth": 120,
   "bracketSameLine": true,
-  "plugins": ["prettier-plugin-organize-imports"]
 }

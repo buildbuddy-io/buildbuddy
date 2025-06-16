@@ -19,6 +19,8 @@ f=
 set -e
 # --- end runfiles.bash initialization v3 ---
 
+export PLUGIN="$(pwd)/node_modules/prettier-plugin-organize-imports/index.js"
+
 if [[ -n "${BUILD_WORKSPACE_DIRECTORY}" ]]; then
   cd "$BUILD_WORKSPACE_DIRECTORY"
 fi
@@ -89,4 +91,4 @@ else
   PRETTIER_COMMAND=("$(rlocation buildbuddy/tools/prettier/prettier_bin_/prettier_bin)")
 fi
 
-BAZEL_BINDIR=. "${PRETTIER_COMMAND[@]}" "${paths[@]}" "$@"
+BAZEL_BINDIR=. "${PRETTIER_COMMAND[@]}" --plugin="${PLUGIN}" "${paths[@]}" "$@"
