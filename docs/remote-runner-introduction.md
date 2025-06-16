@@ -227,16 +227,31 @@ platform property. Valid values are:
 
 For Workflows, you can configure this using the `platform_properties` field.
 
+NOTE: If your workflow is triggered by a GitHub webhook event, the `GIT_REPO_DEFAULT_BRANCH`
+environment variable will be set automatically. We use this to determine whether
+the Workflow is running on a default ref. If you plan to manually dispatch
+a Workflow with the ExecuteWorkflow API or our UI, you must manually set this
+environment variable in your Workflow config (as shown below) for this to work as
+expected.
+
 ```yaml title="buildbuddy.yaml"
 actions:
   - name: "Test all targets"
     platform_properties:
       remote-snapshot-save-policy: none-available
+    env:
+      GIT_REPO_DEFAULT_BRANCH: main
     # ...
 ```
 
 For Remote Bazel, you can configure this using the
 `--runner_exec_properties=remote-snapshot-save-policy=` flag.
+
+NOTE: If your run is triggered by the BB CLI, the `GIT_REPO_DEFAULT_BRANCH`
+environment variable will be set automatically. We use this to determine whether
+the Workflow is running on a default ref. If you plan to use the `Run` API directly,
+you must manually set this environment variable in the API request for this to work as
+expected.
 
 ```bash Sample Command
 bb remote --runner_exec_properties=remote-snapshot-save-policy=none-available test //...
