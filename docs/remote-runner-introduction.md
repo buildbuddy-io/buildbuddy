@@ -205,9 +205,9 @@ platform property. Valid values are:
 - `first-non-default-ref`: Only the first run on a non-default ref will save a remote snapshot.
   All runs on default refs will save a remote snapshot.
   - This policy is applied by default.
-  - Every run on the `main` branch will save a remote snapshot.
-  - The first run on your feature branch `my-feature` can resume from the remote
-    `main` snapshot, and will save a remote snapshot for the `my-feature` ref.
+  - Every run on the default branch (Ex. `main` or `master`) will save a remote snapshot.
+  - The first run on your feature branch `my-feature` can resume from the default
+    snapshot, and will save a remote snapshot for the `my-feature` ref.
   - The second run on the `my-feature` branch will resume from the original `my-feature`
     snapshot. However it will not save a remote snapshot.
   - The third run on the `my-feature` branch will resume from the original `my-feature`
@@ -216,13 +216,13 @@ platform property. Valid values are:
 - `none-available`: A remote snapshot on a non-default ref will only be saved if
   there are no remote snapshots available. If there is any fallback snapshot,
   a remote snapshot will not be saved. All runs on default refs will save a remote snapshot.
-  - Every run on the `main` branch will save a snapshot.
+  - Every run on the default branch (Ex. `main` or `master`) will save a remote snapshot.
   - For the first run on your feature branch `my-feature`, if there is snapshot
-    for the `main` branch available, you will resume from it. Because you resumed
+    for the default branch available, you will resume from it. Because you resumed
     from a remote snapshot, a remote snapshot will not be saved.
-  - Subsequent runs on the `my-feature` branch will resume from the `main` snapshot,
+  - Subsequent runs on the `my-feature` branch will resume from the default snapshot,
     because no remote snapshots were saved for the `my-feature` branch.
-  - If there is no `main` snapshot available, then a remote snapshot will be saved
+  - If there is no default snapshot available, then a remote snapshot will be saved
     for the `my-feature` branch on its first run.
 
 For Workflows, you can configure this using the `platform_properties` field.
