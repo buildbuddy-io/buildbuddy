@@ -590,8 +590,8 @@ func resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs
 
 // ResolveArgs removes all rc-file options from the args, appends an
 // `ignore_all_rc_files` option to the startup options, parses those rc-files
-// into Configs using the default parser, and expands all config options (as
-// well as any `enable_platform_specific_config` option, if one exists) using
+// into Configs, and expands all config options (as well as any
+// `enable_platform_specific_config` option, if one exists) using
 // those configs, and returns the result.
 func (p *Parser) ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
 	ws, err := workspace.Path()
