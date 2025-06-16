@@ -173,6 +173,58 @@ the default snapshot stays up to date.
 For more technical details on our VM implementation, see our BazelCon
 talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.com/watch?v=YycEXBlv7ZA).
 
+#### Remote snapshot save policy
+
+By default, after every remote run, a snapshot is cached locally on the machine
+that ran it. Subsequent runs that are assigned to the same executor can resume
+from that snapshot. Our scheduler uses affinity routing to prioritize routing
+similar workloads to the same executor, to increase the likelihood of hitting
+a local snapshot match.
+
+Snapshots can also be cached in the remote cache. There are pros and cons to
+using remote snapshots.
+
+Local snapshots cannot be guaranteed, because the executor
+that has it cached locally may be unavailable. For example if it's fully occupied
+with other workloads or has been restarted during a release, subsequent remote
+runs will be executed on another machine that doesn't have access to the local
+cache. Using the remote cache guarantees you will always be able to access the
+latest snapshot.
+
+However snapshots can be quite large, and storing them in the remote cache
+can cause significant network transfer. Remote snapshot uploads and downloads
+are billed, and writing every snapshot to the remote cache may result in a
+high bill.
+
+We support configuring the remote snapshot save policy with the `remote-snapshot-save-policy`
+platform property. Valid values are:
+
+- `always`: Always save a remote snapshot.
+  - For performance sensitive or interactive workloads, this will ensure the latest snapshot is
+    always saved to the remote cache and will always be accessible.
+- `first-non-main-ref`: Only the first run on a non-main ref will save a remote snapshot.
+  All runs on main refs will save a remote snapshot.
+  - This policy is applied by default.
+  - Every run on the `main` branch will save a remote snapshot.
+  - The first run on your feature branch `my-feature` can resume from the remote
+    `main` snapshot, and will save a remote snapshot for the `my-feature` ref.
+  - The second run on the `my-feature` branch will resume from the original `my-feature`
+    snapshot. However it will not save a remote snapshot.
+  - The third run on the `my-feature` branch will resume from the original `my-feature`
+    snapshot. It will not resume from the second run of the `my-feature` branch, and
+    it will not save a remote snapshot.
+- `none-available`: A remote snapshot on a non-main ref will only be saved if
+  there are no remote snapshots available. If there is any fallback snapshot,
+  a remote snapshot will not be saved. All runs on main refs will save a remote snapshot.
+  - Every run on the `main` branch will save a snapshot.
+  - For the first run on your feature branch `my-feature`, if there is snapshot
+    for the `main` branch available, you will resume from it. Because you resumed
+    from a remote snapshot, a remote snapshot will not be saved.
+  - Subsequent runs on the `my-feature` branch will resume from the `main` snapshot,
+    because no remote snapshots were saved for the `my-feature` branch.
+  - If there is no `main` snapshot available, then a remote snapshot will be saved
+    for the `my-feature` branch on its first run.
+
 ### Runner recycling (macOS only)
 
 On macOS, remote runs are matched to workspaces using a simpler
