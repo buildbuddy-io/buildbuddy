@@ -423,7 +423,7 @@ func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 			return nil
 		}
 		skipRangeCache = true
-		if !status.IsOutOfRangeError(err) {
+		if !status.IsOutOfRangeError(err) && !status.IsUnavailableError(err) {
 			return err
 		}
 		lastError = err
