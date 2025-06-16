@@ -2675,7 +2675,7 @@ func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddRepl
 			// If the range was added to the node, but the range descriptor was
 			// not successfully updated to meta range, don't consider it as an
 			// overlap range.
-			if overlap.GetRangeId() != remoteRD.GetRangeId() || bytes.Equal(overlap.GetStart(), remoteRD.GetStart()) || bytes.Equal(overlap.GetEnd(), remoteRD.GetEnd()) {
+			if overlap.GetRangeId() != remoteRD.GetRangeId() || !bytes.Equal(overlap.GetStart(), remoteRD.GetStart()) || !bytes.Equal(overlap.GetEnd(), remoteRD.GetEnd()) {
 				return status.FailedPreconditionErrorf("node %q has overlapping ranges, e.g. range_id: %d: [%q, %q)", node.GetNhid(), overlap.GetRangeId(), overlap.GetStart(), overlap.GetEnd())
 			}
 		}
