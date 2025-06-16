@@ -906,8 +906,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/cloudflare/circl",
         patch_args = ["-p1"],
         patches = ["@{}//buildpatches:cloudflare_circl.patch".format(workspace_name)],
-        sum = "h1:qlCDlTPz2n9fu58M0Nh1J/JzcFpfgkFHHX3O35r5vcU=",
-        version = "v1.3.7",
+        sum = "h1:zqIqSPIndyBh1bjLVVDHMPpVKqp8Su/V+6MeDzzQBQ0=",
+        version = "v1.6.1",
     )
     go_repository(
         name = "com_github_cloudflare_golz4",
