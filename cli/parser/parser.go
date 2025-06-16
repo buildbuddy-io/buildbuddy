@@ -27,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 
-	helpoptdef "github.com/buildbuddy-io/buildbuddy/cli/help/option_definitions"
 	logoptdef "github.com/buildbuddy-io/buildbuddy/cli/log/option_definitions"
 	watchoptdef "github.com/buildbuddy-io/buildbuddy/cli/watcher/option_definitions"
 
@@ -36,14 +35,14 @@ import (
 )
 
 var (
-	nativeDefinitions = map[string]*options.Definition {
-			// Set to print debug output for the bb CLI.
-			logoptdef.Verbose.Name(): logoptdef.Verbose,
-			// Reinvokes the CLI as a subprocess on changes to source files.
-			watchoptdef.Watch.Name(): watchoptdef.Watch,
-			// Allow specifying --watcher_flags to forward args to the watcher.
-			// Mostly useful for debugging, e.g. --watcher_flags='--verbose'
-			watchoptdef.WatcherFlags.Name(): watchoptdef.WatcherFlags,
+	nativeDefinitions = map[string]*options.Definition{
+		// Set to print debug output for the bb CLI.
+		logoptdef.Verbose.Name(): logoptdef.Verbose,
+		// Reinvokes the CLI as a subprocess on changes to source files.
+		watchoptdef.Watch.Name(): watchoptdef.Watch,
+		// Allow specifying --watcher_flags to forward args to the watcher.
+		// Mostly useful for debugging, e.g. --watcher_flags='--verbose'
+		watchoptdef.WatcherFlags.Name(): watchoptdef.WatcherFlags,
 	}
 
 	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
