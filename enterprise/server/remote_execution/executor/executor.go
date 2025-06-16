@@ -513,15 +513,15 @@ func (m *ActionMetrics) Report(ctx context.Context) {
 	}).Inc()
 	md := m.Result.GetExecutionMetadata()
 	if md != nil {
-		observeStageDuration(groupID, "queued", md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
-		observeStageDuration(groupID, "pull_image", md.GetWorkerStartTimestamp(), md.GetInputFetchStartTimestamp())
-		observeStageDuration(groupID, "input_fetch", md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
-		observeStageDuration(groupID, "execution", md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
-		observeStageDuration(groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
-		observeStageDuration(groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
+		observeStageDuration(ctx, groupID, "queued", md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
+		observeStageDuration(ctx, groupID, "pull_image", md.GetWorkerStartTimestamp(), md.GetInputFetchStartTimestamp())
+		observeStageDuration(ctx, groupID, "input_fetch", md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
+		observeStageDuration(ctx, groupID, "execution", md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
+		observeStageDuration(ctx, groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
+		observeStageDuration(ctx, groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
 	}
 	if md != nil && m.AuxMetadata != nil {
-		observeStageDuration(groupID, "worker_queued", m.AuxMetadata.GetWorkerQueuedTimestamp(), md.GetWorkerStartTimestamp())
+		observeStageDuration(ctx, groupID, "worker_queued", m.AuxMetadata.GetWorkerQueuedTimestamp(), md.GetWorkerStartTimestamp())
 	}
 	// If the isolation type supports it, report PSI metrics.
 	if md != nil && (m.Isolation == string(platform.PodmanContainerType) || m.Isolation == string(platform.OCIContainerType)) {
@@ -563,7 +563,7 @@ func incompleteExecutionError(ctx context.Context, exitCode int, err error) erro
 	return err
 }
 
-func observeStageDuration(groupID string, stage string, start *timestamppb.Timestamp, end *timestamppb.Timestamp) {
+func observeStageDuration(ctx context.Context, groupID string, stage string, start *timestamppb.Timestamp, end *timestamppb.Timestamp) {
 	startTime := start.AsTime()
 	if startTime.IsZero() {
 		return
@@ -573,10 +573,13 @@ func observeStageDuration(groupID string, stage string, start *timestamppb.Times
 		return
 	}
 	duration := endTime.Sub(startTime)
+	if duration > 20*time.Hour {
+		log.CtxInfof(ctx, "Stage %v took longer than 20h. Duration = %v; Start = %v; End = %v", stage, duration, start, end)
+	}
 	metrics.RemoteExecutionExecutedActionMetadataDurationsUsec.With(prometheus.Labels{
 		metrics.GroupID:                  metricsutil.FilteredGroupIDLabel(groupID),
 		metrics.ExecutedActionStageLabel: stage,
-	}).Observe(float64(duration / time.Microsecond))
+	}).Observe(float64(duration.Microseconds()))
 }
 
 func observePSI(resourceLabel string, psi *repb.PSI, execDuration time.Duration) {
