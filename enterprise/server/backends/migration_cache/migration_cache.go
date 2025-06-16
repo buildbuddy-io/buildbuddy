@@ -302,6 +302,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 			dstContains, dstErr := conf.dest.Contains(ctx, r)
 			if dstErr != nil {
 				log.Warningf("Migration dest %v contains failed: %s", r.GetDigest(), dstErr)
+				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 			} else if srcContains && !dstContains {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "contains",
@@ -310,6 +311,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 				if mc.logNotFoundErrors {
 					log.Warningf("Migration digest %v src contains, dest does not", r.GetDigest())
 				}
+				mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
 			} else if srcContains && dstContains {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "contains",
@@ -359,6 +361,9 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 					metrics.CacheRequestType: "metadata",
 					metrics.GroupID:          groupID(ctx),
 				}).Inc()
+				mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
+			} else {
+				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 			}
 			if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
 				log.Warningf("Migration dest %v metadata failed: %s", r.GetDigest(), dstErr)
