@@ -223,8 +223,8 @@ The following properties allow customizing the behavior of the runner:
   reduces action hermeticity. Available options are `true` and `false`.
 - `runner-recycling-max-wait`: when recycling a runner, how long to wait for a
   recycled runner before also trying to schedule on another machine. Values must
-  be formatted as positive durations. For example, `500ms` or `3s`. This value
-  may be ignored or clamped to a specific range.
+  be formatted as positive durations. For example, `500ms` or `3s`. This is a best-effort
+  mechanism and the server may choose to ignore or clamp this value to a specific range.
 - `preserve-workspace`: only applicable when `"recycle-runner": "true"` is set. Whether to re-use the Workspace directory from the previous action. Available options are `true` and `false`.
 - `clean-workspace-inputs`: a comma-separated list of glob values that
   decides which files in the action's input tree to clean up before the
