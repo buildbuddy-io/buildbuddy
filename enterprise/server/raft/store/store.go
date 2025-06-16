@@ -2667,20 +2667,14 @@ func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddRepl
 		if err != nil {
 			return status.InternalErrorf("failed to check range overlap on node %q: %s", node.GetNhid(), err)
 		}
-		hasOverlap := false
-		if len(rsp.GetRanges()) > 0 {
-			hasOverlap = true
-			if len(rsp.GetRanges()) == 1 {
-				overlapped := rsp.GetRanges()[0]
-				if overlapped.GetRangeId() == remoteRD.GetRangeId() && bytes.Equal(overlapped.GetStart(), remoteRD.GetStart()) && bytes.Equal(overlapped.GetEnd(), remoteRD.GetEnd()) {
-					// The range was added to the node; but the range descriptor
-					// was not successfully updated to meta range.
-					hasOverlap = false
-				}
+
+		for _, overlap := range rsp.GetRanges() {
+			// If the range was added to the node, but the range descriptor was
+			// not successfully updated to meta range, don't consider it as an
+			// overlap range.
+			if overlap.GetRangeId() != remoteRD.GetRangeId() || bytes.Equal(overlap.GetStart(), remoteRD.GetStart()) || bytes.Equal(overlap.GetEnd(), remoteRD.GetEnd()) {
+				return status.FailedPreconditionErrorf("node %q has overlapping ranges, e.g. range_id: %d: [%q, %q)", node.GetNhid(), overlap.GetRangeId(), overlap.GetStart(), overlap.GetEnd())
 			}
-		}
-		if hasOverlap {
-			return status.FailedPreconditionErrorf("node %q has overlapping ranges, e.g. [%q, %q)", node.GetNhid(), rsp.GetRanges()[0].GetStart(), rsp.GetRanges()[0].GetEnd())
 		}
 	}
 
