@@ -57,7 +57,12 @@ func groupIDStringFromContext(ctx context.Context) string {
 	return interfaces.AuthAnonymousUser
 }
 
-var DownloadDeduper = singleflight.Group[string, *FilePointer]{}
+type downloadDedupeKey struct {
+	groupID string
+	key     fetchKey
+}
+
+var DownloadDeduper = singleflight.Group[downloadDedupeKey, *FilePointer]{}
 
 type TransferInfo struct {
 	FileCount        int64
@@ -664,9 +669,20 @@ func linkFileFromFileCache(ctx context.Context, fp *FilePointer, fc interfaces.F
 	return fc.FastLinkFile(ctx, fp.FileNode, fp.FullPath), nil
 }
 
+type fetchKey struct {
+	digest.Key
+	// The file cache treats executable and non-executable files as separate
+	// entries since the attributes are shared when hardlinking.
+	executable bool
+}
+
+func newFetchKey(d *repb.Digest, executable bool) fetchKey {
+	return fetchKey{digest.NewKey(d), executable}
+}
+
 // FileMap is a map of digests to file pointers containing the contents
 // addressed by the digest.
-type FileMap map[digest.Key][]*FilePointer
+type FileMap map[fetchKey][]*FilePointer
 
 type BatchFileFetcher struct {
 	ctx            context.Context
@@ -747,27 +763,29 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 			return digest.MissingDigestError(res.Digest)
 		}
 		d := res.Digest
-		ptrs, ok := filesToFetch[digest.NewKey(d)]
-		if !ok {
-			return status.InternalErrorf("Fetched unrequested file: %q", d)
-		}
-		if len(ptrs) == 0 {
-			continue
-		}
-		ptr := ptrs[0]
-		if err := writeFile(ptr, res.Data); err != nil {
-			return err
-		}
-		if fileCache != nil {
-			if err := fileCache.AddFile(ff.ctx, ptr.FileNode, ptr.FullPath); err != nil {
-				log.Warningf("Error adding file to filecache: %s", err)
+		for _, executable := range []bool{false, true} {
+			ptrs, ok := filesToFetch[newFetchKey(d, executable)]
+			if !ok {
+				continue
 			}
-		}
-		// Only need to write the first file explicitly; the rest of the files can
-		// be fast-copied from the first.
-		for _, dest := range ptrs[1:] {
-			if err := copyFile(ptr, dest, opts); err != nil {
+			if len(ptrs) == 0 {
+				continue
+			}
+			ptr := ptrs[0]
+			if err := writeFile(ptr, res.Data); err != nil {
 				return err
+			}
+			if fileCache != nil {
+				if err := fileCache.AddFile(ff.ctx, ptr.FileNode, ptr.FullPath); err != nil {
+					log.Warningf("Error adding file to filecache: %s", err)
+				}
+			}
+			// Only need to write the first file explicitly; the rest of the files can
+			// be fast-copied from the first.
+			for _, dest := range ptrs[1:] {
+				if err := copyFile(ptr, dest, opts); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -785,7 +803,7 @@ func (ff *BatchFileFetcher) linkFromFileCache(filePointers []*FilePointer, opts 
 }
 
 type digestToFetch struct {
-	d   *repb.Digest
+	key fetchKey
 	fps []*FilePointer
 }
 
@@ -824,7 +842,6 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		// Attempt to link digests from the file cache. Digests that are not
 		// present in the filecache will be added to the fetchQueue channel.
 		for dk, filePointers := range filesToFetch {
-			d := dk.ToDigest()
 			filePointers := filePointers
 
 			rn := digest.NewCASResourceName(dk.ToDigest(), ff.instanceName, ff.digestFunction)
@@ -846,7 +863,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 				}
 
 				// Otherwise, queue the digest to be fetched.
-				fetchQueue <- digestToFetch{d: d, fps: filePointers}
+				fetchQueue <- digestToFetch{key: dk, fps: filePointers}
 				return nil
 			})
 		}
@@ -863,10 +880,10 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 			// If the file exceeds our gRPC max size, it'll never
 			// fit in the batch call, so we'll have to bytestream
 			// it.
-			size := f.d.GetSizeBytes()
+			size := f.key.SizeBytes
 			if size > rpcutil.GRPCMaxSizeBytes || ff.env.GetContentAddressableStorageClient() == nil {
 				eg.Go(func() error {
-					return ff.bytestreamReadFiles(ctx, ff.instanceName, f.d, f.fps, opts)
+					return ff.bytestreamReadFiles(ctx, ff.instanceName, f.key, f.fps, opts)
 				})
 				continue
 			}
@@ -885,7 +902,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 
 			// Add the file to our current batch request and
 			// increment our size.
-			req.Digests = append(req.Digests, f.d)
+			req.Digests = append(req.Digests, f.key.ToDigest())
 			currentBatchRequestSize += size
 		}
 
@@ -919,7 +936,7 @@ func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
 
 // bytestreamReadFiles reads the given digest from the bytestream and creates
 // files pointing to those contents.
-func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceName string, d *repb.Digest, fps []*FilePointer, opts *DownloadTreeOpts) error {
+func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceName string, key fetchKey, fps []*FilePointer, opts *DownloadTreeOpts) error {
 	bsClient := ff.env.GetByteStreamClient()
 	if bsClient == nil {
 		return status.FailedPreconditionErrorf("cannot bytestream read files when bsClient is not set")
@@ -929,7 +946,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		return nil
 	}
 
-	dedupeKey := groupIDStringFromContext(ctx) + "-" + d.GetHash()
+	dedupeKey := downloadDedupeKey{groupID: groupIDStringFromContext(ctx), key: key}
 	fp, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
 		fp0 := fps[0]
 		var mode os.FileMode = 0644
@@ -949,7 +966,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		}
 
 		ff.statsMu.Lock()
-		ff.stats.FileDownloadSizeBytes += d.GetSizeBytes()
+		ff.stats.FileDownloadSizeBytes += key.SizeBytes
 		ff.stats.FileDownloadCount += 1
 		ff.statsMu.Unlock()
 
@@ -1223,7 +1240,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	}
 
 	dirPerms := fs.FileMode(0777)
-	filesToFetch := make(map[digest.Key][]*FilePointer, 0)
+	filesToFetch := make(map[fetchKey][]*FilePointer, 0)
 	var fetchDirFn func(dir *repb.Directory, parentDir string) error
 	fetchDirFn = func(dir *repb.Directory, parentDir string) error {
 		for _, fileNode := range dir.GetFiles() {
@@ -1238,7 +1255,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 				if ok && nodesEqual(node, skippedNode) {
 					return
 				}
-				dk := digest.NewKey(d)
+				dk := newFetchKey(d, node.IsExecutable)
 				filesToFetch[dk] = append(filesToFetch[dk], &FilePointer{
 					FileNode:     node,
 					FullPath:     fullPath,
