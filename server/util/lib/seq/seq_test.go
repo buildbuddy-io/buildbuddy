@@ -18,14 +18,22 @@ func TestSequence(t *testing.T) {
 	s := seq.Sequence[int](input)
 	assert.ElementsMatch(t, expected, slices.Collect(s))
 	assert.ElementsMatch(t, originalInput, input)
+	// test statelessness
+	assert.ElementsMatch(t, expected, slices.Collect(s))
 
 	s = seq.Sequence[int](slices.Values(input))
-	assert.ElementsMatch(t, input, slices.Collect(s))
+	assert.ElementsMatch(t, expected, slices.Collect(s))
+	// test statelessness
+	assert.ElementsMatch(t, expected, slices.Collect(s))
 
 	s = seq.Sequence[int](((iter.Seq[int])(nil)))
 	assert.ElementsMatch(t, make([]int, 0), slices.Collect(s))
+	// test statelessness
+	assert.ElementsMatch(t, make([]int, 0), slices.Collect(s))
 
 	s = seq.Sequence[int]((([]int)(nil)))
+	assert.ElementsMatch(t, make([]int, 0), slices.Collect(s))
+	// test statelessness
 	assert.ElementsMatch(t, make([]int, 0), slices.Collect(s))
 }
 
@@ -79,21 +87,29 @@ func TestChain(t *testing.T) {
 			assert.ElementsMatch(t, append(tc.s1, tc.s2...), slices.Collect(chained))
 			assert.ElementsMatch(t, originalS1, tc.s1)
 			assert.ElementsMatch(t, originalS2, tc.s2)
+			// test statelessness
+			assert.ElementsMatch(t, append(tc.s1, tc.s2...), slices.Collect(chained))
 
 			chained = seq.Chain[string](tc.s1, slices.Values(tc.s2))
 			assert.ElementsMatch(t, append(tc.s1, tc.s2...), slices.Collect(chained))
 			assert.ElementsMatch(t, originalS1, tc.s1)
 			assert.ElementsMatch(t, originalS2, tc.s2)
+			// test statelessness
+			assert.ElementsMatch(t, append(tc.s1, tc.s2...), slices.Collect(chained))
 
 			chained = seq.Chain[string](slices.Values(tc.s1), tc.s2)
 			assert.ElementsMatch(t, append(tc.s1, tc.s2...), slices.Collect(chained))
 			assert.ElementsMatch(t, originalS1, tc.s1)
 			assert.ElementsMatch(t, originalS2, tc.s2)
+			// test statelessness
+			assert.ElementsMatch(t, append(tc.s1, tc.s2...), slices.Collect(chained))
 
 			chained = seq.Chain[string](slices.Values(tc.s1), slices.Values(tc.s2))
 			assert.ElementsMatch(t, append(tc.s1, tc.s2...), slices.Collect(chained))
 			assert.ElementsMatch(t, originalS1, tc.s1)
 			assert.ElementsMatch(t, originalS2, tc.s2)
+			// test statelessness
+			assert.ElementsMatch(t, append(tc.s1, tc.s2...), slices.Collect(chained))
 		})
 	}
 }
@@ -121,7 +137,12 @@ func TestFmap(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			originalInput := slices.Clone(tc.input)
+
 			mapped := seq.Fmap(tc.input, tc.f)
+			assert.ElementsMatch(t, slices.Collect(mapped), tc.expected)
+			assert.ElementsMatch(t, originalInput, tc.input)
+			// test statelessness
 			assert.ElementsMatch(t, slices.Collect(mapped), tc.expected)
 		})
 	}
@@ -133,10 +154,13 @@ func TestFmap(t *testing.T) {
 		mapped := seq.Fmap(input, strconv.Itoa)
 		assert.ElementsMatch(t, expected, slices.Collect(mapped))
 		assert.ElementsMatch(t, originalInput, input)
+		// test statelessness
+		assert.ElementsMatch(t, expected, slices.Collect(mapped))
 
 		mapped = seq.Fmap(slices.Values(input), strconv.Itoa)
 		assert.ElementsMatch(t, expected, slices.Collect(mapped))
-		assert.ElementsMatch(t, originalInput, input)
+		// test statelessness
+		assert.ElementsMatch(t, expected, slices.Collect(mapped))
 	})
 }
 
@@ -225,8 +249,12 @@ func TestTruncate(t *testing.T) {
 			truncated := seq.Truncate[string](tc.input, tc.n)
 			assert.ElementsMatch(t, tc.expected, slices.Collect(truncated))
 			assert.ElementsMatch(t, originalInput, tc.input)
+			// test statelessness
+			assert.ElementsMatch(t, tc.expected, slices.Collect(truncated))
 
 			truncated = seq.Truncate[string](slices.Values(tc.input), tc.n)
+			assert.ElementsMatch(t, tc.expected, slices.Collect(truncated))
+			// test statelessness
 			assert.ElementsMatch(t, tc.expected, slices.Collect(truncated))
 		})
 	}
@@ -315,8 +343,28 @@ func TestRepeat(t *testing.T) {
 			}
 			assert.Equalf(t, len(tc.expected), i, "Sequence should repeat forever, but was instead %d elements in length", i)
 			assert.ElementsMatch(t, originalInput, tc.input)
+			// test statelessness
+			i = 0
+			for e := range repeated {
+				if i == len(tc.expected) {
+					break
+				}
+				assert.Equalf(t, tc.expected[i], e, "at element %d, '%s' was expected, but '%s' was provided.", i, tc.expected[i], e)
+				i++
+			}
+			assert.Equalf(t, len(tc.expected), i, "Sequence should repeat forever, but was instead %d elements in length", i)
 
 			repeated = seq.Repeat[string](slices.Values(tc.input))
+			i = 0
+			for e := range repeated {
+				if i == len(tc.expected) {
+					break
+				}
+				assert.Equalf(t, tc.expected[i], e, "at element %d, '%s' was expected, but '%s' was provided.", i, tc.expected[i], e)
+				i++
+			}
+			assert.Equalf(t, len(tc.expected), i, "Sequence should repeat forever, but was instead %d elements in length", i)
+			// test statelessness
 			i = 0
 			for e := range repeated {
 				if i == len(tc.expected) {
@@ -336,8 +384,16 @@ func TestRepeat(t *testing.T) {
 			assert.FailNowf(t, "sequence should be zero-length, but instead contained element '%s'.", e)
 		}
 		assert.ElementsMatch(t, originalInput, input)
+		// test statelessness
+		for e := range repeated {
+			assert.FailNowf(t, "sequence should be zero-length, but instead contained element '%s'.", e)
+		}
 
 		repeated = seq.Repeat[string](slices.Values(input))
+		for e := range repeated {
+			assert.FailNowf(t, "sequence should be zero-length, but instead contained element '%s'.", e)
+		}
+		// test statelessness
 		for e := range repeated {
 			assert.FailNowf(t, "sequence should be zero-length, but instead contained element '%s'.", e)
 		}
@@ -349,8 +405,16 @@ func TestRepeat(t *testing.T) {
 			assert.FailNowf(t, "sequence should be zero-length, but instead contained element '%s'.", e)
 		}
 		assert.ElementsMatch(t, originalInput, input)
+		// test statelessness
+		for e := range repeated {
+			assert.FailNowf(t, "sequence should be zero-length, but instead contained element '%s'.", e)
+		}
 
 		repeated = seq.Repeat[string](slices.Values(input))
+		for e := range repeated {
+			assert.FailNowf(t, "sequence should be zero-length, but instead contained element '%s'.", e)
+		}
+		// test statelessness
 		for e := range repeated {
 			assert.FailNowf(t, "sequence should be zero-length, but instead contained element '%s'.", e)
 		}
@@ -481,8 +545,12 @@ func TestRepeatN(t *testing.T) {
 			repeated := seq.RepeatN[string](tc.input, tc.n)
 			assert.ElementsMatch(t, tc.expected, slices.Collect(repeated))
 			assert.ElementsMatch(t, originalInput, tc.input)
+			// test statelessness
+			assert.ElementsMatch(t, tc.expected, slices.Collect(repeated))
 
 			repeated = seq.RepeatN[string](slices.Values(tc.input), tc.n)
+			assert.ElementsMatch(t, tc.expected, slices.Collect(repeated))
+			// test statelessness
 			assert.ElementsMatch(t, tc.expected, slices.Collect(repeated))
 		})
 	}
@@ -550,7 +618,6 @@ func TestAccumulate(t *testing.T) {
 		assert.Equal(t, expected, accumulated)
 		assert.Equal(t, input, originalInput)
 
-		input = []int{2, 7, 1, 8, 2, 8}
 		accumulated = seq.Accumulate(
 			"foo ",
 			slices.Values(input),
@@ -920,8 +987,12 @@ func TestFilter(t *testing.T) {
 			filtered := seq.Filter(tc.input, tc.filter)
 			assert.ElementsMatch(t, tc.expected, slices.Collect(filtered))
 			assert.ElementsMatch(t, originalInput, tc.input)
+			// test statelessness
+			assert.ElementsMatch(t, tc.expected, slices.Collect(filtered))
 
 			filtered = seq.Filter(slices.Values(tc.input), tc.filter)
+			assert.ElementsMatch(t, tc.expected, slices.Collect(filtered))
+			// test statelessness
 			assert.ElementsMatch(t, tc.expected, slices.Collect(filtered))
 		})
 	}
