@@ -1,18 +1,22 @@
 package main
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/metadata"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/picker"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/runscript"
@@ -24,17 +28,9 @@ import (
 
 	register_cli_commands "github.com/buildbuddy-io/buildbuddy/cli/cli_command/register"
 	sidecarmain "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar"
+	helpoptdef "github.com/buildbuddy-io/buildbuddy/cli/help/option_definitions"
 	logoptdef "github.com/buildbuddy-io/buildbuddy/cli/log/option_definitions"
 	watchoptdef "github.com/buildbuddy-io/buildbuddy/cli/watcher/option_definitions"
-)
-
-var (
-	// These flags configure the cli at large, and don't apply to any specific
-	// cli command
-	globalCliFlags = map[string]struct{}{
-		// Set to print verbose cli logs
-		"verbose": {},
-	}
 )
 
 const (
@@ -139,6 +135,24 @@ func run() (exitCode int, err error) {
 		return command.Handler(args)
 	}
 
+	// Since we do overly-permissive parsing for help commands to try to reduce
+	// frustration when learning how to use the CLI, we should attempt to parse
+	// this as a help command.
+	if helpArgs, err := interpretAsHelpCommand(os.Args[1:]); err != nil {
+		return -1, err
+	} else if helpArgs.GetCommand() == "help" {
+		// Handle help command if applicable.
+		Configure(helpArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
+		StartupDebug(start)
+		return runHelp(helpArgs)
+	}
+
+	if _, err := bazelisk.ResolveVersion(); err != nil {
+		log.Printf("Failed to resolve bazel version: %s", err)
+	}
+
+	// This was neither a bb CLI command nor a help command; interpret it as a
+	// bazel command.
 	parsedArgs, err := parser.ParseArgs(os.Args[1:])
 	if err != nil {
 		return -1, err
@@ -149,17 +163,11 @@ func run() (exitCode int, err error) {
 	if err != nil {
 		return -1, err
 	}
-	args := parsedArgs.Canonicalized().Format()
-
-	// Handle help command if applicable.
-	exitCode, err = help.HandleHelp(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
+	canonicalizedArgs := parsedArgs.Canonicalized()
 
 	// If none of the CLI subcommand handlers were triggered, assume we should
 	// handle it as a bazel command.
-	return handleBazelCommand(start, args, originalArgs)
+	return handleBazelCommand(start, canonicalizedArgs.Format(), originalArgs)
 }
 
 // StripBBOptionsAndCommand strips the bb options from the beginning of a bb
@@ -188,6 +196,84 @@ func StripBBOptionsAndCommand(args []string) ([]options.Option, *cli_command.Com
 		return opts, command, args[argIndex:]
 	}
 	return nil, nil, args
+}
+
+func interpretAsHelpCommand(args []string) (*parsed.OrderedArgs, error) {
+	helpParser, err := parser.GetHelpParser()
+	if err != nil {
+		return nil, err
+	}
+	helpParser.CommandOptionParser.Permissive = true
+	helpArgs, err := helpParser.ParseArgs(args)
+	if err != nil {
+		return nil, err
+	}
+
+	helpOptionValue, err := options.AccumulateValues[*parsed.IndexedOption](
+		false,
+		slices.Concat(
+			helpArgs.RemoveStartupOptions(helpoptdef.Help.Name()),
+			helpArgs.RemoveCommandOptions(helpoptdef.Help.Name()),
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if helpOptionValue {
+		i, _ := parsed.Find[*parsed.Command](helpArgs.Args)
+		if i == -1 {
+			i = len(helpArgs.Args)
+		}
+		helpParser.CommandOptionParser.Permissive = false
+		reparsed, err := helpParser.ParseArgs(
+			(&parsed.OrderedArgs{
+				Args: append(
+					[]arguments.Argument{&arguments.PositionalArgument{Value: "help"}},
+					helpArgs.Args[i:]...,
+				),
+			}).Format(),
+		)
+		if err != nil {
+			return nil, err
+		}
+		helpArgs.Args = append(arguments.FromConcrete(helpArgs.Args[:i]), reparsed.Args...)
+	}
+	return helpArgs, nil
+}
+
+func runHelp(args *parsed.OrderedArgs) (int, error) {
+	// Let's extract any command options from the startup options
+	helpParser, err := parser.GetHelpParser()
+	if err != nil {
+		return -1, err
+	}
+	startupCommandOptions := args.RemoveStartupOptions(slices.Collect(maps.Keys(helpParser.CommandOptionParser.ByName))...)
+	var toPrepend []arguments.Argument
+	for _, indexed := range startupCommandOptions {
+		o := indexed.Option
+		o.SetDefinition(helpParser.CommandOptionParser.ByName[o.Name()])
+		toPrepend = append(toPrepend, o)
+	}
+	// Now prepend any command options extracted from the startup options to the
+	// command options.
+	if len(toPrepend) != 0 {
+		startupOpts := args.GetStartupOptions()
+		if len(startupOpts) == len(args.Args) {
+			// we need a command if we want command options
+			args.Append(&arguments.PositionalArgument{Value: "help"})
+		}
+		args.Args = slices.Concat(
+			arguments.FromConcrete(startupOpts),
+			args.Args[len(startupOpts):len(startupOpts)+1],
+			toPrepend,
+			args.Args[len(startupOpts)+1:],
+		)
+	}
+	args, err = helpParser.ResolveArgs(args)
+	if err != nil {
+		return -1, err
+	}
+	return help.HandleHelp(args)
 }
 
 // handleBazelCommand handles a native bazel command (i.e. commands that are
