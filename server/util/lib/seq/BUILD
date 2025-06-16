@@ -9,10 +9,10 @@ go_library(
 
 go_test(
     name = "seq_test",
+    size = "small",
     srcs = ["seq_test.go"],
     deps = [
         ":seq",
         "@com_github_stretchr_testify//assert",
     ],
-    size = "small",
 )

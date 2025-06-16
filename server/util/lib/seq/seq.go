@@ -208,7 +208,7 @@ func Accumulate[E any, V any, S Sequenceable[E]](init V, s S, f func(V, E) V) V 
 
 // Any is a special-case of Accumulate that returns true if the passed function
 // returns true for any of the elements in the passed sequence. It will
-// short-circuit, skipping processing the rest of the list, as soon as it finds 
+// short-circuit, skipping processing the rest of the list, as soon as it finds
 // an element for which the passed function returns true.
 func Any[E any, S Sequenceable[E]](s S, f func(E) bool) bool {
 	for e := range Sequence[E](s) {
@@ -221,7 +221,7 @@ func Any[E any, S Sequenceable[E]](s S, f func(E) bool) bool {
 
 // None is a special-case of Accumulate that returns true if the passed function
 // returns false for all of the elements in the passed sequence. It will
-// short-circuit, skipping processing the rest of the list, as soon as it finds 
+// short-circuit, skipping processing the rest of the list, as soon as it finds
 // an element for which the passed function returns true.
 func None[E any, S Sequenceable[E]](s S, f func(E) bool) bool {
 	return !Any(s, f)
@@ -229,7 +229,7 @@ func None[E any, S Sequenceable[E]](s S, f func(E) bool) bool {
 
 // All is a special-case of Accumulate that returns true if the passed function
 // returns true for all of the elements in the passed sequence. It will
-// short-circuit, skipping processing the rest of the list, as soon as it finds 
+// short-circuit, skipping processing the rest of the list, as soon as it finds
 // an element for which the passed function returns false.
 func All[E any, S Sequenceable[E]](s S, f func(E) bool) bool {
 	return !Any(s, func(e E) bool { return !f(e) })
