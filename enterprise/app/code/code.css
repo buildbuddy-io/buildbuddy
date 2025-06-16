@@ -7,6 +7,54 @@
   overflow: hidden;
 }
 
+.code-hover:hover {
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.code-search-xrefs {
+  height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 2px solid #fafafa
+}
+
+.xrefs-header {
+  padding: 10px;
+  background-color: #d2e3fc;
+  color: #1967d2;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.xrefs-file {
+  cursor: pointer;
+  color: #185abc;
+  font-size: 12px;
+  padding: 5px 30px;
+}
+
+.xrefs-category {
+  background-color: #f8f9fa;
+  color: #202124;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+.xrefs-snippet {
+  font-family: monospace;
+  color: #202124;
+  font-size: 12px;
+  line-height: 20px;
+  padding: 0 40px 10px;
+  cursor: pointer;
+}
+
+.xrefs-snippet-line {
+  padding: 0 10px 0 0;
+  color: #185abc;
+}
+
 .code-menu {
   height: 60px;
   flex-shrink: 0;
