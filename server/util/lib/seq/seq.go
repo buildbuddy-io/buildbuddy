@@ -3,6 +3,12 @@
 // that it turns out that not all of a list was needed, as these functions
 // evaluate the sequences they are passed lazily and do not allocate slices for
 // intermediary values.
+// 
+// Guarantees:
+// - All sequences returned by functions in this library are stateless as long
+// as the parameters passed to the functions are stateless.
+// - No function in this library will iterate over a passed sequence more than
+// once.
 package seq
 
 import (
