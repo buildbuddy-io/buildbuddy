@@ -60,7 +60,7 @@ go_test(
     name = "store_test",
     srcs = ["store_test.go"],
     exec_properties = {
-        "test.EstimatedComputeUnits": "8",
+        "test.EstimatedComputeUnits": "10",
         "test.workload-isolation-type": "firecracker",
     },
     shard_count = 8,

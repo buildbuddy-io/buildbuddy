@@ -57,7 +57,8 @@ func addNonVoting(t *testing.T, ts *testutil.TestingStore, ctx context.Context, 
 	membership, err := ts.GetMembership(ctx, rangeID)
 	require.NoError(t, err)
 	ccid := membership.ConfigChangeID
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	maxSingleOpTimeout := 3 * time.Second
+	err = client.RunNodehostFn(ctx, maxSingleOpTimeout, func(ctx context.Context) error {
 		return ts.NodeHost().SyncRequestAddNonVoting(ctx, rangeID, replicaID, nhid, ccid)
 	})
 	require.NoError(t, err)
@@ -365,6 +366,9 @@ func TestAddNodeToCluster(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -536,7 +540,7 @@ func TestAddRangeBack(t *testing.T) {
 			ReplicaId: replicaToRemove.GetReplicaId(),
 			Range:     rd,
 		})
-		if rsp != nil {
+		if removeDataRsp.GetRange() != nil {
 			rd = removeDataRsp.GetRange()
 		}
 		if err != nil {
@@ -1009,7 +1013,8 @@ func readSessionIDs(t *testing.T, ctx context.Context, rangeID uint64, store *te
 	}).ToProto()
 	require.NoError(t, err)
 
-	rsp, err := client.SyncReadLocal(ctx, store.NodeHost(), rangeID, req)
+	maxSingleOpTimeout := 3 * time.Second
+	rsp, err := client.SyncReadLocal(ctx, store.NodeHost(), rangeID, req, maxSingleOpTimeout)
 	require.NoError(t, err)
 	readBatch := rbuilder.NewBatchResponseFromProto(rsp)
 	scanRsp, err := readBatch.ScanResponse(0)
@@ -1182,6 +1187,10 @@ func TestUpReplicate(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1258,6 +1267,7 @@ func TestDownReplicate(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1396,6 +1406,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1466,6 +1477,7 @@ func TestRemoveDeadReplica(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1518,6 +1530,7 @@ func TestRebalance(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
