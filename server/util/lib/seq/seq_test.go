@@ -594,11 +594,11 @@ func TestAccumulate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			originalInput := slices.Clone(tc.input)
 
-			accumulated := seq.Accumulate(tc.init, tc.input, tc.f)
+			accumulated := seq.Accumulate(tc.input, tc.init, tc.f)
 			assert.Equal(t, tc.expected, accumulated)
 			assert.Equal(t, tc.input, originalInput)
 
-			accumulated = seq.Accumulate(tc.init, slices.Values(tc.input), tc.f)
+			accumulated = seq.Accumulate(slices.Values(tc.input), tc.init, tc.f)
 			assert.Equal(t, tc.expected, accumulated)
 			assert.Equal(t, tc.input, originalInput)
 		})
@@ -609,8 +609,8 @@ func TestAccumulate(t *testing.T) {
 		expected := "foo 271828"
 
 		accumulated := seq.Accumulate(
-			"foo ",
 			input,
+			"foo ",
 			func(s string, i int) string {
 				return s + strconv.Itoa(i)
 			},
@@ -619,8 +619,8 @@ func TestAccumulate(t *testing.T) {
 		assert.Equal(t, input, originalInput)
 
 		accumulated = seq.Accumulate(
-			"foo ",
 			slices.Values(input),
+			"foo ",
 			func(s string, i int) string {
 				return s + strconv.Itoa(i)
 			},

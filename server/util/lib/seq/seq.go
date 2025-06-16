@@ -224,7 +224,7 @@ func Sum[E any, S Sequenceable[E]](s S, f func(E, E) E) E {
 
 // Accumulate accumulates all of the elements in the passed sequence into a
 // single value using the passed function and initial value.
-func Accumulate[E any, V any, S Sequenceable[E]](init V, s S, f func(V, E) V) V {
+func Accumulate[E any, V any, S Sequenceable[E]](s S, init V, f func(V, E) V) V {
 	v := init
 	for e := range Sequence[E](s) {
 		v = f(v, e)
