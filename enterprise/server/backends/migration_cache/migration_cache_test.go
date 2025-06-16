@@ -1002,12 +1002,12 @@ func TestFindMissing_DestErr(t *testing.T) {
 	missing, err := mc.FindMissing(ctx, rns)
 	require.NoError(t, err)
 	for range 5 {
-		if destCache.calls.Load() > 1 {
+		if destCache.calls.Load() > 4 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	require.Equal(t, int64(2), destCache.calls.Load(), "Expected dest cache to be called twice (Set and FindMissing)")
+	require.Equal(t, int64(5), destCache.calls.Load(), "Expected dest cache to be called twice (Set, FindMissing, 3x Contains)")
 	require.ElementsMatch(t, []*repb.Digest{notSetR1.GetDigest(), notSetR2.GetDigest()}, missing)
 }
 

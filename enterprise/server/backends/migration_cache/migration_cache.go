@@ -394,6 +394,10 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 			dstMissing, dstErr := conf.dest.FindMissing(ctx, resources)
 			if dstErr != nil {
 				log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
+				for _, r := range resources {
+					mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
+				}
+				return
 			}
 			missingOnlyInDest, _ := digest.Diff(srcMissing, dstMissing)
 			if len(missingOnlyInDest) == 0 {
