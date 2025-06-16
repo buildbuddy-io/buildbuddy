@@ -165,6 +165,8 @@ type Store struct {
 
 	mu      sync.Mutex // protects stopped
 	stopped bool
+
+	maxSingleOpTimeout time.Duration
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -279,10 +281,11 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
 
-		db:               db,
-		leaser:           leaser,
-		clock:            clock,
-		metricsCollector: mc,
+		db:                 db,
+		leaser:             leaser,
+		clock:              clock,
+		metricsCollector:   mc,
+		maxSingleOpTimeout: raftConfig.SingleRaftOpTimeout(),
 	}
 
 	s.replicaInitStatusWaiter = newReplicaStatusWaiter(listener, nhLog)
@@ -1168,7 +1171,7 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 	}
 
 	// Propose the config change (this removes the node from the raft cluster).
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
 	})
 	return err
@@ -1178,7 +1181,7 @@ func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) erro
 	if rangeID == 0 || replicaID == 0 {
 		return status.InvalidArgumentErrorf("rangeID or replicaID is not set")
 	}
-	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err := client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		err := s.nodeHost.StopReplica(rangeID, replicaID)
 		if err == dragonboat.ErrShardClosed {
 			return nil
@@ -1224,7 +1227,7 @@ func (s *Store) syncRemoveData(ctx context.Context, rangeID, replicaID uint64) e
 		return status.WrapErrorf(err, "failed to stop replica before removing data of c%dn%d", rangeID, replicaID)
 	}
 
-	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err := client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		err := s.nodeHost.SyncRemoveData(ctx, rangeID, replicaID)
 		// If the shard is not stopped, we want to retry SyncRemoveData call.
 		if err == dragonboat.ErrShardNotStopped {
@@ -1377,7 +1380,7 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	}
 
 	rangeID := req.GetHeader().GetReplica().GetRangeId()
-	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, rangeID, batch)
+	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, rangeID, batch, s.maxSingleOpTimeout)
 	if err != nil {
 		if err == dragonboat.ErrShardNotFound {
 			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, req.GetHeader())
@@ -2369,7 +2372,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 
 	// Find Split Point.
 	fsp := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}).SetHeader(req.GetHeader())
-	fspRsp, err := client.SyncReadLocalBatch(ctx, s.nodeHost, rangeID, fsp)
+	fspRsp, err := client.SyncReadLocalBatch(ctx, s.nodeHost, rangeID, fsp, s.maxSingleOpTimeout)
 	if err != nil {
 		return nil, status.InternalErrorf("find split point err: %s", err)
 	}
@@ -2545,7 +2548,7 @@ func (s *Store) waitForReplicaToCatchUp(ctx context.Context, rangeID uint64, des
 func (s *Store) GetMembership(ctx context.Context, rangeID uint64) (*dragonboat.Membership, error) {
 	var membership *dragonboat.Membership
 	var err error
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		// Get the config change index for this cluster.
 		membership, err = s.nodeHost.SyncGetShardMembership(ctx, rangeID)
 		if err != nil {
@@ -2622,7 +2625,7 @@ func (s *Store) addNonVoting(ctx context.Context, rangeID uint64, newReplicaID u
 	}
 
 	// Propose the config change (this adds the node as a non-voter to the raft cluster).
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestAddNonVoting(ctx, rangeID, newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
@@ -2668,7 +2671,7 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 		return status.InternalErrorf("failed to get config change ID: %s", err)
 	}
 	s.log.Infof("promote c%dn%d to voter, ccid=%d", rd.GetRangeId(), newReplicaID, configChangeID)
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestAddReplica(ctx, rd.GetRangeId(), newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {

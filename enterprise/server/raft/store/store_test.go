@@ -57,7 +57,8 @@ func addNonVoting(t *testing.T, ts *testutil.TestingStore, ctx context.Context, 
 	membership, err := ts.GetMembership(ctx, rangeID)
 	require.NoError(t, err)
 	ccid := membership.ConfigChangeID
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	maxSingleOpTimeout := 3 * time.Second
+	err = client.RunNodehostFn(ctx, maxSingleOpTimeout, func(ctx context.Context) error {
 		return ts.NodeHost().SyncRequestAddNonVoting(ctx, rangeID, replicaID, nhid, ccid)
 	})
 	require.NoError(t, err)
@@ -539,7 +540,7 @@ func TestAddRangeBack(t *testing.T) {
 			ReplicaId: replicaToRemove.GetReplicaId(),
 			Range:     rd,
 		})
-		if rsp != nil {
+		if removeDataRsp.GetRange() != nil {
 			rd = removeDataRsp.GetRange()
 		}
 		if err != nil {
@@ -1012,7 +1013,8 @@ func readSessionIDs(t *testing.T, ctx context.Context, rangeID uint64, store *te
 	}).ToProto()
 	require.NoError(t, err)
 
-	rsp, err := client.SyncReadLocal(ctx, store.NodeHost(), rangeID, req)
+	maxSingleOpTimeout := 3 * time.Second
+	rsp, err := client.SyncReadLocal(ctx, store.NodeHost(), rangeID, req, maxSingleOpTimeout)
 	require.NoError(t, err)
 	readBatch := rbuilder.NewBatchResponseFromProto(rsp)
 	scanRsp, err := readBatch.ScanResponse(0)
