@@ -1,10 +1,10 @@
-import React from "react";
-import { scheduler } from "../../../proto/scheduler_ts_proto";
-import format from "../../../app/format/format";
 import { BarChart2, Cloud } from "lucide-react";
+import React from "react";
 import Link from "../../../app/components/link/link";
-import { encodeMetricUrlParam, encodeWorkerUrlParam } from "../trends/common";
+import format from "../../../app/format/format";
+import { scheduler } from "../../../proto/scheduler_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
+import { encodeMetricUrlParam, encodeWorkerUrlParam } from "../trends/common";
 
 interface Props {
   node: scheduler.ExecutionNode;

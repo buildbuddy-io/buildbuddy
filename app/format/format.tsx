@@ -1,6 +1,6 @@
+import { isSameDay } from "date-fns";
 import Long from "long";
 import moment from "moment";
-import { isSameDay } from "date-fns";
 import { google as google_duration } from "../../proto/duration_ts_proto";
 import { durationToMillis } from "../util/proto";
 

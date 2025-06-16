@@ -1,6 +1,6 @@
 import React from "react";
-import UpdateSecretComponent from "./update_secret";
 import SecretsListComponent from "./secrets_list";
+import UpdateSecretComponent from "./update_secret";
 
 export interface SecretsComponentProps {
   path: string;

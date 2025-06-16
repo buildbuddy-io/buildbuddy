@@ -1,20 +1,22 @@
-import React from "react";
-import rpcService from "../../../app/service/rpc_service";
-import { User } from "../../../app/auth/auth_service";
-import SidebarNodeComponent, { compareNodes } from "./code_sidebar_node";
-import { Subscription } from "rxjs";
-import * as monaco from "monaco-editor";
 import * as diff from "diff";
-import { runner } from "../../../proto/runner_ts_proto";
+import { ArrowLeft, ArrowUpCircle, ChevronRight, Download, Key, Pencil, Send, XCircle } from "lucide-react";
+import * as monaco from "monaco-editor";
+import React from "react";
+import { Subscription } from "rxjs";
+import alert_service from "../../../app/alert/alert_service";
+import { User } from "../../../app/auth/auth_service";
+import { FilledButton, OutlinedButton } from "../../../app/components/button/button";
+import Spinner from "../../../app/components/spinner/spinner";
+import rpcService from "../../../app/service/rpc_service";
 import { git } from "../../../proto/git_ts_proto";
+import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
-import { ArrowLeft, ArrowUpCircle, ChevronRight, Download, Key, Pencil, Send, XCircle } from "lucide-react";
-import Spinner from "../../../app/components/spinner/spinner";
-import { OutlinedButton, FilledButton } from "../../../app/components/button/button";
 import { createPullRequest, updatePullRequest } from "./code_pull_request";
-import alert_service from "../../../app/alert/alert_service";
+import SidebarNodeComponent, { compareNodes } from "./code_sidebar_node";
 
+import Long from "long";
+import capabilities from "../../../app/capabilities/capabilities";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -23,24 +25,22 @@ import Dialog, {
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
 import Modal from "../../../app/components/modal/modal";
+import SearchBar from "../../../app/components/search_bar/search_bar";
+import error_service from "../../../app/errors/error_service";
+import { GithubIcon } from "../../../app/icons/github";
+import picker_service, { PickerModel } from "../../../app/picker/picker_service";
+import router from "../../../app/router/router";
+import { linkReadWriteGitHubAppURL } from "../../../app/util/github";
 import { parseLcov } from "../../../app/util/lcov";
 import { github } from "../../../proto/github_ts_proto";
-import Long from "long";
-import ModuleSidekick from "../sidekick/module/module";
-import BazelVersionSidekick from "../sidekick/bazelversion/bazelversion";
-import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
-import BuildFileSidekick from "../sidekick/buildfile/buildfile";
-import error_service from "../../../app/errors/error_service";
 import { build } from "../../../proto/remote_execution_ts_proto";
 import { search } from "../../../proto/search_ts_proto";
-import OrgPicker from "../org_picker/org_picker";
-import capabilities from "../../../app/capabilities/capabilities";
-import router from "../../../app/router/router";
-import picker_service, { PickerModel } from "../../../app/picker/picker_service";
-import { GithubIcon } from "../../../app/icons/github";
 import { getLangHintFromFilePath } from "../monaco/monaco";
-import SearchBar from "../../../app/components/search_bar/search_bar";
-import { linkReadWriteGitHubAppURL } from "../../../app/util/github";
+import OrgPicker from "../org_picker/org_picker";
+import BazelrcSidekick from "../sidekick/bazelrc/bazelrc";
+import BazelVersionSidekick from "../sidekick/bazelversion/bazelversion";
+import BuildFileSidekick from "../sidekick/buildfile/buildfile";
+import ModuleSidekick from "../sidekick/module/module";
 
 interface Props {
   user: User;

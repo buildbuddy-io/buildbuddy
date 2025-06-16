@@ -1,19 +1,19 @@
 import React from "react";
 
-import * as format from "../../../app/format/format";
 import {
-  ResponsiveContainer,
-  ComposedChart,
   CartesianGrid,
-  XAxis,
-  YAxis,
-  Line,
+  ComposedChart,
   Legend,
+  Line,
+  ReferenceArea,
+  ResponsiveContainer,
   Tooltip,
   TooltipProps,
-  ReferenceArea,
+  XAxis,
+  YAxis,
 } from "recharts";
 import { CategoricalChartState } from "recharts/types/chart/types";
+import * as format from "../../../app/format/format";
 
 export interface PercentilesChartProps {
   title: string;

@@ -1,7 +1,7 @@
+import { AlertCircle, CheckCircle, PlayCircle, XCircle } from "lucide-react";
 import React from "react";
-import format from "../format/format";
-import { AlertCircle, XCircle, PlayCircle, CheckCircle } from "lucide-react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import format from "../format/format";
 import { durationToMillisWithFallback } from "../util/proto";
 import TargetTestSuiteComponent from "./target_test_suite";
 

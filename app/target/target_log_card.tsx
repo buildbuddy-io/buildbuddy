@@ -1,5 +1,5 @@
-import React from "react";
 import { PauseCircle } from "lucide-react";
+import React from "react";
 import { TerminalComponent } from "../terminal/terminal";
 
 interface Props {

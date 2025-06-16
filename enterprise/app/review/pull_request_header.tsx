@@ -1,11 +1,10 @@
-import React from "react";
-import { ReviewModel } from "./review_model";
-import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import { Github } from "lucide-react";
-import { github } from "../../../proto/github_ts_proto";
-import { ReviewController } from "./review_controller";
+import React from "react";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Link from "../../../app/components/link/link";
 import router from "../../../app/router/router";
+import { ReviewController } from "./review_controller";
+import { ReviewModel } from "./review_model";
 
 interface PullRequestHeaderComponentProps {
   reviewModel: ReviewModel;

@@ -4,7 +4,6 @@ import FilledButton, { OutlinedButton } from "../../../app/components/button/but
 import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { user_id } from "../../../proto/user_id_ts_proto";
-import { user } from "../../../proto/user_ts_proto";
 
 export interface OrgJoinRequestsComponentProps {
   user: User;

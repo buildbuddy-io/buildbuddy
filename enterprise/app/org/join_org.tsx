@@ -1,10 +1,10 @@
 import React from "react";
-import router from "../../../app/router/router";
-import { grp } from "../../../proto/group_ts_proto";
 import authService, { User } from "../../../app/auth/auth_service";
-import rpcService from "../../../app/service/rpc_service";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
+import router from "../../../app/router/router";
+import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
+import { grp } from "../../../proto/group_ts_proto";
 
 export interface JoinOrgComponentProps {
   user: User;

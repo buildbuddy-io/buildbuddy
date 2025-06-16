@@ -1,73 +1,73 @@
+import {
+  CircleDot,
+  Clock,
+  Cloud,
+  Filter,
+  GitBranch,
+  GitCommit,
+  Github,
+  HardDrive,
+  LayoutGrid,
+  SortAsc,
+  SortDesc,
+  Sparkles,
+  Tag,
+  Target,
+  User,
+  Wrench,
+  X,
+} from "lucide-react";
 import React from "react";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
-import Popup from "../../../app/components/popup/popup";
-import Slider from "../../../app/components/slider/slider";
-import {
-  Filter,
-  X,
-  Clock,
-  User,
-  Github,
-  GitBranch,
-  GitCommit,
-  HardDrive,
-  LayoutGrid,
-  Wrench,
-  Tag,
-  SortAsc,
-  SortDesc,
-  Cloud,
-  Sparkles,
-  Target,
-  CircleDot,
-} from "lucide-react";
 import Checkbox from "../../../app/components/checkbox/checkbox";
+import TextInput from "../../../app/components/input/input";
+import Popup from "../../../app/components/popup/popup";
 import Radio from "../../../app/components/radio/radio";
+import Slider from "../../../app/components/slider/slider";
 import { compactDurationSec } from "../../../app/format/format";
 import router from "../../../app/router/router";
 import {
-  DIMENSION_PARAM_NAME,
-  GENERIC_FILTER_PARAM_NAME,
-  ROLE_PARAM_NAME,
-  STATUS_PARAM_NAME,
-  USER_PARAM_NAME,
-  REPO_PARAM_NAME,
   BRANCH_PARAM_NAME,
-  COMMIT_PARAM_NAME,
-  HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
-  PATTERN_PARAM_NAME,
-  TAG_PARAM_NAME,
-  MINIMUM_DURATION_PARAM_NAME,
-  MAXIMUM_DURATION_PARAM_NAME,
-  SORT_BY_PARAM_NAME,
-  SORT_ORDER_PARAM_NAME,
+  COMMIT_PARAM_NAME,
   DEFAULT_SORT_BY_VALUE,
   DEFAULT_SORT_ORDER_VALUE,
+  DIMENSION_PARAM_NAME,
+  GENERIC_FILTER_PARAM_NAME,
+  HOST_PARAM_NAME,
+  MAXIMUM_DURATION_PARAM_NAME,
+  MINIMUM_DURATION_PARAM_NAME,
+  PATTERN_PARAM_NAME,
+  REPO_PARAM_NAME,
+  ROLE_PARAM_NAME,
+  SORT_BY_PARAM_NAME,
+  SORT_ORDER_PARAM_NAME,
+  STATUS_PARAM_NAME,
+  TAG_PARAM_NAME,
+  USER_PARAM_NAME,
 } from "../../../app/router/router_params";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
+import DatePickerButton from "./date_picker_button";
 import {
-  parseRoleParam,
-  toRoleParam,
-  parseStatusParam,
-  toStatusParam,
-  statusToString,
-  isAnyNonDateFilterSet,
-  SortBy,
-  SortOrder,
-  DURATION_SLIDER_VALUES,
-  DURATION_SLIDER_MIN_INDEX,
-  DURATION_SLIDER_MIN_VALUE,
   DURATION_SLIDER_MAX_INDEX,
   DURATION_SLIDER_MAX_VALUE,
-  getFiltersFromDimensionParam,
+  DURATION_SLIDER_MIN_INDEX,
+  DURATION_SLIDER_MIN_VALUE,
+  DURATION_SLIDER_VALUES,
   getDimensionName,
   getDimensionParamFromFilters,
+  getFiltersFromDimensionParam,
+  isAnyNonDateFilterSet,
+  parseRoleParam,
+  parseStatusParam,
+  SortBy,
+  SortOrder,
+  statusToString,
+  toRoleParam,
+  toStatusParam,
 } from "./filter_util";
-import TextInput from "../../../app/components/input/input";
-import DatePickerButton from "./date_picker_button";
 
 export interface FilterProps {
   search: URLSearchParams;

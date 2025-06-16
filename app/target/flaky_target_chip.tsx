@@ -1,11 +1,11 @@
+import { HelpCircle } from "lucide-react";
 import React from "react";
 import { target } from "../../proto/target_ts_proto";
-import rpc_service from "../service/rpc_service";
-import { Path } from "../router/router";
-import { OutlinedLinkButton } from "../components/button/link_button";
-import { HelpCircle } from "lucide-react";
 import { OutlinedButton } from "../components/button/button";
+import { OutlinedLinkButton } from "../components/button/link_button";
 import Spinner from "../components/spinner/spinner";
+import { Path } from "../router/router";
+import rpc_service from "../service/rpc_service";
 
 interface Props {
   repo: string;

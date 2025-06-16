@@ -5,8 +5,8 @@ import InvocationCompareButton from "./invocation_compare_button";
 import InvocationMenuComponent from "./invocation_menu";
 import InvocationModel from "./invocation_model";
 import InvocationShareButton from "./invocation_share_button";
-import WorkflowRerunButton from "./workflow_rerun_button";
 import SuggestionButton from "./suggestion_button";
+import WorkflowRerunButton from "./workflow_rerun_button";
 
 export interface InvocationButtonsProps {
   model: InvocationModel;

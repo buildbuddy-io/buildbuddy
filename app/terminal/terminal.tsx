@@ -1,16 +1,16 @@
-import { WrapText, Download, ArrowUp, ArrowDown, X, Expand, Shrink } from "lucide-react";
-import React from "react";
-import { FixedSizeList } from "react-window";
+import { ArrowDown, ArrowUp, Download, Expand, Shrink, WrapText, X } from "lucide-react";
 import memoizeOne from "memoize-one";
-import Spinner from "../components/spinner/spinner";
+import React from "react";
+import AutoSizer from "react-virtualized-auto-sizer";
+import { FixedSizeList } from "react-window";
+import capabilities from "../capabilities/capabilities";
 import TextInput from "../components/input/input";
+import Spinner from "../components/spinner/spinner";
+import router from "../router/router";
 import { mod } from "../util/math";
 import { Scroller } from "../util/scroller";
-import AutoSizer from "react-virtualized-auto-sizer";
 import { Row, ROW_HEIGHT_PX } from "./row";
-import { getContent, updatedMatchIndexForSearch, toPlainText, Range, ListData } from "./text";
-import router from "../router/router";
-import capabilities from "../capabilities/capabilities";
+import { getContent, ListData, Range, toPlainText, updatedMatchIndexForSearch } from "./text";
 
 const WRAP_LOCAL_STORAGE_KEY = "terminal-wrap";
 const WRAP_LOCAL_STORAGE_VALUE = "wrap";
