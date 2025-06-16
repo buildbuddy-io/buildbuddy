@@ -813,24 +813,24 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 			snapshotSavePolicy: snaputil.AlwaysSaveRemoteSnapshot,
 		},
 		{
-			name:               "Only save first non-main snapshot - on main",
+			name:               "Only save first non-default snapshot - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.OnlySaveFirstNonMainRemoteSnapshot,
+			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultRemoteSnapshot,
 		},
 		{
-			name:               "Only save first non-main snapshot - on feature branch",
+			name:               "Only save first non-default snapshot - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.OnlySaveFirstNonMainRemoteSnapshot,
+			snapshotSavePolicy: snaputil.OnlySaveFirstNonDefaultRemoteSnapshot,
 		},
 		{
-			name:               "Only save non-main snapshot if no snapshots available - on main",
+			name:               "Only save non-default snapshot if no snapshots available - on main",
 			branch:             "main",
-			snapshotSavePolicy: snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable,
+			snapshotSavePolicy: snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable,
 		},
 		{
-			name:               "Only save non-main snapshot if no snapshots available - on feature branch",
+			name:               "Only save non-default snapshot if no snapshots available - on feature branch",
 			branch:             "pr-branch",
-			snapshotSavePolicy: snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable,
+			snapshotSavePolicy: snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable,
 		},
 	}
 
@@ -905,7 +905,7 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 				return vm.SnapshotID()
 			}
 
-			// Create a snapshot for the main branch.
+			// Create a snapshot for the default branch.
 			mainTask := task.CloneVT()
 			mainTask.Command.EnvironmentVariables = []*repb.Command_EnvironmentVariable{
 				{
@@ -943,22 +943,22 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 
 			// Start a VM from the remote snapshot.
 
-			// Unless we're on the main branch or remote snapshot writes are always
+			// Unless we're on the default branch or remote snapshot writes are always
 			// requested, we don't expect to see changes applied from the last
 			// couple runs that only wrote local snapshots, now that the local
 			// snapshots are gone.
 			var expectedOutput string
 			if tc.branch == "main" || tc.snapshotSavePolicy == snaputil.AlwaysSaveRemoteSnapshot {
 				expectedOutput = "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\nTest Branch 4\n"
-			} else if tc.snapshotSavePolicy == snaputil.OnlySaveFirstNonMainRemoteSnapshot {
+			} else if tc.snapshotSavePolicy == snaputil.OnlySaveFirstNonDefaultRemoteSnapshot {
 				expectedOutput = "Main\nTest Branch 1\nTest Branch 4\n"
-			} else if tc.snapshotSavePolicy == snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable {
+			} else if tc.snapshotSavePolicy == snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable {
 				expectedOutput = "Main\nTest Branch 4\n"
 			}
 			workDirForkRemoteFetch := testfs.MakeDirAll(t, rootDir, "work-fork-remote-fetch")
 			runAndSnapshotVM(workDirForkRemoteFetch, "Test Branch 4", expectedOutput, nil, task)
 
-			if tc.snapshotSavePolicy != snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable {
+			if tc.snapshotSavePolicy != snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable {
 				// Should still be able to start from the original snapshot if we use
 				// a snapshot key containing the original VM's snapshot ID.
 				// Note that when using a snapshot ID as the key, we only include the
