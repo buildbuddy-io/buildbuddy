@@ -365,6 +365,9 @@ func TestAddNodeToCluster(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.enable_driver", false)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -1182,6 +1185,10 @@ func TestUpReplicate(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1257,6 +1264,7 @@ func TestDownReplicate(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1395,6 +1403,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1465,6 +1474,7 @@ func TestRemoveDeadReplica(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1517,6 +1527,7 @@ func TestRebalance(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
