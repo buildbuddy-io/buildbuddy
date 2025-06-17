@@ -7,11 +7,13 @@ go_library(
     deps = [
         "//cli/bazelisk",
         "//cli/log",
+        "//cli/log/option_definitions",
         "//cli/parser/arguments",
         "//cli/parser/bazelrc",
         "//cli/parser/options",
         "//cli/parser/parsed",
         "//cli/storage",
+        "//cli/watcher/option_definitions",
         "//cli/workspace",
         "//proto:bazel_flags_go_proto",
         "//proto:remote_execution_go_proto",

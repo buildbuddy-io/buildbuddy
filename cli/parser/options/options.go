@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	NativeBuiltinPluginID   = "//builtin/native"
 	StarlarkBuiltinPluginID = "//builtin/starlark"
 	UnknownBuiltinPluginID  = "//builtin/unknown"
 )
