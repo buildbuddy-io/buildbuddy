@@ -108,7 +108,7 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 			break
 		}
 		eg.Go(func() error {
-			network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP, nil)
+			network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP)
 			if err != nil {
 				return fmt.Errorf("create VM network: %w", err)
 			}
