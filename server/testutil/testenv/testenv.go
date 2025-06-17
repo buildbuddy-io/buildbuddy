@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhealthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpostgres"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
@@ -165,7 +166,7 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 		flags.Set(t, "executor.local_cache_directory", fmt.Sprintf("%s/remote_execution/cache", testRootDir))
 	}
 
-	healthChecker := healthcheck.NewHealthChecker("test")
+	healthChecker := testhealthcheck.NewTestingHealthChecker()
 	te := real_environment.NewRealEnv(healthChecker)
 	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
 	if err != nil {

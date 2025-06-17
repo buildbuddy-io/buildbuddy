@@ -10,18 +10,29 @@ import (
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-type TestingHealthChecker struct{}
+type TestingHealthChecker struct {
+	shutdownCh chan struct{}
+}
 
 func NewTestingHealthChecker() interfaces.HealthChecker {
-	return &TestingHealthChecker{}
+	return &TestingHealthChecker{
+		shutdownCh: make(chan struct{}),
+	}
 }
 
 func (t *TestingHealthChecker) RegisterShutdownFunction(hc interfaces.CheckerFunc) {}
 func (t *TestingHealthChecker) AddHealthCheck(name string, f interfaces.Checker)   {}
 func (t *TestingHealthChecker) WaitForGracefulShutdown() {
-	select {}
+	<-t.shutdownCh
 }
 func (t *TestingHealthChecker) Shutdown() {
+	// Close the shutdown channel if it's not already closed
+	select {
+	case <-t.shutdownCh:
+		// Already closed
+	default:
+		close(t.shutdownCh)
+	}
 }
 func (t *TestingHealthChecker) LivenessHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
