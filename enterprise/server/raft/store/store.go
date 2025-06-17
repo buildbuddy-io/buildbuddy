@@ -2608,8 +2608,8 @@ func (s *Store) CheckRangeOverlaps(ctx context.Context, req *rfpb.CheckRangeOver
 		return nil, status.FailedPreconditionError("req.Start or req.End cannot be nil")
 	}
 	s.rangeMu.RLock()
+	defer s.rangeMu.RUnlock()
 	overlapping := s.rangeMap.GetOverlapping(req.GetStart(), req.GetEnd())
-	s.rangeMu.RUnlock()
 	rsp := &rfpb.CheckRangeOverlapsResponse{}
 	for _, overlapped := range overlapping {
 		rsp.Ranges = append(rsp.Ranges, overlapped.Val)
