@@ -326,7 +326,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
             return null;
           }
           // slight hack: store the kythe reference in the "after" injected text property - it has
-          // a field that holds a generic object.
+          // a field that holds a generic object. This allows the kythe references to be easily
+          // retrieved later.
           displayOptions.after = { attachedData: x, content: "" };
 
           return {
