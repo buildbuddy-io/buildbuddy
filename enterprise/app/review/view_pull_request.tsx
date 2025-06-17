@@ -1,5 +1,7 @@
 import Long from "long";
 import React from "react";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
+import CheckboxButton from "../../../app/components/button/checkbox_button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -7,21 +9,19 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
+import Link from "../../../app/components/link/link";
 import Modal from "../../../app/components/modal/modal";
+import Select, { Option } from "../../../app/components/select/select";
+import error_service from "../../../app/errors/error_service";
 import format from "../../../app/format/format";
+import router from "../../../app/router/router";
 import rpc_service, { CancelablePromise } from "../../../app/service/rpc_service";
 import { github } from "../../../proto/github_ts_proto";
-import error_service from "../../../app/errors/error_service";
-import ReviewThreadComponent from "./review_thread";
-import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
-import CheckboxButton from "../../../app/components/button/checkbox_button";
-import { CommentModel, ReviewModel, FileModel } from "./review_model";
-import Link from "../../../app/components/link/link";
-import router from "../../../app/router/router";
-import PullRequestHeaderComponent from "./pull_request_header";
 import FileContentMonacoComponent from "./file_content_monaco";
 import { getMonacoModelForGithubFile } from "./file_content_service";
-import Select, { Option } from "../../../app/components/select/select";
+import PullRequestHeaderComponent from "./pull_request_header";
+import { CommentModel, FileModel, ReviewModel } from "./review_model";
+import ReviewThreadComponent from "./review_thread";
 
 const FILES_TO_PREFETCH = 3;
 

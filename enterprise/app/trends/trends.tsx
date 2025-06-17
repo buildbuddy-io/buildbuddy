@@ -1,22 +1,22 @@
-import React from "react";
+import Long from "long";
 import moment from "moment";
-import * as format from "../../../app/format/format";
-import rpcService from "../../../app/service/rpc_service";
+import React from "react";
+import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
+import capabilities from "../../../app/capabilities/capabilities";
+import * as format from "../../../app/format/format";
+import router, { Path } from "../../../app/router/router";
+import rpcService from "../../../app/service/rpc_service";
+import * as proto from "../../../app/util/proto";
 import { stats } from "../../../proto/stats_ts_proto";
-import TrendsChartComponent, { ChartColor } from "./trends_chart";
+import FilterComponent from "../filter/filter";
+import { getEndDate, getProtoFilterParams } from "../filter/filter_util";
 import CacheChartComponent from "./cache_chart";
+import { computeTimeKeys, getAverage, getTotal } from "./common";
+import DrilldownPageComponent from "./drilldown_page";
 import PercentilesChartComponent from "./percentile_chart";
 import TrendsSummaryCard from "./summary_card";
-import { Subscription } from "rxjs";
-import FilterComponent from "../filter/filter";
-import capabilities from "../../../app/capabilities/capabilities";
-import { getProtoFilterParams, getEndDate } from "../filter/filter_util";
-import router, { Path } from "../../../app/router/router";
-import * as proto from "../../../app/util/proto";
-import DrilldownPageComponent from "./drilldown_page";
-import { computeTimeKeys, getAverage, getTotal } from "./common";
-import Long from "long";
+import TrendsChartComponent, { ChartColor } from "./trends_chart";
 
 const BITS_PER_BYTE = 8;
 

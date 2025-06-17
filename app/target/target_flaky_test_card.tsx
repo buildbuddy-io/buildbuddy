@@ -1,11 +1,11 @@
-import React from "react";
-import format from "../format/format";
 import { AlertCircle, XCircle } from "lucide-react";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { durationToMillisWithFallback } from "../util/proto";
 import moment from "moment";
-import router from "../router/router";
+import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import Link from "../components/link/link";
+import format from "../format/format";
+import router from "../router/router";
+import { durationToMillisWithFallback } from "../util/proto";
 import TargetTestSuiteComponent from "./target_test_suite";
 
 interface Props {

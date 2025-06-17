@@ -1,11 +1,12 @@
 import React from "react";
-import InvocationModel from "./invocation_model";
-import InvocationExecutionTable from "./invocation_execution_table";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
-import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
-import rpcService from "../service/rpc_service";
 import { OutlinedButton } from "../components/button/button";
+import Select, { Option } from "../components/select/select";
+import errorService from "../errors/error_service";
+import format from "../format/format";
+import rpcService from "../service/rpc_service";
+import InvocationExecutionTable from "./invocation_execution_table";
 import {
   downloadDuration,
   executionDuration,
@@ -15,8 +16,7 @@ import {
   totalDuration,
   uploadDuration,
 } from "./invocation_execution_util";
-import errorService from "../errors/error_service";
-import format from "../format/format";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;

@@ -1,7 +1,7 @@
 import React from "react";
+import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
 import SetupCodeComponent from "./setup_code";
-import { User } from "../auth/user";
 
 interface Props {
   user?: User;

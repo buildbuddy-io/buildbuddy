@@ -1,9 +1,6 @@
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
-import errorService from "../../../app/errors/error_service";
-import rpcService from "../../../app/service/rpc_service";
-import { iprules } from "../../../proto/iprules_ts_proto";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -12,14 +9,12 @@ import Dialog, {
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
 import TextInput from "../../../app/components/input/input";
-import capabilities from "../../../app/capabilities/capabilities";
-import Spinner from "../../../app/components/spinner/spinner";
 import Modal from "../../../app/components/modal/modal";
-import { ru } from "date-fns/locale";
-import rpc_service from "../../../app/service/rpc_service";
-import error_service from "../../../app/errors/error_service";
+import Spinner from "../../../app/components/spinner/spinner";
+import { default as error_service, default as errorService } from "../../../app/errors/error_service";
+import { default as rpc_service, default as rpcService } from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
-import { grp } from "../../../proto/group_ts_proto";
+import { iprules } from "../../../proto/iprules_ts_proto";
 
 export interface Props {
   user: User;

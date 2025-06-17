@@ -511,7 +511,6 @@ ts_library(
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
-        "//app/invocation:invocation_model",
     ],
 )
 
@@ -524,7 +523,6 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/components/banner",
-        "//app/components/button",
         "//app/components/button:link_button",
         "//app/components/filter_input",
         "//app/format",
@@ -652,7 +650,6 @@ ts_library(
         "//:node_modules/tslib",
         "//app/components/link",
         "//app/invocation:invocation_model",
-        "//app/router",
         "//proto:cache_ts_proto",
     ],
 )

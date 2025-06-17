@@ -1,6 +1,6 @@
-import { getUniformBrightnessColor, getMaterialChartColor, getLightMaterialChartColor } from "../util/color";
-import { Profile, TraceEvent, buildThreadTimelines, buildTimeSeries } from "./trace_events";
+import { getLightMaterialChartColor, getMaterialChartColor, getUniformBrightnessColor } from "../util/color";
 import * as constants from "./constants";
+import { Profile, TraceEvent, buildThreadTimelines, buildTimeSeries } from "./trace_events";
 
 /**
  * A trace event profile structured for easier rendering in the trace viewer.

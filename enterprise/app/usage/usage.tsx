@@ -1,13 +1,13 @@
-import React from "react";
-import errorService from "../../../app/errors/error_service";
-import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
-import { User } from "../../../app/auth/auth_service";
-import { usage } from "../../../proto/usage_ts_proto";
-import Select, { Option } from "../../../app/components/select/select";
-import { count, cpuSavingsSec, formatWithCommas, bytes as formatBytes, bytes } from "../../../app/format/format";
 import moment from "moment";
-import TrendsChartComponent, { ChartColor } from "../trends/trends_chart";
+import React from "react";
+import { User } from "../../../app/auth/auth_service";
+import Select, { Option } from "../../../app/components/select/select";
+import errorService from "../../../app/errors/error_service";
+import { bytes, count, bytes as formatBytes, formatWithCommas } from "../../../app/format/format";
 import router, { TrendsChartId } from "../../../app/router/router";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
+import { usage } from "../../../proto/usage_ts_proto";
+import TrendsChartComponent, { ChartColor } from "../trends/trends_chart";
 
 export interface UsageProps {
   user?: User;

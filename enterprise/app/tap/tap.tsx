@@ -1,19 +1,19 @@
 import React from "react";
-import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
-import { invocation } from "../../../proto/invocation_ts_proto";
-import router, { Path } from "../../../app/router/router";
-import format from "../../../app/format/format";
-import Select, { Option } from "../../../app/components/select/select";
 import capabilities from "../../../app/capabilities/capabilities";
+import TextInput from "../../../app/components/input/input";
+import Select, { Option } from "../../../app/components/select/select";
 import errorService from "../../../app/errors/error_service";
+import format from "../../../app/format/format";
+import router, { Path } from "../../../app/router/router";
+import rpcService from "../../../app/service/rpc_service";
 import { normalizeRepoURL } from "../../../app/util/git";
-import TestGridComponent from "./grid";
-import FlakesComponent from "./flakes";
-import GridSortControlsComponent from "./grid_sort_controls";
+import { invocation } from "../../../proto/invocation_ts_proto";
 import DatePickerButton from "../filter/date_picker_button";
 import { getProtoFilterParams } from "../filter/filter_util";
-import TextInput from "../../../app/components/input/input";
+import FlakesComponent from "./flakes";
+import TestGridComponent from "./grid";
+import GridSortControlsComponent from "./grid_sort_controls";
 
 interface Props {
   user: User;

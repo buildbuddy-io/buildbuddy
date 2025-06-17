@@ -2,11 +2,11 @@ import { Percent } from "lucide-react";
 import React from "react";
 
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { TextLink } from "../components/link/link";
 import format from "../format/format";
 import rpcService from "../service/rpc_service";
 import { percentageColor } from "../util/color";
 import { parseLcov } from "../util/lcov";
-import { TextLink } from "../components/link/link";
 
 interface Props {
   invocationId: string;

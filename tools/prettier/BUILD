@@ -6,6 +6,9 @@ package(
 
 bin.prettier_binary(
     name = "prettier_bin",
+    data = [
+        "//:node_modules/prettier-plugin-organize-imports",
+    ],
 )
 
 sh_binary(

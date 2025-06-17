@@ -1,9 +1,9 @@
 import { Subject, Subscription, from } from "rxjs";
 import { eventlog } from "../../proto/eventlog_ts_proto";
+import capabilities from "../capabilities/capabilities";
 import errorService from "../errors/error_service";
 import rpcService, { Cancelable } from "../service/rpc_service";
 import { streamWithRetry } from "../util/rpc";
-import capabilities from "../capabilities/capabilities";
 
 const POLL_TAIL_INTERVAL_MS = 3_000;
 // How many lines to request from the server on each chunk request.

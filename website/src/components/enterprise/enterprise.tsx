@@ -1,7 +1,7 @@
-import React from "react";
-import styles from "./enterprise.module.css";
-import common from "../../css/common.module.css";
 import { Eye, Users, Zap } from "lucide-react";
+import React from "react";
+import common from "../../css/common.module.css";
+import styles from "./enterprise.module.css";
 
 function Component() {
   return (

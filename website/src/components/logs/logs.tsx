@@ -1,7 +1,7 @@
-import React from "react";
-import styles from "./logs.module.css";
-import common from "../../css/common.module.css";
 import Image from "@theme/IdealImage";
+import React from "react";
+import common from "../../css/common.module.css";
+import styles from "./logs.module.css";
 
 function Component() {
   return (
