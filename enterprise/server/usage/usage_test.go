@@ -76,7 +76,7 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	dbh := te.GetDBHandle()
 	rq := dbh.NewQuery(ctx, "get_usages").Raw(`
 		SELECT * From "Usages"
-		ORDER BY group_id, period_start_usec, region, client, origin ASC;
+		ORDER BY group_id, period_start_usec, region, client, server, origin ASC;
 	`)
 
 	err := db.ScanEach(rq, func(ctx context.Context, tu *tables.Usage) error {
@@ -593,6 +593,20 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 			PeriodStartUsec: period1Start.UnixMicro(),
 			UsageCounts:     tables.UsageCounts{Invocations: 1},
 			UsageLabels:     tables.UsageLabels{Origin: "Origin-TestValue2"},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Server: "Server-TestValue1"},
+		},
+		{
+			Region:          "us-west1",
+			GroupID:         "GR1",
+			PeriodStartUsec: period1Start.UnixMicro(),
+			UsageCounts:     tables.UsageCounts{Invocations: 1},
+			UsageLabels:     tables.UsageLabels{Server: "Server-TestValue2"},
 		},
 		{
 			Region:          "us-west1",
