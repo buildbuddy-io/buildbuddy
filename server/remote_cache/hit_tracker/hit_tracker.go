@@ -409,6 +409,7 @@ type TransferTimer struct {
 func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
 	duration := time.Since(t.start)
 	t.emitMetrics(bytesTransferredCache, bytesTransferredClient, duration, compressor, serverLabel)
+	// XXX
 	return t.Record(bytesTransferredClient, time.Since(t.start), compressor)
 }
 
@@ -532,7 +533,7 @@ func (h *HitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actio
 	} else {
 		return nil
 	}
-	labels, err := usageutil.Labels(ctx)
+	labels, err := usageutil.LabelsForUsageRecording(ctx)
 	if err != nil {
 		return status.WrapError(err, "get usage labels")
 	}
