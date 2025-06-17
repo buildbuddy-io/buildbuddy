@@ -593,3 +593,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 	}
 	return &apipb.RunResponse{InvocationId: rsp.InvocationId}, nil
 }
+
+func (s *APIServer) CreateUserApiKey(ctx context.Context, req *apipb.CreateUserApiKeyRequest) (*apipb.CreateUserApiKeyResponse, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
