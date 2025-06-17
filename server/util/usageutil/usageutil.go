@@ -27,6 +27,7 @@ var (
 	clientType string
 )
 
+// Labels returns usage labels for the given request context.
 func Labels(ctx context.Context) (*tables.UsageLabels, error) {
 	return &tables.UsageLabels{
 		Origin: originLabel(ctx),

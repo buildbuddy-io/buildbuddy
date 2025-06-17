@@ -107,9 +107,9 @@ func TestLabelPropagation(t *testing.T) {
 		},
 		{
 			Name:     "All",
-			Client:   "executor",
+			Client:   "app",
 			Origin:   "internal",
-			Expected: &tables.UsageLabels{Client: "executor", Origin: "internal"},
+			Expected: &tables.UsageLabels{Client: "app", Origin: "internal"},
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
