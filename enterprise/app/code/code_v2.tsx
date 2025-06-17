@@ -272,8 +272,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return;
     }
 
-    this.fetchXrefs(decor.targetTicket, (response) => {
-      const def = response.crossReferencesReply?.crossReferences[d.targetTicket].definition[0];
+    this.fetchXrefs(decor.targetTicket, (xrefReply) => {
+      const def = xrefReply.crossReferences[decor.targetTicket].definition[0];
       if (!def?.anchor) {
         return;
       }
@@ -289,8 +289,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return;
     }
 
-    this.fetchXrefs(decor.targetTicket, (response) => {
-      this.setState({ xrefs: response.crossReferencesReply ?? undefined });
+    this.fetchXrefs(decor.targetTicket, (xrefReply) => {
+      this.setState({ xrefs: xrefReply ?? undefined });
     });
   }
 
@@ -327,7 +327,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           }
           // slight hack: store the kythe reference in the "after" injected text property - it has
           // a field that holds a generic object.
-          displayOptions.after = { attachedData: x };
+          displayOptions.after = { attachedData: x, content: "" };
 
           return {
             range: monacoRange,
@@ -335,7 +335,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           };
         })
         .filter((x) => x !== null) || [];
-    this.kytheDecorations.set(newDecor);
+    this.kytheDecorations?.set(newDecor);
   }
 
   getChange(path: string) {
@@ -444,7 +444,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return this.props.search.get("pq");
   }
 
-  decorToReference(decor: monaco.editor.IModelDeltaDecoration): kythe.proto.DecorationsReply.Reference | undefined {
+  decorToReference(decor: monaco.editor.IModelDecoration): kythe.proto.DecorationsReply.Reference | undefined {
     return decor?.options?.after?.attachedData as kythe.proto.DecorationsReply.Reference | undefined;
   }
 
@@ -454,13 +454,27 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return undefined;
     }
 
-    let minMatch = decorInRange.min((decor) => {
+    let minMatch = undefined;
+    let minMatchLength = Number.POSITIVE_INFINITY;
+    for (const decor of decorInRange) {
       if (!decor.options.after?.attachedData) {
-        return Number.POSITIVE_INFINITY;
+        continue;
       }
       const data = decor.options.after.attachedData as kythe.proto.DecorationsReply.Reference;
-      return data.span.end.byteOffset - data.span.start.byteOffset;
-    });
+      if (!data.span || !data.span.start || !data.span.end) {
+        continue;
+      }
+
+      const matchLength = data.span.end.byteOffset - data.span.start.byteOffset;
+      if (matchLength < minMatchLength) {
+        minMatchLength = matchLength;
+        minMatch = decor;
+      }
+    }
+    if (!minMatch) {
+      return undefined;
+    }
+
     return this.decorToReference(minMatch);
   }
 
@@ -502,34 +516,30 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       }
     });
 
-    this.findRefsKey = this.editor.createContextKey<boolean>("findRefsContextKey", false);
-    this.goToDefKey = this.editor.createContextKey<boolean>("goToDefContextKey", false);
-    this.editor.onContextMenu((e) => {
-      if (e.target.range) {
-        let decors = this.editor?.getDecorationsInRange(e.target.range);
-        this.findRefsKey?.set(decors != null && decors.length > 0);
-        this.goToDefKey?.set(decors != null && decors.length > 0);
-      }
-    });
-
     const that = this;
 
+    this.goToDefKey = this.editor.createContextKey<boolean>("goToDefContextKey", false);
     this.editor.addAction({
       id: "code-search-definition-action",
       label: "Go to definition",
-      precondition: this.goToDefKey.get(),
+      precondition: "goToDefContextKey",
       contextMenuGroupId: "navigation",
       contextMenuOrder: 1,
       // Method that will be executed when the action is triggered.
       run: function (ed) {
-        that.fetchXrefAndNavToDefinition(ed.getPosition());
+        const pos = ed.getPosition();
+        if (!pos) {
+          return;
+        }
+        that.fetchXrefAndNavToDefinition(pos);
       },
     });
 
+    this.findRefsKey = this.editor.createContextKey<boolean>("findRefsContextKey", false);
     this.editor.addAction({
       id: "code-search-reference-action",
       label: "Find references",
-      precondition: this.findRefsKey.get(),
+      precondition: "findRefsContextKey",
       contextMenuGroupId: "navigation",
       contextMenuOrder: 2,
       // Method that will be executed when the action is triggered.
@@ -540,6 +550,14 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         }
         that.fetchXrefsByPosition(pos);
       },
+    });
+
+    this.editor.onContextMenu((e) => {
+      if (e.target.range) {
+        let decors = this.editor?.getDecorationsInRange(e.target.range);
+        this.findRefsKey?.set(decors != null && decors.length > 0);
+        this.goToDefKey?.set(decors != null && decors.length > 0);
+      }
     });
 
     this.forceUpdate();
@@ -586,8 +604,12 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           /* wordSeparators= */ null,
           /* captureMatches= */ false
         );
+      if (!ranges || ranges.length == 0) {
+        this.searchDecorations?.clear();
+        return;
+      }
 
-      this.searchDecorations.set(
+      this.searchDecorations?.set(
         ranges?.map((r) => {
           return { range: r.range, options: { inlineClassName: "code-query-highlight" } };
         })
@@ -881,7 +903,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           let records = parseLcov(result);
           for (let record of records) {
             if (record.sourceFile == this.currentPath()) {
-              this.lcovDecorations.set(
+              this.lcovDecorations?.set(
                 record.data.map((r) => {
                   const parts = r.split(",");
                   const lineNum = parseInt(parts[0]);
@@ -1058,7 +1080,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     window.history.pushState(undefined, "", `/code/${this.currentOwner()}/${this.currentRepo()}/${path}#L${line}`);
   }
 
-  fetchXrefs(targetTicket: string, handler: (d: kythe.proto.DecorationsReply.Reference) => void) {
+  fetchXrefs(targetTicket: string, handler: (d: kythe.proto.CrossReferencesReply) => void) {
     if (!targetTicket) {
       return;
     }
@@ -1077,7 +1099,11 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.pendingXrefsRequest = rpcService.service.kytheProxy(req);
     this.pendingXrefsRequest
       .then((r) => {
-        handler(r);
+        if (!r.crossReferencesReply) {
+          console.log("No cross references found for ticket: ", targetTicket);
+          return;
+        }
+        handler(r.crossReferencesReply);
       })
       .catch((e) => {
         console.log("Error fetching xrefs: ", req, e);
@@ -1718,12 +1744,15 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     });
 
     for (const [key, refs] of fileToRefsMap.entries()) {
-      const uniques = new Map<number, kythe.proto.RelatedAnchor>();
+      const uniques = new Map<number, kythe.proto.CrossReferencesReply.RelatedAnchor>();
       const uniqueLineRefs = refs.filter((ra) => {
+        if (!ra.anchor || !ra.anchor.span || !ra.anchor.span.start) {
+          return false;
+        }
         if (uniques.has(ra.anchor.span.start.lineNumber)) {
           return false;
         }
-        uniques.set(ra.anchor.span.start.lineNumber, ra.anchor);
+        uniques.set(ra.anchor.span.start.lineNumber, ra);
         return true;
       });
       uniqueLineRefs.sort((a, b) => {
