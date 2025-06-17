@@ -710,7 +710,7 @@ type UsageLabels struct {
 	Client string `gorm:"not null;default:''"`
 
 	// Server describes the type of server that ultimately handled generating
-	// teh response, for example "cache-proxy" or "app".
+	// the response, for example "cache-proxy" or "app".
 	Server string `gorm:"not null;default:''"`
 }
 
