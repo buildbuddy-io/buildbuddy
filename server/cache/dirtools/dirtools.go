@@ -57,6 +57,9 @@ func groupIDStringFromContext(ctx context.Context) string {
 	return interfaces.AuthAnonymousUser
 }
 
+// downloadDedupeKey controls the granularity at which we dedupe fetches.
+// The granularity is driven by file cache properties.
+// File cache contents is isolated by group, digest and executable attribute.
 type downloadDedupeKey struct {
 	groupID string
 	key     fetchKey
@@ -669,10 +672,15 @@ func linkFileFromFileCache(ctx context.Context, fp *FilePointer, fc interfaces.F
 	return fc.FastLinkFile(ctx, fp.FileNode, fp.FullPath), nil
 }
 
+// fetchKey identifies an artifact to be fetched from a remote cache.
 type fetchKey struct {
 	digest.Key
+
 	// The file cache treats executable and non-executable files as separate
 	// entries since the attributes are shared when hardlinking.
+	// By differentiating executable and non-executable artifacts, we don't
+	// need to worry about attribute differences when interacting with the
+	// file cache.
 	executable bool
 }
 
@@ -765,10 +773,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 		d := res.Digest
 		for _, executable := range []bool{false, true} {
 			ptrs, ok := filesToFetch[newFetchKey(d, executable)]
-			if !ok {
-				continue
-			}
-			if len(ptrs) == 0 {
+			if !ok || len(ptrs) == 0 {
 				continue
 			}
 			ptr := ptrs[0]
