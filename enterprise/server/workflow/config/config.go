@@ -230,9 +230,7 @@ else
 	KYTHE_ARGS="--override_repository=kythe_release=$KYTHE_DIR"
 fi
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
-set -x
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...
-unset -x`, dirName, bazelConfigFlags)
+bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
 
 }
 
