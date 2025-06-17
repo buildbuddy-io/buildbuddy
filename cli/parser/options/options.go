@@ -277,6 +277,7 @@ type Option interface {
 	ClearValue()
 	SetValue(string)
 	GetDefinition() *Definition
+	SetDefinition(*Definition)
 	UseShortName(bool)
 	Normalized() Option
 
@@ -309,6 +310,10 @@ type RequiredValueOption struct {
 
 func (o *RequiredValueOption) GetDefinition() *Definition {
 	return o.Definition
+}
+
+func (o *RequiredValueOption) SetDefinition(d *Definition) {
+	o.Definition = d
 }
 
 func (o *RequiredValueOption) HasValue() bool {
@@ -394,6 +399,10 @@ type BoolOrEnumOption struct {
 
 func (o *BoolOrEnumOption) GetDefinition() *Definition {
 	return o.Definition
+}
+
+func (o *BoolOrEnumOption) SetDefinition(d *Definition) {
+	o.Definition = d
 }
 
 func (o *BoolOrEnumOption) HasValue() bool {
@@ -538,6 +547,10 @@ type ExpansionOption struct {
 
 func (o *ExpansionOption) GetDefinition() *Definition {
 	return o.Definition
+}
+
+func (o *ExpansionOption) SetDefinition(d *Definition) {
+	o.Definition = d
 }
 
 func (_ *ExpansionOption) HasValue() bool {
