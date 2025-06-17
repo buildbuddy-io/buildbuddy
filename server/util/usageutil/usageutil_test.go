@@ -76,7 +76,7 @@ func TestLabels(t *testing.T) {
 			}
 			ctx := metadata.NewIncomingContext(context.Background(), md)
 
-			labels, err := usageutil.LabelsForUsageRecording(ctx)
+			labels, err := usageutil.Labels(ctx)
 
 			require.NoError(t, err)
 			require.Equal(t, test.Expected, labels)
@@ -88,7 +88,6 @@ func TestLabelPropagation(t *testing.T) {
 	for _, test := range []struct {
 		Name     string
 		Client   string
-		Server   string
 		Origin   string
 		Expected *tables.UsageLabels
 	}{
@@ -102,11 +101,6 @@ func TestLabelPropagation(t *testing.T) {
 			Expected: &tables.UsageLabels{Client: "executor"},
 		},
 		{
-			Name:     "Server",
-			Server:   "app",
-			Expected: &tables.UsageLabels{Server: "app"},
-		},
-		{
 			Name:     "Origin",
 			Origin:   "external",
 			Expected: &tables.UsageLabels{Origin: "external"},
@@ -114,14 +108,13 @@ func TestLabelPropagation(t *testing.T) {
 		{
 			Name:     "All",
 			Client:   "executor",
-			Server:   "cache-proxy",
 			Origin:   "internal",
-			Expected: &tables.UsageLabels{Client: "executor", Server: "cache-proxy", Origin: "internal"},
+			Expected: &tables.UsageLabels{Client: "executor", Origin: "internal"},
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			flags.Set(t, "grpc_client_origin_header", test.Origin)
-			usageutil.SetServerName(test.Client)
+			usageutil.SetClientType(test.Client)
 
 			ctx := context.Background()
 			// Set some pre-existing bazel request metadata on the incoming
@@ -138,10 +131,7 @@ func TestLabelPropagation(t *testing.T) {
 			ctx = context.Background()
 			ctx = metadata.NewIncomingContext(ctx, outgoingMD)
 
-			// Simulate that we've arrived at the receiving server by
-			// changing the server name on the fly.
-			usageutil.SetServerName(test.Server)
-			labels, err := usageutil.LabelsForUsageRecording(ctx)
+			labels, err := usageutil.Labels(ctx)
 
 			require.NoError(t, err)
 			require.Equal(t, test.Expected, labels)
