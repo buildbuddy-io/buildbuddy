@@ -275,7 +275,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   fetchXrefAndNavToDefinition(pos: monaco.Position) {
-    const decor = this.getMostSpecificDecoration(
+    const decor = this.getMostSpecificRef(
       new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
     );
     if (!decor) {
@@ -292,14 +292,16 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   fetchXrefsByPosition(pos: monaco.Position) {
-    const decor = this.getMostSpecificDecoration(
+    const refs = this.getKytheRefsInRange(
       new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
     );
-    if (!decor) {
+    if (!refs) {
       return;
     }
 
-    this.fetchXrefs(decor.targetTicket, (xrefReply) => {
+    const tickets = refs.map((ref) => ref.targetTicket).filter((ticket) => ticket);
+
+    this.fetchXrefs(tickets, (xrefReply) => {
       this.setState({ xrefs: xrefReply ?? undefined });
     });
   }
@@ -459,32 +461,38 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return decor?.options?.after?.attachedData as kythe.proto.DecorationsReply.Reference | undefined;
   }
 
-  getMostSpecificDecoration(range: monaco.Range): kythe.proto.DecorationsReply.Reference | undefined {
-    // Get the decoration that overlaps this range and has the smallest span.
-
+  getKytheRefsInRange(range: monaco.Range): kythe.proto.DecorationsReply.Reference[] | undefined {
     const decorInRange = this.editor?.getDecorationsInRange(range);
     if (!decorInRange) {
       return undefined;
     }
 
+    return decorInRange
+      .map((decor) => this.decorToReference(decor))
+      .filter((ref) => !!ref);
+  }
+
+  getMostSpecificRef(range: monaco.Range): kythe.proto.DecorationsReply.Reference | undefined {
+    // Get the decoration that overlaps this range and has the smallest span.
+    const kytheRefs = this.getKytheRefsInRange(range);
+
     let minMatch = undefined;
     let minMatchLength = Number.POSITIVE_INFINITY;
-    for (const decor of decorInRange) {
-      const data = decor.options.after?.attachedData as kythe.proto.DecorationsReply.Reference;
-      if (!data || !data.span || !data.span.start || !data.span.end) {
+    for (const ref of kytheRefs) {
+      if (!ref || !ref.span || !ref.span.start || !ref.span.end) {
         continue;
       }
-      const matchLength = data.span.end.byteOffset - data.span.start.byteOffset;
+      const matchLength = ref.span.end.byteOffset - ref.span.start.byteOffset;
       if (matchLength < minMatchLength) {
         minMatchLength = matchLength;
-        minMatch = decor;
+        minMatch = ref;
       }
     }
     if (!minMatch) {
       return undefined;
     }
 
-    return this.decorToReference(minMatch);
+    return minMatch
   }
 
   fetchInitialContent() {
@@ -1088,8 +1096,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     window.history.pushState(undefined, "", `/code/${this.currentOwner()}/${this.currentRepo()}/${path}#L${line}`);
   }
 
-  fetchXrefs(targetTicket: string, handler: (d: kythe.proto.CrossReferencesReply) => void) {
-    if (!targetTicket) {
+  fetchXrefs(targetTickets: string[], handler: (d: kythe.proto.CrossReferencesReply) => void) {
+    if (!targetTickets || targetTickets.length === 0) {
       return;
     }
     this.pendingXrefsRequest?.cancel();
@@ -1098,7 +1106,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     const req = new search.KytheRequest({
       crossReferencesRequest: new kythe.proto.CrossReferencesRequest({
         snippets: kythe.proto.SnippetsKind.DEFAULT,
-        ticket: [targetTicket],
+        ticket: targetTickets,
         declarationKind: kythe.proto.CrossReferencesRequest.DeclarationKind.ALL_DECLARATIONS,
         referenceKind: kythe.proto.CrossReferencesRequest.ReferenceKind.ALL_REFERENCES,
         definitionKind: kythe.proto.CrossReferencesRequest.DefinitionKind.BINDING_DEFINITIONS,
@@ -1108,9 +1116,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.pendingXrefsRequest
       .then((r) => {
         if (!r.crossReferencesReply) {
-          console.log("No cross references found for ticket: ", targetTicket);
+          console.log("No cross references found for tickets: ", targetTickets);
           return;
         }
+        console.log("Xrefs", r.crossReferencesReply);
         handler(r.crossReferencesReply);
       })
       .catch((e) => {
@@ -1732,7 +1741,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   renderXrefGroup(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]) {
-    console.log(`Rendering xref group: ${name}`, anchors);
     if (anchors.length === 0) {
       return <></>;
     }
@@ -1764,16 +1772,29 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         return true;
       });
       uniqueLineRefs.sort((a, b) => {
-        return (a.anchor?.span?.start?.byteOffset || 100000) - (b.anchor?.span?.start?.byteOffset || 100000);
+        return (a.anchor?.span?.start?.byteOffset || Number.POSITIVE_INFINITY) - (b.anchor?.span?.start?.byteOffset || Number.POSITIVE_INFINITY);
       });
 
       fileToRefsMap.set(key, uniqueLineRefs);
     }
 
+    let sortedFiles = new Map(
+      [...fileToRefsMap.entries()].sort((a, b) => {
+        const aTest = a[0].toLowerCase().includes("test");
+        const bTest = b[0].toLowerCase().includes("test");
+        if (aTest && !bTest) {
+          return 1; // a is a test, b is not, so b should come first
+        } else if (!aTest && bTest) {
+          return -1; // b is a test, a is not, so a should come first
+        }
+        return a[0] < b[0] ? -1 : 1; // otherwise sort alphabetically
+      })
+    );
+
     return (
       <div>
         <div className="xrefs-category">{name}</div>
-        {[...fileToRefsMap.entries()].map((entry) => {
+        {[...sortedFiles.entries()].map((entry) => {
           const path = new URL(entry[0]).searchParams.get("path") ?? "";
           if (!path) {
             return <></>;
@@ -1811,12 +1832,21 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     if (!this.state.xrefs) {
       return <></>;
     }
-    const xrefs = Object.values(this.state.xrefs?.crossReferences)[0];
+    const xrefs = Object.values(this.state.xrefs?.crossReferences);
+    let defs: kythe.proto.CrossReferencesReply.RelatedAnchor[] = [];
+    let refs: kythe.proto.CrossReferencesReply.RelatedAnchor[] = [];
+    for (const xref of xrefs) {
+      defs.push(...xref.definition);
+      refs.push(...xref.reference);
+    }
+
     return (
       <div>
         <div className="xrefs-header">References</div>
-        {this.renderXrefGroup("Definitions", xrefs.definition)}
-        {this.renderXrefGroup("Other references", xrefs.reference)}
+        <div className="xrefs-container">
+          {this.renderXrefGroup("Definitions", defs)}
+          {this.renderXrefGroup("Other references", refs)}
+        </div>
       </div>
     );
   }
