@@ -97,6 +97,7 @@ interface State {
 
   xrefsLoading: boolean;
   extendedXrefs?: search.ExtendedXrefsReply;
+  xrefsHeight: number;
 }
 
 // When upgrading monaco, make sure to run
@@ -142,6 +143,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
     commands: ["build //...", "test //..."],
     defaultConfig: "",
+    xrefsHeight: 300,
   };
 
   editor: monaco.editor.IStandaloneCodeEditor | undefined;
@@ -1910,6 +1912,14 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     );
   }
 
+  resizeXrefs(e: React.MouseEvent) {
+    console.log("mousemove", window.innerHeight - e.clientY, e);
+    this.updateState({
+      xrefsHeight: Math.max(100, window.innerHeight - e.clientY),
+    });
+  };
+  resizeXrefsProp = this.resizeXrefs.bind(this);
+
   render() {
     setTimeout(() => {
       this.editor?.layout();
@@ -2142,6 +2152,18 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
             {Boolean(this.state.xrefsLoading || this.state.extendedXrefs) && (
               <div className="code-search-xrefs">
                 {/* TODO(jdelfino): Add an error state if xrefs fail to load */}
+                onMouseDown={(e) => {
+                  console.log("mousedown", e, e.nativeEvent.offsetY);
+                  if (e.nativeEvent.offsetY < 4) {
+                    document.addEventListener("mousemove", this.resizeXrefsProp, false);
+                  }
+                }}
+                onMouseUp ={(e) => {
+                  console.log("mouseup", e);
+                  document.removeEventListener("mousemove", this.resizeXrefsProp, false);
+                }}
+                style={{height: this.state.xrefsHeight}}
+              >
                 {this.state.xrefsLoading && <div className="loading"></div>}
                 {!this.state.xrefsLoading && this.renderXrefPanel()}
               </div>
