@@ -1698,7 +1698,7 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context, dnsOverrides
 		}
 	}
 
-	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP, dnsOverrides)
+	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP)
 	if err != nil {
 		return status.UnavailableErrorf("create VM network: %s", err)
 	}

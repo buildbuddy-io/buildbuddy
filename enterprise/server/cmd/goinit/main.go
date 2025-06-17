@@ -546,11 +546,11 @@ func runVMDNSServer(ctx context.Context) error {
 
 	// Ensure hostnames end with '.' so they are not resolved as relative names.
 	for _, o := range dnsOverrides {
-		if o.RedirectToIP == "" {
-			return status.InvalidArgumentError("empty redirect IP")
+		if o.RedirectToDomain == "" {
+			return status.InvalidArgumentError("empty redirect domain")
 		}
-		if !strings.HasSuffix(o.HostnameToOverride, ".") {
-			o.HostnameToOverride += "."
+		if !strings.HasSuffix(o.DomainToOverride, ".") {
+			o.DomainToOverride += "."
 		}
 	}
 
@@ -565,8 +565,8 @@ func runVMDNSServer(ctx context.Context) error {
 
 func (s *vmDNSServer) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	for _, o := range s.overrides {
-		if strings.HasSuffix(req.Question[0].Name, o.HostnameToOverride) {
-			s.overrideResponse(w, req, o.RedirectToIP)
+		if strings.HasSuffix(req.Question[0].Name, o.DomainToOverride) {
+			s.overrideResponse(w, req, o.RedirectToDomain)
 			return
 		}
 	}
@@ -593,27 +593,22 @@ func (s *vmDNSServer) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	}
 }
 
-func (s *vmDNSServer) overrideResponse(w dns.ResponseWriter, req *dns.Msg, redirectToIP string) {
+func (s *vmDNSServer) overrideResponse(w dns.ResponseWriter, req *dns.Msg, redirectToDomain string) {
 	m := &dns.Msg{}
 	m.SetReply(req)
 	m.Authoritative = true
 	m.Rcode = dns.RcodeSuccess
 	m.RecursionAvailable = true
-	aRec := &dns.A{
+	cname := &dns.CNAME{
 		Hdr: dns.RR_Header{
 			Name:   req.Question[0].Name,
-			Rrtype: dns.TypeA,
+			Rrtype: dns.TypeCNAME,
 			Class:  dns.ClassINET,
 			Ttl:    60,
 		},
-		A: net.ParseIP(redirectToIP),
+		Target: redirectToDomain,
 	}
-	// TODO: If the override is unavailable, should we fallback to the original
-	// hostname? For example if we override buildbuddy.io with proxy.io but the
-	// proxy is unavailable, should we provide another DNS response for buildbuddy.io?
-	// We'd need the IP for the original hostname, because you can return
-	// multiple A responses but only a single cname response.
-	m.Answer = append(m.Answer, aRec)
+	m.Answer = append(m.Answer, cname)
 	if err := w.WriteMsg(m); err != nil {
 		log.Errorf("could not send dns reply: %s", err)
 	}
