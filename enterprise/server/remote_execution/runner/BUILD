@@ -37,6 +37,7 @@ go_library(
         "//server/util/background",
         "//server/util/disk",
         "//server/util/flag",
+        "//server/util/fspath",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/random",

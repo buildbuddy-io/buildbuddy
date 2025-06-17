@@ -16,6 +16,7 @@ go_library(
         "//server/util/alert",
         "//server/util/claims",
         "//server/util/fastcopy",
+        "//server/util/fspath",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/rpcutil",

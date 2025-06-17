@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -76,7 +77,7 @@ type TransferInfo struct {
 	Transfers map[string]*repb.FileNode
 	// Exists tracks the files that already existed, keyed by their
 	// workspace-relative paths.
-	Exists map[string]*repb.FileNode
+	Exists map[fspath.Key]*repb.FileNode
 
 	LinkCount    int64
 	LinkDuration time.Duration
@@ -632,7 +633,8 @@ type FilePointer struct {
 // we overwrite existing files without silently dropping errors when linking
 // the file. (Note, it is not needed when writing a fresh copy of the file.)
 func removeExisting(fp *FilePointer, opts *DownloadTreeOpts) error {
-	if _, ok := opts.Skip[fp.RelativePath]; ok {
+	pathKey := fspath.NewKey(fp.RelativePath, opts.CaseInsensitive)
+	if _, ok := opts.Skip[pathKey]; ok {
 		if err := os.Remove(fp.FullPath); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -640,7 +642,10 @@ func removeExisting(fp *FilePointer, opts *DownloadTreeOpts) error {
 	return nil
 }
 
-func writeFile(fp *FilePointer, data []byte) error {
+func writeFile(fp *FilePointer, data []byte, opts *DownloadTreeOpts) error {
+	if err := removeExisting(fp, opts); err != nil {
+		return err
+	}
 	var mode os.FileMode = 0644
 	if fp.FileNode.IsExecutable {
 		mode = 0755
@@ -777,7 +782,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 				continue
 			}
 			ptr := ptrs[0]
-			if err := writeFile(ptr, res.Data); err != nil {
+			if err := writeFile(ptr, res.Data, opts); err != nil {
 				return err
 			}
 			if fileCache != nil {
@@ -853,7 +858,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 			// Write empty files directly (skip checking cache and downloading).
 			if rn.IsEmpty() {
 				for _, fp := range filePointers {
-					if err := writeFile(fp, []byte("")); err != nil {
+					if err := writeFile(fp, []byte(""), opts); err != nil {
 						return err
 					}
 				}
@@ -1037,10 +1042,13 @@ func checkSymlink(oldName, newName string) bool {
 }
 
 type DownloadTreeOpts struct {
-	// Skip specifies file paths to skip, along with their file nodes. If the digest
-	// and executable bit of a file to be downloaded doesn't match the digest
-	// and executable bit of the file in this map, then it is re-downloaded (not skipped).
-	Skip map[string]*repb.FileNode
+	// CaseInsensitive specifies whether the filesystem is case-insensitive.
+	// If true, the paths will be normalized to lowercase.
+	CaseInsensitive bool
+	// Skip specifies file paths to skip, along with their file nodes. If the
+	// file metadata or contents to be downloaded don't match the file in this
+	// map, then it is re-downloaded (not skipped).
+	Skip map[fspath.Key]*repb.FileNode
 	// TrackTransfers specifies whether to record the full set of files downloaded
 	// and return them in TransferInfo.Transfers.
 	TrackTransfers bool
@@ -1235,12 +1243,12 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	trackExistsFn := func(relPath string, node *repb.FileNode) {}
 	if opts.TrackTransfers {
 		txInfo.Transfers = map[string]*repb.FileNode{}
-		txInfo.Exists = map[string]*repb.FileNode{}
+		txInfo.Exists = map[fspath.Key]*repb.FileNode{}
 		trackTransfersFn = func(relPath string, node *repb.FileNode) {
 			txInfo.Transfers[relPath] = node
 		}
 		trackExistsFn = func(relPath string, node *repb.FileNode) {
-			txInfo.Exists[relPath] = node
+			txInfo.Exists[fspath.NewKey(relPath, opts.CaseInsensitive)] = node
 		}
 	}
 
@@ -1253,7 +1261,8 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 				d := node.GetDigest()
 				fullPath := filepath.Join(location, node.Name)
 				relPath := trimPathPrefix(fullPath, rootDir)
-				skippedNode, ok := opts.Skip[relPath]
+				pathKey := fspath.NewKey(relPath, opts.CaseInsensitive)
+				skippedNode, ok := opts.Skip[pathKey]
 				if ok {
 					trackExistsFn(relPath, node)
 				}
@@ -1320,7 +1329,8 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 }
 
 func nodesEqual(a *repb.FileNode, b *repb.FileNode) bool {
-	return a.GetDigest().GetHash() == b.GetDigest().GetHash() &&
+	return a.GetName() == b.GetName() &&
+		a.GetDigest().GetHash() == b.GetDigest().GetHash() &&
 		a.GetDigest().GetSizeBytes() == b.GetDigest().GetSizeBytes() &&
 		a.GetIsExecutable() == b.GetIsExecutable()
 }
