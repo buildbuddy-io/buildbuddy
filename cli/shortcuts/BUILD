@@ -5,7 +5,6 @@ go_library(
     srcs = ["shortcuts.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/shortcuts",
     visibility = ["//visibility:public"],
-    deps = ["//cli/arg"],
 )
 
 package(default_visibility = ["//cli:__subpackages__"])

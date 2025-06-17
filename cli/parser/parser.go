@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
+	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -68,6 +69,7 @@ var (
 				return &Return{nil, err}
 			}
 			parser, err := GenerateParser(flagCollection)
+			parser.StartupOptionParser.Aliases = shortcuts.Shortcuts
 			return &Return{parser, err}
 		},
 	)
@@ -87,6 +89,7 @@ type Subparser struct {
 	ByShortName map[string]*options.Definition
 
 	Subcommands set.Set[string]
+	Aliases     map[string]string
 }
 
 func (m *Subparser) ForceAdd(d *options.Definition) {
@@ -114,12 +117,13 @@ type Parser struct {
 	CommandOptionParser *Subparser
 }
 
-func NewParser(optionDefinitions []*options.Definition) *Parser {
+func NewParser(optionDefinitions []*options.Definition, commands []string, aliases map[string]string) *Parser {
 	p := &Parser{
 		StartupOptionParser: &Subparser{
 			ByName:      map[string]*options.Definition{},
 			ByShortName: map[string]*options.Definition{},
-			Subcommands: make(set.Set[string]),
+			Subcommands: set.From(commands...),
+			Aliases:     aliases,
 		},
 		CommandOptionParser: &Subparser{
 			ByName:      map[string]*options.Definition{},
@@ -211,19 +215,29 @@ func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.Ord
 			parsedArgs.Args = append(parsedArgs.Args, arguments.ToPositionalArguments(next[1:])...)
 			break
 		}
-		if command == "startup" {
-			command = next[0]
+		if len(subparser.Subcommands) == 0 {
+			// If the subparser does not support subcommands, this is just a normal
+			// positional argument.
+			parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: next[0]})
+			next = next[1:]
+			continue
+		}
+		command = next[0]
+		if !subparser.Subcommands.Contains(command) {
 			if command == "" {
 				// bazel treats a blank command as a help command that halts both option and
 				// argument parsing and ignores all non-startup options in the rc file.
 				break
 			}
-			if !subparser.Subcommands.Contains(command) {
+			// Expand command shortcuts like b=>build, t=>test, etc.
+			aliased, ok := subparser.Aliases[command]
+			if !ok {
 				return nil, fmt.Errorf("Command '%s' not found. Try 'bb help'", command)
 			}
-			subparser = p.CommandOptionParser
+			command = aliased
 		}
-		parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: next[0]})
+		subparser = p.CommandOptionParser
+		parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: command})
 		next = next[1:]
 	}
 	return parsedArgs, nil
@@ -452,7 +466,7 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 // OptionDefinitions, places each option definition into subparsers corresponding
 // to the commands it supports, and returns the resulting parser.
 func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...string) (*Parser, error) {
-	p := NewParser(nil)
+	p := NewParser(nil, nil, nil)
 	for _, info := range flagCollection.FlagInfos {
 		if err := p.AddOptionDefinition(options.DefinitionFrom(info)); err != nil {
 			return nil, err

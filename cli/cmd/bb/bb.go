@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/runscript"
 	"github.com/buildbuddy-io/buildbuddy/cli/setup"
-	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -77,9 +76,6 @@ func run() (exitCode int, err error) {
 
 	// Register all known cli commands so that we can query or iterate them later.
 	register_cli_commands.Register()
-
-	// Expand command shortcuts like b=>build, t=>test, etc.
-	args = shortcuts.HandleShortcuts(args)
 
 	// Make sure startup args are always in the format --foo=bar.
 	args, err = parser.CanonicalizeArgs(args)

@@ -12,6 +12,7 @@ go_library(
         "//cli/parser/bazelrc",
         "//cli/parser/options",
         "//cli/parser/parsed",
+        "//cli/shortcuts",
         "//cli/storage",
         "//cli/watcher/option_definitions",
         "//cli/workspace",
