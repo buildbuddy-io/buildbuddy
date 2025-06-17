@@ -26,7 +26,6 @@ go_library(
         "//server/util/db",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
-        "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/testing/flags",
         "//server/util/vtprotocodec",
