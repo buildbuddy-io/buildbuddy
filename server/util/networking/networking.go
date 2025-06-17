@@ -88,6 +88,11 @@ var (
 	}
 )
 
+type DnsOverride struct {
+	HostnameToOverride string `yaml:"hostname_to_override"`
+	RedirectToIP       string `yaml:"redirect_to_ip"`
+}
+
 // runCommand runs the provided command, prepending sudo if the calling user is
 // not already root. Output and errors are returned.
 func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
