@@ -450,6 +450,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   getMostSpecificDecoration(range: monaco.Range): kythe.proto.DecorationsReply.Reference | undefined {
+    // Get the decoration that overlaps this range and has the smallest span.
+
     const decorInRange = this.editor?.getDecorationsInRange(range);
     if (!decorInRange) {
       return undefined;
@@ -458,14 +460,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     let minMatch = undefined;
     let minMatchLength = Number.POSITIVE_INFINITY;
     for (const decor of decorInRange) {
-      if (!decor.options.after?.attachedData) {
+      const data = decor.options.after?.attachedData as kythe.proto.DecorationsReply.Reference;
+      if (!data || !data.span || !data.span.start || !data.span.end) {
         continue;
       }
-      const data = decor.options.after.attachedData as kythe.proto.DecorationsReply.Reference;
-      if (!data.span || !data.span.start || !data.span.end) {
-        continue;
-      }
-
       const matchLength = data.span.end.byteOffset - data.span.start.byteOffset;
       if (matchLength < minMatchLength) {
         minMatchLength = matchLength;
