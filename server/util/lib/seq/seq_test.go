@@ -198,7 +198,7 @@ func TestDrop(t *testing.T) {
 				"foobar",
 				"barfoo",
 			},
-			n:        0,
+			n: 0,
 			expected: []string{
 				"foo",
 				"bar",
@@ -226,7 +226,7 @@ func TestDrop(t *testing.T) {
 				"foobar",
 				"barfoo",
 			},
-			n: 4,
+			n:        4,
 			expected: make([]string, 0),
 		},
 		"non-empty with n greater than length": {
