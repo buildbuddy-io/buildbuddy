@@ -266,13 +266,13 @@ func TestTruncate(t *testing.T) {
 		truncated := seq.Truncate[string](lines, 2)
 		assert.ElementsMatch(
 			t,
-			[]string{"hello", "there"},
+			[]string{"hello\n", "there\n"},
 			slices.Collect(truncated),
 		)
 
 		assert.ElementsMatch(
 			t,
-			[]string{"cool", "world", ""},
+			[]string{"cool\n", "world\n"},
 			slices.Collect(lines),
 		)
 	})
