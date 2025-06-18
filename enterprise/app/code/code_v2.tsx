@@ -478,15 +478,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return decor?.options?.after?.attachedData as kythe.proto.DecorationsReply.Reference | undefined;
   }
 
-  getKytheRefsInRange(range: monaco.Range): kythe.proto.DecorationsReply.Reference[] | undefined {
-    const decorInRange = this.editor?.getDecorationsInRange(range);
-    if (!decorInRange) {
-      return undefined;
-    }
-
-    return decorInRange.map((decor) => this.decorToReference(decor)).filter((ref) => !!ref);
-  }
-
   getKytheRefsForRange(range: monaco.Range): kythe.proto.DecorationsReply.Reference[] | undefined {
     // This finds the smallest decorations in a given range.
     // All decorations that share the same smallest span will be returned.
