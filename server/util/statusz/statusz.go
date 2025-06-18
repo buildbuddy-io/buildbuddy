@@ -199,10 +199,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer h.mu.RUnlock()
 	ctx := r.Context()
 
-	sectionName := r.PathValue("section_name")
-	if sectionName != "" {
-		sectionName = strings.Split(sectionName, "/")[0]
-	}
+	sectionName, _, _ := strings.Cut(r.PathValue("section_name"), "/")
 	if section, ok := h.sections[sectionName]; ok {
 		if r.Method == http.MethodPost && section.Update != nil {
 			section.Update(w, r)
