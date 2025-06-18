@@ -8,7 +8,6 @@ ts_library(
     name = "invocation",
     srcs = ["invocation.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/moment",
@@ -439,7 +438,6 @@ ts_library(
     name = "invocation_model",
     srcs = ["invocation_model.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/moment",

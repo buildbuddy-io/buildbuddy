@@ -6,7 +6,6 @@ ts_library(
     name = "auditlogs",
     srcs = ["auditlogs.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-date-range",
         "//:node_modules/lucide-react",

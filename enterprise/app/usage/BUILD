@@ -8,7 +8,6 @@ ts_library(
     name = "usage",
     srcs = ["usage.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/moment",
         "//:node_modules/react",
