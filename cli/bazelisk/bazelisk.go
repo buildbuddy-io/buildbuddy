@@ -21,12 +21,6 @@ var (
 	setVersionErr  error
 )
 
-const (
-	// bazelisk environment variable name that skips tools/bazel if set to a
-	// non-empty string.
-	skipWrapperEnvVar = "BAZELISK_SKIP_WRAPPER"
-)
-
 type RunOpts struct {
 	// Stdout is the Writer where bazelisk should write its stdout.
 	// Defaults to os.Stdout if nil.
@@ -35,26 +29,9 @@ type RunOpts struct {
 	// Stderr is the Writer where bazelisk should write its stderr.
 	// Defaults to os.Stderr if nil.
 	Stderr io.Writer
-
-	// SkipWrapper skips the tools/bazel wrapper if it exists.
-	SkipWrapper bool
 }
 
 func Run(args []string, opts *RunOpts) (exitCode int, err error) {
-	if opts.SkipWrapper {
-		prev, ok := os.LookupEnv(skipWrapperEnvVar)
-		if err := os.Setenv(skipWrapperEnvVar, "true"); err != nil {
-			return -1, fmt.Errorf("failed to set %s: %s", skipWrapperEnvVar, err)
-		}
-		// Reset BAZELISK_SKIP_WRAPPER to its previous state after running
-		// bazelisk.
-		if ok {
-			defer os.Setenv(skipWrapperEnvVar, prev)
-		} else {
-			defer os.Unsetenv(skipWrapperEnvVar)
-		}
-	}
-
 	// If we were already invoked via bazelisk, then set the bazel version to
 	// the next version appearing in the .bazelversion file so that bazelisk
 	// doesn't just invoke us again (resulting in an infinite loop).
@@ -103,7 +80,7 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 // This will return true when referencing a CLI release in .bazelversion such as
 // "buildbuddy-io/0.0.13" and then running `bazelisk`.
 func IsInvokedByBazelisk() bool {
-	return filepath.Base(os.Args[0]) == "bazelisk" || os.Getenv(skipWrapperEnvVar) == "true"
+	return filepath.Base(os.Args[0]) == "bazelisk" || os.Getenv("BAZELISK_SKIP_WRAPPER") == "true"
 }
 
 // makePipeWriter adapts a writer to an *os.File by using an os.Pipe().
