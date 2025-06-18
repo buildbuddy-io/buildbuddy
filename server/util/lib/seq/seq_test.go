@@ -165,6 +165,97 @@ func TestFmap(t *testing.T) {
 	})
 }
 
+func TestDrop(t *testing.T) {
+	for name, tc := range map[string]struct {
+		input    []string
+		n        int
+		expected []string
+	}{
+		"empty with zero": {
+			input:    make([]string, 0),
+			n:        0,
+			expected: make([]string, 0),
+		},
+		"nil with zero": {
+			input:    nil,
+			n:        0,
+			expected: make([]string, 0),
+		},
+		"empty with non-zero": {
+			input:    make([]string, 0),
+			n:        10,
+			expected: make([]string, 0),
+		},
+		"nil with non-zero": {
+			input:    nil,
+			n:        10,
+			expected: make([]string, 0),
+		},
+		"non-empty with zero": {
+			input: []string{
+				"foo",
+				"bar",
+				"foobar",
+				"barfoo",
+			},
+			n:        0,
+			expected: []string{
+				"foo",
+				"bar",
+				"foobar",
+				"barfoo",
+			},
+		},
+		"non-empty with n less than length": {
+			input: []string{
+				"foo",
+				"bar",
+				"foobar",
+				"barfoo",
+			},
+			n: 2,
+			expected: []string{
+				"foobar",
+				"barfoo",
+			},
+		},
+		"non-empty with n equal to length": {
+			input: []string{
+				"foo",
+				"bar",
+				"foobar",
+				"barfoo",
+			},
+			n: 4,
+			expected: make([]string, 0),
+		},
+		"non-empty with n greater than length": {
+			n: 100,
+			input: []string{
+				"foo",
+				"bar",
+				"foobar",
+				"barfoo",
+			},
+			expected: make([]string, 0),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			originalInput := slices.Clone(tc.input)
+			dropped := seq.Drop[string](tc.input, tc.n)
+			assert.ElementsMatch(t, tc.expected, slices.Collect(dropped))
+			assert.ElementsMatch(t, originalInput, tc.input)
+			// test statelessness
+			assert.ElementsMatch(t, tc.expected, slices.Collect(dropped))
+
+			dropped = seq.Drop[string](slices.Values(tc.input), tc.n)
+			assert.ElementsMatch(t, tc.expected, slices.Collect(dropped))
+			// test statelessness
+			assert.ElementsMatch(t, tc.expected, slices.Collect(dropped))
+		})
+	}
+}
+
 func TestTruncate(t *testing.T) {
 	for name, tc := range map[string]struct {
 		input    []string
