@@ -210,6 +210,7 @@ type config struct {
 	doubleReadPercentage, decompressPercentage float64
 }
 
+// TODO(vanja) either return errors, or remove the error return value.
 func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 	c := &config{
 		src:                  mc.defaultConfigDoNotUseDirectly.src,
@@ -223,7 +224,7 @@ func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 	}
 	m := mc.flagProvider.Object(ctx, MigrationCacheConfigFlag, nil)
 	if m == nil {
-		return nil, status.InternalError("No migration cache config found in experiment flags")
+		return c, nil
 	}
 
 	if v, ok := m[MigrationStateField]; ok {
@@ -242,31 +243,31 @@ func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 				c.src = mc.defaultConfigDoNotUseDirectly.dest
 				c.dest = nil
 			default:
-				return nil, status.InternalErrorf("Unknown migration cache state: %s", state)
+				log.CtxWarningf(ctx, "Invalid migration config - Unknown migration cache state: %s", state)
 			}
 		} else {
-			return nil, status.InternalErrorf("MigrationStateField is not a string: %T(%v)", v, v)
+			log.CtxWarningf(ctx, "Invalid migration config - MigrationStateField is not a string: %T(%v)", v, v)
 		}
 	}
 	if v, ok := m[AsyncDestWriteField]; ok {
 		if asyncDestWrites, ok := v.(bool); ok {
 			c.asyncDestWrites = asyncDestWrites
 		} else {
-			return nil, status.InternalErrorf("AsyncDestWriteField is not a bool: %T(%v)", v, v)
+			log.CtxWarningf(ctx, "Invalid migration config - AsyncDestWriteField is not a bool: %T(%v)", v, v)
 		}
 	}
 	if v, ok := m[DoubleReadPercentageField]; ok {
 		if doubleReadPercentage, ok := v.(float64); ok {
 			c.doubleReadPercentage = doubleReadPercentage
 		} else {
-			return nil, status.InternalErrorf("DoubleReadPercentageField is not a float64: %T(%v)", v, v)
+			log.CtxWarningf(ctx, "Invalid migration config - DoubleReadPercentageField is not a float64: %T(%v)", v, v)
 		}
 	}
 	if v, ok := m[DecompressReadPercentageField]; ok {
 		if decompressPercentage, ok := v.(float64); ok {
 			c.decompressPercentage = decompressPercentage
 		} else {
-			return nil, status.InternalErrorf("DecompressReadPercentageField is not a float64: %T(%v)", v, v)
+			log.CtxWarningf(ctx, "Invalid migration config - DecompressReadPercentageField is not a float64: %T(%v)", v, v)
 		}
 	}
 	return c, nil
