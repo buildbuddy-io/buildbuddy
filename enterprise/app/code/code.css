@@ -20,14 +20,14 @@
 }
 
 .code-search-xrefs::before {
-    content: '';
-    display: block;
-    background-color: #ccc;
-    position: relative;
-    top: 0;
-    height: 4px;
-    width: 100%;
-    cursor: ns-resize;
+  content: "";
+  display: block;
+  background-color: #ccc;
+  position: relative;
+  top: 0;
+  height: 4px;
+  width: 100%;
+  cursor: ns-resize;
 }
 
 .xrefs-header {
