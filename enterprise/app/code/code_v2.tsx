@@ -2042,7 +2042,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
             </div>
             {Boolean(this.state.xrefsLoading || this.state.xrefs) && (
               <div className="code-search-xrefs">
-                { /* TODO(jdelfino): Add an error state if xrefs fail to load */}
+                {/* TODO(jdelfino): Add an error state if xrefs fail to load */}
                 {this.state.xrefsLoading && <div className="loading"></div>}
                 {!this.state.xrefsLoading && this.renderXrefs()}
               </div>
