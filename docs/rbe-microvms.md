@@ -109,7 +109,7 @@ A single microVM snapshot may be used by many test runs, and can survive for
 very long. To start a fresh instance, add an execution property or modify an
 existing one.
 
-For the above reasons, We recommend using `test.recycle-runner-key` to encode
+For the above reasons, we recommend using `test.recycle-runner-key` to encode
 dependency and version information. For example, a test that keeps MySQL running
 between runs should have `"test.recycle-runner-key": "mysql@v1.2.3"`. When you
 switch to a new version of MySQL, you would update this to guarantee a new
