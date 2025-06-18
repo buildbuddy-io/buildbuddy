@@ -1,5 +1,5 @@
 import React from "react";
-import rpcService from "../../../app/service/rpc_service";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
 import SidebarNodeComponentV2, { compareNodes } from "./code_sidebar_node_v2";
 import { Subscription } from "rxjs";
@@ -93,6 +93,9 @@ interface State {
 
   commands: string[];
   defaultConfig: string;
+
+  xrefsLoading: boolean;
+  xrefs?: kythe.proto.CrossReferencesReply;
 }
 
 // When upgrading monaco, make sure to run
@@ -123,6 +126,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     prLink: "",
     prBranch: "",
     prNumber: new Long(0),
+    xrefsLoading: false,
 
     loading: false,
 
@@ -140,6 +144,16 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
   editor: monaco.editor.IStandaloneCodeEditor | undefined;
   diffEditor: monaco.editor.IDiffEditor | undefined;
+
+  // Note that these decoration collections are automatically cleared when the model is changed.
+  kytheDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
+  searchDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
+  lcovDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
+
+  findRefsKey?: monaco.editor.IContextKey<boolean>;
+  goToDefKey?: monaco.editor.IContextKey<boolean>;
+  pendingXrefsRequest?: CancelablePromise<search.KytheResponse>;
+  mousedownTarget?: monaco.Position;
 
   codeViewer = React.createRef<HTMLDivElement>();
   diffViewer = React.createRef<HTMLDivElement>();
@@ -229,7 +243,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     });
   }
 
-  getDisplayOptions(o: any): any | null {
+  getDisplayOptions(o: any): monaco.editor.IModelDecorationOptions | null {
     let type = "";
     switch (o.kind) {
       case "/kythe/edge/ref/call":
@@ -250,61 +264,104 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return { inlineClassName: "code-hover " + type, hoverMessage: { value: o.target_ticket } };
   }
 
+  fetchXrefAndNavToDefinition(pos: monaco.Position) {
+    const decor = this.getMostSpecificDecoration(
+      new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
+    );
+    if (!decor) {
+      return;
+    }
+
+    this.fetchXrefs(decor.targetTicket, (xrefReply) => {
+      const def = xrefReply.crossReferences[decor.targetTicket].definition[0];
+      if (!def?.anchor) {
+        return;
+      }
+      this.navigateToAnchor(def.anchor);
+    });
+  }
+
+  fetchXrefsByPosition(pos: monaco.Position) {
+    const decor = this.getMostSpecificDecoration(
+      new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
+    );
+    if (!decor) {
+      return;
+    }
+
+    this.fetchXrefs(decor.targetTicket, (xrefReply) => {
+      this.setState({ xrefs: xrefReply ?? undefined });
+    });
+  }
+
   async fetchDecorations(filename: string) {
     if (!filename) {
       return;
     }
 
     let ticket = "kythe://buildbuddy?path=" + filename;
-    let req = new search.KytheRequest();
-    req.decorationsRequest = new kythe.proto.DecorationsRequest();
-    req.decorationsRequest.location = new kythe.proto.Location();
-    req.decorationsRequest.location.ticket = ticket;
-    req.decorationsRequest.references = true;
-    req.decorationsRequest.targetDefinitions = true;
-    req.decorationsRequest.semanticScopes = true;
-    req.decorationsRequest.diagnostics = true;
-
+    const req = new search.KytheRequest({
+      decorationsRequest: new kythe.proto.DecorationsRequest({
+        location: new kythe.proto.Location({
+          ticket: ticket,
+        }),
+        references: true,
+        targetDefinitions: true,
+        semanticScopes: true,
+        diagnostics: true,
+      }),
+    });
     let rsp = await rpcService.service.kytheProxy(req);
-    const newDecor = rsp.decorationsReply?.reference
-      .map((x) => {
-        const startLine = x.span?.start?.lineNumber || 0;
-        const startColumn = x.span?.start?.columnOffset || 0;
-        const endLine = x.span?.end?.lineNumber || 0;
-        const endColumn = x.span?.end?.columnOffset || 0;
-        const monacoRange = new monaco.Range(startLine, startColumn + 1, endLine, endColumn + 1);
-        const displayOptions = this.getDisplayOptions(x);
-        if (displayOptions === null) {
-          return null;
-        }
-        return {
-          range: monacoRange,
-          options: displayOptions,
-        };
-      })
-      .filter((x) => x !== null);
 
-    // Paging @jdhollen
+    const newDecor =
+      rsp.decorationsReply?.reference
+        .map((x) => {
+          const startLine = x.span?.start?.lineNumber || 0;
+          const startColumn = x.span?.start?.columnOffset || 0;
+          const endLine = x.span?.end?.lineNumber || 0;
+          const endColumn = x.span?.end?.columnOffset || 0;
+          const monacoRange = new monaco.Range(startLine, startColumn + 1, endLine, endColumn + 1);
+          const displayOptions = this.getDisplayOptions(x);
+          if (displayOptions === null) {
+            return null;
+          }
+          // slight hack: store the kythe reference in the "after" injected text property - it has
+          // a field that holds a generic object. This allows the kythe references to be easily
+          // retrieved later.
+          displayOptions.after = { attachedData: x, content: "" };
+
+          return {
+            range: monacoRange,
+            options: displayOptions,
+          };
+        })
+        .filter((x) => x !== null) || [];
+    this.kytheDecorations?.set(newDecor);
   }
 
   getChange(path: string) {
     return this.state.changes.get(path);
   }
 
-  fetchIfNeededAndNavigate(path: string, additionalParams = "") {
-    this.navigateToPath(path + additionalParams);
+  fetchIfNeededAndNavigate(path: string, additionalParams = "", line = 0): Promise<boolean> {
+    if (line > 0) {
+      this.navigateToPathWithLine(path, line);
+    } else {
+      this.navigateToPath(path + additionalParams);
+    }
 
     if (this.state.mergeConflicts.has(path)) {
       this.handleViewConflictClicked(path, this.state.mergeConflicts.get(path)!, undefined);
-      return;
+      return Promise.resolve(true);
     } else if (this.isDiffView()) {
       this.handleViewDiffClicked(path);
-      return;
+      return Promise.resolve(true);
     }
 
-    this.getModel(path).then((model) => {
+    return this.getModel(path).then((model) => {
       this.setModel(path, model);
       this.focusLineNumberAndHighlightQuery();
+      return true;
     });
   }
 
@@ -388,6 +445,38 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return this.props.search.get("pq");
   }
 
+  decorToReference(decor: monaco.editor.IModelDecoration): kythe.proto.DecorationsReply.Reference | undefined {
+    return decor?.options?.after?.attachedData as kythe.proto.DecorationsReply.Reference | undefined;
+  }
+
+  getMostSpecificDecoration(range: monaco.Range): kythe.proto.DecorationsReply.Reference | undefined {
+    // Get the decoration that overlaps this range and has the smallest span.
+
+    const decorInRange = this.editor?.getDecorationsInRange(range);
+    if (!decorInRange) {
+      return undefined;
+    }
+
+    let minMatch = undefined;
+    let minMatchLength = Number.POSITIVE_INFINITY;
+    for (const decor of decorInRange) {
+      const data = decor.options.after?.attachedData as kythe.proto.DecorationsReply.Reference;
+      if (!data || !data.span || !data.span.start || !data.span.end) {
+        continue;
+      }
+      const matchLength = data.span.end.byteOffset - data.span.start.byteOffset;
+      if (matchLength < minMatchLength) {
+        minMatchLength = matchLength;
+        minMatch = decor;
+      }
+    }
+    if (!minMatch) {
+      return undefined;
+    }
+
+    return this.decorToReference(minMatch);
+  }
+
   fetchInitialContent() {
     if (this.fetchedInitialContent || !this.getDefaultBranch()) {
       return;
@@ -404,6 +493,69 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       value: "",
       theme: "vs",
       readOnly: this.isSingleFile() || Boolean(this.getQuery()),
+    });
+    this.searchDecorations = this.editor.createDecorationsCollection();
+    this.kytheDecorations = this.editor.createDecorationsCollection();
+    this.lcovDecorations = this.editor.createDecorationsCollection();
+
+    this.editor.onMouseDown((e) => {
+      this.mousedownTarget = e.target.position ?? undefined;
+    });
+
+    this.editor.onMouseUp((e) => {
+      if (this.mousedownTarget && e.target.position) {
+        if (
+          e.target.position.column === this.mousedownTarget.column &&
+          e.target.position.lineNumber === this.mousedownTarget.lineNumber
+        ) {
+          this.fetchXrefsByPosition(e.target.position);
+        }
+      } else {
+        this.mousedownTarget = undefined;
+      }
+    });
+
+    this.goToDefKey = this.editor.createContextKey<boolean>("goToDefContextKey", false);
+    this.editor.addAction({
+      id: "code-search-definition-action",
+      label: "Go to definition",
+      precondition: "goToDefContextKey",
+      contextMenuGroupId: "navigation",
+      contextMenuOrder: 1,
+      // Method that will be executed when the action is triggered.
+      run: (ed) => {
+        const pos = ed.getPosition();
+        if (!pos) {
+          return;
+        }
+        this.fetchXrefAndNavToDefinition(pos);
+      },
+    });
+
+    this.findRefsKey = this.editor.createContextKey<boolean>("findRefsContextKey", false);
+    this.editor.addAction({
+      id: "code-search-reference-action",
+      label: "Find references",
+      precondition: "findRefsContextKey",
+      contextMenuGroupId: "navigation",
+      contextMenuOrder: 2,
+      // Method that will be executed when the action is triggered.
+      run: (ed) => {
+        const pos = ed.getPosition();
+        if (!pos) {
+          return;
+        }
+        this.fetchXrefsByPosition(pos);
+      },
+    });
+
+    this.editor.onContextMenu((e) => {
+      if (e.target.range) {
+        let decors = this.editor?.getDecorationsInRange(e.target.range);
+        // TODO(jdelfino): Disable "Go to definition" when already on a definition
+        this.findRefsKey?.set(decors != null && decors.length > 0);
+        this.goToDefKey?.set(decors != null && decors.length > 0);
+      }
     });
 
     this.forceUpdate();
@@ -450,13 +602,12 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           /* wordSeparators= */ null,
           /* captureMatches= */ false
         );
-      this.editor?.removeDecorations(
-        this.editor
-          ?.getModel()
-          ?.getAllDecorations()
-          .map((d) => d.id) || []
-      );
-      this.editor?.createDecorationsCollection(
+      if (!ranges || ranges.length == 0) {
+        this.searchDecorations?.clear();
+        return;
+      }
+
+      this.searchDecorations?.set(
         ranges?.map((r) => {
           return { range: r.range, options: { inlineClassName: "code-query-highlight" } };
         })
@@ -750,8 +901,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           let records = parseLcov(result);
           for (let record of records) {
             if (record.sourceFile == this.currentPath()) {
-              this.editor?.deltaDecorations(
-                [],
+              this.lcovDecorations?.set(
                 record.data.map((r) => {
                   const parts = r.split(",");
                   const lineNum = parseInt(parts[0]);
@@ -922,6 +1072,43 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       "",
       `/code/${this.currentOwner()}/${this.currentRepo()}/${path}${window.location.hash}`
     );
+  }
+
+  navigateToPathWithLine(path: string, line: number) {
+    window.history.pushState(undefined, "", `/code/${this.currentOwner()}/${this.currentRepo()}/${path}#L${line}`);
+  }
+
+  fetchXrefs(targetTicket: string, handler: (d: kythe.proto.CrossReferencesReply) => void) {
+    if (!targetTicket) {
+      return;
+    }
+    this.pendingXrefsRequest?.cancel();
+    this.setState({ xrefsLoading: true });
+
+    const req = new search.KytheRequest({
+      crossReferencesRequest: new kythe.proto.CrossReferencesRequest({
+        snippets: kythe.proto.SnippetsKind.DEFAULT,
+        ticket: [targetTicket],
+        declarationKind: kythe.proto.CrossReferencesRequest.DeclarationKind.ALL_DECLARATIONS,
+        referenceKind: kythe.proto.CrossReferencesRequest.ReferenceKind.ALL_REFERENCES,
+        definitionKind: kythe.proto.CrossReferencesRequest.DefinitionKind.BINDING_DEFINITIONS,
+      }),
+    });
+    this.pendingXrefsRequest = rpcService.service.kytheProxy(req);
+    this.pendingXrefsRequest
+      .then((r) => {
+        if (!r.crossReferencesReply) {
+          console.log("No cross references found for ticket: ", targetTicket);
+          return;
+        }
+        handler(r.crossReferencesReply);
+      })
+      .catch((e) => {
+        console.log("Error fetching xrefs: ", req, e);
+      })
+      .finally(() => {
+        this.setState({ xrefsLoading: false });
+      });
   }
 
   async handleBuildClicked(args: string) {
@@ -1525,6 +1712,105 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return Array.from(files.values());
   }
 
+  navigateToAnchor(a: kythe.proto.Anchor) {
+    const path = a.parent.split("?path=")[1];
+    const line = a.span?.start?.lineNumber;
+    if (!line) {
+      return;
+    }
+    this.fetchIfNeededAndNavigate(path, "", line);
+  }
+
+  renderXrefGroup(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]) {
+    console.log(`Rendering xref group: ${name}`, anchors);
+    if (anchors.length === 0) {
+      return <></>;
+    }
+    // group up by parent...
+    const fileToRefsMap: Map<string, kythe.proto.CrossReferencesReply.RelatedAnchor[]> = new Map();
+
+    anchors.forEach((a) => {
+      if (!a.anchor) {
+        return;
+      }
+      const parentTicket = a.anchor.parent;
+      if (!fileToRefsMap.has(parentTicket)) {
+        fileToRefsMap.set(parentTicket, []);
+      }
+
+      fileToRefsMap.get(parentTicket)!.push(a);
+    });
+
+    for (const [key, refs] of fileToRefsMap.entries()) {
+      const uniques = new Map<number, kythe.proto.CrossReferencesReply.RelatedAnchor>();
+      const uniqueLineRefs = refs.filter((ra) => {
+        if (!ra.anchor || !ra.anchor.span || !ra.anchor.span.start) {
+          return false;
+        }
+        if (uniques.has(ra.anchor.span.start.lineNumber)) {
+          return false;
+        }
+        uniques.set(ra.anchor.span.start.lineNumber, ra);
+        return true;
+      });
+      uniqueLineRefs.sort((a, b) => {
+        return (a.anchor?.span?.start?.byteOffset || 100000) - (b.anchor?.span?.start?.byteOffset || 100000);
+      });
+
+      fileToRefsMap.set(key, uniqueLineRefs);
+    }
+
+    return (
+      <div>
+        <div className="xrefs-category">{name}</div>
+        {[...fileToRefsMap.entries()].map((entry) => {
+          const path = new URL(entry[0]).searchParams.get("path") ?? "";
+          if (!path) {
+            return <></>;
+          }
+          return (
+            <div>
+              <div
+                className="xrefs-file"
+                onClick={() => {
+                  this.fetchIfNeededAndNavigate(path, "", 1);
+                }}>
+                {path} ({entry[1].length} result{entry[1].length > 1 ? "s" : ""})
+              </div>
+              <div className="xrefs-snippet">
+                {entry[1].map((a) => {
+                  return (
+                    <div
+                      onClick={() => {
+                        this.navigateToAnchor(a.anchor!);
+                      }}>
+                      <span className="xrefs-snippet-line">{a.anchor?.span?.start?.lineNumber}: </span>
+                      <span>{a.anchor?.snippet}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  renderXrefs() {
+    if (!this.state.xrefs) {
+      return <></>;
+    }
+    const xrefs = Object.values(this.state.xrefs?.crossReferences)[0];
+    return (
+      <div>
+        <div className="xrefs-header">References</div>
+        {this.renderXrefGroup("Definitions", xrefs.definition)}
+        {this.renderXrefGroup("Other references", xrefs.reference)}
+      </div>
+    );
+  }
+
   render() {
     setTimeout(() => {
       this.editor?.layout();
@@ -1754,6 +2040,13 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 ref={this.diffViewer}
               />
             </div>
+            {Boolean(this.state.xrefsLoading || this.state.xrefs) && (
+              <div className="code-search-xrefs">
+                {/* TODO(jdelfino): Add an error state if xrefs fail to load */}
+                {this.state.xrefsLoading && <div className="loading"></div>}
+                {!this.state.xrefsLoading && this.renderXrefs()}
+              </div>
+            )}
             {this.state.changes.size > 0 && !this.getQuery() && (
               <div className="code-diff-viewer">
                 <div className="code-diff-viewer-title">
