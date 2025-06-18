@@ -87,10 +87,9 @@ func Fmap[I any, O any, S Sequenceable[I]](s S, f func(I) O) iter.Seq[O] {
 	}
 }
 
-// Truncate drops the first N elements from the passed sequence after N
-// elements. If the sequence is fewer than N elements in length, it will
-// return an empty sequence. If N is less than one, the sequence is returned
-// unchanged.
+// Drop drops the first N elements from the passed sequence after N elements. If
+// the sequence is fewer than N elements in length, it will return an empty
+// sequence. If N is less than one, the sequence is returned unchanged.
 //
 // As with all sequences returned by this library, so long as the parameters are
 // stateless, the returned sequence will be stateless.
