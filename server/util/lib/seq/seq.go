@@ -104,13 +104,13 @@ func Truncate[E any, S Sequenceable[E]](s S, n int) iter.Seq[E] {
 	return func(yield func(E) bool) {
 		i := 0
 		for e := range Sequence[E](s) {
-			if i >= n {
-				return
-			}
 			if !yield(e) {
 				return
 			}
 			i++
+			if i >= n {
+				return
+			}
 		}
 	}
 }
