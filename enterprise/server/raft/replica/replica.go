@@ -463,13 +463,13 @@ func (sm *Replica) checkLocks(wb pebble.Batch, txid []byte) error {
 		keyString := string(ukey)
 		lockingTxid, ok := sm.lockedKeys[keyString]
 		if ok && !bytes.Equal(txid, lockingTxid) {
-			return status.UnavailableErrorf("[%s] Conflict on key %q, locked by %q", sm.name(), keyString, string(lockingTxid))
+			return status.UnavailableErrorf("[%s] %s %q, locked by %q", sm.name(), constants.ConflictKeyMsg, keyString, string(lockingTxid))
 		}
 		sm.rangeMu.RLock()
 		containsKey := sm.mappedRange != nil && sm.mappedRange.Contains(ukey)
 		sm.rangeMu.RUnlock()
 		if containsKey && len(sm.mappedRangeLockingTXID) > 0 && !bytes.Equal(txid, sm.mappedRangeLockingTXID) {
-			return status.UnavailableErrorf("[%s] Conflict on key %q, locked by %q", sm.name(), keyString, string(sm.mappedRangeLockingTXID))
+			return status.UnavailableErrorf("[%s] %s %q, locked by %q", sm.name(), constants.ConflictKeyMsg, keyString, string(sm.mappedRangeLockingTXID))
 		}
 	}
 	return nil

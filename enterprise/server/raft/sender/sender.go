@@ -384,6 +384,10 @@ func WithConsistencyMode(mode rfpb.Header_ConsistencyMode) Option {
 	}
 }
 
+func isConflictKeyError(err error) bool {
+	return status.IsUnavailableError(err) && strings.Contains(status.Message(err), constants.ConflictKeyMsg)
+}
+
 // run looks up the replicas that are responsible for the given key and executes
 // fn for each replica until the function succeeds or returns an unretriable
 // error.
@@ -423,7 +427,7 @@ func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 			return nil
 		}
 		skipRangeCache = true
-		if !status.IsOutOfRangeError(err) && !status.IsUnavailableError(err) {
+		if !status.IsOutOfRangeError(err) && !isConflictKeyError(err) {
 			return err
 		}
 		lastError = err

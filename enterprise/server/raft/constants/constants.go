@@ -112,6 +112,7 @@ var (
 	RangeNotCurrentMsg   = "Range not current"   // break
 	RangeLeaseInvalidMsg = "Range lease invalid" // continue
 	RangeSplittingMsg    = "Range splitting"
+	ConflictKeyMsg       = "Conflict on key"
 )
 
 type ReplicaState int
