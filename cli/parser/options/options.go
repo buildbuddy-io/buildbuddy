@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 
 	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
@@ -780,14 +781,14 @@ func NameFilter[O Option](name string) func(O) bool {
 	}
 }
 
-// AccumulateValues accepts an initial value, acc, and a variadic Option
+// AccumulateValues accepts an initial value, acc, and a Sequenceable Option
 // parameter, opts, and returns the resulting value of evaluating all of those
 // options in order. It should only be called with opts that all share the same
 // definition, and an inital value that matches the type of value that
 // definition implies. Otherwise, its output will be nonsensical.
-func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, opts ...O) (T, error) {
+func AccumulateValues[O Option, T string | []string | bool | BoolOrEnum, S seq.Sequenceable[O]](acc T, opts S) (T, error) {
 	p := any(&acc)
-	for _, opt := range opts {
+	for opt := range seq.Sequence[O](opts) {
 		switch p := p.(type) {
 		case *string:
 			*p = opt.GetValue()
@@ -806,8 +807,7 @@ func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, 
 		case *BoolOrEnum:
 			b := opt.BoolLike()
 			if b == nil {
-				p.SetEnum(opt.GetValue())
-				continue
+				return *new(T), fmt.Errorf("Option '%s' is not a boolean (or boolean-or-enum) option.", opt.Name())
 			}
 			v, err := b.AsBool()
 			if err != nil {
@@ -815,6 +815,8 @@ func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, 
 				continue
 			}
 			p.SetBool(v)
+		default:
+			return *new(T), fmt.Errorf("Accumulator is of unsupported type %T.", acc)
 		}
 	}
 	return acc, nil
