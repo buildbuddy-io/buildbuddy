@@ -22,7 +22,6 @@ go_library(
         "//cli/plugin",
         "//cli/runscript",
         "//cli/setup",
-        "//cli/shortcuts",
         "//cli/watcher",
         "//server/util/rlimit",
         "//server/util/status",
