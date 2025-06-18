@@ -148,16 +148,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   diffEditor: monaco.editor.IDiffEditor | undefined;
 
   // Note that these decoration collections are automatically cleared when the model is changed.
-  kytheDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-  searchDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-  lcovDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-
-  findRefsKey?: monaco.editor.IContextKey<boolean>;
-  goToDefKey?: monaco.editor.IContextKey<boolean>;
-  pendingXrefsRequest?: CancelablePromise<search.KytheResponse>;
-  mousedownTarget?: monaco.Position;
-
-  // Note that these decoration collections are automatically cleared when the model is changed.
   searchDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
   lcovDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
 
