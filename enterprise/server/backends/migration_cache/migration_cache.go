@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -210,6 +211,8 @@ type config struct {
 	doubleReadPercentage, decompressPercentage float64
 }
 
+var configInvalidAlertOnce sync.Once
+
 // TODO(vanja) either return errors, or remove the error return value.
 func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 	c := &config{
@@ -243,31 +246,31 @@ func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 				c.src = mc.defaultConfigDoNotUseDirectly.dest
 				c.dest = nil
 			default:
-				log.CtxWarningf(ctx, "Invalid migration config - Unknown migration cache state: %s", state)
+				alert.CtxUnexpectedEvent(ctx, "migration_cache_invalid_config", "Unknown migration cache state: %s", state)
 			}
 		} else {
-			log.CtxWarningf(ctx, "Invalid migration config - MigrationStateField is not a string: %T(%v)", v, v)
+			alert.CtxUnexpectedEvent(ctx, "migration_cache_invalid_config", "MigrationStateField is not a string: %T(%v)", v, v)
 		}
 	}
 	if v, ok := m[AsyncDestWriteField]; ok {
 		if asyncDestWrites, ok := v.(bool); ok {
 			c.asyncDestWrites = asyncDestWrites
 		} else {
-			log.CtxWarningf(ctx, "Invalid migration config - AsyncDestWriteField is not a bool: %T(%v)", v, v)
+			alert.CtxUnexpectedEvent(ctx, "migration_cache_invalid_config", "AsyncDestWriteField is not a bool: %T(%v)", v, v)
 		}
 	}
 	if v, ok := m[DoubleReadPercentageField]; ok {
 		if doubleReadPercentage, ok := v.(float64); ok {
 			c.doubleReadPercentage = doubleReadPercentage
 		} else {
-			log.CtxWarningf(ctx, "Invalid migration config - DoubleReadPercentageField is not a float64: %T(%v)", v, v)
+			alert.CtxUnexpectedEvent(ctx, "migration_cache_invalid_config", "DoubleReadPercentageField is not a float64: %T(%v)", v, v)
 		}
 	}
 	if v, ok := m[DecompressReadPercentageField]; ok {
 		if decompressPercentage, ok := v.(float64); ok {
 			c.decompressPercentage = decompressPercentage
 		} else {
-			log.CtxWarningf(ctx, "Invalid migration config - DecompressReadPercentageField is not a float64: %T(%v)", v, v)
+			alert.CtxUnexpectedEvent(ctx, "migration_cache_invalid_config", "DecompressReadPercentageField is not a float64: %T(%v)", v, v)
 		}
 	}
 	return c, nil
