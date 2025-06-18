@@ -774,6 +774,12 @@ func (b *BoolOrEnum) Set(value any) {
 	}
 }
 
+func NameFilter[O Option](name string) func(O) bool {
+	return func(opt O) bool {
+		return opt.Name() == name
+	}
+}
+
 // AccumulateValues accepts an initial value, acc, and a variadic Option
 // parameter, opts, and returns the resulting value of evaluating all of those
 // options in order. It should only be called with opts that all share the same
