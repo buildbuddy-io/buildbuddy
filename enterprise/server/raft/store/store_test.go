@@ -482,6 +482,56 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	require.Equal(t, 2, len(replicas))
 	rd = s.GetRange(2)
 	require.Equal(t, 2, len(rd.GetReplicas()))
+	require.Equal(t, 1, len(rd.GetRemoved()))
+}
+
+func TestRemoveStagingReplica(t *testing.T) {
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShard(t, ctx, stores...)
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	rd := s.GetRange(2)
+	newRD := rd.CloneVT()
+	newRD.Staging = append(newRD.Staging, rd.GetReplicas()[0])
+	newRD.Replicas = newRD.Replicas[1:]
+
+	log.Infof("new rd: %+v", newRD)
+	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
+	require.NoError(t, err)
+
+	log.Infof("=== test setup completed ===")
+	replicaID := newRD.GetStaging()[0].GetReplicaId()
+	nhid := newRD.GetStaging()[0].GetNhid()
+	log.Infof("remove replica c%dn%d", rd.GetRangeId(), replicaID)
+	_, err = s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+		Range:     rd,
+		ReplicaId: replicaID,
+	})
+	require.NoError(t, err)
+
+	remaining := make([]*testutil.TestingStore, 0, 2)
+	for _, store := range stores {
+		if store.NHID() != nhid {
+			remaining = append(remaining, store)
+		}
+	}
+
+	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
+	replicas := getMembership(t, s, ctx, 2)
+	require.Equal(t, 2, len(replicas))
+	rd = s.GetRange(2)
+	require.Equal(t, 0, len(rd.GetStaging()))
+	require.Equal(t, 1, len(rd.GetRemoved()))
 }
 
 func TestAddRangeBack(t *testing.T) {
