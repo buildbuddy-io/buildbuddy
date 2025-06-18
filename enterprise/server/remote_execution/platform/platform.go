@@ -81,7 +81,7 @@ const (
 	unsetContainerImageVal = "none"
 
 	RecycleRunnerPropertyName               = "recycle-runner"
-	RecycleRunnerKeyPropertyName            = "recycle-runner-key"
+	RunnerRecyclingKey            = "runner-recycling-key"
 	RemoteSnapshotSavePolicyPropertyName    = "remote-snapshot-save-policy"
 	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
 	PreserveWorkspacePropertyName           = "preserve-workspace"
