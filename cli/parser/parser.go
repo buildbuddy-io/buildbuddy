@@ -90,6 +90,10 @@ type Subparser struct {
 
 	Subcommands set.Set[string]
 	Aliases     map[string]string
+
+	// Permissive specifies whether or not to error out when parsing an option
+	// that does not support the current command.
+	Permissive bool
 }
 
 func (m *Subparser) ForceAdd(d *options.Definition) {
@@ -269,7 +273,7 @@ func (p *Subparser) ParseOptions(args []string, command string) ([]options.Optio
 			if option.PluginID() == options.UnknownBuiltinPluginID {
 				// If this is an unknown option, assume it's supported by this command.
 				option.GetDefinition().AddSupportedCommand(command)
-			} else if !option.Supports(command) {
+			} else if !p.Permissive && !option.Supports(command) {
 				return nil, 0, fmt.Errorf("failed to parse options: Option '%s' does not support command '%s'", token, command)
 			}
 		}
