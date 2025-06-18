@@ -552,6 +552,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.editor.onContextMenu((e) => {
       if (e.target.range) {
         let decors = this.editor?.getDecorationsInRange(e.target.range);
+        // TODO(jdelfino): Disable "Go to definition" when already on a definition
         this.findRefsKey?.set(decors != null && decors.length > 0);
         this.goToDefKey?.set(decors != null && decors.length > 0);
       }
