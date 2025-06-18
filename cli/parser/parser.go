@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
@@ -69,6 +71,11 @@ var (
 				return &Return{nil, err}
 			}
 			parser, err := GenerateParser(flagCollection)
+			for name, d := range nativeDefinitions {
+				if err := parser.AddOptionDefinition(d); err != nil {
+					log.Warnf("Error initializing command-line parser when adding bb-specific definiton for '%s': %s", name, err)
+				}
+			}
 			parser.StartupOptionParser.Aliases = shortcuts.Shortcuts
 			return &Return{parser, err}
 		},
@@ -138,6 +145,21 @@ func NewParser(optionDefinitions []*options.Definition, commands []string, alias
 		p.AddOptionDefinition(d)
 	}
 	return p
+}
+
+// GetNativeParser can parse native bb options without needing to start the bazel
+// client or server.
+func GetNativeParser() *Parser {
+	definitions := slices.Collect(maps.Values(nativeDefinitions))
+	aliases := map[string]string{}
+	for alias, command := range cli_command.Aliases {
+		aliases[alias] = command.Name
+	}
+	return NewParser(
+		definitions,
+		slices.Collect(maps.Keys(cli_command.CommandsByName)),
+		aliases,
+	)
 }
 
 func (p *Parser) ForceAddOptionDefinition(d *options.Definition) {

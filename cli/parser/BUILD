@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser",
     deps = [
         "//cli/bazelisk",
+        "//cli/cli_command",
         "//cli/log",
         "//cli/log/option_definitions",
         "//cli/parser/arguments",
