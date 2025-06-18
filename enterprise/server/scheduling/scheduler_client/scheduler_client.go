@@ -154,7 +154,11 @@ func (r *Registration) Statusz(ctx context.Context) string {
 	return buf.String()
 }
 
-func (r *Registration) UpdateStatusz(w http.ResponseWriter, req *http.Request) {
+func (r *Registration) ServeStatusz(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if err := req.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
