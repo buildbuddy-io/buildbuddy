@@ -155,16 +155,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   pendingXrefsRequest?: CancelablePromise<search.KytheResponse>;
   mousedownTarget?: monaco.Position;
 
-  // Note that these decoration collections are automatically cleared when the model is changed.
-  kytheDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-  searchDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-  lcovDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-
-  findRefsKey?: monaco.editor.IContextKey<boolean>;
-  goToDefKey?: monaco.editor.IContextKey<boolean>;
-  pendingXrefsRequest?: CancelablePromise<search.KytheResponse>;
-  mousedownTarget?: monaco.Position;
-
   codeViewer = React.createRef<HTMLDivElement>();
   diffViewer = React.createRef<HTMLDivElement>();
 
@@ -274,25 +264,18 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return { inlineClassName: "code-hover " + type, hoverMessage: { value: o.target_ticket } };
   }
 
-  fetchXrefAndNavToDefinition(pos: monaco.Position) {
-    const decor = this.getMostSpecificRef(
+  ticketsForPosition(pos: monaco.Position): string[] {
+    const refs = this.getKytheRefsForRange(
       new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
     );
-    if (!decor) {
-      return;
+    if (!refs) {
+      return [];
     }
-
-    this.fetchXrefs(decor.targetTicket, (xrefReply) => {
-      const def = xrefReply.crossReferences[decor.targetTicket].definition[0];
-      if (!def?.anchor) {
-        return;
-      }
-      this.navigateToAnchor(def.anchor);
-    });
+    return refs.map((ref) => ref.targetTicket).filter((ticket) => ticket);
   }
 
-  fetchXrefsByPosition(pos: monaco.Position) {
-    const refs = this.getKytheRefsInRange(
+  navigateToDefinitionOrPopulatePanel(pos: monaco.Position) {
+    const refs = this.getKytheRefsForRange(
       new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
     );
     if (!refs) {
@@ -300,6 +283,41 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     }
 
     const tickets = refs.map((ref) => ref.targetTicket).filter((ticket) => ticket);
+    const isDef = refs.reduce((acc, ref) => acc || ref.kind === "/kythe/edge/defines/binding", false);
+
+    if (isDef) {
+      this.populateXrefsPanel(tickets);
+    } else {
+      this.navigateToDefinition(tickets, true);
+    }
+  }
+
+  navigateToDefinition(tickets: string[], fallbackToPanel = false) {
+    if (!tickets || tickets.length === 0) {
+      return;
+    }
+
+    this.fetchXrefs(tickets, (xrefReply) => {
+      const defs = Object.values(xrefReply.crossReferences).filter((item) => item.definition.length > 0);
+
+      if (defs.length === 0) {
+        if (fallbackToPanel) {
+          this.populateXrefsPanel(tickets);
+        } else {
+          console.log("Warning: No definitions found for tickets", tickets);
+        }
+      } else {
+        if (defs.length > 0 && defs[0].definition?.length > 0 && defs[0].definition[0].anchor) {
+          this.navigateToAnchor(defs[0].definition[0].anchor);
+        }
+      }
+    });
+  }
+
+  populateXrefsPanel(tickets: string[]) {
+    if (!tickets || tickets.length === 0) {
+      return;
+    }
 
     this.fetchXrefs(tickets, (xrefReply) => {
       this.setState({ xrefs: xrefReply ?? undefined });
@@ -472,27 +490,42 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       .filter((ref) => !!ref);
   }
 
-  getMostSpecificRef(range: monaco.Range): kythe.proto.DecorationsReply.Reference | undefined {
-    // Get the decoration that overlaps this range and has the smallest span.
-    const kytheRefs = this.getKytheRefsInRange(range);
+  getKytheRefsForRange(range: monaco.Range): kythe.proto.DecorationsReply.Reference[] | undefined {
+    // This finds the smallest decorations in a given range.
+    // All decorations that share the same smallest span will be returned.
+    // This is necessary because, for example, some definitions will have multiple
+    // /kythe/edge/defines/binding edges, and we want to process them all so we don't
+    // miss references.
+    const decorInRange = this.editor?.getDecorationsInRange(range);
+    if (!decorInRange) {
+      return undefined;
+    }
 
-    let minMatch = undefined;
+    let refsInRange = decorInRange
+      .map((decor) => this.decorToReference(decor))
+      .filter((ref) => !!ref);
+
+    let minMatches: kythe.proto.DecorationsReply.Reference[] = [];
     let minMatchLength = Number.POSITIVE_INFINITY;
-    for (const ref of kytheRefs) {
+    for (const ref of refsInRange) {
       if (!ref || !ref.span || !ref.span.start || !ref.span.end) {
         continue;
       }
       const matchLength = ref.span.end.byteOffset - ref.span.start.byteOffset;
       if (matchLength < minMatchLength) {
         minMatchLength = matchLength;
-        minMatch = ref;
+        minMatches = [ref];
+      } else if (
+        // If this span has the same offsets as the current minimum, return it also.
+        matchLength === minMatchLength &&
+        minMatches[0]?.span?.start?.byteOffset === ref.span.start.byteOffset &&
+        minMatches[0]?.span?.end?.byteOffset === ref.span.end.byteOffset
+      ) {
+        minMatches.push(ref);
       }
     }
-    if (!minMatch) {
-      return undefined;
-    }
 
-    return minMatch
+    return minMatches
   }
 
   fetchInitialContent() {
@@ -526,7 +559,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           e.target.position.column === this.mousedownTarget.column &&
           e.target.position.lineNumber === this.mousedownTarget.lineNumber
         ) {
-          this.fetchXrefsByPosition(e.target.position);
+          this.navigateToDefinitionOrPopulatePanel(e.target.position);
         }
       } else {
         this.mousedownTarget = undefined;
@@ -546,7 +579,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         if (!pos) {
           return;
         }
-        this.fetchXrefAndNavToDefinition(pos);
+        this.navigateToDefinition(this.ticketsForPosition(pos));
       },
     });
 
@@ -563,7 +596,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         if (!pos) {
           return;
         }
-        this.fetchXrefsByPosition(pos);
+        this.populateXrefsPanel(this.ticketsForPosition(pos));
       },
     });
 
