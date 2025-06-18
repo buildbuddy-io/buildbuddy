@@ -269,7 +269,7 @@ func TestTruncate(t *testing.T) {
 			[]string{"hello", "there"},
 			slices.Collect(truncated),
 		)
-		
+
 		assert.ElementsMatch(
 			t,
 			[]string{"cool", "world", ""},
