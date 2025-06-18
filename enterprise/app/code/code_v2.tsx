@@ -95,7 +95,6 @@ interface State {
   defaultConfig: string;
 
   xrefsLoading: boolean;
-  xrefs?: kythe.proto.CrossReferencesReply;
   usages?: search.UsageReply;
   xrefsHeight: number;
 }
@@ -147,16 +146,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
   editor: monaco.editor.IStandaloneCodeEditor | undefined;
   diffEditor: monaco.editor.IDiffEditor | undefined;
-
-  // Note that these decoration collections are automatically cleared when the model is changed.
-  kytheDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-  searchDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-  lcovDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-
-  findRefsKey?: monaco.editor.IContextKey<boolean>;
-  goToDefKey?: monaco.editor.IContextKey<boolean>;
-  pendingXrefsRequest?: CancelablePromise<search.KytheResponse>;
-  mousedownTarget?: monaco.Position;
 
   // Note that these decoration collections are automatically cleared when the model is changed.
   kytheDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
@@ -306,6 +295,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return;
     }
 
+    // TODO(jdelfino): This fetch could be trimmed down to just request defs. This func not used
+    // from anywhere else right now.
     this.fetchXrefs(tickets, (xrefReply) => {
       const defs = Object.values(xrefReply.crossReferences).filter((item) => item.definition.length > 0);
 
@@ -332,7 +323,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     }
 
     this.fetchUsages(tickets, (usageReply) => {
-      this.setState({ xrefs: undefined, usages: usageReply ?? undefined });
+      this.setState({ usages: usageReply ?? undefined });
     });
   }
 
@@ -550,12 +541,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.lcovDecorations = this.editor.createDecorationsCollection();
 
     this.editor.onMouseDown((e) => {
-      console.log("onMouseDown", e);
       this.mousedownTarget = e.target.position ?? undefined;
     });
 
     this.editor.onMouseUp((e) => {
-      console.log("onMouseUp", e, this.mousedownTarget);
       if (this.mousedownTarget && e.target.position) {
         if (
           e.target.position.column === this.mousedownTarget.column &&
@@ -1140,6 +1129,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.pendingXrefsRequest?.cancel();
     this.setState({ xrefsLoading: true });
 
+    // TODO(jdelfino): Factor common stuff out of this and fetchUsages.
     const req = new search.KytheRequest({
       crossReferencesRequest: new kythe.proto.CrossReferencesRequest({
         snippets: kythe.proto.SnippetsKind.DEFAULT,
@@ -1867,7 +1857,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         return a[0] < b[0] ? -1 : 1; // otherwise sort alphabetically
       })
     );
-    console.log("Sorted files", sortedFiles);
 
     return (
       <div>
@@ -1908,52 +1897,20 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
   renderXrefPanel() {
     console.log("Rendering xref panel");
-    if (!this.state.xrefs && !this.state.usages) {
+    if (!this.state.usages) {
       return <></>;
     }
 
-    let sections = new Map<string, kythe.proto.CrossReferencesReply.RelatedAnchor[]>();
-
-    if (this.state.xrefs) {
-      console.log("Rendering xrefs in panel");
-      sections.set("Definitions", []);
-      sections.set("Other references", []);
-
-      const xrefs = Object.values(this.state.xrefs?.crossReferences);
-      for (const xref of xrefs) {
-        console.log("Xref", xref);
-        sections.get("Definitions")?.push(...xref.definition);
-        sections.get("Other references")?.push(...xref.reference);
-      }
-    } else if (this.state.usages) {
-      console.log("Rendering usages in panel");
-
-      if (this.state.usages.definitions) {
-        sections.set("Definitions", this.state.usages.definitions);
-      }
-      if (this.state.usages.overrides) {
-        sections.set("Overrides", this.state.usages.overrides);
-      }
-      if (this.state.usages.overriddenBy) {
-        sections.set("Overridden By", this.state.usages.overriddenBy);
-      }
-      if (this.state.usages.extends) {
-        sections.set("Extends", this.state.usages.extends);
-      }
-      if (this.state.usages.extendedBy) {
-        sections.set("Extended By", this.state.usages.extendedBy);
-      }
-      if (this.state.usages.callHierarchy) {
-        sections.set("References", this.state.usages.callHierarchy);
-      }
-    }
     return (
       <div>
         <div className="xrefs-header">References</div>
         <div className="xrefs-container">
-          {Array.from(sections.entries()).map(([name, anchors]) => {
-            return this.renderAnchors(name, anchors);
-          })}
+          {Boolean(this.state.usages.definitions) && (this.renderAnchors("Definitions", this.state.usages.definitions))}
+          {Boolean(this.state.usages.overrides) && (this.renderAnchors("Overrides", this.state.usages.overrides))}
+          {Boolean(this.state.usages.overriddenBy) && (this.renderAnchors("Overridden By", this.state.usages.overriddenBy))}
+          {Boolean(this.state.usages.extends) && (this.renderAnchors("Extends", this.state.usages.extends))}
+          {Boolean(this.state.usages.extendedBy) && (this.renderAnchors("Extended By", this.state.usages.extendedBy))}
+          {Boolean(this.state.usages.callHierarchy) && (this.renderAnchors("References", this.state.usages.callHierarchy))}
         </div>
       </div>
     );
@@ -2195,7 +2152,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 ref={this.diffViewer}
               />
             </div>
-            {Boolean(this.state.xrefsLoading || this.state.xrefs) && (
+            {Boolean(this.state.xrefsLoading || this.state.usages) && (
               <div
                 className="code-search-xrefs"
                 // TODO(jdelfino): Add an error state if xrefs fail to load
