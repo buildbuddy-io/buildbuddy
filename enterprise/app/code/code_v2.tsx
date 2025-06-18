@@ -265,9 +265,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   ticketsForPosition(pos: monaco.Position): string[] {
-    const refs = this.getKytheRefsForRange(
-      new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
-    );
+    const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
     if (!refs) {
       return [];
     }
@@ -275,9 +273,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   navigateToDefinitionOrPopulatePanel(pos: monaco.Position) {
-    const refs = this.getKytheRefsForRange(
-      new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
-    );
+    const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
     if (!refs) {
       return;
     }
@@ -485,9 +481,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return undefined;
     }
 
-    return decorInRange
-      .map((decor) => this.decorToReference(decor))
-      .filter((ref) => !!ref);
+    return decorInRange.map((decor) => this.decorToReference(decor)).filter((ref) => !!ref);
   }
 
   getKytheRefsForRange(range: monaco.Range): kythe.proto.DecorationsReply.Reference[] | undefined {
@@ -501,9 +495,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return undefined;
     }
 
-    let refsInRange = decorInRange
-      .map((decor) => this.decorToReference(decor))
-      .filter((ref) => !!ref);
+    let refsInRange = decorInRange.map((decor) => this.decorToReference(decor)).filter((ref) => !!ref);
 
     let minMatches: kythe.proto.DecorationsReply.Reference[] = [];
     let minMatchLength = Number.POSITIVE_INFINITY;
@@ -525,7 +517,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       }
     }
 
-    return minMatches
+    return minMatches;
   }
 
   fetchInitialContent() {
@@ -1807,7 +1799,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         return true;
       });
       uniqueLineRefs.sort((a, b) => {
-        return (a.anchor?.span?.start?.byteOffset || Number.POSITIVE_INFINITY) - (b.anchor?.span?.start?.byteOffset || Number.POSITIVE_INFINITY);
+        return (
+          (a.anchor?.span?.start?.byteOffset || Number.POSITIVE_INFINITY) -
+          (b.anchor?.span?.start?.byteOffset || Number.POSITIVE_INFINITY)
+        );
       });
 
       fileToRefsMap.set(key, uniqueLineRefs);
