@@ -87,6 +87,34 @@ func Fmap[I any, O any, S Sequenceable[I]](s S, f func(I) O) iter.Seq[O] {
 	}
 }
 
+// Drop drops the first N elements from the passed sequence after N elements. If
+// the sequence is fewer than N elements in length, it will return an empty
+// sequence. If N is less than one, the sequence is returned unchanged.
+//
+// As with all sequences returned by this library, so long as the parameters are
+// stateless, the returned sequence will be stateless.
+// NOTE: as of writing, go's type inference does not work on this function, so
+// the element type must be specified as a type parameter. However, if
+// https://github.com/golang/go/issues/73527 is ever accepted/addressed, the
+// explicit type specification will no longer be needed.
+func Drop[E any, S Sequenceable[E]](s S, n int) iter.Seq[E] {
+	if n < 1 {
+		return Sequence[E](s)
+	}
+	return func(yield func(E) bool) {
+		i := 0
+		for e := range Sequence[E](s) {
+			if i < n {
+				i++
+				continue
+			}
+			if !yield(e) {
+				return
+			}
+		}
+	}
+}
+
 // Truncate truncates the passed sequence after N elements. If the sequence is
 // fewer than N elements in length, it will be returned unchanged. If N is less
 // than one, the empty sequence is returned
