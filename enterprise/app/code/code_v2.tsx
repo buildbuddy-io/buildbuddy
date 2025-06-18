@@ -296,16 +296,19 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.fetchXrefs(tickets, (xrefReply) => {
       const defs = Object.values(xrefReply.crossReferences).filter((item) => item.definition.length > 0);
 
-      if (defs.length === 0) {
+      let anchor: kythe.proto.Anchor | undefined = undefined;
+      if (defs.length > 0 && defs[0].definition && defs[0].definition.length > 0 && defs[0].definition[0].anchor) {
+        anchor = defs[0].definition[0].anchor;
+      }
+
+      if (!anchor) {
         if (fallbackToPanel) {
           this.populateXrefsPanel(tickets);
         } else {
           console.log("Warning: No definitions found for tickets", tickets);
         }
       } else {
-        if (defs.length > 0 && defs[0].definition?.length > 0 && defs[0].definition[0].anchor) {
-          this.navigateToAnchor(defs[0].definition[0].anchor);
-        }
+        this.navigateToAnchor(anchor);
       }
     });
   }
