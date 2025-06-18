@@ -245,9 +245,11 @@ func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 				c.dest = nil
 			default:
 				alert.CtxUnexpectedEvent(ctx, "migration_cache_invalid_config", "Unknown migration cache state: %s", state)
+				return c, nil
 			}
 		} else {
 			alert.CtxUnexpectedEvent(ctx, "migration_cache_invalid_config", "MigrationStateField is not a string: %T(%v)", v, v)
+			return c, nil
 		}
 	}
 	if v, ok := m[AsyncDestWriteField]; ok {
@@ -255,6 +257,7 @@ func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 			c.asyncDestWrites = asyncDestWrites
 		} else {
 			alert.CtxUnexpectedEvent(ctx, "migration_cache_invalid_config", "AsyncDestWriteField is not a bool: %T(%v)", v, v)
+			return c, nil
 		}
 	}
 	if v, ok := m[DoubleReadPercentageField]; ok {
@@ -262,6 +265,7 @@ func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 			c.doubleReadPercentage = doubleReadPercentage
 		} else {
 			alert.CtxUnexpectedEvent(ctx, "migration_cache_invalid_config", "DoubleReadPercentageField is not a float64: %T(%v)", v, v)
+			return c, nil
 		}
 	}
 	if v, ok := m[DecompressReadPercentageField]; ok {
@@ -269,6 +273,7 @@ func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 			c.decompressPercentage = decompressPercentage
 		} else {
 			alert.CtxUnexpectedEvent(ctx, "migration_cache_invalid_config", "DecompressReadPercentageField is not a float64: %T(%v)", v, v)
+			return c, nil
 		}
 	}
 	return c, nil
