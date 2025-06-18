@@ -150,16 +150,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   diffEditor: monaco.editor.IDiffEditor | undefined;
 
   // Note that these decoration collections are automatically cleared when the model is changed.
-  kytheDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-  searchDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-  lcovDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-
-  findRefsKey?: monaco.editor.IContextKey<boolean>;
-  goToDefKey?: monaco.editor.IContextKey<boolean>;
-  pendingXrefsRequest?: CancelablePromise<search.KytheResponse>;
-  mousedownTarget?: monaco.Position;
-
-  // Note that these decoration collections are automatically cleared when the model is changed.
   searchDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
   lcovDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
 
@@ -1912,12 +1902,12 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     );
   }
 
-  resizeXrefs(e: React.MouseEvent) {
+  resizeXrefs(e: MouseEvent) {
     console.log("mousemove", window.innerHeight - e.clientY, e);
     this.updateState({
       xrefsHeight: Math.max(100, window.innerHeight - e.clientY),
     });
-  };
+  }
   resizeXrefsProp = this.resizeXrefs.bind(this);
 
   render() {
@@ -2158,12 +2148,11 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                     document.addEventListener("mousemove", this.resizeXrefsProp, false);
                   }
                 }}
-                onMouseUp ={(e) => {
+                onMouseUp={(e) => {
                   console.log("mouseup", e);
                   document.removeEventListener("mousemove", this.resizeXrefsProp, false);
                 }}
-                style={{height: this.state.xrefsHeight}}
-              >
+                style={{ height: this.state.xrefsHeight }}>
                 {this.state.xrefsLoading && <div className="loading"></div>}
                 {!this.state.xrefsLoading && this.renderXrefPanel()}
               </div>
