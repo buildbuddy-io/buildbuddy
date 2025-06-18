@@ -1792,6 +1792,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       fileToRefsMap.get(parentTicket)!.push(a);
     });
 
+    // Unique all the anchors (duplicates are common).
+    // Also, sort them by position in the file.
     for (const [key, refs] of fileToRefsMap.entries()) {
       const uniques = new Map<number, kythe.proto.CrossReferencesReply.RelatedAnchor>();
       const uniqueLineRefs = refs.filter((ra) => {
@@ -1811,6 +1813,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       fileToRefsMap.set(key, uniqueLineRefs);
     }
 
+    // Now sort the files, putting non-tests before tests.
     let sortedFiles = new Map(
       [...fileToRefsMap.entries()].sort((a, b) => {
         const aTest = a[0].toLowerCase().includes("test");
