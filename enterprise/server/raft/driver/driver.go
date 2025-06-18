@@ -1100,7 +1100,7 @@ func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, replicaStateMap
 			rq.log.Debugf("there are %d replicas for range %d without states, removing replicas without states", rd.GetRangeId(), count)
 			return replicasUnavailable
 		}
-		rq.log.Debugf("there are %d up-to-date replicas for range %d and quorum is %d, any replicas can be removed", rd.GetRangeId(), numUpToDateReplicas, quorum)
+		rq.log.Debugf("there are %d up-to-date replicas for range %d and quorum is %d, any replica can be removed", rd.GetRangeId(), numUpToDateReplicas, quorum)
 		return rd.GetReplicas()
 	}
 
