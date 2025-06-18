@@ -853,7 +853,6 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	// Write some more records to the new end range.
 	written = append(written, writeNRecords(ctx, t, s1, 50)...)
-
 	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: header,
 		Range:  rd,

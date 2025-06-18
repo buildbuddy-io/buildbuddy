@@ -2475,7 +2475,6 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 
 	metaStmt := tb.AddStatement()
 	metaStmt.SetRangeDescriptor(mrd).SetBatch(metaBatch)
-
 	if err := s.txnCoordinator.RunTxn(ctx, tb); err != nil {
 		return nil, err
 	}
