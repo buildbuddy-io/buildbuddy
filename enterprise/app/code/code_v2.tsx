@@ -157,16 +157,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   pendingXrefsRequest?: CancelablePromise<search.KytheResponse>;
   mousedownTarget?: monaco.Position;
 
-  // Note that these decoration collections are automatically cleared when the model is changed.
-  kytheDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-  searchDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-  lcovDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
-
-  findRefsKey?: monaco.editor.IContextKey<boolean>;
-  goToDefKey?: monaco.editor.IContextKey<boolean>;
-  pendingXrefsRequest?: CancelablePromise<search.KytheResponse>;
-  mousedownTarget?: monaco.Position;
-
   codeViewer = React.createRef<HTMLDivElement>();
   diffViewer = React.createRef<HTMLDivElement>();
 
@@ -1889,12 +1879,12 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     );
   }
 
-  resizeXrefs(e: React.MouseEvent) {
+  resizeXrefs(e: MouseEvent) {
     console.log("mousemove", window.innerHeight - e.clientY, e);
     this.updateState({
       xrefsHeight: Math.max(100, window.innerHeight - e.clientY),
     });
-  };
+  }
   resizeXrefsProp = this.resizeXrefs.bind(this);
 
   render() {
@@ -2127,20 +2117,20 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
               />
             </div>
             {Boolean(this.state.xrefsLoading || this.state.xrefs) && (
-              <div className="code-search-xrefs"
-                {/* TODO(jdelfino): Add an error state if xrefs fail to load */}
+              <div
+                className="code-search-xrefs"
+                // TODO(jdelfino): Add an error state if xrefs fail to load
                 onMouseDown={(e) => {
                   console.log("mousedown", e, e.nativeEvent.offsetY);
                   if (e.nativeEvent.offsetY < 4) {
                     document.addEventListener("mousemove", this.resizeXrefsProp, false);
                   }
                 }}
-                onMouseUp ={(e) => {
+                onMouseUp={(e) => {
                   console.log("mouseup", e);
                   document.removeEventListener("mousemove", this.resizeXrefsProp, false);
                 }}
-                style={{height: this.state.xrefsHeight}}
-              >
+                style={{ height: this.state.xrefsHeight }}>
                 {this.state.xrefsLoading && <div className="loading"></div>}
                 {!this.state.xrefsLoading && this.renderXrefs()}
               </div>
