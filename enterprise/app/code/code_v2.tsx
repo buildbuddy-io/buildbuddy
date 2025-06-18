@@ -515,8 +515,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       }
     });
 
-    const that = this;
-
     this.goToDefKey = this.editor.createContextKey<boolean>("goToDefContextKey", false);
     this.editor.addAction({
       id: "code-search-definition-action",
@@ -525,12 +523,12 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       contextMenuGroupId: "navigation",
       contextMenuOrder: 1,
       // Method that will be executed when the action is triggered.
-      run: function (ed) {
+      run: (ed) => {
         const pos = ed.getPosition();
         if (!pos) {
           return;
         }
-        that.fetchXrefAndNavToDefinition(pos);
+        this.fetchXrefAndNavToDefinition(pos);
       },
     });
 
@@ -542,12 +540,12 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       contextMenuGroupId: "navigation",
       contextMenuOrder: 2,
       // Method that will be executed when the action is triggered.
-      run: function (ed) {
+      run: (ed) => {
         const pos = ed.getPosition();
         if (!pos) {
           return;
         }
-        that.fetchXrefsByPosition(pos);
+        this.fetchXrefsByPosition(pos);
       },
     });
 
@@ -1766,6 +1764,9 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         <div className="xrefs-category">{name}</div>
         {[...fileToRefsMap.entries()].map((entry) => {
           const path = new URL(entry[0]).searchParams.get("path") ?? "";
+          if (!path) {
+            return <></>;
+          }
           return (
             <div>
               <div
@@ -2040,6 +2041,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
             </div>
             {Boolean(this.state.xrefsLoading || this.state.xrefs) && (
               <div className="code-search-xrefs">
+                { /* TODO(jdelfino): Add an error state if xrefs fail to load */}
                 {this.state.xrefsLoading && <div className="loading"></div>}
                 {!this.state.xrefsLoading && this.renderXrefs()}
               </div>
