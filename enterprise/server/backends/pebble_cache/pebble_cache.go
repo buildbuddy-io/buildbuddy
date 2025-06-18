@@ -496,9 +496,6 @@ func warnIfCacheTooLarge(opts *Options) {
 	}
 	var partitionTotal int64
 	for _, part := range opts.Partitions {
-		if part.MaxSizeBytes <= 0 {
-			continue // skip partitions with no size limit
-		}
 		partitionTotal += part.MaxSizeBytes
 	}
 	if partitionTotal > int64(usage.TotalBytes) {
