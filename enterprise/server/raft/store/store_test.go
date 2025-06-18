@@ -504,6 +504,7 @@ func TestRemoveStagingReplica(t *testing.T) {
 	newRD := rd.CloneVT()
 	newRD.Staging = append(newRD.Staging, rd.GetReplicas()[0])
 	newRD.Replicas = newRD.Replicas[1:]
+	newRD.Generation++
 
 	log.Infof("new rd: %+v", newRD)
 	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
@@ -514,7 +515,7 @@ func TestRemoveStagingReplica(t *testing.T) {
 	nhid := newRD.GetStaging()[0].GetNhid()
 	log.Infof("remove replica c%dn%d", rd.GetRangeId(), replicaID)
 	_, err = s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
-		Range:     rd,
+		Range:     newRD,
 		ReplicaId: replicaID,
 	})
 	require.NoError(t, err)
