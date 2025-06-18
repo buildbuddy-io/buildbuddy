@@ -3,12 +3,19 @@ package ociruntime
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
+	"maps"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -38,6 +46,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -53,6 +62,9 @@ import (
 const (
 	// Exit code 139 represents 11 (SIGSEGV signal) + 128 https://tldp.org/LDP/abs/html/exitcodes.html
 	ociSIGSEGVExitCode = 139
+
+	// Statusz section name.
+	imagesStatuszSectionName = "ociruntime_images"
 )
 
 var (
@@ -317,6 +329,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err != nil {
 		return nil, err
 	}
+	statusz.AddSection(imagesStatuszSectionName, "OCI images", imageStore)
 
 	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
@@ -1290,7 +1303,7 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 	// requested user ID
 	spec := ""
 	if image != nil {
-		spec = image.Config.User
+		spec = image.ConfigFile.Config.User
 	}
 	if dockerUserProp != "" {
 		spec = dockerUserProp
@@ -1417,9 +1430,9 @@ type Image struct {
 	// Layers holds the image layers from lowermost to uppermost.
 	Layers []*ImageLayer
 
-	// Config holds various image settings such as user and environment
+	// ConfigFile holds various image settings such as user and environment
 	// directives.
-	Config ctr.Config
+	ConfigFile ctr.ConfigFile
 }
 
 // ImageLayer represents a resolved image layer.
@@ -1540,7 +1553,7 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 		if err != nil {
 			return status.UnavailableErrorf("get image config file: %s", err)
 		}
-		resolvedImage.Config = f.Config
+		resolvedImage.ConfigFile = *f
 		return nil
 	})
 	if err := eg.Wait(); err != nil {
@@ -1678,13 +1691,84 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	return nil
 }
 
+// Statusz returns statusz page contents for the image store.
+func (s *ImageStore) Statusz(ctx context.Context) string {
+	var h strings.Builder
+	h.WriteString(`<ul>`)
+	names := slices.Collect(maps.Keys(s.cachedImages))
+	slices.Sort(names)
+	for _, name := range names {
+		downloadURL := fmt.Sprintf(
+			"%s/%s/download?name=%s",
+			statusz.BasePath, imagesStatuszSectionName, url.QueryEscape(name))
+		h.WriteString(`<li>`)
+		h.WriteString(`<a href="` + downloadURL + `" target="_blank">`)
+		h.WriteString(html.EscapeString(name))
+		h.WriteString(`</a>`)
+		h.WriteString(`</li>`)
+	}
+	h.WriteString(`</ul>`)
+	return h.String()
+}
+
+func (s *ImageStore) ServeStatusz(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/download" {
+		s.download(w, r)
+		return
+	}
+	http.NotFound(w, r)
+}
+
+var filenameUnsafeChars = regexp.MustCompile(`[^a-zA-Z0-9_\-]`)
+
+func sanitizeFilename(name string) string {
+	return filenameUnsafeChars.ReplaceAllString(name, "_")
+}
+
+// downloads a tarball image that can be loaded with 'docker load'.
+func (s *ImageStore) download(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	s.mu.RLock()
+	image, ok := s.cachedImages[name]
+	s.mu.RUnlock()
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	ctx := r.Context()
+
+	downloadTmpDir := filepath.Join(s.layersDir, "image-download"+tmpSuffix())
+	if err := os.MkdirAll(downloadTmpDir, 0755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer os.RemoveAll(downloadTmpDir)
+
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.tar", sanitizeFilename(name)))
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.WriteHeader(http.StatusOK)
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	if err := s.writeDockerImageTarball(ctx, w, image, name, downloadTmpDir); err != nil {
+		if ctx.Err() != nil {
+			// Request was cancelled
+			return
+		} else {
+			log.CtxWarningf(ctx, "Failed to export docker image tarball: %s", err)
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func withImageConfig(cmd *repb.Command, image *Image) (*repb.Command, error) {
 	// Apply any env vars from the image which aren't overridden by the command
 	cmdVarNames := make(map[string]bool, len(cmd.EnvironmentVariables))
 	for _, cmdVar := range cmd.GetEnvironmentVariables() {
 		cmdVarNames[cmdVar.GetName()] = true
 	}
-	imageEnv, err := commandutil.EnvProto(image.Config.Env)
+	imageEnv, err := commandutil.EnvProto(image.ConfigFile.Config.Env)
 	if err != nil {
 		return nil, status.WrapError(err, "parse image env")
 	}
@@ -1698,7 +1782,7 @@ func withImageConfig(cmd *repb.Command, image *Image) (*repb.Command, error) {
 
 	// Return a copy of the command but with the image config applied
 	out := cmd.CloneVT()
-	out.Arguments = append(image.Config.Entrypoint, cmd.Arguments...)
+	out.Arguments = append(image.ConfigFile.Config.Entrypoint, cmd.Arguments...)
 	out.EnvironmentVariables = outEnv
 	return out, nil
 }
@@ -1723,6 +1807,159 @@ func cleanStaleImageCacheDirs(root string) error {
 		if err := os.RemoveAll(path); err != nil {
 			return fmt.Errorf("remove %q: %w", path, err)
 		}
+	}
+	return nil
+}
+
+// writeDockerImageTarball constructs a Docker-compatible .tar archive and
+// writes it to the provided io.Writer.
+func (s *ImageStore) writeDockerImageTarball(ctx context.Context, w io.Writer, image *Image, imageName, tmpDir string) error {
+	tarWriter := tar.NewWriter(w)
+
+	// Add each layer to the tarball, storing the diff IDs for each.
+	// The layer will be named {diffID}.tar.gz in the tarball.
+	var layerFiles []*os.File
+	var layerDiffIDs []ctr.Hash
+	var layerFileNames []string
+	for _, layer := range image.Layers {
+		compressedTarball, err := os.CreateTemp(tmpDir, "docker-layer-*.tar.gz")
+		if err != nil {
+			return fmt.Errorf("failed to create temp file for layer %q: %w", layer.DiffID.Hex, err)
+		}
+		defer os.Remove(compressedTarball.Name())
+		defer compressedTarball.Close()
+		diffID, err := s.writeCompressedLayerTarball(ctx, compressedTarball.Name(), layer)
+		if err != nil {
+			return fmt.Errorf("write compressed layer %q: %w", layer.DiffID.Hex, err)
+		}
+		layerFiles = append(layerFiles, compressedTarball)
+		layerFileNames = append(layerFileNames, fmt.Sprintf("%s.tar.gz", layer.DiffID.Hex))
+		layerDiffIDs = append(layerDiffIDs, *diffID)
+	}
+
+	// Prepare the image configuration and manifest
+	cfg := image.ConfigFile // shallow copy
+	cfg.RootFS = ctr.RootFS{
+		Type:    "layers",
+		DiffIDs: layerDiffIDs,
+	}
+	cfg.History = nil
+	cfg.Created = ctr.Time{Time: time.Now()}
+
+	configBytes, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal image config: %w", err)
+	}
+	configHash := sha256.Sum256(configBytes)
+	configHex := hex.EncodeToString(configHash[:])
+	configFilename := fmt.Sprintf("%s.json", configHex)
+
+	// Generate a new tag based on the image name.
+	// e.g. "ubuntu@sha256:..." -> "ubuntu:buildbuddy-exported-20250101000000"
+	repoTag := imageName
+	repoTag, _, _ = strings.Cut(repoTag, "@")
+	repoTag, _, _ = strings.Cut(repoTag, ":")
+	repoTag += ":buildbuddy-executor-exported-" + time.Now().Format("20060102150405")
+
+	manifest := []struct {
+		Config   string   `json:"Config"`
+		RepoTags []string `json:"RepoTags"`
+		Layers   []string `json:"Layers"`
+	}{
+		{
+			Config:   configFilename,
+			RepoTags: []string{repoTag},
+			Layers:   layerFileNames,
+		},
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("failed to marshal manifest: %w", err)
+	}
+	// Add manifest and config file to the tarball.
+	if err := addFileToTar(tarWriter, "manifest.json", manifestBytes); err != nil {
+		return fmt.Errorf("failed to add manifest.json to tar: %w", err)
+	}
+	if err := addFileToTar(tarWriter, configFilename, configBytes); err != nil {
+		return fmt.Errorf("failed to add config to tar: %w", err)
+	}
+	// Add each layer to the tarball.
+	for i, layer := range image.Layers {
+		f := layerFiles[i]
+		fi, err := f.Stat()
+		if err != nil {
+			return fmt.Errorf("stat layer %q: %w", layer.DiffID.Hex, err)
+		}
+		layerHeader := &tar.Header{
+			Name:    layerFileNames[i],
+			Mode:    0644,
+			Size:    fi.Size(),
+			ModTime: time.Now(),
+		}
+		if err := tarWriter.WriteHeader(layerHeader); err != nil {
+			return fmt.Errorf("failed to write layer header: %w", err)
+		}
+		// Stream the layer from the temp file into the final tar writer.
+		// We need to seek back to the start of the file before we can read it.
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf("failed to seek temp layer file: %w", err)
+		}
+		if _, err := io.Copy(tarWriter, f); err != nil {
+			return fmt.Errorf("failed to stream layer from temp file to final tar: %w", err)
+		}
+	}
+	if err := tarWriter.Close(); err != nil {
+		return fmt.Errorf("failed to flush tar writer: %w", err)
+	}
+	return nil
+}
+
+func (s *ImageStore) writeCompressedLayerTarball(ctx context.Context, compressedTarballPath string, layer *ImageLayer) (*ctr.Hash, error) {
+	f, err := os.Create(compressedTarballPath)
+	if err != nil {
+		return nil, fmt.Errorf("create compressed layer tarball: %w", err)
+	}
+	defer f.Close()
+
+	gzipWriter := gzip.NewWriter(f)
+	diffIDHasher := sha256.New()
+
+	// We use an io.MultiWriter to pipe the output of the 'tar' command to two places:
+	// 1. The gzip.Writer, which compresses the layer and writes it to our temp file.
+	// 2. The sha256.Hasher, which calculates the diffID of the *uncompressed* layer.
+	uncompressedWriter := io.MultiWriter(gzipWriter, diffIDHasher)
+
+	layerPath := layerPath(s.layersDir, layer.DiffID)
+	if err := ociconv.OverlayfsLayerToTarball(ctx, uncompressedWriter, layerPath); err != nil {
+		return nil, fmt.Errorf("failed to convert layer to tarball: %w", err)
+	}
+	// The gzip.Writer must be closed to flush all buffered data to the
+	// underlying file.
+	if err := gzipWriter.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close gzip writer: %w", err)
+	}
+
+	diffID := &ctr.Hash{
+		Algorithm: "sha256",
+		Hex:       hex.EncodeToString(diffIDHasher.Sum(nil)),
+	}
+
+	return diffID, nil
+}
+
+// addFileToTar is a helper to write a file (represented by a byte slice) into a tar archive.
+func addFileToTar(tw *tar.Writer, filename string, content []byte) error {
+	hdr := &tar.Header{
+		Name:    filename,
+		Mode:    0644,
+		Size:    int64(len(content)),
+		ModTime: time.Now(),
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("failed to write header for %s: %w", filename, err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		return fmt.Errorf("failed to write content for %s: %w", filename, err)
 	}
 	return nil
 }
