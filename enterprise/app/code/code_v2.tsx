@@ -96,6 +96,7 @@ interface State {
 
   xrefsLoading: boolean;
   xrefs?: kythe.proto.CrossReferencesReply;
+  usages?: search.UsageReply;
   xrefsHeight: number;
 }
 
@@ -330,8 +331,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return;
     }
 
-    this.fetchXrefs(tickets, (xrefReply) => {
-      this.setState({ xrefs: xrefReply ?? undefined });
+    this.fetchUsages(tickets, (usageReply) => {
+      this.setState({ xrefs: undefined, usages: usageReply ?? undefined });
     });
   }
 
@@ -377,6 +378,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           };
         })
         .filter((x) => x !== null) || [];
+    console.log("Setting decorations for", filename, newDecor);
     this.kytheDecorations?.set(newDecor);
   }
 
@@ -548,10 +550,12 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.lcovDecorations = this.editor.createDecorationsCollection();
 
     this.editor.onMouseDown((e) => {
+      console.log("onMouseDown", e);
       this.mousedownTarget = e.target.position ?? undefined;
     });
 
     this.editor.onMouseUp((e) => {
+      console.log("onMouseUp", e, this.mousedownTarget);
       if (this.mousedownTarget && e.target.position) {
         if (
           e.target.position.column === this.mousedownTarget.column &&
@@ -1131,6 +1135,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     if (!targetTickets || targetTickets.length === 0) {
       return;
     }
+    targetTickets = [...new Set(targetTickets)]; // Remove duplicates
+
     this.pendingXrefsRequest?.cancel();
     this.setState({ xrefsLoading: true });
 
@@ -1150,8 +1156,40 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           console.log("No cross references found for tickets: ", targetTickets);
           return;
         }
-        console.log("Xrefs", r.crossReferencesReply);
+        console.log("Xrefs reply", r.crossReferencesReply);
         handler(r.crossReferencesReply);
+      })
+      .catch((e) => {
+        console.log("Error fetching xrefs: ", req, e);
+      })
+      .finally(() => {
+        this.setState({ xrefsLoading: false });
+      });
+  }
+
+  fetchUsages(targetTickets: string[], handler: (d: search.UsageReply) => void) {
+    if (!targetTickets || targetTickets.length === 0) {
+      return;
+    }
+    targetTickets = [...new Set(targetTickets)]; // Remove duplicates
+
+    this.pendingXrefsRequest?.cancel();
+    this.setState({ xrefsLoading: true });
+
+    const req = new search.KytheRequest({
+      usageRequest: new search.UsageRequest({
+        tickets: targetTickets,
+      }),
+    });
+    this.pendingXrefsRequest = rpcService.service.kytheProxy(req);
+    this.pendingXrefsRequest
+      .then((r) => {
+        if (!r.usageReply) {
+          console.log("No cross references found for tickets: ", targetTickets);
+          return;
+        }
+        console.log("Usages", r.usageReply);
+        handler(r.usageReply);
       })
       .catch((e) => {
         console.log("Error fetching xrefs: ", req, e);
@@ -1771,7 +1809,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.fetchIfNeededAndNavigate(path, "", line);
   }
 
-  renderXrefGroup(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]) {
+  renderAnchors(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]) {
+    console.log("Rendering xref group", name, anchors);
     if (anchors.length === 0) {
       return <></>;
     }
@@ -1828,6 +1867,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         return a[0] < b[0] ? -1 : 1; // otherwise sort alphabetically
       })
     );
+    console.log("Sorted files", sortedFiles);
 
     return (
       <div>
@@ -1866,31 +1906,60 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     );
   }
 
-  renderXrefs() {
-    if (!this.state.xrefs) {
+  renderXrefPanel() {
+    console.log("Rendering xref panel");
+    if (!this.state.xrefs && !this.state.usages) {
       return <></>;
     }
-    const xrefs = Object.values(this.state.xrefs?.crossReferences);
-    let defs: kythe.proto.CrossReferencesReply.RelatedAnchor[] = [];
-    let refs: kythe.proto.CrossReferencesReply.RelatedAnchor[] = [];
-    for (const xref of xrefs) {
-      defs.push(...xref.definition);
-      refs.push(...xref.reference);
-    }
 
+    let sections = new Map<string, kythe.proto.CrossReferencesReply.RelatedAnchor[]>();
+
+    if (this.state.xrefs) {
+      console.log("Rendering xrefs in panel");
+      sections.set("Definitions", []);
+      sections.set("Other references", []);
+
+      const xrefs = Object.values(this.state.xrefs?.crossReferences);
+      for (const xref of xrefs) {
+        console.log("Xref", xref);
+        sections.get("Definitions")?.push(...xref.definition);
+        sections.get("Other references")?.push(...xref.reference);
+      }
+    } else if (this.state.usages) {
+      console.log("Rendering usages in panel");
+
+      if (this.state.usages.definitions) {
+        sections.set("Definitions", this.state.usages.definitions);
+      }
+      if (this.state.usages.overrides) {
+        sections.set("Overrides", this.state.usages.overrides);
+      }
+      if (this.state.usages.overriddenBy) {
+        sections.set("Overridden By", this.state.usages.overriddenBy);
+      }
+      if (this.state.usages.extends) {
+        sections.set("Extends", this.state.usages.extends);
+      }
+      if (this.state.usages.extendedBy) {
+        sections.set("Extended By", this.state.usages.extendedBy);
+      }
+      if (this.state.usages.callHierarchy) {
+        sections.set("References", this.state.usages.callHierarchy);
+      }
+    }
     return (
       <div>
         <div className="xrefs-header">References</div>
         <div className="xrefs-container">
-          {this.renderXrefGroup("Definitions", defs)}
-          {this.renderXrefGroup("Other references", refs)}
+          {Array.from(sections.entries()).map(([name, anchors]) => {
+            return this.renderAnchors(name, anchors);
+          })}
         </div>
       </div>
     );
   }
 
   resizeXrefs(e: MouseEvent) {
-    console.log("mousemove", window.innerHeight - e.clientY, e);
     this.updateState({
       xrefsHeight: Math.max(100, window.innerHeight - e.clientY),
     });
@@ -2142,7 +2211,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 }}
                 style={{ height: this.state.xrefsHeight }}>
                 {this.state.xrefsLoading && <div className="loading"></div>}
-                {!this.state.xrefsLoading && this.renderXrefs()}
+                {!this.state.xrefsLoading && this.renderXrefPanel()}
               </div>
             )}
             {this.state.changes.size > 0 && !this.getQuery() && (

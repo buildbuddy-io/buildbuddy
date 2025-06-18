@@ -543,6 +543,8 @@ func (css *codesearchServer) extendedXrefs(ctx context.Context, req *srpb.Extend
 		}
 	}
 
+	log.Infof("Fetching cross-references for tickets: %s", xrefTickets)
+
 	xrefReq := &kxpb.CrossReferencesRequest{
 		Ticket:          xrefTickets,
 		DefinitionKind:  kxpb.CrossReferencesRequest_ALL_DEFINITIONS,
