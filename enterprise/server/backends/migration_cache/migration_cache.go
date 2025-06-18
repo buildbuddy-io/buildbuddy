@@ -211,8 +211,6 @@ type config struct {
 	doubleReadPercentage, decompressPercentage float64
 }
 
-var configInvalidAlertOnce sync.Once
-
 // TODO(vanja) either return errors, or remove the error return value.
 func (mc *MigrationCache) config(ctx context.Context) (*config, error) {
 	c := &config{
