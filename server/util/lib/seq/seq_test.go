@@ -256,7 +256,7 @@ func TestDrop(t *testing.T) {
 	}
 }
 
-func TestTruncate(t *testing.T) {
+func TestTake(t *testing.T) {
 	for name, tc := range map[string]struct {
 		input    []string
 		n        int
@@ -338,23 +338,23 @@ func TestTruncate(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			originalInput := slices.Clone(tc.input)
-			truncated := seq.Truncate[string](tc.input, tc.n)
-			assert.ElementsMatch(t, tc.expected, slices.Collect(truncated))
+			taken := seq.Take[string](tc.input, tc.n)
+			assert.ElementsMatch(t, tc.expected, slices.Collect(taken))
 			assert.ElementsMatch(t, originalInput, tc.input)
 			// test statelessness
-			assert.ElementsMatch(t, tc.expected, slices.Collect(truncated))
+			assert.ElementsMatch(t, tc.expected, slices.Collect(taken))
 
-			truncated = seq.Truncate[string](slices.Values(tc.input), tc.n)
-			assert.ElementsMatch(t, tc.expected, slices.Collect(truncated))
+			taken = seq.Take[string](slices.Values(tc.input), tc.n)
+			assert.ElementsMatch(t, tc.expected, slices.Collect(taken))
 			// test statelessness
-			assert.ElementsMatch(t, tc.expected, slices.Collect(truncated))
+			assert.ElementsMatch(t, tc.expected, slices.Collect(taken))
 		})
 	}
 	t.Run("stateful truncate", func(t *testing.T) {
 		input := "hello\nthere\ncool\nworld\n"
 		// string.Lines is a stateful sequence.
 		lines := strings.Lines(input)
-		truncated := seq.Truncate[string](lines, 2)
+		truncated := seq.Take[string](lines, 2)
 		assert.ElementsMatch(
 			t,
 			[]string{"hello\n", "there\n"},
