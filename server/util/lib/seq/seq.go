@@ -115,9 +115,9 @@ func Drop[E any, S Sequenceable[E]](s S, n int) iter.Seq[E] {
 	}
 }
 
-// Truncate truncates the passed sequence after N elements. If the sequence is
-// fewer than N elements in length, it will be returned unchanged. If N is less
-// than one, the empty sequence is returned
+// Take returns a sequence consisting only of the first N elements of the passed
+// sequence. If the sequence is fewer than N elements in length, it will be
+// returned unchanged. If N is less than one, the empty sequence is returned.
 //
 // As with all sequences returned by this library, so long as the parameters are
 // stateless, the returned sequence will be stateless.
@@ -125,7 +125,7 @@ func Drop[E any, S Sequenceable[E]](s S, n int) iter.Seq[E] {
 // the element type must be specified as a type parameter. However, if
 // https://github.com/golang/go/issues/73527 is ever accepted/addressed, the
 // explicit type specification will no longer be needed.
-func Truncate[E any, S Sequenceable[E]](s S, n int) iter.Seq[E] {
+func Take[E any, S Sequenceable[E]](s S, n int) iter.Seq[E] {
 	if n < 1 {
 		return EmptySeq[E]
 	}
