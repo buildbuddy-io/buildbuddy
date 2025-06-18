@@ -99,34 +99,23 @@ type StatusReporter interface {
 	// running state in a compact way.
 	Statusz(ctx context.Context) string
 }
-type StatusUpdater interface {
-	// Sections that implement this interface may update the service's
-	// current running state in some way.
-	// Implementations are responsible for writing the HTTP status code.
-	// The client does not use the HTTP body.
-	// To trigger updates, the client must make a POST request to
-	// "/statusz/{section_name}", which can be done e.g. by using <form>
-	// submissions with method="post", or by using the JS fetch() API.
-	UpdateStatusz(w http.ResponseWriter, r *http.Request)
-}
+
 type StatusServer interface {
 	// Sections that implement this interface may implement arbitrary additional
-	// HTTP serving logic, e.g. to expose artifacts referenced in the statusz
-	// sections. Requests are only routed to these handlers if they contain a
-	// path starting with "/statusz/{section_name}/". The
-	// "/statusz/{section_name}" prefix is stripped.
+	// HTTP serving logic, e.g. to implement POST updates or expose artifacts
+	// referenced in the statusz sections. Requests are only routed to these
+	// handlers if they contain a path starting with "/statusz/{section_name}/".
+	// The "/statusz/{section_name}" prefix is stripped.
 	ServeStatusz(w http.ResponseWriter, r *http.Request)
 }
 
 type StatusFunc func(ctx context.Context) string
-type UpdateFunc = http.HandlerFunc
 type ServeFunc = http.HandlerFunc
 
 type Section struct {
 	Name        string
 	Description string
 	Status      StatusFunc
-	Update      UpdateFunc
 	Serve       ServeFunc
 }
 
@@ -149,9 +138,6 @@ func (h *Handler) AddSection(name, description string, statusReporter StatusRepo
 		Name:        name,
 		Description: description,
 		Status:      statusReporter.Statusz,
-	}
-	if sm, ok := statusReporter.(StatusUpdater); ok {
-		s.Update = sm.UpdateStatusz
 	}
 	if sm, ok := statusReporter.(StatusServer); ok {
 		s.Serve = http.StripPrefix(BasePath+"/"+name, http.HandlerFunc(sm.ServeStatusz)).ServeHTTP
@@ -201,10 +187,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	sectionName, _, _ := strings.Cut(r.PathValue("section_name"), "/")
 	if section, ok := h.sections[sectionName]; ok {
-		if r.Method == http.MethodPost && section.Update != nil {
-			section.Update(w, r)
-			return
-		}
 		if section.Serve != nil {
 			section.Serve(w, r)
 			return
