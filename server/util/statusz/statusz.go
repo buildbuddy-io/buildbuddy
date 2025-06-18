@@ -2,12 +2,14 @@ package statusz
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,7 +17,9 @@ import (
 )
 
 const (
-	StatuszPath = "/statusz/{section_name...}"
+	BasePath = "/statusz"
+
+	Route = "/statusz/{section_name...}"
 
 	templateContents = `<!DOCTYPE html>
 <html>
@@ -95,22 +99,24 @@ type StatusReporter interface {
 	// running state in a compact way.
 	Statusz(ctx context.Context) string
 }
-type StatusUpdater interface {
-	// Sections that implement this interface may update the service's
-	// current running state in some way.
-	// Implementations are responsible for writing the HTTP status code.
-	// The client does not use the HTTP body.
-	UpdateStatusz(w http.ResponseWriter, r *http.Request)
+
+type StatusServer interface {
+	// Sections that implement this interface may implement arbitrary additional
+	// HTTP serving logic, e.g. to implement POST updates or expose artifacts
+	// referenced in the statusz sections. Requests are only routed to these
+	// handlers if they contain a path starting with "/statusz/{section_name}/".
+	// The "/statusz/{section_name}" prefix is stripped.
+	ServeStatusz(w http.ResponseWriter, r *http.Request)
 }
 
 type StatusFunc func(ctx context.Context) string
-type UpdateFunc func(w http.ResponseWriter, r *http.Request)
+type ServeFunc = http.HandlerFunc
 
 type Section struct {
 	Name        string
 	Description string
 	Status      StatusFunc
-	Update      UpdateFunc
+	Serve       ServeFunc
 }
 
 type Handler struct {
@@ -133,8 +139,8 @@ func (h *Handler) AddSection(name, description string, statusReporter StatusRepo
 		Description: description,
 		Status:      statusReporter.Statusz,
 	}
-	if sm, ok := statusReporter.(StatusUpdater); ok {
-		s.Update = sm.UpdateStatusz
+	if sm, ok := statusReporter.(StatusServer); ok {
+		s.Serve = http.StripPrefix(BasePath+"/"+name, http.HandlerFunc(sm.ServeStatusz)).ServeHTTP
 	}
 	h.sections[name] = s
 }
@@ -179,26 +185,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer h.mu.RUnlock()
 	ctx := r.Context()
 
-	selectedSection := r.PathValue("section_name")
-
-	if r.Method == http.MethodPost {
-		section, ok := h.sections[selectedSection]
-		if !ok {
-			http.Error(w, "no section specified in URL path", http.StatusInternalServerError)
+	sectionName, _, _ := strings.Cut(r.PathValue("section_name"), "/")
+	if section, ok := h.sections[sectionName]; ok {
+		if section.Serve != nil {
+			section.Serve(w, r)
 			return
 		}
-		if section.Update == nil {
-			http.Error(w, "section does not implement Update interface", http.StatusInternalServerError)
-			return
-		}
-		section.Update(w, r)
+		http.Error(w, fmt.Sprintf("section %q does not support HTTP handling", sectionName), http.StatusBadRequest)
 		return
 	}
 
 	// If no single-section was specified, render all sections.
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	sections := make([]*renderedSection, 0, len(h.sections))
 	for _, section := range h.sections {
-		if selectedSection != "" && section.Name != selectedSection {
+		if sectionName != "" && section.Name != sectionName {
 			continue
 		}
 		rs := &renderedSection{
