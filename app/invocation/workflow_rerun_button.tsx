@@ -216,7 +216,9 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
   // and don't have a snapshot key in the execute response) must use this approach.
   private async invalidateAllSnapshots() {
     const repoUrl = this.props.model.workflowConfigured?.pushedRepoUrl;
-    rpcService.service.invalidateAllSnapshotsForRepo(new workflow.InvalidateAllSnapshotsForRepoRequest({ repoUrl }));
+    return rpcService.service.invalidateAllSnapshotsForRepo(
+      new workflow.InvalidateAllSnapshotsForRepoRequest({ repoUrl })
+    );
   }
 
   // getWorkflowExecution returns the execution for the workflow run (ci_runner).
