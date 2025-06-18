@@ -4,6 +4,7 @@ import (
 	"iter"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
@@ -258,6 +259,23 @@ func TestTruncate(t *testing.T) {
 			assert.ElementsMatch(t, tc.expected, slices.Collect(truncated))
 		})
 	}
+	t.Run("stateful truncate", func(t *testing.T) {
+		input := "hello\nthere\ncool\nworld\n"
+		// string.Lines is a stateful sequence.
+		lines := strings.Lines(input)
+		truncated := seq.Truncate[string](lines, 2)
+		assert.ElementsMatch(
+			t,
+			[]string{"hello\n", "there\n"},
+			slices.Collect(truncated),
+		)
+
+		assert.ElementsMatch(
+			t,
+			[]string{"cool\n", "world\n"},
+			slices.Collect(lines),
+		)
+	})
 }
 
 func TestRepeat(t *testing.T) {
