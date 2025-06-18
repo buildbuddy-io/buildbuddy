@@ -250,7 +250,8 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         <div className="affected-users-list">
           {selectedMembers.map((member) => (
             <div className={`affected-users-list-item ${this.isLoggedInUser(member) ? "flagged-self-user" : ""}`}>
-              {member?.user?.email || member?.user?.name?.full} {iconFromAccountType(member.user?.accountType)}
+              {member?.user?.email || member?.user?.name?.full || member?.user?.username}{" "}
+              {iconFromAccountType(member.user?.accountType)}
             </div>
           ))}
         </div>
