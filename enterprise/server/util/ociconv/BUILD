@@ -16,6 +16,7 @@ go_library(
         "//server/util/tracing",
         "//third_party/singleflight",
         "@com_github_google_go_containerregistry//pkg/v1/mutate",
+        "@org_golang_x_sys//unix",
     ],
 )
 
