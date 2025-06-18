@@ -806,8 +806,7 @@ func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, 
 		case *BoolOrEnum:
 			b := opt.BoolLike()
 			if b == nil {
-				p.SetEnum(opt.GetValue())
-				continue
+				return *new(T), fmt.Errorf("Option '%s' is not a boolean (or boolean-or-enum) option.", opt.Name())
 			}
 			v, err := b.AsBool()
 			if err != nil {
@@ -815,6 +814,8 @@ func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, 
 				continue
 			}
 			p.SetBool(v)
+		default:
+			return *new(T), fmt.Errorf("Accumulator is of unsupported type %T.", acc)
 		}
 	}
 	return acc, nil
