@@ -354,11 +354,11 @@ func TestTake(t *testing.T) {
 		input := "hello\nthere\ncool\nworld\n"
 		// string.Lines is a stateful sequence.
 		lines := strings.Lines(input)
-		truncated := seq.Take[string](lines, 2)
+		taken := seq.Take[string](lines, 2)
 		assert.ElementsMatch(
 			t,
 			[]string{"hello\n", "there\n"},
-			slices.Collect(truncated),
+			slices.Collect(taken),
 		)
 
 		assert.ElementsMatch(
