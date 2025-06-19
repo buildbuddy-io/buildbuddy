@@ -48,6 +48,9 @@ import (
 	ftsrv "kythe.io/kythe/go/serving/filetree"
 	gsrv "kythe.io/kythe/go/serving/graph"
 	xsrv "kythe.io/kythe/go/serving/xrefs"
+
+	kgpb "kythe.io/kythe/proto/graph_go_proto"
+	kxpb "kythe.io/kythe/proto/xref_go_proto"
 )
 
 const (
@@ -494,6 +497,131 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	return rsp, nil
 }
 
+func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageRequest) (*srpb.UsageReply, error) {
+	ticks := req.GetTickets()
+
+	// TODO(jdelfino): Handle generated code by dealing with /kythe/edge/generates edges
+
+	// See https://kythe.io/docs/schema/ for edge type definitions.
+	edgeTypes := []string{
+		"/kythe/edge/overrides",
+		"%/kythe/edge/overrides",
+		"/kythe/edge/overrides/transitive",
+		"%/kythe/edge/overrides/transitive",
+		"/kythe/edge/satisfies",
+		"%/kythe/edge/satisfies",
+		"/kythe/edge/extends",
+		"%/kythe/edge/extends",
+	}
+	edgeReq := &kgpb.EdgesRequest{
+		Ticket: ticks,
+		Kind:   edgeTypes,
+	}
+
+	edgeReply, err := css.gs.Edges(ctx, edgeReq)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to get edges for ticket %s: %v", ticks, err)
+	}
+	//log.Infof("Found edges for ticket %s: %+v", tick, edges)
+
+	xrefTickets := make([]string, len(ticks))
+	copy(xrefTickets, ticks)
+
+	for ticket, edgeSet := range edgeReply.GetEdgeSets() {
+		xrefTickets = append(xrefTickets, ticket)
+		for _, edges := range edgeSet.GetGroups() {
+			for _, edge := range edges.GetEdge() {
+				xrefTickets = append(xrefTickets, edge.GetTargetTicket())
+			}
+		}
+	}
+
+	log.Infof("Fetching cross-references for tickets: %s", xrefTickets)
+
+	xrefReq := &kxpb.CrossReferencesRequest{
+		Ticket:          xrefTickets,
+		DefinitionKind:  kxpb.CrossReferencesRequest_ALL_DEFINITIONS,
+		DeclarationKind: kxpb.CrossReferencesRequest_ALL_DECLARATIONS,
+		ReferenceKind:   kxpb.CrossReferencesRequest_ALL_REFERENCES,
+		Snippets:        kxpb.SnippetsKind_DEFAULT,
+	}
+	xrefReply, err := css.xs.CrossReferences(ctx, xrefReq)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to get cross-references for tickets %s: %v", xrefTickets, err)
+	}
+
+	repl := &srpb.UsageReply{
+		Overrides:     make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		OverriddenBy:  make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		Extends:       make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		ExtendedBy:    make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		CallHierarchy: make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+	}
+
+	handleEdges(
+		[]string{"/kythe/edge/overrides", "/kythe/edge/overrides/transitive"},
+		edgeReply,
+		xrefReply,
+		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
+			repl.Overrides = append(repl.Overrides, xrefs.GetDefinition()...)
+			// Add callers of the overridden function to the call hierarchy.
+			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetReference()...)
+			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetCaller()...)
+		})
+
+	handleEdges(
+		[]string{"%/kythe/edge/overrides", "%/kythe/edge/overrides/transitive"},
+		edgeReply,
+		xrefReply,
+		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
+			repl.OverriddenBy = append(repl.Overrides, xrefs.GetDefinition()...)
+			// Add callers of any overridding implementations to the call hierarchy.
+			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetReference()...)
+			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetCaller()...)
+		})
+
+	handleEdges(
+		[]string{"/kythe/edge/satisfies", "/kythe/edge/overrides/extends"},
+		edgeReply,
+		xrefReply,
+		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
+			repl.Extends = append(repl.Extends, xrefs.GetDefinition()...)
+		})
+
+	handleEdges(
+		[]string{"%/kythe/edge/satisfies", "%/kythe/edge/overrides/extends"},
+		edgeReply,
+		xrefReply,
+		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
+			repl.ExtendedBy = append(repl.Extends, xrefs.GetDefinition()...)
+		})
+
+	for _, tick := range ticks {
+		repl.Definitions = append(repl.Definitions, xrefReply.GetCrossReferences()[tick].GetDefinition()...)
+		repl.CallHierarchy = append(repl.CallHierarchy, xrefReply.GetCrossReferences()[tick].GetReference()...)
+		repl.CallHierarchy = append(repl.CallHierarchy, xrefReply.GetCrossReferences()[tick].GetCaller()...)
+	}
+
+	log.Infof("computed: %+v", repl)
+	return repl, nil
+}
+
+func handleEdges(edgeTypes []string, edgeReply *kgpb.EdgesReply, xrefs *kxpb.CrossReferencesReply, handler func(anchor *kxpb.CrossReferencesReply_CrossReferenceSet)) {
+	for _, edgeSet := range edgeReply.GetEdgeSets() {
+		for _, edgeType := range edgeTypes {
+			if edges, ok := edgeSet.GetGroups()[edgeType]; ok {
+				for _, edge := range edges.GetEdge() {
+					xrefs, ok := xrefs.GetCrossReferences()[edge.GetTargetTicket()]
+					if !ok {
+						continue
+					}
+					handler(xrefs)
+				}
+			}
+		}
+	}
+}
+
 func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequest) (*srpb.KytheResponse, error) {
 	var rsp = new(srpb.KytheResponse)
 	var err = status.UnimplementedError("method not implemented in codesearch backend")
@@ -529,6 +657,12 @@ func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequ
 			CrossReferencesReply: crossReferencesReply,
 		}
 		err = crossReferencesErr
+	case *srpb.KytheRequest_UsageRequest:
+		usageReply, usageErr := css.funcUsage(ctx, req.GetUsageRequest())
+		rsp.Value = &srpb.KytheResponse_UsageReply{
+			UsageReply: usageReply,
+		}
+		err = usageErr
 	}
 
 	return rsp, err
@@ -647,3 +781,27 @@ func (css *codesearchServer) IngestAnnotations(ctx context.Context, req *inpb.In
 func (css *codesearchServer) Close(ctx context.Context) {
 	css.kdb.Close(ctx)
 }
+
+/*
+total:{references:4  ref_edge_to_count:{key:"/kythe/edge/ref/call"  value:4}}  filtered:{}
+cross_references:{
+	key:"kythe://buildbuddy?lang=go?path=codesearch/types/types?root=bazel-out/bin#method%20IndexWriter.UpdateDocument"
+	value:{ticket:"kythe://buildbuddy?lang=go?path=codesearch/types/types?root=bazel-out/bin#method%20IndexWriter.UpdateDocument"
+		reference:{
+			anchor:{
+				ticket:"kythe://buildbuddy?lang=go?path=codesearch/github/github.go#%232897%3A2945"  kind:"/kythe/edge/ref/call"  parent:"kythe://buildbuddy?path=codesearch/github/github.go"
+				span:{start:{byte_offset:2897  line_number:94  column_offset:11}  end:{byte_offset:2945  line_number:94  column_offset:59}}}}
+		reference:{
+			anchor:{
+				ticket:"kythe://buildbuddy?lang=go?path=codesearch/github/github.go#%232897%3A2945"  kind:"/kythe/edge/ref/call"  parent:"kythe://buildbuddy?path=codesearch/github/github.go"
+				span:{start:{byte_offset:2897  line_number:94  column_offset:11}  end:{byte_offset:2945  line_number:94  column_offset:59}}}}
+		reference:{
+			anchor:{
+				ticket:"kythe://buildbuddy?lang=go?path=codesearch/github/github.go#%234300%3A4348"  kind:"/kythe/edge/ref/call"  parent:"kythe://buildbuddy?path=codesearch/github/github.go"
+				span:{start:{byte_offset:4300  line_number:124  column_offset:11}  end:{byte_offset:4348  line_number:124  column_offset:59}}}}
+		reference:{
+			anchor:{
+				ticket:"kythe://buildbuddy?lang=go?path=codesearch/github/github.go#%234300%3A4348"  kind:"/kythe/edge/ref/call"  parent:"kythe://buildbuddy?path=codesearch/github/github.go"
+				span:{start:{byte_offset:4300  line_number:124  column_offset:11}  end:{byte_offset:4348  line_number:124  column_offset:59}}}}}}
+
+*/
