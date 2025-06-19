@@ -1819,8 +1819,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return (
       <div>
         <div className="xrefs-category">{name}</div>
-        {[...sortedFiles.entries()].map((entry) => {
-          const path = new URL(entry[0]).searchParams.get("path") ?? "";
+        {[...sortedFiles.entries()].map(([ticket, anchors]) => {
+          const path = new URL(ticket).searchParams.get("path") ?? "";
           if (!path) {
             return <></>;
           }
@@ -1831,10 +1831,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 onClick={() => {
                   this.fetchIfNeededAndNavigate(path, "", 1);
                 }}>
-                {path} ({entry[1].length} result{entry[1].length > 1 ? "s" : ""})
+                {path} ({anchors.length} result{anchors.length > 1 ? "s" : ""})
               </div>
               <div className="xrefs-snippet">
-                {entry[1].map((a) => {
+                {anchors.map((a) => {
                   return (
                     <div
                       onClick={() => {
