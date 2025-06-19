@@ -99,18 +99,17 @@ message SearchResponse {
   PerformanceMetrics performance_metrics = 4;
 }
 
-message UsageRequest {
+message ExtendedXrefsRequest {
   repeated string tickets = 1;
 }
 
-// TODO(jdelfino): Ugh, rename this to something better
-message UsageReply {
+message ExtendedXrefsReply {
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor definitions = 1;
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor overrides = 2;
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor overridden_by = 3;
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor extends = 4;
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor extended_by = 5;
-  repeated kythe.proto.CrossReferencesReply.RelatedAnchor call_hierarchy = 6;
+  repeated kythe.proto.CrossReferencesReply.RelatedAnchor references = 6;
 }
 
 message KytheRequest {
@@ -122,7 +121,7 @@ message KytheRequest {
     kythe.proto.CrossReferencesRequest cross_references_request = 4;
     kythe.proto.CorpusRootsRequest corpus_roots_request = 5;
     kythe.proto.DirectoryRequest directory_request = 6;
-    UsageRequest usage_request = 7;
+    ExtendedXrefsRequest extended_xrefs_request = 7;
   }
 }
 
@@ -135,6 +134,6 @@ message KytheResponse {
     kythe.proto.CrossReferencesReply cross_references_reply = 4;
     kythe.proto.CorpusRootsReply corpus_roots_reply = 5;
     kythe.proto.DirectoryReply directory_reply = 6;
-    UsageReply usage_reply = 7;
+    ExtendedXrefsReply extended_xrefs_reply = 7;
   }
 }

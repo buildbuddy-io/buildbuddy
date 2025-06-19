@@ -497,7 +497,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	return rsp, nil
 }
 
-func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageRequest) (*srpb.UsageReply, error) {
+func (css *codesearchServer) extendedXrefs(ctx context.Context, req *srpb.ExtendedXrefsRequest) (*srpb.ExtendedXrefsReply, error) {
 	// This function exists to populate the references panel in the code browser UI.
 	// The overall approach is:
 	// 1. Fetch "interesting" edges from the requested tickets
@@ -557,12 +557,12 @@ func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageReque
 
 	// Combine the data from edges and xrefs into the final response.
 
-	repl := &srpb.UsageReply{
-		Overrides:     make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
-		OverriddenBy:  make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
-		Extends:       make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
-		ExtendedBy:    make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
-		CallHierarchy: make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+	repl := &srpb.ExtendedXrefsReply{
+		Overrides:    make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		OverriddenBy: make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		Extends:      make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		ExtendedBy:   make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		References:   make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
 	}
 
 	handleEdges(
@@ -572,8 +572,8 @@ func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageReque
 		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
 			repl.Overrides = append(repl.Overrides, xrefs.GetDefinition()...)
 			// Add callers of the overridden function to the call hierarchy.
-			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetReference()...)
-			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetCaller()...)
+			repl.References = append(repl.References, xrefs.GetReference()...)
+			repl.References = append(repl.References, xrefs.GetCaller()...)
 		})
 
 	handleEdges(
@@ -583,8 +583,8 @@ func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageReque
 		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
 			repl.OverriddenBy = append(repl.Overrides, xrefs.GetDefinition()...)
 			// Add callers of any overridding implementations to the call hierarchy.
-			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetReference()...)
-			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetCaller()...)
+			repl.References = append(repl.References, xrefs.GetReference()...)
+			repl.References = append(repl.References, xrefs.GetCaller()...)
 		})
 
 	handleEdges(
@@ -594,7 +594,7 @@ func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageReque
 		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
 			repl.Extends = append(repl.Extends, xrefs.GetDefinition()...)
 			// Include references to the superclass/interface
-			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetReference()...)
+			repl.References = append(repl.References, xrefs.GetReference()...)
 		})
 
 	handleEdges(
@@ -604,14 +604,14 @@ func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageReque
 		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
 			repl.ExtendedBy = append(repl.Extends, xrefs.GetDefinition()...)
 			// Include references to the subclasses/implementations?
-			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetReference()...)
+			repl.References = append(repl.References, xrefs.GetReference()...)
 		})
 
 	for _, tick := range ticks {
 		// Include xrefs for the original tickets as well.
 		repl.Definitions = append(repl.Definitions, xrefReply.GetCrossReferences()[tick].GetDefinition()...)
-		repl.CallHierarchy = append(repl.CallHierarchy, xrefReply.GetCrossReferences()[tick].GetReference()...)
-		repl.CallHierarchy = append(repl.CallHierarchy, xrefReply.GetCrossReferences()[tick].GetCaller()...)
+		repl.References = append(repl.References, xrefReply.GetCrossReferences()[tick].GetReference()...)
+		repl.References = append(repl.References, xrefReply.GetCrossReferences()[tick].GetCaller()...)
 	}
 
 	return repl, nil
@@ -670,12 +670,12 @@ func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequ
 			CrossReferencesReply: crossReferencesReply,
 		}
 		err = crossReferencesErr
-	case *srpb.KytheRequest_UsageRequest:
-		usageReply, usageErr := css.funcUsage(ctx, req.GetUsageRequest())
-		rsp.Value = &srpb.KytheResponse_UsageReply{
-			UsageReply: usageReply,
+	case *srpb.KytheRequest_ExtendedXrefsRequest:
+		xrefsReply, xrefsErr := css.extendedXrefs(ctx, req.GetExtendedXrefsRequest())
+		rsp.Value = &srpb.KytheResponse_ExtendedXrefsReply{
+			ExtendedXrefsReply: xrefsReply,
 		}
-		err = usageErr
+		err = xrefsErr
 	}
 
 	return rsp, err

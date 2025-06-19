@@ -356,7 +356,7 @@ func TestUsage_Override(t *testing.T) {
 	// In this test, A overrides B. If A overrides B, we should see:
 	// 1. A's definition in Definitions
 	// 2. B's definition in Overrides
-	// 3. References to both A and B in CallHierarchy
+	// 3. References to both A and B in References
 
 	ctx := context.Background()
 
@@ -415,8 +415,8 @@ func TestUsage_Override(t *testing.T) {
 	}
 
 	rsp, err := css.KytheProxy(ctx, &spb.KytheRequest{
-		Value: &spb.KytheRequest_UsageRequest{
-			UsageRequest: &spb.UsageRequest{
+		Value: &spb.KytheRequest_ExtendedXrefsRequest{
+			ExtendedXrefsRequest: &spb.ExtendedXrefsRequest{
 				Tickets: []string{ticketA},
 			},
 		},
@@ -429,27 +429,27 @@ func TestUsage_Override(t *testing.T) {
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "a defn"}},
-	}, rsp.GetUsageReply().GetDefinitions())
+	}, rsp.GetExtendedXrefsReply().GetDefinitions())
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "b defn"}},
-	}, rsp.GetUsageReply().GetOverrides())
+	}, rsp.GetExtendedXrefsReply().GetOverrides())
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "a ref"}},
 		{Anchor: &xrefpb.Anchor{Text: "b ref"}},
-	}, rsp.GetUsageReply().GetCallHierarchy())
+	}, rsp.GetExtendedXrefsReply().GetReferences())
 
-	assert.Empty(t, rsp.GetUsageReply().GetOverriddenBy())
-	assert.Empty(t, rsp.GetUsageReply().GetExtends())
-	assert.Empty(t, rsp.GetUsageReply().GetExtendedBy())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetOverriddenBy())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetExtends())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetExtendedBy())
 }
 
 func TestUsage_OverridenBy(t *testing.T) {
 	// In this test, A is overriden by B. If A is overridden by B, we should see:
 	// 1. A's definition in Definitions
 	// 2. B's definition in Overrides
-	// 3. References to both A and B in CallHierarchy
+	// 3. References to both A and B in References
 
 	ctx := context.Background()
 
@@ -508,8 +508,8 @@ func TestUsage_OverridenBy(t *testing.T) {
 	}
 
 	rsp, err := css.KytheProxy(ctx, &spb.KytheRequest{
-		Value: &spb.KytheRequest_UsageRequest{
-			UsageRequest: &spb.UsageRequest{
+		Value: &spb.KytheRequest_ExtendedXrefsRequest{
+			ExtendedXrefsRequest: &spb.ExtendedXrefsRequest{
 				Tickets: []string{ticketA},
 			},
 		},
@@ -522,27 +522,27 @@ func TestUsage_OverridenBy(t *testing.T) {
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "a defn"}},
-	}, rsp.GetUsageReply().GetDefinitions())
+	}, rsp.GetExtendedXrefsReply().GetDefinitions())
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "b defn"}},
-	}, rsp.GetUsageReply().GetOverriddenBy())
+	}, rsp.GetExtendedXrefsReply().GetOverriddenBy())
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "a ref"}},
 		{Anchor: &xrefpb.Anchor{Text: "b ref"}},
-	}, rsp.GetUsageReply().GetCallHierarchy())
+	}, rsp.GetExtendedXrefsReply().GetReferences())
 
-	assert.Empty(t, rsp.GetUsageReply().GetOverrides())
-	assert.Empty(t, rsp.GetUsageReply().GetExtends())
-	assert.Empty(t, rsp.GetUsageReply().GetExtendedBy())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetOverrides())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetExtends())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetExtendedBy())
 }
 
 func TestUsage_Extends(t *testing.T) {
 	// In this test, A extends B. If A extends B, we should see:
 	// 1. A's definition in Definitions
 	// 2. B's definition in Extends
-	// 3. References to A and B in CallHierarchy
+	// 3. References to A and B in References
 
 	ctx := context.Background()
 
@@ -601,8 +601,8 @@ func TestUsage_Extends(t *testing.T) {
 	}
 
 	rsp, err := css.KytheProxy(ctx, &spb.KytheRequest{
-		Value: &spb.KytheRequest_UsageRequest{
-			UsageRequest: &spb.UsageRequest{
+		Value: &spb.KytheRequest_ExtendedXrefsRequest{
+			ExtendedXrefsRequest: &spb.ExtendedXrefsRequest{
 				Tickets: []string{ticketA},
 			},
 		},
@@ -615,27 +615,27 @@ func TestUsage_Extends(t *testing.T) {
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "a defn"}},
-	}, rsp.GetUsageReply().GetDefinitions())
+	}, rsp.GetExtendedXrefsReply().GetDefinitions())
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "b defn"}},
-	}, rsp.GetUsageReply().GetExtends())
+	}, rsp.GetExtendedXrefsReply().GetExtends())
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "a ref"}},
 		{Anchor: &xrefpb.Anchor{Text: "b ref"}},
-	}, rsp.GetUsageReply().GetCallHierarchy())
+	}, rsp.GetExtendedXrefsReply().GetReferences())
 
-	assert.Empty(t, rsp.GetUsageReply().GetOverrides())
-	assert.Empty(t, rsp.GetUsageReply().GetOverriddenBy())
-	assert.Empty(t, rsp.GetUsageReply().GetExtendedBy())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetOverrides())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetOverriddenBy())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetExtendedBy())
 }
 
 func TestUsage_ExtendedBy(t *testing.T) {
 	// In this test, A is extended by B. If A is extended by B, we should see:
 	// 1. A's definition in Definitions
 	// 2. B's definition in ExtendedBy
-	// 3. References to A and B in CallHierarchy
+	// 3. References to A and B in References
 
 	ctx := context.Background()
 
@@ -694,8 +694,8 @@ func TestUsage_ExtendedBy(t *testing.T) {
 	}
 
 	rsp, err := css.KytheProxy(ctx, &spb.KytheRequest{
-		Value: &spb.KytheRequest_UsageRequest{
-			UsageRequest: &spb.UsageRequest{
+		Value: &spb.KytheRequest_ExtendedXrefsRequest{
+			ExtendedXrefsRequest: &spb.ExtendedXrefsRequest{
 				Tickets: []string{ticketA},
 			},
 		},
@@ -708,18 +708,18 @@ func TestUsage_ExtendedBy(t *testing.T) {
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "a defn"}},
-	}, rsp.GetUsageReply().GetDefinitions())
+	}, rsp.GetExtendedXrefsReply().GetDefinitions())
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "b defn"}},
-	}, rsp.GetUsageReply().GetExtendedBy())
+	}, rsp.GetExtendedXrefsReply().GetExtendedBy())
 
 	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
 		{Anchor: &xrefpb.Anchor{Text: "a ref"}},
 		{Anchor: &xrefpb.Anchor{Text: "b ref"}},
-	}, rsp.GetUsageReply().GetCallHierarchy())
+	}, rsp.GetExtendedXrefsReply().GetReferences())
 
-	assert.Empty(t, rsp.GetUsageReply().GetOverrides())
-	assert.Empty(t, rsp.GetUsageReply().GetOverriddenBy())
-	assert.Empty(t, rsp.GetUsageReply().GetExtends())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetOverrides())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetOverriddenBy())
+	assert.Empty(t, rsp.GetExtendedXrefsReply().GetExtends())
 }
