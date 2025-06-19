@@ -62,7 +62,9 @@ go_test(
         "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@io_kythe//kythe/go/serving/graph",
         "@io_kythe//kythe/go/services/xrefs",
+        "@io_kythe//kythe/go/serving/graph",
+        "@io_kythe//kythe/proto:graph_go_proto",
+        "@io_kythe//kythe/proto:xref_go_proto",
     ],
 )
