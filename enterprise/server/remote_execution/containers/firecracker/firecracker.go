@@ -2180,9 +2180,9 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if err := c.vfsServer.Prepare(ctx, c.fsLayout); err != nil {
-		return nil, err
-	}
+	//if err := c.vfsServer.Prepare(ctx, c.fsLayout); err != nil {
+	//	return nil, err
+	//}
 
 	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
 	defer cancel()

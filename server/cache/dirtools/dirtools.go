@@ -927,6 +927,9 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) error {
 				// If we linked the digest from the file cache, there's nothing
 				// more to do.
 				if err := ff.linkFromFileCache(filePointers, opts); err == nil {
+					if strings.HasPrefix(dk.Hash, "b97") {
+						log.CtxWarningf(ff.ctx, "already in file cache %+v: file node %+v", dk, filePointers[0].FileNode)
+					}
 					ff.notifyFetchCompleted(dk)
 					return nil
 				}
@@ -1021,6 +1024,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 
 		var w interfaces.CommittedWriteCloser
 		if ff.onlyDownloadToFileCache {
+			log.CtxWarningf(ff.ctx, "writing bytestream blob %s to file cache: %+v", digest.String(key.ToDigest()), fp0.FileNode)
 			fcw, err := ff.env.GetFileCache().Writer(ctx, fp0.FileNode, ff.digestFunction)
 			if err != nil {
 				return nil, status.WrapError(err, "could not create filecache writer")
@@ -1370,7 +1374,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	if err := tf.Start(); err != nil {
 		return nil, err
 	}
-	return tf.Finish()
+	return tf.Wait()
 }
 
 func NewTreeFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, tree *repb.Tree, opts *DownloadTreeOpts) (*TreeFetcher, error) {
@@ -1487,7 +1491,7 @@ func (f *TreeFetcher) Start() error {
 	return nil
 }
 
-func (f *TreeFetcher) Finish() (*TransferInfo, error) {
+func (f *TreeFetcher) Wait() (*TransferInfo, error) {
 	var err error
 	select {
 	case err = <-f.done:

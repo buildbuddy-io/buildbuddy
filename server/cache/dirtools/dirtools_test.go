@@ -1230,7 +1230,7 @@ func TestDownloadTreeDirectlyToFileCache(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	info, err := tf.Finish()
+	info, err := tf.Wait()
 	require.NoError(t, err)
 
 	require.Equal(t, int64(2), info.FileCount, "two files should be transferred, one linked from filecache")
