@@ -64,7 +64,6 @@ interface State {
 
   fullPathToNodeMap: Map<string, workspace.Node>;
   fullPathToModelMap: Map<string, monaco.editor.ITextModel>;
-  fullPathToDecorationsMap: Map<string, string[]>;
   fullPathToDiffModelMap: Map<string, monaco.editor.IDiffEditorModel>;
 
   originalFileContents: Map<string, string>;
@@ -118,7 +117,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     fullPathToChildrenMap: new Map<string, Array<workspace.Node>>(),
     fullPathToNodeMap: new Map<string, workspace.Node>(),
     fullPathToModelMap: new Map<string, monaco.editor.ITextModel>(),
-    fullPathToDecorationsMap: new Map<string, string[]>(),
     fullPathToDiffModelMap: new Map<string, monaco.editor.IDiffEditorModel>(),
     originalFileContents: new Map<string, string>(),
     tabs: new Map<string, string>(),
@@ -149,6 +147,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   diffEditor: monaco.editor.IDiffEditor | undefined;
 
   // Note that these decoration collections are automatically cleared when the model is changed.
+  kytheDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
   searchDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
   lcovDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
 
@@ -402,7 +401,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           };
         })
         .filter((x) => x !== null) || [];
-    return newDecor;
+    this.kytheDecorations?.set(newDecor);
   }
 
   getChange(path: string) {
@@ -570,6 +569,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       readOnly: this.isSingleFile() || Boolean(this.getQuery()),
     });
     this.searchDecorations = this.editor.createDecorationsCollection();
+    this.kytheDecorations = this.editor.createDecorationsCollection();
     this.lcovDecorations = this.editor.createDecorationsCollection();
 
     this.editor.onMouseDown((e) => {
@@ -660,6 +660,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.editor.onDidChangeModelContent(() => {
       this.handleContentChanged();
       this.highlightQuery();
+      this.fetchDecorations(this.currentPath());
     });
   }
 
@@ -695,6 +696,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       this.editor?.revealLinesInCenter(focusedLineNumber, focusedLineNumber);
       this.editor?.focus();
       this.highlightQuery();
+      this.fetchDecorations(this.currentPath());
     });
   }
 
@@ -1119,16 +1121,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       model = monaco.editor.createModel(fileContents, getLangHintFromFilePath(fullPath), monaco.Uri.file(fullPath));
       this.state.fullPathToModelMap.set(fullPath, model);
       this.state.fullPathToNodeMap.set(fullPath, node);
-
-      this.fetchDecorations(fullPath).then((newDecs) => {
-        if (!newDecs) {
-          return;
-        }
-        let oldDecs = this.state.fullPathToDecorationsMap.get(fullPath) || [];
-        let newDecIds = model!.deltaDecorations(oldDecs, newDecs);
-        this.state.fullPathToDecorationsMap.set(fullPath, newDecIds);
-      });
-
       this.updateState({ fullPathToModelMap: this.state.fullPathToModelMap });
     }
     return model;
