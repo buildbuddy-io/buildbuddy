@@ -494,17 +494,8 @@ func TestEnqueue_Raciness(t *testing.T) {
 	}
 }
 
-func TestEnqueueByResourceName_ActionCache(t *testing.T) {
-	_, updater, cas, ticker := setup(t)
-	ctx := ctxWithClientIdentity()
-
-	rn := digest.NewACResourceName(digest0, "instance-1", repb.DigestFunction_SHA256).ActionCacheString()
-	updater.EnqueueByResourceName(ctx, rn)
-	expectNoMoreUpdates(t, ticker, cas)
-}
-
-func casResourceName(t *testing.T, d *repb.Digest, instanceName string) string {
-	return digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256).DownloadString()
+func casResourceName(t *testing.T, d *repb.Digest, instanceName string) *digest.CASResourceName {
+	return digest.NewCASResourceName(d, instanceName, repb.DigestFunction_SHA256)
 }
 
 func TestEnqueueByResourceName_CAS(t *testing.T) {

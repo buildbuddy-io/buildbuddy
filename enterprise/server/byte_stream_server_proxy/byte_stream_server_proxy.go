@@ -25,7 +25,7 @@ import (
 type ByteStreamServerProxy struct {
 	atimeUpdater  interfaces.AtimeUpdater
 	authenticator interfaces.Authenticator
-	local         bspb.ByteStreamServer
+	local         interfaces.ByteStreamServer
 	remote        bspb.ByteStreamClient
 }
 
@@ -101,7 +101,12 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		return metrics.HitStatusLabel, nil
 	}
 
-	localErr := s.local.Read(req, stream)
+	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
+	if err != nil {
+		return metrics.HitStatusLabel, nil
+	}
+
+	localErr := s.local.ReadCASResource(rn, req.GetReadOffset(), req.GetReadLimit(), stream)
 	// If some responses were streamed to the client, just return the
 	// error. Otherwise, fall-back to remote. We might be able to continue
 	// streaming to the client by doing an offset read from the remote
@@ -110,7 +115,7 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		// Recover from local error if no frames have been sent
 		return metrics.MissStatusLabel, s.readRemoteWriteLocal(req, stream)
 	} else {
-		s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
+		s.atimeUpdater.EnqueueByResourceName(ctx, rn)
 		return metrics.HitStatusLabel, localErr
 	}
 }

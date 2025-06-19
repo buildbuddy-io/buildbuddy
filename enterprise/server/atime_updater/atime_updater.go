@@ -235,13 +235,7 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	).Add(float64(dropped))
 }
 
-func (u *atimeUpdater) EnqueueByResourceName(ctx context.Context, downloadString string) {
-	rn, err := digest.ParseDownloadResourceName(downloadString)
-	if err != nil {
-		// Could be an ActionCache digest, or malformed.
-		log.Infof("Skipping remote atime update for malformed download resource name: %s [%s]", downloadString, err)
-		return
-	}
+func (u *atimeUpdater) EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) {
 	u.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
 }
 
