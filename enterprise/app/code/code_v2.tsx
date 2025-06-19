@@ -63,6 +63,7 @@ interface State {
 
   fullPathToNodeMap: Map<string, workspace.Node>;
   fullPathToModelMap: Map<string, monaco.editor.ITextModel>;
+  fullPathToDecorationsMap: Map<string, string[]>;
   fullPathToDiffModelMap: Map<string, monaco.editor.IDiffEditorModel>;
 
   originalFileContents: Map<string, string>;
@@ -117,6 +118,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     fullPathToChildrenMap: new Map<string, Array<workspace.Node>>(),
     fullPathToNodeMap: new Map<string, workspace.Node>(),
     fullPathToModelMap: new Map<string, monaco.editor.ITextModel>(),
+    fullPathToDecorationsMap: new Map<string, string[]>(),
     fullPathToDiffModelMap: new Map<string, monaco.editor.IDiffEditorModel>(),
     originalFileContents: new Map<string, string>(),
     tabs: new Map<string, string>(),
@@ -148,7 +150,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   diffEditor: monaco.editor.IDiffEditor | undefined;
 
   // Note that these decoration collections are automatically cleared when the model is changed.
-  kytheDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
   searchDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
   lcovDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
 
@@ -276,7 +277,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
   navigateToDefinitionOrPopulatePanel(pos: monaco.Position) {
     const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
-    if (!refs) {
+    if (!refs || refs.length === 0) {
       return;
     }
 
@@ -294,10 +295,25 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     if (!tickets?.length) {
       return;
     }
+    tickets = [...new Set(tickets)]; // Remove duplicates
 
-    // TODO(jdelfino): This fetch could be trimmed down to just request defs. This func not used
-    // from anywhere else right now.
-    this.fetchXrefs(tickets, (xrefReply) => {
+    const kytheReq = new search.KytheRequest({
+      crossReferencesRequest: new kythe.proto.CrossReferencesRequest({
+        snippets: kythe.proto.SnippetsKind.DEFAULT,
+        ticket: tickets,
+        declarationKind: kythe.proto.CrossReferencesRequest.DeclarationKind.NO_DECLARATIONS,
+        referenceKind: kythe.proto.CrossReferencesRequest.ReferenceKind.NO_REFERENCES,
+        definitionKind: kythe.proto.CrossReferencesRequest.DefinitionKind.BINDING_DEFINITIONS,
+      })
+    });
+
+    this.fetchKytheData(kytheReq).then((kytheReply) => {
+      let xrefReply = kytheReply.crossReferencesReply;
+      if (!xrefReply) {
+        console.log("Warning: No xrefs found for tickets", tickets);
+        return;
+      }
+
       const defs = Object.values(xrefReply.crossReferences).filter((item) => item.definition.length > 0);
 
       let anchor: kythe.proto.Anchor | undefined = undefined;
@@ -322,8 +338,20 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return;
     }
 
-    this.fetchUsages(tickets, (usageReply) => {
-      this.setState({ usages: usageReply ?? undefined });
+    tickets = [...new Set(tickets)]; // Remove duplicates
+    const usageReq = new search.KytheRequest({
+      usageRequest: new search.UsageRequest({
+        tickets: tickets,
+      }),
+    });
+
+    this.fetchKytheData(usageReq).then((kytheReply) => {
+      let usageReply = kytheReply.usageReply;
+      if (!usageReply) {
+        console.log("Warning: No usages found for tickets", tickets);
+        return;
+      }
+      this.setState({ usages: usageReply });
     });
   }
 
@@ -369,8 +397,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           };
         })
         .filter((x) => x !== null) || [];
-    console.log("Setting decorations for", filename, newDecor);
-    this.kytheDecorations?.set(newDecor);
+    return newDecor;
   }
 
   getChange(path: string) {
@@ -394,7 +421,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
     return this.getModel(path).then((model) => {
       this.setModel(path, model);
-      this.focusLineNumberAndHighlightQuery();
       return true;
     });
   }
@@ -529,7 +555,9 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return;
     }
     window.addEventListener("resize", () => this.handleWindowResize());
-    window.addEventListener("hashchange", () => this.focusLineNumberAndHighlightQuery());
+    window.addEventListener("hashchange", () => {
+      this.focusLineNumberAndHighlightQuery()
+    });
 
     this.editor = monaco.editor.create(this.codeViewer.current!, {
       value: "",
@@ -537,7 +565,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       readOnly: this.isSingleFile() || Boolean(this.getQuery()),
     });
     this.searchDecorations = this.editor.createDecorationsCollection();
-    this.kytheDecorations = this.editor.createDecorationsCollection();
     this.lcovDecorations = this.editor.createDecorationsCollection();
 
     this.editor.onMouseDown((e) => {
@@ -628,7 +655,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.editor.onDidChangeModelContent(() => {
       this.handleContentChanged();
       this.highlightQuery();
-      this.fetchDecorations(this.currentPath());
     });
   }
 
@@ -664,7 +690,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       this.editor?.revealLinesInCenter(focusedLineNumber, focusedLineNumber);
       this.editor?.focus();
       this.highlightQuery();
-      this.fetchDecorations(this.currentPath());
     });
   }
 
@@ -1082,13 +1107,23 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       });
   }
 
-  ensureModelExists(fullPath: string, node: workspace.Node) {
+  ensureModelExists(fullPath: string, node: workspace.Node): monaco.editor.ITextModel {
     let fileContents = textDecoder.decode(node.content);
     let model = this.state.fullPathToModelMap.get(fullPath);
     if (!model) {
       model = monaco.editor.createModel(fileContents, getLangHintFromFilePath(fullPath), monaco.Uri.file(fullPath));
       this.state.fullPathToModelMap.set(fullPath, model);
       this.state.fullPathToNodeMap.set(fullPath, node);
+
+      this.fetchDecorations(fullPath).then((newDecs) => {
+        if (!newDecs) {
+          return;
+        }
+        let oldDecs = this.state.fullPathToDecorationsMap.get(fullPath) || [];
+        let newDecIds = model!.deltaDecorations(oldDecs, newDecs);
+        this.state.fullPathToDecorationsMap.set(fullPath, newDecIds);
+      });
+
       this.updateState({ fullPathToModelMap: this.state.fullPathToModelMap });
     }
     return model;
@@ -1105,7 +1140,9 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   setModel(fullPath: string, model: monaco.editor.ITextModel | undefined) {
     this.state.tabs.set(fullPath, fullPath);
     this.editor?.setModel(model || null);
-    this.updateState({ tabs: this.state.tabs }, () => this.focusLineNumberAndHighlightQuery());
+    this.updateState({ tabs: this.state.tabs }, () => {
+      this.focusLineNumberAndHighlightQuery()
+    });
   }
 
   navigateToPath(path: string) {
@@ -1120,69 +1157,14 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     window.history.pushState(undefined, "", `/code/${this.currentOwner()}/${this.currentRepo()}/${path}#L${line}`);
   }
 
-  fetchXrefs(targetTickets: string[], handler: (d: kythe.proto.CrossReferencesReply) => void) {
-    if (!targetTickets || targetTickets.length === 0) {
-      return;
-    }
-    targetTickets = [...new Set(targetTickets)]; // Remove duplicates
-
+  async fetchKytheData(req: search.KytheRequest): Promise<search.KytheResponse> {
     this.pendingXrefsRequest?.cancel();
     this.setState({ xrefsLoading: true });
 
-    // TODO(jdelfino): Factor common stuff out of this and fetchUsages.
-    const req = new search.KytheRequest({
-      crossReferencesRequest: new kythe.proto.CrossReferencesRequest({
-        snippets: kythe.proto.SnippetsKind.DEFAULT,
-        ticket: targetTickets,
-        declarationKind: kythe.proto.CrossReferencesRequest.DeclarationKind.ALL_DECLARATIONS,
-        referenceKind: kythe.proto.CrossReferencesRequest.ReferenceKind.ALL_REFERENCES,
-        definitionKind: kythe.proto.CrossReferencesRequest.DefinitionKind.BINDING_DEFINITIONS,
-      }),
-    });
     this.pendingXrefsRequest = rpcService.service.kytheProxy(req);
-    this.pendingXrefsRequest
-      .then((r) => {
-        if (!r.crossReferencesReply) {
-          console.log("No cross references found for tickets: ", targetTickets);
-          return;
-        }
-        console.log("Xrefs reply", r.crossReferencesReply);
-        handler(r.crossReferencesReply);
-      })
+    return this.pendingXrefsRequest!
       .catch((e) => {
-        console.log("Error fetching xrefs: ", req, e);
-      })
-      .finally(() => {
-        this.setState({ xrefsLoading: false });
-      });
-  }
-
-  fetchUsages(targetTickets: string[], handler: (d: search.UsageReply) => void) {
-    if (!targetTickets || targetTickets.length === 0) {
-      return;
-    }
-    targetTickets = [...new Set(targetTickets)]; // Remove duplicates
-
-    this.pendingXrefsRequest?.cancel();
-    this.setState({ xrefsLoading: true });
-
-    const req = new search.KytheRequest({
-      usageRequest: new search.UsageRequest({
-        tickets: targetTickets,
-      }),
-    });
-    this.pendingXrefsRequest = rpcService.service.kytheProxy(req);
-    this.pendingXrefsRequest
-      .then((r) => {
-        if (!r.usageReply) {
-          console.log("No cross references found for tickets: ", targetTickets);
-          return;
-        }
-        console.log("Usages", r.usageReply);
-        handler(r.usageReply);
-      })
-      .catch((e) => {
-        console.log("Error fetching xrefs: ", req, e);
+        console.log("Error fetching kythe data: ", req, e);
       })
       .finally(() => {
         this.setState({ xrefsLoading: false });
@@ -1800,7 +1782,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   renderAnchors(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]) {
-    console.log("Rendering xref group", name, anchors);
     if (anchors.length === 0) {
       return <></>;
     }
@@ -1896,7 +1877,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   renderXrefPanel() {
-    console.log("Rendering xref panel");
     if (!this.state.usages) {
       return <></>;
     }
@@ -2157,13 +2137,11 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 className="code-search-xrefs"
                 // TODO(jdelfino): Add an error state if xrefs fail to load
                 onMouseDown={(e) => {
-                  console.log("mousedown", e, e.nativeEvent.offsetY);
                   if (e.nativeEvent.offsetY < 4) {
                     document.addEventListener("mousemove", this.resizeXrefsProp, false);
                   }
                 }}
                 onMouseUp={(e) => {
-                  console.log("mouseup", e);
                   document.removeEventListener("mousemove", this.resizeXrefsProp, false);
                 }}
                 style={{ height: this.state.xrefsHeight }}>
