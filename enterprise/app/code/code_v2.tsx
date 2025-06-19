@@ -44,7 +44,6 @@ import { getLangHintFromFilePath } from "../monaco/monaco";
 import SearchBar from "../../../app/components/search_bar/search_bar";
 import { linkReadWriteGitHubAppURL } from "../../../app/util/github";
 
-
 interface Props {
   user: User;
   tab: string;
