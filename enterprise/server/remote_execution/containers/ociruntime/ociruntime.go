@@ -1245,6 +1245,9 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		if stdio.Stdout == nil {
 			stdout = &bytes.Buffer{}
 			cmd.Stdout = stdout
+			if *commandutil.DebugStreamCommandOutputs {
+				cmd.Stdout = io.MultiWriter(stdout, log.Writer("[crun] "))
+			}
 		} else {
 			stdout = nil
 			cmd.Stdout = stdio.Stdout
@@ -1252,6 +1255,9 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		if stdio.Stderr == nil {
 			stderr = &bytes.Buffer{}
 			cmd.Stderr = stderr
+			if *commandutil.DebugStreamCommandOutputs {
+				cmd.Stderr = io.MultiWriter(stderr, log.Writer("[crun] "))
+			}
 		} else {
 			stderr = nil
 			cmd.Stderr = stdio.Stderr
