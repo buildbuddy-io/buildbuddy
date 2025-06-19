@@ -34,6 +34,8 @@ func executionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error)
 		return "file_upload_size_bytes", nil
 	case stat_filter.ExecutionMetricType_EXECUTION_WALL_TIME_EXECUTION_METRIC:
 		return "IF(worker_completed_timestamp_usec < queued_timestamp_usec, 0, (worker_completed_timestamp_usec - queued_timestamp_usec))", nil
+	case stat_filter.ExecutionMetricType_EXECUTION_CPU_NANOS_EXECUTION_METRIC:
+		return "cpu_nanos", nil
 	default:
 		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
 	}

@@ -216,6 +216,12 @@ const METRIC_OPTIONS: MetricOption[] = [
     name: "Executor peak memory usage",
     metric: stat_filter.Metric.create({ execution: stat_filter.ExecutionMetricType.PEAK_MEMORY_EXECUTION_METRIC }),
   },
+  {
+    name: "Execution CPU time",
+    metric: stat_filter.Metric.create({
+      execution: stat_filter.ExecutionMetricType.EXECUTION_CPU_NANOS_EXECUTION_METRIC,
+    }),
+  },
 ];
 
 export default class DrilldownPageComponent extends React.Component<Props, State> {
@@ -252,6 +258,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         case stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_TIME_EXECUTION_METRIC:
           return (v / 1000000).toFixed(2) + "s";
+        case stat_filter.ExecutionMetricType.EXECUTION_CPU_NANOS_EXECUTION_METRIC:
+          return (v / 1000000000).toFixed(2) + "s";
         case stat_filter.ExecutionMetricType.PEAK_MEMORY_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC:
@@ -778,7 +786,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         <FilledButton
           className="square drilldown-page-zoom-button"
           title={"Clear zoom"}
-          onClick={() => this.handleClearZoom()}>
+          onClick={() => this.handleClearZoom()}
+        >
           <X className="icon white" />
         </FilledButton>
       </div>
@@ -827,7 +836,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
             <Select
               className="drilldown-page-select"
               onChange={this.handleMetricChange.bind(this)}
-              value={this.selectedMetric.name}>
+              value={this.selectedMetric.name}
+            >
               {METRIC_OPTIONS.map(
                 (o) =>
                   o.name && (
@@ -852,7 +862,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   valueFormatter={(v) => this.renderBucketValue(v)}
                   selectionCallback={(s) => this.handleHeatmapSelection(s)}
                   zoomCallback={(s) => this.handleHeatmapZoom(s)}
-                  selectedData={this.currentHeatmapSelection}></HeatmapComponent>
+                  selectedData={this.currentHeatmapSelection}
+                ></HeatmapComponent>
                 <div className="trend-chart">
                   <div className="trend-chart-title">{this.getDrilldownChartsTitle()}</div>
                   {this.state.loadingDrilldowns && <div className="loading"></div>}
@@ -882,7 +893,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                                   width={300}
                                   height={200}
                                   data={chart.entry}
-                                  onClick={this.handleBarClick.bind(this, chart.drilldownType)}>
+                                  onClick={this.handleBarClick.bind(this, chart.drilldownType)}
+                                >
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis
                                     interval="preserveStart"
@@ -932,7 +944,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   {this.state.eventData?.executions && (
                     <InvocationExecutionTable
                       executions={this.state.eventData.executions.map((e) => e.execution as execution_stats.Execution)}
-                      invocationIdProvider={(e) => this.getInvocationIdForExecution(e)}></InvocationExecutionTable>
+                      invocationIdProvider={(e) => this.getInvocationIdForExecution(e)}
+                    ></InvocationExecutionTable>
                   )}
                 </div>
               </>
