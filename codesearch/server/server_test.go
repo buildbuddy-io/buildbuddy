@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
@@ -18,6 +19,10 @@ import (
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	spb "github.com/buildbuddy-io/buildbuddy/proto/search"
+	xsrv "kythe.io/kythe/go/services/xrefs"
+	gsrv "kythe.io/kythe/go/serving/graph"
+	gpb "kythe.io/kythe/proto/graph_go_proto"
+	xrefpb "kythe.io/kythe/proto/xref_go_proto"
 )
 
 func mustMakeServer(t *testing.T) *codesearchServer {
@@ -319,4 +324,402 @@ func TestDropNamespace(t *testing.T) {
 	assert.Equal(t, &inpb.RepoStatusResponse{
 		LastIndexedCommitSha: "",
 	}, response)
+}
+
+type TestTable struct {
+	gsrv.Table
+
+	response         *gpb.EdgesReply
+	requestedTickets []string
+}
+
+func (tt *TestTable) Edges(ctx context.Context, edgeReq *gpb.EdgesRequest) (*gpb.EdgesReply, error) {
+	fmt.Printf("TestTable Edges called with: %v\n", edgeReq)
+	tt.requestedTickets = edgeReq.GetTicket()
+	return tt.response, nil
+}
+
+type TestXrefService struct {
+	xsrv.Service
+
+	response         *xrefpb.CrossReferencesReply
+	requestedTickets []string
+}
+
+func (xs *TestXrefService) CrossReferences(ctx context.Context, req *xrefpb.CrossReferencesRequest) (*xrefpb.CrossReferencesReply, error) {
+	fmt.Printf("TestXrefService CrossReferences called with: %v\n", req)
+	xs.requestedTickets = req.GetTicket()
+	return xs.response, nil
+}
+
+func TestUsage_Override(t *testing.T) {
+	// In this test, A overrides B. If A overrides B, we should see:
+	// 1. A's definition in Definitions
+	// 2. B's definition in Overrides
+	// 3. References to both A and B in CallHierarchy
+
+	ctx := context.Background()
+
+	ticketA := "kythe://test?path=a"
+	ticketB := "kythe://test?path=b"
+
+	// These canned responses don't have all fields filled in, but should have everything needed
+	// directly by the function under test.
+
+	edgeResp := &gpb.EdgesReply{
+		EdgeSets: map[string]*gpb.EdgeSet{
+			ticketA: {
+				Groups: map[string]*gpb.EdgeSet_Group{
+					"/kythe/edge/overrides": {
+						Edge: []*gpb.EdgeSet_Group_Edge{
+							{TargetTicket: ticketB},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	xrefResp := &xrefpb.CrossReferencesReply{
+		CrossReferences: map[string]*xrefpb.CrossReferencesReply_CrossReferenceSet{
+			ticketA: {
+				Ticket: ticketA,
+				Definition: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "a defn"}},
+				},
+				Reference: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "a ref"}},
+				},
+			},
+			ticketB: {
+				Ticket: ticketB,
+				Definition: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "b defn"}},
+				},
+				Reference: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "b ref"}},
+				},
+			},
+		},
+	}
+
+	testTable := &TestTable{
+		response: edgeResp,
+	}
+	testXrefService := &TestXrefService{
+		response: xrefResp,
+	}
+	css := &codesearchServer{
+		gs: testTable,
+		xs: testXrefService,
+	}
+
+	rsp, err := css.KytheProxy(ctx, &spb.KytheRequest{
+		Value: &spb.KytheRequest_UsageRequest{
+			UsageRequest: &spb.UsageRequest{
+				Tickets: []string{ticketA},
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, rsp)
+
+	assert.Equal(t, []string{ticketA}, testTable.requestedTickets)
+	assert.Equal(t, []string{ticketA, ticketB}, testXrefService.requestedTickets)
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "a defn"}},
+	}, rsp.GetUsageReply().GetDefinitions())
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "b defn"}},
+	}, rsp.GetUsageReply().GetOverrides())
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "a ref"}},
+		{Anchor: &xrefpb.Anchor{Text: "b ref"}},
+	}, rsp.GetUsageReply().GetCallHierarchy())
+
+	assert.Empty(t, rsp.GetUsageReply().GetOverriddenBy())
+	assert.Empty(t, rsp.GetUsageReply().GetExtends())
+	assert.Empty(t, rsp.GetUsageReply().GetExtendedBy())
+}
+
+func TestUsage_OverridenBy(t *testing.T) {
+	// In this test, A is overriden by B. If A is overridden by B, we should see:
+	// 1. A's definition in Definitions
+	// 2. B's definition in Overrides
+	// 3. References to both A and B in CallHierarchy
+
+	ctx := context.Background()
+
+	ticketA := "kythe://test?path=a"
+	ticketB := "kythe://test?path=b"
+
+	// These canned responses don't have all fields filled in, but should have everything needed
+	// directly by the function under test.
+
+	edgeResp := &gpb.EdgesReply{
+		EdgeSets: map[string]*gpb.EdgeSet{
+			ticketA: {
+				Groups: map[string]*gpb.EdgeSet_Group{
+					"%/kythe/edge/overrides": {
+						Edge: []*gpb.EdgeSet_Group_Edge{
+							{TargetTicket: ticketB},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	xrefResp := &xrefpb.CrossReferencesReply{
+		CrossReferences: map[string]*xrefpb.CrossReferencesReply_CrossReferenceSet{
+			ticketA: {
+				Ticket: ticketA,
+				Definition: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "a defn"}},
+				},
+				Reference: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "a ref"}},
+				},
+			},
+			ticketB: {
+				Ticket: ticketB,
+				Definition: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "b defn"}},
+				},
+				Reference: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "b ref"}},
+				},
+			},
+		},
+	}
+
+	testTable := &TestTable{
+		response: edgeResp,
+	}
+	testXrefService := &TestXrefService{
+		response: xrefResp,
+	}
+	css := &codesearchServer{
+		gs: testTable,
+		xs: testXrefService,
+	}
+
+	rsp, err := css.KytheProxy(ctx, &spb.KytheRequest{
+		Value: &spb.KytheRequest_UsageRequest{
+			UsageRequest: &spb.UsageRequest{
+				Tickets: []string{ticketA},
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, rsp)
+
+	assert.Equal(t, []string{ticketA}, testTable.requestedTickets)
+	assert.Equal(t, []string{ticketA, ticketB}, testXrefService.requestedTickets)
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "a defn"}},
+	}, rsp.GetUsageReply().GetDefinitions())
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "b defn"}},
+	}, rsp.GetUsageReply().GetOverriddenBy())
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "a ref"}},
+		{Anchor: &xrefpb.Anchor{Text: "b ref"}},
+	}, rsp.GetUsageReply().GetCallHierarchy())
+
+	assert.Empty(t, rsp.GetUsageReply().GetOverrides())
+	assert.Empty(t, rsp.GetUsageReply().GetExtends())
+	assert.Empty(t, rsp.GetUsageReply().GetExtendedBy())
+}
+
+func TestUsage_Extends(t *testing.T) {
+	// In this test, A extends B. If A extends B, we should see:
+	// 1. A's definition in Definitions
+	// 2. B's definition in Extends
+	// 3. References to A and B in CallHierarchy
+
+	ctx := context.Background()
+
+	ticketA := "kythe://test?path=a"
+	ticketB := "kythe://test?path=b"
+
+	// These canned responses don't have all fields filled in, but should have everything needed
+	// directly by the function under test.
+
+	edgeResp := &gpb.EdgesReply{
+		EdgeSets: map[string]*gpb.EdgeSet{
+			ticketA: {
+				Groups: map[string]*gpb.EdgeSet_Group{
+					"/kythe/edge/satisfies": {
+						Edge: []*gpb.EdgeSet_Group_Edge{
+							{TargetTicket: ticketB},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	xrefResp := &xrefpb.CrossReferencesReply{
+		CrossReferences: map[string]*xrefpb.CrossReferencesReply_CrossReferenceSet{
+			ticketA: {
+				Ticket: ticketA,
+				Definition: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "a defn"}},
+				},
+				Reference: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "a ref"}},
+				},
+			},
+			ticketB: {
+				Ticket: ticketB,
+				Definition: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "b defn"}},
+				},
+				Reference: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "b ref"}},
+				},
+			},
+		},
+	}
+
+	testTable := &TestTable{
+		response: edgeResp,
+	}
+	testXrefService := &TestXrefService{
+		response: xrefResp,
+	}
+	css := &codesearchServer{
+		gs: testTable,
+		xs: testXrefService,
+	}
+
+	rsp, err := css.KytheProxy(ctx, &spb.KytheRequest{
+		Value: &spb.KytheRequest_UsageRequest{
+			UsageRequest: &spb.UsageRequest{
+				Tickets: []string{ticketA},
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, rsp)
+
+	assert.Equal(t, []string{ticketA}, testTable.requestedTickets)
+	assert.Equal(t, []string{ticketA, ticketB}, testXrefService.requestedTickets)
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "a defn"}},
+	}, rsp.GetUsageReply().GetDefinitions())
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "b defn"}},
+	}, rsp.GetUsageReply().GetExtends())
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "a ref"}},
+		{Anchor: &xrefpb.Anchor{Text: "b ref"}},
+	}, rsp.GetUsageReply().GetCallHierarchy())
+
+	assert.Empty(t, rsp.GetUsageReply().GetOverrides())
+	assert.Empty(t, rsp.GetUsageReply().GetOverriddenBy())
+	assert.Empty(t, rsp.GetUsageReply().GetExtendedBy())
+}
+
+func TestUsage_ExtendedBy(t *testing.T) {
+	// In this test, A is extended by B. If A is extended by B, we should see:
+	// 1. A's definition in Definitions
+	// 2. B's definition in ExtendedBy
+	// 3. References to A and B in CallHierarchy
+
+	ctx := context.Background()
+
+	ticketA := "kythe://test?path=a"
+	ticketB := "kythe://test?path=b"
+
+	// These canned responses don't have all fields filled in, but should have everything needed
+	// directly by the function under test.
+
+	edgeResp := &gpb.EdgesReply{
+		EdgeSets: map[string]*gpb.EdgeSet{
+			ticketA: {
+				Groups: map[string]*gpb.EdgeSet_Group{
+					"%/kythe/edge/extends": {
+						Edge: []*gpb.EdgeSet_Group_Edge{
+							{TargetTicket: ticketB},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	xrefResp := &xrefpb.CrossReferencesReply{
+		CrossReferences: map[string]*xrefpb.CrossReferencesReply_CrossReferenceSet{
+			ticketA: {
+				Ticket: ticketA,
+				Definition: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "a defn"}},
+				},
+				Reference: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "a ref"}},
+				},
+			},
+			ticketB: {
+				Ticket: ticketB,
+				Definition: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "b defn"}},
+				},
+				Reference: []*xrefpb.CrossReferencesReply_RelatedAnchor{
+					{Anchor: &xrefpb.Anchor{Text: "b ref"}},
+				},
+			},
+		},
+	}
+
+	testTable := &TestTable{
+		response: edgeResp,
+	}
+	testXrefService := &TestXrefService{
+		response: xrefResp,
+	}
+	css := &codesearchServer{
+		gs: testTable,
+		xs: testXrefService,
+	}
+
+	rsp, err := css.KytheProxy(ctx, &spb.KytheRequest{
+		Value: &spb.KytheRequest_UsageRequest{
+			UsageRequest: &spb.UsageRequest{
+				Tickets: []string{ticketA},
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, rsp)
+
+	assert.Equal(t, []string{ticketA}, testTable.requestedTickets)
+	assert.Equal(t, []string{ticketA, ticketB}, testXrefService.requestedTickets)
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "a defn"}},
+	}, rsp.GetUsageReply().GetDefinitions())
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "b defn"}},
+	}, rsp.GetUsageReply().GetExtendedBy())
+
+	assert.ElementsMatch(t, []*xrefpb.CrossReferencesReply_RelatedAnchor{
+		{Anchor: &xrefpb.Anchor{Text: "a ref"}},
+		{Anchor: &xrefpb.Anchor{Text: "b ref"}},
+	}, rsp.GetUsageReply().GetCallHierarchy())
+
+	assert.Empty(t, rsp.GetUsageReply().GetOverrides())
+	assert.Empty(t, rsp.GetUsageReply().GetOverriddenBy())
+	assert.Empty(t, rsp.GetUsageReply().GetExtends())
 }

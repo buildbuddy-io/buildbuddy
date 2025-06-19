@@ -155,7 +155,7 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("Starting incremental update %q@%s", repoURL)
+	log.Infof("Starting incremental update %q", repoURL)
 
 	r := index.NewReader(ctx, css.db, req.GetNamespace(), schema.MetadataSchema())
 	lastIndexedSHA, err := github.GetLastIndexedCommitSha(r, repoURL)
@@ -336,7 +336,7 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		case inpb.ReplacementStrategy_REPLACE_REPO:
 			rsp, err = css.fullyReindex(ctx, req)
 		case inpb.ReplacementStrategy_DROP_NAMESPACE:
-			rsp, err = css.dropNamespace(ctx, req)
+			rsp, err = css.dropNamespace(req)
 		default:
 			return status.InvalidArgumentErrorf("Invalid replacement strategy %s", req.GetReplacementStrategy())
 		}
@@ -357,7 +357,7 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 	return rsp, nil
 }
 
-func (css *codesearchServer) dropNamespace(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+func (css *codesearchServer) dropNamespace(req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
 	log.Infof("Dropping namespace %s", req.GetNamespace())
 
 	writer, err := index.NewWriter(css.db, req.GetNamespace())
@@ -535,8 +535,7 @@ func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageReque
 	xrefTickets := make([]string, len(ticks))
 	copy(xrefTickets, ticks)
 
-	for ticket, edgeSet := range edgeReply.GetEdgeSets() {
-		xrefTickets = append(xrefTickets, ticket)
+	for _, edgeSet := range edgeReply.GetEdgeSets() {
 		for _, edges := range edgeSet.GetGroups() {
 			for _, edge := range edges.GetEdge() {
 				xrefTickets = append(xrefTickets, edge.GetTargetTicket())
@@ -589,19 +588,23 @@ func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageReque
 		})
 
 	handleEdges(
-		[]string{"/kythe/edge/satisfies", "/kythe/edge/overrides/extends"},
+		[]string{"/kythe/edge/satisfies", "/kythe/edge/extends"},
 		edgeReply,
 		xrefReply,
 		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
 			repl.Extends = append(repl.Extends, xrefs.GetDefinition()...)
+			// Include references to the superclass/interface
+			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetReference()...)
 		})
 
 	handleEdges(
-		[]string{"%/kythe/edge/satisfies", "%/kythe/edge/overrides/extends"},
+		[]string{"%/kythe/edge/satisfies", "%/kythe/edge/extends"},
 		edgeReply,
 		xrefReply,
 		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
 			repl.ExtendedBy = append(repl.Extends, xrefs.GetDefinition()...)
+			// Include references to the subclasses/implementations?
+			repl.CallHierarchy = append(repl.CallHierarchy, xrefs.GetReference()...)
 		})
 
 	for _, tick := range ticks {
