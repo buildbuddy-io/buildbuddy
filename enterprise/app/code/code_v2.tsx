@@ -44,6 +44,7 @@ import { getLangHintFromFilePath } from "../monaco/monaco";
 import SearchBar from "../../../app/components/search_bar/search_bar";
 import { linkReadWriteGitHubAppURL } from "../../../app/util/github";
 
+
 interface Props {
   user: User;
   tab: string;
@@ -96,7 +97,7 @@ interface State {
   defaultConfig: string;
 
   xrefsLoading: boolean;
-  usages?: search.UsageReply;
+  extendedXrefs?: search.ExtendedXrefsReply;
   xrefsHeight: number;
 }
 
@@ -269,7 +270,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
   ticketsForPosition(pos: monaco.Position): string[] {
     const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
-    if (!refs) {
+    if (!refs?.length) {
       return [];
     }
     return refs.map((ref) => ref.targetTicket).filter((ticket) => ticket);
@@ -277,7 +278,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
   navigateToDefinitionOrPopulatePanel(pos: monaco.Position) {
     const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
-    if (!refs || refs.length === 0) {
+    if (!refs?.length) {
       return;
     }
 
@@ -307,30 +308,32 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       })
     });
 
-    this.fetchKytheData(kytheReq).then((kytheReply) => {
-      let xrefReply = kytheReply.crossReferencesReply;
-      if (!xrefReply) {
-        console.log("Warning: No xrefs found for tickets", tickets);
-        return;
-      }
-
-      const defs = Object.values(xrefReply.crossReferences).filter((item) => item.definition.length > 0);
-
-      let anchor: kythe.proto.Anchor | undefined = undefined;
-      if (defs.length > 0 && defs[0].definition && defs[0].definition.length > 0 && defs[0].definition[0].anchor) {
-        anchor = defs[0].definition[0].anchor;
-      }
-
-      if (!anchor) {
-        if (fallbackToPanel) {
-          this.populateXrefsPanel(tickets);
-        } else {
-          console.log("Warning: No definitions found for tickets", tickets);
+    this.fetchKytheData(kytheReq)
+      .then((kytheReply) => {
+        let xrefReply = kytheReply.crossReferencesReply;
+        if (!xrefReply) {
+          console.log("Warning: No xrefs found for tickets", tickets);
+          return;
         }
-      } else {
-        this.navigateToAnchor(anchor);
-      }
-    });
+
+        const defs = Object.values(xrefReply.crossReferences).filter((item) => item.definition.length > 0);
+
+        let anchor: kythe.proto.Anchor | undefined = undefined;
+        if (defs.length > 0 && defs[0].definition && defs[0].definition.length > 0 && defs[0].definition[0].anchor) {
+          anchor = defs[0].definition[0].anchor;
+        }
+
+        if (!anchor) {
+          if (fallbackToPanel) {
+            this.populateXrefsPanel(tickets);
+          } else {
+            console.log("Warning: No definitions found for tickets", tickets);
+          }
+        } else {
+          this.navigateToAnchor(anchor);
+        }
+      })
+      .catch((e) => console.log("Error fetching kythe data", e));
   }
 
   populateXrefsPanel(tickets: string[]) {
@@ -339,20 +342,24 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     }
 
     tickets = [...new Set(tickets)]; // Remove duplicates
-    const usageReq = new search.KytheRequest({
-      usageRequest: new search.UsageRequest({
+    const xrefsReq = new search.KytheRequest({
+      extendedXrefsRequest: new search.ExtendedXrefsRequest({
         tickets: tickets,
       }),
     });
 
-    this.fetchKytheData(usageReq).then((kytheReply) => {
-      let usageReply = kytheReply.usageReply;
-      if (!usageReply) {
-        console.log("Warning: No usages found for tickets", tickets);
-        return;
-      }
-      this.setState({ usages: usageReply });
-    });
+    this.fetchKytheData(xrefsReq)
+      .then((kytheReply) => {
+        if(!kytheReply) { return; }
+
+        let xrefsReply = kytheReply.extendedXrefsReply;
+        if (!xrefsReply) {
+          console.log("Warning: No extendedXrefs found for tickets", tickets);
+          return;
+        }
+        this.setState({ extendedXrefs: xrefsReply });
+      })
+      .catch((e) => console.log("Error fetching kythe data", e));
   }
 
   async fetchDecorations(filename: string) {
@@ -1161,11 +1168,9 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.pendingXrefsRequest?.cancel();
     this.setState({ xrefsLoading: true });
 
-    this.pendingXrefsRequest = rpcService.service.kytheProxy(req);
-    return this.pendingXrefsRequest!
-      .catch((e) => {
-        console.log("Error fetching kythe data: ", req, e);
-      })
+    let xrefReq = rpcService.service.kytheProxy(req);
+    this.pendingXrefsRequest = xrefReq
+    return xrefReq
       .finally(() => {
         this.setState({ xrefsLoading: false });
       });
@@ -1877,7 +1882,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   renderXrefPanel() {
-    if (!this.state.usages) {
+    if (!this.state.extendedXrefs) {
       return <></>;
     }
 
@@ -1885,12 +1890,12 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       <div>
         <div className="xrefs-header">References</div>
         <div className="xrefs-container">
-          {Boolean(this.state.usages.definitions) && (this.renderAnchors("Definitions", this.state.usages.definitions))}
-          {Boolean(this.state.usages.overrides) && (this.renderAnchors("Overrides", this.state.usages.overrides))}
-          {Boolean(this.state.usages.overriddenBy) && (this.renderAnchors("Overridden By", this.state.usages.overriddenBy))}
-          {Boolean(this.state.usages.extends) && (this.renderAnchors("Extends", this.state.usages.extends))}
-          {Boolean(this.state.usages.extendedBy) && (this.renderAnchors("Extended By", this.state.usages.extendedBy))}
-          {Boolean(this.state.usages.callHierarchy) && (this.renderAnchors("References", this.state.usages.callHierarchy))}
+          {Boolean(this.state.extendedXrefs.definitions) && (this.renderAnchors("Definitions", this.state.extendedXrefs.definitions))}
+          {Boolean(this.state.extendedXrefs.overrides) && (this.renderAnchors("Overrides", this.state.extendedXrefs.overrides))}
+          {Boolean(this.state.extendedXrefs.overriddenBy) && (this.renderAnchors("Overridden By", this.state.extendedXrefs.overriddenBy))}
+          {Boolean(this.state.extendedXrefs.extends) && (this.renderAnchors("Extends", this.state.extendedXrefs.extends))}
+          {Boolean(this.state.extendedXrefs.extendedBy) && (this.renderAnchors("Extended By", this.state.extendedXrefs.extendedBy))}
+          {Boolean(this.state.extendedXrefs.references) && (this.renderAnchors("References", this.state.extendedXrefs.references))}
         </div>
       </div>
     );
@@ -2132,7 +2137,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 ref={this.diffViewer}
               />
             </div>
-            {Boolean(this.state.xrefsLoading || this.state.usages) && (
+            {Boolean(this.state.xrefsLoading || this.state.extendedXrefs) && (
               <div
                 className="code-search-xrefs"
                 // TODO(jdelfino): Add an error state if xrefs fail to load
