@@ -264,32 +264,61 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return { inlineClassName: "code-hover " + type, hoverMessage: { value: o.target_ticket } };
   }
 
-  fetchXrefAndNavToDefinition(pos: monaco.Position) {
-    const decor = this.getMostSpecificDecoration(
-      new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
-    );
-    if (!decor) {
+  ticketsForPosition(pos: monaco.Position): string[] {
+    const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
+    if (!refs) {
+      return [];
+    }
+    return refs.map((ref) => ref.targetTicket).filter((ticket) => ticket);
+  }
+
+  navigateToDefinitionOrPopulatePanel(pos: monaco.Position) {
+    const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
+    if (!refs) {
       return;
     }
 
-    this.fetchXrefs(decor.targetTicket, (xrefReply) => {
-      const def = xrefReply.crossReferences[decor.targetTicket].definition[0];
-      if (!def?.anchor) {
-        return;
+    const tickets = refs.map((ref) => ref.targetTicket).filter((ticket) => ticket);
+    const isDef = refs.reduce((acc, ref) => acc || ref.kind === "/kythe/edge/defines/binding", false);
+
+    if (isDef) {
+      this.populateXrefsPanel(tickets);
+    } else {
+      this.navigateToDefinition(tickets, true);
+    }
+  }
+
+  navigateToDefinition(tickets: string[], fallbackToPanel = false) {
+    if (!tickets?.length) {
+      return;
+    }
+
+    this.fetchXrefs(tickets, (xrefReply) => {
+      const defs = Object.values(xrefReply.crossReferences).filter((item) => item.definition.length > 0);
+
+      let anchor: kythe.proto.Anchor | undefined = undefined;
+      if (defs.length > 0 && defs[0].definition && defs[0].definition.length > 0 && defs[0].definition[0].anchor) {
+        anchor = defs[0].definition[0].anchor;
       }
-      this.navigateToAnchor(def.anchor);
+
+      if (!anchor) {
+        if (fallbackToPanel) {
+          this.populateXrefsPanel(tickets);
+        } else {
+          console.log("Warning: No definitions found for tickets", tickets);
+        }
+      } else {
+        this.navigateToAnchor(anchor);
+      }
     });
   }
 
-  fetchXrefsByPosition(pos: monaco.Position) {
-    const decor = this.getMostSpecificDecoration(
-      new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
-    );
-    if (!decor) {
+  populateXrefsPanel(tickets: string[]) {
+    if (!tickets || tickets.length === 0) {
       return;
     }
 
-    this.fetchXrefs(decor.targetTicket, (xrefReply) => {
+    this.fetchXrefs(tickets, (xrefReply) => {
       this.setState({ xrefs: xrefReply ?? undefined });
     });
   }
@@ -449,32 +478,40 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return decor?.options?.after?.attachedData as kythe.proto.DecorationsReply.Reference | undefined;
   }
 
-  getMostSpecificDecoration(range: monaco.Range): kythe.proto.DecorationsReply.Reference | undefined {
-    // Get the decoration that overlaps this range and has the smallest span.
-
+  getKytheRefsForRange(range: monaco.Range): kythe.proto.DecorationsReply.Reference[] | undefined {
+    // This finds the smallest decorations in a given range.
+    // All decorations that share the same smallest span will be returned.
+    // This is necessary because, for example, some definitions will have multiple
+    // /kythe/edge/defines/binding edges, and we want to process them all so we don't
+    // miss references.
     const decorInRange = this.editor?.getDecorationsInRange(range);
     if (!decorInRange) {
       return undefined;
     }
 
-    let minMatch = undefined;
+    let refsInRange = decorInRange.map((decor) => this.decorToReference(decor)).filter((ref) => !!ref);
+
+    let minMatches: kythe.proto.DecorationsReply.Reference[] = [];
     let minMatchLength = Number.POSITIVE_INFINITY;
-    for (const decor of decorInRange) {
-      const data = decor.options.after?.attachedData as kythe.proto.DecorationsReply.Reference;
-      if (!data || !data.span || !data.span.start || !data.span.end) {
+    for (const ref of refsInRange) {
+      if (!(ref?.span?.start && ref?.span?.end)) {
         continue;
       }
-      const matchLength = data.span.end.byteOffset - data.span.start.byteOffset;
+      const matchLength = ref.span.end.byteOffset - ref.span.start.byteOffset;
       if (matchLength < minMatchLength) {
         minMatchLength = matchLength;
-        minMatch = decor;
+        minMatches = [ref];
+      } else if (
+        // If this span has the same offsets as the current minimum, return it also.
+        matchLength === minMatchLength &&
+        minMatches[0]?.span?.start?.byteOffset === ref.span.start.byteOffset &&
+        minMatches[0]?.span?.end?.byteOffset === ref.span.end.byteOffset
+      ) {
+        minMatches.push(ref);
       }
     }
-    if (!minMatch) {
-      return undefined;
-    }
 
-    return this.decorToReference(minMatch);
+    return minMatches;
   }
 
   fetchInitialContent() {
@@ -508,7 +545,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           e.target.position.column === this.mousedownTarget.column &&
           e.target.position.lineNumber === this.mousedownTarget.lineNumber
         ) {
-          this.fetchXrefsByPosition(e.target.position);
+          this.navigateToDefinitionOrPopulatePanel(e.target.position);
         }
       } else {
         this.mousedownTarget = undefined;
@@ -528,7 +565,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         if (!pos) {
           return;
         }
-        this.fetchXrefAndNavToDefinition(pos);
+        this.navigateToDefinition(this.ticketsForPosition(pos));
       },
     });
 
@@ -545,7 +582,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         if (!pos) {
           return;
         }
-        this.fetchXrefsByPosition(pos);
+        this.populateXrefsPanel(this.ticketsForPosition(pos));
       },
     });
 
@@ -1078,8 +1115,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     window.history.pushState(undefined, "", `/code/${this.currentOwner()}/${this.currentRepo()}/${path}#L${line}`);
   }
 
-  fetchXrefs(targetTicket: string, handler: (d: kythe.proto.CrossReferencesReply) => void) {
-    if (!targetTicket) {
+  fetchXrefs(targetTickets: string[], handler: (d: kythe.proto.CrossReferencesReply) => void) {
+    if (!targetTickets || targetTickets.length === 0) {
       return;
     }
     this.pendingXrefsRequest?.cancel();
@@ -1088,7 +1125,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     const req = new search.KytheRequest({
       crossReferencesRequest: new kythe.proto.CrossReferencesRequest({
         snippets: kythe.proto.SnippetsKind.DEFAULT,
-        ticket: [targetTicket],
+        ticket: targetTickets,
         declarationKind: kythe.proto.CrossReferencesRequest.DeclarationKind.ALL_DECLARATIONS,
         referenceKind: kythe.proto.CrossReferencesRequest.ReferenceKind.ALL_REFERENCES,
         definitionKind: kythe.proto.CrossReferencesRequest.DefinitionKind.BINDING_DEFINITIONS,
@@ -1098,9 +1135,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.pendingXrefsRequest
       .then((r) => {
         if (!r.crossReferencesReply) {
-          console.log("No cross references found for ticket: ", targetTicket);
+          console.log("No cross references found for tickets: ", targetTickets);
           return;
         }
+        console.log("Xrefs", r.crossReferencesReply);
         handler(r.crossReferencesReply);
       })
       .catch((e) => {
@@ -1722,7 +1760,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   renderXrefGroup(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]) {
-    console.log(`Rendering xref group: ${name}`, anchors);
     if (anchors.length === 0) {
       return <></>;
     }
@@ -1741,6 +1778,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       fileToRefsMap.get(parentTicket)!.push(a);
     });
 
+    // Unique all the anchors (duplicates are common).
+    // Also, sort them by position in the file.
     for (const [key, refs] of fileToRefsMap.entries()) {
       const uniques = new Map<number, kythe.proto.CrossReferencesReply.RelatedAnchor>();
       const uniqueLineRefs = refs.filter((ra) => {
@@ -1754,17 +1793,35 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         return true;
       });
       uniqueLineRefs.sort((a, b) => {
-        return (a.anchor?.span?.start?.byteOffset || 100000) - (b.anchor?.span?.start?.byteOffset || 100000);
+        return (
+          (a.anchor?.span?.start?.byteOffset || Number.POSITIVE_INFINITY) -
+          (b.anchor?.span?.start?.byteOffset || Number.POSITIVE_INFINITY)
+        );
       });
 
       fileToRefsMap.set(key, uniqueLineRefs);
     }
 
+    // Now sort the files, putting non-tests before tests.
+    // TODO(jdelfino): Sort suspected genfiles last (e.g. files that match `.pb.*$`)
+    let sortedFiles = new Map(
+      [...fileToRefsMap.entries()].sort((a, b) => {
+        const aTest = a[0].toLowerCase().includes("test");
+        const bTest = b[0].toLowerCase().includes("test");
+        if (aTest && !bTest) {
+          return 1; // a is a test, b is not, so b should come first
+        } else if (!aTest && bTest) {
+          return -1; // b is a test, a is not, so a should come first
+        }
+        return a[0] < b[0] ? -1 : 1; // otherwise sort alphabetically
+      })
+    );
+
     return (
       <div>
         <div className="xrefs-category">{name}</div>
-        {[...fileToRefsMap.entries()].map((entry) => {
-          const path = new URL(entry[0]).searchParams.get("path") ?? "";
+        {[...sortedFiles.entries()].map(([ticket, anchors]) => {
+          const path = new URL(ticket).searchParams.get("path") ?? "";
           if (!path) {
             return <></>;
           }
@@ -1775,10 +1832,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 onClick={() => {
                   this.fetchIfNeededAndNavigate(path, "", 1);
                 }}>
-                {path} ({entry[1].length} result{entry[1].length > 1 ? "s" : ""})
+                {path} ({anchors.length} result{anchors.length > 1 ? "s" : ""})
               </div>
               <div className="xrefs-snippet">
-                {entry[1].map((a) => {
+                {anchors.map((a) => {
                   return (
                     <div
                       onClick={() => {
@@ -1801,12 +1858,21 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     if (!this.state.xrefs) {
       return <></>;
     }
-    const xrefs = Object.values(this.state.xrefs?.crossReferences)[0];
+    const xrefs = Object.values(this.state.xrefs?.crossReferences);
+    let defs: kythe.proto.CrossReferencesReply.RelatedAnchor[] = [];
+    let refs: kythe.proto.CrossReferencesReply.RelatedAnchor[] = [];
+    for (const xref of xrefs) {
+      defs.push(...xref.definition);
+      refs.push(...xref.reference);
+    }
+
     return (
       <div>
         <div className="xrefs-header">References</div>
-        {this.renderXrefGroup("Definitions", xrefs.definition)}
-        {this.renderXrefGroup("Other references", xrefs.reference)}
+        <div className="xrefs-container">
+          {this.renderXrefGroup("Definitions", defs)}
+          {this.renderXrefGroup("Other references", refs)}
+        </div>
       </div>
     );
   }
