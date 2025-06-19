@@ -301,7 +301,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         declarationKind: kythe.proto.CrossReferencesRequest.DeclarationKind.NO_DECLARATIONS,
         referenceKind: kythe.proto.CrossReferencesRequest.ReferenceKind.NO_REFERENCES,
         definitionKind: kythe.proto.CrossReferencesRequest.DefinitionKind.BINDING_DEFINITIONS,
-      })
+      }),
     });
 
     this.fetchKytheData(kytheReq)
@@ -346,7 +346,9 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
     this.fetchKytheData(xrefsReq)
       .then((kytheReply) => {
-        if(!kytheReply) { return; }
+        if (!kytheReply) {
+          return;
+        }
 
         let xrefsReply = kytheReply.extendedXrefsReply;
         if (!xrefsReply) {
@@ -1155,11 +1157,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.setState({ xrefsLoading: true });
 
     let xrefReq = rpcService.service.kytheProxy(req);
-    this.pendingXrefsRequest = xrefReq
-    return xrefReq
-      .finally(() => {
-        this.setState({ xrefsLoading: false });
-      });
+    this.pendingXrefsRequest = xrefReq;
+    return xrefReq.finally(() => {
+      this.setState({ xrefsLoading: false });
+    });
   }
 
   async handleBuildClicked(args: string) {
@@ -1876,12 +1877,17 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       <div>
         <div className="xrefs-header">References</div>
         <div className="xrefs-container">
-          {Boolean(this.state.extendedXrefs.definitions) && (this.renderAnchors("Definitions", this.state.extendedXrefs.definitions))}
-          {Boolean(this.state.extendedXrefs.overrides) && (this.renderAnchors("Overrides", this.state.extendedXrefs.overrides))}
-          {Boolean(this.state.extendedXrefs.overriddenBy) && (this.renderAnchors("Overridden By", this.state.extendedXrefs.overriddenBy))}
-          {Boolean(this.state.extendedXrefs.extends) && (this.renderAnchors("Extends", this.state.extendedXrefs.extends))}
-          {Boolean(this.state.extendedXrefs.extendedBy) && (this.renderAnchors("Extended By", this.state.extendedXrefs.extendedBy))}
-          {Boolean(this.state.extendedXrefs.references) && (this.renderAnchors("References", this.state.extendedXrefs.references))}
+          {Boolean(this.state.extendedXrefs.definitions) &&
+            this.renderAnchors("Definitions", this.state.extendedXrefs.definitions)}
+          {Boolean(this.state.extendedXrefs.overrides) &&
+            this.renderAnchors("Overrides", this.state.extendedXrefs.overrides)}
+          {Boolean(this.state.extendedXrefs.overriddenBy) &&
+            this.renderAnchors("Overridden By", this.state.extendedXrefs.overriddenBy)}
+          {Boolean(this.state.extendedXrefs.extends) && this.renderAnchors("Extends", this.state.extendedXrefs.extends)}
+          {Boolean(this.state.extendedXrefs.extendedBy) &&
+            this.renderAnchors("Extended By", this.state.extendedXrefs.extendedBy)}
+          {Boolean(this.state.extendedXrefs.references) &&
+            this.renderAnchors("References", this.state.extendedXrefs.references)}
         </div>
       </div>
     );
@@ -2119,7 +2125,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
             {Boolean(this.state.xrefsLoading || this.state.extendedXrefs) && (
               <div className="code-search-xrefs">
                 {/* TODO(jdelfino): Add an error state if xrefs fail to load */}
-                 {this.state.xrefsLoading && <div className="loading"></div>}
+                {this.state.xrefsLoading && <div className="loading"></div>}
                 {!this.state.xrefsLoading && this.renderXrefPanel()}
               </div>
             )}
