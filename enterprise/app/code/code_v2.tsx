@@ -390,7 +390,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
     return this.getModel(path).then((model) => {
       this.setModel(path, model);
-      this.focusLineNumberAndHighlightQuery();
       return true;
     });
   }
