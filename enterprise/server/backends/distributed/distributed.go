@@ -373,9 +373,14 @@ func isTreeCacheResource(r *rspb.ResourceName) bool {
 // lookasideKey returns the resource's key in the lookaside cache and true,
 // or "" and false if the resource shouldn't be stored in the lookaside cache.
 func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key string, ok bool) {
+	// Don't store contents for encrypted users/groups in the lookaside cache
+	// to avoid cache inconsistencies between the group's cache and the
+	// lookaside cache.
+	// TODO(go/b/5175): treat non-default-partition contents this way too.
 	if authutil.EncryptionEnabled(ctx, c.authenticator) {
 		return "", false
 	}
+
 	if isTreeCacheResource(r) {
 		// These are OK to put in the lookaside cache because even
 		// though they are technically AC entries, they are based on CAS
