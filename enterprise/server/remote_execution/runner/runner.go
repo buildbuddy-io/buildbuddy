@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -253,6 +254,14 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 	return nil
 }
 
+func fillStatsFromTransferInfo(ioStats *repb.IOStats, rxInfo *dirtools.TransferInfo) {
+	ioStats.FileDownloadCount = rxInfo.FileCount
+	ioStats.FileDownloadDurationUsec = rxInfo.TransferDuration.Microseconds()
+	ioStats.FileDownloadSizeBytes = rxInfo.BytesTransferred
+	ioStats.LocalCacheHits = rxInfo.LinkCount
+	ioStats.LocalCacheLinkDuration = durationpb.New(rxInfo.LinkDuration)
+}
+
 func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
 	rootInstanceDigest := digest.NewCASResourceName(
 		r.task.GetAction().GetInputRootDigest(),
@@ -283,11 +292,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 			return err
 		}
 	}
-	ioStats.FileDownloadCount = rxInfo.FileCount
-	ioStats.FileDownloadDurationUsec = rxInfo.TransferDuration.Microseconds()
-	ioStats.FileDownloadSizeBytes = rxInfo.BytesTransferred
-	ioStats.LocalCacheHits = rxInfo.LinkCount
-	ioStats.LocalCacheLinkDuration = durationpb.New(rxInfo.LinkDuration)
+	fillStatsFromTransferInfo(ioStats, rxInfo)
 	return nil
 }
 
@@ -345,6 +350,13 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 	command := r.task.GetCommand()
 
 	defer func() {
+		txInfo, err := r.Workspace.TaskFinished()
+		if err != nil {
+			log.CtxWarningf(ctx, "failed to finish task: %s", err)
+		}
+		if txInfo != nil {
+			fillStatsFromTransferInfo(ioStats, txInfo)
+		}
 		res.VfsStats = r.Workspace.ComputeVFSStats()
 	}()
 

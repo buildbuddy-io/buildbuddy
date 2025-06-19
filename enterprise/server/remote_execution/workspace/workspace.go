@@ -89,8 +89,9 @@ type Workspace struct {
 	// to make sure this map accurately reflects the filesystem.
 	Inputs map[fspath.Key]*repb.FileNode
 
-	mu       sync.Mutex // protects(removing)
-	removing bool
+	mu          sync.Mutex // protects(removing, treeFetcher)
+	removing    bool
+	treeFetcher *dirtools.TreeFetcher
 }
 
 type Opts struct {
@@ -244,9 +245,9 @@ func (ws *Workspace) CreateOutputDirs() error {
 	return ws.dirHelper.CreateOutputDirs()
 }
 
-func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
+func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSystemLayout, treeFetcher *dirtools.TreeFetcher) error {
 	if ws.vfsServer != nil {
-		if err := ws.vfsServer.Prepare(ctx, layout); err != nil {
+		if err := ws.vfsServer.Prepare(ctx, layout, treeFetcher); err != nil {
 			return err
 		}
 	}
@@ -270,23 +271,37 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// Don't download inputs if the workspace is backed by FUSE, but we still
-	// need to inform it about the CAS artifacts that should appear in the
-	// filesystem.
-	if ws.vfs != nil {
-		if err := ws.prepareVFS(ctx, layout); err != nil {
-			return nil, err
-		}
-		return &dirtools.TransferInfo{}, nil
+	opts := &dirtools.DownloadTreeOpts{}
+	if ws.vfs == nil {
+		opts.RootDir = ws.inputRoot()
 	}
-
-	opts := &dirtools.DownloadTreeOpts{RootDir: ws.inputRoot()}
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
 	execReq := ws.task.GetExecuteRequest()
-	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
+	tf, err := dirtools.NewTreeFetcher(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
+	if err != nil {
+		return nil, status.WrapErrorf(err, "could not create tree fetcher")
+	}
+
+	// Start fetching inputs.
+	if err := tf.Start(); err != nil {
+		return nil, status.WrapErrorf(err, "could not start tree fetcher")
+	}
+
+	// Inform VFS about the layout of the input tree and give it access to the
+	// running tree fetcher.
+	if ws.vfs != nil {
+		ws.treeFetcher = tf
+		if err := ws.prepareVFS(ctx, layout, tf); err != nil {
+			return nil, err
+		}
+		return &dirtools.TransferInfo{}, nil
+	}
+
+	// If we're not using FUSE, wait for the input tree to be fully downloaded.
+	txInfo, err := tf.Wait()
 	if err == nil {
 		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
 			return txInfo, err
@@ -521,6 +536,17 @@ func (ws *Workspace) ComputeVFSStats() *repb.VfsStats {
 		return nil
 	}
 	return ws.vfsServer.ComputeStats()
+}
+
+// TaskFinished informs the workspace that task execution is done.
+// TransferInfo will only be populated when VFS is enabled.
+// TODO(vadim): populate TransferInfo for the non-VFS path as well
+func (ws *Workspace) TaskFinished() (*dirtools.TransferInfo, error) {
+	if ws.treeFetcher == nil {
+		return nil, nil
+	}
+	// TODO(vadim): cancel unfinished transfers instead of waiting for them
+	return ws.treeFetcher.Wait()
 }
 
 // Clean removes files and directories in the workspace which are not preserved

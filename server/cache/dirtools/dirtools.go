@@ -1026,6 +1026,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 
 		var w interfaces.CommittedWriteCloser
 		if ff.onlyDownloadToFileCache {
+			log.CtxWarningf(ff.ctx, "writing bytestream blob %s to file cache: %+v", digest.String(key.ToDigest()), fp0.FileNode)
 			fcw, err := ff.env.GetFileCache().Writer(ctx, fp0.FileNode, ff.digestFunction)
 			if err != nil {
 				return nil, status.WrapError(err, "could not create filecache writer")
