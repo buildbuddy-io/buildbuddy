@@ -289,7 +289,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   navigateToDefinition(tickets: string[], fallbackToPanel = false) {
-    if (!tickets || tickets.length === 0) {
+    if (!tickets?.length) {
       return;
     }
 
@@ -494,7 +494,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     let minMatches: kythe.proto.DecorationsReply.Reference[] = [];
     let minMatchLength = Number.POSITIVE_INFINITY;
     for (const ref of refsInRange) {
-      if (!ref || !ref.span || !ref.span.start || !ref.span.end) {
+      if (!(ref?.span?.start && ref?.span?.end)) {
         continue;
       }
       const matchLength = ref.span.end.byteOffset - ref.span.start.byteOffset;
@@ -1803,6 +1803,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     }
 
     // Now sort the files, putting non-tests before tests.
+    // TODO(jdelfino): Sort suspected genfiles last (e.g. files that match `.pb.*$`)
     let sortedFiles = new Map(
       [...fileToRefsMap.entries()].sort((a, b) => {
         const aTest = a[0].toLowerCase().includes("test");
