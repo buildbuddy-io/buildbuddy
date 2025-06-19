@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -104,6 +105,7 @@ type peerInfo struct {
 }
 
 type Cache struct {
+	authenticator        interfaces.Authenticator
 	local                interfaces.Cache
 	log                  log.Logger
 	lookasideMu          *sync.Mutex
@@ -209,6 +211,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		config.RPCHeartbeatInterval = 1 * time.Second
 	}
 	dc := &Cache{
+		authenticator:       env.GetAuthenticator(),
 		local:               c,
 		lookasideMu:         &sync.Mutex{},
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", config.ListenAddr)),
@@ -369,7 +372,10 @@ func isTreeCacheResource(r *rspb.ResourceName) bool {
 
 // lookasideKey returns the resource's key in the lookaside cache and true,
 // or "" and false if the resource shouldn't be stored in the lookaside cache.
-func lookasideKey(r *rspb.ResourceName) (key string, ok bool) {
+func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key string, ok bool) {
+	if authutil.EncryptionEnabled(ctx, c.authenticator) {
+		return "", false
+	}
 	if isTreeCacheResource(r) {
 		// These are OK to put in the lookaside cache because even
 		// though they are technically AC entries, they are based on CAS
@@ -385,7 +391,7 @@ func lookasideKey(r *rspb.ResourceName) (key string, ok bool) {
 	return "", false
 }
 
-func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
+func (c *Cache) addLookasideEntry(ctx context.Context, r *rspb.ResourceName, data []byte) {
 	if !c.lookasideCacheEnabled() {
 		return
 	}
@@ -396,7 +402,7 @@ func (c *Cache) addLookasideEntry(r *rspb.ResourceName, data []byte) {
 		c.log.Infof("Attempted to set zero-length lookaside entry. Key %q", r)
 		return
 	}
-	k, ok := lookasideKey(r)
+	k, ok := c.lookasideKey(ctx, r)
 	if !ok {
 		c.log.Debugf("Not setting lookaside entry for resource: %s", r)
 		return
@@ -434,11 +440,11 @@ func init() {
 
 // getLookasideEntry returns the resource and if it was found in the lookaside
 // cache.
-func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, bool) {
+func (c *Cache) getLookasideEntry(ctx context.Context, r *rspb.ResourceName) ([]byte, bool) {
 	if !c.lookasideCacheEnabled() {
 		return nil, false
 	}
-	k, ok := lookasideKey(r)
+	k, ok := c.lookasideKey(ctx, r)
 	if !ok {
 		c.log.Debugf("Not getting lookaside entry for resource: %s", r)
 		return nil, false
@@ -726,7 +732,7 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
 	for _, r := range rns {
-		if _, found := c.getLookasideEntry(r); found {
+		if _, found := c.getLookasideEntry(ctx, r); found {
 			continue
 		} else {
 			stillMissing = append(stillMissing, r)
@@ -746,7 +752,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	stillMissing := make([]*rspb.ResourceName, 0, len(rns))
 
 	for _, r := range rns {
-		if buf, found := c.getLookasideEntry(r); found {
+		if buf, found := c.getLookasideEntry(ctx, r); found {
 			results[r.GetDigest()] = buf
 		} else {
 			stillMissing = append(stillMissing, r)
@@ -764,7 +770,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	for _, r := range stillMissing {
 		buf, ok := remoteResults[r.GetDigest()]
 		if ok {
-			c.addLookasideEntry(r, buf)
+			c.addLookasideEntry(ctx, r, buf)
 		}
 	}
 	if len(results) == 0 {
@@ -789,11 +795,11 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	// configure the lookaside writer so the blob can be cached as it is
 	// read.
 	if cacheable {
-		if buf, found := c.getLookasideEntry(r); found {
+		if buf, found := c.getLookasideEntry(ctx, r); found {
 			return io.NopCloser(bytes.NewReader(buf)), nil
 		}
 		if c.lookasideCacheEnabled() && r.GetDigest().GetSizeBytes() <= *maxLookasideEntryBytes {
-			if k, ok := lookasideKey(r); ok {
+			if k, ok := c.lookasideKey(ctx, r); ok {
 				if lwc, err := c.lookasideWriter(r, k); err == nil {
 					lookasideWriter = lwc
 				}
