@@ -498,11 +498,19 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 }
 
 func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageRequest) (*srpb.UsageReply, error) {
+	// This function exists to populate the references panel in the code browser UI.
+	// The overall approach is:
+	// 1. Fetch "interesting" edges from the requested tickets
+	// 2. Fetch xrefs for each target node in the fetched edges
+	// 3. Bucket the target nodes into the appropriate fields in the response.
+
 	ticks := req.GetTickets()
 
 	// TODO(jdelfino): Handle generated code by dealing with /kythe/edge/generates edges
 
 	// See https://kythe.io/docs/schema/ for edge type definitions.
+	// Every edge that leads to data that might want to be shown in the references panel of the UI
+	// should be included here.
 	edgeTypes := []string{
 		"/kythe/edge/overrides",
 		"%/kythe/edge/overrides",
@@ -522,8 +530,8 @@ func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageReque
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get edges for ticket %s: %v", ticks, err)
 	}
-	//log.Infof("Found edges for ticket %s: %+v", tick, edges)
 
+	// Fetch xrefs for each ticket in the edge reply.
 	xrefTickets := make([]string, len(ticks))
 	copy(xrefTickets, ticks)
 
@@ -536,8 +544,6 @@ func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageReque
 		}
 	}
 
-	log.Infof("Fetching cross-references for tickets: %s", xrefTickets)
-
 	xrefReq := &kxpb.CrossReferencesRequest{
 		Ticket:          xrefTickets,
 		DefinitionKind:  kxpb.CrossReferencesRequest_ALL_DEFINITIONS,
@@ -549,6 +555,8 @@ func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageReque
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get cross-references for tickets %s: %v", xrefTickets, err)
 	}
+
+	// Combine the data from edges and xrefs into the final response.
 
 	repl := &srpb.UsageReply{
 		Overrides:     make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
@@ -597,15 +605,17 @@ func (css *codesearchServer) funcUsage(ctx context.Context, req *srpb.UsageReque
 		})
 
 	for _, tick := range ticks {
+		// Include xrefs for the original tickets as well.
 		repl.Definitions = append(repl.Definitions, xrefReply.GetCrossReferences()[tick].GetDefinition()...)
 		repl.CallHierarchy = append(repl.CallHierarchy, xrefReply.GetCrossReferences()[tick].GetReference()...)
 		repl.CallHierarchy = append(repl.CallHierarchy, xrefReply.GetCrossReferences()[tick].GetCaller()...)
 	}
 
-	log.Infof("computed: %+v", repl)
 	return repl, nil
 }
 
+// handleEdges is a helper function that pulls sets of edges from an EdgesReply, looks up the xrefs
+// for each target node of the matched edges, and calls a handler function on each one.
 func handleEdges(edgeTypes []string, edgeReply *kgpb.EdgesReply, xrefs *kxpb.CrossReferencesReply, handler func(anchor *kxpb.CrossReferencesReply_CrossReferenceSet)) {
 	for _, edgeSet := range edgeReply.GetEdgeSets() {
 		for _, edgeType := range edgeTypes {

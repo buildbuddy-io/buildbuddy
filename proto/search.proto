@@ -103,6 +103,7 @@ message UsageRequest {
   repeated string tickets = 1;
 }
 
+// TODO(jdelfino): Ugh, rename this to something better
 message UsageReply {
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor definitions = 1;
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor overrides = 2;
