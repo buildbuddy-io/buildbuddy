@@ -559,9 +559,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return;
     }
     window.addEventListener("resize", () => this.handleWindowResize());
-    window.addEventListener("hashchange", () => {
-      this.focusLineNumberAndHighlightQuery()
-    });
+    window.addEventListener("hashchange", () => this.focusLineNumberAndHighlightQuery());
 
     this.editor = monaco.editor.create(this.codeViewer.current!, {
       value: "",
@@ -1114,7 +1112,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       });
   }
 
-  ensureModelExists(fullPath: string, node: workspace.Node): monaco.editor.ITextModel {
+  ensureModelExists(fullPath: string, node: workspace.Node) {
     let fileContents = textDecoder.decode(node.content);
     let model = this.state.fullPathToModelMap.get(fullPath);
     if (!model) {
@@ -1137,9 +1135,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   setModel(fullPath: string, model: monaco.editor.ITextModel | undefined) {
     this.state.tabs.set(fullPath, fullPath);
     this.editor?.setModel(model || null);
-    this.updateState({ tabs: this.state.tabs }, () => {
-      this.focusLineNumberAndHighlightQuery()
-    });
+    this.updateState({ tabs: this.state.tabs }, () => this.focusLineNumberAndHighlightQuery());
   }
 
   navigateToPath(path: string) {
