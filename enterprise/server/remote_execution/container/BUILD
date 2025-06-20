@@ -18,6 +18,7 @@ go_library(
         "//server/interfaces",
         "//server/util/alert",
         "//server/util/authutil",
+        "//server/util/background",
         "//server/util/flag",
         "//server/util/hash",
         "//server/util/log",
