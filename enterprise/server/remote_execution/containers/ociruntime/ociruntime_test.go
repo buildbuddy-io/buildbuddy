@@ -607,6 +607,64 @@ func TestExecUsageStats(t *testing.T) {
 	assert.Greater(t, s.GetCpuNanos(), int64(0), "CPU")
 }
 
+func TestStatsPostExec(t *testing.T) {
+	setupNetworking(t)
+
+	image := realBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		# Use 32MB of memory (in /dev/shm).
+		# Using this approach instead of allocating a big string,
+		# because it seems like 'sh' takes a while to actually free the string,
+		# but for what we're trying to test here, we need the memory to be freed
+		# immediately (before it can be caught by our stats polling).
+		cat /dev/zero | head -c 32000000 > /dev/shm/FILE
+
+		# Hold the memory long enough for the stats polling to register it.
+		sleep 0.25
+
+		# Free the memory then immediately exit.
+		rm /dev/shm/FILE
+	`}}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+
+	// Stats() should report ~0 memory usage since the task has completed,
+	// even though it used 32MB of memory.
+	stats, err := c.Stats(ctx)
+	require.NoError(t, err)
+	require.Less(t, stats.GetMemoryBytes(), int64(2e6), "final memory usage should be much less than 32MB")
+}
+
 func TestPullCreateExecRemove(t *testing.T) {
 	setupNetworking(t)
 
