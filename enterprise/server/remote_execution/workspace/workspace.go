@@ -280,13 +280,13 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		return &dirtools.TransferInfo{}, nil
 	}
 
-	opts := &dirtools.DownloadTreeOpts{}
+	opts := &dirtools.DownloadTreeOpts{RootDir: ws.inputRoot()}
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
 	execReq := ws.task.GetExecuteRequest()
-	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, ws.inputRoot(), opts)
+	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
 	if err == nil {
 		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
 			return txInfo, err
