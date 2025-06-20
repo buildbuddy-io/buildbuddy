@@ -748,7 +748,7 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 	}
 	k, err := authDB.CreateAPIKey(
 		ctx, req.GetRequestContext().GetGroupId(), req.GetLabel(), req.GetCapability(),
-		req.GetVisibleToDevelopers())
+		req.GetExpiresIn().AsDuration(), req.GetVisibleToDevelopers())
 	if err != nil {
 		return nil, err
 	}
@@ -957,7 +957,9 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 	if userID == "" {
 		userID = u.GetUserID()
 	}
-	k, err := authDB.CreateUserAPIKey(ctx, req.GetRequestContext().GetGroupId(), userID, req.GetLabel(), req.GetCapability())
+	k, err := authDB.CreateUserAPIKey(
+		ctx, req.GetRequestContext().GetGroupId(), userID, req.GetLabel(),
+		req.GetCapability(), req.GetExpiresIn().AsDuration())
 	if err != nil {
 		return nil, err
 	}
