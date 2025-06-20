@@ -104,7 +104,6 @@ ts_library(
     name = "review_thread",
     srcs = ["review_thread.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/moment",
         "//:node_modules/react",

@@ -40,7 +40,6 @@ ts_library(
     name = "date_picker_button",
     srcs = ["date_picker_button.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-date-range",
         "//:node_modules/lucide-react",
@@ -62,7 +61,6 @@ ts_library(
     srcs = ["filter_util.tsx"],
     deps = [
         "//:node_modules/@types/long",
-        "//:node_modules/@types/moment",
         "//:node_modules/long",
         "//:node_modules/moment",
         "//:node_modules/tslib",

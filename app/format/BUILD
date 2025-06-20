@@ -7,7 +7,6 @@ ts_library(
     srcs = ["format.tsx"],
     deps = [
         "//:node_modules/@types/long",
-        "//:node_modules/@types/moment",
         "//:node_modules/date-fns",
         "//:node_modules/long",
         "//:node_modules/moment",
