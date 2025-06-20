@@ -19,6 +19,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -61,7 +62,7 @@ func NewXcodeLocator() *xcodeLocator {
 func (x *xcodeLocator) verify() {
 	for _, version := range *desiredXcodeVersions {
 		if _, ok := x.versions[version]; !ok {
-			log.Warningf("Failed to locate desired Xcode version %s", version)
+			alert.UnexpectedEvent("xcode version missing", "Failed to locate desired Xcode version %s", version)
 		}
 	}
 }
