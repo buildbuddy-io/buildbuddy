@@ -175,7 +175,7 @@ common:local-rbe-mac --config=local
 
 # Build with --config=dev to send build logs to the dev server
 common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
-common:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
+common:dev --bes_backend=grpcs://buildbuddy.remote.buildbuddy.dev
 
 # Common flags to be used with remote cache
 common:cache-shared --remote_cache_compression
@@ -184,7 +184,7 @@ common:cache-shared --remote_timeout=10m
 
 common:cache-dev --config=cache-shared
 common:cache-dev --config=dev
-common:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
+common:cache-dev --remote_cache=grpcs://buildbuddy.remote.buildbuddy.dev
 
 # Build with --config=cache to use prod cache.
 common:cache --config=cache-shared
@@ -223,7 +223,7 @@ common:remote-prod-shared --test_tag_filters=-performance
 # Note: Dev BES needed to override the default prod BES urls.
 common:remote-dev-shared --config=dev
 common:remote-dev-shared --config=remote-shared
-common:remote-dev-shared --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+common:remote-dev-shared --remote_executor=grpcs://buildbuddy.remote.buildbuddy.dev
 # Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
 # but performance tests should not be run remotely since the environment
 # is not consistent or stable.
