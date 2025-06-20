@@ -32,6 +32,7 @@ func Labels(ctx context.Context) (*tables.UsageLabels, error) {
 	return &tables.UsageLabels{
 		Origin: originLabel(ctx),
 		Client: clientLabel(ctx),
+		Server: "",
 	}, nil
 }
 
