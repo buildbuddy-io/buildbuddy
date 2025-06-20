@@ -216,6 +216,12 @@ const METRIC_OPTIONS: MetricOption[] = [
     name: "Executor peak memory usage",
     metric: stat_filter.Metric.create({ execution: stat_filter.ExecutionMetricType.PEAK_MEMORY_EXECUTION_METRIC }),
   },
+  {
+    name: "Execution CPU time",
+    metric: stat_filter.Metric.create({
+      execution: stat_filter.ExecutionMetricType.EXECUTION_CPU_NANOS_EXECUTION_METRIC,
+    }),
+  },
 ];
 
 export default class DrilldownPageComponent extends React.Component<Props, State> {
@@ -252,6 +258,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         case stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_TIME_EXECUTION_METRIC:
           return (v / 1000000).toFixed(2) + "s";
+        case stat_filter.ExecutionMetricType.EXECUTION_CPU_NANOS_EXECUTION_METRIC:
+          return (v / 1000000000).toFixed(2) + "s";
         case stat_filter.ExecutionMetricType.PEAK_MEMORY_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC:
