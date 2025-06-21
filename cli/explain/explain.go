@@ -207,6 +207,8 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 		backend, err = flaghistory.GetLastBackend()
 		if err != nil {
 			log.Debugf("Failed to get last backend: %v", err)
+		}
+		if backend == "" {
 			backend = login.DefaultApiTarget
 		}
 	}
