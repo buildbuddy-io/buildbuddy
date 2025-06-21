@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -124,6 +125,10 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	return nil
 }
 
+func makeHeader(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
+	return header.New(rd, replica, rfpb.Header_LINEARIZABLE)
+}
+
 func (tc *Coordinator) prepareStatement(ctx context.Context, txnID []byte, statement *rfpb.TxnRequest_Statement) error {
 	batch := statement.GetRawBatch()
 	batch.TransactionId = txnID
@@ -143,7 +148,7 @@ func (tc *Coordinator) prepareStatement(ctx context.Context, txnID []byte, state
 	for retrier.Next() {
 		// Prepare each statement.
 		log.Infof("prepare statement for range %d", rangeID)
-		syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, statement.GetRange(), batch)
+		syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, statement.GetRange(), batch, makeHeader)
 		if err == nil {
 			rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
 			if err := rsp.AnyError(); err != nil {
@@ -214,7 +219,8 @@ func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.Fi
 			}
 		}
 	}
-	syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, stmt.GetRange(), batchProto)
+
+	syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, stmt.GetRange(), batchProto, makeHeader)
 	if err != nil {
 		return err
 	}
@@ -323,6 +329,7 @@ func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 		}
 
 		for _, stmt := range txnRecord.GetTxnRequest().GetStatements() {
+			log.Infof("finalize txn statement: %d", stmt.GetRange().GetRangeId())
 			err := tc.finalizeTxn(ctx, txnID, txnRecord.GetOp(), stmt)
 			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is already finalized, we will get NotFound Error when we finalize and this is fine.

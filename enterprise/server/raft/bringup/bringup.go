@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -395,7 +396,9 @@ func StartShard(ctx context.Context, store IStore, bootstrapInfo *ClusterBootstr
 		RangeId:  bootstrapInfo.rangeID,
 		Replicas: bootstrapInfo.Replicas,
 	}
-	syncRsp, err := store.Sender().SyncProposeWithRangeDescriptor(ctx, rd, batchProto)
+	syncRsp, err := store.Sender().SyncProposeWithRangeDescriptor(ctx, rd, batchProto, func(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
+		return header.NewWithoutRangeInfo(replica, rfpb.Header_LINEARIZABLE)
+	})
 	if err != nil {
 		return err
 	}

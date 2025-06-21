@@ -1370,6 +1370,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	session := s.session
 	if len(req.GetBatch().GetTransactionId()) > 0 {
 		session = s.txnSession
+		s.log.Infof("SyncPropose txn, finalize operation: ", req.GetBatch().GetFinalizeOperation())
 	} else {
 		// use eviction session for delete requests
 		unions := req.GetBatch().GetUnion()
@@ -3070,7 +3071,7 @@ func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, 
 		metaRangeBatch.Add(metaRangeCasReq)
 
 		stmt := txn.AddStatement()
-		stmt.SetRangeDescriptor(new).SetBatch(localBatch)
+		stmt.SetRangeDescriptor(old).SetBatch(localBatch)
 
 		stmt = txn.AddStatement()
 		stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)

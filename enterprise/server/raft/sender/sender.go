@@ -561,7 +561,8 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 
 // SyncProposeWithRangeDescriptor calls SyncPropose on different replicas
 // specified in the given range descriptor, until one of the replica succeeds.
-func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest) (*rfpb.SyncProposeResponse, error) {
+func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest, makeHeaderFn makeHeaderFunc) (*rfpb.SyncProposeResponse, error) {
+	log.Infof("SyncProposeWithRD: %+v", rd)
 	var syncRsp *rfpb.SyncProposeResponse
 	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
@@ -574,9 +575,7 @@ func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.Ra
 		syncRsp = r
 		return nil
 	}
-	_, err := s.TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
-		return header.NewWithoutRangeInfo(replica, rfpb.Header_LINEARIZABLE)
-	})
+	_, err := s.TryReplicas(ctx, rd, runFn, makeHeaderFn)
 	return syncRsp, err
 }
 
