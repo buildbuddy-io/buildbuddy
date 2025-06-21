@@ -501,8 +501,9 @@ func TestRemoveStagingReplica(t *testing.T) {
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
+
 	newRD := rd.CloneVT()
-	newRD.Staging = append(newRD.Staging, rd.GetReplicas()[0])
+	newRD.Staging = append(newRD.Staging, newRD.Replicas[0])
 	newRD.Replicas = newRD.Replicas[1:]
 	newRD.Generation++
 
@@ -510,10 +511,31 @@ func TestRemoveStagingReplica(t *testing.T) {
 	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
 	require.NoError(t, err)
 
+	for {
+		// transfer leadership if the staging replica is the leader.
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+		if s.NHID() != newRD.GetStaging()[0].GetNhid() {
+			break
+		}
+		s.TransferLeadership(ctx, &rfpb.TransferLeadershipRequest{
+			RangeId:         uint64(2),
+			TargetReplicaId: newRD.GetReplicas()[0].GetReplicaId(),
+		})
+	}
+
+	// Wait till the range descriptor change is completed.
+	//for {
+	//	rd = s.GetRange(2)
+	//	if rd.GetGeneration() == newRD.GetGeneration() {
+	//		break
+	//	}
+	//	time.Sleep(50 * time.Millisecond)
+	//}
+
 	log.Infof("=== test setup completed ===")
 	replicaID := newRD.GetStaging()[0].GetReplicaId()
 	nhid := newRD.GetStaging()[0].GetNhid()
-	log.Infof("remove replica c%dn%d", rd.GetRangeId(), replicaID)
+	log.Infof("call nhid %s to remove replica c%dn%d", s.NHID(), rd.GetRangeId(), replicaID)
 	_, err = s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
 		Range:     newRD,
 		ReplicaId: replicaID,
