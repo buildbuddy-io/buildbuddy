@@ -575,8 +575,16 @@ func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.Ra
 		syncRsp = r
 		return nil
 	}
-	_, err := s.TryReplicas(ctx, rd, runFn, makeHeaderFn)
-	return syncRsp, err
+	retrier := retry.DefaultWithContext(ctx)
+	var lastError error
+	for retrier.Next() {
+		_, err := s.TryReplicas(ctx, rd, runFn, makeHeaderFn)
+		if !status.IsOutOfRangeError(err) && !isConflictKeyError(err) {
+			return syncRsp, err
+		}
+		lastError = err
+	}
+	return syncRsp, status.UnavailableErrorf("SyncProposeWithRangeDescriptor retries exceeded for rd: %+v err: %s", rd, lastError)
 }
 
 func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest, mods ...Option) (*rfpb.BatchCmdResponse, error) {
