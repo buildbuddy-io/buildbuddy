@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
+	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -27,11 +28,24 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 
+	logoptdef "github.com/buildbuddy-io/buildbuddy/cli/log/option_definitions"
+	watchoptdef "github.com/buildbuddy-io/buildbuddy/cli/watcher/option_definitions"
+
 	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
+	nativeDefinitions = map[string]*options.Definition{
+		// Set to print debug output for the bb CLI.
+		logoptdef.Verbose.Name(): logoptdef.Verbose,
+		// Reinvokes the CLI as a subprocess on changes to source files.
+		watchoptdef.Watch.Name(): watchoptdef.Watch,
+		// Allow specifying --watcher_flags to forward args to the watcher.
+		// Mostly useful for debugging, e.g. --watcher_flags='--verbose'
+		watchoptdef.WatcherFlags.Name(): watchoptdef.WatcherFlags,
+	}
+
 	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
 
 	// make this a var so the test can replace it.
@@ -55,6 +69,7 @@ var (
 				return &Return{nil, err}
 			}
 			parser, err := GenerateParser(flagCollection)
+			parser.StartupOptionParser.Aliases = shortcuts.Shortcuts
 			return &Return{parser, err}
 		},
 	)
@@ -74,6 +89,11 @@ type Subparser struct {
 	ByShortName map[string]*options.Definition
 
 	Subcommands set.Set[string]
+	Aliases     map[string]string
+
+	// Permissive specifies whether or not to error out when parsing an option
+	// that does not support the current command.
+	Permissive bool
 }
 
 func (m *Subparser) ForceAdd(d *options.Definition) {
@@ -101,12 +121,13 @@ type Parser struct {
 	CommandOptionParser *Subparser
 }
 
-func NewParser(optionDefinitions []*options.Definition) *Parser {
+func NewParser(optionDefinitions []*options.Definition, commands []string, aliases map[string]string) *Parser {
 	p := &Parser{
 		StartupOptionParser: &Subparser{
 			ByName:      map[string]*options.Definition{},
 			ByShortName: map[string]*options.Definition{},
-			Subcommands: make(set.Set[string]),
+			Subcommands: set.From(commands...),
+			Aliases:     aliases,
 		},
 		CommandOptionParser: &Subparser{
 			ByName:      map[string]*options.Definition{},
@@ -198,19 +219,29 @@ func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.Ord
 			parsedArgs.Args = append(parsedArgs.Args, arguments.ToPositionalArguments(next[1:])...)
 			break
 		}
-		if command == "startup" {
-			command = next[0]
+		if len(subparser.Subcommands) == 0 {
+			// If the subparser does not support subcommands, this is just a normal
+			// positional argument.
+			parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: next[0]})
+			next = next[1:]
+			continue
+		}
+		command = next[0]
+		if !subparser.Subcommands.Contains(command) {
 			if command == "" {
 				// bazel treats a blank command as a help command that halts both option and
 				// argument parsing and ignores all non-startup options in the rc file.
 				break
 			}
-			if !subparser.Subcommands.Contains(command) {
+			// Expand command shortcuts like b=>build, t=>test, etc.
+			aliased, ok := subparser.Aliases[command]
+			if !ok {
 				return nil, fmt.Errorf("Command '%s' not found. Try 'bb help'", command)
 			}
-			subparser = p.CommandOptionParser
+			command = aliased
 		}
-		parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: next[0]})
+		subparser = p.CommandOptionParser
+		parsedArgs.Args = append(parsedArgs.Args, &arguments.PositionalArgument{Value: command})
 		next = next[1:]
 	}
 	return parsedArgs, nil
@@ -242,7 +273,7 @@ func (p *Subparser) ParseOptions(args []string, command string) ([]options.Optio
 			if option.PluginID() == options.UnknownBuiltinPluginID {
 				// If this is an unknown option, assume it's supported by this command.
 				option.GetDefinition().AddSupportedCommand(command)
-			} else if !option.Supports(command) {
+			} else if !p.Permissive && !option.Supports(command) {
 				return nil, 0, fmt.Errorf("failed to parse options: Option '%s' does not support command '%s'", token, command)
 			}
 		}
@@ -439,7 +470,7 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 // OptionDefinitions, places each option definition into subparsers corresponding
 // to the commands it supports, and returns the resulting parser.
 func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...string) (*Parser, error) {
-	p := NewParser(nil)
+	p := NewParser(nil, nil, nil)
 	for _, info := range flagCollection.FlagInfos {
 		if err := p.AddOptionDefinition(options.DefinitionFrom(info)); err != nil {
 			return nil, err
@@ -537,11 +568,7 @@ func runBazelHelpWithCache() (string, error) {
 	buf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
 	log.Debugf("\x1b[90mGathering metadata for bazel %s...\x1b[m", topic)
-	opts := &bazelisk.RunOpts{
-		Stdout:      io.MultiWriter(tmp, buf),
-		Stderr:      errBuf,
-		SkipWrapper: true,
-	}
+	opts := &bazelisk.RunOpts{Stdout: io.MultiWriter(tmp, buf), Stderr: errBuf}
 	exitCode, err := bazelisk.Run([]string{
 		"--ignore_all_rc_files",
 		// Run in a temp output base to avoid messing with any running bazel
@@ -571,7 +598,7 @@ func runBazelHelpWithCache() (string, error) {
 // `ignore_all_rc_files` option to the startup options, parses those rc-files
 // into Configs using the default parser, and expands all config options (as
 // well as any `enable_platform_specific_config` option, if one exists) using
-// those coonfigs, and returns the result.
+// those configs, and returns the result.
 func ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
 	ws, err := workspace.Path()
 	if err != nil {
@@ -580,16 +607,28 @@ func ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
 	return resolveArgs(parsedArgs, ws)
 }
 
-// resolveArgs removes all rc-file options from the args, appends an
-// `ignore_all_rc_files` option to the startup options, parses those rc-files
-// into Configs using the default parser, and expands all config options (as
-// well as any `enable_platform_specific_config` option, if one exists) using
-// those coonfigs, and returns the result.
 func resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs, error) {
 	p, err := GetParser()
 	if err != nil {
 		return nil, err
 	}
+	return p.resolveArgs(parsedArgs, ws)
+}
+
+// ResolveArgs removes all rc-file options from the args, appends an
+// `ignore_all_rc_files` option to the startup options, parses those rc-files
+// into Configs, and expands all config options (as well as any
+// `enable_platform_specific_config` option, if one exists) using
+// those configs, and returns the result.
+func (p *Parser) ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
+	ws, err := workspace.Path()
+	if err != nil {
+		log.Debugf("Could not determine workspace dir: %s", err)
+	}
+	return p.resolveArgs(parsedArgs, ws)
+}
+
+func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs, error) {
 	configs, defaultConfig, err := p.consumeAndParseRCFiles(parsedArgs, ws)
 	if err != nil {
 		return nil, err

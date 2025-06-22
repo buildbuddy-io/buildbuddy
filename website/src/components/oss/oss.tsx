@@ -22,7 +22,7 @@ function Component() {
               GitHub
             </a>
             . To show our appreciation to the open source community, we also offer BuildBuddy Cloud for free to small
-            teams and Open Source projects.
+            teams and open source projects.
           </div>
         </div>
         <Image

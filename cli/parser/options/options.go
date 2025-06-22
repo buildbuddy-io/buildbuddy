@@ -3,16 +3,20 @@ package options
 import (
 	"fmt"
 	"iter"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 
 	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
 )
 
 const (
+	NativeBuiltinPluginID   = "//builtin/native"
 	StarlarkBuiltinPluginID = "//builtin/starlark"
 	UnknownBuiltinPluginID  = "//builtin/unknown"
 )
@@ -101,7 +105,7 @@ type Definition struct {
 	requiresValue bool
 
 	// The list of commands that support this option.
-	supportedCommands map[string]struct{}
+	supportedCommands set.Set[string]
 
 	// pluginID is the ID of the bb cli plugin associated with this option
 	// definition, if applicable (or a pseudo-plugin ID for so-called "built-in"
@@ -145,7 +149,7 @@ func (d *Definition) SupportedCommands() iter.Seq[string] {
 
 func (d *Definition) Supports(command string) bool {
 	for cmd, ok := command, true; ok; cmd, ok = bazelrc.Parent(cmd) {
-		if _, ok := d.supportedCommands[cmd]; ok {
+		if d.supportedCommands.Contains(cmd) {
 			return true
 		}
 	}
@@ -155,11 +159,9 @@ func (d *Definition) Supports(command string) bool {
 
 func (d *Definition) AddSupportedCommand(commands ...string) {
 	if d.supportedCommands == nil {
-		d.supportedCommands = make(map[string]struct{}, 1)
+		d.supportedCommands = make(set.Set[string], 1)
 	}
-	for _, command := range commands {
-		d.supportedCommands[command] = struct{}{}
-	}
+	d.supportedCommands.AddSeq(slices.Values(commands))
 }
 
 func (d *Definition) PluginID() string {
@@ -180,15 +182,7 @@ func WithPluginID(pluginID string) DefinitionOpt {
 
 func WithSupportFor(commands ...string) DefinitionOpt {
 	return func(d *Definition) {
-		if len(commands) == 0 {
-			return
-		}
-		if d.supportedCommands == nil {
-			d.supportedCommands = make(map[string]struct{}, len(commands))
-		}
-		for _, command := range commands {
-			d.supportedCommands[command] = struct{}{}
-		}
+		d.AddSupportedCommand(commands...)
 	}
 }
 
@@ -263,11 +257,9 @@ func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 		multi:             info.GetAllowsMultiple(),
 		hasNegative:       info.GetHasNegativeFlag(),
 		requiresValue:     info.GetRequiresValue(),
-		supportedCommands: make(map[string]struct{}, len(info.GetCommands())),
+		supportedCommands: make(set.Set[string], len(info.GetCommands())),
 	}
-	for _, cmd := range info.GetCommands() {
-		d.supportedCommands[cmd] = struct{}{}
-	}
+	d.AddSupportedCommand(info.GetCommands()...)
 	return d
 }
 
@@ -286,6 +278,7 @@ type Option interface {
 	ClearValue()
 	SetValue(string)
 	GetDefinition() *Definition
+	SetDefinition(*Definition)
 	UseShortName(bool)
 	Normalized() Option
 
@@ -318,6 +311,10 @@ type RequiredValueOption struct {
 
 func (o *RequiredValueOption) GetDefinition() *Definition {
 	return o.Definition
+}
+
+func (o *RequiredValueOption) SetDefinition(d *Definition) {
+	o.Definition = d
 }
 
 func (o *RequiredValueOption) HasValue() bool {
@@ -403,6 +400,10 @@ type BoolOrEnumOption struct {
 
 func (o *BoolOrEnumOption) GetDefinition() *Definition {
 	return o.Definition
+}
+
+func (o *BoolOrEnumOption) SetDefinition(d *Definition) {
+	o.Definition = d
 }
 
 func (o *BoolOrEnumOption) HasValue() bool {
@@ -547,6 +548,10 @@ type ExpansionOption struct {
 
 func (o *ExpansionOption) GetDefinition() *Definition {
 	return o.Definition
+}
+
+func (o *ExpansionOption) SetDefinition(d *Definition) {
+	o.Definition = d
 }
 
 func (_ *ExpansionOption) HasValue() bool {
@@ -707,6 +712,18 @@ type BoolOrEnum struct {
 	e *string
 }
 
+func NewBoolOrEnum[T bool | string](value T) *BoolOrEnum {
+	p := any(&value)
+	switch p := p.(type) {
+	case *bool:
+		return &BoolOrEnum{b: p}
+	case *string:
+		return &BoolOrEnum{e: p}
+	}
+	// This should never happen
+	return nil
+}
+
 func (b *BoolOrEnum) GetBool() (bool, bool) {
 	if b.b == nil {
 		return false, false
@@ -758,14 +775,20 @@ func (b *BoolOrEnum) Set(value any) {
 	}
 }
 
-// AccumulateValues accepts an initial value, acc, and a variadic Option
+func NameFilter[O Option](name string) func(O) bool {
+	return func(opt O) bool {
+		return opt.Name() == name
+	}
+}
+
+// AccumulateValues accepts an initial value, acc, and a Sequenceable Option
 // parameter, opts, and returns the resulting value of evaluating all of those
 // options in order. It should only be called with opts that all share the same
 // definition, and an inital value that matches the type of value that
 // definition implies. Otherwise, its output will be nonsensical.
-func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, opts ...O) (T, error) {
+func AccumulateValues[O Option, T string | []string | bool | BoolOrEnum, S seq.Sequenceable[O]](acc T, opts S) (T, error) {
 	p := any(&acc)
-	for _, opt := range opts {
+	for opt := range seq.Sequence[O](opts) {
 		switch p := p.(type) {
 		case *string:
 			*p = opt.GetValue()
@@ -784,8 +807,7 @@ func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, 
 		case *BoolOrEnum:
 			b := opt.BoolLike()
 			if b == nil {
-				p.SetEnum(opt.GetValue())
-				continue
+				return *new(T), fmt.Errorf("Option '%s' is not a boolean (or boolean-or-enum) option.", opt.Name())
 			}
 			v, err := b.AsBool()
 			if err != nil {
@@ -793,6 +815,8 @@ func AccumulateValues[T string | []string | bool | BoolOrEnum, O Option](acc T, 
 				continue
 			}
 			p.SetBool(v)
+		default:
+			return *new(T), fmt.Errorf("Accumulator is of unsupported type %T.", acc)
 		}
 	}
 	return acc, nil

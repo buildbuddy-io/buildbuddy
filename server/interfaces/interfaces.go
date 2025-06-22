@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -54,6 +55,7 @@ import (
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/genproto/googleapis/longrunning"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -1673,7 +1675,7 @@ type RegistryService interface {
 
 type AtimeUpdater interface {
 	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value)
-	EnqueueByResourceName(ctx context.Context, downloadString string)
+	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName)
 }
 
 type CPULeaser interface {
@@ -1757,4 +1759,12 @@ type ExperimentFlagProvider interface {
 	String(ctx context.Context, flagName string, defaultValue string, opts ...any) string
 	Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64
 	Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64
+	Object(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) map[string]any
+}
+
+// Wrapper around a bspb.ByteStream_ReadServer that supports directly providing
+// a parsed CAS resource name for Read() to avoid having to reparse one.
+type ByteStreamServer interface {
+	bspb.ByteStreamServer
+	ReadCASResource(rn *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error
 }

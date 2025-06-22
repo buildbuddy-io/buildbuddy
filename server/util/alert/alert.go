@@ -1,6 +1,7 @@
 package alert
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -20,6 +21,12 @@ import (
 //	alert.UnexpectedEvent("cannot_unmarshal_proto")
 //	alert.UnexpectedEvent("cannot_unmarshal_proto", "invocation_id %s err: %s", invocation_id, err)
 func UnexpectedEvent(name string, msgAndArgs ...interface{}) {
+	CtxUnexpectedEvent(context.Background(), name, msgAndArgs...)
+}
+
+// CtxUnexpectedEvent is the same as UnexpectedEvent, but takes a context
+// which is used when logging the event.
+func CtxUnexpectedEvent(ctx context.Context, name string, msgAndArgs ...interface{}) {
 	metrics.UnexpectedEvent.With(prometheus.Labels{metrics.EventName: name}).Inc()
 	logMsg := fmt.Sprintf("Unexpected event %q", name)
 	if len(msgAndArgs) == 1 {
@@ -33,5 +40,5 @@ func UnexpectedEvent(name string, msgAndArgs ...interface{}) {
 			logMsg += "<invalid args to UnexpectedEvent>"
 		}
 	}
-	log.Warning(logMsg)
+	log.CtxWarning(ctx, logMsg)
 }

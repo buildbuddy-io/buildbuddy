@@ -144,7 +144,7 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 		}
 		inputs = append(inputs, &wkpb.Input{
 			Digest: digestBytes,
-			Path:   path,
+			Path:   path.NormalizedString(),
 		})
 	}
 

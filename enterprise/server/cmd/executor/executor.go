@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -400,19 +399,15 @@ func main() {
 }
 
 func deleteBuildRoot(ctx context.Context, rootDir string) {
-	log.Infof("Deleting build root dir at %q", rootDir)
+	log.Infof("Cleaning build root dir at %q", rootDir)
 	stop := canary.StartWithLateFn(1*time.Minute, func(timeTaken time.Duration) {
-		log.Infof("Still deleting build root dir (%s elapsed)", timeTaken)
+		log.Infof("Still cleaning build root dir (%s elapsed)", timeTaken)
 	}, func(timeTaken time.Duration) {})
 	defer stop()
 
-	mounts, err := disk.ChildMounts(ctx, rootDir)
-	if err == nil && len(mounts) > 0 {
-		// TODO(bduffany): see what gets logged here in practice, and if it
-		// looks safe, unmount these instead of just logging.
-		log.Warningf("Build root directory still has mounted filesystems: %s", strings.Join(mounts, ", "))
-	}
-	if err := disk.ForceRemove(ctx, rootDir); err != nil {
-		log.Warningf("Failed to remove build root dir: %s", err)
+	if err := cleanBuildRoot(ctx, rootDir); err != nil {
+		log.Errorf("Error cleaning build root dir %q: %s", rootDir, err)
+	} else {
+		log.Infof("Cleaned build root dir at %q", rootDir)
 	}
 }

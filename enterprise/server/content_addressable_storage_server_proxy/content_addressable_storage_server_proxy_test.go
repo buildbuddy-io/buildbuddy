@@ -44,13 +44,6 @@ const (
 	atimeUpdatePeriod = time.Minute
 )
 
-// The real AtimeUpdater makes RPCs which may interfere with tests.
-type noOpAtimeUpdater struct{}
-
-func (a *noOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) {
-}
-func (a *noOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ string) {}
-
 func requestCountingUnaryInterceptor(count *atomic.Int32) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		count.Add(1)
@@ -390,7 +383,7 @@ func testGetTree(t *testing.T, withCaching bool) {
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	bsClient := bspb.NewByteStreamClient(conn)
 	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetAtimeUpdater(&noOpAtimeUpdater{})
+	proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
 	bsProxy := bspb.NewByteStreamClient(proxyConn)
@@ -563,7 +556,7 @@ func BenchmarkBatchReadBlobs(b *testing.B) {
 	proxyEnv := testenv.GetTestEnv(b)
 	// The atime update runs background goroutines that can interfere with
 	// calls to atime_updater.Enqueue(). Disable it for benchmarking.
-	proxyEnv.SetAtimeUpdater(&noOpAtimeUpdater{})
+	proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	clock := clockwork.NewFakeClock()
 	proxyEnv.SetClock(clock)
 	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -653,7 +646,7 @@ func BenchmarkGetTree(b *testing.B) {
 	proxyEnv := testenv.GetTestEnv(b)
 	// The atime update runs background goroutines that can interfere with
 	// calls to atime_updater.Enqueue(). Disable it for benchmarking.
-	proxyEnv.SetAtimeUpdater(&noOpAtimeUpdater{})
+	proxyEnv.SetAtimeUpdater(&testenv.NoOpAtimeUpdater{})
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, b)
 	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
 	bsProxy := bspb.NewByteStreamClient(proxyConn)

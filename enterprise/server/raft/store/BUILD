@@ -38,6 +38,7 @@ go_library(
         "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/rangemap",
         "//server/util/status",
         "//server/util/statusz",
         "@com_github_elastic_gosigar//:gosigar",
@@ -59,7 +60,7 @@ go_test(
     name = "store_test",
     srcs = ["store_test.go"],
     exec_properties = {
-        "test.EstimatedComputeUnits": "8",
+        "test.EstimatedComputeUnits": "10",
         "test.workload-isolation-type": "firecracker",
     },
     shard_count = 8,

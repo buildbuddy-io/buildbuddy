@@ -1062,25 +1062,30 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, replicaStateMap map[uint64]constants.ReplicaState, brandNewReplicaID *uint64) []*rfpb.ReplicaDescriptor {
 	numUpToDateReplicas := 0
 	replicasBehind := make([]*rfpb.ReplicaDescriptor, 0)
+	replicasUnavailable := make([]*rfpb.ReplicaDescriptor, 0)
 	for _, r := range rd.GetReplicas() {
 		rs, ok := replicaStateMap[r.GetReplicaId()]
 		if !ok {
+			replicasUnavailable = append(replicasUnavailable, r)
 			continue
 		}
-		if rs == constants.ReplicaStateCurrent {
+		switch rs {
+		case constants.ReplicaStateCurrent:
 			numUpToDateReplicas++
-		} else if rs == constants.ReplicaStateBehind {
+		case constants.ReplicaStateBehind:
 			// Don't consider brand new replica ID as falling behind
 			if brandNewReplicaID == nil || r.GetReplicaId() != *brandNewReplicaID {
 				replicasBehind = append(replicasBehind, r)
 			}
+		case constants.ReplicaStateUnknown:
+			replicasUnavailable = append(replicasUnavailable, r)
 		}
 	}
 
 	quorum := computeQuorum(len(rd.GetReplicas()) - 1)
 	if numUpToDateReplicas < quorum {
 		// The number of up-to-date replicas is less than quorum. Don't remove
-		rq.log.Debugf("there are %d up-to-date replicas and quorum is %d, don't remove", numUpToDateReplicas, quorum)
+		rq.log.Debugf("there are %d up-to-date replicas for range %d and quorum is %d, don't remove", rd.GetRangeId(), numUpToDateReplicas, quorum)
 		return nil
 	}
 
@@ -1088,10 +1093,14 @@ func (rq *Queue) findRemovableReplicas(rd *rfpb.RangeDescriptor, replicaStateMap
 		// Any replica can be removed.
 		replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
 		if suspects := replicasByStatus.SuspectReplicas; len(suspects) > 0 {
-			rq.log.Debugf("there are %d suspects, removing suspects", len(suspects))
+			rq.log.Debugf("there are %d suspects for range %d, removing suspects", rd.GetRangeId(), len(suspects))
 			return suspects
 		}
-		rq.log.Debugf("there are %d up-to-date replicas and quorum is %d, any replicas can be removed", numUpToDateReplicas, quorum)
+		if count := len(replicasUnavailable); count > 0 {
+			rq.log.Debugf("there are %d replicas for range %d without states, removing replicas without states", rd.GetRangeId(), count)
+			return replicasUnavailable
+		}
+		rq.log.Debugf("there are %d up-to-date replicas for range %d and quorum is %d, any replica can be removed", rd.GetRangeId(), numUpToDateReplicas, quorum)
 		return rd.GetReplicas()
 	}
 

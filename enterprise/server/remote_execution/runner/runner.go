@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -547,6 +548,7 @@ type pool struct {
 	env                environment.Env
 	podID              string
 	buildRoot          string
+	caseInsensitiveFS  bool
 	cgroupParent       string
 	blockDevice        *block_io.Device
 	cacheRoot          string
@@ -575,7 +577,6 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
 	}
-
 	p := &pool{
 		env:          env,
 		podID:        podID,
@@ -586,6 +587,10 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 	}
 	if err := os.MkdirAll(p.buildRoot, fs.FileMode(0755)); err != nil {
 		return nil, status.InternalErrorf("Failed to create build root directory %q: %s", p.buildRoot, err)
+	}
+	p.caseInsensitiveFS, err = fspath.IsCaseInsensitiveFS(p.buildRoot)
+	if err != nil {
+		return nil, status.InternalErrorf("test build root case sensitivity at path %q: %s", p.buildRoot, err)
 	}
 	if opts.ContainerProvider != nil {
 		p.overrideProvider = opts.ContainerProvider
@@ -818,7 +823,9 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		ExecutionTask: task,
 	}
 
-	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{})
+	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{
+		CaseInsensitive: p.caseInsensitiveFS,
+	})
 	if err != nil {
 		return err
 	}
@@ -1017,10 +1024,11 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		return nil, err
 	}
 	wsOpts := &workspace.Opts{
-		Preserve:     props.PreserveWorkspace,
-		CleanInputs:  props.CleanWorkspaceInputs,
-		UseOverlayfs: useOverlayfs,
-		UseVFS:       props.EnableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType,
+		Preserve:        props.PreserveWorkspace,
+		CleanInputs:     props.CleanWorkspaceInputs,
+		CaseInsensitive: p.caseInsensitiveFS,
+		UseOverlayfs:    useOverlayfs,
+		UseVFS:          props.EnableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {

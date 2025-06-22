@@ -559,6 +559,15 @@ message RemoveReplicaResponse {
   RangeDescriptor range = 1;
 }
 
+message CheckRangeOverlapsRequest {
+  bytes start = 1;
+  bytes end = 2;
+}
+
+message CheckRangeOverlapsResponse {
+  repeated RangeDescriptor ranges = 1;
+}
+
 message SplitRangeRequest {
   Header header = 1;
   RangeDescriptor range = 2;

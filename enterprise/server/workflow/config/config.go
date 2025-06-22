@@ -178,7 +178,7 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
-const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.75-buildbuddy.tar.gz"
+const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.76-buildbuddy.tar.gz"
 
 func checkoutKythe(dirName, downloadURL string) string {
 	buf := fmt.Sprintf(`
@@ -220,7 +220,7 @@ if [ "$BZLMOD_ENABLED" -eq 1 ]; then
 	# manually adding to MODULE.bazel.
     if [ $BZL_MAJOR_VERSION -lt 8 ]; then
         echo "Adding kythe repository to MODULE.bazel"
-        echo -e '\nbazel_dep(name = "kythe", version = "0.0.75")' >> MODULE.bazel
+        echo -e '\nbazel_dep(name = "kythe", version = "0.0.76")' >> MODULE.bazel
         echo "local_path_override(module_name=\"kythe\", path=\"$KYTHE_DIR\")" >> MODULE.bazel
 	else
         KYTHE_ARGS="--inject_repository=kythe_release=$KYTHE_DIR"
@@ -230,9 +230,7 @@ else
 	KYTHE_ARGS="--override_repository=kythe_release=$KYTHE_DIR"
 fi
 echo "Found Bazel major version: $BZL_MAJOR_VERSION, with enable_bzlmod: $BZLMOD_ENABLED"
-set -x
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...
-unset -x`, dirName, bazelConfigFlags)
+bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build $KYTHE_ARGS %s //...`, dirName, bazelConfigFlags)
 
 }
 

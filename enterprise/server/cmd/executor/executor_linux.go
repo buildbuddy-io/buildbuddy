@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -106,4 +107,8 @@ func cleanupFUSEMounts() {
 	if err := vbd.CleanStaleMounts(); err != nil {
 		log.Warningf("Failed to cleanup Virtual Block Device mounts from previous runs: %s", err)
 	}
+}
+
+func cleanBuildRoot(ctx context.Context, buildRoot string) error {
+	return disk.CleanDirectory(ctx, buildRoot)
 }

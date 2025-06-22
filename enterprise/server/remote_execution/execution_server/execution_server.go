@@ -362,6 +362,12 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.NetworkBytesReceived = md.GetUsageStats().GetNetworkStats().GetBytesReceived()
 			executionProto.NetworkPacketsSent = md.GetUsageStats().GetNetworkStats().GetPacketsSent()
 			executionProto.NetworkPacketsReceived = md.GetUsageStats().GetNetworkStats().GetPacketsReceived()
+			executionProto.CpuPressureSomeStallUsec = md.GetUsageStats().GetCpuPressure().GetSome().GetTotal()
+			executionProto.CpuPressureFullStallUsec = md.GetUsageStats().GetCpuPressure().GetFull().GetTotal()
+			executionProto.MemoryPressureSomeStallUsec = md.GetUsageStats().GetMemoryPressure().GetSome().GetTotal()
+			executionProto.MemoryPressureFullStallUsec = md.GetUsageStats().GetMemoryPressure().GetFull().GetTotal()
+			executionProto.IoPressureSomeStallUsec = md.GetUsageStats().GetIoPressure().GetSome().GetTotal()
+			executionProto.IoPressureFullStallUsec = md.GetUsageStats().GetIoPressure().GetFull().GetTotal()
 
 			executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
 			executionProto.Experiments = auxMeta.GetExperiments()
@@ -720,6 +726,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if err != nil {
 		return "", nil, status.WrapError(err, "get executor pool info")
 	}
+	var hostnamePrefix string
+	if exp := s.env.GetExperimentFlagProvider(); exp != nil {
+		hostnamePrefix = exp.String(ctx, "remote_execution.executor_hostname_prefix", "")
+		log.CtxInfof(ctx, "Using executor hostname prefix %q", hostnamePrefix)
+	}
 
 	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()
 
@@ -733,6 +744,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Os:                props.OS,
 		Arch:              props.Arch,
 		Pool:              pool.Name,
+		HostnamePrefix:    hostnamePrefix,
 		TaskSize:          taskSize,
 		DefaultTaskSize:   defaultTaskSize,
 		MeasuredTaskSize:  measuredSize,

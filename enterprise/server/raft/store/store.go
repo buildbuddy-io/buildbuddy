@@ -46,6 +46,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/elastic/gosigar"
@@ -131,6 +132,7 @@ type Store struct {
 
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
+	rangeMap   *rangemap.RangeMap[*rfpb.RangeDescriptor]
 
 	leaseKeeper *leasekeeper.LeaseKeeper
 	replicas    sync.Map // map of uint64 rangeID -> *replica.Replica
@@ -165,6 +167,8 @@ type Store struct {
 
 	mu      sync.Mutex // protects stopped
 	stopped bool
+
+	maxSingleOpTimeout time.Duration
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -268,6 +272,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 		rangeMu:    sync.RWMutex{},
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
+		rangeMap:   rangemap.New[*rfpb.RangeDescriptor](),
 
 		leaseKeeper: leasekeeper.New(nodeHost, nhLog, nodeLiveness, listener, eventsChan, lkSession),
 		replicas:    sync.Map{},
@@ -279,10 +284,11 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
 
-		db:               db,
-		leaser:           leaser,
-		clock:            clock,
-		metricsCollector: mc,
+		db:                 db,
+		leaser:             leaser,
+		clock:              clock,
+		metricsCollector:   mc,
+		maxSingleOpTimeout: raftConfig.SingleRaftOpTimeout(),
 	}
 
 	s.replicaInitStatusWaiter = newReplicaStatusWaiter(listener, nhLog)
@@ -814,9 +820,26 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.log.Debugf("Update range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
 
+	var err error
+	added := false
 	s.rangeMu.Lock()
 	s.openRanges[rd.GetRangeId()] = rd
+
+	if rd.GetStart() != nil && rd.GetEnd() != nil {
+		checkFn := func(v *rfpb.RangeDescriptor) bool {
+			return v.GetGeneration() < rd.GetGeneration()
+		}
+		added, err = s.rangeMap.AddAndRemoveOverlapping(rd.GetStart(), rd.GetEnd(), rd, checkFn)
+		if !added {
+			s.log.Debugf("UpdateRange: Ignoring rangeDescriptor %+v, because current has same or later generation", rd)
+		}
+	}
 	s.rangeMu.Unlock()
+
+	if err != nil {
+		s.log.Warningf("failed to add range %d: [%q, %q) gen %d failed: %s", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration(), err)
+		return
+	}
 
 	if !loaded {
 		metrics.RaftRanges.With(prometheus.Labels{
@@ -829,7 +852,7 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
-	if rd.GetStart() == nil && rd.GetEnd() == nil {
+	if rd.GetStart() == nil || rd.GetEnd() == nil {
 		s.log.Debugf("range %d has no bounds (yet?)", rd.GetRangeId())
 		return
 	}
@@ -864,6 +887,9 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	s.rangeMu.Lock()
 	delete(s.openRanges, rd.GetRangeId())
+	if rd.GetStart() != nil && rd.GetEnd() != nil {
+		s.rangeMap.Remove(rd.GetStart(), rd.GetEnd())
+	}
 	s.rangeMu.Unlock()
 
 	metrics.RaftRanges.With(prometheus.Labels{
@@ -1168,7 +1194,7 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 	}
 
 	// Propose the config change (this removes the node from the raft cluster).
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
 	})
 	return err
@@ -1178,7 +1204,7 @@ func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) erro
 	if rangeID == 0 || replicaID == 0 {
 		return status.InvalidArgumentErrorf("rangeID or replicaID is not set")
 	}
-	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err := client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		err := s.nodeHost.StopReplica(rangeID, replicaID)
 		if err == dragonboat.ErrShardClosed {
 			return nil
@@ -1224,7 +1250,7 @@ func (s *Store) syncRemoveData(ctx context.Context, rangeID, replicaID uint64) e
 		return status.WrapErrorf(err, "failed to stop replica before removing data of c%dn%d", rangeID, replicaID)
 	}
 
-	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err := client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		err := s.nodeHost.SyncRemoveData(ctx, rangeID, replicaID)
 		// If the shard is not stopped, we want to retry SyncRemoveData call.
 		if err == dragonboat.ErrShardNotStopped {
@@ -1377,7 +1403,7 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	}
 
 	rangeID := req.GetHeader().GetReplica().GetRangeId()
-	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, rangeID, batch)
+	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, rangeID, batch, s.maxSingleOpTimeout)
 	if err != nil {
 		if err == dragonboat.ErrShardNotFound {
 			return nil, status.OutOfRangeErrorf("%s: cluster not found for %+v", constants.RangeLeaseInvalidMsg, req.GetHeader())
@@ -2369,7 +2395,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 
 	// Find Split Point.
 	fsp := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}).SetHeader(req.GetHeader())
-	fspRsp, err := client.SyncReadLocalBatch(ctx, s.nodeHost, rangeID, fsp)
+	fspRsp, err := client.SyncReadLocalBatch(ctx, s.nodeHost, rangeID, fsp, s.maxSingleOpTimeout)
 	if err != nil {
 		return nil, status.InternalErrorf("find split point err: %s", err)
 	}
@@ -2418,6 +2444,9 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	if err := addLocalRangeEdits(leftRange, updatedLeftRange, leftBatch); err != nil {
 		return nil, err
 	}
+	// lock the left range when we prepare the transaction. Before we finalize
+	// the transaction, we don't allow keys in the old left range to be written.
+	leftBatch.SetLockMappedRange(true)
 
 	rightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -2545,7 +2574,7 @@ func (s *Store) waitForReplicaToCatchUp(ctx context.Context, rangeID uint64, des
 func (s *Store) GetMembership(ctx context.Context, rangeID uint64) (*dragonboat.Membership, error) {
 	var membership *dragonboat.Membership
 	var err error
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		// Get the config change index for this cluster.
 		membership, err = s.nodeHost.SyncGetShardMembership(ctx, rangeID)
 		if err != nil {
@@ -2573,6 +2602,22 @@ func (s *Store) getConfigChangeID(ctx context.Context, rangeID uint64) (uint64, 
 		return 0, err
 	}
 	return membership.ConfigChangeID, nil
+}
+
+// CheckRangeOverlaps checks whether there is an open range overlapped with the
+// [start, end) in the request.
+func (s *Store) CheckRangeOverlaps(ctx context.Context, req *rfpb.CheckRangeOverlapsRequest) (*rfpb.CheckRangeOverlapsResponse, error) {
+	if req.GetStart() == nil || req.GetEnd() == nil {
+		return nil, status.FailedPreconditionError("req.Start or req.End cannot be nil")
+	}
+	s.rangeMu.RLock()
+	defer s.rangeMu.RUnlock()
+	overlapping := s.rangeMap.GetOverlapping(req.GetStart(), req.GetEnd())
+	rsp := &rfpb.CheckRangeOverlapsResponse{}
+	for _, overlapped := range overlapping {
+		rsp.Ranges = append(rsp.Ranges, overlapped.Val)
+	}
+	return rsp, nil
 }
 
 func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddReplicaRequest) error {
@@ -2610,6 +2655,35 @@ func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddRepl
 			return status.FailedPreconditionErrorf("range %d is being removed from node %q", req.GetRange().GetRangeId(), node.GetNhid())
 		}
 	}
+	c, err := s.apiClient.Get(ctx, node.GetGrpcAddress())
+	if err != nil {
+		return status.InternalErrorf("failed to get the client for the node %q: %s", node.GetNhid(), err)
+	}
+
+	// Check the target node doesn't have an overlapping range. An overlapping
+	// range can be caused by a slow node that hasn't committed the split txn.
+	// Since we don't support range merge operations, we don't need to worry
+	// about the case where overlapping ranges occur between the check and when
+	// the replica is added to the node.
+	if remoteRD.GetStart() != nil && remoteRD.GetEnd() != nil {
+		rsp, err := c.CheckRangeOverlaps(ctx, &rfpb.CheckRangeOverlapsRequest{
+			Start: remoteRD.GetStart(),
+			End:   remoteRD.GetEnd(),
+		})
+		if err != nil {
+			return status.InternalErrorf("failed to check range overlap on node %q: %s", node.GetNhid(), err)
+		}
+
+		for _, overlap := range rsp.GetRanges() {
+			// If the range was added to the node, but the range descriptor was
+			// not successfully updated to meta range, don't consider it as an
+			// overlap range.
+			if overlap.GetRangeId() != remoteRD.GetRangeId() || !bytes.Equal(overlap.GetStart(), remoteRD.GetStart()) || !bytes.Equal(overlap.GetEnd(), remoteRD.GetEnd()) {
+				return status.FailedPreconditionErrorf("node %q has overlapping ranges, e.g. range_id: %d: [%q, %q)", node.GetNhid(), overlap.GetRangeId(), overlap.GetStart(), overlap.GetEnd())
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -2622,7 +2696,7 @@ func (s *Store) addNonVoting(ctx context.Context, rangeID uint64, newReplicaID u
 	}
 
 	// Propose the config change (this adds the node as a non-voter to the raft cluster).
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestAddNonVoting(ctx, rangeID, newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
@@ -2668,7 +2742,7 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 		return status.InternalErrorf("failed to get config change ID: %s", err)
 	}
 	s.log.Infof("promote c%dn%d to voter, ccid=%d", rd.GetRangeId(), newReplicaID, configChangeID)
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+	err = client.RunNodehostFn(ctx, s.maxSingleOpTimeout, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestAddReplica(ctx, rd.GetRangeId(), newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {

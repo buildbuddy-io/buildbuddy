@@ -234,6 +234,8 @@ func AssertExactFileContents(t testing.TB, rootDir string, contents map[string]s
 
 		require.NoError(t, err)
 		relPath := strings.TrimPrefix(path, rootDir+string(os.PathSeparator))
+		// Always use forward slashes for paths.
+		relPath = strings.ReplaceAll(relPath, string(os.PathSeparator), "/")
 		actualFilePaths = append(actualFilePaths, relPath)
 		if content, ok := contents[relPath]; ok {
 			require.NoError(t, err)

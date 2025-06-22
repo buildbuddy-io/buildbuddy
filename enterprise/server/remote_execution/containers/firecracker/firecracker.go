@@ -75,6 +75,7 @@ import (
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
+	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var (
@@ -976,21 +977,21 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 			return status.WrapError(err, "could not initialize snaploader when checking for remote snapshot: %s")
 		}
 
-		// We want to always save the main snapshot remotely, because it is used as
-		// a fallback for runs on other branches, and we want the latest main snapshot available
+		// We want to always save the default snapshot remotely, because it is used as
+		// a fallback for runs on other branches, and we want the latest default snapshot available
 		// to all executors.
-		// The main snapshot is the fallback key for non-main branches,
+		// The default snapshot is the fallback key for non-default branches,
 		// so if a run does not have a fallback key, it's likely running on
-		// the main branch.
-		isLikelyMainSnapshot := !c.hasFallbackKeys()
+		// the default branch.
+		isLikelyDefaultSnapshot := !c.hasFallbackKeys()
 
-		if savePolicy == snaputil.AlwaysSaveRemoteSnapshot || isLikelyMainSnapshot {
+		if savePolicy == snaputil.AlwaysSaveRemoteSnapshot || isLikelyDefaultSnapshot {
 			shouldCacheRemotely = true
-		} else if savePolicy == snaputil.OnlySaveNonMainRemoteSnapshotIfNoneAvailable {
+		} else if savePolicy == snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable {
 			shouldCacheRemotely = !c.hasRemoteSnapshot(ctx, loader)
 		} else {
 			// By default (applies if save policy is unset or invalid) or if
-			// savePolicy=OnlySaveFirstNonMainRemoteSnapshot,
+			// savePolicy=OnlySaveFirstNonDefaultRemoteSnapshot,
 			// only save a remote snapshot if a remote snapshot for the primary git branch key
 			// doesn't already exist.
 			shouldCacheRemotely = !c.hasRemoteSnapshotForKey(ctx, loader, c.SnapshotKeySet().GetBranchKey())
@@ -1037,9 +1038,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 	if c.snapshot == nil || c.snapshot.GetVMMetadata() == nil {
 		return &fcpb.VMMetadata{
-			VmId:        c.id,
-			SnapshotId:  c.snapshotID,
-			SnapshotKey: c.SnapshotKeySet().GetBranchKey(),
+			VmId:             c.id,
+			SnapshotId:       c.snapshotID,
+			SnapshotKey:      c.SnapshotKeySet().GetBranchKey(),
+			CreatedTimestamp: tspb.New(c.currentTaskInitTime),
 		}
 	}
 	return c.snapshot.GetVMMetadata()
@@ -1053,6 +1055,7 @@ func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
 		ActionDigest:          c.task.GetExecuteRequest().GetActionDigest(),
 		ExecuteResponseDigest: d,
 		SnapshotId:            c.snapshotID, // Unique ID pertaining to this execution run
+		CompletedTimestamp:    tspb.Now(),
 	}
 }
 

@@ -90,10 +90,16 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
-	r, err := digest.ParseDownloadResourceName(req.GetResourceName())
+	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	if err != nil {
 		return err
 	}
+	return s.ReadCASResource(rn, req.GetReadOffset(), req.GetReadLimit(), stream)
+}
+
+// This version of Read accepts the parameters of a ReadRequest directly so it
+// can be called by ByteStreamServerProxy to avoid re-parsing resource names.
+func (s *ByteStreamServer) ReadCASResource(r *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error {
 	if !s.supportsCompressor(r.GetCompressor()) {
 		return status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
 	}
@@ -113,11 +119,11 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
 	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
-	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && req.ReadOffset == 0 && req.ReadLimit == 0
+	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && offset == 0 && limit == 0
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
 	}
-	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), req.ReadOffset, req.ReadLimit)
+	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
 	if err != nil {
 		if err := ht.TrackMiss(r.GetDigest()); err != nil {
 			log.Debugf("ByteStream Read: hit tracker TrackMiss error: %s", err)

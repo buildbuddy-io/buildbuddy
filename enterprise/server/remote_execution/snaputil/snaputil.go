@@ -32,15 +32,17 @@ var (
 	storeSnapshotsInLocalClusterOnly = flag.Bool("executor.store_snapshots_in_local_cluster_only", false, "If true, snapshots are only stored in the cache proxy in the cluster where this executor is running.")
 )
 
-// ChunkSource represents how a snapshot chunk was initialized
-type ChunkSource int
-
 const (
 	// MemoryFileName is the fixed file name of the memory snapshot file.
 	// We rely on this name to locate the memory file in snapshots. Do not
 	// change!
 	MemoryFileName = "memory"
+)
 
+// ChunkSource represents how a snapshot chunk was initialized
+type ChunkSource int
+
+const (
 	// ChunkSourceUnmapped means the lazy chunk has not been initialized yet
 	ChunkSourceUnmapped ChunkSource = iota
 	// ChunkSourceHole means the chunk was initialized as a hole - i.e. it started
@@ -54,18 +56,20 @@ const (
 	ChunkSourceLocalFilecache
 	// ChunkSourceRemoteCache means the chunk was fetched from the remote cache
 	ChunkSourceRemoteCache
+)
 
-	// Values for platform.RemoteSnapshotSavePolicyPropertyName:
+// Values for platform.RemoteSnapshotSavePolicyPropertyName:
+const (
 	// Every run will save a remote snapshot.
 	AlwaysSaveRemoteSnapshot = "always"
-	// Default. Only the first run on a non-main ref will save a remote snapshot.
-	// All runs on main refs will save a remote snapshot.
-	OnlySaveFirstNonMainRemoteSnapshot = "first-non-main-ref"
-	// Will only save a remote snapshot on a non-main ref if there are no remote
-	// snapshots available. If there is a fallback main snapshot, still will not save
+	// Default. Only the first run on a non-default ref will save a remote snapshot.
+	// All runs on default refs will save a remote snapshot.
+	OnlySaveFirstNonDefaultRemoteSnapshot = "first-non-default-ref"
+	// Will only save a remote snapshot on a non-default ref if there are no remote
+	// snapshots available. If there is a fallback default snapshot, still will not save
 	// a remote snapshot.
-	// All runs on main refs will save a remote snapshot.
-	OnlySaveNonMainRemoteSnapshotIfNoneAvailable = "none-available"
+	// All runs on default refs will save a remote snapshot.
+	OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable = "none-available"
 )
 
 func (s ChunkSource) String() string {

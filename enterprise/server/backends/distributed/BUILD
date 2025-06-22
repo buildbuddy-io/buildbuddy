@@ -21,6 +21,7 @@ go_library(
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
         "//server/resources",
+        "//server/util/authutil",
         "//server/util/background",
         "//server/util/consistent_hash",
         "//server/util/flag",

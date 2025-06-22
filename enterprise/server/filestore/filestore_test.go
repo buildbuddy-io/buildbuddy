@@ -120,6 +120,9 @@ func TestKnownVersions(t *testing.T) {
 			parsedVersion, err := key.FromBytes([]byte(exemplar))
 			assert.NoError(t, err)
 			assert.Equal(t, version, parsedVersion)
+			reSerialized, err := key.Bytes(parsedVersion)
+			assert.NoError(t, err)
+			assert.Equal(t, string(exemplar), string(reSerialized))
 		}
 	}
 }
@@ -251,11 +254,11 @@ func TestLockID(t *testing.T) {
 	}
 }
 
-func formatKey(t *testing.T, fr *sgpb.FileRecord) string {
+func formatKey(t *testing.T, fr *sgpb.FileRecord, version filestore.PebbleKeyVersion) string {
 	fs := filestore.New()
 	pk, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
-	bs, err := pk.Bytes(filestore.Version3)
+	bs, err := pk.Bytes(version)
 	require.NoError(t, err)
 	return string(bs)
 }
@@ -278,15 +281,15 @@ func TestVersion3(t *testing.T) {
 			Digest:         d,
 			DigestFunction: repb.DigestFunction_SHA256,
 		}
-		require.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/0/v3", formatKey(t, fr))
+		assert.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/0/v3", formatKey(t, fr, filestore.Version3))
 
 		// AC w/ instance name.
 		fr.Isolation.RemoteInstanceName = "remote_instance_name"
-		require.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v3", formatKey(t, fr))
+		assert.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v3", formatKey(t, fr, filestore.Version3))
 
 		// AC w/ instance name & encryption.
 		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
-		require.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/EK456/v3", formatKey(t, fr))
+		assert.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/EK456/v3", formatKey(t, fr, filestore.Version3))
 	}
 
 	// CAS
@@ -301,10 +304,59 @@ func TestVersion3(t *testing.T) {
 			Digest:         d,
 			DigestFunction: repb.DigestFunction_SHA256,
 		}
-		require.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/v3", formatKey(t, fr))
+		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/v3", formatKey(t, fr, filestore.Version3))
 
 		// CAS w/ encryption
 		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
-		require.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/EK456/v3", formatKey(t, fr))
+		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/EK456/v3", formatKey(t, fr, filestore.Version3))
+	}
+}
+
+func TestVersion5(t *testing.T) {
+	partitionID := "foo"
+	groupID := "GR123"
+	d := &repb.Digest{Hash: "647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309", SizeBytes: 123}
+
+	// AC
+	{
+		// AC w/o instance name.
+		fr := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:          rspb.CacheType_AC,
+				RemoteInstanceName: "",
+				PartitionId:        partitionID,
+				GroupId:            groupID,
+			},
+			Digest:         d,
+			DigestFunction: repb.DigestFunction_SHA256,
+		}
+		assert.Equal(t, "PTfoo/72879509a94331dd1daab801d58eb1e5a6523097150916aeaee4c584d46de5ea/1/ac/v5", formatKey(t, fr, filestore.Version5))
+
+		// AC w/ instance name.
+		fr.Isolation.RemoteInstanceName = "remote_instance_name"
+		assert.Equal(t, "PTfoo/7f9486526761dd87bc045a9fa4637d01142f13760a0b656991509baa720d0883/1/ac/v5", formatKey(t, fr, filestore.Version5))
+
+		// AC w/ instance name & encryption.
+		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
+		assert.Equal(t, "PTfoo/7f9486526761dd87bc045a9fa4637d01142f13760a0b656991509baa720d0883/1/ac/EK456/v5", formatKey(t, fr, filestore.Version5))
+	}
+
+	// CAS
+	{
+		// CAS w/o encryption
+		fr := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:   rspb.CacheType_CAS,
+				PartitionId: partitionID,
+				GroupId:     groupID,
+			},
+			Digest:         d,
+			DigestFunction: repb.DigestFunction_SHA256,
+		}
+		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/cas/v5", formatKey(t, fr, filestore.Version5))
+
+		// CAS w/ encryption
+		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
+		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/cas/EK456/v5", formatKey(t, fr, filestore.Version5))
 	}
 }

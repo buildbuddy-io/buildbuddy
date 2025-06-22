@@ -75,8 +75,8 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
         <div className="titles">
           {(this.props.model.isBazelInvocation() || this.props.model.isHostedBazelInvocation()) && (
             <div className="title" title={this.props.model.getAllPatterns()}>
-              {this.props.model.getUser(/*possessive=*/ true)} {this.props.model.getCommand()}{" "}
-              {this.props.model.getPattern()}
+              {this.props.model.getUserPossessivePrefix()}
+              {this.props.model.getCommand()} {this.props.model.getPattern()}
             </div>
           )}
           {this.props.model.workflowConfigured && (
@@ -94,13 +94,13 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             <Clock className="icon" />
             {this.props.model.getTiming()}
           </div>
-          {isBazelInvocation && (
-            <Link className="detail clickable" href={Path.userHistoryPath + this.props.model.getUser(false)}>
+          {isBazelInvocation && !!this.props.model.getUser() && (
+            <Link className="detail clickable" href={Path.userHistoryPath + this.props.model.getUser()}>
               <UserIcon className="icon" />
-              {this.props.model.getUser(false)}
+              {this.props.model.getUser()}
             </Link>
           )}
-          {isBazelInvocation && (
+          {isBazelInvocation && !!this.props.model.getHost() && (
             <Link className="detail clickable" href={Path.hostHistoryPath + this.props.model.getHost()}>
               <HardDrive className="icon" />
               {this.props.model.getHost()}

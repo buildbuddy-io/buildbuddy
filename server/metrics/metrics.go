@@ -690,11 +690,11 @@ var (
 		CacheNameLabel,
 	})
 
-	DiskCacheSampledPartitionGroupSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	DiskCachePartitionGroupSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
-		Name:      "disk_cache_sampled_partition_group_size_bytes",
-		Help:      "Number of bytes seen while sampling the partition for eviction, by group ID.",
+		Name:      "disk_cache_partition_group_size_bytes",
+		Help:      "Number of bytes in the partition, by group ID.",
 	}, []string{
 		PartitionID,
 		CacheNameLabel,
@@ -793,6 +793,7 @@ var (
 		Help:      "Number of not found errors from the destination cache during a cache migration.",
 	}, []string{
 		CacheRequestType,
+		GroupID,
 	})
 
 	MigrationDoubleReadHitCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -802,6 +803,7 @@ var (
 		Help:      "Number of double reads where the source and destination caches hold the same digests during a cache migration.",
 	}, []string{
 		CacheRequestType,
+		GroupID,
 	})
 
 	MigrationCopyChanSize = promauto.NewGauge(prometheus.GaugeOpts{
@@ -818,6 +820,7 @@ var (
 		Help:      "Number of bytes copied from the source to destination cache during a cache migration.",
 	}, []string{
 		CacheTypeLabel,
+		GroupID,
 	})
 
 	MigrationBlobsCopied = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -827,6 +830,7 @@ var (
 		Help:      "Number of blobs copied from the source to destination cache during a cache migration.",
 	}, []string{
 		CacheTypeLabel,
+		GroupID,
 	})
 
 	TreeCacheLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -962,7 +966,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "executed_action_metadata_durations_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*day, 1.2),
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*day, 1.4),
 		Help:      "Time spent in each stage of action execution, in **microseconds**. Queries should filter or group by the `stage` label, taking care not to aggregate different stages.",
 	}, []string{
 		ExecutedActionStageLabel,

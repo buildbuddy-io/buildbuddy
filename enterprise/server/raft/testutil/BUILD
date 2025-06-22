@@ -41,6 +41,10 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_test(
     name = "testutil_test",
     srcs = ["testutil_test.go"],
+    exec_properties = {
+        "test.EstimatedComputeUnits": "8",
+        "test.workload-isolation-type": "firecracker",
+    },
     deps = [
         ":testutil",
         "@com_github_jonboulle_clockwork//:clockwork",

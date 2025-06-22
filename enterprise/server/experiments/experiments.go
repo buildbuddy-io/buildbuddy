@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/open-feature/go-sdk/openfeature"
 
@@ -114,6 +115,12 @@ func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) o
 	if aid := rmd.GetActionId(); len(aid) > 0 {
 		options.attributes["action_id"] = aid
 	}
+	if mnemonic := rmd.GetActionMnemonic(); mnemonic != "" {
+		options.attributes["action_mnemonic"] = mnemonic
+	}
+	if targetID := rmd.GetTargetId(); targetID != "" {
+		options.attributes["target_id"] = targetID
+	}
 	for _, optI := range opts {
 		if opt, ok := optI.(Option); ok {
 			opt(options)
@@ -138,26 +145,66 @@ func WithContext(key string, value interface{}) Option {
 // overrides, and returns the Boolean value for flagName, or defaultValue if no
 // experiment provider is configured.
 func (fp *FlagProvider) Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool {
-	return fp.client.Boolean(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	v, err := fp.client.BooleanValue(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	if err != nil {
+		log.CtxWarningf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		return defaultValue
+	}
+	return v
 }
 
 // String extracts the evaluationContext from ctx, applies any option
 // overrides, and returns the String value for flagName, or defaultValue if no
 // experiment provider is configured.
 func (fp *FlagProvider) String(ctx context.Context, flagName string, defaultValue string, opts ...any) string {
-	return fp.client.String(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	v, err := fp.client.StringValue(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	if err != nil {
+		log.CtxWarningf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		return defaultValue
+	}
+	return v
 }
 
 // Float64 extracts the evaluationContext from ctx, applies any option
 // overrides, and returns the Float64 value for flagName, or defaultValue if no
 // experiment provider is configured.
 func (fp *FlagProvider) Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64 {
-	return fp.client.Float(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	v, err := fp.client.FloatValue(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	if err != nil {
+		log.CtxWarningf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		return defaultValue
+	}
+	return v
 }
 
 // Int64 extracts the evaluationContext from ctx, applies any option
 // overrides, and returns the Int64 value for flagName, or defaultValue if no
 // experiment provider is configured.
 func (fp *FlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
-	return fp.client.Int(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	v, err := fp.client.IntValue(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	if err != nil {
+		log.CtxWarningf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		return defaultValue
+	}
+	return v
+}
+
+// Object extracts the evaluationContext from ctx, applies any option
+// overrides, and returns the map[string]any value for flagName, or defaultValue
+// if no experiment provider is configured.
+func (fp *FlagProvider) Object(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) map[string]any {
+	v, err := fp.client.ObjectValue(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
+	if err != nil {
+		log.CtxWarningf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		return defaultValue
+	}
+	if v == nil {
+		return defaultValue
+	}
+	if m, ok := v.(map[string]any); ok {
+		return m
+	} else {
+		log.CtxWarningf(ctx, "Experiment flag %q expected a map[string]any value, but the value is %T (%v)", flagName, v, v)
+	}
+	return defaultValue
 }

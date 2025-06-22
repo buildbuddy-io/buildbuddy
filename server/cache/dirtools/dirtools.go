@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -57,7 +58,15 @@ func groupIDStringFromContext(ctx context.Context) string {
 	return interfaces.AuthAnonymousUser
 }
 
-var DownloadDeduper = singleflight.Group[string, *FilePointer]{}
+// downloadDedupeKey controls the granularity at which we dedupe fetches.
+// The granularity is driven by file cache properties.
+// File cache contents is isolated by group, digest and executable attribute.
+type downloadDedupeKey struct {
+	groupID string
+	key     fetchKey
+}
+
+var DownloadDeduper = singleflight.Group[downloadDedupeKey, *FilePointer]{}
 
 type TransferInfo struct {
 	FileCount        int64
@@ -68,7 +77,7 @@ type TransferInfo struct {
 	Transfers map[string]*repb.FileNode
 	// Exists tracks the files that already existed, keyed by their
 	// workspace-relative paths.
-	Exists map[string]*repb.FileNode
+	Exists map[fspath.Key]*repb.FileNode
 
 	LinkCount    int64
 	LinkDuration time.Duration
@@ -624,7 +633,8 @@ type FilePointer struct {
 // we overwrite existing files without silently dropping errors when linking
 // the file. (Note, it is not needed when writing a fresh copy of the file.)
 func removeExisting(fp *FilePointer, opts *DownloadTreeOpts) error {
-	if _, ok := opts.Skip[fp.RelativePath]; ok {
+	pathKey := fspath.NewKey(fp.RelativePath, opts.CaseInsensitive)
+	if _, ok := opts.Skip[pathKey]; ok {
 		if err := os.Remove(fp.FullPath); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -632,7 +642,10 @@ func removeExisting(fp *FilePointer, opts *DownloadTreeOpts) error {
 	return nil
 }
 
-func writeFile(fp *FilePointer, data []byte) error {
+func writeFile(fp *FilePointer, data []byte, opts *DownloadTreeOpts) error {
+	if err := removeExisting(fp, opts); err != nil {
+		return err
+	}
 	var mode os.FileMode = 0644
 	if fp.FileNode.IsExecutable {
 		mode = 0755
@@ -664,9 +677,25 @@ func linkFileFromFileCache(ctx context.Context, fp *FilePointer, fc interfaces.F
 	return fc.FastLinkFile(ctx, fp.FileNode, fp.FullPath), nil
 }
 
+// fetchKey identifies an artifact to be fetched from a remote cache.
+type fetchKey struct {
+	digest.Key
+
+	// The file cache treats executable and non-executable files as separate
+	// entries since the attributes are shared when hardlinking.
+	// By differentiating executable and non-executable artifacts, we don't
+	// need to worry about attribute differences when interacting with the
+	// file cache.
+	executable bool
+}
+
+func newFetchKey(d *repb.Digest, executable bool) fetchKey {
+	return fetchKey{digest.NewKey(d), executable}
+}
+
 // FileMap is a map of digests to file pointers containing the contents
 // addressed by the digest.
-type FileMap map[digest.Key][]*FilePointer
+type FileMap map[fetchKey][]*FilePointer
 
 type BatchFileFetcher struct {
 	ctx            context.Context
@@ -747,27 +776,26 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 			return digest.MissingDigestError(res.Digest)
 		}
 		d := res.Digest
-		ptrs, ok := filesToFetch[digest.NewKey(d)]
-		if !ok {
-			return status.InternalErrorf("Fetched unrequested file: %q", d)
-		}
-		if len(ptrs) == 0 {
-			continue
-		}
-		ptr := ptrs[0]
-		if err := writeFile(ptr, res.Data); err != nil {
-			return err
-		}
-		if fileCache != nil {
-			if err := fileCache.AddFile(ff.ctx, ptr.FileNode, ptr.FullPath); err != nil {
-				log.Warningf("Error adding file to filecache: %s", err)
+		for _, executable := range []bool{false, true} {
+			ptrs, ok := filesToFetch[newFetchKey(d, executable)]
+			if !ok || len(ptrs) == 0 {
+				continue
 			}
-		}
-		// Only need to write the first file explicitly; the rest of the files can
-		// be fast-copied from the first.
-		for _, dest := range ptrs[1:] {
-			if err := copyFile(ptr, dest, opts); err != nil {
+			ptr := ptrs[0]
+			if err := writeFile(ptr, res.Data, opts); err != nil {
 				return err
+			}
+			if fileCache != nil {
+				if err := fileCache.AddFile(ff.ctx, ptr.FileNode, ptr.FullPath); err != nil {
+					log.Warningf("Error adding file to filecache: %s", err)
+				}
+			}
+			// Only need to write the first file explicitly; the rest of the files can
+			// be fast-copied from the first.
+			for _, dest := range ptrs[1:] {
+				if err := copyFile(ptr, dest, opts); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -785,7 +813,7 @@ func (ff *BatchFileFetcher) linkFromFileCache(filePointers []*FilePointer, opts 
 }
 
 type digestToFetch struct {
-	d   *repb.Digest
+	key fetchKey
 	fps []*FilePointer
 }
 
@@ -824,14 +852,13 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		// Attempt to link digests from the file cache. Digests that are not
 		// present in the filecache will be added to the fetchQueue channel.
 		for dk, filePointers := range filesToFetch {
-			d := dk.ToDigest()
 			filePointers := filePointers
 
 			rn := digest.NewCASResourceName(dk.ToDigest(), ff.instanceName, ff.digestFunction)
 			// Write empty files directly (skip checking cache and downloading).
 			if rn.IsEmpty() {
 				for _, fp := range filePointers {
-					if err := writeFile(fp, []byte("")); err != nil {
+					if err := writeFile(fp, []byte(""), opts); err != nil {
 						return err
 					}
 				}
@@ -846,7 +873,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 				}
 
 				// Otherwise, queue the digest to be fetched.
-				fetchQueue <- digestToFetch{d: d, fps: filePointers}
+				fetchQueue <- digestToFetch{key: dk, fps: filePointers}
 				return nil
 			})
 		}
@@ -863,10 +890,10 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 			// If the file exceeds our gRPC max size, it'll never
 			// fit in the batch call, so we'll have to bytestream
 			// it.
-			size := f.d.GetSizeBytes()
+			size := f.key.SizeBytes
 			if size > rpcutil.GRPCMaxSizeBytes || ff.env.GetContentAddressableStorageClient() == nil {
 				eg.Go(func() error {
-					return ff.bytestreamReadFiles(ctx, ff.instanceName, f.d, f.fps, opts)
+					return ff.bytestreamReadFiles(ctx, ff.instanceName, f.key, f.fps, opts)
 				})
 				continue
 			}
@@ -885,7 +912,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 
 			// Add the file to our current batch request and
 			// increment our size.
-			req.Digests = append(req.Digests, f.d)
+			req.Digests = append(req.Digests, f.key.ToDigest())
 			currentBatchRequestSize += size
 		}
 
@@ -919,7 +946,7 @@ func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
 
 // bytestreamReadFiles reads the given digest from the bytestream and creates
 // files pointing to those contents.
-func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceName string, d *repb.Digest, fps []*FilePointer, opts *DownloadTreeOpts) error {
+func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceName string, key fetchKey, fps []*FilePointer, opts *DownloadTreeOpts) error {
 	bsClient := ff.env.GetByteStreamClient()
 	if bsClient == nil {
 		return status.FailedPreconditionErrorf("cannot bytestream read files when bsClient is not set")
@@ -929,7 +956,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		return nil
 	}
 
-	dedupeKey := groupIDStringFromContext(ctx) + "-" + d.GetHash()
+	dedupeKey := downloadDedupeKey{groupID: groupIDStringFromContext(ctx), key: key}
 	fp, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
 		fp0 := fps[0]
 		var mode os.FileMode = 0644
@@ -949,7 +976,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		}
 
 		ff.statsMu.Lock()
-		ff.stats.FileDownloadSizeBytes += d.GetSizeBytes()
+		ff.stats.FileDownloadSizeBytes += key.SizeBytes
 		ff.stats.FileDownloadCount += 1
 		ff.statsMu.Unlock()
 
@@ -1015,10 +1042,13 @@ func checkSymlink(oldName, newName string) bool {
 }
 
 type DownloadTreeOpts struct {
-	// Skip specifies file paths to skip, along with their file nodes. If the digest
-	// and executable bit of a file to be downloaded doesn't match the digest
-	// and executable bit of the file in this map, then it is re-downloaded (not skipped).
-	Skip map[string]*repb.FileNode
+	// CaseInsensitive specifies whether the filesystem is case-insensitive.
+	// If true, the paths will be normalized to lowercase.
+	CaseInsensitive bool
+	// Skip specifies file paths to skip, along with their file nodes. If the
+	// file metadata or contents to be downloaded don't match the file in this
+	// map, then it is re-downloaded (not skipped).
+	Skip map[fspath.Key]*repb.FileNode
 	// TrackTransfers specifies whether to record the full set of files downloaded
 	// and return them in TransferInfo.Transfers.
 	TrackTransfers bool
@@ -1213,17 +1243,17 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	trackExistsFn := func(relPath string, node *repb.FileNode) {}
 	if opts.TrackTransfers {
 		txInfo.Transfers = map[string]*repb.FileNode{}
-		txInfo.Exists = map[string]*repb.FileNode{}
+		txInfo.Exists = map[fspath.Key]*repb.FileNode{}
 		trackTransfersFn = func(relPath string, node *repb.FileNode) {
 			txInfo.Transfers[relPath] = node
 		}
 		trackExistsFn = func(relPath string, node *repb.FileNode) {
-			txInfo.Exists[relPath] = node
+			txInfo.Exists[fspath.NewKey(relPath, opts.CaseInsensitive)] = node
 		}
 	}
 
 	dirPerms := fs.FileMode(0777)
-	filesToFetch := make(map[digest.Key][]*FilePointer, 0)
+	filesToFetch := make(map[fetchKey][]*FilePointer, 0)
 	var fetchDirFn func(dir *repb.Directory, parentDir string) error
 	fetchDirFn = func(dir *repb.Directory, parentDir string) error {
 		for _, fileNode := range dir.GetFiles() {
@@ -1231,14 +1261,15 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 				d := node.GetDigest()
 				fullPath := filepath.Join(location, node.Name)
 				relPath := trimPathPrefix(fullPath, rootDir)
-				skippedNode, ok := opts.Skip[relPath]
+				pathKey := fspath.NewKey(relPath, opts.CaseInsensitive)
+				skippedNode, ok := opts.Skip[pathKey]
 				if ok {
 					trackExistsFn(relPath, node)
 				}
 				if ok && nodesEqual(node, skippedNode) {
 					return
 				}
-				dk := digest.NewKey(d)
+				dk := newFetchKey(d, node.IsExecutable)
 				filesToFetch[dk] = append(filesToFetch[dk], &FilePointer{
 					FileNode:     node,
 					FullPath:     fullPath,
@@ -1298,7 +1329,8 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 }
 
 func nodesEqual(a *repb.FileNode, b *repb.FileNode) bool {
-	return a.GetDigest().GetHash() == b.GetDigest().GetHash() &&
+	return a.GetName() == b.GetName() &&
+		a.GetDigest().GetHash() == b.GetDigest().GetHash() &&
 		a.GetDigest().GetSizeBytes() == b.GetDigest().GetSizeBytes() &&
 		a.GetIsExecutable() == b.GetIsExecutable()
 }

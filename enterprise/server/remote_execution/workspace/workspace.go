@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strings"
 	"sync"
 
 	_ "embed"
@@ -27,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -87,7 +87,7 @@ type Workspace struct {
 	// workspace-relative paths to file nodes.
 	// TODO: Make sure these files are written read-only
 	// to make sure this map accurately reflects the filesystem.
-	Inputs map[string]*repb.FileNode
+	Inputs map[fspath.Key]*repb.FileNode
 
 	mu       sync.Mutex // protects(removing)
 	removing bool
@@ -98,6 +98,9 @@ type Opts struct {
 	// for output paths.
 	Preserve    bool
 	CleanInputs string
+	// CaseInsensitive specifies whether the root directory (under which the
+	// workspace directory is created) is case-insensitive.
+	CaseInsensitive bool
 	// UseOverlayfs specifies whether the workspace should use overlayfs to
 	// allow copy-on-write for workspace inputs.
 	UseOverlayfs bool
@@ -163,7 +166,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		vfs:       vfs,
 		vfsServer: vfsServer,
 		Opts:      opts,
-		Inputs:    map[string]*repb.FileNode{},
+		Inputs:    map[fspath.Key]*repb.FileNode{},
 	}, nil
 }
 
@@ -290,7 +293,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		}
 
 		for path, node := range txInfo.Transfers {
-			ws.Inputs[path] = node
+			ws.Inputs[fspath.NewKey(path, ws.Opts.CaseInsensitive)] = node
 		}
 		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
 		span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
@@ -318,18 +321,21 @@ func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	return os.WriteFile(destPath, ci_runner_bundle.CiRunnerBytes, 0o555)
 }
 
-func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) error {
+func (ws *Workspace) CleanInputsIfNecessary(keep map[fspath.Key]*repb.FileNode) error {
 	if ws.Opts.CleanInputs == "" {
 		return nil
 	}
-	inputFilesToCleanUp := make(map[string]*repb.FileNode)
+	inputFilesToCleanUp := make(map[fspath.Key]*repb.FileNode)
 	// Curly braces indicate a comma separated list of patterns: https://pkg.go.dev/github.com/gobwas/glob#Compile
 	glob, err := glob.Compile(fmt.Sprintf("{%s}", ws.Opts.CleanInputs), os.PathSeparator)
 	if err != nil {
 		return status.FailedPreconditionErrorf("Invalid glob {%s} used for input cleaning: %s", ws.Opts.CleanInputs, err.Error())
 	}
 	for path, node := range ws.Inputs {
-		if ws.Opts.CleanInputs == "*" || glob.Match(path) {
+		// NOTE: the glob is matching against the normalized path key here
+		// (which is always lowercase on case-insensitive filesystems), not the
+		// path string.
+		if ws.Opts.CleanInputs == "*" || glob.Match(path.NormalizedString()) {
 			inputFilesToCleanUp[path] = node
 		}
 	}
@@ -338,7 +344,7 @@ func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) erro
 	}
 	if len(inputFilesToCleanUp) > 0 {
 		for path := range inputFilesToCleanUp {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
+			if err := os.RemoveAll(filepath.Join(ws.Path(), path.NormalizedString())); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean inputs: %s", err)
 			}
 			delete(ws.Inputs, path)
@@ -542,14 +548,14 @@ func (ws *Workspace) Clean() error {
 			}
 			// If the output path was a directory, we need to delete any known
 			// input files which lived under that output directory.
-			for inputPath := range ws.Inputs {
-				if isParent(outputPath, inputPath) {
-					delete(ws.Inputs, inputPath)
+			for inputKey := range ws.Inputs {
+				if fspath.IsParent(outputPath, inputKey.NormalizedString(), ws.Opts.CaseInsensitive) {
+					delete(ws.Inputs, inputKey)
 				}
 			}
 			// In case this output path previously pointed to an input file,
 			// delete it from the inputs index (this should be pretty uncommon).
-			delete(ws.Inputs, outputPath)
+			delete(ws.Inputs, fspath.NewKey(outputPath, ws.Opts.CaseInsensitive))
 		}
 		return nil
 	}
@@ -571,8 +577,4 @@ func removeChildren(dirPath string) error {
 		}
 	}
 	return nil
-}
-
-func isParent(parent, child string) bool {
-	return strings.HasPrefix(child, parent+string(os.PathSeparator))
 }

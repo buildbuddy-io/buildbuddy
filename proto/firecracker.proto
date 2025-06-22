@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package firecracker;
 
+import "google/protobuf/timestamp.proto";
 import "proto/remote_execution.proto";
 
 // VM properties which cannot be changed across snapshot/resume cycles.
@@ -187,6 +188,9 @@ message VMMetadata {
     // For example, even if the same execution is retried multiple times using
     // the same snapshot key, each run will have a unqiue snapshot_id.
     string snapshot_id = 5;
+
+    // The approximate finish time of the task.
+    google.protobuf.Timestamp completed_timestamp = 6;
   }
 
   // The last task to execute on this VM. When resuming from snapshot, this
@@ -198,6 +202,9 @@ message VMMetadata {
 
   // The snapshot key the currently executing task saved to after execution.
   SnapshotKey snapshot_key = 4;
+
+  // The time at which the VM was created.
+  google.protobuf.Timestamp created_timestamp = 5;
 }
 
 // SnapshotVersionMetadata contains the version ID to be used for snapshots.

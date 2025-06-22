@@ -10,6 +10,8 @@ go_library(
         "//cli/parser/arguments",
         "//cli/parser/bazelrc",
         "//proto:bazel_flags_go_proto",
+        "//server/util/lib/seq",
+        "//server/util/lib/set",
     ],
 )
 
