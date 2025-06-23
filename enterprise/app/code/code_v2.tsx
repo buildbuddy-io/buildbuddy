@@ -266,7 +266,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
   ticketsForPosition(pos: monaco.Position): string[] {
     const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
-    if (!refs?.length) {
+    if (!refs.length) {
       return [];
     }
     return refs.map((ref) => ref.targetTicket).filter((ticket) => ticket);
@@ -274,7 +274,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
   navigateToDefinitionOrPopulatePanel(pos: monaco.Position) {
     const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
-    if (!refs?.length) {
+    if (!refs.length) {
       return;
     }
 
@@ -515,7 +515,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return decor?.options?.after?.attachedData as kythe.proto.DecorationsReply.Reference | undefined;
   }
 
-  getKytheRefsForRange(range: monaco.Range): kythe.proto.DecorationsReply.Reference[] | undefined {
+  getKytheRefsForRange(range: monaco.Range): kythe.proto.DecorationsReply.Reference[] {
     // This finds the smallest decorations in a given range.
     // All decorations that share the same smallest span will be returned.
     // This is necessary because, for example, some definitions will have multiple
@@ -523,7 +523,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     // miss references.
     const decorInRange = this.editor?.getDecorationsInRange(range);
     if (!decorInRange) {
-      return undefined;
+      return [];
     }
 
     let refsInRange = decorInRange.map((decor) => this.decorToReference(decor)).filter((ref) => !!ref);
