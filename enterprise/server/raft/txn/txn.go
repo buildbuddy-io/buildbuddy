@@ -125,10 +125,6 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	return nil
 }
 
-func makeHeader(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
-	return header.New(rd, replica, rfpb.Header_LINEARIZABLE)
-}
-
 func (tc *Coordinator) prepareStatement(ctx context.Context, txnID []byte, statement *rfpb.TxnRequest_Statement) error {
 	batch := statement.GetRawBatch()
 	batch.TransactionId = txnID
@@ -148,7 +144,15 @@ func (tc *Coordinator) prepareStatement(ctx context.Context, txnID []byte, state
 	for retrier.Next() {
 		// Prepare each statement.
 		log.Infof("prepare statement for range %d", rangeID)
-		syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, statement.GetRange(), batch, makeHeader)
+
+		var headerFn header.MakeFunc
+		if statement.GetRangeValidationRequired() {
+			headerFn = header.MakeLinearizableWithRangeValidation
+		} else {
+			headerFn = header.MakeLinearizableWithoutRangeValidation
+		}
+
+		syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, statement.GetRange(), batch, headerFn)
 		if err == nil {
 			rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
 			if err := rsp.AnyError(); err != nil {
@@ -219,8 +223,14 @@ func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.Fi
 			}
 		}
 	}
+	var headerFn header.MakeFunc
+	if stmt.GetRangeValidationRequired() {
+		headerFn = header.MakeLinearizableWithRangeValidation
+	} else {
+		headerFn = header.MakeLinearizableWithoutRangeValidation
+	}
 
-	syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, stmt.GetRange(), batchProto, makeHeader)
+	syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, stmt.GetRange(), batchProto, headerFn)
 	if err != nil {
 		return err
 	}

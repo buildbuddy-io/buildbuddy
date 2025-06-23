@@ -2469,13 +2469,23 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		RangeId:       newRangeID,
 		InitialMember: initialMembers,
 	})
+	// Range Validation is required on the existing range to make sure that the
+	// existing leader/range lease holder has the update-to-date range descriptor.
+	// This is achieved by running the leftStmt sync propose on the machine with
+	// the range lease holder.
+	leftStmt.SetRangeValidationRequired(true)
 
 	rightStmt := tb.AddStatement()
 	rightStmt.SetRangeDescriptor(newRightRange).SetBatch(rightBatch)
 	rightStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
+	// The range descriptor is a new one instead of existing one. Do not validate range on SyncPropose
+	rightStmt.SetRangeValidationRequired(false)
 
 	metaStmt := tb.AddStatement()
 	metaStmt.SetRangeDescriptor(mrd).SetBatch(metaBatch)
+	// The range descriptor is from range cache and can be not-up-to date; but since the
+	// meta range descriptor itself is not changed, we don't need range validation.
+	metaStmt.SetRangeValidationRequired(false)
 	if err := s.txnCoordinator.RunTxn(ctx, tb); err != nil {
 		return nil, err
 	}
@@ -3066,15 +3076,30 @@ func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, 
 		localBatch.Add(metaRangeCasReq)
 		stmt := txn.AddStatement()
 		stmt.SetRangeDescriptor(mrd).SetBatch(localBatch)
+		// Range Validation is required on the existing range to make sure that the
+		// existing leader/range lease holder has the update-to-date range descriptor.
+		// This is achieved by running the stmt sync propose on the machine with
+		// the range lease holder. In this case, meta range itself is being
+		// modified.
+		stmt.SetRangeValidationRequired(true)
 	} else {
 		metaRangeBatch := rbuilder.NewBatchBuilder()
 		metaRangeBatch.Add(metaRangeCasReq)
 
 		stmt := txn.AddStatement()
 		stmt.SetRangeDescriptor(old).SetBatch(localBatch)
+		// Range Validation is required on the existing range to make sure that the
+		// existing leader/range lease holder has the update-to-date range descriptor.
+		// This is achieved by running the stmt sync propose on the machine with
+		// the range lease holder.
+		stmt.SetRangeValidationRequired(true)
 
 		stmt = txn.AddStatement()
 		stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)
+		// Since meta range descriptor is not changed, we don't need range
+		// validation. Also, mrd can be out of date since we get it from range
+		// cache.
+		stmt.SetRangeValidationRequired(false)
 	}
 	err = s.txnCoordinator.RunTxn(ctx, txn)
 	if err != nil {

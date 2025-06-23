@@ -263,7 +263,6 @@ func (s *Sender) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 }
 
 type runFunc func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error
-type makeHeaderFunc func(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header
 
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, mode rfpb.Header_ConsistencyMode) (int, error) {
 	return s.TryReplicas(ctx, rd, fn, func(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
@@ -272,7 +271,7 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 }
 
 // tryReplica tries the fn on the replica and returns whether to try a different replica
-func (s *Sender) tryReplica(ctx context.Context, rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor, fn runFunc, makeHeaderFn makeHeaderFunc) (bool, error) {
+func (s *Sender) tryReplica(ctx context.Context, rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor, fn runFunc, makeHeaderFn header.MakeFunc) (bool, error) {
 	select {
 	case <-ctx.Done():
 		return false, ctx.Err()
@@ -318,7 +317,7 @@ func (s *Sender) tryReplica(ctx context.Context, rd *rfpb.RangeDescriptor, repli
 	return false, err
 }
 
-func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, makeHeaderFn makeHeaderFunc) (replicaIdx int, returnedErr error) {
+func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, makeHeaderFn header.MakeFunc) (replicaIdx int, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	attr := attribute.Int64("range_id", int64(rd.GetRangeId()))
 	spn.SetAttributes(attr)
@@ -561,7 +560,7 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 
 // SyncProposeWithRangeDescriptor calls SyncPropose on different replicas
 // specified in the given range descriptor, until one of the replica succeeds.
-func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest, makeHeaderFn makeHeaderFunc) (*rfpb.SyncProposeResponse, error) {
+func (s *Sender) SyncProposeWithRangeDescriptor(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest, makeHeaderFn header.MakeFunc) (*rfpb.SyncProposeResponse, error) {
 	log.Infof("SyncProposeWithRD: %+v", rd)
 	var syncRsp *rfpb.SyncProposeResponse
 	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {

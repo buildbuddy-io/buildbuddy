@@ -396,9 +396,7 @@ func StartShard(ctx context.Context, store IStore, bootstrapInfo *ClusterBootstr
 		RangeId:  bootstrapInfo.rangeID,
 		Replicas: bootstrapInfo.Replicas,
 	}
-	syncRsp, err := store.Sender().SyncProposeWithRangeDescriptor(ctx, rd, batchProto, func(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
-		return header.NewWithoutRangeInfo(replica, rfpb.Header_LINEARIZABLE)
-	})
+	syncRsp, err := store.Sender().SyncProposeWithRangeDescriptor(ctx, rd, batchProto, header.MakeLinearizableWithoutRangeValidation)
 	if err != nil {
 		return err
 	}
