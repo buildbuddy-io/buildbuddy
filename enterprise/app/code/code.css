@@ -32,12 +32,13 @@
   background-color: #d2e3fc;
   color: #1967d2;
   font-size: 12px;
+  line-height: 16px;
   font-weight: 600;
 }
 
 .xrefs-container {
   overflow-y: auto;
-  height: calc(100% - 32px);
+  height: calc(100% - 36px);
 }
 
 .xrefs-file {
