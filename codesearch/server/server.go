@@ -48,6 +48,9 @@ import (
 	ftsrv "kythe.io/kythe/go/serving/filetree"
 	gsrv "kythe.io/kythe/go/serving/graph"
 	xsrv "kythe.io/kythe/go/serving/xrefs"
+
+	kgpb "kythe.io/kythe/proto/graph_go_proto"
+	kxpb "kythe.io/kythe/proto/xref_go_proto"
 )
 
 const (
@@ -152,7 +155,7 @@ func (css *codesearchServer) incrementalUpdate(ctx context.Context, req *inpb.In
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("Starting incremental update %q@%s", repoURL)
+	log.Infof("Starting incremental update %q", repoURL)
 
 	r := index.NewReader(ctx, css.db, req.GetNamespace(), schema.MetadataSchema())
 	lastIndexedSHA, err := github.GetLastIndexedCommitSha(r, repoURL)
@@ -333,7 +336,7 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 		case inpb.ReplacementStrategy_REPLACE_REPO:
 			rsp, err = css.fullyReindex(ctx, req)
 		case inpb.ReplacementStrategy_DROP_NAMESPACE:
-			rsp, err = css.dropNamespace(ctx, req)
+			rsp, err = css.dropNamespace(req)
 		default:
 			return status.InvalidArgumentErrorf("Invalid replacement strategy %s", req.GetReplacementStrategy())
 		}
@@ -354,7 +357,7 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 	return rsp, nil
 }
 
-func (css *codesearchServer) dropNamespace(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+func (css *codesearchServer) dropNamespace(req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
 	log.Infof("Dropping namespace %s", req.GetNamespace())
 
 	writer, err := index.NewWriter(css.db, req.GetNamespace())
@@ -494,6 +497,144 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	return rsp, nil
 }
 
+func (css *codesearchServer) extendedXrefs(ctx context.Context, req *srpb.ExtendedXrefsRequest) (*srpb.ExtendedXrefsReply, error) {
+	// This function exists to populate the references panel in the code browser UI.
+	// The overall approach is:
+	// 1. Fetch "interesting" edges from the requested tickets
+	// 2. Fetch xrefs for each target node in the fetched edges
+	// 3. Bucket the target nodes into the appropriate fields in the response.
+
+	ticks := req.GetTickets()
+
+	// TODO(jdelfino): Handle generated code by dealing with /kythe/edge/generates edges
+
+	// See https://kythe.io/docs/schema/ for edge type definitions.
+	// Every edge that leads to data that might want to be shown in the references panel of the UI
+	// should be included here.
+	edgeTypes := []string{
+		"/kythe/edge/overrides",
+		"%/kythe/edge/overrides",
+		"/kythe/edge/overrides/transitive",
+		"%/kythe/edge/overrides/transitive",
+		"/kythe/edge/satisfies",
+		"%/kythe/edge/satisfies",
+		"/kythe/edge/extends",
+		"%/kythe/edge/extends",
+	}
+	edgeReq := &kgpb.EdgesRequest{
+		Ticket: ticks,
+		Kind:   edgeTypes,
+	}
+
+	edgeReply, err := css.gs.Edges(ctx, edgeReq)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to get edges for ticket %s: %v", ticks, err)
+	}
+
+	// Fetch xrefs for each ticket in the edge reply.
+	xrefTickets := make([]string, len(ticks))
+	copy(xrefTickets, ticks)
+
+	for _, edgeSet := range edgeReply.GetEdgeSets() {
+		for _, edges := range edgeSet.GetGroups() {
+			for _, edge := range edges.GetEdge() {
+				xrefTickets = append(xrefTickets, edge.GetTargetTicket())
+			}
+		}
+	}
+
+	xrefReq := &kxpb.CrossReferencesRequest{
+		Ticket:          xrefTickets,
+		DefinitionKind:  kxpb.CrossReferencesRequest_ALL_DEFINITIONS,
+		DeclarationKind: kxpb.CrossReferencesRequest_ALL_DECLARATIONS,
+		ReferenceKind:   kxpb.CrossReferencesRequest_ALL_REFERENCES,
+		Snippets:        kxpb.SnippetsKind_DEFAULT,
+	}
+	xrefReply, err := css.xs.CrossReferences(ctx, xrefReq)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to get cross-references for tickets %s: %v", xrefTickets, err)
+	}
+
+	// Combine the data from edges and xrefs into the final response.
+
+	repl := &srpb.ExtendedXrefsReply{
+		Overrides:    make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		OverriddenBy: make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		Extends:      make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		ExtendedBy:   make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+		References:   make([]*kxpb.CrossReferencesReply_RelatedAnchor, 0),
+	}
+
+	handleEdges(
+		[]string{"/kythe/edge/overrides", "/kythe/edge/overrides/transitive"},
+		edgeReply,
+		xrefReply,
+		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
+			repl.Overrides = append(repl.Overrides, xrefs.GetDefinition()...)
+			// Add callers of the overridden function to the call hierarchy.
+			repl.References = append(repl.References, xrefs.GetReference()...)
+			repl.References = append(repl.References, xrefs.GetCaller()...)
+		})
+
+	handleEdges(
+		[]string{"%/kythe/edge/overrides", "%/kythe/edge/overrides/transitive"},
+		edgeReply,
+		xrefReply,
+		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
+			repl.OverriddenBy = append(repl.Overrides, xrefs.GetDefinition()...)
+			// Add callers of any overridding implementations to the call hierarchy.
+			repl.References = append(repl.References, xrefs.GetReference()...)
+			repl.References = append(repl.References, xrefs.GetCaller()...)
+		})
+
+	handleEdges(
+		[]string{"/kythe/edge/satisfies", "/kythe/edge/extends"},
+		edgeReply,
+		xrefReply,
+		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
+			repl.Extends = append(repl.Extends, xrefs.GetDefinition()...)
+			// Include references to the superclass/interface
+			repl.References = append(repl.References, xrefs.GetReference()...)
+		})
+
+	handleEdges(
+		[]string{"%/kythe/edge/satisfies", "%/kythe/edge/extends"},
+		edgeReply,
+		xrefReply,
+		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
+			repl.ExtendedBy = append(repl.Extends, xrefs.GetDefinition()...)
+			// Include references to the subclasses/implementations?
+			repl.References = append(repl.References, xrefs.GetReference()...)
+		})
+
+	for _, tick := range ticks {
+		// Include xrefs for the original tickets as well.
+		repl.Definitions = append(repl.Definitions, xrefReply.GetCrossReferences()[tick].GetDefinition()...)
+		repl.References = append(repl.References, xrefReply.GetCrossReferences()[tick].GetReference()...)
+		repl.References = append(repl.References, xrefReply.GetCrossReferences()[tick].GetCaller()...)
+	}
+
+	return repl, nil
+}
+
+// handleEdges is a helper function that pulls sets of edges from an EdgesReply, looks up the xrefs
+// for each target node of the matched edges, and calls a handler function on each one.
+func handleEdges(edgeTypes []string, edgeReply *kgpb.EdgesReply, xrefs *kxpb.CrossReferencesReply, handler func(anchor *kxpb.CrossReferencesReply_CrossReferenceSet)) {
+	for _, edgeSet := range edgeReply.GetEdgeSets() {
+		for _, edgeType := range edgeTypes {
+			if edges, ok := edgeSet.GetGroups()[edgeType]; ok {
+				for _, edge := range edges.GetEdge() {
+					xrefs, ok := xrefs.GetCrossReferences()[edge.GetTargetTicket()]
+					if !ok {
+						continue
+					}
+					handler(xrefs)
+				}
+			}
+		}
+	}
+}
+
 func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequest) (*srpb.KytheResponse, error) {
 	var rsp = new(srpb.KytheResponse)
 	var err = status.UnimplementedError("method not implemented in codesearch backend")
@@ -529,6 +670,12 @@ func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequ
 			CrossReferencesReply: crossReferencesReply,
 		}
 		err = crossReferencesErr
+	case *srpb.KytheRequest_ExtendedXrefsRequest:
+		xrefsReply, xrefsErr := css.extendedXrefs(ctx, req.GetExtendedXrefsRequest())
+		rsp.Value = &srpb.KytheResponse_ExtendedXrefsReply{
+			ExtendedXrefsReply: xrefsReply,
+		}
+		err = xrefsErr
 	}
 
 	return rsp, err
