@@ -2152,12 +2152,11 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                         document.removeEventListener("mousemove", this.resizeXrefsProp, false);
                       });
                     }
-                  }}>
-                </div>
+                  }}></div>
                 <div
                   // TODO(jdelfino): Add an error state if xrefs fail to load
                   className="code-search-xrefs"
-                  style={{ height: this.state.xrefsHeight + 'px'}}>
+                  style={{ height: this.state.xrefsHeight + "px" }}>
                   {this.state.xrefsLoading && <div className="loading"></div>}
                   {!this.state.xrefsLoading && this.renderXrefs()}
                 </div>
