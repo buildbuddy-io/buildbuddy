@@ -2150,7 +2150,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                     window.addEventListener("mousemove", this.resizeXrefsProp, false);
                   }}></div>
                 <div
-                  // TODO(jdelfino): Add an error state if xrefs fail to load
+                  { /* TODO(jdelfino): Add an error state if xrefs fail to load */ }
                   className="code-search-xrefs"
                   style={{ height: this.state.xrefsHeight + "px" }}>
                   {this.state.xrefsLoading && <div className="loading"></div>}
