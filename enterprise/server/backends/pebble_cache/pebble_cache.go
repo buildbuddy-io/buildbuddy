@@ -2726,9 +2726,11 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			// but was chosen based on the default sampler refresh period of 5 minutes to
 			// ensure that samples mostly decay within a couple hours (normally it's faster
 			// than this, assuming eviction is firing on all cylinders).
+			e.mu.Lock()
 			for k, v := range e.sizeByGroup {
 				e.sizeByGroup[k] = int64(float64(v) * (*groupSizeSampleDecayRate))
 			}
+			e.mu.Unlock()
 		}
 		totalCount += 1
 		if !iter.Valid() {
