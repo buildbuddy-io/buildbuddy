@@ -37,7 +37,7 @@
 
 .xrefs-container {
   overflow-y: auto;
-  height: 85%;
+  height: calc(100% - 32px);
 }
 
 .xrefs-file {
