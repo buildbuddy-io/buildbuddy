@@ -99,16 +99,38 @@ message SearchResponse {
   PerformanceMetrics performance_metrics = 4;
 }
 
+// "Extended" xrefs are cross-references that are needed by the code browser UI, but that are not
+// available via a single kythe CrossReferences request. The returned data requires navigating
+// the annotation graph to find additional nodes and fetch their cross-references.
+// This request/reply are intended to provide the data needed to populate the "References" panel
+// in the UI.
 message ExtendedXrefsRequest {
   repeated string tickets = 1;
 }
 
+// See https://kythe.io/docs/schema/ for Kythe schema details.
 message ExtendedXrefsReply {
+  // Definitions of the requested ticket
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor definitions = 1;
+
+  // Overrides of the requested ticket.
+  // See /kythe/edge/overrides[/transitive]
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor overrides = 2;
+
+  // Places where the requested ticket is overridden. The inverse of `overrides`.
+  // See /kythe/edge/overrides[/transitive]
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor overridden_by = 3;
+
+  // References to entities which the requested ticket extends.
+  // See /kythe/edge/extends and /kythe/edge/satisfies.
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor extends = 4;
+
+  // References to entities which extend the requested ticket. The inverse of `extends`.
+  // See /kythe/edge/extends and /kythe/edge/satisfies.
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor extended_by = 5;
+
+  // Extended references to the requested ticket. This will include references to super/sub-classes
+  // and overridden/overriding methods.
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor references = 6;
 }
 

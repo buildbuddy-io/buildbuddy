@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
@@ -334,7 +333,6 @@ type TestTable struct {
 }
 
 func (tt *TestTable) Edges(ctx context.Context, edgeReq *gpb.EdgesRequest) (*gpb.EdgesReply, error) {
-	fmt.Printf("TestTable Edges called with: %v\n", edgeReq)
 	tt.requestedTickets = edgeReq.GetTicket()
 	return tt.response, nil
 }
@@ -347,7 +345,6 @@ type TestXrefService struct {
 }
 
 func (xs *TestXrefService) CrossReferences(ctx context.Context, req *xrefpb.CrossReferencesRequest) (*xrefpb.CrossReferencesReply, error) {
-	fmt.Printf("TestXrefService CrossReferences called with: %v\n", req)
 	xs.requestedTickets = req.GetTicket()
 	return xs.response, nil
 }
