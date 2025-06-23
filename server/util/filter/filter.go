@@ -37,7 +37,7 @@ func executionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error)
 	case stat_filter.ExecutionMetricType_EXECUTION_CPU_NANOS_EXECUTION_METRIC:
 		return "cpu_nanos", nil
 	case stat_filter.ExecutionMetricType_EXECUTION_AVERAGE_MILLICORES_EXECUTION_METRIC:
-		return "IF(cpu_nanos <= 0 OR (execution_completed_timestamp_usec - execution_start_timestamp_usec) <= 0, 0, divideDecimal(toDecimal64(cpu_nanos, 4), toDecimal64((execution_completed_timestamp_usec - execution_start_timestamp_usec) * 1000, 4)))", nil
+		return "IF(cpu_nanos <= 0 OR (execution_completed_timestamp_usec - execution_start_timestamp_usec) <= 0, 0, intDivOrZero(cpu_nanos*1000, (execution_completed_timestamp_usec - execution_start_timestamp_usec) * 1000))", nil
 	default:
 		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
 	}
