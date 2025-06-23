@@ -12,6 +12,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:soci_go_proto",
+        "//proto/api/v1:api_v1_go_proto",
         "//server/interfaces",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_jonboulle_clockwork//:clockwork",

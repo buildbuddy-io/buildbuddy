@@ -11,6 +11,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -138,6 +139,7 @@ type RealEnv struct {
 	hitTrackerFactory                interfaces.HitTrackerFactory
 	hitTrackerServiceServer          hitpb.HitTrackerServiceServer
 	experimentFlagProvider           interfaces.ExperimentFlagProvider
+	apiServiceClient                 apipb.ApiServiceClient
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -845,4 +847,10 @@ func (r *RealEnv) GetExperimentFlagProvider() interfaces.ExperimentFlagProvider 
 }
 func (r *RealEnv) SetExperimentFlagProvider(experimentFlagProvider interfaces.ExperimentFlagProvider) {
 	r.experimentFlagProvider = experimentFlagProvider
+}
+func (r *RealEnv) GetApiClient() apipb.ApiServiceClient {
+	return r.apiServiceClient
+}
+func (r *RealEnv) SetApiClient(c apipb.ApiServiceClient) {
+	r.apiServiceClient = c
 }

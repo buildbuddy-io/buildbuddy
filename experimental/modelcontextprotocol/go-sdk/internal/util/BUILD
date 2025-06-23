@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "util",
+    srcs = ["util.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/internal/util",
+    visibility = ["//experimental/modelcontextprotocol/go-sdk:__subpackages__"],
+)
+
+go_test(
+    name = "util_test",
+    srcs = ["util_test.go"],
+    embed = [":util"],
+)
