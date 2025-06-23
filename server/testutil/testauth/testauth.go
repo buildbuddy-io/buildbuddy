@@ -148,14 +148,6 @@ func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 		return nil, err
 	}
 	return claims.ClaimsFromContext(ctx)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// return c, nil
-	// if jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
-	// 	return claims.ParseClaims(jwt)
-	// }
-	// return nil, authutil.AnonymousUserError("User not found")
 }
 
 func (a *TestAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
