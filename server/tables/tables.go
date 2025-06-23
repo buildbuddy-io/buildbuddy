@@ -708,6 +708,10 @@ type UsageLabels struct {
 	// Client describes the type of client responsible for the usage, such as
 	// "bazel" or "executor".
 	Client string `gorm:"not null;default:''"`
+
+	// Server describes the type of server that ultimately handled generating
+	// the response, for example "cache-proxy" or "app".
+	Server string `gorm:"not null;default:''"`
 }
 
 // Usage holds usage counter values for a group during a particular time period.
