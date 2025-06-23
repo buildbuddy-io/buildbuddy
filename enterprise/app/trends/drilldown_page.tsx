@@ -222,6 +222,12 @@ const METRIC_OPTIONS: MetricOption[] = [
       execution: stat_filter.ExecutionMetricType.EXECUTION_CPU_NANOS_EXECUTION_METRIC,
     }),
   },
+  {
+    name: "Execution avg cores used",
+    metric: stat_filter.Metric.create({
+      execution: stat_filter.ExecutionMetricType.EXECUTION_AVERAGE_MILLICORES_EXECUTION_METRIC,
+    }),
+  },
 ];
 
 export default class DrilldownPageComponent extends React.Component<Props, State> {
@@ -264,6 +270,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         case stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_SIZE_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_SIZE_EXECUTION_METRIC:
           return format.bytes(v);
+        case stat_filter.ExecutionMetricType.EXECUTION_AVERAGE_MILLICORES_EXECUTION_METRIC:
+          return (v / 1000).toFixed(2);
         default:
           return v.toString();
       }
