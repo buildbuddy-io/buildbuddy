@@ -14,20 +14,17 @@
 
 .code-search-xrefs {
   height: 300px;
-  overflow-y: hidden;
-  overflow-x: hidden;
+  overflow: hidden;
   border: 2px solid #fafafa;
+  border-top: 0px;
 }
 
-.code-search-xrefs::before {
-  content: "";
-  display: block;
-  background-color: #ccc;
-  position: relative;
-  top: 0;
+.code-search-xrefs-resize {
   height: 4px;
-  width: 100%;
+  background-color: #ccc;
   cursor: ns-resize;
+  border-left: 2px solid #fafafa;
+  border-right: 2px solid #fafafa;
 }
 
 .xrefs-header {

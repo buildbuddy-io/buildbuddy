@@ -1903,9 +1903,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   resizeXrefs(e: MouseEvent) {
-    console.log("mousemove", window.innerHeight - e.clientY, e);
     this.updateState({
-      xrefsHeight: Math.max(100, window.innerHeight - e.clientY),
+      xrefsHeight: Math.max(100, window.innerHeight - e.clientY - 6),
     });
   }
   resizeXrefsProp = this.resizeXrefs.bind(this);
@@ -2140,21 +2139,28 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
               />
             </div>
             {Boolean(this.state.xrefsLoading || this.state.extendedXrefs) && (
-              <div className="code-search-xrefs">
-                {/* TODO(jdelfino): Add an error state if xrefs fail to load */}
-                onMouseDown={(e) => {
-                  console.log("mousedown", e, e.nativeEvent.offsetY);
-                  if (e.nativeEvent.offsetY < 4) {
+              <div>
+                <div
+                  className="code-search-xrefs-resize"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
                     document.addEventListener("mousemove", this.resizeXrefsProp, false);
-                  }
-                }}
-                onMouseUp={(e) => {
-                  console.log("mouseup", e);
-                  document.removeEventListener("mousemove", this.resizeXrefsProp, false);
-                }}
-                style={{ height: this.state.xrefsHeight }}>
-                {this.state.xrefsLoading && <div className="loading"></div>}
-                {!this.state.xrefsLoading && this.renderXrefPanel()}
+                    if (e.currentTarget.getAttribute("resize-listener-installed") !== "true") {
+                      let targ = e.currentTarget;
+                      document.addEventListener("mouseup", () => {
+                        targ.setAttribute("resize-listener-installed", "true");
+                        document.removeEventListener("mousemove", this.resizeXrefsProp, false);
+                      });
+                    }
+                  }}>
+                </div>
+                <div
+                  // TODO(jdelfino): Add an error state if xrefs fail to load
+                  className="code-search-xrefs"
+                  style={{ height: this.state.xrefsHeight + 'px'}}>
+                  {this.state.xrefsLoading && <div className="loading"></div>}
+                  {!this.state.xrefsLoading && this.renderXrefs()}
+                </div>
               </div>
             )}
             {this.state.changes.size > 0 && !this.getQuery() && (
