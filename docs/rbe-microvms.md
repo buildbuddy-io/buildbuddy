@@ -92,9 +92,28 @@ sh_test(
 )
 ```
 
-Then, subsequent runs of this test should be able to take advantage of a
-warm microVM, with Docker already up and running, and the `ubuntu:20.04`
-image already cached from when we ran the previous action.
+Then, subsequent runs of this test should be able to take advantage of a warm
+microVM, with Docker already up and running, and the `ubuntu:20.04` image
+already cached. This is an optimization, and should not be relied upon for
+correctness. Finding a warm VM can fail for various reasons, like because it
+fell out of the cache or the machine that has it is fully loaded.
+
+This works across test targets, as long as their platform properties, including
+`exec_properties` are identical. To create separate microVMs, add any unique
+execution property. You should do this to separate tests with different
+environments, so the VMs do not become too large. For example, if you have some
+tests that use only MySQL, and others that only use PostgreSQL, they should have
+different `exec_properties`.
+
+A single microVM snapshot may be used by many test runs, and can survive for
+very long. To start a fresh instance, add an execution property or modify an
+existing one.
+
+For the above reasons, we recommend using `test.runner-recycling-key` to encode
+dependency and version information. For example, a test that keeps MySQL running
+between runs should have `"test.runner-recycling-key": "mysql@v1.2.3"`. When you
+switch to a new version of MySQL, you would update this to guarantee a new
+microVM.
 
 :::tip
 
