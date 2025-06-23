@@ -72,10 +72,10 @@ func StartupDebug(start time.Time) {
 //
 // We template this top support different types of Option slices; for example,
 // []*parsed.IndexedOption
-func Configure[O options.Option](bbOpts []O) {
-	verbose, err := options.AccumulateValues[O](
+func Configure[T options.Option](bbOpts []T) {
+	verbose, err := options.AccumulateValues[T](
 		*options.NewBoolOrEnum(false),
-		seq.Filter(bbOpts, options.NameFilter[O](logoptdef.Verbose.Name())),
+		seq.Filter(bbOpts, options.NameFilter[T](logoptdef.Verbose.Name())),
 	)
 	if err != nil {
 		log.Configure("")
@@ -94,17 +94,17 @@ func Configure[O options.Option](bbOpts []O) {
 		log.Warnf("Failed to interpret '%s' flag", logoptdef.Verbose.Name())
 	}
 
-	watch, err := options.AccumulateValues[O](
+	watch, err := options.AccumulateValues[T](
 		false,
-		seq.Filter(bbOpts, options.NameFilter[O](watchoptdef.Watch.Name())),
+		seq.Filter(bbOpts, options.NameFilter[T](watchoptdef.Watch.Name())),
 	)
 	if err != nil {
 		log.Warnf("Error encountered reading '%s' flag: %s", watchoptdef.Watch.Name(), err)
 	}
 	if watch {
-		watcherFlags, err := options.AccumulateValues[O](
+		watcherFlags, err := options.AccumulateValues[T](
 			[]string{},
-			seq.Filter(bbOpts, options.NameFilter[O](watchoptdef.WatcherFlags.Name())),
+			seq.Filter(bbOpts, options.NameFilter[T](watchoptdef.WatcherFlags.Name())),
 		)
 		if err != nil {
 			log.Warnf("Error encountered reading '%s' flag: %s", watchoptdef.WatcherFlags.Name(), err)
