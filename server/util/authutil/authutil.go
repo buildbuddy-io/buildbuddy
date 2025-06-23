@@ -175,7 +175,7 @@ func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticat
 
 // Returns a context derived from the provided context that has the
 // client-supplied parsed and cached for retrieval using GetAuthHeaders.
-func ContextWithAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator) context.Context {
+func ContextWithCachedAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator) context.Context {
 	headers := map[string][]string{}
 
 	keys := metadata.ValueFromIncomingContext(ctx, ClientIdentityHeaderName)
@@ -210,7 +210,7 @@ func GetAuthHeaders(ctx context.Context) map[string][]string {
 }
 
 // Adds the provided auth headers into the provided context and returns a new
-// context containng them. This function is intended for use along with
+// context containing them. This function is intended for use along with
 // GetAuthHeaders when auth headers must be copied between contexts.
 func AddAuthHeadersToContext(ctx context.Context, headers map[string][]string, authenticator interfaces.Authenticator) context.Context {
 	for key, values := range headers {

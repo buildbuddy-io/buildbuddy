@@ -165,7 +165,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 
 	// Store auth headers in context so they can be reused between the
 	// atime_updater and the hit_tracker_client.
-	ctx = authutil.ContextWithAuthHeaders(ctx, s.authenticator)
+	ctx = authutil.ContextWithCachedAuthHeaders(ctx, s.authenticator)
 
 	mergedResp := repb.BatchReadBlobsResponse{}
 	mergedDigests := []*repb.Digest{}
