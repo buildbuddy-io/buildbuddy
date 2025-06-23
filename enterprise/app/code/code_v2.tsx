@@ -564,6 +564,9 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     }
     window.addEventListener("resize", () => this.handleWindowResize());
     window.addEventListener("hashchange", () => this.focusLineNumberAndHighlightQuery());
+    window.addEventListener("mouseup", () => {
+      window.removeEventListener("mousemove", this.resizeXrefsProp, false);
+    });
 
     this.editor = monaco.editor.create(this.codeViewer.current!, {
       value: "",
@@ -2144,14 +2147,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                   className="code-search-xrefs-resize"
                   onMouseDown={(e) => {
                     e.preventDefault();
-                    document.addEventListener("mousemove", this.resizeXrefsProp, false);
-                    if (e.currentTarget.getAttribute("resize-listener-installed") !== "true") {
-                      let targ = e.currentTarget;
-                      document.addEventListener("mouseup", () => {
-                        targ.setAttribute("resize-listener-installed", "true");
-                        document.removeEventListener("mousemove", this.resizeXrefsProp, false);
-                      });
-                    }
+                    window.addEventListener("mousemove", this.resizeXrefsProp, false);
                   }}></div>
                 <div
                   // TODO(jdelfino): Add an error state if xrefs fail to load
