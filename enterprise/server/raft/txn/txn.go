@@ -128,8 +128,6 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 func (tc *Coordinator) prepareStatement(ctx context.Context, txnID []byte, statement *rfpb.TxnRequest_Statement) error {
 	batch := statement.GetRawBatch()
 	batch.TransactionId = txnID
-	rangeID := statement.GetRange().GetRangeId()
-
 	for _, hook := range statement.GetHooks() {
 		if hook.GetPhase() == rfpb.TransactionHook_PREPARE {
 			log.Infof("add post commit hook")
@@ -137,37 +135,11 @@ func (tc *Coordinator) prepareStatement(ctx context.Context, txnID []byte, state
 		}
 	}
 
-	retrier := retry.DefaultWithContext(ctx)
-
-	var lastError error
-
-	for retrier.Next() {
-		// Prepare each statement.
-		log.Infof("prepare statement for range %d", rangeID)
-
-		var headerFn header.MakeFunc
-		if statement.GetRangeValidationRequired() {
-			headerFn = header.MakeLinearizableWithRangeValidation
-		} else {
-			headerFn = header.MakeLinearizableWithoutRangeValidation
-		}
-
-		syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, statement.GetRange(), batch, headerFn)
-		if err == nil {
-			rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
-			if err := rsp.AnyError(); err != nil {
-				return err
-			}
-			log.Infof("prepare statement for range %d finished", rangeID)
-			return nil
-		}
-
-		if !status.IsOutOfRangeError(err) {
-			return err
-		}
-		lastError = err
+	err := tc.run(ctx, statement, batch)
+	if err != nil {
+		return status.WrapErrorf(err, "unable to prepare statement")
 	}
-	return status.UnavailableErrorf("prepareStatement retries exceeded for txid: %q err: %s", txnID, lastError)
+	return nil
 }
 
 func (tc *Coordinator) deleteTxnRecord(ctx context.Context, txnID []byte) error {
@@ -207,6 +179,34 @@ func (tc *Coordinator) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRe
 	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
 }
 
+func (tc *Coordinator) run(ctx context.Context, stmt *rfpb.TxnRequest_Statement, batch *rfpb.BatchCmdRequest) error {
+	var headerFn header.MakeFunc
+	if stmt.GetRangeValidationRequired() {
+		headerFn = header.MakeLinearizableWithRangeValidation
+	} else {
+		headerFn = header.MakeLinearizableWithoutRangeValidation
+	}
+	retrier := retry.DefaultWithContext(ctx)
+	var lastError error
+	for retrier.Next() {
+		syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, stmt.GetRange(), batch, headerFn)
+		if err == nil {
+			rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
+			if err := rsp.AnyError(); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		if !status.IsOutOfRangeError(err) {
+			return err
+		}
+		lastError = err
+	}
+	return status.UnavailableErrorf("tx.run retries exceeded for txid: %q err: %s", batch.GetTransactionId(), lastError)
+
+}
+
 func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.FinalizeOperation, stmt *rfpb.TxnRequest_Statement) error {
 	batch := rbuilder.NewBatchBuilder().SetTransactionID(txnID)
 	batch.SetFinalizeOperation(op)
@@ -223,19 +223,11 @@ func (tc *Coordinator) finalizeTxn(ctx context.Context, txnID []byte, op rfpb.Fi
 			}
 		}
 	}
-	var headerFn header.MakeFunc
-	if stmt.GetRangeValidationRequired() {
-		headerFn = header.MakeLinearizableWithRangeValidation
-	} else {
-		headerFn = header.MakeLinearizableWithoutRangeValidation
-	}
-
-	syncRsp, err := tc.sender().SyncProposeWithRangeDescriptor(ctx, stmt.GetRange(), batchProto, headerFn)
+	err = tc.run(ctx, stmt, batchProto)
 	if err != nil {
-		return err
+		return status.WrapErrorf(err, "unable to finalize txn on stmt")
 	}
-	rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
-	return rsp.AnyError()
+	return nil
 }
 
 func (tj *Coordinator) Start(ctx context.Context) {
