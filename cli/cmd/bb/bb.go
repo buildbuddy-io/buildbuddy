@@ -129,7 +129,7 @@ func run() (exitCode int, err error) {
 	// the command.
 	// This is to shortcut the startup-time of the bazel client / server if they
 	// do not need to be run.
-	if opts, command, args := StripBBOptionsAndCommand(os.Args[1:]); command != nil && command.Name != "help" {
+	if opts, command, args := interpretAsBBCliCommand(os.Args[1:]); command != nil && command.Name != "help" {
 		// Let the help parser handle a help command; otherwise, let's handle the
 		// CLI command.
 		Configure(opts)
@@ -162,13 +162,13 @@ func run() (exitCode int, err error) {
 	return handleBazelCommand(start, args, originalArgs)
 }
 
-// StripBBOptionsAndCommand strips the bb options from the beginning of a bb
+// interpretAsBBCliCommand strips the bb options from the beginning of a bb
 // command and returns the options, the command, and the truncated args. If any
 // unrecognized option is encountered before the first positional argument or if
 // the first positional argument is not a bb command (like it might be if it
 // were a bazel command, for example), the args are returned untouched, the
 // options will be nil, and the command will be nil.
-func StripBBOptionsAndCommand(args []string) ([]options.Option, *cli_command.Command, []string) {
+func interpretAsBBCliCommand(args []string) ([]options.Option, *cli_command.Command, []string) {
 	p := parser.GetNativeParser().StartupOptionParser
 	p.Permissive = true
 	opts, argIndex, err := p.ParseOptions(args, "startup")
