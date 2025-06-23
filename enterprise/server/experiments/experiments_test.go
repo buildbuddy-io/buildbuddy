@@ -146,6 +146,7 @@ func TestSelection(t *testing.T) {
 	offlineFlagPath := writeFlagConfig(t, testFlags)
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	openfeature.SetProviderAndWait(provider)
+	defer provider.Shutdown()
 
 	fp, err := experiments.NewFlagProvider("test-name")
 	require.NoError(t, err)
@@ -205,6 +206,7 @@ func TestMultiVariant(t *testing.T) {
 	offlineFlagPath := writeFlagConfig(t, testFlags)
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	openfeature.SetProviderAndWait(provider)
+	defer provider.Shutdown()
 
 	fp, err := experiments.NewFlagProvider("test-name")
 	require.NoError(t, err)

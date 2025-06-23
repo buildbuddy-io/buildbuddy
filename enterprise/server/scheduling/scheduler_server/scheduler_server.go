@@ -1121,7 +1121,77 @@ func (s *SchedulerServer) GetSharedExecutorPoolGroupID() string {
 	return *sharedExecutorPoolGroupID
 }
 
-func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os, arch string, originalPool *interfaces.PoolInfo) *interfaces.PoolInfo {
+	fp := s.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return nil
+	}
+
+	const experimentName = "remote_execution.pool_override"
+	obj := fp.Object(
+		ctx, experimentName, map[string]any{},
+		experiments.WithContext("os", os),
+		experiments.WithContext("arch", arch),
+		experiments.WithContext("pool", originalPool.Name),
+		experiments.WithContext("self_hosted", originalPool.IsSelfHosted),
+	)
+
+	// If null or empty, don't override.
+	if len(obj) == 0 {
+		return nil
+	}
+
+	log.CtxInfof(ctx, "Pool override: %+#v", obj)
+
+	override := &interfaces.PoolInfo{}
+	if groupIDValue, ok := obj["group_id"]; ok {
+		if groupID, ok := groupIDValue.(string); ok {
+			override.GroupID = groupID
+		} else {
+			log.CtxWarningf(ctx, "%s: 'group_id' is not a string: %v", experimentName, groupIDValue)
+			return nil
+		}
+	} else {
+		// group_id is not set; use the original pool's group ID.
+		override.GroupID = originalPool.GroupID
+	}
+	if poolValue, ok := obj["pool"]; ok {
+		if pool, ok := poolValue.(string); ok {
+			override.Name = pool
+		} else {
+			log.CtxWarningf(ctx, "%s: 'pool' is not a string: %v", experimentName, poolValue)
+			return nil
+		}
+	} else {
+		// pool is not set; use the original pool's name.
+		override.Name = originalPool.Name
+	}
+
+	if override.GroupID == *sharedExecutorPoolGroupID {
+		override.IsShared = true
+	} else {
+		override.IsSelfHosted = true
+	}
+
+	return override
+}
+
+func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+	poolInfo, err := s.getPoolInfo(ctx, os, requestedPool, workflowID, poolType)
+	if err != nil {
+		return nil, err
+	}
+	// Now that we know the pool we would normally route to, feed that into the
+	// experiment context and use that to potentially reroute to a different
+	// pool.
+	if override := s.getPoolOverrideFromExperiments(ctx, os, arch, poolInfo); override != nil {
+		return override, nil
+	}
+
+	return poolInfo, nil
+}
+
+func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
 	// Note: The defaultPoolName flag only applies to the shared executor pool.
 	// The pool name for self-hosted pools is always determined directly from
 	// platform props.
