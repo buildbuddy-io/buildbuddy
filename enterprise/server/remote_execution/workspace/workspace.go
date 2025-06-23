@@ -280,7 +280,9 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		return &dirtools.TransferInfo{}, nil
 	}
 
-	opts := &dirtools.DownloadTreeOpts{}
+	opts := &dirtools.DownloadTreeOpts{
+		CaseInsensitive: ws.Opts.CaseInsensitive,
+	}
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
