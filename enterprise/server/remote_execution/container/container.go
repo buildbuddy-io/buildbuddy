@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -49,6 +50,10 @@ const (
 
 	// How often to poll container stats.
 	statsPollInterval = 50 * time.Millisecond
+
+	// How long to extend the context deadline to allow the final container
+	// stats to be collected once execution has completed.
+	statsFinalMeasurementDeadlineExtension = 1 * time.Second
 
 	// Max uncompressed size in bytes to retain for timeseries data. After this
 	// limit is reached, samples are dropped.
@@ -328,6 +333,8 @@ func (s *UsageStats) TrackExecution(ctx context.Context, lifetimeStatsFn func(ct
 	// observed value.
 	s.Reset()
 
+	originalCtx := ctx
+
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
@@ -350,6 +357,24 @@ func (s *UsageStats) TrackExecution(ctx context.Context, lifetimeStatsFn func(ct
 		for {
 			select {
 			case <-ctx.Done():
+				// Do one more stats collection right at the end of the
+				// execution. This serves two purposes: first, it makes sure we
+				// count any CPU usage that we might've missed at the very end
+				// of the execution. Second, it ensures we update memory usage
+				// to reflect what the task looks like at the very end, after
+				// the main task process has exited, which is important since we
+				// don't recycle runners if their current memory usage exceeds a
+				// certain threshold.
+				ctx, cancel := background.ExtendContextForFinalization(originalCtx, statsFinalMeasurementDeadlineExtension)
+				defer cancel()
+				stats, err := lifetimeStatsFn(ctx)
+				if err == nil {
+					// TODO: an error will be returned for podman here because
+					// we run containers with --rm, which deletes the container
+					// cgroup. We should do the removal in Remove() instead, so
+					// that we can reliably perform the final stats collection.
+					s.Update(stats)
+				}
 				return
 			case <-t.C:
 				stats, err := lifetimeStatsFn(ctx)
