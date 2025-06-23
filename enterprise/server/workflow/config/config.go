@@ -256,7 +256,7 @@ find -L ../bazel-out/*/extra_actions -name "*.cxx.kzip" \
 	--experimental_dynamic_claim_cache="--SERVER=localhost:11211" \
 	-cache="--SERVER=localhost:11211" \
 	-cache_stats \
-  | $KYTHE_DIR/tools/dedup_stream >> kythe_entries_all
+  | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
 kill $memcached_pid
 
 "$KYTHE_DIR"/tools/write_tables --entries kythe_entries --out leveldb:kythe_tables
