@@ -40,6 +40,9 @@ const (
 	// The context key under which client-identity information is stored.
 	ClientIdentityHeaderName = "x-buildbuddy-client-identity"
 
+	// The context key under which auth headers are stored.
+	authHeadersKey = "auth-headers"
+
 	// WARNING: app/auth/auth_service.ts depends on these messages matching.
 	UserNotFoundMsg   = "User not found"
 	LoggedOutMsg      = "User logged out"
@@ -170,10 +173,9 @@ func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticat
 	return u.GetCacheEncryptionEnabled()
 }
 
-// Extracts auth headers from the provided context and returns them as a map.
-// This function is intended for use along with AddAuthHeadersToContext when
-// auth headers must be copied between contexts.
-func GetAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator) map[string][]string {
+// Returns a context derived from the provided context that has the
+// client-supplied parsed and cached for retrieval using GetAuthHeaders.
+func ContextWithAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator) context.Context {
 	headers := map[string][]string{}
 
 	keys := metadata.ValueFromIncomingContext(ctx, ClientIdentityHeaderName)
@@ -186,6 +188,23 @@ func GetAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator)
 
 	if jwt := authenticator.TrustedJWTFromAuthContext(ctx); jwt != "" {
 		headers[ContextTokenStringKey] = []string{jwt}
+	}
+
+	return context.WithValue(ctx, authHeadersKey, headers)
+}
+
+// Retrieves a multi-map of the auth headers cached in the provided context.
+func GetAuthHeaders(ctx context.Context) map[string][]string {
+	rawHeaders := ctx.Value(authHeadersKey)
+	if rawHeaders == nil {
+		alert.UnexpectedEvent("No auth headers found in context, did you remember to call authutil.StoreAuthHeadersInContext?")
+		return map[string][]string{}
+	}
+
+	headers, ok := rawHeaders.(map[string][]string)
+	if !ok {
+		alert.UnexpectedEvent("Auth headers in context have the wrong type")
+		return map[string][]string{}
 	}
 	return headers
 }
