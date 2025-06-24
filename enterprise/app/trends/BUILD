@@ -9,7 +9,6 @@ ts_library(
     srcs = ["trends.tsx"],
     deps = [
         "//:node_modules/@types/long",
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/long",
         "//:node_modules/moment",
@@ -39,7 +38,6 @@ ts_library(
     srcs = ["common.ts"],
     deps = [
         "//:node_modules/@types/d3-time",
-        "//:node_modules/@types/moment",
         "//:node_modules/d3-time",
         "//:node_modules/moment",
         "//:node_modules/tslib",
@@ -64,7 +62,6 @@ ts_library(
     name = "trends_requests",
     srcs = ["trends_requests.ts"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/moment",
         "//:node_modules/tslib",
         "//app/capabilities",
@@ -92,7 +89,6 @@ ts_library(
     srcs = ["drilldown_page.tsx"],
     deps = [
         "//:node_modules/@types/long",
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/long",
         "//:node_modules/lucide-react",
@@ -129,7 +125,6 @@ ts_library(
     deps = [
         "//:node_modules/@types/d3-scale",
         "//:node_modules/@types/long",
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/d3-scale",
         "//:node_modules/long",

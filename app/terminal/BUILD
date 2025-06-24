@@ -9,7 +9,6 @@ ts_library(
     srcs = ["terminal.tsx"],
     deps = [
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-virtualized-auto-sizer",
         "//:node_modules/@types/react-window",
         "//:node_modules/lucide-react",
         "//:node_modules/memoize-one",
