@@ -141,7 +141,7 @@ func MakeExecutable(t testing.TB, rootDir string, path string) {
 
 func WriteFile(t testing.TB, rootDir, path, content string) string {
 	fullPath := filepath.Join(rootDir, path)
-	err := os.MkdirAll(filepath.Dir(path), 0755)
+	err := os.MkdirAll(filepath.Dir(fullPath), 0755)
 	require.NoError(t, err)
 	err = os.WriteFile(fullPath, []byte(content), 0644)
 	require.NoError(t, err)

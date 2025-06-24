@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -1148,32 +1149,21 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 		if groupID, ok := groupIDValue.(string); ok {
 			override.GroupID = groupID
 		} else {
-			log.CtxWarningf(ctx, "%s: 'group_id' is not a string: %v", experimentName, groupIDValue)
+			alert.CtxUnexpectedEvent(ctx, "%s: 'group_id' is not a string: %v", experimentName, groupIDValue)
 			return nil
 		}
-	} else {
-		// group_id is not set; use the original pool's group ID.
-		override.GroupID = originalPool.GroupID
 	}
 	if poolValue, ok := obj["pool"]; ok {
 		if pool, ok := poolValue.(string); ok {
 			override.Name = pool
 		} else {
-			log.CtxWarningf(ctx, "%s: 'pool' is not a string: %v", experimentName, poolValue)
+			alert.CtxUnexpectedEvent(ctx, "%s: 'pool' is not a string: %v", experimentName, poolValue)
 			return nil
 		}
-	} else {
-		// pool is not set; use the original pool's name.
-		override.Name = originalPool.Name
 	}
 
-	if override.GroupID == *sharedExecutorPoolGroupID {
-		override.IsSelfHosted = false
-		override.IsShared = true
-	} else {
-		override.IsSelfHosted = true
-		override.IsShared = false
-	}
+	override.IsShared = override.GroupID == *sharedExecutorPoolGroupID
+	override.IsSelfHosted = !override.IsShared
 
 	return &override
 }
