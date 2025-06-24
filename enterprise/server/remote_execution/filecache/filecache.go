@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"hash"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -462,9 +463,10 @@ type verifiedWriter struct {
 	ctx context.Context
 	fc  *fileCache
 
-	csum hash.Hash
-	node *repb.FileNode
-	file *os.File
+	digestFunction repb.DigestFunction_Value
+	csum           hash.Hash
+	node           *repb.FileNode
+	file           *os.File
 }
 
 func newVerifiedWriter(ctx context.Context, fc *fileCache, node *repb.FileNode, digestFunction repb.DigestFunction_Value, file *os.File) (*verifiedWriter, error) {
@@ -473,12 +475,35 @@ func newVerifiedWriter(ctx context.Context, fc *fileCache, node *repb.FileNode, 
 		return nil, err
 	}
 	return &verifiedWriter{
-		ctx:  ctx,
-		fc:   fc,
-		csum: csum,
-		node: node,
-		file: file,
+		ctx:            ctx,
+		fc:             fc,
+		digestFunction: digestFunction,
+		csum:           csum,
+		node:           node,
+		file:           file,
 	}, nil
+}
+
+func (v *verifiedWriter) Seek(offset int64, whence int) (int64, error) {
+	if whence != io.SeekStart {
+		return 0, fmt.Errorf("unsupported whence for file cache writer: %d", whence)
+	}
+	if offset != 0 {
+		return 0, errors.New("filecache writer only supports seeking to start")
+	}
+
+	ret, err := v.file.Seek(offset, whence)
+	if err != nil {
+		return 0, err
+	}
+
+	csum, err := digest.HashForDigestType(v.digestFunction)
+	if err != nil {
+		return 0, err
+	}
+	v.csum = csum
+
+	return ret, nil
 }
 
 func (v *verifiedWriter) Write(p []byte) (n int, err error) {
