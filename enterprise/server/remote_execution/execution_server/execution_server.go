@@ -722,7 +722,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		predictedSize = sizer.Predict(ctx, executionTask)
 	}
 
-	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, props.OS, props.Pool, props.WorkflowID, props.PoolType)
+	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return "", nil, status.WrapError(err, "get executor pool info")
 	}
@@ -1380,7 +1380,7 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 		return err
 	}
 
-	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Pool, plat.WorkflowID, plat.PoolType)
+	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Arch, plat.Pool, plat.WorkflowID, plat.PoolType)
 	if err != nil {
 		return status.InternalErrorf("failed to determine executor pool: %s", err)
 	}
