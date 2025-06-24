@@ -48,9 +48,6 @@ const (
 	// instead.
 	noExitCode = -2
 
-	// How often to poll container stats.
-	statsPollInterval = 50 * time.Millisecond
-
 	// How long to extend the context deadline to allow the final container
 	// stats to be collected once execution has completed.
 	statsFinalMeasurementDeadlineExtension = 1 * time.Second
@@ -67,6 +64,7 @@ var (
 
 	recordUsageTimelines          = flag.Bool("executor.record_usage_timelines", false, "Capture resource usage timeseries data in UsageStats for each task.")
 	imagePullTimeout              = flag.Duration("executor.image_pull_timeout", 5*time.Minute, "How long to wait for the container image to be pulled before returning an Unavailable (retryable) error for an action execution attempt. Applies to all isolation types (docker, firecracker, etc.)")
+	cgroupStatsPollInterval       = flag.Duration("executor.cgroup_stats_poll_interval", 500*time.Millisecond, "How often to poll container stats.")
 	debugUseLocalImagesOnly       = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 	debugEnableAnonymousRecycling = flag.Bool("debug_enable_anonymous_runner_recycling", false, "Whether to enable runner recycling for unauthenticated requests. For debugging purposes only - do not use in production.")
 
@@ -352,7 +350,7 @@ func (s *UsageStats) TrackExecution(ctx context.Context, lifetimeStatsFn func(ct
 			}
 		}()
 
-		t := time.NewTicker(statsPollInterval)
+		t := time.NewTicker(*cgroupStatsPollInterval)
 		defer t.Stop()
 		for {
 			select {
