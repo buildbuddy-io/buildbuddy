@@ -485,6 +485,9 @@ func newVerifiedWriter(ctx context.Context, fc *fileCache, node *repb.FileNode, 
 }
 
 func (v *verifiedWriter) Seek(offset int64, whence int) (int64, error) {
+	if v.file == nil {
+		return 0, errors.New("file cache writer is closed")
+	}
 	if whence != io.SeekStart {
 		return 0, fmt.Errorf("unsupported whence for file cache writer: %d", whence)
 	}
