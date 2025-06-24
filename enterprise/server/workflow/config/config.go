@@ -238,14 +238,28 @@ func prepareKytheOutputs(dirName string) string {
 	buf := fmt.Sprintf(`
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 ulimit -n 10240
-find -L bazel-out/ -name *.go.kzip -print0 | xargs -r0 zipmerge output.go.kzip
-find -L bazel-out/ -name *.protobuf.kzip -print0 | xargs -r0 zipmerge output.protobuf.kzip
 
-if [ -f output.go.kzip ]; then
-  "$KYTHE_DIR"/indexers/go_indexer -continue output.go.kzip >> kythe_entries
-fi
-if [ -f output.protobuf.kzip ]; then
-  "$KYTHE_DIR"/indexers/proto_indexer -index_file output.protobuf.kzip >> kythe_entries
+find -L ../bazel-out/ -name "*.go.kzip" | parallel --gnu $KYTHE_DIR/indexers/go_indexer -continue | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L ../bazel-out/ -name "*.proto.kzip" | parallel --gnu $KYTHE_DIR/indexers/proto_indexer -index_file {} | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+find -L bazel-out -name '*.java.kzip' | parallel --gnu  java -jar $KYTHE_DIR/indexers/java_indexer.jar | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+
+# cxx indexing needs a cache to complete in a "reasonable" amount of time. It still takes a long time
+# and produces very large indices.
+# See https://groups.google.com/g/kythe/c/xKXE3S1JIRI for discussion of these args.
+# TODO(jdelfino): apt update / install are slow - consider either creating a statically linked
+# memcached binary, or installing it in the container image.
+
+cxx_kzips=$(find -L ../bazel-out/*/extra_actions -name "*.cxx.kzip")
+if [ ! -z "$cxx_kzips" ]; then
+  sudo apt update && sudo apt install -y memcached
+  memcached -p 11211 --listen localhost -m 512 & memcached_pid=$!
+  echo "$cxx_kzips" | parallel --gnu $KYTHE_DIR/indexers/cxx_indexer \
+    --experimental_alias_template_instantiations \
+	--experimental_dynamic_claim_cache="--SERVER=localhost:11211" \
+	-cache="--SERVER=localhost:11211" \
+	-cache_stats \
+  | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
+  kill $memcached_pid
 fi
 
 "$KYTHE_DIR"/tools/write_tables --entries kythe_entries --out leveldb:kythe_tables
