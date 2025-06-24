@@ -246,18 +246,21 @@ find -L bazel-out -name '*.java.kzip' | parallel --gnu  java -jar $KYTHE_DIR/ind
 # cxx indexing needs a cache to complete in a "reasonable" amount of time. It still takes a long time
 # and produces very large indices.
 # See https://groups.google.com/g/kythe/c/xKXE3S1JIRI for discussion of these args.
-# TODO(jdelfino): Will this work? Is there a better way? Does this workflow need its own docker image?
-sudo apt update && sudo apt install -y memcached
-memcached -p 11211 --listen localhost & memcached_pid=$!
+# TODO(jdelfino): apt update / install are slow - consider either creating a statically linked
+# memcached binary, or installing it in the container image.
 
-find -L ../bazel-out/*/extra_actions -name "*.cxx.kzip" \
-  | parallel --gnu $KYTHE_DIR/indexers/cxx_indexer \
+cxx_kzips=$(find -L ../bazel-out/*/extra_actions -name "*.cxx.kzip")
+if [ ! -z "$cxx_kzips" ]; then
+  sudo apt update && sudo apt install -y memcached
+  memcached -p 11211 --listen localhost -m 512 & memcached_pid=$!
+  echo "$cxx_kzips" | parallel --gnu $KYTHE_DIR/indexers/cxx_indexer \
     --experimental_alias_template_instantiations \
 	--experimental_dynamic_claim_cache="--SERVER=localhost:11211" \
 	-cache="--SERVER=localhost:11211" \
 	-cache_stats \
   | $KYTHE_DIR/tools/dedup_stream >> kythe_entries
-kill $memcached_pid
+  kill $memcached_pid
+fi
 
 "$KYTHE_DIR"/tools/write_tables --entries kythe_entries --out leveldb:kythe_tables
 "$KYTHE_DIR"/tools/export_sstable --input leveldb:kythe_tables --output="$BUILDBUDDY_ARTIFACTS_DIRECTORY"/%s
