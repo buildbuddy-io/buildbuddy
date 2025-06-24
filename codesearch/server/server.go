@@ -520,6 +520,8 @@ func (css *codesearchServer) extendedXrefs(ctx context.Context, req *srpb.Extend
 		"%/kythe/edge/satisfies",
 		"/kythe/edge/extends",
 		"%/kythe/edge/extends",
+		"/kythe/edge/generates",
+		"%/kythe/edge/generates",
 	}
 	edgeReq := &kgpb.EdgesRequest{
 		Ticket: ticks,
@@ -605,6 +607,27 @@ func (css *codesearchServer) extendedXrefs(ctx context.Context, req *srpb.Extend
 			repl.ExtendedBy = append(repl.Extends, xrefs.GetDefinition()...)
 			// Include references to the subclasses/implementations?
 			repl.References = append(repl.References, xrefs.GetReference()...)
+		})
+
+	handleEdges(
+		[]string{"%/kythe/edge/generates"},
+		edgeReply,
+		xrefReply,
+		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
+			// This is be the location in the .proto file
+			repl.GeneratedBy = append(repl.Extends, xrefs.GetDefinition()...)
+		})
+
+	handleEdges(
+		[]string{"/kythe/edge/generates"},
+		edgeReply,
+		xrefReply,
+		func(xrefs *kxpb.CrossReferencesReply_CrossReferenceSet) {
+			// TODO(jdelfino): For protos, this will include references from within generated code,
+			// which will not be available to browse. Something should filter these out...
+			// but there's not a clear indication in the kythe annotations that a file itself is
+			// generated.
+			repl.References = append(repl.Extends, xrefs.GetReference()...)
 		})
 
 	for _, tick := range ticks {
