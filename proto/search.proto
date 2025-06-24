@@ -132,6 +132,7 @@ message ExtendedXrefsReply {
   // Extended references to the requested ticket. This will include references
   // to super/sub-classes and overridden/overriding methods.
   repeated kythe.proto.CrossReferencesReply.RelatedAnchor references = 6;
+  repeated kythe.proto.CrossReferencesReply.RelatedAnchor generated_by = 7;
 }
 
 message KytheRequest {
