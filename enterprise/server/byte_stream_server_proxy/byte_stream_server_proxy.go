@@ -93,11 +93,6 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
 		return metrics.UncacheableStatusLabel, s.readRemoteOnly(ctx, req, stream)
 	}
-
-	// Store auth headers in context so they can be reused between the
-	// atime_updater and the hit_tracker_client.
-	ctx = authutil.ContextWithCachedAuthHeaders(ctx, s.authenticator)
-
 	if proxy_util.SkipRemote(ctx) {
 		if err := s.readLocalOnly(req, stream); err != nil {
 			log.CtxInfof(ctx, "Error reading local: %v", err)

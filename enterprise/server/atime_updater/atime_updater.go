@@ -156,7 +156,7 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	}
 
 	groupID := u.groupID(ctx)
-	authHeaders := authutil.GetAuthHeaders(ctx)
+	authHeaders := authutil.GetAuthHeaders(ctx, u.authenticator)
 	if len(authHeaders) == 0 {
 		log.Infof("Dropping remote atime update due to missing auth headers in context")
 		return

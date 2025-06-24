@@ -227,7 +227,7 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 
 	groupHits := h.hitsByGroup[groupID]
 	h.mu.Unlock()
-	authHeaders := authutil.GetAuthHeaders(ctx)
+	authHeaders := authutil.GetAuthHeaders(ctx, h.authenticator)
 	if groupHits.enqueue(hit, authHeaders) {
 		metrics.RemoteHitTrackerUpdates.WithLabelValues(
 			string(groupID),
