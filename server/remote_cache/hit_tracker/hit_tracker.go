@@ -409,7 +409,6 @@ type TransferTimer struct {
 func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
 	duration := time.Since(t.start)
 	t.emitMetrics(bytesTransferredCache, bytesTransferredClient, duration, compressor, serverLabel)
-	// XXX
 	return t.Record(bytesTransferredClient, time.Since(t.start), compressor)
 }
 
