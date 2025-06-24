@@ -64,7 +64,7 @@ type schedulerServerMock struct {
 	scheduleReqs  []*scpb.ScheduleTaskRequest
 }
 
-func (s *schedulerServerMock) GetPoolInfo(_ context.Context, _ string, _ string, _ string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+func (s *schedulerServerMock) GetPoolInfo(_ context.Context, os, arch, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
 	groupID := sharedPoolGroupID
 	if poolType == interfaces.PoolTypeSelfHosted {
 		groupID = selfHostedPoolGroupID
