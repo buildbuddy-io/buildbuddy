@@ -495,6 +495,15 @@ func warnIfCacheTooLarge(opts *Options) {
 	if opts.MaxSizeBytes > int64(usage.TotalBytes) {
 		alert.UnexpectedEvent(fmt.Sprintf("Pebble cache maximum size (%d) exceeds disk partition size (%d)", opts.MaxSizeBytes, usage.TotalBytes))
 	}
+	var partitionTotal int64
+	for _, part := range opts.Partitions {
+		if part.MaxSizeBytes <= 0 {
+			alert.UnexpectedEvent(fmt.Sprintf("Pebble cache partition %q size (%d) is negative", part.ID, part.MaxSizeBytes))
+		}
+	}
+	if partitionTotal > int64(usage.TotalBytes) {
+		alert.UnexpectedEvent(fmt.Sprintf("Pebble cache combined partition size (%d) exceeds maximum size (%d)", partitionTotal, opts.MaxSizeBytes))
+	}
 }
 
 // defaultPebbleOptions returns default pebble config options.
