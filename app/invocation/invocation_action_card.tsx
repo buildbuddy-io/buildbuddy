@@ -226,12 +226,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
    * locate the ExecuteResponse that was returned for this particular
    * invocation.
    */
-  fetchActionResult() {
+  fetchActionResult(): CancelablePromise<void> | null {
     let digestParam = this.props.search.get("actionDigest");
     const digest = parseActionDigest(digestParam ?? "");
     if (!digest) {
       alert_service.error("Missing action digest in URL");
-      return;
+      return null;
     }
     const actionResultUrl = this.props.model.getActionCacheURL(digest);
     this.actionResultRPC = rpcService
@@ -243,6 +243,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.fetchStderr(actionResult);
       })
       .catch((e) => console.error("Failed to fetch action result:", e));
+
+    return this.actionResultRPC as CancelablePromise<void>;
   }
 
   private executeResponseRPC?: CancelablePromise<build.bazel.remote.execution.v2.ExecuteResponse | null>;
@@ -323,7 +325,22 @@ export default class InvocationActionCardComponent extends React.Component<Props
         errorService.handleError(e);
       })
       .finally(() => {
-        if (!executionFound && streamFallback) {
+        if (executionFound) return;
+
+        const fetchResult = this.fetchActionResult();
+        if (fetchResult !== null) {
+          fetchResult.catch((e) => {
+            const error = BuildBuddyError.parse(e);
+            if (error.code !== "NotFound") {
+              console.error("Error during AC fallback:", e);
+              // Optionally handle other non-NotFound errors from AC fetch.
+            } else {
+              console.debug("Action result not found in AC.");
+            }
+          });
+        }
+
+        if (streamFallback) {
           console.debug("Falling back to WaitExecution");
           this.streamExecution();
         }
