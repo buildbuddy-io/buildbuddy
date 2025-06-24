@@ -523,15 +523,6 @@ func TestRemoveStagingReplica(t *testing.T) {
 		})
 	}
 
-	// Wait till the range descriptor change is completed.
-	//for {
-	//	rd = s.GetRange(2)
-	//	if rd.GetGeneration() == newRD.GetGeneration() {
-	//		break
-	//	}
-	//	time.Sleep(50 * time.Millisecond)
-	//}
-
 	log.Infof("=== test setup completed ===")
 	replicaID := newRD.GetStaging()[0].GetReplicaId()
 	nhid := newRD.GetStaging()[0].GetNhid()
