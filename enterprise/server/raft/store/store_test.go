@@ -224,6 +224,9 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
+	// store_test is sensitive to cpu pressure stall on remote executor. Increase
+	// the single op timeout to make it less sensitive.
+	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 
 	clock := clockwork.NewFakeClock()
 
