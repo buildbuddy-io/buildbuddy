@@ -1143,7 +1143,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 
 	log.CtxInfof(ctx, "Pool override: %+#v", obj)
 
-	override := &interfaces.PoolInfo{}
+	override := *originalPool // shallow copy
 	if groupIDValue, ok := obj["group_id"]; ok {
 		if groupID, ok := groupIDValue.(string); ok {
 			override.GroupID = groupID
@@ -1168,12 +1168,14 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 	}
 
 	if override.GroupID == *sharedExecutorPoolGroupID {
+		override.IsSelfHosted = false
 		override.IsShared = true
 	} else {
 		override.IsSelfHosted = true
+		override.IsShared = false
 	}
 
-	return override
+	return &override
 }
 
 func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
