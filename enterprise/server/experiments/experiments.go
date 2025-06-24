@@ -147,7 +147,7 @@ func WithContext(key string, value interface{}) Option {
 func (fp *FlagProvider) Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool {
 	v, err := fp.client.BooleanValue(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
-		log.CtxWarningf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
 		return defaultValue
 	}
 	return v
@@ -159,7 +159,7 @@ func (fp *FlagProvider) Boolean(ctx context.Context, flagName string, defaultVal
 func (fp *FlagProvider) String(ctx context.Context, flagName string, defaultValue string, opts ...any) string {
 	v, err := fp.client.StringValue(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
-		log.CtxWarningf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
 		return defaultValue
 	}
 	return v
@@ -171,7 +171,7 @@ func (fp *FlagProvider) String(ctx context.Context, flagName string, defaultValu
 func (fp *FlagProvider) Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64 {
 	v, err := fp.client.FloatValue(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
-		log.CtxWarningf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
 		return defaultValue
 	}
 	return v
@@ -183,7 +183,7 @@ func (fp *FlagProvider) Float64(ctx context.Context, flagName string, defaultVal
 func (fp *FlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
 	v, err := fp.client.IntValue(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
-		log.CtxWarningf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
 		return defaultValue
 	}
 	return v
@@ -195,7 +195,7 @@ func (fp *FlagProvider) Int64(ctx context.Context, flagName string, defaultValue
 func (fp *FlagProvider) Object(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) map[string]any {
 	v, err := fp.client.ObjectValue(ctx, flagName, defaultValue, fp.getEvaluationContext(ctx, opts...))
 	if err != nil {
-		log.CtxWarningf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
+		log.CtxDebugf(ctx, "Experiment flag %q could not be evaluated: %v", flagName, err)
 		return defaultValue
 	}
 	if v == nil {
