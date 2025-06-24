@@ -2850,7 +2850,7 @@ func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, lastModifyUsec i
 	case rspb.CacheType_AC:
 		e.acCount += deltaCount
 	case rspb.CacheType_UNKNOWN_CACHE_TYPE:
-		log.Errorf("[%s] Cannot update cache size: resource of unknown type", e.cacheName)
+		log.Infof("[%s] Cannot update cache size: resource of unknown type", e.cacheName)
 	}
 	e.sizeBytes += deltaSize
 	e.lru.UpdateSizeBytes(e.sizeBytes)
