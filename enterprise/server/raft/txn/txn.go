@@ -179,6 +179,10 @@ func (tc *Coordinator) WriteTxnRecord(ctx context.Context, txnRecord *rfpb.TxnRe
 	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
 }
 
+func isConflictKeyError(err error) bool {
+	return status.IsUnavailableError(err) && strings.Contains(status.Message(err), constants.ConflictKeyMsg)
+}
+
 func (tc *Coordinator) run(ctx context.Context, stmt *rfpb.TxnRequest_Statement, batch *rfpb.BatchCmdRequest) error {
 	var headerFn header.MakeFunc
 	if stmt.GetRangeValidationRequired() {
@@ -198,7 +202,7 @@ func (tc *Coordinator) run(ctx context.Context, stmt *rfpb.TxnRequest_Statement,
 			return nil
 		}
 
-		if !status.IsOutOfRangeError(err) {
+		if !status.IsOutOfRangeError(err) && !isConflictKeyError(err) {
 			return err
 		}
 		lastError = err
