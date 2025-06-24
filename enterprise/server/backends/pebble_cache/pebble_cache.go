@@ -809,10 +809,10 @@ func (p *PebbleCache) minDatabaseVersion() filestore.PebbleKeyVersion {
 	return p.minDBVersion
 }
 
-func (p *PebbleCache) maxDatabaseVersion() filestore.PebbleKeyVersion {
+func (p *PebbleCache) minAndMaxDatabaseVersions() (min, max filestore.PebbleKeyVersion) {
 	p.versionMu.RLock()
 	defer p.versionMu.RUnlock()
-	return p.maxDBVersion
+	return p.minDBVersion, p.maxDBVersion
 }
 
 func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
@@ -949,8 +949,7 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 	}
 	defer iter.Close()
 
-	minVersion := p.maxDatabaseVersion()
-	maxVersion := p.minDatabaseVersion()
+	minVersion, maxVersion := p.minAndMaxDatabaseVersions()
 	migrationStart := time.Now()
 	keysSeen := 0
 	keysMigrated := 0
@@ -1409,7 +1408,8 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 		totalACCount += acCount
 	}
 	estimatedSizeByGroup := computeEstimatedSizeByGroup(sampledSizeByGroup, totalSizeBytes)
-	buf += fmt.Sprintf("Min DB version: %d, Max DB version: %d, Active version: %d\n", p.minDatabaseVersion(), p.maxDatabaseVersion(), p.activeDatabaseVersion())
+	minVersion, maxVersion := p.minAndMaxDatabaseVersions()
+	buf += fmt.Sprintf("Min DB version: %d, Max DB version: %d, Active version: %d\n", minVersion, maxVersion, p.activeDatabaseVersion())
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
@@ -1507,7 +1507,7 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebbl
 	defer spn.End()
 
 	var lastErr error
-	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
+	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
 			return -1, err
@@ -1524,21 +1524,6 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebbl
 func (p *PebbleCache) lookupFileMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) error {
 	_, err := p.lookupFileMetadataAndVersion(ctx, db, key, fileMetadata)
 	return err
-}
-
-// iterHasKey returns a bool indicating if the provided iterator has the
-// exact key specified.
-func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) (bool, error) {
-	for version := p.maxDatabaseVersion(); version >= p.minDatabaseVersion(); version-- {
-		keyBytes, err := key.Bytes(version)
-		if err != nil {
-			return false, err
-		}
-		if iter.SeekGE(keyBytes) && bytes.Equal(iter.Key(), keyBytes) {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte, fileMetadata *sgpb.FileMetadata) error {
