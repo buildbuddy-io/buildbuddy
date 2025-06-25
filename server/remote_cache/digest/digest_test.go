@@ -545,8 +545,7 @@ func BenchmarkDigestCompute(b *testing.B) {
 				buf := make([]byte, size)
 				_, err := rand.Read(buf)
 				require.NoError(b, err)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					digest.Compute(bytes.NewReader(buf), df)
 				}
 			})

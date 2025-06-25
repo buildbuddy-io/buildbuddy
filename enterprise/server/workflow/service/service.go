@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -139,7 +140,8 @@ func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActio
 		workflowActionName,
 		wf.InstanceNameSuffix,
 	}, gitCleanExclude...)
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(keys, "|"))))
+	b := sha256.Sum256([]byte(strings.Join(keys, "|")))
+	return hex.EncodeToString(b[:])
 }
 
 // startWorkflowTask represents a workflow to be started in the background in

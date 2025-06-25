@@ -1064,6 +1064,10 @@ type mkdirAllRequest struct {
 }
 
 func (mar *mkdirAllRequest) Do() error {
+	err := os.Mkdir(mar.path, mar.perm)
+	if err == nil {
+		return nil
+	}
 	return os.MkdirAll(mar.path, mar.perm)
 }
 

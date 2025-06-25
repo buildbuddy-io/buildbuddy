@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"math"
@@ -1434,7 +1435,7 @@ func platformHash(p *repb.Platform) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%x", sha256.Sum256(b)), nil
+	return hex.EncodeToString(sha256.Sum256(b)), nil
 }
 
 type labeledError struct {

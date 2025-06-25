@@ -3,6 +3,7 @@ package cachetools
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -122,7 +123,7 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 			return err
 		}
 	}
-	computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
+	computedDigest := hex.EncodeToString(checksum.Sum(nil))
 	if computedDigest != r.GetDigest().GetHash() {
 		return status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest, r.GetDigest().GetHash())
 	}
