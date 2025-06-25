@@ -246,25 +246,18 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     });
   }
 
-  getDisplayOptions(o: any): monaco.editor.IModelDecorationOptions | null {
-    let type = "";
-    switch (o.kind) {
-      case "/kythe/edge/ref/call":
-        type = "fncall";
-        break;
-      case "/kythe/edge/ref/imports":
-        type = "import";
-        break;
-      case "/kythe/edge/defines/binding":
-        type = "def";
-        break;
-      case "/kythe/edge/ref":
-        type = "";
-        break;
-      default:
-        return null;
+  getDisplayOptions(o: any, className: string = "code-hover"): monaco.editor.IModelDecorationOptions | null {
+    const allowedKinds = [
+      "/kythe/edge/ref/call",
+      "/kythe/edge/ref/imports",
+      "/kythe/edge/defines/binding",
+      "/kythe/edge/ref",
+      "/kythe/edge/ref/writes",
+    ];
+    if (!allowedKinds.includes(o.kind)) {
+      return null;
     }
-    return { inlineClassName: "code-hover " + type, hoverMessage: { value: o.target_ticket } };
+    return { inlineClassName: className, hoverMessage: { value: o.target_ticket } };
   }
 
   ticketsForPosition(pos: monaco.Position): string[] {
@@ -278,6 +271,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   navigateToDefinitionOrPopulatePanel(pos: monaco.Position) {
     const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
     if (!refs.length) {
+      this.clearHighlights(this.editor?.getModel()!);
       return;
     }
 
@@ -361,6 +355,71 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         this.setState({ extendedXrefs: xrefsReply });
       })
       .catch((e) => console.log("Error fetching kythe data", e));
+  }
+
+  clearHighlights(model: monaco.editor.ITextModel) {
+    let modDecs: monaco.editor.IModelDecoration[] = [];
+
+    model.getAllDecorations().forEach((decor: monaco.editor.IModelDecoration) => {
+      const ref = this.decorToReference(decor);
+      if (!ref) {
+        return;
+      }
+
+      if (decor.options.inlineClassName !== "code-hover") {
+        decor.options.inlineClassName = "code-hover";
+        modDecs.push(decor);
+      }
+    });
+    if (modDecs.length > 0) {
+      model.deltaDecorations(
+        modDecs.map((x) => x.id),
+        modDecs
+      );
+    }
+  }
+
+  hoverHandler(model: monaco.editor.ITextModel, position: monaco.Position): monaco.languages.Hover | undefined {
+    let ticks = this.ticketsForPosition(position);
+    if (!ticks?.length) {
+      return;
+    }
+
+    let modDecs: monaco.editor.IModelDecoration[] = [];
+
+    // Go through each decoration. Find decorations with matching tickets. Update their class names
+    // to highlight them. At the same time, remove previous highlights.
+    model.getAllDecorations().forEach((decor: monaco.editor.IModelDecoration) => {
+      const ref = this.decorToReference(decor);
+      if (!ref) {
+        return;
+      }
+
+      let newClassName = "";
+      if (ticks.includes(ref.targetTicket)) {
+        // This decoration matches the hovered ticket - highlight it if the edge type warrants it.
+        if (ref.kind === "/kythe/edge/ref") {
+          newClassName = "code-highlight-reference";
+        } else if (ref.kind === "/kythe/edge/defines/binding" || ref.kind === "/kythe/edge/ref/writes") {
+          newClassName = "code-highlight-modification";
+        }
+      } else if (decor.options.inlineClassName !== "code-hover") {
+        // reset no-longer-matching nodes
+        newClassName = "code-hover";
+      }
+
+      if (newClassName) {
+        decor.options.inlineClassName = newClassName;
+        modDecs.push(decor);
+      }
+    });
+
+    if (modDecs.length > 0) {
+      model.deltaDecorations(
+        modDecs.map((x) => x.id),
+        modDecs
+      );
+    }
   }
 
   async fetchDecorations(filename: string) {
@@ -635,6 +694,13 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         this.goToDefKey?.set(decors != null && decors.length > 0);
       }
     });
+
+    monaco.languages.registerHoverProvider(
+      { scheme: "file" },
+      {
+        provideHover: this.hoverHandler.bind(this),
+      }
+    );
 
     this.forceUpdate();
 
