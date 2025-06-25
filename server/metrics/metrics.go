@@ -313,6 +313,8 @@ const (
 	CacheProxyRequestType = "proxy_request_type"
 
 	OCIResourceTypeLabel = "oci_resource_type"
+
+	OpLabel = "op"
 )
 
 // Label value constants
@@ -1608,12 +1610,14 @@ var (
 		FileCacheRequestStatusLabel,
 	})
 
-	FileCacheLinkLatencyUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+	FileCacheOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
-		Name:      "file_cache_link_latency_usec",
-		Help:      "Latency of individual file cache link operations.",
+		Name:      "file_cache_op_latency_usec",
+		Help:      "Latency of individual file cache operations.",
 		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 10),
+	}, []string{
+		OpLabel,
 	})
 
 	FileCacheLastEvictionAgeUsec = promauto.NewGauge(prometheus.GaugeOpts{
@@ -3353,6 +3357,16 @@ var (
 	}, []string{
 		OCIResourceTypeLabel,
 		CacheEventTypeLabel,
+	})
+
+	InputTreeSetupOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "input_tree_setup_op_latency_usec",
+		Help:      "Latency of individual operations used for setting up input trees.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 10),
+	}, []string{
+		OpLabel,
 	})
 )
 
