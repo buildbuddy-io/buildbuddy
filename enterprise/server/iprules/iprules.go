@@ -278,7 +278,16 @@ func (s *Service) Authorize(ctx context.Context) error {
 		}
 	}
 
-	return s.authorize(ctx, u.GetGroupID())
+	groupID := u.GetGroupID()
+	// For API keys, use the ACL list from the group that owns the API key
+	// rather than the group that is the target of the API request.
+	// For most API key users the OwnerGroupID is the same as the effective
+	// GroupID, but for customers that use a parent/child hierarchy we want to
+	// enforce the rules using the group to which the API key belongs to.
+	if u.GetAPIKeyInfo().OwnerGroupID != "" {
+		groupID = u.GetAPIKeyInfo().OwnerGroupID
+	}
+	return s.authorize(ctx, groupID)
 }
 
 func (s *Service) AuthorizeHTTPRequest(ctx context.Context, r *http.Request) error {
