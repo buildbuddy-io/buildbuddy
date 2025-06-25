@@ -367,7 +367,9 @@ type Router interface {
 type ciRunnerRouter struct{}
 
 func (ciRunnerRouter) Applies(params routingParams) bool {
-	return platform.IsCICommand(params.cmd, params.platform) && platform.IsTrue(platform.FindValue(params.platform, platform.RecycleRunnerPropertyName))
+	// TODO: pass parsed platform into routingParams and avoid manual parsing
+	// here.
+	return platform.IsCICommand(params.cmd, params.platform) && platform.IsTrue(platform.FindValue(params.platform, "recycle-runner"))
 }
 
 func (ciRunnerRouter) preferredNodeLimit(_ routingParams) int {

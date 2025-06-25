@@ -721,7 +721,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		// If recycling is enabled and a snapshot exists, then when calling
 		// Create(), load the snapshot instead of creating a new VM.
 
-		recyclingEnabled := platform.IsTrue(platform.FindValue(platform.GetProto(task.GetAction(), task.GetCommand()), platform.RecycleRunnerPropertyName))
+		recyclingEnabled := platform.IsRecyclingEnabled(task)
 		c.recyclingEnabled = recyclingEnabled
 		if recyclingEnabled && snaputil.IsChunkedSnapshotSharingEnabled() {
 			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)

@@ -42,6 +42,8 @@ const (
 
 	sysMemoryBytes = tasksize.DefaultMemEstimate * 10
 	sysMilliCPU    = tasksize.DefaultCPUEstimate * 10
+
+	recycleRunnerPropertyName = "recycle-runner"
 )
 
 var (
@@ -147,7 +149,7 @@ func newTask() *repb.ScheduledTask {
 			Arguments: []string{"pwd"},
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
-					{Name: platform.RecycleRunnerPropertyName, Value: "true"},
+					{Name: recycleRunnerPropertyName, Value: "true"},
 				},
 			},
 		},
@@ -322,6 +324,34 @@ func TestRunnerPool_CanAddAndGetBackSameRunner(t *testing.T) {
 	mustAddWithoutEviction(t, ctx, pool, r1)
 
 	r2 := mustGetPausedRunner(t, ctx, pool, newTask())
+
+	assert.Same(t, r1, r2)
+	assert.Equal(t, 0, pool.PausedRunnerCount())
+}
+
+func TestRunnerPool_CanAddAndGetBackSameRunner_DockerReuseAlias(t *testing.T) {
+	env := newTestEnv(t)
+	pool := newRunnerPool(t, env, noLimitsCfg())
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+
+	t1 := &repb.ScheduledTask{
+		ExecutionTask: &repb.ExecutionTask{
+			Command: &repb.Command{
+				Arguments: []string{"pwd"},
+				Platform: &repb.Platform{
+					Properties: []*repb.Platform_Property{
+						{Name: "dockerReuse", Value: "true"},
+					},
+				},
+			},
+		},
+	}
+	r1 := mustGetNewRunner(t, ctx, pool, t1)
+
+	mustAddWithoutEviction(t, ctx, pool, r1)
+
+	t2 := t1.CloneVT()
+	r2 := mustGetPausedRunner(t, ctx, pool, t2)
 
 	assert.Same(t, r1, r2)
 	assert.Equal(t, 0, pool.PausedRunnerCount())
@@ -690,7 +720,7 @@ func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb
 				Properties: []*repb.Platform_Property{
 					{Name: "persistentWorkerKey", Value: key},
 					{Name: "persistentWorkerProtocol", Value: protocol},
-					{Name: platform.RecycleRunnerPropertyName, Value: "true"},
+					{Name: recycleRunnerPropertyName, Value: "true"},
 				},
 			},
 		},
