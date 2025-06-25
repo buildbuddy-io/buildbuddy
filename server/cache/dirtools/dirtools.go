@@ -1071,8 +1071,6 @@ func (mar *mkdirAllRequest) Do() error {
 	if err == nil {
 		return err
 	}
-	// If we failed it means the parent directory does not exist, or the target
-	// directory exists. MkdirAll will handle both cases.
 	return os.MkdirAll(mar.path, mar.perm)
 }
 

@@ -4,6 +4,7 @@ package filestore
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -276,7 +277,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 			if _, err := h.Write([]byte(hashExtra)); err != nil {
 				return nil, err
 			}
-			hashStr = fmt.Sprintf("%x", h.Sum(nil))
+			hashStr = hex.EncodeToString(h.Sum(nil))
 		}
 
 		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)

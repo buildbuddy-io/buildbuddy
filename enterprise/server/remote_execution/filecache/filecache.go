@@ -2,6 +2,7 @@ package filecache
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -523,7 +524,7 @@ func (v *verifiedWriter) Commit() error {
 	if v.file == nil {
 		return status.FailedPreconditionError("writer is closed")
 	}
-	hashStr := fmt.Sprintf("%x", v.csum.Sum(nil))
+	hashStr := hex.EncodeToString(v.csum.Sum(nil))
 	if v.node.GetDigest().GetHash() != hashStr {
 		return status.DataLossErrorf("data checksum %q does not match expected checksum %q", hashStr, v.node.GetDigest().GetHash())
 	}

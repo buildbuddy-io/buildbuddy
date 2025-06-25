@@ -3,6 +3,7 @@ package firecracker
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -308,7 +309,7 @@ func putFileIntoDir(ctx context.Context, fsys fs.FS, fileName, destDir string, m
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
-	fileHash := fmt.Sprintf("%x", h.Sum(nil))
+	fileHash := hex.EncodeToString(h.Sum(nil))
 	fileHome := filepath.Join(destDir, "executor", fileHash)
 	if err := disk.EnsureDirectoryExists(fileHome); err != nil {
 		return "", err

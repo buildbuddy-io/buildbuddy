@@ -2,13 +2,14 @@ package hash
 
 import (
 	"crypto/sha256"
-	"fmt"
+	"encoding/hex"
 	"reflect"
 	"unsafe"
 )
 
 func Bytes(input []byte) string {
-	return fmt.Sprintf("%x", sha256.Sum256(input))
+	sha := sha256.Sum256(input)
+	return hex.EncodeToString(sha[:])
 }
 
 func String(input string) string {

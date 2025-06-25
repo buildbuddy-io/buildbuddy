@@ -2,7 +2,7 @@ package byte_stream_server
 
 import (
 	"context"
-	"fmt"
+	"encoding/hex"
 	"hash"
 	"io"
 
@@ -572,7 +572,7 @@ func (s *Checksum) Write(p []byte) (int, error) {
 
 func (s *Checksum) Check(r *digest.CASResourceName) error {
 	d := r.GetDigest()
-	computedDigest := fmt.Sprintf("%x", s.hash.Sum(nil))
+	computedDigest := hex.EncodeToString(s.hash.Sum(nil))
 	if computedDigest != d.GetHash() {
 		return status.DataLossErrorf("Hash of uploaded bytes %q [%s] did not match provided digest: %q [%s].", computedDigest, s.digestFunction, d.GetHash(), r.GetDigestFunction())
 	}

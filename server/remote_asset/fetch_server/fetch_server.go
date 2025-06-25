@@ -3,6 +3,7 @@ package fetch_server
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -142,7 +143,7 @@ func parseChecksumQualifier(qualifier *rapb.Qualifier) (repb.DigestFunction_Valu
 			if err != nil {
 				return repb.DigestFunction_UNKNOWN, "", status.FailedPreconditionErrorf("Error decoding qualifier %q: %s", qualifier.GetName(), err.Error())
 			}
-			expectedChecksum := fmt.Sprintf("%x", decodedHash)
+			expectedChecksum := hex.EncodeToString(decodedHash)
 			return digestFunc, expectedChecksum, nil
 		}
 	}

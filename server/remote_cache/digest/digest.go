@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
 	"hash"
 	"io"
@@ -398,7 +399,7 @@ func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, 
 		return nil, err
 	}
 	return &repb.Digest{
-		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
+		Hash:      hex.EncodeToString(h.Sum(nil)),
 		SizeBytes: n,
 	}, nil
 }
