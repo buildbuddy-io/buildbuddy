@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -1164,13 +1165,20 @@ type inputTreeWrangler struct {
 	direct bool
 	reqs   chan taskRequest
 	done   chan struct{}
+
+	mkdirAllLatency          prometheus.Observer
+	symlinkLatency           prometheus.Observer
+	linkFromFileCacheLatency prometheus.Observer
 }
 
 func newInputTreeWrangler(env environment.Env) *inputTreeWrangler {
 	w := &inputTreeWrangler{
-		env:  env,
-		done: make(chan struct{}),
-		reqs: make(chan taskRequest, inputTreeOpsQueueSize),
+		env:                      env,
+		done:                     make(chan struct{}),
+		reqs:                     make(chan taskRequest, inputTreeOpsQueueSize),
+		mkdirAllLatency:          metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "mkdirall"}),
+		symlinkLatency:           metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "symlink"}),
+		linkFromFileCacheLatency: metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_from_file_cache"}),
 	}
 	if *inputTreeSetupParallelism == -1 {
 		w.direct = true
@@ -1217,15 +1225,33 @@ func (w *inputTreeWrangler) scheduleRequest(ctx context.Context, req inputTreeRe
 }
 
 func (w *inputTreeWrangler) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
-	return w.scheduleRequest(ctx, &mkdirAllRequest{path: path, perm: perm})
+	start := time.Now()
+	err := w.scheduleRequest(ctx, &mkdirAllRequest{path: path, perm: perm})
+	if err != nil {
+		return err
+	}
+	w.mkdirAllLatency.Observe(time.Since(start).Seconds())
+	return nil
 }
 
 func (w *inputTreeWrangler) Symlink(ctx context.Context, oldname string, newname string) error {
-	return w.scheduleRequest(ctx, &symlinkRequest{oldname: oldname, newname: newname})
+	start := time.Now()
+	err := w.scheduleRequest(ctx, &symlinkRequest{oldname: oldname, newname: newname})
+	if err != nil {
+		return err
+	}
+	w.symlinkLatency.Observe(time.Since(start).Seconds())
+	return nil
 }
 
 func (w *inputTreeWrangler) LinkFromFileCache(ctx context.Context, filePointers []*FilePointer, opts *DownloadTreeOpts) error {
-	return w.scheduleRequest(ctx, &linkFromFileCacheRequest{ctx: ctx, fileCache: w.env.GetFileCache(), filePointers: filePointers, opts: opts})
+	start := time.Now()
+	err := w.scheduleRequest(ctx, &linkFromFileCacheRequest{ctx: ctx, fileCache: w.env.GetFileCache(), filePointers: filePointers, opts: opts})
+	if err != nil {
+		return err
+	}
+	w.linkFromFileCacheLatency.Observe(time.Since(start).Seconds())
+	return nil
 }
 
 func getInputTreeWrangler(env environment.Env) *inputTreeWrangler {
