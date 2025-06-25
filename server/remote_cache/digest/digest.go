@@ -387,10 +387,25 @@ func isOldStyleDigestFunction(digestFunction repb.DigestFunction_Value) bool {
 	}
 }
 
+var blake3Hashes = sync.Pool{New: func() any { return blake3.New() }}
+
 func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
-	h, err := HashForDigestType(digestType)
-	if err != nil {
-		return nil, err
+	var h hash.Hash
+	if digestType == repb.DigestFunction_BLAKE3 {
+		// blake3.New() allocates over 10KiB. Use a pool to avoid this.
+		// sha256.New() allocates under 360 bytes, so we don't pool it.
+		// The other hash functions are not used frequently enough to pool.
+		h = blake3Hashes.Get().(hash.Hash)
+		defer func() {
+			h.Reset()
+			blake3Hashes.Put(h)
+		}()
+	} else {
+		var err error
+		h, err = HashForDigestType(digestType)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Read file in 32KB chunks (default)
