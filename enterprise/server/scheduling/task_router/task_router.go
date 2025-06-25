@@ -36,6 +36,7 @@ const (
 	// router for routable tasks. This is intentionally less than the number of
 	// probes per task (for load balancing purposes).
 	defaultPreferredNodeLimit = 1
+
 	// The preferred node limit for ci_runner tasks.
 	// This is set higher than the default limit since we strongly prefer
 	// these tasks to hit a node with a warm bazel workspace, but it is
@@ -72,7 +73,7 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	if rdb == nil {
 		return nil, status.FailedPreconditionError("Redis is required for task router")
 	}
-	strategies := []Router{ciRunnerRouter{}, affinityRouter{}}
+	strategies := []Router{ciRunnerRouter{}, &persistentWorkerRouter{env}, affinityRouter{}}
 	return &taskRouter{
 		env:        env,
 		rdb:        rdb,
@@ -93,7 +94,7 @@ func (n rankedExecutionNode) IsPreferred() bool {
 	return n.preferred
 }
 
-func nonePreferred(nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+func nodesAsRanked(nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
 	for i, node := range nodes {
 		rankedNodes[i] = rankedExecutionNode{node: node}
@@ -175,18 +176,18 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 	nodes = weightedResample(nodes)
 
 	params := getRoutingParams(ctx, tr.env, action, cmd, remoteInstanceName)
-	strategy := tr.selectRouter(params)
+	strategy := tr.selectRouter(ctx, params)
 	if strategy == nil {
-		return nonePreferred(nodes)
+		return nodesAsRanked(nodes)
 	}
 
 	preferredNodeLimit, routingKeys, err := strategy.RoutingInfo(params)
 	if err != nil {
 		log.Errorf("Failed to compute routing info: %s", err)
-		return nonePreferred(nodes)
+		return strategy.RankNodes(params, nodes)
 	}
 	if preferredNodeLimit == 0 {
-		return nonePreferred(nodes)
+		return strategy.RankNodes(params, nodes)
 	}
 
 	// Note: if multiple executors live on the same host, the last one in the
@@ -209,7 +210,7 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 		preferredHostIDs, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
 		if err != nil {
 			log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
-			return nonePreferred(nodes)
+			return strategy.RankNodes(params, nodes)
 		}
 
 		log.Debugf("Preferred executor host IDs for %q: %v", routingKey, preferredHostIDs)
@@ -247,7 +248,7 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 // given node.
 func (tr *taskRouter) MarkSucceeded(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
 	params := getRoutingParams(ctx, tr.env, action, cmd, remoteInstanceName)
-	strategy := tr.selectRouter(params)
+	strategy := tr.selectRouter(ctx, params)
 	if strategy == nil {
 		return
 	}
@@ -288,7 +289,7 @@ func (tr *taskRouter) MarkSucceeded(ctx context.Context, action *repb.Action, cm
 // that subsequent executions will run on random execution nodes.
 func (tr *taskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
 	params := getRoutingParams(ctx, tr.env, action, cmd, remoteInstanceName)
-	strategy := tr.selectRouter(params)
+	strategy := tr.selectRouter(ctx, params)
 	if strategy == nil {
 		return
 	}
@@ -328,9 +329,9 @@ func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Act
 }
 
 // Selects and returns a Router to use, or nil if none applies.
-func (tr taskRouter) selectRouter(params routingParams) Router {
+func (tr taskRouter) selectRouter(ctx context.Context, params routingParams) Router {
 	for _, strategy := range tr.strategies {
-		if strategy.Applies(params) {
+		if strategy.Applies(ctx, params) {
 			return strategy
 		}
 	}
@@ -351,7 +352,7 @@ func copyNodes(nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
 type Router interface {
 	// Returns true if this router applies to the given routing parameters,
 	// false otherwise. Note: Applies() must be deterministic.
-	Applies(params routingParams) bool
+	Applies(ctx context.Context, params routingParams) bool
 
 	// Returns the routing info (preferredNodeLimit and routingKeys) for the
 	// provided routing parameters. The preferredNodeLimit is the number of
@@ -360,13 +361,18 @@ type Router interface {
 	// are sorted in order of most preferred to least preferred. That order
 	// should be preserved when ranking nodes.
 	RoutingInfo(params routingParams) (int, []string, error)
+
+	// RankNodes returns the nodes in order of descending priority.
+	// Implementations that do not otherwise care should return a random
+	// ordering of nodes using the nodesAsRanked() function.
+	RankNodes(params routingParams, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode
 }
 
 // The ciRunnerRouter routes ci_runner tasks according to git branch
 // information.
 type ciRunnerRouter struct{}
 
-func (ciRunnerRouter) Applies(params routingParams) bool {
+func (ciRunnerRouter) Applies(_ context.Context, params routingParams) bool {
 	// TODO: pass parsed platform into routingParams and avoid manual parsing
 	// here.
 	return platform.IsCICommand(params.cmd, params.platform) && platform.IsTrue(platform.FindValue(params.platform, "recycle-runner"))
@@ -421,6 +427,10 @@ func (s ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error)
 	return nodeLimit, keys, err
 }
 
+func (s ciRunnerRouter) RankNodes(_ routingParams, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	return nodesAsRanked(nodes)
+}
+
 // affinityRouter generates Redis routing keys based on:
 //   - remoteInstanceName
 //   - groupID
@@ -435,7 +445,7 @@ func (s ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error)
 // of the input tree is unchanged.
 type affinityRouter struct{}
 
-func (affinityRouter) Applies(params routingParams) bool {
+func (affinityRouter) Applies(_ context.Context, params routingParams) bool {
 	return *affinityRoutingEnabled && getFirstOutput(params.cmd) != ""
 }
 
@@ -475,6 +485,10 @@ func (s affinityRouter) RoutingInfo(params routingParams) (int, []string, error)
 	return nodeLimit, []string{key}, err
 }
 
+func (s affinityRouter) RankNodes(_ routingParams, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	return nodesAsRanked(nodes)
+}
+
 func getFirstOutput(cmd *repb.Command) string {
 	if cmd == nil {
 		return ""
@@ -487,4 +501,59 @@ func getFirstOutput(cmd *repb.Command) string {
 		return cmd.OutputDirectories[0]
 	}
 	return ""
+}
+
+// persistentWorkerRouter generates routing keys based on:
+//   - groupID
+//   - remote_instance_name
+//   - persistentWorkerKey
+type persistentWorkerRouter struct{
+	env environment.Env
+}
+
+func (r *persistentWorkerRouter) Applies(ctx context.Context, params routingParams) bool {
+	if platform.FindValue(params.platform, "persistentWorkerKey") == "" {
+		return false
+	}
+	if exp := r.env.GetExperimentFlagProvider(); exp != nil {
+		return exp.Boolean(ctx, "remote_execution.enable_persistent_worker_routing", false)
+        }
+	return false
+}
+
+func (persistentWorkerRouter) preferredNodeLimit(_ routingParams) int {
+	// Intentionally set to the number of probes so that
+	// any task with a persistent worker key gets a hot node.
+	return 3
+}
+
+func (persistentWorkerRouter) routingKey(params routingParams) (string, error) {
+	parts := []string{"task_route", params.groupID}
+
+	if params.remoteInstanceName != "" {
+		parts = append(parts, params.remoteInstanceName)
+	}
+	parts = append(parts, platform.FindValue(params.platform, "persistentWorkerKey"))
+
+	return strings.Join(parts, "/"), nil
+}
+
+func (s persistentWorkerRouter) RoutingInfo(params routingParams) (int, []string, error) {
+	nodeLimit := s.preferredNodeLimit(params)
+	key, err := s.routingKey(params)
+	return nodeLimit, []string{key}, err
+}
+
+func (s persistentWorkerRouter) RankNodes(params routingParams, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	key, err := s.routingKey(params)
+	if err == nil {
+		src := rand.NewSource(int64(hash.MemHashString(key)))
+		rng := rand.New(src)
+
+		rng.Shuffle(len(nodes), func(i, j int) {
+			nodes[i], nodes[j] = nodes[j], nodes[i]
+		})
+	}
+
+	return nodesAsRanked(nodes)
 }
