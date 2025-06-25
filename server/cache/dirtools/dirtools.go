@@ -1064,6 +1064,15 @@ type mkdirAllRequest struct {
 }
 
 func (mar *mkdirAllRequest) Do() error {
+	// Directories are created in tree traversal order, so parents should always
+	// exist. os.Mkdir should work and be faster than os.MkdirAll so try it
+	// first.
+	err := os.Mkdir(mar.path, mar.perm)
+	if err == nil {
+		return err
+	}
+	// If we failed it means the parent directory does not exist, or the target
+	// directory exists. MkdirAll will handle both cases.
 	return os.MkdirAll(mar.path, mar.perm)
 }
 
