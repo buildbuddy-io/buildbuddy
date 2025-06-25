@@ -271,6 +271,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   navigateToDefinitionOrPopulatePanel(pos: monaco.Position) {
     const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
     if (!refs.length) {
+      this.clearHighlights(this.editor?.getModel()!);
       return;
     }
 
@@ -354,6 +355,63 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         this.setState({ extendedXrefs: xrefsReply });
       })
       .catch((e) => console.log("Error fetching kythe data", e));
+  }
+
+  clearHighlights(model: monaco.IEditorModel) {
+    let modDecs: monaco.IModelDecoration[] = [];
+
+    model.getAllDecorations().forEach((decor: monaco.IModelDecoration) => {
+      const ref = this.decorToReference(decor);
+      if (!ref) {
+        return;
+      }
+
+      if (decor.options.inlineClassName !== "code-hover") {
+        decor.options.inlineClassName = "code-hover";
+        modDecs.push(decor);
+      }
+    });
+    if (modDecs.length > 0) {
+      model.deltaDecorations(modDecs.map((x) => x.id),modDecs);
+    }
+  };
+
+  hoverHandler(model: monaco.IEditorModel, position: monaco.Position): monaco.languages.Hover | undefined {
+    let ticks = this.ticketsForPosition(position);
+    if (!ticks?.length) { return null; }
+
+    let modDecs: monaco.IModelDecoration[] = [];
+
+    // Go through each decoration. Find decorations with matching tickets. Update their class names
+    // to highlight them. At the same time, remove previous highlights.
+    model.getAllDecorations().forEach((decor: monaco.IModelDecoration) => {
+      const ref = this.decorToReference(decor);
+      if (!ref) {
+        return;
+      }
+
+      let newClassName = "";
+      if (ticks.includes(ref.targetTicket)) {
+        // This decoration matches the hovered ticket - highlight it if the edge type warrants it.
+        if (ref.kind === "/kythe/edge/ref") {
+          newClassName = "code-highlight-reference";
+        } else if (ref.kind === "/kythe/edge/defines/binding" || ref.kind === "/kythe/edge/ref/writes") {
+          newClassName = "code-highlight-modification";
+        }
+      } else if (decor.options.inlineClassName !== "code-hover") {
+        // reset no-longer-matching nodes
+        newClassName = "code-hover";
+      }
+
+      if (newClassName) {
+        decor.options.inlineClassName = newClassName;
+        modDecs.push(decor);
+      }
+    });
+
+    if (modDecs.length > 0) {
+      model.deltaDecorations(modDecs.map((x) => x.id), modDecs);
+    }
   }
 
   async fetchDecorations(filename: string) {
@@ -632,40 +690,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     });
 
     monaco.languages.registerHoverProvider({scheme: "file"}, {
-      provideHover: (model, position, token, context) => {
-        console.log("provideHover", model, position, token, context);
-        let ticks = this.ticketsForPosition(position);
-        if (!ticks?.length) { return null; }
-
-        console.log("hover ticks", ticks);
-
-        let modDecs: monaco.IModelDecoration[] = [];
-        let modIds: string[] = [];
-        model.getAllDecorations().forEach((decor: monaco.IModelDecoration) => {
-            const ref = this.decorToReference(decor);
-            if (!ref) {
-              return;
-            }
-            let newClassName = "";
-            if (ticks.includes(ref.targetTicket)) {
-              if (ref.kind === "/kythe/edge/ref") {
-                newClassName = "code-highlight-reference";
-              } else if (ref.kind === "/kythe/edge/defines/binding" || ref.kind === "/kythe/edge/ref/writes") {
-                newClassName = "code-highlight-definition";
-              }
-            } else if (decor.options.inlineClassName !== "code-hover") {
-              // reset previously highlighted nodes
-              newClassName = "code-hover";
-            }
-
-            if (newClassName) {
-              decor.options.inlineClassName = newClassName;
-              modIds.push(decor.id);
-              modDecs.push(decor);
-            }
-          });
-        model.deltaDecorations(modIds,modDecs);
-      }
+      provideHover: this.hoverHandler.bind(this),
     });
 
     this.forceUpdate();
