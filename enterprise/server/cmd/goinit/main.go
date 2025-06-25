@@ -554,13 +554,27 @@ func runVMDNSServer(ctx context.Context) error {
 		}
 	}
 
+	eg := &errgroup.Group{}
 	mux.Handle(".", &vmDNSServer{overrides: dnsOverrides})
-	s := &dns.Server{
-		Addr:    "127.0.0.1:53",
-		Net:     "udp4",
-		Handler: mux,
-	}
-	return s.ListenAndServe()
+
+	eg.Go(func() error {
+		tcp := &dns.Server{
+			Addr:    "127.0.0.1:53",
+			Net:     "tcp",
+			Handler: mux,
+		}
+		return tcp.ListenAndServe()
+	})
+	eg.Go(func() error {
+		udp := &dns.Server{
+			Addr:    "127.0.0.1:53",
+			Net:     "udp4",
+			Handler: mux,
+		}
+		return udp.ListenAndServe()
+	})
+
+	return eg.Wait()
 }
 
 func (s *vmDNSServer) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
