@@ -80,7 +80,10 @@ const (
 	// empty or unset.
 	unsetContainerImageVal = "none"
 
-	RecycleRunnerPropertyName               = "recycle-runner"
+	recycleRunnerPropertyName = "recycle-runner"
+	// dockerReuse is treated as an alias for recycle-runner.
+	dockerReusePropertyName = "dockerReuse"
+
 	RunnerRecyclingKey                      = "runner-recycling-key"
 	RemoteSnapshotSavePolicyPropertyName    = "remote-snapshot-save-policy"
 	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
@@ -305,7 +308,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	if pool == DefaultPoolValue {
 		pool = ""
 	}
-	recycleRunner := boolProp(m, RecycleRunnerPropertyName, false)
+	recycleRunner := boolProp(m, recycleRunnerPropertyName, false) || boolProp(m, dockerReusePropertyName, false)
 	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	// Only Enable VFS if it is also enabled via flags.
@@ -795,6 +798,16 @@ func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 // IsTrue returns whether the given platform property value is truthy.
 func IsTrue(value string) bool {
 	return strings.EqualFold(value, "true")
+}
+
+// IsRecyclingEnabled returns whether runner recycling is enabled for the given
+// task.
+func IsRecyclingEnabled(task *repb.ExecutionTask) bool {
+	parsed, err := ParseProperties(task)
+	if err != nil {
+		return false
+	}
+	return parsed.RecycleRunner
 }
 
 func DockerSocket() string {
