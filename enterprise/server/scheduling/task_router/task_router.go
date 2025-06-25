@@ -423,14 +423,22 @@ func (s ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error)
 //   - remoteInstanceName
 //   - groupID
 //   - platform properties
-//   - and the name of the first action output
+//   - the name of the first action output (only if recycling is disabled)
 //
-// Because only a single action can generate a given output in Bazel, this key
-// uniquely identifies an action and is stable even if the action's inputs
-// change. The intent of using this routing key is to route successive actions
-// whose inputs have changed to nodes which previously executed that action to
-// increase the local-cache hitrate, as it's likely that for large actions most
-// of the input tree is unchanged.
+// If recycling is enabled, we want to route actions to a node which most likely
+// has a warm runner (e.g. Java persistent worker or Firecracker snapshot), to
+// maximize the chance of a runner hit, and to minimize runner pool eviction
+// (since if too many different runner pool keys hit the same node, it's more
+// likely that runners will be evicted from the pool). The runner pool uses
+// remote instance name, group ID, and platform properties in the key, so we use
+// that same key for affinity routing.
+//
+// If recycling is disabled, then we instead try to optimize for filecache hits
+// when downloading action inputs. For now, just use the first output path as
+// the routing key, which roughly acts as a stable identifier for the action.
+// Typically when an action is re-run, most of the input tree is unchanged from
+// when it previously ran, so this strategy should give us a decent chance of
+// hitting a node with a warm filecache.
 type affinityRouter struct{}
 
 func (affinityRouter) Applies(params routingParams) bool {
@@ -454,15 +462,14 @@ func (affinityRouter) routingKey(params routingParams) (string, error) {
 	}
 	parts = append(parts, hash.Bytes(b))
 
-	// Add the first output as the final part of the routing key. This should
-	// uniquely identify a bazel action and is an attempt to route actions to
-	// executor nodes that are warmed up (with inputs and OCI images) for this
-	// action.
-	firstOutput := getFirstOutput(params.cmd)
-	if firstOutput == "" {
-		return "", status.InternalError("routing key requested for action with no outputs")
+	recyclingEnabled := platform.IsTrue(platform.FindValue(params.platform, platform.RecycleRunnerPropertyName))
+	if !recyclingEnabled {
+		firstOutput := getFirstOutput(params.cmd)
+		if firstOutput == "" {
+			return "", status.InternalError("routing key requested for action with no outputs")
+		}
+		parts = append(parts, hash.String(firstOutput))
 	}
-	parts = append(parts, hash.String(firstOutput))
 
 	return strings.Join(parts, "/"), nil
 }
