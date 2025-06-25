@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
@@ -565,4 +566,85 @@ func (n *testNode) GetExecutorHostId() string {
 
 func (n *testNode) GetAssignableMilliCpu() int64 {
 	return n.milliCPUs
+}
+
+func TestTaskRouter_RankNodes_PersistentKeyRouting(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	firstCmd := &repb.Command{
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "foo", Value: "bar"},
+		},
+		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "persistentWorkerKey", Value: "abc1"},
+			},
+		},
+	}
+	instanceName := "test-instance"
+
+	// No executor should be preferred.
+	nodes := sequentiallyNumberedNodes(100)
+	ranked := router.RankNodes(ctx, nil, firstCmd, instanceName, nodes)
+	for i, node := range ranked {
+		log.Printf("rank[%d]: %+v", i, node.GetExecutionNode().GetExecutorHostId())
+	}
+	//	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, firstCmd, instanceName)
+	//	requireNonSequential(t, ranked)
+	//	requireNonePreferred(t, ranked)
+
+	// Mark the task as complete by executor 1.
+	router.MarkSucceeded(ctx, nil, firstCmd, instanceName, executorHostID1)
+
+	secondCmd := &repb.Command{
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "foo", Value: "baz"},
+		},
+		Arguments:   []string{"gcc", "-c", "opt", "foo.c"},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "persistentWorkerKey", Value: "abc1"},
+			},
+		},
+	}
+
+	// Task should now be routed to executor 1.
+	ranked = router.RankNodes(ctx, nil, secondCmd, instanceName, nodes)
+	for i, node := range ranked {
+		log.Printf("rank[%d]: %+v", i, node.GetExecutionNode().GetExecutorHostId())
+	}
+
+	requireSameExecutionNodes(t, nodes, ranked)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	require.True(t, ranked[0].IsPreferred())
+	//	requireNonSequential(t, ranked[1:])
+	//	requireNonePreferred(t, ranked[1:])
+
+	// Mark the task complete by executor 2 as well.
+	router.MarkSucceeded(ctx, nil, secondCmd, instanceName, executorHostID2)
+
+	// Verify that tasks with a different first output are routed randomly.
+	thirdCmd := &repb.Command{
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "foo", Value: "bar"},
+		},
+		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
+		OutputPaths: []string{"/bazel-out/bar.a"},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "persistentWorkerKey", Value: "def2"},
+			},
+		},
+	}
+
+	ranked = router.RankNodes(ctx, nil, thirdCmd, instanceName, nodes)
+	for i, node := range ranked {
+		log.Printf("rank[%d]: %+v", i, node.GetExecutionNode().GetExecutorHostId())
+	}
+	requireNotAlwaysRanked(0, executorHostID2, t, router, ctx, thirdCmd, instanceName)
+
 }

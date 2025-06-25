@@ -94,6 +94,8 @@ func (n rankedExecutionNode) IsPreferred() bool {
 	return n.preferred
 }
 
+// nodesAsRanked returns a slice of deduped execution nodes in the same order
+// that nodes is in.
 func nodesAsRanked(nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
 	for i, node := range nodes {
@@ -231,13 +233,13 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 		}
 	}
 
-	// Randomly shuffle non-preferred nodes at the end of the ranking.
-	for _, node := range nodes {
-		if _, ok := rankedNodeSet[node.GetExecutorId()]; ok {
+	// Add non-preferred nodes at the end of the ranking.
+	for _, rankedExecutionNode := range strategy.RankNodes(params, nodes) {
+		if _, ok := rankedNodeSet[rankedExecutionNode.GetExecutionNode().GetExecutorId()]; ok {
 			continue
 		}
-		ranked = append(ranked, rankedExecutionNode{node: node})
-		rankedNodeSet[node.GetExecutorId()] = struct{}{}
+		ranked = append(ranked, rankedExecutionNode)
+		rankedNodeSet[rankedExecutionNode.GetExecutionNode().GetExecutorId()] = struct{}{}
 	}
 
 	return ranked
@@ -332,6 +334,7 @@ func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Act
 func (tr taskRouter) selectRouter(ctx context.Context, params routingParams) Router {
 	for _, strategy := range tr.strategies {
 		if strategy.Applies(ctx, params) {
+			log.Printf("selected strategy %+v", strategy)
 			return strategy
 		}
 	}
@@ -507,7 +510,7 @@ func getFirstOutput(cmd *repb.Command) string {
 //   - groupID
 //   - remote_instance_name
 //   - persistentWorkerKey
-type persistentWorkerRouter struct{
+type persistentWorkerRouter struct {
 	env environment.Env
 }
 
@@ -516,9 +519,11 @@ func (r *persistentWorkerRouter) Applies(ctx context.Context, params routingPara
 		return false
 	}
 	if exp := r.env.GetExperimentFlagProvider(); exp != nil {
-		return exp.Boolean(ctx, "remote_execution.enable_persistent_worker_routing", false)
-        }
-	return false
+		if t := exp.Boolean(ctx, "remote_execution.enable_persistent_worker_routing", false); t {
+			return t
+		}
+	}
+	return true // STOPSHIP(tyler): set back to false.
 }
 
 func (persistentWorkerRouter) preferredNodeLimit(_ routingParams) int {
@@ -527,7 +532,7 @@ func (persistentWorkerRouter) preferredNodeLimit(_ routingParams) int {
 	return 3
 }
 
-func (persistentWorkerRouter) routingKey(params routingParams) (string, error) {
+func (persistentWorkerRouter) routingKey(params routingParams) string {
 	parts := []string{"task_route", params.groupID}
 
 	if params.remoteInstanceName != "" {
@@ -535,25 +540,21 @@ func (persistentWorkerRouter) routingKey(params routingParams) (string, error) {
 	}
 	parts = append(parts, platform.FindValue(params.platform, "persistentWorkerKey"))
 
-	return strings.Join(parts, "/"), nil
+	return strings.Join(parts, "/")
 }
 
-func (s persistentWorkerRouter) RoutingInfo(params routingParams) (int, []string, error) {
-	nodeLimit := s.preferredNodeLimit(params)
-	key, err := s.routingKey(params)
-	return nodeLimit, []string{key}, err
+func (r persistentWorkerRouter) RoutingInfo(params routingParams) (int, []string, error) {
+	nodeLimit := r.preferredNodeLimit(params)
+	key := r.routingKey(params)
+	return nodeLimit, []string{key}, nil
 }
 
-func (s persistentWorkerRouter) RankNodes(params routingParams, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
-	key, err := s.routingKey(params)
-	if err == nil {
-		src := rand.NewSource(int64(hash.MemHashString(key)))
-		rng := rand.New(src)
+func (r persistentWorkerRouter) RankNodes(params routingParams, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	key := r.routingKey(params)
 
-		rng.Shuffle(len(nodes), func(i, j int) {
-			nodes[i], nodes[j] = nodes[j], nodes[i]
-		})
-	}
+	sort.Slice(nodes, func(i, j int) bool {
+		return hash.MemHashString(key+nodes[i].GetExecutorHostId()) < hash.MemHashString(key+nodes[j].GetExecutorHostId())
+	})
 
 	return nodesAsRanked(nodes)
 }
