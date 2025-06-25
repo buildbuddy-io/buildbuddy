@@ -8,23 +8,14 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 )
 
 const (
 	cliName = "bb"
-)
-
-var (
-	// helpModifiers are flags that affect how the help output is displayed.
-	helpModifiers = map[string]struct{}{
-		"--long":  {},
-		"--short": {},
-	}
 )
 
 // HandleHelp Valid cases to trigger help:
@@ -35,41 +26,9 @@ var (
 // * bb `command name` -h
 // * bb --help `command name`
 // * bb `command name` --help
-func HandleHelp(args []string) (exitCode int, err error) {
-	args, _ = arg.SplitExecutableArgs(args)
-
-	// Returns first non-flag
-	cmd, idx := arg.GetCommandAndIndex(args)
-	// If no command is specified, show general help.
-	// TODO: Allow configuring a "default command" that is run when
-	// no args are passed? Like `build //...`
-	if idx == -1 {
-		return showHelp("", getHelpModifiers(args))
-	}
-	if cmd == "help" {
-		helpTopic := arg.GetCommand(args[idx+1:])
-		return showHelp(helpTopic, getHelpModifiers(args))
-	}
-	if arg.ContainsExact(args, "-h") || arg.ContainsExact(args, "--help") {
-		bazelCommand, _ := parser.GetBazelCommandAndIndex(args)
-		// Sanity check to work around potential issues with
-		// GetBazelCommandAndIndex (see TODOs on that func).
-		if cmd != bazelCommand {
-			return -1, nil
-		}
-		return showHelp(bazelCommand, getHelpModifiers(args))
-	}
-	return -1, nil
-}
-
-func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
-	bazelArgs := []string{"help"}
-	if subcommand != "" {
-		bazelArgs = append(bazelArgs, subcommand)
-	}
-	bazelArgs = append(bazelArgs, modifiers...)
+func HandleHelp(args parsed.Args) (exitCode int, err error) {
 	buf := &bytes.Buffer{}
-	exitCode, err = bazelisk.Run(bazelArgs, &bazelisk.RunOpts{Stdout: buf, Stderr: buf})
+	exitCode, err = bazelisk.Run(args.Format(), &bazelisk.RunOpts{Stdout: buf, Stderr: buf})
 	if err != nil {
 		io.Copy(os.Stdout, buf)
 		return exitCode, err
@@ -124,16 +83,6 @@ func printBBCommands() {
 		fmt.Printf("  %s  %s\n", padEnd(c.Name, 18), c.Help)
 	}
 	fmt.Println()
-}
-
-func getHelpModifiers(args []string) []string {
-	var out []string
-	for _, arg := range args {
-		if _, ok := helpModifiers[arg]; ok {
-			out = append(out, arg)
-		}
-	}
-	return out
 }
 
 func padStart(value string, targetLength int) string {

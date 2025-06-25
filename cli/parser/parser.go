@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 
+	helpoptdef "github.com/buildbuddy-io/buildbuddy/cli/help/option_definitions"
 	logoptdef "github.com/buildbuddy-io/buildbuddy/cli/log/option_definitions"
 	watchoptdef "github.com/buildbuddy-io/buildbuddy/cli/watcher/option_definitions"
 
@@ -162,6 +163,79 @@ func GetNativeParser() *Parser {
 	)
 }
 
+// GetHelpParser returns a parser that can parse bazel options, native options,
+// and the help option.
+// TODO: when we finally can support plugin options, make sure the help parser
+// has access to those as well.
+func GetHelpParser() (*Parser, error) {
+	bazelParser, err := GetBazelParser()
+	if err != nil {
+		return nil, err
+	}
+	nativeParser := GetNativeParser()
+
+	var helpOptionDefinitionsAsStartupOptions []*options.Definition
+	for name, d := range bazelParser.CommandOptionParser.ByName {
+		if d.Supports("help") {
+			// help parser has to be able to recognize help options as startup options,
+			// since when help is called with `-h` or `--help`, there technically is
+			// no command for command options to follow.
+			defOpts := []options.DefinitionOpt{
+				options.WithSupportFor("startup"),
+			}
+			if d.ShortName() != "" {
+				defOpts = append(defOpts, options.WithShortName(d.ShortName()))
+			}
+			if d.Multi() {
+				defOpts = append(defOpts, options.WithMulti())
+			}
+			if d.HasNegative() {
+				defOpts = append(defOpts, options.WithNegative())
+			}
+			if d.RequiresValue() {
+				defOpts = append(defOpts, options.WithRequiresValue())
+			}
+			if d.PluginID() != "" {
+				defOpts = append(defOpts, options.WithPluginID(d.PluginID()))
+			}
+			helpOptionDefinitionsAsStartupOptions = append(
+				helpOptionDefinitionsAsStartupOptions,
+				options.NewDefinition(
+					name,
+					defOpts...,
+				),
+			)
+		}
+	}
+
+	option_definitions := slices.Concat(
+		slices.Collect(maps.Values(nativeParser.StartupOptionParser.ByName)),
+		slices.Collect(maps.Values(bazelParser.StartupOptionParser.ByName)),
+		slices.Collect(maps.Values(bazelParser.CommandOptionParser.ByName)),
+		helpOptionDefinitionsAsStartupOptions,
+		[]*options.Definition{helpoptdef.Help},
+	)
+
+	commands := slices.Concat(
+		slices.Collect(nativeParser.StartupOptionParser.Subcommands.All()),
+		slices.Collect(bazelParser.StartupOptionParser.Subcommands.All()),
+		// recognize -- to prevent parsing failure for cases like, for example,
+		// `bb -h -- build
+		[]string{"--"},
+	)
+
+	aliases := maps.Clone(bazelParser.StartupOptionParser.Aliases)
+	maps.Insert(aliases, maps.All(nativeParser.StartupOptionParser.Aliases))
+
+	return NewParser(option_definitions, commands, aliases), nil
+}
+
+// GetBazelParser can parse bazel options, bb CLI native options, and plugin
+// options.
+func GetBazelParser() (*Parser, error) {
+	return GetParser()
+}
+
 func (p *Parser) ForceAddOptionDefinition(d *options.Definition) {
 	// addOptionDefinition does not return an error if force is true.
 	_ = p.addOptionDefinitionImpl(d, true)
@@ -233,13 +307,23 @@ func (p *Parser) ParseArgsForCommand(args []string, command string) (*parsed.Ord
 			break
 		}
 		if next[0] == "--" {
-			if command == "startup" {
-				// Bazel does not recognize `--` until the command has been encountered.
-				return nil, fmt.Errorf("unknown startup option '--'.")
+			// -- as a positional argument always ends parsing, one way or another.
+			if len(subparser.Subcommands) == 0 {
+				parsedArgs.Args = append(parsedArgs.Args, &arguments.DoubleDash{})
+				parsedArgs.Args = append(parsedArgs.Args, arguments.ToPositionalArguments(next[1:])...)
+				break
 			}
-			parsedArgs.Args = append(parsedArgs.Args, &arguments.DoubleDash{})
-			parsedArgs.Args = append(parsedArgs.Args, arguments.ToPositionalArguments(next[1:])...)
-			break
+			if subparser.Subcommands.Contains("--") {
+				// special case to support bb help edge cases; '--help' or '-h' implies
+				// a 'help' subcommand, so `--` is not necessarily an error. Hence, the
+				// parser for parsing help commands supports `--` as a command, though
+				// it is still true that no arguments following it may be interpreted
+				// as options.
+				parsedArgs.Args = append(parsedArgs.Args, arguments.ToPositionalArguments(next)...)
+				break
+			}
+			// Bazel does not recognize `--` until the command has been encountered.
+			return nil, fmt.Errorf("unknown startup option '--'.")
 		}
 		if len(subparser.Subcommands) == 0 {
 			// If the subparser does not support subcommands, this is just a normal

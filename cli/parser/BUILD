@@ -7,6 +7,7 @@ go_library(
     deps = [
         "//cli/bazelisk",
         "//cli/cli_command",
+        "//cli/help/option_definitions",
         "//cli/log",
         "//cli/log/option_definitions",
         "//cli/parser/arguments",
