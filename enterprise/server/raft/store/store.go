@@ -2916,7 +2916,8 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		}
 
 		var replicaDesc *rfpb.ReplicaDescriptor
-		for _, replica := range rd.GetReplicas() {
+		replicas := append(rd.GetReplicas(), rd.GetStaging()...)
+		for _, replica := range replicas {
 			if replica.GetReplicaId() == req.GetReplicaId() {
 				if replica.GetNhid() == s.NHID() {
 					return nil, status.FailedPreconditionErrorf("cannot remove leader c%dn%d", rangeID, req.GetReplicaId())
@@ -3148,6 +3149,13 @@ func (s *Store) markReplicaForRemovalFromRangeDescriptor(ctx context.Context, ra
 			newDescriptor.Replicas = append(newDescriptor.Replicas[:i], newDescriptor.Replicas[i+1:]...)
 			break
 		}
+	}
+	for i, replica := range newDescriptor.Staging {
+		if replica.GetReplicaId() == replicaID {
+			newDescriptor.Removed = append(newDescriptor.Removed, newDescriptor.Staging[i])
+			newDescriptor.Staging = append(newDescriptor.Staging[:i], newDescriptor.Staging[i+1:]...)
+		}
+
 	}
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
 	if newDescriptor.GetLastAddedReplicaId() == replicaID {
