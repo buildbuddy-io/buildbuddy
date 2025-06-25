@@ -576,12 +576,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     // miss references.
     const decorInRange = this.editor?.getDecorationsInRange(range);
     if (!decorInRange) {
-      console.log("Warning: No decorations found in range", range);
       return [];
     }
 
     let refsInRange = decorInRange.map((decor) => this.decorToReference(decor)).filter((ref) => !!ref);
-    console.log("refsInRange", refsInRange);
 
     let minMatches: kythe.proto.DecorationsReply.Reference[] = [];
     let minMatchLength = Number.POSITIVE_INFINITY;
