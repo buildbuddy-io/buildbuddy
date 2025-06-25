@@ -506,8 +506,6 @@ func (css *codesearchServer) extendedXrefs(ctx context.Context, req *srpb.Extend
 
 	ticks := req.GetTickets()
 
-	// TODO(jdelfino): Handle generated code by dealing with /kythe/edge/generates edges
-
 	// See https://kythe.io/docs/schema/ for edge type definitions.
 	// Every edge that leads to data that might want to be shown in the references panel of the UI
 	// should be included here.
@@ -699,6 +697,13 @@ func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequ
 			ExtendedXrefsReply: xrefsReply,
 		}
 		err = xrefsErr
+	case *srpb.KytheRequest_DocsRequest:
+		//docsReply, docsErr := css.documentation(ctx, req.GetDocsRequest())
+		docsReply, docsErr := css.xs.Documentation(ctx, req.GetDocsRequest())
+		rsp.Value = &srpb.KytheResponse_DocsReply{
+			DocsReply: docsReply,
+		}
+		err = docsErr
 	}
 
 	return rsp, err
