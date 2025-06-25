@@ -5,6 +5,7 @@ import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { user_id } from "../../../proto/user_id_ts_proto";
 import { user } from "../../../proto/user_ts_proto";
+import { accountName } from "../../../app/auth/user";
 
 export interface OrgJoinRequestsComponentProps {
   user: User;
@@ -114,16 +115,7 @@ export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComp
  */
 function accountLabel(user: user_id.DisplayUser | null | undefined) {
   if (!user) return null;
-  let account = "Unknown account";
-  if (user.username) {
-    account = user.username;
-  } else if (user.email) {
-    account = user.email;
-  } else {
-    account = `BuildBuddy User ${user.userId?.id}`;
-  }
-
-  return `${account} (${accountTypeLabel(user.accountType)})`;
+  return `${accountName(user)} (${accountTypeLabel(user.accountType)})`;
 }
 
 function accountTypeLabel(accountType: user_id.AccountType) {

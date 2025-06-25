@@ -66,3 +66,16 @@ export class User {
     return this.allowedRpcs.has("updateGroup");
   }
 }
+
+export function accountName(user: user_id.DisplayUser | undefined | null): string {
+  if (!user) {
+    return "Unknown User";
+  }
+  if (user.username) {
+    return user.username;
+  }
+  if (user.email) {
+    return user.email;
+  }
+  return `BuildBuddy User ${user.userId?.id}`;
+}

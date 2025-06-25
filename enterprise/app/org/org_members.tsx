@@ -1,5 +1,6 @@
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
+import { accountName } from "../../../app/auth/user";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
 import Checkbox from "../../../app/components/checkbox/checkbox";
@@ -20,7 +21,7 @@ import { user_id } from "../../../proto/user_id_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
 import Banner from "../../../app/components/banner/banner";
 import capabilities from "../../../app/capabilities/capabilities";
-import { CheckCircle, Github, HelpCircle, ShieldCheck, UserCircle, XCircle } from "lucide-react";
+import { CheckCircle, HelpCircle, ShieldCheck, UserCircle, XCircle } from "lucide-react";
 import { GoogleIcon } from "../../../app/icons/google";
 import { GithubIcon } from "../../../app/icons/github";
 
@@ -250,7 +251,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         <div className="affected-users-list">
           {selectedMembers.map((member) => (
             <div className={`affected-users-list-item ${this.isLoggedInUser(member) ? "flagged-self-user" : ""}`}>
-              {member?.user?.email || member?.user?.name?.full} {iconFromAccountType(member.user?.accountType)}
+              {accountName(member.user)} {iconFromAccountType(member.user?.accountType)}
             </div>
           ))}
         </div>
