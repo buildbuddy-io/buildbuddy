@@ -246,7 +246,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     });
   }
 
-  getDisplayOptions(o: any, className: string = "code-hover" ): monaco.editor.IModelDecorationOptions | null {
+  getDisplayOptions(o: any, className: string = "code-hover"): monaco.editor.IModelDecorationOptions | null {
     const allowedKinds = [
       "/kythe/edge/ref/call",
       "/kythe/edge/ref/imports",
@@ -372,13 +372,18 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       }
     });
     if (modDecs.length > 0) {
-      model.deltaDecorations(modDecs.map((x) => x.id),modDecs);
+      model.deltaDecorations(
+        modDecs.map((x) => x.id),
+        modDecs
+      );
     }
-  };
+  }
 
   hoverHandler(model: monaco.IEditorModel, position: monaco.Position): monaco.languages.Hover | undefined {
     let ticks = this.ticketsForPosition(position);
-    if (!ticks?.length) { return null; }
+    if (!ticks?.length) {
+      return null;
+    }
 
     let modDecs: monaco.IModelDecoration[] = [];
 
@@ -410,7 +415,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     });
 
     if (modDecs.length > 0) {
-      model.deltaDecorations(modDecs.map((x) => x.id), modDecs);
+      model.deltaDecorations(
+        modDecs.map((x) => x.id),
+        modDecs
+      );
     }
   }
 
@@ -687,9 +695,12 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       }
     });
 
-    monaco.languages.registerHoverProvider({scheme: "file"}, {
-      provideHover: this.hoverHandler.bind(this),
-    });
+    monaco.languages.registerHoverProvider(
+      { scheme: "file" },
+      {
+        provideHover: this.hoverHandler.bind(this),
+      }
+    );
 
     this.forceUpdate();
 
