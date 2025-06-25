@@ -822,7 +822,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   componentDidUpdate(prevProps: Props, prevState: State) {
     this.fetchInitialContent();
     this.editor?.setModel(this.state.fullPathToModelMap.get(this.currentPath()) || null);
-    this.focusLineNumberAndHighlightQuery()
+    this.focusLineNumberAndHighlightQuery();
   }
 
   parsePath() {
