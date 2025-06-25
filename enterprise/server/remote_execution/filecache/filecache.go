@@ -81,6 +81,11 @@ type fileCache struct {
 	lock        sync.Mutex
 	l           *lru.LRU[*entry]
 	dirScanDone chan struct{}
+
+	linkFromFileCacheLatency prometheus.Observer
+	linkIntoFileCacheLatency prometheus.Observer
+	createParentDirLatency   prometheus.Observer
+	addFileLatency           prometheus.Observer
 }
 
 // entry is used to hold a value in the evictList
@@ -131,9 +136,13 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 		return nil, err
 	}
 	c := &fileCache{
-		rootDir:     rootDir,
-		l:           l,
-		dirScanDone: make(chan struct{}),
+		rootDir:                  rootDir,
+		l:                        l,
+		dirScanDone:              make(chan struct{}),
+		linkFromFileCacheLatency: metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_from_filecache"}),
+		linkIntoFileCacheLatency: metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_into_filecache"}),
+		createParentDirLatency:   metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "create_parent_dir"}),
+		addFileLatency:           metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "add_file"}),
 	}
 	if err := os.RemoveAll(c.TempDir()); err != nil {
 		return nil, status.WrapErrorf(err, "failed to clear filecache temp dir")
@@ -292,7 +301,7 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 		log.Warningf("Failed to link file from cache: %s", err)
 		return false
 	}
-	metrics.FileCacheLinkLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
+	c.linkFromFileCacheLatency.Observe(float64(time.Since(start).Microseconds()))
 	return true
 }
 
@@ -343,9 +352,11 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	// group. With includeSubdirPrefix=false, this could make the Add path
 	// 7% faster, but it's more complicated with includeSubdirPrefix=true.
 	if fp != existingFilePath {
+		start := time.Now()
 		if err := disk.EnsureDirectoryExists(filepath.Dir(fp)); err != nil {
 			return err
 		}
+		c.createParentDirLatency.Observe(float64(time.Since(start).Microseconds()))
 	}
 
 	c.lock.Lock()
@@ -364,9 +375,12 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		// (i.e. it's being added from some action workspace), then remove and
 		// unlink any existing entry, then hardlink to the destination path.
 		c.l.Remove(k)
+
+		start := time.Now()
 		if err := cloneOrLink(groupID, existingFilePath, fp); err != nil {
 			return err
 		}
+		c.linkIntoFileCacheLatency.Observe(float64(time.Since(start).Microseconds()))
 
 		// If the file being added is inside the filecache dir, and it
 		// is stored in an "old-style" location, then remove it.
@@ -393,9 +407,15 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 }
 
 func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) error {
+	start := time.Now()
 	groupID := groupIDStringFromContext(ctx)
 	// Locking happens in addFileToGroup().
-	return c.addFileToGroup(groupID, node, existingFilePath)
+	err := c.addFileToGroup(groupID, node, existingFilePath)
+	if err != nil {
+		return err
+	}
+	c.addFileLatency.Observe(float64(time.Since(start).Microseconds()))
+	return nil
 }
 
 func (c *fileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
