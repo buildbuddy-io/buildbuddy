@@ -246,25 +246,18 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     });
   }
 
-  getDisplayOptions(o: any): monaco.editor.IModelDecorationOptions | null {
-    let type = "";
-    switch (o.kind) {
-      case "/kythe/edge/ref/call":
-        type = "fncall";
-        break;
-      case "/kythe/edge/ref/imports":
-        type = "import";
-        break;
-      case "/kythe/edge/defines/binding":
-        type = "def";
-        break;
-      case "/kythe/edge/ref":
-        type = "";
-        break;
-      default:
-        return null;
+  getDisplayOptions(o: any, className: string = "code-hover" ): monaco.editor.IModelDecorationOptions | null {
+    const allowedKinds = [
+      "/kythe/edge/ref/call",
+      "/kythe/edge/ref/imports",
+      "/kythe/edge/defines/binding",
+      "/kythe/edge/ref",
+      "/kythe/edge/ref/writes",
+    ];
+    if (!allowedKinds.includes(o.kind)) {
+      return null;
     }
-    return { inlineClassName: "code-hover " + type, hoverMessage: { value: o.target_ticket } };
+    return { inlineClassName: className, hoverMessage: { value: o.target_ticket } };
   }
 
   ticketsForPosition(pos: monaco.Position): string[] {
@@ -525,10 +518,12 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     // miss references.
     const decorInRange = this.editor?.getDecorationsInRange(range);
     if (!decorInRange) {
+      console.log("Warning: No decorations found in range", range);
       return [];
     }
 
     let refsInRange = decorInRange.map((decor) => this.decorToReference(decor)).filter((ref) => !!ref);
+    console.log("refsInRange", refsInRange);
 
     let minMatches: kythe.proto.DecorationsReply.Reference[] = [];
     let minMatchLength = Number.POSITIVE_INFINITY;
@@ -633,6 +628,43 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         // TODO(jdelfino): Disable "Go to definition" when already on a definition
         this.findRefsKey?.set(decors != null && decors.length > 0);
         this.goToDefKey?.set(decors != null && decors.length > 0);
+      }
+    });
+
+    monaco.languages.registerHoverProvider({scheme: "file"}, {
+      provideHover: (model, position, token, context) => {
+        console.log("provideHover", model, position, token, context);
+        let ticks = this.ticketsForPosition(position);
+        if (!ticks?.length) { return null; }
+
+        console.log("hover ticks", ticks);
+
+        let modDecs: monaco.IModelDecoration[] = [];
+        let modIds: string[] = [];
+        model.getAllDecorations().forEach((decor: monaco.IModelDecoration) => {
+            const ref = this.decorToReference(decor);
+            if (!ref) {
+              return;
+            }
+            let newClassName = "";
+            if (ticks.includes(ref.targetTicket)) {
+              if (ref.kind === "/kythe/edge/ref") {
+                newClassName = "code-highlight-reference";
+              } else if (ref.kind === "/kythe/edge/defines/binding" || ref.kind === "/kythe/edge/ref/writes") {
+                newClassName = "code-highlight-definition";
+              }
+            } else if (decor.options.inlineClassName !== "code-hover") {
+              // reset previously highlighted nodes
+              newClassName = "code-hover";
+            }
+
+            if (newClassName) {
+              decor.options.inlineClassName = newClassName;
+              modIds.push(decor.id);
+              modDecs.push(decor);
+            }
+          });
+        model.deltaDecorations(modIds,modDecs);
       }
     });
 

@@ -12,6 +12,20 @@
   cursor: pointer;
 }
 
+.code-highlight-definition {
+  text-decoration: underline;
+  background-color: #f8f0ff;
+  cursor: pointer;
+  border: 1px solid #9334e6;
+}
+
+.code-highlight-reference {
+  text-decoration: underline;
+  background-color: #fef7e0;
+  cursor: pointer;
+  border: 1px solid #8f6b00;
+}
+
 .code-search-xrefs {
   height: 300px;
   overflow: hidden;
