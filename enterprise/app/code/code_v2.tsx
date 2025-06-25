@@ -357,10 +357,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       .catch((e) => console.log("Error fetching kythe data", e));
   }
 
-  clearHighlights(model: monaco.IEditorModel) {
-    let modDecs: monaco.IModelDecoration[] = [];
+  clearHighlights(model: monaco.editor.ITextModel) {
+    let modDecs: monaco.editor.IModelDecoration[] = [];
 
-    model.getAllDecorations().forEach((decor: monaco.IModelDecoration) => {
+    model.getAllDecorations().forEach((decor: monaco.editor.IModelDecoration) => {
       const ref = this.decorToReference(decor);
       if (!ref) {
         return;
@@ -379,17 +379,17 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     }
   }
 
-  hoverHandler(model: monaco.IEditorModel, position: monaco.Position): monaco.languages.Hover | undefined {
+  hoverHandler(model: monaco.editor.ITextModel, position: monaco.Position): monaco.languages.Hover | undefined {
     let ticks = this.ticketsForPosition(position);
     if (!ticks?.length) {
-      return null;
+      return;
     }
 
-    let modDecs: monaco.IModelDecoration[] = [];
+    let modDecs: monaco.editor.IModelDecoration[] = [];
 
     // Go through each decoration. Find decorations with matching tickets. Update their class names
     // to highlight them. At the same time, remove previous highlights.
-    model.getAllDecorations().forEach((decor: monaco.IModelDecoration) => {
+    model.getAllDecorations().forEach((decor: monaco.editor.IModelDecoration) => {
       const ref = this.decorToReference(decor);
       if (!ref) {
         return;
