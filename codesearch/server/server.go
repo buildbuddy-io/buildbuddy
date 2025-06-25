@@ -656,6 +656,80 @@ func handleEdges(edgeTypes []string, edgeReply *kgpb.EdgesReply, xrefs *kxpb.Cro
 	}
 }
 
+func (css *codesearchServer) documentation(ctx context.Context, req *srpb.ExtendedDocumentationRequest) (*srpb.ExtendedDocumentationReply, error) {
+	// 1. Find the %/kythe/edge/documents edges for the given ticket.
+	// 2. Fetch the nodes for those tickets, and extract the /kythe/text fact from each node, which
+	//    contains the docstring.
+	// 3. Fetch the node for the original ticket, which contains the node type.
+	// 4. Fetch the cross-references for the original ticket, which contains the definition location.
+
+	// Note that, even though the kythe xrefs service has a "Documentation" method, the underlying
+	// data does not appear to be populated by kythe's write_tables tool (unless you use the
+	// experimental beam implementation), and even then, it doesn't contain node info or definition
+	// locations, which we want to show in the UI. So, we do that part manually here.
+
+	ticket := req.GetTicket()
+	tickets := []string{ticket}
+	reply := &srpb.ExtendedDocumentationReply{}
+
+	// Edges, to find all the "documents" edges for the given ticket.
+	edgeReq := &kgpb.EdgesRequest{
+		Ticket: tickets,
+		Kind:   []string{"%/kythe/edge/documents"},
+	}
+
+	edgeReply, err := css.gs.Edges(ctx, edgeReq)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to get edges for ticket %s: %v", tickets, err)
+	}
+
+	for _, edgeSet := range edgeReply.GetEdgeSets() {
+		if grp, ok := edgeSet.GetGroups()["%/kythe/edge/documents"]; ok {
+			for _, edge := range grp.GetEdge() {
+				tickets = append(tickets, edge.TargetTicket)
+			}
+		}
+	}
+
+	// Nodes, to get docstring, and the node kind of the original ticket.
+	nodeReply, err := css.gs.Nodes(ctx, &kgpb.NodesRequest{Ticket: tickets})
+	if err != nil {
+		return nil, status.InternalErrorf("failed to get nodes for tickets %s: %v", tickets, err)
+	}
+
+	for tick, node := range nodeReply.GetNodes() {
+		if tick == ticket {
+			reply.NodeInfo = node
+		} else {
+			// Documentation nodes hold the docstring in the "kythe/text" fact.
+			// https://kythe.io/docs/schema/#doc
+			txt, ok := node.GetFacts()["kythe/text"]
+			if ok {
+				reply.Docstring = string(txt)
+			}
+		}
+	}
+
+	// Xrefs, for the definition location.
+	xrefReq := &kxpb.CrossReferencesRequest{
+		Ticket:          []string{ticket},
+		DefinitionKind:  kxpb.CrossReferencesRequest_ALL_DEFINITIONS,
+		DeclarationKind: kxpb.CrossReferencesRequest_NO_DECLARATIONS,
+		ReferenceKind:   kxpb.CrossReferencesRequest_NO_REFERENCES,
+		Snippets:        kxpb.SnippetsKind_NONE,
+	}
+	xrefReply, err := css.xs.CrossReferences(ctx, xrefReq)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to get cross-references for tickets %s: %v", ticket, err)
+	}
+	xrefs, ok := xrefReply.GetCrossReferences()[ticket]
+	if ok && len(xrefs.GetDefinition()) > 0 {
+		reply.Definition = xrefs.GetDefinition()[0]
+	}
+
+	return reply, nil
+}
+
 func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequest) (*srpb.KytheResponse, error) {
 	var rsp = new(srpb.KytheResponse)
 	var err = status.UnimplementedError("method not implemented in codesearch backend")
@@ -698,8 +772,8 @@ func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequ
 		}
 		err = xrefsErr
 	case *srpb.KytheRequest_DocsRequest:
-		//docsReply, docsErr := css.documentation(ctx, req.GetDocsRequest())
-		docsReply, docsErr := css.xs.Documentation(ctx, req.GetDocsRequest())
+		docsReply, docsErr := css.documentation(ctx, req.GetDocsRequest())
+		//docsReply, docsErr := css.xs.Documentation(ctx, req.GetDocsRequest())
 		rsp.Value = &srpb.KytheResponse_DocsReply{
 			DocsReply: docsReply,
 		}
