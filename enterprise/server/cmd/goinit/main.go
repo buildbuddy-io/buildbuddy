@@ -579,7 +579,7 @@ func runVMDNSServer(ctx context.Context) error {
 
 func (s *vmDNSServer) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	for _, o := range s.overrides {
-		if strings.HasSuffix(req.Question[0].Name, o.HostnameToOverride) {
+		if strings.HasSuffix(req.Question[0].Name, o.HostnameToOverride) && !strings.HasSuffix(req.Question[0].Name, "proxy.metal.buildbuddy.dev.") {
 			s.overrideResponse(w, req, o.RedirectToIP)
 			return
 		}
@@ -613,21 +613,26 @@ func (s *vmDNSServer) overrideResponse(w dns.ResponseWriter, req *dns.Msg, redir
 	m.Authoritative = true
 	m.Rcode = dns.RcodeSuccess
 	m.RecursionAvailable = true
-	aRec := &dns.A{
+
+	cname := &dns.CNAME{
 		Hdr: dns.RR_Header{
 			Name:   req.Question[0].Name,
+			Rrtype: dns.TypeCNAME,
+			Class:  dns.ClassINET,
+			Ttl:    60,
+		},
+		Target: "proxy.metal.buildbuddy.dev.",
+	}
+	aRec := &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   "proxy.metal.buildbuddy.dev.",
 			Rrtype: dns.TypeA,
 			Class:  dns.ClassINET,
 			Ttl:    60,
 		},
-		A: net.ParseIP(redirectToIP),
+		A: net.ParseIP("23.176.168.34"),
 	}
-	// TODO: If the override is unavailable, should we fallback to the original
-	// hostname? For example if we override buildbuddy.io with proxy.io but the
-	// proxy is unavailable, should we provide another DNS response for buildbuddy.io?
-	// We'd need the IP for the original hostname, because you can return
-	// multiple A responses but only a single cname response.
-	m.Answer = append(m.Answer, aRec)
+	m.Answer = append(m.Answer, cname, aRec)
 	if err := w.WriteMsg(m); err != nil {
 		log.Errorf("could not send dns reply: %s", err)
 	}
