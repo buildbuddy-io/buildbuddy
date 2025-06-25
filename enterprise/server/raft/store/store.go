@@ -2468,13 +2468,25 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		RangeId:       newRangeID,
 		InitialMember: initialMembers,
 	})
+	// Range Validation is required on the existing range to make sure that the
+	// existing leader/range lease holder has the update-to-date range descriptor.
+	// See go/raft-range-validation-in-txn.
+	leftStmt.SetRangeValidationRequired(true)
 
 	rightStmt := tb.AddStatement()
 	rightStmt.SetRangeDescriptor(newRightRange).SetBatch(rightBatch)
 	rightStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
 
+	// No range validation b/c the range descriptor is a new one.
+	// See go/raft-range-validation-in-txn
+	rightStmt.SetRangeValidationRequired(false)
+
 	metaStmt := tb.AddStatement()
 	metaStmt.SetRangeDescriptor(mrd).SetBatch(metaBatch)
+	// The meta range descriptor is from range cache and can be not-up-to date.
+	// Validating meta range can make the txn difficult to succeed.
+	// See go/raft-range-validation-in-txn.
+	metaStmt.SetRangeValidationRequired(false)
 	if err := s.txnCoordinator.RunTxn(ctx, tb); err != nil {
 		return nil, err
 	}
@@ -3065,15 +3077,28 @@ func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, 
 		localBatch.Add(metaRangeCasReq)
 		stmt := txn.AddStatement()
 		stmt.SetRangeDescriptor(mrd).SetBatch(localBatch)
+		// Range Validation is required on the existing range to make sure that the
+		// existing leader/range lease holder has the update-to-date range descriptor.
+		// Normally, we don't want range validation for meta range, but since we
+		// are changing meta range discriptor, validation is required.
+		// See go/raft-range-validation-in-txn.
+		stmt.SetRangeValidationRequired(true)
 	} else {
 		metaRangeBatch := rbuilder.NewBatchBuilder()
 		metaRangeBatch.Add(metaRangeCasReq)
 
 		stmt := txn.AddStatement()
-		stmt.SetRangeDescriptor(new).SetBatch(localBatch)
+		stmt.SetRangeDescriptor(old).SetBatch(localBatch)
+		// Range Validation is required on the existing range to make sure that the
+		// existing leader/range lease holder has the update-to-date range descriptor.
+		// See go/raft-range-validation-in-txn.
+		stmt.SetRangeValidationRequired(true)
 
 		stmt = txn.AddStatement()
 		stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)
+		// No range validation for meta range. See
+		// go/raft-range-validation-in-txn for more details.
+		stmt.SetRangeValidationRequired(false)
 	}
 	err = s.txnCoordinator.RunTxn(ctx, txn)
 	if err != nil {

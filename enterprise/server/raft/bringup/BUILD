@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/filestore",
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/header",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/sender",
