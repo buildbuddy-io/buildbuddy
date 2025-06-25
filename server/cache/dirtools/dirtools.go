@@ -1068,11 +1068,11 @@ func (mar *mkdirAllRequest) Do() error {
 	// exist. os.Mkdir should work and be faster than os.MkdirAll so try it
 	// first.
 	err := os.Mkdir(mar.path, mar.perm)
-	if err == nil || !os.IsNotExist(err) {
+	if err == nil {
 		return err
 	}
-	// If we failed with a "not exist" error, it means the parent directory
-	// does not exist, so we need to create the entire path.
+	// If we failed it means the parent directory does not exist, or the target
+	// directory exists. MkdirAll will handle both cases.
 	return os.MkdirAll(mar.path, mar.perm)
 }
 
