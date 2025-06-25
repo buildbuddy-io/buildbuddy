@@ -1435,7 +1435,8 @@ func platformHash(p *repb.Platform) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(sha256.Sum256(b)), nil
+	sha := sha256.Sum256(b)
+	return hex.EncodeToString(sha[:]), nil
 }
 
 type labeledError struct {
