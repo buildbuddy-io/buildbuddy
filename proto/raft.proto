@@ -190,10 +190,15 @@ message TxnRequest {
     BatchCmdRequest raw_batch = 2;
     RangeDescriptor range = 3;
     repeated TransactionHook hooks = 4;
-    // Is range validation required for the statement? Generally, it's required
-    // for existing range, e.g. the left range in a split txn, or the txn to
-    // update range descriptor; not required for new range: i.e. the right range
-    // in a split txn
+
+    // Is range validation required for the statement? 
+	//
+	// It's required for the existing range This is to make sure the range 
+	// descriptor on the range lease holder or current leader is up-to-date w/o
+	// a linearizable read to the meta range. 
+	//
+	// However, for new ranges and meta range when itself is not updated. More 
+	// details can be found at go/raft-range-validation-in-txn.
     bool range_validation_required = 5;
   }
   repeated Statement statements = 2;

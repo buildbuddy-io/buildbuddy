@@ -335,7 +335,6 @@ func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 		}
 
 		for _, stmt := range txnRecord.GetTxnRequest().GetStatements() {
-			log.Infof("finalize txn statement: %d", stmt.GetRange().GetRangeId())
 			err := tc.finalizeTxn(ctx, txnID, txnRecord.GetOp(), stmt)
 			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is already finalized, we will get NotFound Error when we finalize and this is fine.
