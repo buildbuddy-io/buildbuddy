@@ -91,12 +91,18 @@ type GroupMembership struct {
 	Role role.Role `json:"role"`
 }
 
+type APIKeyInfo struct {
+	ID           string
+	OwnerGroupID string
+}
+
 type UserInfo interface {
 	jwt.Claims
 
-	// ID of the API Key used to authenticate the request or empty if an API
-	// key was not used.
-	GetAPIKeyID() string
+	// GetAPIKeyInfo returns the metadata for the API key used for
+	// authentication. An empty struct will be returned if an API key
+	// was not used.
+	GetAPIKeyInfo() APIKeyInfo
 	// ID of the authenticated user. Empty if authenticated using an Org API
 	// key.
 	GetUserID() string
