@@ -305,7 +305,7 @@ func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
 }`)
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
 	openfeature.SetProviderAndWait(provider)
-	defer provider.Shutdown()
+	defer openfeature.Shutdown()
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
 
@@ -829,6 +829,47 @@ func TestSchedulingDelay_PreferredExecutorUnhealthy(t *testing.T) {
 
 	fe2.EnsureTaskNotReceived(taskID)
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
+}
+
+func TestSchedulingDelay_ExperimentOverride(t *testing.T) {
+	tmp := testfs.MakeTempDir(t)
+	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+	"$schema": "https://flagd.dev/schema/v0/flags.json",
+	"flags": {
+		"remote_execution.non_preferred_node_scheduling_delay_ms": {
+			"state": "ENABLED",
+			"variants": {
+				"delayed": 1000,
+				"default": 0
+			},
+			"defaultVariant": "default",
+			"targeting": {
+				"if": [
+					{ "==": [{ "var": "persistent_worker" }, true] },
+					"delayed"
+				]
+			}
+		}
+	}
+}`)
+	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	openfeature.SetProviderAndWait(provider)
+	defer openfeature.Shutdown()
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env, ctx := getEnv(t, &schedulerOpts{preferredExecutors: []string{"2"}}, "user1")
+	env.SetExperimentFlagProvider(fp)
+
+	fe1 := newFakeExecutorWithId(ctx, t, "1", env.GetSchedulerClient())
+	fe2 := newFakeExecutorWithId(ctx, t, "2", env.GetSchedulerClient())
+	fe1.Register()
+	fe2.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{"persistentWorkerKey": "abc123"})
+
+	fe1.WaitForTaskWithDelay(taskID, 1*time.Second)
+	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
 }
 
 func TestEnqueueTaskReservation_DoesntOverwriteDelay(t *testing.T) {

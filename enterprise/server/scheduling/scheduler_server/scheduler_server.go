@@ -2009,8 +2009,9 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	attempts := 0
 	var rankedNodes []interfaces.RankedExecutionNode
 
-	nonPreferredDelay := getNonPreferredSchedulingDelay(platform.GetProto(task.GetAction(), cmd))
+	nonPreferredDelay := s.getNonPreferredSchedulingDelay(ctx, platform.GetProto(task.GetAction(), cmd))
 	delayable := enqueueRequest.GetDelay() == nil
+	log.Infof("scheduleOnConnected=%v, delay=%s, plat: %v", opts.scheduleOnConnectedExecutors, nonPreferredDelay, platform.GetProto(task.GetAction(), cmd))
 	for len(successfulReservations) < probeCount {
 		// If the queue of ranked, candidate nodes is empty, refresh them.
 		// This is necessary to handle the fact that the set of available nodes
@@ -2080,11 +2081,32 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	return nil
 }
 
+func (s *SchedulerServer) getNonPreferredSchedulingDelayFromExperiments(ctx context.Context, plat *repb.Platform) (time.Duration, bool) {
+	fp := s.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return 0, false
+	}
+	isPersistentWorker := platform.FindValue(plat, platform.PersistentWorkerKeyPropertyName) != ""
+	delayMs := fp.Int64(
+		ctx, "remote_execution.non_preferred_node_scheduling_delay_ms", 0,
+		experiments.WithContext("persistent_worker", isPersistentWorker),
+	)
+	if delayMs == 0 {
+		return 0, false
+	}
+	return time.Duration(delayMs * int64(time.Millisecond)), true
+}
+
 // Returns the delay that should be applied to executions scheduled on
 // non-preferred execution nodes.
-func getNonPreferredSchedulingDelay(plat *repb.Platform) time.Duration {
+func (s *SchedulerServer) getNonPreferredSchedulingDelay(ctx context.Context, plat *repb.Platform) time.Duration {
 	delayProperty := platform.FindValue(plat, platform.RunnerRecyclingMaxWaitPropertyName)
 	if delayProperty == "" {
+		// If the user hasn't set a delay, attempt to apply a delay based on
+		// experiments, if applicable.
+		if d, ok := s.getNonPreferredSchedulingDelayFromExperiments(ctx, plat); ok {
+			return d
+		}
 		return defaultSchedulingDelay
 	}
 	d, err := time.ParseDuration(delayProperty)
@@ -2254,7 +2276,6 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		if _, err := s.deleteTask(ctx, taskID); err != nil {
 			return err
 		}
-		log.Infof(fmt.Sprintf("Task %q does not have retries enabled. Not re-enqueuing.", taskID))
 		if err := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, status.InternalError(reason)); err != nil {
 			log.CtxWarningf(ctx, "Could not mark execution failed for task %q: %s", taskID, err)
 		}

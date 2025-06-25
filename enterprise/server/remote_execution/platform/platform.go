@@ -91,7 +91,7 @@ const (
 	overlayfsWorkspacePropertyName          = "overlayfs-workspace"
 	cleanWorkspaceInputsPropertyName        = "clean-workspace-inputs"
 	persistentWorkerPropertyName            = "persistent-workers"
-	persistentWorkerKeyPropertyName         = "persistentWorkerKey"
+	PersistentWorkerKeyPropertyName         = "persistentWorkerKey"
 	persistentWorkerProtocolPropertyName    = "persistentWorkerProtocol"
 	WorkflowIDPropertyName                  = "workflow-id"
 	WorkloadIsolationPropertyName           = "workload-isolation-type"
@@ -405,7 +405,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		OverlayfsWorkspace:        boolProp(m, overlayfsWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
-		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
+		PersistentWorkerKey:       stringProp(m, PersistentWorkerKeyPropertyName, ""),
 		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
@@ -759,7 +759,7 @@ func parseSnapshotKeyJSON(in string) (*fcpb.SnapshotKey, error) {
 func findValue(platform *repb.Platform, name string) (value string, ok bool) {
 	name = strings.ToLower(name)
 	for _, prop := range platform.GetProperties() {
-		if prop.GetName() == name {
+		if strings.ToLower(prop.GetName()) == name {
 			return strings.TrimSpace(prop.GetValue()), true
 		}
 	}
