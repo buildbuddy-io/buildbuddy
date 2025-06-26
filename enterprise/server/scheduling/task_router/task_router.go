@@ -3,8 +3,6 @@ package task_router
 import (
 	"context"
 	"flag"
-	"math/rand"
-	"sort"
 	"strings"
 	"time"
 
@@ -16,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/wrand"
 	"github.com/go-redis/redis/v8"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -117,65 +116,16 @@ func dedupe(nodes []interfaces.RankedExecutionNode) []interfaces.RankedExecution
 	return deduped
 }
 
-// weightedResample resamples the slice `nodes` by weighting each node by its
-// assignable CPU. This means that larger nodes have an opportunity to appear
-// more often than smaller nodes, increasing their chance of being hit.
-//
-// To ensure fairness and diversity (mostly for tests with small number of
-// nodes):
-//   - the returned number of nodes is (maxSize / minSize) times greater than
-//     the original number of nodes
-//   - all original nodes will be returned at least once
-func weightedResample(nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
-	if len(nodes) <= 1 {
-		return nodes
-	}
-	largest := float64(0)
-	smallest := float64(1e6)
-
-	unsampledOriginalNodes := make(map[interfaces.ExecutionNode]struct{}, len(nodes))
-	cumulativeSum := make([]float64, len(nodes))
-	for i := 0; i < len(nodes); i++ {
-		cpu := float64(nodes[i].GetAssignableMilliCpu())
-		cumulativeSum[i] = cpu
-		if i > 0 {
-			cumulativeSum[i] += cumulativeSum[i-1]
-		}
-		if cpu > largest {
-			largest = cpu
-		}
-		if cpu < smallest {
-			smallest = cpu
-		}
-		unsampledOriginalNodes[nodes[i]] = struct{}{}
-	}
-
-	samples := make([]interfaces.ExecutionNode, len(nodes)*int(largest/smallest))
-	for i := 0; i < len(samples); i++ {
-		val := rand.Float64() * cumulativeSum[len(cumulativeSum)-1]
-		n := sort.Search(len(cumulativeSum), func(i int) bool { return cumulativeSum[i] > val })
-		sampledNode := nodes[n]
-		samples[i] = sampledNode
-		delete(unsampledOriginalNodes, sampledNode)
-	}
-
-	// Ensure that any of the original nodeset that was not sampled gets
-	// added. This ensures that all nodes are represented, so that node
-	// specific task routing ("route to this one node") still works.
-	for unsampledNode := range unsampledOriginalNodes {
-		samples = append(samples, unsampledNode)
-	}
-	return samples
-}
-
 // RankNodes returns the input nodes ordered by their affinity to the given
 // routing properties.
 func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	nodes = copyNodes(nodes)
 
-	// Resample nodes by CPU weight so that nodes with more resources
+	// Perform a shuffle weighted by node CPU so that nodes with more resources
 	// are more likely to get more tasks.
-	nodes = weightedResample(nodes)
+	nodes = wrand.Shuffle(nodes, func(node interfaces.ExecutionNode) int64 {
+		return node.GetAssignableMilliCpu()
+	})
 
 	params := getRoutingParams(ctx, tr.env, action, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(ctx, params)
