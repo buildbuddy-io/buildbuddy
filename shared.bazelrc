@@ -151,7 +151,7 @@ common:macos --host_macos_minimum_os=12.0
 common:anon-bes --bes_results_url=https://app.buildbuddy.io/invocation/
 common:anon-bes --bes_backend=grpcs://remote.buildbuddy.io
 
-common:authed-bes --bes_results_url=https://buildbuddy.remote.buildbuddy.io/invocation/
+common:authed-bes --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
 common:authed-bes --bes_backend=grpcs://buildbuddy.remote.buildbuddy.io
 
 # Build with --config=local to send build logs to your local server
@@ -272,14 +272,14 @@ common:probers-shared --config=cache-shared
 
 # Build with --config=probers to use BuildBuddy RBE in the probers org.
 common:probers --config=probers-shared
-common:probers --bes_results_url=https://buildbuddy-probers-us-west1.remote.buildbuddy.io/invocation/
+common:probers --bes_results_url=https://buildbuddy-probers-us-west1.buildbuddy.io/invocation/
 common:probers --bes_backend=grpcs://buildbuddy-probers-us-west1.remote.buildbuddy.io
 common:probers --remote_cache=grpcs://buildbuddy-probers-us-west1.remote.buildbuddy.io
 common:probers --remote_executor=grpcs://buildbuddy-probers-us-west1.remote.buildbuddy.io
 
 # Build with --config=probers-dev to use BuildBuddy RBE in the probers org.
 common:probers-dev --config=probers-shared
-common:probers-dev --bes_results_url=https://buildbuddy-probers.remote.buildbuddy.dev/invocation/
+common:probers-dev --bes_results_url=https://buildbuddy-probers.buildbuddy.dev/invocation/
 common:probers-dev --bes_backend=grpcs://buildbuddy-probers.remote.buildbuddy.dev
 common:probers-dev --remote_cache=grpcs://buildbuddy-probers.remote.buildbuddy.dev
 common:probers-dev --remote_executor=grpcs://buildbuddy-probers.remote.buildbuddy.dev
