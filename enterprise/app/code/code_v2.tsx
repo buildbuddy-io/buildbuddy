@@ -384,6 +384,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   updateSymbolHighlights(model: monaco.editor.ITextModel, tickets: string[]) {
     let modDecs: monaco.editor.IModelDecoration[] = [];
 
+    // Go through each decoration. Find decorations with matching tickets. Update their class names
+    // to highlight them. At the same time, remove non-matching highlights.
     model.getAllDecorations().forEach((decor: monaco.editor.IModelDecoration) => {
       const ref = this.decorToReference(decor);
       if (!ref) {
@@ -417,6 +419,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     }
   }
 
+  // Translates node facts /node/kind and /subkind into a human-readable description.
+  // See https://kythe.io/docs/schema/#_node_kinds
   nodeInfoToMarkdownDescription(nodeInfo: kythe_common.kythe.proto.common.NodeInfo | null | undefined): string {
     if (!nodeInfo?.facts || !("/kythe/node/kind" in nodeInfo.facts)) {
       return "";
@@ -498,16 +502,23 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return description;
   }
 
+  // Creates the contents for a pop-up shown when hovering over a symbol.
+  // The popup has 2 sections: definition information (including type, location, and snippet),
+  // and documentation string (if it exists).
+  // TODO(jdelfino): The styling of this is not the best, but it would need to use HTML instead of
+  // Markdown to make it any better.
   async makeHoverContents(ticket: string): Promise<monaco.languages.Hover> {
     return this.fetchDocumentation(ticket).then((rval: search.ExtendedDocumentationReply): monaco.languages.Hover => {
       if (!rval || !rval.nodeInfo || !rval.definition) {
         return { contents: [] };
       }
 
-      console.log("got response: ", rval);
-
       let popupContents: monaco.IMarkdownString[] = [];
 
+      // A full description is of the form:
+      // <node description> defined at <file path>:<line number>
+      // <definition snippet>
+      // We make a best-effort to create a partial description if any of the metadata is missing.
       let description = this.nodeInfoToMarkdownDescription(rval.nodeInfo);
 
       const location = this.filenameFromAnchor(rval.definition?.anchor) + ":" + this.lineNumberFromAnchor(rval.definition?.anchor);
