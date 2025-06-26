@@ -94,8 +94,8 @@ func (n rankedExecutionNode) IsPreferred() bool {
 	return n.preferred
 }
 
-// nodesAsRanked returns a slice of deduped execution nodes in the same order
-// that nodes is in.
+// nodesAsRanked converts a slice of ExecutionNodes to a slice of
+// RankedExecutionNodes, preserving their order, and then removes any dupes.
 func nodesAsRanked(nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
 	for i, node := range nodes {
@@ -207,13 +207,15 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 	// Routing keys should be prioritized in the order they were returned
 	for _, routingKey := range routingKeys {
 		if preferredNodeLimit == 0 {
+			// Do not attempt to read preferred nodes from redis
+			// if preferredNodeLimit is 0.
 			break
 		}
 
 		preferredHostIDs, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
 		if err != nil {
 			log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
-			return strategy.RankNodes(params, nodes)
+			return nodesAsRanked(nodes)
 		}
 
 		log.Debugf("Preferred executor host IDs for %q: %v", routingKey, preferredHostIDs)
@@ -234,7 +236,8 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 		}
 	}
 
-	// Add non-preferred nodes at the end of the ranking.
+	// Add non-preferred nodes at the end of the ranking, according to the
+	// selected strategy.
 	for _, rankedExecutionNode := range strategy.RankNodes(params, nodes) {
 		if _, ok := rankedNodeSet[rankedExecutionNode.GetExecutionNode().GetExecutorId()]; ok {
 			continue
@@ -335,7 +338,6 @@ func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Act
 func (tr taskRouter) selectRouter(ctx context.Context, params routingParams) Router {
 	for _, strategy := range tr.strategies {
 		if strategy.Applies(ctx, params) {
-			log.Printf("selected strategy %+v", strategy)
 			return strategy
 		}
 	}
@@ -368,7 +370,7 @@ type Router interface {
 
 	// RankNodes returns the nodes in order of descending priority.
 	// Implementations that do not otherwise care should return a random
-	// ordering of nodes using the nodesAsRanked() function.
+	// ordering of nodes using `nodesAsRanked(nodes)`.
 	RankNodes(params routingParams, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode
 }
 
@@ -511,6 +513,14 @@ func getFirstOutput(cmd *repb.Command) string {
 //   - groupID
 //   - remote_instance_name
 //   - persistentWorkerKey
+//
+// It ranks nodes deterministically for a given routing key, but does not apply
+// stickiness to any single node, it only prefers to send tasks back to the
+// same N nodes.
+//
+// Different routing keys result in totally different permutations
+// of the nodes, so tasks with different persistentWorkerKeys should be well
+// distributed.
 type persistentWorkerRouter struct {
 	env environment.Env
 }
@@ -553,6 +563,10 @@ func (r *persistentWorkerRouter) RoutingInfo(params routingParams) (int, []strin
 func (r *persistentWorkerRouter) RankNodes(params routingParams, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	key := r.routingKey(params)
 
+	// A set of tasks with the same (group_id, remote_instance_name,
+	// persistent worker key), should all route to the same set of N nodes,
+	// where N is determined by the probe count.
+	//
 	sort.Slice(nodes, func(i, j int) bool {
 		return hash.MemHashString(key+nodes[i].GetExecutorHostId()) < hash.MemHashString(key+nodes[j].GetExecutorHostId())
 	})
