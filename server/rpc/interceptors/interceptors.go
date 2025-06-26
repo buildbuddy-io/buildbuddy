@@ -510,20 +510,21 @@ func propagateRequestMetadataIDsToSpanStreamServerInterceptor() grpc.StreamServe
 
 func meteredUnaryInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
-		clientZones := metadata.ValueFromIncomingContext(ctx, "gcpzone")
 		serverZone := resources.GetZone()
-		resp, err = handler(ctx, req)
+		clientZones := metadata.ValueFromIncomingContext(ctx, "gcpzone")
+		clientZone := "unknown"
 		if len(clientZones) == 1 {
-			clientZone := clientZones[0]
-			metrics.InterZoneEgress.With(prometheus.Labels{
-				"source":      clientZone,
-				"destination": serverZone,
-			}).Add(float64(proto.Size(req.(proto.Message))))
-			metrics.InterZoneEgress.With(prometheus.Labels{
-				"source":      serverZone,
-				"destination": clientZone,
-			}).Add(float64(proto.Size(resp.(proto.Message))))
+			clientZone = clientZones[0]
 		}
+		resp, err = handler(ctx, req)
+		metrics.InterZoneEgress.With(prometheus.Labels{
+			"source":      clientZone,
+			"destination": serverZone,
+		}).Add(float64(proto.Size(req.(proto.Message))))
+		metrics.InterZoneEgress.With(prometheus.Labels{
+			"source":      serverZone,
+			"destination": clientZone,
+		}).Add(float64(proto.Size(resp.(proto.Message))))
 		return resp, err
 	}
 }
@@ -569,13 +570,14 @@ func (s meteredStream) RecvMsg(m any) error {
 func meteredStreamInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx := stream.Context()
-		clientZones := metadata.ValueFromIncomingContext(ctx, "gcpzone")
 		serverZone := resources.GetZone()
+		clientZone := "unknown"
+		clientZones := metadata.ValueFromIncomingContext(ctx, "gcpzone")
 		if len(clientZones) != 1 {
-			return handler(srv, stream)
+			clientZone = clientZones[0]
 		}
 		stream = meteredStream{
-			clientZone:    clientZones[0],
+			clientZone:    clientZone,
 			serverZone:    serverZone,
 			wrappedStream: stream,
 		}
