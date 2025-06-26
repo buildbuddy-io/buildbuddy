@@ -773,7 +773,6 @@ func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequ
 		err = xrefsErr
 	case *srpb.KytheRequest_DocsRequest:
 		docsReply, docsErr := css.documentation(ctx, req.GetDocsRequest())
-		//docsReply, docsErr := css.xs.Documentation(ctx, req.GetDocsRequest())
 		rsp.Value = &srpb.KytheResponse_DocsReply{
 			DocsReply: docsReply,
 		}
