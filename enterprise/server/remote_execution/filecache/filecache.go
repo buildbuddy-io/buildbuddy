@@ -276,19 +276,19 @@ func key(ctx context.Context, node *repb.FileNode) string {
 	return k
 }
 
-var requestCountMetrics map[bool]prometheus.Counter
+var requestCountMetric map[bool]prometheus.Counter
 
 func init() {
-	requestCountMetrics = make(map[bool]prometheus.Counter, 2)
-	requestCountMetrics[true] = metrics.FileCacheRequests.
+	requestCountMetric = make(map[bool]prometheus.Counter, 2)
+	requestCountMetric[true] = metrics.FileCacheRequests.
 		With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: hitMetricLabel})
-	requestCountMetrics[false] = metrics.FileCacheRequests.
+	requestCountMetric[false] = metrics.FileCacheRequests.
 		With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: missMetricLabel})
 }
 
 func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) (hit bool) {
 	defer func() {
-		requestCountMetrics[hit].Inc()
+		requestCountMetric[hit].Inc()
 	}()
 
 	groupID := groupIDStringFromContext(ctx)
@@ -312,7 +312,7 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, err error) {
 	defer func() {
 		hit := f != nil
-		requestCountMetrics[hit].Inc()
+		requestCountMetric[hit].Inc()
 	}()
 
 	groupID := groupIDStringFromContext(ctx)
