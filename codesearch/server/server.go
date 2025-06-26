@@ -703,7 +703,7 @@ func (css *codesearchServer) documentation(ctx context.Context, req *srpb.Extend
 		} else {
 			// Documentation nodes hold the docstring in the "kythe/text" fact.
 			// https://kythe.io/docs/schema/#doc
-			txt, ok := node.GetFacts()["kythe/text"]
+			txt, ok := node.GetFacts()["/kythe/text"]
 			if ok {
 				reply.Docstring = string(txt)
 			}
@@ -716,7 +716,7 @@ func (css *codesearchServer) documentation(ctx context.Context, req *srpb.Extend
 		DefinitionKind:  kxpb.CrossReferencesRequest_ALL_DEFINITIONS,
 		DeclarationKind: kxpb.CrossReferencesRequest_NO_DECLARATIONS,
 		ReferenceKind:   kxpb.CrossReferencesRequest_NO_REFERENCES,
-		Snippets:        kxpb.SnippetsKind_NONE,
+		Snippets:        kxpb.SnippetsKind_DEFAULT,
 	}
 	xrefReply, err := css.xs.CrossReferences(ctx, xrefReq)
 	if err != nil {

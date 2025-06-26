@@ -35,6 +35,7 @@ import error_service from "../../../app/errors/error_service";
 import { build } from "../../../proto/remote_execution_ts_proto";
 import { search } from "../../../proto/search_ts_proto";
 import { kythe } from "../../../proto/kythe_xref_ts_proto";
+import * as kythe_common from "../../../proto/kythe_common_ts_proto";
 import OrgPicker from "../org_picker/org_picker";
 import capabilities from "../../../app/capabilities/capabilities";
 import router from "../../../app/router/router";
@@ -271,7 +272,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   navigateToDefinitionOrPopulatePanel(pos: monaco.Position) {
     const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
     if (!refs.length) {
-      this.clearHighlights(this.editor?.getModel()!);
+      // clear all highlights when clicking on a non-reference
+      this.updateSymbolHighlights(this.editor?.getModel()!, []);
       return;
     }
 
@@ -379,16 +381,9 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     }
   }
 
-  hoverHandler(model: monaco.editor.ITextModel, position: monaco.Position): monaco.languages.Hover | undefined {
-    let ticks = this.ticketsForPosition(position);
-    if (!ticks?.length) {
-      return;
-    }
-
+  updateSymbolHighlights(model: monaco.editor.ITextModel, tickets: string[]) {
     let modDecs: monaco.editor.IModelDecoration[] = [];
 
-    // Go through each decoration. Find decorations with matching tickets. Update their class names
-    // to highlight them. At the same time, remove previous highlights.
     model.getAllDecorations().forEach((decor: monaco.editor.IModelDecoration) => {
       const ref = this.decorToReference(decor);
       if (!ref) {
@@ -396,7 +391,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       }
 
       let newClassName = "";
-      if (ticks.includes(ref.targetTicket)) {
+      if (tickets.includes(ref.targetTicket)) {
         // This decoration matches the hovered ticket - highlight it if the edge type warrants it.
         if (ref.kind === "/kythe/edge/ref") {
           newClassName = "code-highlight-reference";
@@ -420,6 +415,155 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         modDecs
       );
     }
+  }
+
+  nodeInfoToMarkdownDescription(nodeInfo: kythe_common.kythe.proto.common.NodeInfo | null | undefined): string {
+    if (!nodeInfo?.facts || !("/kythe/node/kind" in nodeInfo.facts)) {
+      return "";
+    }
+
+    const kind = textDecoder.decode(nodeInfo.facts["/kythe/node/kind"]);
+    const subkind = textDecoder.decode(nodeInfo.facts["/kythe/subkind"]);
+    let description = "";
+
+    switch (kind) {
+      case "function":
+        switch (subkind) {
+          case "constructor":
+            description = "Constructor";
+            break;
+          case "destructor":
+            description = "Destructor";
+            break;
+          default:
+            description = "Function";
+            break;
+        }
+        break;
+      case "variable":
+        switch (subkind) {
+          case "local":
+          case "local/exception":
+          case "local/resource":
+            description = "Local Variable";
+            break;
+          case "local/parameter":
+            description = "Parameter";
+            break;
+          case "field":
+            description = "Field";
+            break;
+          case "import":
+            description = "Imported Variable";
+            break;
+          default:
+            description = "Variable";
+            break;
+        }
+        break;
+      case "record":
+        switch (subkind) {
+          case "class":
+            description = "Class";
+            break;
+          case "enum":
+          case "enumClass":
+            description = "Enum";
+            break;
+          case "struct":
+            description = "Struct";
+            break;
+          case "union":
+            description = "Union";
+            break;
+          case "type":
+            description = "Type";
+            break;
+          default:
+            description = "Record";
+            break;
+        }
+        break;
+      case "constant":
+        description = "Constant"
+        const val = textDecoder.decode(nodeInfo.facts["/kythe/text"]);
+        if (val) {
+          description += `: ${val}`;
+        }
+        break;
+      default:
+        description = kind.toUpperCase();
+        break;
+      }
+    return description;
+  }
+
+  async makeHoverContents(ticket: string): Promise<monaco.languages.Hover> {
+    return this.fetchDocumentation(ticket).then((rval: search.ExtendedDocumentationReply): monaco.languages.Hover => {
+      if (!rval || !rval.nodeInfo || !rval.definition) {
+        return { contents: [] };
+      }
+
+      console.log("got response: ", rval);
+
+      let popupContents: monaco.IMarkdownString[] = [];
+
+      let description = this.nodeInfoToMarkdownDescription(rval.nodeInfo);
+
+      const location = this.filenameFromAnchor(rval.definition?.anchor) + ":" + this.lineNumberFromAnchor(rval.definition?.anchor);
+      if (location.length > 1) {
+        if (description.length > 0) {
+          description += " defined at " + location;
+        } else {
+          description = "Defined at " + location;
+        }
+      }
+
+      if (rval.definition?.anchor?.snippet) {
+        if (description.length > 0) {
+          description += "\n\n";
+        }
+        description += "`" + rval.definition.anchor.snippet + "`";
+      }
+
+      if (description.length > 0) {
+        description = "**Definition**\n\n" + description;
+        popupContents.push({
+          value: description
+        });
+      }
+
+      if (rval.docstring) {
+        popupContents.push({ value: "**Documentation**\n\n" + rval.docstring });
+      }
+
+      return {contents: popupContents};
+    });
+  }
+
+  hoverHandler(model: monaco.editor.ITextModel, position: monaco.Position): Promise<monaco.languages.Hover> | undefined {
+    let ticks = this.ticketsForPosition(position);
+    if (!ticks?.length) {
+      return;
+    }
+
+    this.updateSymbolHighlights(model, ticks);
+    return this.makeHoverContents(ticks[0]);
+  }
+
+  async fetchDocumentation(tick: string): Promise<search.ExtendedDocumentationReply> {
+    const req = new search.KytheRequest({
+      docsRequest: new search.ExtendedDocumentationRequest({
+        ticket: tick,
+      }),
+    });
+    return rpcService.service.kytheProxy(req).then((rsp) => {
+      if (!rsp.docsReply) { return new search.ExtendedDocumentationReply(); }
+      return rsp.docsReply;
+    }).catch((e) => {
+      console.error("Error fetching documentation for ticket", tick, e);
+      return new search.ExtendedDocumentationReply();
+    });
   }
 
   async fetchDecorations(filename: string) {
@@ -1850,13 +1994,20 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return Array.from(files.values());
   }
 
+  filenameFromAnchor(a: kythe.proto.Anchor | null | undefined): string {
+    return a?.parent.split("?path=")[1] || "";
+  }
+
+  lineNumberFromAnchor(a: kythe.proto.Anchor | null | undefined): number {
+    return a?.span?.start?.lineNumber || 0;
+  }
+
   navigateToAnchor(a: kythe.proto.Anchor) {
-    const path = a.parent.split("?path=")[1];
-    const line = a.span?.start?.lineNumber;
-    if (!line) {
-      return;
-    }
-    this.fetchIfNeededAndNavigate(path, "", line);
+    this.fetchIfNeededAndNavigate(
+      this.filenameFromAnchor(a),
+      "",
+      this.lineNumberFromAnchor(a)
+    );
   }
 
   renderAnchors(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]) {
