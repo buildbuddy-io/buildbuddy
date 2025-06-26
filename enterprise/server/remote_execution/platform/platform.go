@@ -308,7 +308,14 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	if pool == DefaultPoolValue {
 		pool = ""
 	}
-	recycleRunner := boolProp(m, recycleRunnerPropertyName, false) || boolProp(m, dockerReusePropertyName, false)
+	// Runner recycling is enabled if any of the following are true:
+	// - recycle-runner is true
+	// - dockerReuse is true (supported for compatibility reasons)
+	// - persistentWorkerKey is set (persistent workers are implemented using
+	//   runner recycling)
+	recycleRunner := boolProp(m, recycleRunnerPropertyName, false) ||
+		boolProp(m, dockerReusePropertyName, false) ||
+		stringProp(m, persistentWorkerKeyPropertyName, "") != ""
 	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	// Only Enable VFS if it is also enabled via flags.
