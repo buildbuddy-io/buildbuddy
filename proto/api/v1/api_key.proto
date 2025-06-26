@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package api.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+message ApiKey {
+  // The unique ID of this API key.
+  // Example: "AK1234567890"
+  string api_key_id = 1;
+
+  // The API key value passed in API requests.
+  // Example: "eXaMpLeSecRetKeY314159"
+  string value = 2;
+
+  // Optional display name for the API key.
+  // This is not required to be unique.
+  // Example: "My API key"
+  string label = 3;
+
+  // Timestamp at which the API key expires.
+  // If unset, the API key does not expire.
+  google.protobuf.Timestamp expiration_timestamp = 4;
+}
+
+message CreateUserApiKeyRequest {
+  // BuildBuddy user ID of the user to create the API key for.
+  // Example: "US1234567890"
+  string user_id = 1;
+
+  // Optional display name for the API key.
+  // This is not required to be unique.
+  // Example: "My API key"
+  string label = 2;
+
+  // Optional duration after which the API key should expire.
+  // If unset, the API key does not expire.
+  google.protobuf.Duration expires_in = 3;
+}
+
+message CreateUserApiKeyResponse {
+  // The API key that was created.
+  ApiKey api_key = 1;
+}
