@@ -33,7 +33,6 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
-        "//server/util/log",
         "//server/util/testing/flags",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk//openfeature/memprovider",
