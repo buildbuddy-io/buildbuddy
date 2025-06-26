@@ -7,7 +7,10 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/failure_details"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -17,7 +20,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
@@ -25,13 +30,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	commonpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 var userMap = testauth.TestUsers("user1", "group1")
@@ -502,6 +510,118 @@ func TestGetTargetWithLowFilterThreshold(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCreateUserApiKey(t *testing.T) {
+	flags.Set(t, "app.user_owned_keys_enabled", true)
+	ctx := context.Background()
+	env := enterprise_testenv.New(t)
+	auth := enterprise_testauth.Configure(t, env)
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+
+	// Get an admin user.
+	var admin *tables.User
+	var adminGroup *tables.Group
+	for _, u := range users {
+		if u.Groups[0].Role == uint32(role.Admin) {
+			admin = u
+			adminGroup = &u.Groups[0].Group
+			break
+		}
+	}
+	adminUserCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+	// As the admin user, enable user-owned keys for their group.
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, adminUserCtx, env, adminGroup.GroupID, true)
+	// As the admin user, create an org admin key.
+	orgAdminKey, err := env.GetAuthDB().CreateAPIKey(
+		adminUserCtx, adminGroup.GroupID, "test-admin-key",
+		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
+		0,     /*=expiresIn*/
+		false, /*=visibleToDevelopers*/
+	)
+	require.NoError(t, err)
+	orgAdminKeyInfo, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, orgAdminKey.Value)
+	require.NoError(t, err)
+	orgAdminKeyClaims, err := claims.APIKeyGroupClaims(ctx, orgAdminKeyInfo)
+	require.NoError(t, err)
+	orgAdminKeyCtx := testauth.WithAuthenticatedUserInfo(ctx, orgAdminKeyClaims)
+
+	s := NewAPIServer(env)
+
+	// Send an unauthenticated request to create a user API key; this should
+	// fail.
+	rsp, err := s.CreateUserApiKey(ctx, &apipb.CreateUserApiKeyRequest{
+		UserId: admin.UserID,
+	})
+	require.True(t, status.IsUnauthenticatedError(err))
+	require.Nil(t, rsp)
+
+	// Send an authenticated request to create a user API key for the admin
+	// user; this should succeed.
+	rsp, err = s.CreateUserApiKey(orgAdminKeyCtx, &apipb.CreateUserApiKeyRequest{
+		UserId:    admin.UserID,
+		Label:     "test-api-key",
+		ExpiresIn: durationpb.New(time.Hour),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, rsp.GetApiKey().GetApiKeyId())
+	require.NotEmpty(t, rsp.GetApiKey().GetValue())
+	require.Greater(
+		t,
+		rsp.GetApiKey().GetExpirationTimestamp().AsTime().Unix(),
+		time.Now().Add(30*time.Minute).Unix(),
+	)
+	require.Less(
+		t,
+		rsp.GetApiKey().GetExpirationTimestamp().AsTime().Unix(),
+		time.Now().Add(90*time.Minute).Unix(),
+	)
+	require.Equal(t, "test-api-key", rsp.GetApiKey().GetLabel())
+
+	// Find another user who is not in the admin group.
+	// Should not be able to create a user API key for that user.
+	var nonGroupMember *tables.User
+	for _, u := range users {
+		isAdminGroupMember := false
+		for _, g := range u.Groups {
+			if g.GroupID == adminGroup.GroupID {
+				isAdminGroupMember = true
+				break
+			}
+		}
+		if !isAdminGroupMember {
+			nonGroupMember = u
+		}
+	}
+	_, err = s.CreateUserApiKey(orgAdminKeyCtx, &apipb.CreateUserApiKeyRequest{
+		UserId: nonGroupMember.UserID,
+		Label:  "test-api-key",
+	})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err), "want PermissionDenied, got %v", err)
+
+	// Add the non-member to the group.
+	err = env.GetUserDB().UpdateGroupUsers(orgAdminKeyCtx, adminGroup.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{
+			UserId:           &uidpb.UserId{Id: nonGroupMember.UserID},
+			MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		},
+	})
+	require.NoError(t, err)
+	newlyAddedUserID := nonGroupMember.UserID
+
+	// Try creating a user API key again for the user who is now a member of the
+	// group; this should succeed.
+	rsp, err = s.CreateUserApiKey(orgAdminKeyCtx, &apipb.CreateUserApiKeyRequest{
+		UserId: newlyAddedUserID,
+		Label:  "test-api-key",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, rsp.GetApiKey().GetApiKeyId())
+	require.NotEmpty(t, rsp.GetApiKey().GetValue())
+	require.Equal(t, "test-api-key", rsp.GetApiKey().GetLabel())
+	require.Nil(t, rsp.GetApiKey().GetExpirationTimestamp())
 }
 
 func getEnvAndCtx(t testing.TB, user string) (*testenv.TestEnv, context.Context) {

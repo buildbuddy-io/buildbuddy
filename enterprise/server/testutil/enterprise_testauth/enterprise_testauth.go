@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -129,6 +130,28 @@ func CreateRandomUser(t *testing.T, env environment.Env, domain string) *tables.
 	tu, err = udb.GetUserByIDWithoutAuthCheck(ctx, tu.UserID)
 	require.NoError(t, err)
 	return tu
+}
+
+func SetUserOwnedKeysEnabled(t *testing.T, ctx context.Context, env environment.Env, groupID string, enabled bool) {
+	// The Update API requires an URL identifier, so look it up and
+	// preserve it if it exists, otherwise initialize.
+	// TODO: We should probably remove this requirement; it is inconvenient
+	// both for testing and when users want to tweak group settings in the UI.
+	g, err := env.GetUserDB().GetGroupByID(ctx, groupID)
+	require.NoError(t, err)
+
+	url := strings.ToLower(groupID + "-slug")
+	if g.URLIdentifier != "" {
+		url = g.URLIdentifier
+	}
+
+	updates := &tables.Group{
+		GroupID:              groupID,
+		UserOwnedKeysEnabled: enabled,
+		URLIdentifier:        url,
+	}
+	_, err = env.GetUserDB().UpdateGroup(ctx, updates)
+	require.NoError(t, err)
 }
 
 func randomUser(t *testing.T, domain string) *tables.User {

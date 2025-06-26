@@ -126,28 +126,6 @@ func apiKeyValues(keys []*tables.APIKey) []string {
 	return out
 }
 
-func setUserOwnedKeysEnabled(t *testing.T, ctx context.Context, env environment.Env, groupID string, enabled bool) {
-	// The Update API requires an URL identifier, so look it up and
-	// preserve it if it exists, otherwise initialize.
-	// TODO: We should probably remove this requirement; it is inconvenient
-	// both for testing and when users want to tweak group settings in the UI.
-	g, err := env.GetUserDB().GetGroupByID(ctx, groupID)
-	require.NoError(t, err)
-
-	url := strings.ToLower(groupID + "-slug")
-	if g.URLIdentifier != "" {
-		url = g.URLIdentifier
-	}
-
-	updates := &tables.Group{
-		GroupID:              groupID,
-		UserOwnedKeysEnabled: enabled,
-		URLIdentifier:        url,
-	}
-	_, err = env.GetUserDB().UpdateGroup(ctx, updates)
-	require.NoError(t, err)
-}
-
 func TestInsertUser(t *testing.T) {
 	env := newTestEnv(t)
 	udb := env.GetUserDB()
@@ -929,7 +907,7 @@ func TestDeleteAPIKey(t *testing.T) {
 	// Re-authenticate with the new group role
 	ctx3 := authUserCtx(ctx, env, t, "US3")
 
-	setUserOwnedKeysEnabled(t, ctx1, env, gr1.Group.GroupID, true)
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.Group.GroupID, true)
 
 	uk3, err := adb.CreateUserAPIKey(
 		ctx3, gr1.Group.GroupID, "US3", "US3's Key",
@@ -981,10 +959,10 @@ func TestUserOwnedKeys_GetUpdateDeletePermissions(t *testing.T) {
 			// Enable user-owned keys for both orgs
 			gr1AdminCtx := authUserCtx(ctx, env, t, "US1")
 			gr1 := getGroup(t, gr1AdminCtx, env).Group
-			setUserOwnedKeysEnabled(t, gr1AdminCtx, env, gr1.GroupID, true)
+			enterprise_testauth.SetUserOwnedKeysEnabled(t, gr1AdminCtx, env, gr1.GroupID, true)
 			gr2AdminCtx := authUserCtx(ctx, env, t, "US3")
 			gr2 := getGroup(t, gr2AdminCtx, env).Group
-			setUserOwnedKeysEnabled(t, gr2AdminCtx, env, gr2.GroupID, true)
+			enterprise_testauth.SetUserOwnedKeysEnabled(t, gr2AdminCtx, env, gr2.GroupID, true)
 
 			// Create a key owned by test.Owner
 			ownerGroup := getGroup(t, ownerCtx, env).Group
@@ -1086,7 +1064,7 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 		err)
 
 	// Now enable user-owned keys and try again; should succeed.
-	setUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
 
 	key1, err := adb.CreateUserAPIKey(
 		ctx1, gr1.GroupID, "US1", "US1's key",
@@ -1102,7 +1080,7 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 	require.Equal(t, "US1", user.UserID)
 
 	// Now disable user-owned keys.
-	setUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, false)
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, false)
 
 	// Attempt to re-authenticate and try again; should fail since the key
 	// should effectively be deactivated.
@@ -1150,7 +1128,7 @@ func TestUserOwnedKeys_RemoveUserFromGroup_KeyNoLongerWorks(t *testing.T) {
 	createUser(t, ctx, env, "US2", "org1.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
 	gr1 := getGroup(t, ctx1, env).Group
-	setUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
 	err := udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
 		{UserId: &uidpb.UserId{Id: "US2"}, Role: grpb.Group_ADMIN_ROLE},
 	})
@@ -1190,7 +1168,7 @@ func TestUserOwnedKeys_ChangeRole_UpdatesCapabilities(t *testing.T) {
 	ctx1 := authUserCtx(ctx, env, t, "US1")
 	takeOwnershipOfDomain(t, ctx1, env, "US1")
 	gr1 := getGroup(t, ctx1, env).Group
-	setUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
 	err := udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
 		{UserId: &uidpb.UserId{Id: "US2"}, Role: grpb.Group_ADMIN_ROLE},
 	})
@@ -1252,7 +1230,7 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 			createUser(t, ctx, env, "US1", "org1.io")
 			ctx1 := authUserCtx(ctx, env, t, "US1")
 			g := getGroup(t, ctx1, env).Group
-			setUserOwnedKeysEnabled(t, ctx1, env, g.GroupID, true)
+			enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, g.GroupID, true)
 			r, err := role.ToProto(test.Role)
 			require.NoError(t, err)
 			err = udb.UpdateGroupUsers(ctx1, g.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
@@ -1311,7 +1289,7 @@ func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {
 	createUser(t, ctx, env, "US1", "org1.io")
 	ctx1 := authUserCtx(ctx, env, t, "US1")
 	g := getGroup(t, ctx1, env).Group
-	setUserOwnedKeysEnabled(t, ctx1, env, g.GroupID, true)
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, g.GroupID, true)
 
 	// Delete any group-level keys so that user-level keys will be the only
 	// keys associated with the org.
@@ -1415,7 +1393,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 				createUser(t, ctx, env, "US1", "org1.io")
 				ctx1 := authUserCtx(ctx, env, t, "US1")
 				g := getGroup(t, ctx1, env).Group
-				setUserOwnedKeysEnabled(t, ctx1, env, g.GroupID, true)
+				enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, g.GroupID, true)
 				k1, err := adb.CreateAPIKey(ctx1, "GR1", "", test.AuthKeyCaps, 0 /*=expiresIn*/, false)
 				require.NoError(t, err)
 				keys["GR1"] = k1
@@ -1425,7 +1403,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 				createUser(t, ctx, env, "US2", "org2.io")
 				ctx2 := authUserCtx(ctx, env, t, "US2")
 				g := getGroup(t, ctx2, env).Group
-				setUserOwnedKeysEnabled(t, ctx2, env, g.GroupID, true)
+				enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx2, env, g.GroupID, true)
 				k2, err := adb.CreateAPIKey(ctx2, "GR2", "", test.AuthKeyCaps, 0 /*=expiresIn*/, false)
 				require.NoError(t, err)
 				keys["GR2"] = k2
