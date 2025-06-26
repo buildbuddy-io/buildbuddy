@@ -476,7 +476,7 @@ type AuthDB interface {
 	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
 
 	// CreateAPIKey creates a group-level API key.
-	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, expiresIn time.Duration, visibleToDevelopers bool) (*tables.APIKey, error)
 
 	// CreateAPIKeyWithoutAuthCheck creates a group-level API key without
 	// checking that the user has admin rights on the group. This should only
@@ -497,7 +497,7 @@ type AuthDB interface {
 	// user must be a member of the group. If the request is not authenticated
 	// as the given user, then the authenticated user or API key must have
 	// ORG_ADMIN capability.
-	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []cappb.Capability) (*tables.APIKey, error)
+	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []cappb.Capability, expiresIn time.Duration) (*tables.APIKey, error)
 
 	// GetAPIKey returns an API key by ID. The key may be user-owned or
 	// group-owned.
