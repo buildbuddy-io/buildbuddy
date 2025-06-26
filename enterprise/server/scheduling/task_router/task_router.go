@@ -186,10 +186,7 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 	preferredNodeLimit, routingKeys, err := strategy.RoutingInfo(params)
 	if err != nil {
 		log.Errorf("Failed to compute routing info: %s", err)
-		return strategy.RankNodes(params, nodes)
-	}
-	if preferredNodeLimit == 0 {
-		return strategy.RankNodes(params, nodes)
+		return nodesAsRanked(nodes)
 	}
 
 	// Note: if multiple executors live on the same host, the last one in the
@@ -209,6 +206,10 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 
 	// Routing keys should be prioritized in the order they were returned
 	for _, routingKey := range routingKeys {
+		if preferredNodeLimit == 0 {
+			break
+		}
+
 		preferredHostIDs, err := tr.rdb.LRange(ctx, routingKey, 0, -1).Result()
 		if err != nil {
 			log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
@@ -526,13 +527,15 @@ func (r *persistentWorkerRouter) Applies(ctx context.Context, params routingPara
 	return true // STOPSHIP(tyler): set back to false.
 }
 
-func (persistentWorkerRouter) preferredNodeLimit(_ routingParams) int {
-	// Intentionally set to the number of probes so that
-	// any task with a persistent worker key gets a hot node.
-	return 3
+func (_ *persistentWorkerRouter) preferredNodeLimit(_ routingParams) int {
+	// Intentionally set to the number of saved preferred nodes to 0 so that
+	// no preferences are saved for this router. All work is done by
+	// RankNodes below, shuffles all nodes by routingKey and then returns
+	// them in the same order every time.
+	return 0
 }
 
-func (persistentWorkerRouter) routingKey(params routingParams) string {
+func (_ *persistentWorkerRouter) routingKey(params routingParams) string {
 	parts := []string{"task_route", params.groupID}
 
 	if params.remoteInstanceName != "" {
@@ -543,13 +546,13 @@ func (persistentWorkerRouter) routingKey(params routingParams) string {
 	return strings.Join(parts, "/")
 }
 
-func (r persistentWorkerRouter) RoutingInfo(params routingParams) (int, []string, error) {
+func (r *persistentWorkerRouter) RoutingInfo(params routingParams) (int, []string, error) {
 	nodeLimit := r.preferredNodeLimit(params)
 	key := r.routingKey(params)
 	return nodeLimit, []string{key}, nil
 }
 
-func (r persistentWorkerRouter) RankNodes(params routingParams, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+func (r *persistentWorkerRouter) RankNodes(params routingParams, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	key := r.routingKey(params)
 
 	sort.Slice(nodes, func(i, j int) bool {
