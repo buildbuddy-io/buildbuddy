@@ -1233,13 +1233,6 @@ var (
 		Help:      "Maximum total CPU time on the executor that can be allocated for task execution, in **milliCPU** (CPU-milliseconds per second).",
 	})
 
-	RemoteExecutionCPUUtilization = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_execution",
-		Name:      "cpu_utilization_milli_cpu",
-		Help:      "Approximate current CPU utilization of tasks executing, in **milli-CPU** (CPU-milliseconds per second). This allows for much higher granularity than using a `rate()` on `used_milli_cpu` metric.",
-	})
-
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
@@ -2278,14 +2271,6 @@ var (
 		QuotaAllowed,
 	})
 
-	RegistryBlobRangeLatencyUsec = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "registry",
-		Name:      "blob_range_latency_usec",
-		Help:      "Latency of serving layer blob ranges.",
-		Buckets:   coarseMicrosecondToHour,
-	})
-
 	ClickhouseInsertedCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "clickhouse",
@@ -2490,15 +2475,6 @@ var (
 		Subsystem: "raft",
 		Name:      "leaders",
 		Help:      "Number of raft leaders on each nodehost.",
-	}, []string{
-		RaftRangeIDLabel,
-	})
-
-	RaftRecords = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: bbNamespace,
-		Subsystem: "raft",
-		Name:      "records",
-		Help:      "Number of raft records in each range.",
 	}, []string{
 		RaftRangeIDLabel,
 	})
@@ -3094,17 +3070,6 @@ var (
 		Name:      "pebble_cache_zombie_table_size_bytes",
 		Help:      "The size of zombie tables in bytes",
 	}, []string{
-		CacheNameLabel,
-	})
-
-	// Temporary metric to verify AC sampling behavior.
-	PebbleCacheGroupIDSampleCount = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_cache",
-		Name:      "pebble_cache_groupid_sample_count",
-		Help:      "The number of times a group has been selected for key sampling.",
-	}, []string{
-		GroupID,
 		CacheNameLabel,
 	})
 
