@@ -1772,5 +1772,5 @@ type ExperimentFlagProvider interface {
 // a parsed CAS resource name for Read() to avoid having to reparse one.
 type ByteStreamServer interface {
 	bspb.ByteStreamServer
-	ReadCASResource(rn *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error
+	ReadCASResource(ctx context.Context, rn *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error
 }
