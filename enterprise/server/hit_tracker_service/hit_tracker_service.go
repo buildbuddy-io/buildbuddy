@@ -28,6 +28,7 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
+// TODO(iain): record a source (e.g. Cache Proxy).
 func (h HitTrackerService) Track(ctx context.Context, req *hitpb.TrackRequest) (*hitpb.TrackResponse, error) {
 	for _, hit := range req.GetHits() {
 		var hitTracker interfaces.HitTracker

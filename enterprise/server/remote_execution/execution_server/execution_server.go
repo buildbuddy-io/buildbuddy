@@ -1391,7 +1391,7 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb
 	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
 		counts.CPUNanos = usg.GetCpuNanos()
 	}
-	labels, err := usageutil.LabelsForUsageRecording(ctx)
+	labels, err := usageutil.Labels(ctx)
 	if err != nil {
 		return status.WrapError(err, "compute usage labels")
 	}

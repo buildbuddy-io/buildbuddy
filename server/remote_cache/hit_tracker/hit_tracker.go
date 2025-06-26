@@ -532,7 +532,7 @@ func (h *HitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actio
 	} else {
 		return nil
 	}
-	labels, err := usageutil.LabelsForUsageRecording(ctx)
+	labels, err := usageutil.Labels(ctx)
 	if err != nil {
 		return status.WrapError(err, "get usage labels")
 	}
