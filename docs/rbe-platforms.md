@@ -286,15 +286,9 @@ slow to run initially, but then get faster as Just-In-Time (JIT)
 compilation kicks in and allows the compiler to run using more optimized
 machine code.
 
-To use remote persistent workers, two steps are required:
-
-1. Set `"recycle-runner": "true"` in `exec_properties` to enable
-   [runner recycling](#action-isolation-and-hermeticity-properties).
-   We recommend setting this property using a Bazel macro, so that
-   it will be set automatically on the relevant targets supporting
-   persistent workers.
-2. Pass the flag ["--experimental_remote_mark_tool_inputs"](https://bazel.build/reference/command-line-reference#flag--experimental_remote_mark_tool_inputs) to
-   your bazel command or add it to your `.bazelrc`.
+To use remote persistent workers, pass the flag
+["--experimental_remote_mark_tool_inputs"](https://bazel.build/reference/command-line-reference#flag--experimental_remote_mark_tool_inputs) to
+your bazel command or add it to your `.bazelrc`.
 
 The `--experimental_remote_mark_tool_inputs` flag sets the following
 properties (it's not normally recommended to set these manually; they are
