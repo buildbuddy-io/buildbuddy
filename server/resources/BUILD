@@ -5,7 +5,7 @@ go_library(
     srcs = ["resources.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/resources",
     visibility = [
-        "//enterprise:__subpackages__",
+        "//visibility:public",
     ],
     deps = [
         "//proto:scheduler_go_proto",

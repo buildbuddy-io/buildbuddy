@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -25,6 +26,7 @@ import (
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/mem"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -129,6 +131,7 @@ func (p *ClientConnPool) GetReadyConnection() (*grpc.ClientConn, error) {
 }
 
 func (p *ClientConnPool) Invoke(ctx context.Context, method string, args any, reply any, opts ...grpc.CallOption) error {
+	ctx = metadata.AppendToOutgoingContext(ctx, "gcpzone", resources.GetZone())
 	return p.getConn().Invoke(ctx, method, args, reply, opts...)
 }
 
@@ -143,6 +146,7 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 		},
 	)
 	defer cancel()
+	ctx = metadata.AppendToOutgoingContext(ctx, "gcpzone", resources.GetZone())
 	return p.getConn().NewStream(ctx, desc, method, opts...)
 }
 
