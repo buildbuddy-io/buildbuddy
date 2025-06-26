@@ -3,6 +3,7 @@ package byte_stream_client
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/url"
 	"strconv"
@@ -159,7 +160,7 @@ func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, 
 		return status.InvalidArgumentErrorf("Only bytestream:// uris are supported")
 	}
 
-	var err error
+	var allErrs error
 
 	// If we have a cache enabled, try connecting to that first
 	if p.env.GetCache() != nil {
@@ -169,29 +170,38 @@ func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, 
 			grpcPort = strconv.Itoa(p)
 		}
 		localURL.Host = "localhost:" + grpcPort
-		err = p.streamFromUrl(ctx, localURL, false, offset, limit, writer)
+		err := p.streamFromUrl(ctx, localURL, false, offset, limit, writer)
+		if err == nil {
+			return nil
+		}
+		allErrs = status.WrapErrorf(err, "failed to read from local cache %q", localURL.Host)
 	}
 
 	// If the local cache did not work, maybe a remote cache is being used.
 	// Try to connect to that, first over grpcs.
-	if err != nil || p.env.GetCache() == nil {
-		err = p.streamFromUrl(ctx, url, true, offset, limit, writer)
+	if allErrs != nil || p.env.GetCache() == nil {
+		err := p.streamFromUrl(ctx, url, true, offset, limit, writer)
+		if err == nil {
+			return nil
+		}
+		allErrs = errors.Join(allErrs, status.WrapErrorf(err, "failed to read from grpcs cache %q", url.Host))
 	}
 
 	// If that didn't work, try plain old grpc.
-	if !*restrictBytestreamDialing && err != nil {
-		err = p.streamFromUrl(ctx, url, false, offset, limit, writer)
+	if !*restrictBytestreamDialing {
+		err := p.streamFromUrl(ctx, url, false, offset, limit, writer)
+		if err == nil {
+			return nil
+		}
+		allErrs = errors.Join(allErrs, status.WrapErrorf(err, "failed to read from grpc cache %q", url.Host))
 	}
 
 	// Sanitize the error so as to not expose internal services via the
 	// error message.
-	if err != nil {
-		if !status.IsNotFoundError(err) {
-			log.Warningf("Error byte-streaming from %q: %s", stripUser(url), err)
-		}
-		return status.UnavailableErrorf("failed to read byte stream resource %q", stripUser(url))
+	if !status.IsNotFoundError(allErrs) {
+		log.Warningf("Error byte-streaming from %q: %s", stripUser(url), allErrs.Error())
 	}
-	return nil
+	return status.UnavailableErrorf("failed to read byte stream resource %q", stripUser(url))
 }
 
 func stripUser(u *url.URL) *url.URL {
