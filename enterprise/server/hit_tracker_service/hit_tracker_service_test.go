@@ -156,7 +156,7 @@ func TestHitTrackerService_DetailedStats(t *testing.T) {
 type fakeUsageTracker struct {
 	interfaces.UsageTracker
 	Increments []*tables.UsageCounts
-	Labels []*tables.UsageLabels
+	Labels     []*tables.UsageLabels
 }
 
 func (ut *fakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
