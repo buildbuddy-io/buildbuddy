@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -662,16 +661,20 @@ func writeFile(fp *FilePointer, data []byte, opts *DownloadTreeOpts) error {
 	return f.Close()
 }
 
-func copyFile(src *FilePointer, dest *FilePointer, opts *DownloadTreeOpts) error {
-	if err := removeExisting(dest, opts); err != nil {
+func linkFileFromFileCache(ctx context.Context, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts) error {
+	ok, err := maybeLinkFromFileCache(ctx, fp, fc, opts)
+	if err != nil {
 		return err
 	}
-	return fastcopy.FastCopy(src.FullPath, dest.FullPath)
+	if !ok {
+		return status.UnknownErrorf("digest %q is missing from file cache", digest.String(fp.FileNode.Digest))
+	}
+	return nil
 }
 
-// linkFileFromFileCache attempts to link the given file path from the local
+// maybeLinkFileFromFileCache attempts to link the given file path from the local
 // file cache, and returns whether the linking was successful.
-func linkFileFromFileCache(ctx context.Context, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts) (bool, error) {
+func maybeLinkFromFileCache(ctx context.Context, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts) (bool, error) {
 	if err := removeExisting(fp, opts); err != nil {
 		return false, err
 	}
@@ -714,7 +717,10 @@ type BatchFileFetcher struct {
 // NewBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
 // `fileCache` is optional. If present, it's used to cache a copy of the data for use by future reads.
 // `casClient` is optional. If not specified, all requests will use the ByteStream API.
-func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value) *BatchFileFetcher {
+func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value) (*BatchFileFetcher, error) {
+	if env.GetFileCache() == nil {
+		return nil, status.InvalidArgumentError("FileCache is required")
+	}
 	return &BatchFileFetcher{
 		ctx:            ctx,
 		env:            env,
@@ -723,7 +729,7 @@ func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		digestFunction: digestFunction,
 		once:           &sync.Once{},
 		compress:       false,
-	}
+	}, nil
 }
 
 func (ff *BatchFileFetcher) supportsCompression() bool {
@@ -782,19 +788,15 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 			if !ok || len(ptrs) == 0 {
 				continue
 			}
+
 			ptr := ptrs[0]
-			if err := writeFile(ptr, res.Data, opts); err != nil {
+			_, err := fileCache.Write(ff.ctx, ptr.FileNode, res.Data)
+			if err != nil {
 				return err
 			}
-			if fileCache != nil {
-				if err := fileCache.AddFile(ff.ctx, ptr.FileNode, ptr.FullPath); err != nil {
-					log.Warningf("Error adding file to filecache: %s", err)
-				}
-			}
-			// Only need to write the first file explicitly; the rest of the files can
-			// be fast-copied from the first.
-			for _, dest := range ptrs[1:] {
-				if err := copyFile(ptr, dest, opts); err != nil {
+
+			for _, ptr := range ptrs {
+				if err := linkFileFromFileCache(ff.ctx, ptr, fileCache, opts); err != nil {
 					return err
 				}
 			}
@@ -958,21 +960,23 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	}
 
 	dedupeKey := downloadDedupeKey{groupID: groupIDStringFromContext(ctx), key: key}
-	fp, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
+	_, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
 		fp0 := fps[0]
-		var mode os.FileMode = 0644
-		if fp0.FileNode.IsExecutable {
-			mode = 0755
-		}
-		f, err := os.OpenFile(fp0.FullPath, os.O_RDWR|os.O_CREATE, mode)
+		w, err := ff.env.GetFileCache().Writer(ctx, fp0.FileNode, ff.digestFunction)
 		if err != nil {
 			return nil, err
 		}
+		defer w.Close()
+
 		resourceName := digest.NewCASResourceName(fp0.FileNode.Digest, instanceName, ff.digestFunction)
 		if ff.supportsCompression() {
 			resourceName.SetCompressor(repb.Compressor_ZSTD)
 		}
-		if err := cachetools.GetBlob(ctx, bsClient, resourceName, f); err != nil {
+		if err := cachetools.GetBlob(ctx, bsClient, resourceName, w); err != nil {
+			return nil, err
+		}
+
+		if err := w.Commit(); err != nil {
 			return nil, err
 		}
 
@@ -980,32 +984,15 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		ff.stats.FileDownloadSizeBytes += key.SizeBytes
 		ff.stats.FileDownloadCount += 1
 		ff.statsMu.Unlock()
-
-		if err := f.Close(); err != nil {
-			return nil, err
-		}
-		fileCache := ff.env.GetFileCache()
-		if fileCache != nil {
-			if err := fileCache.AddFile(ff.ctx, fp0.FileNode, fp0.FullPath); err != nil {
-				log.Warningf("Error adding file to filecache: %s", err)
-			}
-		}
 		return fp0, nil
 	})
 	if err != nil {
 		return err
 	}
 
-	// Depending on whether or not this bytestream request was deduped, fp
-	// will either be == fps[0], or a different fp from a concurrent request
-	// made by the same user.
-	// Check for that case, to avoid copying a file over itself, and copy fp
-	// to all of the destination fps.
 	for _, dest := range fps {
-		if fp == dest {
-			continue
-		}
-		if err := copyFile(fp, dest, opts); err != nil {
+		err := linkFileFromFileCache(ctx, dest, ff.env.GetFileCache(), opts)
+		if err != nil {
 			return err
 		}
 	}
@@ -1115,7 +1102,7 @@ func (lffcr *linkFromFileCacheRequest) Do() error {
 	numFilesLinked := 0
 	for _, fp := range lffcr.filePointers {
 		if lffcr.fileCache != nil {
-			linked, err := linkFileFromFileCache(lffcr.ctx, fp, lffcr.fileCache, lffcr.opts)
+			linked, err := maybeLinkFromFileCache(lffcr.ctx, fp, lffcr.fileCache, lffcr.opts)
 			if err != nil {
 				return err
 			}
@@ -1344,7 +1331,10 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		return nil, err
 	}
 
-	ff := NewBatchFileFetcher(ctx, env, instanceName, digestFunction)
+	ff, err := NewBatchFileFetcher(ctx, env, instanceName, digestFunction)
+	if err != nil {
+		return nil, err
+	}
 
 	// Download any files into the directory structure.
 	if err := ff.FetchFiles(filesToFetch, opts); err != nil {

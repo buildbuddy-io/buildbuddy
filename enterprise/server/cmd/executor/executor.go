@@ -70,7 +70,7 @@ var (
 	appTarget                 = flag.String("executor.app_target", "grpcs://remote.buildbuddy.io", "The GRPC url of a buildbuddy app server.")
 	cacheTarget               = flag.String("executor.cache_target", "", "The GRPC url of the remote cache to use. If empty, the value from --executor.app_target is used.")
 	cacheTargetTrafficPercent = flag.Int("executor.cache_target_traffic_percent", 100, "The percent of cache traffic to send to --executor.cache_target. If not 100, the remainder will be sent to --executor.app_target.")
-	disableLocalCache         = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.")
+	disableLocalCache         = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.", flag.Deprecated("file cache can no longer be disabled"))
 	deleteFileCacheOnStartup  = flag.Bool("executor.delete_filecache_on_startup", false, "If true, delete the file cache on startup")
 	deleteBuildRootOnStartup  = flag.Bool("executor.delete_build_root_on_startup", false, "If true, delete the build root on startup")
 	executorMedadataDirectory = flag.String("executor.metadata_directory", "", "Location where executor host_id and other metadata is stored. Defaults to executor.local_cache_directory/../")
@@ -232,11 +232,9 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 
 	initializeCacheClientsOrDie(*appTarget, *cacheTarget, *cacheTargetTrafficPercent, realEnv)
 
-	if !*disableLocalCache {
-		log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
-		if fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
-			realEnv.SetFileCache(fc)
-		}
+	log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
+	if fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
+		realEnv.SetFileCache(fc)
 	}
 
 	conn, err := grpc_client.DialInternal(realEnv, *appTarget)

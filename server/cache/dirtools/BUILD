@@ -15,7 +15,6 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/alert",
         "//server/util/claims",
-        "//server/util/fastcopy",
         "//server/util/fspath",
         "//server/util/log",
         "//server/util/proto",
