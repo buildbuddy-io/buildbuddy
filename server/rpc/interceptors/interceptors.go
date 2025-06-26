@@ -348,10 +348,13 @@ func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercepto
 			if err != nil {
 				log.Warningf("Quota Manager failed: %s", err)
 			}
-		}
-		if *enableGRPCMetricsByGroupID {
-			if key, err := quota.GetKey(ctx, env); err == nil {
-				metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key, strconv.FormatBool(allow)).Inc()
+			if !allow {
+				return nil, status.ResourceExhaustedError("exceeds quota")
+			}
+			if *enableGRPCMetricsByGroupID {
+				if key, err := quota.GetKey(ctx, env); err == nil {
+					metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key, strconv.FormatBool(allow)).Inc()
+				}
 			}
 		}
 		r, err := handler(ctx, req)
@@ -368,10 +371,13 @@ func quotaStreamServerInterceptor(env environment.Env) grpc.StreamServerIntercep
 			if err != nil {
 				log.Warningf("Quota Manager failed: %s", err)
 			}
-		}
-		if *enableGRPCMetricsByGroupID {
-			if key, err := quota.GetKey(stream.Context(), env); err == nil {
-				metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key, strconv.FormatBool(allow)).Inc()
+			if !allow {
+				return status.ResourceExhaustedError("exceeds quota")
+			}
+			if *enableGRPCMetricsByGroupID {
+				if key, err := quota.GetKey(stream.Context(), env); err == nil {
+					metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key, strconv.FormatBool(allow)).Inc()
+				}
 			}
 		}
 		err = handler(srv, stream)
