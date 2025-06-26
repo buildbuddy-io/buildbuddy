@@ -326,7 +326,7 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 
 func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	// Identify ourselves as an app client in gRPC requests to other apps.
-	usageutil.SetServerName("app")
+	usageutil.SetClientType("app")
 	byte_stream_client.RegisterPooledBytestreamClient(env)
 
 	// TODO(jdhollen): Share this pool with the cache above.  Not a huge deal for now.
