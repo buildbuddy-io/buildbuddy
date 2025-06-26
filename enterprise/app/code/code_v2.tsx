@@ -489,7 +489,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         }
         break;
       case "constant":
-        description = "Constant"
+        description = "Constant";
         const val = textDecoder.decode(nodeInfo.facts["/kythe/text"]);
         if (val) {
           description += `: ${val}`;
@@ -498,7 +498,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       default:
         description = kind.toUpperCase();
         break;
-      }
+    }
     return description;
   }
 
@@ -521,7 +521,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       // We make a best-effort to create a partial description if any of the metadata is missing.
       let description = this.nodeInfoToMarkdownDescription(rval.nodeInfo);
 
-      const location = this.filenameFromAnchor(rval.definition?.anchor) + ":" + this.lineNumberFromAnchor(rval.definition?.anchor);
+      const location =
+        this.filenameFromAnchor(rval.definition?.anchor) + ":" + this.lineNumberFromAnchor(rval.definition?.anchor);
       if (location.length > 1) {
         if (description.length > 0) {
           description += " defined at " + location;
@@ -540,7 +541,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       if (description.length > 0) {
         description = "**Definition**\n\n" + description;
         popupContents.push({
-          value: description
+          value: description,
         });
       }
 
@@ -548,11 +549,14 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         popupContents.push({ value: "**Documentation**\n\n" + rval.docstring });
       }
 
-      return {contents: popupContents};
+      return { contents: popupContents };
     });
   }
 
-  hoverHandler(model: monaco.editor.ITextModel, position: monaco.Position): Promise<monaco.languages.Hover> | undefined {
+  hoverHandler(
+    model: monaco.editor.ITextModel,
+    position: monaco.Position
+  ): Promise<monaco.languages.Hover> | undefined {
     let ticks = this.ticketsForPosition(position);
     if (!ticks?.length) {
       return;
@@ -568,13 +572,18 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         ticket: tick,
       }),
     });
-    return rpcService.service.kytheProxy(req).then((rsp) => {
-      if (!rsp.docsReply) { return new search.ExtendedDocumentationReply(); }
-      return rsp.docsReply;
-    }).catch((e) => {
-      console.error("Error fetching documentation for ticket", tick, e);
-      return new search.ExtendedDocumentationReply();
-    });
+    return rpcService.service
+      .kytheProxy(req)
+      .then((rsp) => {
+        if (!rsp.docsReply) {
+          return new search.ExtendedDocumentationReply();
+        }
+        return rsp.docsReply;
+      })
+      .catch((e) => {
+        console.error("Error fetching documentation for ticket", tick, e);
+        return new search.ExtendedDocumentationReply();
+      });
   }
 
   async fetchDecorations(filename: string) {
@@ -2014,11 +2023,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   navigateToAnchor(a: kythe.proto.Anchor) {
-    this.fetchIfNeededAndNavigate(
-      this.filenameFromAnchor(a),
-      "",
-      this.lineNumberFromAnchor(a)
-    );
+    this.fetchIfNeededAndNavigate(this.filenameFromAnchor(a), "", this.lineNumberFromAnchor(a));
   }
 
   renderAnchors(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]) {
