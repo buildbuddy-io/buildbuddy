@@ -3,31 +3,31 @@ syntax = "proto3";
 import "proto/search.proto";
 
 message IdealResult {
-    string owner = 1;
-    string repo = 2;
-    string filename = 3;
-    int32 match_count = 4;
-    // TODO: worth it?
-    repeated int32 snippet_line_numbers = 5;
+  string owner = 1;
+  string repo = 2;
+  string filename = 3;
+  int32 match_count = 4;
+  // TODO: worth it?
+  repeated int32 snippet_line_numbers = 5;
 
-    float relevance = 6;
+  float relevance = 6;
 
-    // Not used programatically, but to aid annotation
-    string notes = 7;
+  // Not used programatically, but to aid annotation
+  string notes = 7;
 }
 
 message Case {
-    search.Query query = 1;
-    repeated IdealResult ideal_results = 2;
-    bool penalize_unmatched = 3;
+  search.Query query = 1;
+  repeated IdealResult ideal_results = 2;
+  bool penalize_unmatched = 3;
 }
 
 message Repo {
-    string url = 1;
-    string sha = 2;
+  string url = 1;
+  string sha = 2;
 }
 
 message Suite {
-    repeated Repo repos = 1;
-    repeated Case cases = 2;
+  repeated Repo repos = 1;
+  repeated Case cases = 2;
 }

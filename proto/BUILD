@@ -807,7 +807,7 @@ proto_library(
     srcs = ["search_rating.proto"],
     deps = [
         ":search_proto",
-    ]
+    ],
 )
 
 proto_library(
@@ -1995,7 +1995,7 @@ go_proto_library(
     proto = ":search_rating_proto",
     deps = [
         ":search_go_proto",
-    ]
+    ],
 )
 
 go_proto_library(

@@ -10,7 +10,7 @@ filegroup(
 go_library(
     name = "rater_lib",
     srcs = ["rater.go"],
-    embedsrcs = [":ratings_data"],
+    embedsrcs = ["ratings.proto.json"],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/test/quality",
     visibility = ["//visibility:private"],
     deps = [
