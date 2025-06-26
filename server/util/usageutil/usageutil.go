@@ -22,17 +22,16 @@ const (
 var (
 	origin = flag.String("grpc_client_origin_header", "", "Header value to set for x-buildbuddy-origin.")
 
-	// Header value to set for x-buildbuddy-client.
-	// See: WithLocalServerLabels
-	clientType string
+	// The server name to record in usage.  This will be used for the "client" usage label when sending RPCS
+	// and the "server" usage label when a usage-generating request terminates at this server.
+	serverName string
 )
 
-// Labels returns usage labels for the given request context.
-func Labels(ctx context.Context) (*tables.UsageLabels, error) {
+func LabelsForUsageRecording(ctx context.Context) (*tables.UsageLabels, error) {
 	return &tables.UsageLabels{
 		Origin: originLabel(ctx),
 		Client: clientLabel(ctx),
-		Server: "",
+		Server: serverName,
 	}, nil
 }
 
@@ -51,7 +50,7 @@ func WithLocalServerLabels(ctx context.Context) context.Context {
 	// Note: we set the header values here even if they're empty so that they
 	// override other header values, e.g. bazel request metadata.
 	ctx = metadata.AppendToOutgoingContext(ctx, OriginHeaderName, *origin)
-	ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, clientType)
+	ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, serverName)
 	return ctx
 }
 
@@ -61,10 +60,10 @@ func ClientOrigin() string {
 	return *origin
 }
 
-// SetClientType sets the value of the x-buildbuddy-client header for *outgoing*
-// gRPC requests with label propagation enabled.
-func SetClientType(value string) {
-	clientType = value
+// SetServerName will be used for x-buildbuddy-client header for *outgoing* gRPC
+// requests and recorded for usage-generating requests that terminated at this server.
+func SetServerName(value string) {
+	serverName = value
 }
 
 func originLabel(ctx context.Context) string {
