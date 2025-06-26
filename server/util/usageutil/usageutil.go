@@ -27,11 +27,11 @@ var (
 	serverName string
 )
 
-func LabelsForUsageRecording(ctx context.Context) (*tables.UsageLabels, error) {
+func LabelsForUsageRecording(ctx context.Context, server string) (*tables.UsageLabels, error) {
 	return &tables.UsageLabels{
 		Origin: originLabel(ctx),
 		Client: clientLabel(ctx),
-		Server: serverName,
+		Server: server,
 	}, nil
 }
 
@@ -64,6 +64,10 @@ func ClientOrigin() string {
 // requests and recorded for usage-generating requests that terminated at this server.
 func SetServerName(value string) {
 	serverName = value
+}
+
+func ServerName() string {
+	return serverName
 }
 
 func originLabel(ctx context.Context) string {

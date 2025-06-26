@@ -1755,6 +1755,12 @@ type HitTrackerFactory interface {
 
 	// Creates a new HitTracker for tracking ByteStream/CAS hits.
 	NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) HitTracker
+
+	// Creates a new HitTracker for tracking Action Cache hits.
+	NewRemoteACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) HitTracker
+
+	// Creates a new HitTracker for tracking ByteStream/CAS hits.
+	NewRemoteCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) HitTracker
 }
 
 // ExperimentFlagProvider can be use for getting a flag value for a request to

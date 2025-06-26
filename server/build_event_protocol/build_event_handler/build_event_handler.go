@@ -1663,7 +1663,7 @@ func toStoredInvocation(inv *tables.Invocation) *sipb.StoredInvocation {
 }
 
 func incrementInvocationUsage(ctx context.Context, ut interfaces.UsageTracker) {
-	labels, err := usageutil.LabelsForUsageRecording(ctx)
+	labels, err := usageutil.LabelsForUsageRecording(ctx, usageutil.ServerName())
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to compute invocation usage labels: %s", err)
 		return
