@@ -759,7 +759,7 @@ func parseSnapshotKeyJSON(in string) (*fcpb.SnapshotKey, error) {
 func findValue(platform *repb.Platform, name string) (value string, ok bool) {
 	name = strings.ToLower(name)
 	for _, prop := range platform.GetProperties() {
-		if prop.GetName() == name {
+		if strings.ToLower(prop.GetName()) == name {
 			return strings.TrimSpace(prop.GetValue()), true
 		}
 	}
