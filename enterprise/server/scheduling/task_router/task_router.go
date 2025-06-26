@@ -520,11 +520,9 @@ func (r *persistentWorkerRouter) Applies(ctx context.Context, params routingPara
 		return false
 	}
 	if exp := r.env.GetExperimentFlagProvider(); exp != nil {
-		if t := exp.Boolean(ctx, "remote_execution.enable_persistent_worker_routing", false); t {
-			return t
-		}
+		return exp.Boolean(ctx, "remote_execution.enable_persistent_worker_routing", false)
 	}
-	return true // STOPSHIP(tyler): set back to false.
+	return false
 }
 
 func (_ *persistentWorkerRouter) preferredNodeLimit(_ routingParams) int {
