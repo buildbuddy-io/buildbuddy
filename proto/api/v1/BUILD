@@ -37,6 +37,7 @@ proto_library(
     name = "api_v1_proto",
     srcs = [
         "action.proto",
+        "api_key.proto",
         "file.proto",
         "invocation.proto",
         "log.proto",
