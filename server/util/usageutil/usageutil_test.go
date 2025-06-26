@@ -76,7 +76,7 @@ func TestLabels(t *testing.T) {
 			}
 			ctx := metadata.NewIncomingContext(context.Background(), md)
 
-			labels, err := usageutil.LabelsForUsageRecording(ctx)
+			labels, err := usageutil.LabelsForUsageRecording(ctx, "")
 
 			require.NoError(t, err)
 			require.Equal(t, test.Expected, labels)
@@ -141,7 +141,7 @@ func TestLabelPropagation(t *testing.T) {
 			// Simulate that we've arrived at the receiving server by
 			// changing the server name on the fly.
 			usageutil.SetServerName(test.Server)
-			labels, err := usageutil.LabelsForUsageRecording(ctx)
+			labels, err := usageutil.LabelsForUsageRecording(ctx, test.Server)
 
 			require.NoError(t, err)
 			require.Equal(t, test.Expected, labels)
