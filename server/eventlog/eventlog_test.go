@@ -104,6 +104,39 @@ func TestGetEventLogChunkMaxBufferSize(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("%04x", 6), rsp.NextChunkId)
 }
 
+/*
+func TestLinesAcrossChunks(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+
+	invocationDB := &mockinvocationdb.MockInvocationDB{DB: make(map[string]*tables.Invocation)}
+	env.SetInvocationDB(invocationDB)
+
+	// Make a bare bones test invocation in the DB
+	testID := "test_id"
+	invocationDB.DB[testID] = &tables.Invocation{
+		InvocationID: testID,
+		Attempt:      1,
+		LastChunkId:  fmt.Sprintf("%04x", uint16(3)),
+	}
+
+	blobstore := mockstore.New()
+	env.SetBlobstore(blobstore)
+
+	blobPath := eventlog.GetEventLogPathFromInvocationIdAndAttempt(testID, 1)
+
+	// Make a chunked log for the invocation. Chunked logs can have more chunks
+	// than LastChunkId would suggest due to latency between blobstore writes
+	// and db writes recording them.
+	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(0))] = make([]byte, 8)
+	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(1))] = make([]byte, 8)
+	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(2))] = make([]byte, 8)
+	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(3))] = make([]byte, 8)
+	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(4))] = make([]byte, 8)
+	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(5))] = make([]byte, 8)
+
+}
+*/
+
 type testLog struct {
 	head bytes.Buffer
 	tail []byte
@@ -138,43 +171,43 @@ func TestComplexScreenWriting(t *testing.T) {
 		{
 			name:    "single write with space",
 			write:   []string{" "},
-			wantLog: " ",
+			wantLog: "",
 		},
 		{
 			name:    "single blankline write",
 			write:   []string{"\n"},
-			wantLog: "\n",
+			wantLog: "",
 		},
 		{
 			name:    "multiple blankline writes",
 			write:   []string{"\n", "\n"},
-			wantLog: "\n\n",
+			wantLog: "\n",
 		},
 		{
 			name:    "multiple writes with multiple lines",
 			write:   []string{"1\n", "2\n"},
-			wantLog: "1\n2\n",
+			wantLog: "1\n2",
 		},
 		{
 			name:    "single write with multiple lines",
 			write:   []string{"1\n2\n"},
-			wantLog: "1\n2\n",
+			wantLog: "1\n2",
 		},
 		{
 			name:    "multiple writes with multiple lines and double-newline",
 			write:   []string{"1\n\n", "2\n"},
-			wantLog: "1\n\n2\n",
+			wantLog: "1\n\n2",
 		},
 		{
 			name:    "multiple writes with mix of trailing and leading whitespace",
 			write:   []string{"1", "2\n", "3\n ", "4\n\n", "5 \n", " 6"},
-			wantLog: "12\n3\n 4\n\n5 \n 6",
+			wantLog: "12\n3\n 4\n\n5\n 6",
 		},
 	}
 	// Run each of the basic test cases both with a window height of 0 (no
 	// curses) and 1 (with curses).
 	var testCases []testCase
-	for _, windowHeight := range []int{0, 1} {
+	for _, windowHeight := range []int{0, 1, 2, 3} {
 		for _, tc := range basicTestCases {
 			testCases = append(testCases, testCase{
 				name:       fmt.Sprintf("WindowHeight=%d/%s", windowHeight, tc.name),
@@ -278,6 +311,7 @@ func TestComplexScreenWriting(t *testing.T) {
 			for _, s := range tc.write {
 				_, err = w.Write(ctx, []byte(s))
 				require.NoError(t, err)
+				require.NoError(t, screen.WriteErr)
 			}
 			require.Equal(t, ansiDebugString(tc.wantLog), ansiDebugString(tl.String()))
 		})
