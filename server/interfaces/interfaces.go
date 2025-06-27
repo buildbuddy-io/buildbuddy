@@ -1342,10 +1342,11 @@ type DistributedLock interface {
 // QuotaManager manages quota.
 type QuotaManager interface {
 	// Allow checks whether a user (identified from the ctx) has exceeded a rate
-	// limit inside the namespace.
+	// limit inside the namespace and returns ResourceExhaustedError
+	// when it's not allowed.
 	// If the rate limit has not been exceeded, the underlying storage is updated
 	// by the supplied quantity.
-	Allow(ctx context.Context, namespace string, quantity int64) (bool, error)
+	Allow(ctx context.Context, namespace string, quantity int64) error
 
 	GetNamespace(ctx context.Context, req *qpb.GetNamespaceRequest) (*qpb.GetNamespaceResponse, error)
 	RemoveNamespace(ctx context.Context, req *qpb.RemoveNamespaceRequest) (*qpb.RemoveNamespaceResponse, error)
