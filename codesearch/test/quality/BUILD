@@ -15,7 +15,6 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//proto:codesearch_service_go_proto",
-        "//proto:git_go_proto",
         "//proto:index_go_proto",
         "//proto:search_go_proto",
         "//proto:search_rating_go_proto",

@@ -32,8 +32,9 @@ and the file contains a single `Suite` message from
 When adding new cases:
 
 1. Choose a query, check out the relevant repo at the commit SHA specified in
-the test suite, and use `grep` (or some other tool) to manually find the expected responses.
-   * **Don't** use codesearch itself to find the expected responses - bugs in codesearch could lead
+   the test suite, and use `grep` (or some other tool) to manually find the expected responses.
+
+   - **Don't** use codesearch itself to find the expected responses - bugs in codesearch could lead
      to encoding incorrect results in the golden data.
 
 2. Create an `IdealResult` object describing each result that you want to contribute to scoring.
@@ -43,11 +44,12 @@ the test suite, and use `grep` (or some other tool) to manually find the expecte
    The range of relevance values matters within a single test case, but does not need to be uniform
    across test cases (scores are normalized per test case). However, here are some default rules to
    follow unless there is a reason to deviate:
-      1. A relevance of 3.0 is an "excellent" result, and should the first or second result.
-      2. A relevance of 2.0 is a "good" result, and should be within the first few results.
-      3. A relevance of 1.0 is a "fine" result, but should probably not be in the first few results.
-      4. A relevance of 0.5 is a "poor" result - it's a valid match, but should be towards the end
-         of the results (e.g. generated code, or low value test usages of a function).
+
+   1. A relevance of 3.0 is an "excellent" result, and should the first or second result.
+   2. A relevance of 2.0 is a "good" result, and should be within the first few results.
+   3. A relevance of 1.0 is a "fine" result, but should probably not be in the first few results.
+   4. A relevance of 0.5 is a "poor" result - it's a valid match, but should be towards the end
+      of the results (e.g. generated code, or low value test usages of a function).
 
    Note that the order of the `IdealResults` in [ratings.proto.json](ratings.proto.json) is
    irrelevant. The provided relevance values indicate how each result will contribute to the
@@ -68,4 +70,3 @@ the result set, but will not be directly penalized for other results being inclu
 this situation might be a very commonly used function - the test case may list the function's
 definition with a high relevance, but no other results. In this case, as long as the actual query
 returned the function definition early in the results, it would score well.
-
