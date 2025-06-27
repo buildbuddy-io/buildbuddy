@@ -336,7 +336,7 @@ func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
 	key, err := quota.GetKey(ctx, qm.env)
 	if err != nil {
-		log.CtxWarningf(ctx, "failed to get quota key for namespace %s: %s", namespace, err)
+		log.CtxWarningf(ctx, "Failed to get quota key for namespace %s: %s", namespace, err)
 		return nil
 	}
 	b := qm.findBucket(namespace, key)
