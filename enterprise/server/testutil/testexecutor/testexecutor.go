@@ -24,9 +24,9 @@ func (e *Executor) WaitForReady() error {
 var executorRlocationpath string
 
 type Opts struct {
-	Args              []string
-	DebugName         string
-	SkipWaitToBeReady bool
+	Args             []string
+	DebugName        string
+	SkipWaitForReady bool
 }
 
 // Run a local BuildBuddy executor binary for the scope of the given test case.
@@ -47,7 +47,7 @@ func RunWithOpts(t *testing.T, opts *Opts) *Executor {
 		),
 		HTTPPort:              e.httpPort,
 		HealthCheckServerType: "prod-buildbuddy-executor",
-		SkipWaitForReady:      opts.SkipWaitToBeReady,
+		SkipWaitForReady:      opts.SkipWaitForReady,
 	})
 	e.server = s
 	return e

@@ -862,7 +862,7 @@ func (r *Env) AddNamedExecutors(t *testing.T, names []string) []*testexecutor.Ex
 				"--executor.app_target=" + r.AppProxy.GRPCTarget(),
 				"--executor.test_only_executor_id=" + name,
 			},
-			SkipWaitToBeReady: true,
+			SkipWaitForReady: true,
 		}
 		e := testexecutor.RunWithOpts(t, opts)
 		eg.Go(func() error {
