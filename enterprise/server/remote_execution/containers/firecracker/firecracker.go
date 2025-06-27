@@ -523,11 +523,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 		HostCpuid:         getCPUID(),
 	}
-	var err error
-	vmConfig.BootArgs, err = getBootArgs(vmConfig, *dnsOverrides)
-	if err != nil {
-		return nil, status.WrapError(err, "get boot args")
-	}
+	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
 		VMConfiguration:        vmConfig,
 		ContainerImage:         args.Props.ContainerImage,
@@ -1090,7 +1086,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 
-	if err := c.setupNetworking(ctx, *dnsOverrides); err != nil {
+	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
 
@@ -1443,7 +1439,7 @@ func (c *FirecrackerContainer) getChroot() string {
 	return filepath.Join(c.jailerRoot, "firecracker", c.id, "root")
 }
 
-func getBootArgs(vmConfig *fcpb.VMConfiguration, dnsOverrides []*networking.DnsOverride) (string, error) {
+func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	kernelArgs := []string{
 		"ro",
 		"console=ttyS0",
@@ -1489,22 +1485,19 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration, dnsOverrides []*networking.DnsO
 	if platform.VFSEnabled() {
 		initArgs = append(initArgs, "-enable_vfs")
 	}
-	return strings.Join(append(initArgs, kernelArgs...), " "), nil
+	return strings.Join(append(initArgs, kernelArgs...), " ")
 }
 
 // getConfig returns the firecracker config for the current container and given
 // filesystem image paths. The image paths are not expected to be in the chroot;
 // they will be hardlinked to the chroot when starting the machine (see
 // NaiveChrootStrategy).
-func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerFS, scratchFS, workspaceFS string, dnsOverrides []*networking.DnsOverride) (*fcclient.Config, error) {
+func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
 	var netnsPath string
 	if c.network != nil {
 		netnsPath = c.network.NamespacePath()
 	}
-	bootArgs, err := getBootArgs(c.vmConfig, dnsOverrides)
-	if err != nil {
-		return nil, status.WrapError(err, "get boot args")
-	}
+	bootArgs := getBootArgs(c.vmConfig)
 	jailerCfg, err := c.getJailerConfig(ctx, c.executorConfig.GuestKernelImagePath)
 	if err != nil {
 		return nil, status.WrapError(err, "get jailer config")
@@ -1684,7 +1677,7 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	return walkErr
 }
 
-func (c *FirecrackerContainer) setupNetworking(ctx context.Context, dnsOverrides []*networking.DnsOverride) error {
+func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	if !c.vmConfig.EnableNetworking {
 		return nil
 	}
@@ -1966,11 +1959,11 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 
-	if err := c.setupNetworking(ctx, *dnsOverrides); err != nil {
+	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
 
-	fcCfg, err := c.getConfig(ctx, rootFSPath, containerFSPath, scratchFSPath, workspacePlaceholderPath, *dnsOverrides)
+	fcCfg, err := c.getConfig(ctx, rootFSPath, containerFSPath, scratchFSPath, workspacePlaceholderPath)
 	if err != nil {
 		return err
 	}

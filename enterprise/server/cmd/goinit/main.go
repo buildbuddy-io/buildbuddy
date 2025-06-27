@@ -546,73 +546,52 @@ func runVMDNSServer(ctx context.Context) error {
 
 	// Ensure hostnames end with '.' so they are not resolved as relative names.
 	for _, o := range dnsOverrides {
-		if o.RedirectToIP == "" {
-			return status.InvalidArgumentError("empty redirect IP")
+		if o.RedirectToHostname == "" {
+			return status.InvalidArgumentError("empty redirect hostname")
 		}
 		if !strings.HasSuffix(o.HostnameToOverride, ".") {
 			o.HostnameToOverride += "."
 		}
 	}
 
-	eg := &errgroup.Group{}
 	mux.Handle(".", &vmDNSServer{overrides: dnsOverrides})
-
-	eg.Go(func() error {
-		tcp := &dns.Server{
-			Addr:    "127.0.0.1:53",
-			Net:     "tcp",
-			Handler: mux,
-		}
-		return tcp.ListenAndServe()
-	})
-	eg.Go(func() error {
-		udp := &dns.Server{
-			Addr:    "127.0.0.1:53",
-			Net:     "udp4",
-			Handler: mux,
-		}
-		return udp.ListenAndServe()
-	})
-
-	return eg.Wait()
+	s := &dns.Server{
+		Addr:    "127.0.0.1:53",
+		Net:     "udp4",
+		Handler: mux,
+	}
+	return s.ListenAndServe()
 }
 
 func (s *vmDNSServer) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	for _, o := range s.overrides {
-		if strings.HasSuffix(req.Question[0].Name, o.HostnameToOverride) && !strings.HasSuffix(req.Question[0].Name, "proxy.metal.buildbuddy.dev.") {
-			s.overrideResponse(w, req, o.RedirectToIP)
+		if strings.HasSuffix(req.Question[0].Name, o.HostnameToOverride) && !strings.HasSuffix(req.Question[0].Name, o.RedirectToHostname) {
+			s.overrideResponse(w, req, o.RedirectToHostname)
 			return
 		}
 	}
 
 	// For all other requests, forward to a remote DNS server.
-	upstreams := []string{"8.8.8.8:53", "8.8.4.4:53", "1.1.1.1:53"}
-	for _, upstream := range upstreams {
-		rsp, err := s.forwardQuery(req, upstream)
-		if err == nil && rsp != nil && rsp.Rcode == dns.RcodeSuccess {
-			if err := w.WriteMsg(rsp); err != nil {
-				log.Errorf("could not send dns reply: %s", err)
-			}
-			return
-		}
-		log.Warningf("Forwarding to %s failed or returned no answer, trying next remote DNS server", upstream)
+	rsp, err := s.forwardToRemoteServer(req)
+	if err != nil {
+		s.returnFailureMsg(w, req)
+		return
 	}
 
-	// Return an error if all forwards fail.
-	m := new(dns.Msg)
-	m.SetRcode(req, dns.RcodeServerFailure)
-	m.RecursionAvailable = true
-	if err := w.WriteMsg(m); err != nil {
+	if err := w.WriteMsg(rsp); err != nil {
 		log.Errorf("could not send dns reply: %s", err)
 	}
 }
 
-func (s *vmDNSServer) overrideResponse(w dns.ResponseWriter, req *dns.Msg, redirectToIP string) {
-	m := &dns.Msg{}
-	m.SetReply(req)
-	m.Authoritative = true
-	m.Rcode = dns.RcodeSuccess
-	m.RecursionAvailable = true
+// overrideResponse returns a DNS response pointing requests originally directed
+// to `hostname_to_override` => `redirect_to_hostname`.
+// The response also contains the A record for `redirect_to_hostname` so the
+// client can follow the request to the final IP addr it should hit.
+func (s *vmDNSServer) overrideResponse(w dns.ResponseWriter, req *dns.Msg, redirectToHostname string) {
+	rspMsg := &dns.Msg{}
+	rspMsg.SetReply(req)
+	rspMsg.Rcode = dns.RcodeSuccess
+	rspMsg.RecursionAvailable = true
 
 	cname := &dns.CNAME{
 		Hdr: dns.RR_Header{
@@ -621,30 +600,49 @@ func (s *vmDNSServer) overrideResponse(w dns.ResponseWriter, req *dns.Msg, redir
 			Class:  dns.ClassINET,
 			Ttl:    60,
 		},
-		Target: "proxy.metal.buildbuddy.dev.",
+		Target: redirectToHostname,
 	}
-	aRec := &dns.A{
-		Hdr: dns.RR_Header{
-			Name:   "proxy.metal.buildbuddy.dev.",
-			Rrtype: dns.TypeA,
-			Class:  dns.ClassINET,
-			Ttl:    60,
-		},
-		A: net.ParseIP("23.176.168.34"),
+
+	// Get A record for `redirectToHostname` from remote DNS server.
+	forwardMsg := &dns.Msg{}
+	forwardMsg.SetQuestion(redirectToHostname, dns.TypeA)
+	forwardMsg.RecursionDesired = true
+	rsp, err := s.forwardToRemoteServer(forwardMsg)
+	if err != nil {
+		s.returnFailureMsg(w, req)
+		return
 	}
-	m.Answer = append(m.Answer, cname, aRec)
-	if err := w.WriteMsg(m); err != nil {
+
+	rspMsg.Answer = append(rspMsg.Answer, cname)
+	rspMsg.Answer = append(rspMsg.Answer, rsp.Answer...)
+
+	if err := w.WriteMsg(rspMsg); err != nil {
 		log.Errorf("could not send dns reply: %s", err)
 	}
 }
 
-// forwardQuery forwards a DNS query to a remote DNS server. Other than specific
-// queries that are overwritten by the local DNS server, most should be
+// forwardToRemoteServer forwards a DNS query to remote DNS servers. Other than configured
+// queries that should be overwritten by the local DNS server, most should be
 // forwarded on.
-func (s *vmDNSServer) forwardQuery(req *dns.Msg, upstreamServer string) (*dns.Msg, error) {
+func (s *vmDNSServer) forwardToRemoteServer(req *dns.Msg) (*dns.Msg, error) {
+	upstreams := []string{"8.8.8.8:53", "8.8.4.4:53", "1.1.1.1:53"}
 	c := new(dns.Client)
-	resp, _, err := c.Exchange(req, upstreamServer)
-	return resp, err
+	for _, upstream := range upstreams {
+		rsp, _, err := c.Exchange(req, upstream)
+		if err == nil && rsp != nil && rsp.Rcode == dns.RcodeSuccess {
+			return rsp, nil
+		}
+		log.Warningf("Forwarding to %s failed or returned no answer, trying next remote DNS server", upstream)
+	}
+	return nil, status.InternalError("forwarding to all upstream dns servers failed")
+}
+
+func (s *vmDNSServer) returnFailureMsg(w dns.ResponseWriter, req *dns.Msg) {
+	failureMsg := new(dns.Msg)
+	failureMsg.SetRcode(req, dns.RcodeServerFailure)
+	if err := w.WriteMsg(failureMsg); err != nil {
+		log.Errorf("could not send dns reply: %s", err)
+	}
 }
 
 // Resizes the ext4 filesystem mounted at the given path to match the underlying
