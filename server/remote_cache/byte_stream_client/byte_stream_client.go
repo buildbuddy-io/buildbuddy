@@ -30,7 +30,7 @@ import (
 
 var (
 	restrictBytestreamDialing = flag.Bool("app.restrict_bytestream_dialing", false, "If true, only allow dialing localhost or the configured cache backend for bytestream requests.")
-	enablePoolCache           = flag.Bool("grpc_client.enable_pool_cache", false, "Whether or not to enable the connection pool cache.")
+	enablePoolCache           = flag.Bool("grpc_client.enable_pool_cache", true, "Whether or not to enable the connection pool cache.")
 )
 
 type pooledByteStreamClient struct {
