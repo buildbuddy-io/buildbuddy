@@ -333,19 +333,30 @@ func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
 	return ns.defaultBucket
 }
 
-func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) (bool, error) {
+func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
 	key, err := quota.GetKey(ctx, qm.env)
 	if err != nil {
-		log.Warningf("Failed to get quota key: %s", err)
-		return true, nil
+		log.CtxWarningf(ctx, "Failed to get quota key for namespace %s: %s", namespace, err)
+		return nil
 	}
 	b := qm.findBucket(namespace, key)
 	if b == nil {
 		// The bucket is not found, b/c either the namespace or the default bucket
 		// is not defined.
-		return true, nil
+		return nil
 	}
-	return b.Allow(ctx, key, quantity)
+	allow, err := b.Allow(ctx, key, quantity)
+	if err != nil {
+		log.CtxWarningf(ctx, "Quota check for %q failed: %s", namespace, err)
+		// There is some error when determining whether the request should be
+		// allowed. Do not block the traffic when the quota system has issues.
+		return nil
+	}
+	if allow {
+		return nil
+	} else {
+		return status.ResourceExhaustedErrorf("quota exceeded for %q", namespace)
+	}
 }
 
 func Register(env *real_environment.RealEnv) error {
