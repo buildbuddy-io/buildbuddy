@@ -86,6 +86,7 @@ type fileCache struct {
 	linkIntoFileCacheLatency prometheus.Observer
 	createParentDirLatency   prometheus.Observer
 	addFileLatency           prometheus.Observer
+	requestCounter           map[bool]prometheus.Counter
 }
 
 // entry is used to hold a value in the evictList
@@ -143,6 +144,10 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 		linkIntoFileCacheLatency: metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_into_filecache"}),
 		createParentDirLatency:   metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "create_parent_dir"}),
 		addFileLatency:           metrics.FileCacheOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "add_file"}),
+		requestCounter: map[bool]prometheus.Counter{
+			true:  metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: hitMetricLabel}),
+			false: metrics.FileCacheRequests.With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: missMetricLabel}),
+		},
 	}
 	if err := os.RemoveAll(c.TempDir()); err != nil {
 		return nil, status.WrapErrorf(err, "failed to clear filecache temp dir")
@@ -276,19 +281,9 @@ func key(ctx context.Context, node *repb.FileNode) string {
 	return k
 }
 
-var requestCountMetric map[bool]prometheus.Counter
-
-func init() {
-	requestCountMetric = make(map[bool]prometheus.Counter, 2)
-	requestCountMetric[true] = metrics.FileCacheRequests.
-		With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: hitMetricLabel})
-	requestCountMetric[false] = metrics.FileCacheRequests.
-		With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: missMetricLabel})
-}
-
 func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) (hit bool) {
 	defer func() {
-		requestCountMetric[hit].Inc()
+		c.requestCounter[hit].Inc()
 	}()
 
 	groupID := groupIDStringFromContext(ctx)
@@ -312,7 +307,7 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, err error) {
 	defer func() {
 		hit := f != nil
-		requestCountMetric[hit].Inc()
+		c.requestCounter[hit].Inc()
 	}()
 
 	groupID := groupIDStringFromContext(ctx)
