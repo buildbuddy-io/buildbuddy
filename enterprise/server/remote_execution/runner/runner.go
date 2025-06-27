@@ -744,11 +744,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		}
 
 		r := p.runners[evictIndex]
-		if p.pausedRunnerCount() >= p.maxRunnerCount {
-			log.Infof("Evicting runner %s (pool max count %d exceeded).", r, p.maxRunnerCount)
-		} else if p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
-			log.Infof("Evicting runner %s (max memory %d exceeded).", r, p.maxRunnerMemoryUsageBytes)
-		}
+		log.Infof("Evicting runner %s (pool max count %d exceeded).", r, p.maxRunnerCount)
 		p.runners = append(p.runners[:evictIndex], p.runners[evictIndex+1:]...)
 
 		metrics.RunnerPoolEvictions.Inc()
