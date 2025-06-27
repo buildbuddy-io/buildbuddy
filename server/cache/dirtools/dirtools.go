@@ -738,10 +738,10 @@ type BatchFileFetcher struct {
 	stats   repb.IOStats
 }
 
-// NewBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
+// newBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
 // `fileCache` is optional. If present, it's used to cache a copy of the data for use by future reads.
 // `casClient` is optional. If not specified, all requests will use the ByteStream API.
-func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, filesToFetch FileMap, opts *DownloadTreeOpts) *BatchFileFetcher {
+func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, filesToFetch FileMap, opts *DownloadTreeOpts) *BatchFileFetcher {
 	remainingFetches := make(map[fetchKey]struct{})
 	for k := range filesToFetch {
 		remainingFetches[k] = struct{}{}
@@ -795,7 +795,7 @@ func (ff *BatchFileFetcher) notifyFetchCompleted(fk fetchKey) {
 	ff.mu.Unlock()
 }
 
-func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, filesToFetch FileMap, opts *DownloadTreeOpts) error {
+func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, opts *DownloadTreeOpts) error {
 	casClient := ff.env.GetContentAddressableStorageClient()
 	if casClient == nil {
 		return status.FailedPreconditionErrorf("cannot batch download files when casClient is not set")
@@ -825,7 +825,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 		d := res.Digest
 		for _, executable := range []bool{false, true} {
 			fetchKey := newFetchKey(d, executable)
-			ptrs, ok := filesToFetch[fetchKey]
+			ptrs, ok := ff.filesToFetch[fetchKey]
 			if !ok || len(ptrs) == 0 {
 				continue
 			}
@@ -969,7 +969,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) error {
 			if currentBatchRequestSize+size > rpcutil.GRPCMaxSizeBytes {
 				reqCopy := req
 				eg.Go(func() error {
-					return ff.batchDownloadFiles(ctx, reqCopy, ff.filesToFetch, opts)
+					return ff.batchDownloadFiles(ctx, reqCopy, opts)
 				})
 				req = newRequest()
 				currentBatchRequestSize = 0
@@ -985,7 +985,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) error {
 		if len(req.Digests) > 0 {
 			reqCopy := req
 			eg.Go(func() error {
-				return ff.batchDownloadFiles(ctx, reqCopy, ff.filesToFetch, opts)
+				return ff.batchDownloadFiles(ctx, reqCopy, opts)
 			})
 		}
 		return nil
@@ -1514,7 +1514,7 @@ func (f *TreeFetcher) Start() error {
 		return err
 	}
 
-	f.ff = NewBatchFileFetcher(ctx, f.env, f.instanceName, f.digestFunction, f.filesToFetch, f.opts)
+	f.ff = newBatchFileFetcher(ctx, f.env, f.instanceName, f.digestFunction, f.filesToFetch, f.opts)
 
 	go func() {
 		// Download any files into the directory structure.
