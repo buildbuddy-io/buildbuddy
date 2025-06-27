@@ -104,7 +104,6 @@ func main() {
 	if err := distributed.Register(env); err != nil {
 		log.Fatal(err.Error())
 	}
-	usageutil.SetServerName("cache-proxy")
 
 	env.SetListenAddr(*listen)
 	if err := ssl.Register(env); err != nil {

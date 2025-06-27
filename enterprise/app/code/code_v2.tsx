@@ -887,6 +887,13 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
   componentDidUpdate(prevProps: Props, prevState: State) {
     this.fetchInitialContent();
+
+    const path = this.currentPath();
+    this.getModel(path).then((model) => {
+      this.setModel(path, model);
+      return true;
+    });
+    this.focusLineNumberAndHighlightQuery();
   }
 
   parsePath() {
@@ -1198,7 +1205,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         let newDecIds = model!.deltaDecorations(oldDecs, newDecs);
         this.state.fullPathToDecorationsMap.set(fullPath, newDecIds);
       });
-
       this.updateState({ fullPathToModelMap: this.state.fullPathToModelMap });
     }
     return model;
@@ -1213,9 +1219,11 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   setModel(fullPath: string, model: monaco.editor.ITextModel | undefined) {
-    this.state.tabs.set(fullPath, fullPath);
+    if (!this.state.tabs.has(fullPath)) {
+      this.state.tabs.set(fullPath, fullPath);
+      this.updateState({ tabs: this.state.tabs }, () => this.focusLineNumberAndHighlightQuery());
+    }
     this.editor?.setModel(model || null);
-    this.updateState({ tabs: this.state.tabs }, () => this.focusLineNumberAndHighlightQuery());
   }
 
   navigateToPath(path: string) {

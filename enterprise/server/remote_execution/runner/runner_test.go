@@ -720,7 +720,7 @@ func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb
 				Properties: []*repb.Platform_Property{
 					{Name: "persistentWorkerKey", Value: key},
 					{Name: "persistentWorkerProtocol", Value: protocol},
-					{Name: recycleRunnerPropertyName, Value: "true"},
+					// Note: we don't need to explicitly set recycle-runner=true.
 				},
 			},
 		},
