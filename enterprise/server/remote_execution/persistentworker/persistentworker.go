@@ -174,6 +174,7 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 
 // Stop kills the worker process and waits for it to exit.
 func (w *Worker) Stop() error {
+	log.Debugf("Stopping persistent worker")
 	return w.stop()
 }
 
@@ -255,6 +256,9 @@ func (w *Worker) expandFlagFiles(args []string) ([]string, error) {
 			}
 			defer file.Close()
 			scanner := bufio.NewScanner(file)
+			// The default max buffer size is 64KB which is too small in some
+			// cases. Increase it to 1MB.
+			scanner.Buffer(nil, 1024*1024)
 			for scanner.Scan() {
 				args, err := w.expandFlagFiles([]string{scanner.Text()})
 				if err != nil {

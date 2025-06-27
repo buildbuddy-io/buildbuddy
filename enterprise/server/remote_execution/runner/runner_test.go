@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,7 +22,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -710,6 +713,7 @@ func TestRunnerPool_TaskSize(t *testing.T) {
 func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ScheduledTask {
 	workerPath := testfs.RunfilePath(t, testworkerRunfilePath)
 	task := &repb.ExecutionTask{
+		Action: &repb.Action{},
 		Command: &repb.Command{
 			Arguments: []string{
 				workerPath,
@@ -850,6 +854,34 @@ func TestRunnerPool_PersistentWorker_UnknownFlagFileError(t *testing.T) {
 	// back in the pool.
 	pool.TryRecycle(ctx, r, true)
 	assert.Equal(t, 0, pool.PausedRunnerCount())
+}
+
+func TestRunnerPool_PersistentWorker_LargeFlagFile(t *testing.T) {
+	env := newTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+	go runServer()
+	pool := newRunnerPool(t, env, noLimitsCfg())
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+
+	// Write a large flag (100KB) to the flag file and upload it as an input.
+	tmp := testfs.MakeTempDir(t)
+	testfs.WriteFile(t, tmp, "flags", strings.Repeat("a", 100*1024))
+	task := newPersistentRunnerTask(t, "abc", "@flags", "", &wkpb.WorkResponse{})
+	inputRootDigest, _, err := cachetools.UploadDirectoryToCAS(ctx, env, "", repb.DigestFunction_SHA256, tmp)
+	require.NoError(t, err)
+	task.ExecutionTask.Action.InputRootDigest = inputRootDigest
+
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	err = r.DownloadInputs(ctx, &repb.IOStats{})
+	require.NoError(t, err)
+	res := r.Run(context.Background(), &repb.IOStats{})
+	require.NoError(t, res.Error)
+
+	// Make sure that recycling succeeds.
+	pool.TryRecycle(ctx, r, true)
+	assert.Equal(t, 1, pool.PausedRunnerCount())
 }
 
 func TestRunnerPool_PersistentWorker_Crash_ShowsWorkerStderrInOutput(t *testing.T) {
