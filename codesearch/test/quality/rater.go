@@ -1,6 +1,6 @@
-// TODO: package comment explaining scoring
-// TODO: readme with annotation instructions
-// TODO: should this be automated? put in a workflow and run when CS deps change?
+// This file contains a rating harness for evaluating the quality of codesearch results.
+//
+// See README.md in this directory for more background and instructions on how to create test cases.
 package main
 
 import (
@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"flag"
 	"math"
+	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -15,7 +16,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
-	gpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	spb "github.com/buildbuddy-io/buildbuddy/proto/search"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search_rating"
@@ -68,14 +68,10 @@ func main() {
 
 func indexRepos(ctx context.Context, client cspb.CodesearchServiceClient, repos []*srpb.Repo) error {
 	for _, repo := range repos {
-		log.Infof("Indexing repo: %s", repo.GetUrl())
+		log.Infof("Indexing repo: %s@%s", repo.GetRepo().GetRepoUrl(), repo.GetRepoState().GetCommitSha())
 		_, err := client.Index(ctx, &inpb.IndexRequest{
-			GitRepo: &gpb.GitRepo{
-				RepoUrl: repo.GetUrl(),
-			},
-			RepoState: &gpb.RepoState{
-				CommitSha: repo.GetSha(),
-			},
+			GitRepo:             repo.GetRepo(),
+			RepoState:           repo.GetRepoState(),
 			ReplacementStrategy: inpb.ReplacementStrategy_REPLACE_REPO,
 		})
 		if err != nil {
@@ -99,6 +95,11 @@ func runCase(ctx context.Context, client cspb.CodesearchServiceClient, tc *srpb.
 	return s
 }
 
+// scoreDoc computes the score for a single search result.
+// Note that the score for an individual document is not position-dependent. All we do is find the
+// result in the ideal results, and return its relevance score (discounted if the match count
+// doesn't match). The position scoring happens during the DCG calculation.
+// Depending on the test case, we may also penalize for results not found in the ideal result set.
 func scoreDoc(result *spb.Result, idealResults []*srpb.IdealResult, penalizeMissing bool) float64 {
 	for _, ideal := range idealResults {
 		if result.GetOwner() == ideal.GetOwner() &&
@@ -119,6 +120,7 @@ func scoreDoc(result *spb.Result, idealResults []*srpb.IdealResult, penalizeMiss
 	}
 }
 
+// score computes the nDCG for a set of actual results, based on the provided ideal results.
 func score(results *spb.SearchResponse, tc *srpb.Case) float64 {
 	idealResults := tc.GetIdealResults()
 
@@ -136,12 +138,16 @@ func score(results *spb.SearchResponse, tc *srpb.Case) float64 {
 	return ndcg(rels, idealRels)
 }
 
+// ndcg computes the normalized Discounted Cumulative Gain (nDCG) for a list of relevance scores,
+// normalized against the ideal relevance scores. In theory, nDCG scores can be compared across
+// different queries with different expected result counts.
+// https://en.wikipedia.org/wiki/Discounted_cumulative_gain#Normalized_DCG
 func ndcg(rels []float64, idealRels []float64) float64 {
 	if len(rels) == 0 || len(idealRels) == 0 {
 		return 0.0
 	}
 
-	// TODO: sort by rel descending, or rely on the order of the input?
+	sort.Sort(sort.Reverse(sort.Float64Slice(idealRels)))
 	idealDcg := dcg(idealRels)
 	if idealDcg == 0 {
 		return 0.0
@@ -152,6 +158,8 @@ func ndcg(rels []float64, idealRels []float64) float64 {
 	return final / idealDcg
 }
 
+// dcg computes the Discounted Cumulative Gain for a list of relevance scores.
+// https://en.wikipedia.org/wiki/Discounted_cumulative_gain#Discounted_Cumulative_Gain
 func dcg(rels []float64) float64 {
 	sum := 0.0
 	for i, rel := range rels {

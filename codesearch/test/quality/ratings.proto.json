@@ -1,8 +1,8 @@
 {
   "repos": [
     {
-      "url": "github.com/buildbuddy-io/buildbuddy",
-      "sha": "860f21b"
+      "repo": { "repo_url": "github.com/buildbuddy-io/buildbuddy" },
+      "repo_state": { "commit_sha": "860f21b" }
     }
   ],
   "cases": [

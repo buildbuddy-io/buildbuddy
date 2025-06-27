@@ -806,6 +806,7 @@ proto_library(
     name = "search_rating_proto",
     srcs = ["search_rating.proto"],
     deps = [
+        ":git_proto",
         ":search_proto",
     ],
 )
@@ -1994,6 +1995,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/search_rating",
     proto = ":search_rating_proto",
     deps = [
+        ":git_go_proto",
         ":search_go_proto",
     ],
 )
