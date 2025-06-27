@@ -757,7 +757,10 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		recyclingEnabled := platform.IsRecyclingEnabled(task)
 		c.recyclingEnabled = recyclingEnabled
 		if recyclingEnabled && snaputil.IsChunkedSnapshotSharingEnabled() {
-			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
+			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
+				RemoteReadEnabled: c.supportsRemoteSnapshots,
+				ReadPolicy:        platform.FindEffectiveValue(task, platform.SnapshotReadPolicyPropertyName),
+			})
 			c.createFromSnapshot = (err == nil)
 			label := ""
 			if err != nil {
@@ -1033,16 +1036,23 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		}
 	}
 
+	// We always use a local manifest if it exists, so only write one if
+	// we don't want to prioritize reading a remote manifest.
+	readPolicy := platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName)
+	writeManifestLocally := !shouldCacheRemotely ||
+		!(readPolicy == "" || readPolicy == snaputil.AlwaysReadNewestSnapshot)
+
 	opts := &snaploader.CacheSnapshotOptions{
-		VMMetadata:           vmd,
-		VMConfiguration:      c.vmConfig,
-		VMStateSnapshotPath:  filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:      c.executorConfig.GuestKernelImagePath,
-		InitrdImagePath:      c.executorConfig.InitrdImagePath,
-		ChunkedFiles:         map[string]*copy_on_write.COWStore{},
-		Recycled:             c.recycled,
-		Remote:               shouldCacheRemotely,
-		SkippedCacheRemotely: c.supportsRemoteSnapshots && !shouldCacheRemotely,
+		VMMetadata:            vmd,
+		VMConfiguration:       c.vmConfig,
+		VMStateSnapshotPath:   filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
+		KernelImagePath:       c.executorConfig.GuestKernelImagePath,
+		InitrdImagePath:       c.executorConfig.InitrdImagePath,
+		ChunkedFiles:          map[string]*copy_on_write.COWStore{},
+		Recycled:              c.recycled,
+		CacheSnapshotRemotely: shouldCacheRemotely,
+		SkippedCacheRemotely:  c.supportsRemoteSnapshots && !shouldCacheRemotely,
+		WriteManifestLocally:  writeManifestLocally,
 	}
 	if snapshotSharingEnabled {
 		if c.rootStore != nil {
@@ -1170,7 +1180,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
+		RemoteReadEnabled: c.supportsRemoteSnapshots,
+		ReadPolicy:        platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName),
+	})
 	if err != nil {
 		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
 	}
@@ -3105,7 +3118,10 @@ func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader sna
 }
 
 func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, loader snaploader.Loader, key *fcpb.SnapshotKey) bool {
-	_, err := loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, c.supportsRemoteSnapshots)
+	_, err := loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
+		RemoteReadEnabled: c.supportsRemoteSnapshots,
+		ReadPolicy:        platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName),
+	})
 	return err == nil
 }
 
