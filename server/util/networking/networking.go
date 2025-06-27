@@ -90,7 +90,7 @@ var (
 
 type DnsOverride struct {
 	HostnameToOverride string `yaml:"hostname_to_override"`
-	RedirectToIP       string `yaml:"redirect_to_ip"`
+	RedirectToHostname string `yaml:"redirect_to_hostname"`
 }
 
 // runCommand runs the provided command, prepending sudo if the calling user is
