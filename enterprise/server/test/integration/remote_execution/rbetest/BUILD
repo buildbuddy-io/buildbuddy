@@ -30,6 +30,7 @@ go_library(
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testcontext",
+        "//enterprise/server/testutil/testexecutor",
         "//enterprise/server/testutil/testredis",
         "//proto:buildbuddy_service_go_proto",
         "//proto:capability_go_proto",
@@ -76,5 +77,6 @@ go_library(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/prototext",
+        "@org_golang_x_sync//errgroup",
     ],
 )
