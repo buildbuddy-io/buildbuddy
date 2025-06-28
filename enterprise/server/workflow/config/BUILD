@@ -10,6 +10,8 @@ go_library(
         "//enterprise/server/webhooks/webhook_data",
         "//proto:runner_go_proto",
         "//server/build_event_protocol/accumulator",
+        "//server/endpoint_urls/cache_api_url",
+        "//server/tables",
         "@in_gopkg_yaml_v2//:yaml_v2",
     ],
 )
@@ -22,6 +24,8 @@ go_test(
         ":config",
         "//enterprise/server/workflow/config/test_data",
         "//proto:runner_go_proto",
+        "//server/endpoint_urls/cache_api_url",
+        "//server/tables",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
