@@ -1817,3 +1817,51 @@ func TestMounts(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 }
+
+func TestHostTmpdir(t *testing.T) {
+	setupNetworking(t)
+	image := manuallyProvisionedBusyboxImage(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	testfs.WriteAllFileContents(t, wd, map[string]string{})
+	c, err := provider.New(ctx, &container.Init{
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+		Task: &repb.ScheduledTask{ExecutionTask: &repb.ExecutionTask{
+			Action: &repb.Action{
+				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+					{
+						Name:  "experimental-host-tmpdir",
+						Value: "true",
+					},
+				}},
+			},
+		}},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+
+		require.NoDirExists(t, wd+".tmp", "host tmpdir should be cleaned up")
+	})
+
+	// Run
+	cmd := &repb.Command{Arguments: []string{"touch", "/tmp/foo.txt"}}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+
+	assert.Empty(t, string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+	require.NoError(t, res.Error)
+	require.FileExists(t, wd+".tmp/foo.txt", "file should be created in host tmpdir")
+}

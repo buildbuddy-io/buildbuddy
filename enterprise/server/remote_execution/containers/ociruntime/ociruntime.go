@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -367,6 +368,10 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		tiniEnabled:    args.Props.DockerInit,
 		user:           args.Props.DockerUser,
 		forceRoot:      args.Props.DockerForceRoot,
+		// Allow mounting /tmp/ from a directory on the host. Any FS operations
+		// within the overlayfs will be slow, so this should help for actions
+		// that do a lot of file I/O under /tmp/.
+		enableHostTmpdir: platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "experimental-host-tmpdir")),
 
 		milliCPU: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
 	}
@@ -395,6 +400,8 @@ type ociContainer struct {
 	workDir          string
 	mergedMounts     []string
 	overlayfsMounted bool
+	enableHostTmpdir bool
+	tmpdir           string
 	stats            container.UsageStats
 	networkPool      *networking.ContainerNetworkPool
 	network          *networking.ContainerNetwork
@@ -480,6 +487,15 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	// Setup cgroup
 	if err := c.setupCgroup(ctx); err != nil {
 		return fmt.Errorf("setup cgroup: %w", err)
+	}
+
+	// Set up host /tmp/ dir if enabled
+	if c.enableHostTmpdir {
+		tmpdir := c.workDir + ".tmp"
+		if err := os.MkdirAll(tmpdir, 0755); err != nil {
+			return fmt.Errorf("create host tmpdir %q: %w", tmpdir, err)
+		}
+		c.tmpdir = tmpdir
 	}
 
 	// Create config.json from the image config and command
@@ -676,6 +692,13 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 		if err := unix.Unmount(c.rootfsPath(), unix.MNT_FORCE); err != nil && firstErr == nil {
 			firstErr = status.UnavailableErrorf("unmount overlayfs: %s", err)
 		}
+	}
+
+	if c.tmpdir != "" {
+		if err := os.RemoveAll(c.tmpdir); err != nil && firstErr == nil {
+			firstErr = status.UnavailableErrorf("remove host tmpdir: %s", err)
+		}
+		c.tmpdir = ""
 	}
 
 	if err := c.cleanupNetwork(ctx); err != nil && firstErr == nil {
@@ -1177,6 +1200,14 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Type:        "bind",
 			Source:      c.tiniPath,
 			Options:     []string{"bind", "rprivate", "ro"},
+		})
+	}
+	if c.tmpdir != "" {
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: "/tmp",
+			Type:        "bind",
+			Source:      c.tmpdir,
+			Options:     []string{"bind", "rprivate"},
 		})
 	}
 	spec.Mounts = append(spec.Mounts, *mounts...)
