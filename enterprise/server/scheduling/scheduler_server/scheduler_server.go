@@ -1895,11 +1895,6 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		return task
 	}
 	isolationType := platform.FindEffectiveValue(taskProto, platform.WorkloadIsolationPropertyName)
-	if isolationType != string(platform.FirecrackerContainerType) {
-		return task
-	}
-	expOptions := make([]any, 0, 2)
-	expOptions = append(expOptions, experiments.WithContext("executor_hostname", executorHostname))
 
 	selfHosted := false
 	if is := s.env.GetClientIdentityService(); is != nil {
@@ -1907,7 +1902,12 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		// Client identity is only set on managed executors.
 		selfHosted = err != nil || identity.Client != interfaces.ClientIdentityExecutor
 	}
-	expOptions = append(expOptions, experiments.WithContext("self_hosted_executor", selfHosted))
+
+	expOptions := []any{
+		experiments.WithContext("executor_hostname", executorHostname),
+		experiments.WithContext("self_hosted", selfHosted),
+		experiments.WithContext("requested_isolation_type", isolationType),
+	}
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until
@@ -1915,21 +1915,77 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	// with the value in the task.
 	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
 
-	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
-	if skipResavingGroup == "" {
-		return task
-	}
-	taskProto.Experiments = append(taskProto.Experiments, "skip-resaving-action-snapshots:"+skipResavingGroup)
 	if taskProto.GetPlatformOverrides() == nil {
-		taskProto.PlatformOverrides = new(repb.Platform)
+		taskProto.PlatformOverrides = &repb.Platform{}
 	}
+
+	// TODO: clean up skip-resaving-snapshots experiment (it's 100% rolled out
+	// in prod).
 	plat := taskProto.GetPlatformOverrides()
-	if strings.EqualFold(skipResavingGroup, "treatment") { // No point in setting the property when it's false.
+	if isolationType == string(platform.FirecrackerContainerType) {
 		plat.Properties = append(plat.Properties, &repb.Platform_Property{
 			Name:  platform.SkipResavingActionSnapshotsPropertyName,
 			Value: "true",
 		})
 	}
+
+	// The "remote_execution.platform_experiments" flag evaluates to a list of
+	// experiment names. For each experiment name in the list, we then evaluate
+	// each experiment separately. This allows running multiple platform
+	// experiments at once, which is desired so that experiments can be ramped
+	// up independently.
+	const platformExperimentsFlagName = "remote_execution.platform_experiments"
+	var platformExperiments []any
+	// platform experiments is a map[string]any because openfeature doesn't
+	// support arrays as top-level values. So we model it as a map[string]any
+	// with an array-valued "experiments" field.
+	platformExperimentsObj := fp.Object(ctx, platformExperimentsFlagName, nil, expOptions...)
+	if experiments, ok := platformExperimentsObj["experiments"]; ok {
+		if arr, ok := experiments.([]any); ok {
+			platformExperiments = arr
+		} else {
+			log.CtxInfof(ctx, "%s: experiments field is not an array: %T", platformExperimentsFlagName, experiments)
+		}
+	}
+	for _, experiment := range platformExperiments {
+		experimentName, ok := experiment.(string)
+		if !ok {
+			log.CtxInfof(ctx, "%s: skipping non-string experiment %T", platformExperimentsFlagName, experiment)
+			continue
+		}
+		// Get the object value for the experiment as well as the details.
+		m, details := fp.ObjectDetails(ctx, experimentName, map[string]any{}, expOptions...)
+		if details.Variant() == "" {
+			// Experiment not enabled; skip.
+			continue
+		}
+		// Validate platform properties. Buffer properties and only append them
+		// if all properties are valid.
+		// TODO: check for conflicting experiments.
+		props := make([]*repb.Platform_Property, 0, len(m))
+		var invalid bool
+		for k, v := range m {
+			if s, ok := v.(string); ok {
+				props = append(props, &repb.Platform_Property{
+					Name:  k,
+					Value: s,
+				})
+			} else {
+				log.CtxInfof(ctx, "%s: experiment %s: type must be map[string]string, but map contains value of type %T", platformExperimentsFlagName, experimentName, v)
+				invalid = true
+				break
+			}
+		}
+		if invalid {
+			continue
+		}
+		slices.SortFunc(props, func(a, b *repb.Platform_Property) int {
+			return strings.Compare(a.GetName(), b.GetName())
+		})
+		plat.Properties = append(plat.Properties, props...)
+		taskProto.Experiments = append(taskProto.Experiments, experimentName+":"+details.Variant())
+	}
+
 	if newTask, err := proto.Marshal(taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to marshal ExecutionTask: %s", err)
 		return task

@@ -25,10 +25,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -305,7 +307,7 @@ func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
 }`)
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
 	openfeature.SetProviderAndWait(provider)
-	defer provider.Shutdown()
+	defer openfeature.Shutdown()
 	fp, err := experiments.NewFlagProvider("test")
 	require.NoError(t, err)
 
@@ -338,6 +340,63 @@ func TestSchedulerServerGetPoolInfoWithPoolOverride(t *testing.T) {
 	}, p)
 }
 
+func TestSchedulerServerPlatformExperiments(t *testing.T) {
+	tmp := testfs.MakeTempDir(t)
+	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
+	"$schema": "https://flagd.dev/schema/v0/flags.json",
+	"flags": {
+		"remote_execution.platform_experiments": {
+			"state": "ENABLED",
+			"defaultVariant": "default",
+			"variants": {
+				"default": {
+					"experiments": ["remote_execution.enable_cool_new_isolation_type"]
+				}
+			}
+		},
+		"remote_execution.enable_cool_new_isolation_type": {
+			"state": "ENABLED",
+			"defaultVariant": "default",
+			"variants": {
+				"treatment": {
+					"workload-isolation-type": "turbo-encabulator"
+				},
+				"control": {},
+				"default": {}
+			},
+			"targeting": {
+				"fractional": [
+					["treatment", 50],
+					["control", 50],
+					["default", 0]
+				]
+			}
+		}
+	}
+}`)
+	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	openfeature.SetProviderAndWait(provider)
+	defer openfeature.Shutdown()
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+
+	env, ctx := getEnv(t, &schedulerOpts{}, "")
+	env.SetExperimentFlagProvider(fp)
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+
+	fe.WaitForTask(taskID)
+	lease := fe.Claim(taskID)
+	defer lease.Finalize()
+
+	require.Equal(t, []string{"remote_execution.enable_cool_new_isolation_type:treatment"}, lease.task.GetExperiments())
+	require.Empty(t, cmp.Diff([]*repb.Platform_Property{
+		{Name: "workload-isolation-type", Value: "turbo-encabulator"},
+	}, lease.task.GetPlatformOverrides().GetProperties(), protocmp.Transform()), nil)
+}
+
 type task struct {
 	delay time.Duration
 }
@@ -359,9 +418,10 @@ type fakeExecutor struct {
 	id   string
 	node *scpb.ExecutionNode
 
-	ctx context.Context
-
+	ctx       context.Context
+	stop      context.CancelFunc
 	unhealthy atomic.Bool
+	wg        sync.WaitGroup
 
 	mu    sync.Mutex
 	tasks map[string]task
@@ -390,7 +450,8 @@ func newFakeExecutorWithId(ctx context.Context, t *testing.T, id string, schedul
 		AssignableMilliCpu:    32_000,
 	}
 	ctx = log.EnrichContext(ctx, "executor_id", id)
-	return &fakeExecutor{
+	ctx, cancel := context.WithCancel(ctx)
+	fe := &fakeExecutor{
 		t:                 t,
 		schedulerClient:   schedulerClient,
 		id:                id,
@@ -399,7 +460,13 @@ func newFakeExecutorWithId(ctx context.Context, t *testing.T, id string, schedul
 		node:              node,
 		send:              make(chan *scpb.RegisterAndStreamWorkRequest),
 		schedulerMessages: make(chan *scpb.RegisterAndStreamWorkResponse, 128),
+		stop:              cancel,
 	}
+	t.Cleanup(func() {
+		fe.stop()
+		fe.wait()
+	})
+	return fe
 }
 
 func (e *fakeExecutor) markUnhealthy() {
@@ -424,16 +491,25 @@ func (e *fakeExecutor) Register() {
 	})
 	require.NoError(e.t, err)
 
-	recvChan := make(chan Result[*scpb.RegisterAndStreamWorkResponse])
+	recvChan := make(chan Result[*scpb.RegisterAndStreamWorkResponse], 1)
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		for {
 			msg, err := stream.Recv()
 			recvChan <- Result[*scpb.RegisterAndStreamWorkResponse]{Value: msg, Err: err}
+			if err != nil {
+				return
+			}
 		}
 	}()
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case msg := <-recvChan:
 				rsp, err := msg.Value, msg.Err
 				if status.IsUnavailableError(err) {
@@ -467,9 +543,10 @@ func (e *fakeExecutor) Register() {
 			}
 		}
 	}()
+}
 
-	// Give the executor a moment to register with the scheduler.
-	time.Sleep(100 * time.Millisecond)
+func (e *fakeExecutor) wait() {
+	e.wg.Wait()
 }
 
 func (e *fakeExecutor) WaitForTask(taskID string) {
@@ -514,8 +591,9 @@ func (e *fakeExecutor) ResetTasks() {
 type taskLease struct {
 	t       *testing.T
 	stream  scpb.Scheduler_LeaseTaskClient
-	taskID  string
 	leaseID string
+	taskID  string
+	task    *repb.ExecutionTask
 }
 
 func (tl *taskLease) Renew() error {
@@ -558,10 +636,18 @@ func (e *fakeExecutor) Claim(taskID string) *taskLease {
 	require.NoError(e.t, err)
 	require.NotZero(e.t, rsp.GetLeaseDurationSeconds())
 
+	var task *repb.ExecutionTask
+	if len(rsp.GetSerializedTask()) > 0 {
+		task = &repb.ExecutionTask{}
+		err = proto.Unmarshal(rsp.GetSerializedTask(), task)
+		require.NoError(e.t, err)
+	}
+
 	lease := &taskLease{
 		t:       e.t,
 		stream:  stream,
 		taskID:  taskID,
+		task:    task,
 		leaseID: rsp.GetLeaseId(),
 	}
 	return lease
