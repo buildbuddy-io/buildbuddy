@@ -1794,6 +1794,7 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			UserRole: role.Developer,
 			ExpectedCapabilities: []cappb.Capability{
 				cappb.Capability_CAS_WRITE,
+				cappb.Capability_GROUP_ACCESS,
 			},
 		},
 		{
@@ -1803,6 +1804,7 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 				cappb.Capability_CAS_WRITE,
 				cappb.Capability_CACHE_WRITE,
 				cappb.Capability_ORG_ADMIN,
+				cappb.Capability_GROUP_ACCESS,
 			},
 		},
 		{
@@ -1811,12 +1813,15 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			ExpectedCapabilities: []cappb.Capability{
 				cappb.Capability_CAS_WRITE,
 				cappb.Capability_CACHE_WRITE,
+				cappb.Capability_GROUP_ACCESS,
 			},
 		},
 		{
-			Name:                 "Reader",
-			UserRole:             role.Reader,
-			ExpectedCapabilities: nil,
+			Name:     "Reader",
+			UserRole: role.Reader,
+			ExpectedCapabilities: []cappb.Capability{
+				cappb.Capability_GROUP_ACCESS,
+			},
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
