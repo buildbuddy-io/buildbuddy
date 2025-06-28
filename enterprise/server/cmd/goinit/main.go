@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -26,10 +27,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jsimonetti/rtnetlink/rtnl"
+	"github.com/miekg/dns"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -64,6 +67,7 @@ var (
 
 	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
 	isVMVFS  = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
+	isVMDNS  = flag.Bool("vmdns", false, "Whether to run as the vmdns server.")
 )
 
 var (
@@ -276,6 +280,10 @@ func main() {
 		die(vmvfs.Run())
 		return
 	}
+	if *isVMDNS {
+		die(runVMDNSServer(rootContext))
+		return
+	}
 
 	log.Infof("Starting BuildBuddy init (args: %s)", os.Args)
 
@@ -371,6 +379,10 @@ func main() {
 		log.Errorf("Unable to increase file open descriptor limit: %s", err)
 	}
 
+	if *setDefaultRoute {
+		die(configureDefaultRoute("eth0", "192.168.241.1"))
+	}
+
 	die(mkdirp("/etc", 0755))
 	die(os.WriteFile("/etc/hostname", []byte("localhost\n"), 0755))
 	hosts := []string{
@@ -385,6 +397,21 @@ func main() {
 		"nameserver 8.8.4.4",
 		"nameserver 1.1.1.1",
 	}
+
+	var dnsOverrides []*networking.DnsOverride
+	// Ensure default route has been configured before fetching data from the
+	// networked metadata service.
+	if *setDefaultRoute {
+		dnsOverridesJSON, err := fetchMMDSKey("dns_overrides")
+		if err != nil {
+			die(err)
+		}
+		die(json.Unmarshal(dnsOverridesJSON, &dnsOverrides))
+	}
+	if len(dnsOverrides) > 0 {
+		// Point to local DNS server to handle any DNS overrides.
+		nameServers = append([]string{"nameserver 127.0.0.1"}, nameServers...)
+	}
 	die(os.WriteFile("/etc/resolv.conf", []byte(strings.Join(nameServers, "\n")), 0755))
 	if _, err := os.Stat("/etc/mtab"); err != nil {
 		if os.IsNotExist(err) {
@@ -398,10 +425,6 @@ func main() {
 	// See https://github.com/torvalds/linux/blob/929ed21dfdb6ee94391db51c9eedb63314ef6847/fs/notify/inotify/inotify_user.c#L838-L844
 	if err := os.WriteFile("/proc/sys/fs/inotify/max_user_watches", []byte("65536"), 0); err != nil {
 		die(fmt.Errorf("failed to set fs.inotify.max_user_watches: %s", err))
-	}
-
-	if *setDefaultRoute {
-		die(configureDefaultRoute("eth0", "192.168.241.1"))
 	}
 
 	die(os.Setenv("PATH", *path))
@@ -450,6 +473,15 @@ func main() {
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 	})
+	if len(dnsOverrides) > 0 {
+		// Run local DNS server.
+		eg.Go(func() error {
+			cmd := exec.CommandContext(ctx, os.Args[0], append(os.Args[1:], "--vmdns")...)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
+		})
+	}
 
 	if *initDockerd {
 		die(startDockerd(ctx))
@@ -492,6 +524,125 @@ func runVMExecServer(ctx context.Context) error {
 	}
 
 	return server.Serve(listener)
+}
+
+type vmDNSServer struct {
+	overrides []*networking.DnsOverride
+}
+
+func runVMDNSServer(ctx context.Context) error {
+	log.Infof("Starting vm dns server on port 53")
+
+	var dnsOverrides []*networking.DnsOverride
+	dnsOverridesJSON, err := fetchMMDSKey("dns_overrides")
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(dnsOverridesJSON, &dnsOverrides); err != nil {
+		return err
+	}
+
+	mux := dns.NewServeMux()
+
+	// Ensure hostnames end with '.' so they are not resolved as relative names.
+	for _, o := range dnsOverrides {
+		if o.RedirectToHostname == "" {
+			return status.InvalidArgumentError("empty redirect hostname")
+		}
+		if !strings.HasSuffix(o.HostnameToOverride, ".") {
+			o.HostnameToOverride += "."
+		}
+	}
+
+	mux.Handle(".", &vmDNSServer{overrides: dnsOverrides})
+	s := &dns.Server{
+		Addr:    "127.0.0.1:53",
+		Net:     "udp4",
+		Handler: mux,
+	}
+	return s.ListenAndServe()
+}
+
+func (s *vmDNSServer) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
+	for _, o := range s.overrides {
+		if strings.HasSuffix(req.Question[0].Name, o.HostnameToOverride) && !strings.HasSuffix(req.Question[0].Name, o.RedirectToHostname) {
+			s.overrideResponse(w, req, o.RedirectToHostname)
+			return
+		}
+	}
+
+	// For all other requests, forward to a remote DNS server.
+	rsp, err := s.forwardToRemoteServer(req)
+	if err != nil {
+		s.returnFailureMsg(w, req)
+		return
+	}
+
+	if err := w.WriteMsg(rsp); err != nil {
+		log.Errorf("could not send dns reply: %s", err)
+	}
+}
+
+// overrideResponse returns a DNS response pointing requests originally directed
+// to `hostname_to_override` => `redirect_to_hostname`.
+// The response also contains the A record for `redirect_to_hostname` so the
+// client can follow the request to the final IP addr it should hit.
+func (s *vmDNSServer) overrideResponse(w dns.ResponseWriter, req *dns.Msg, redirectToHostname string) {
+	rspMsg := &dns.Msg{}
+	rspMsg.SetReply(req)
+	rspMsg.Rcode = dns.RcodeSuccess
+	rspMsg.RecursionAvailable = true
+
+	cname := &dns.CNAME{
+		Hdr: dns.RR_Header{
+			Name:   req.Question[0].Name,
+			Rrtype: dns.TypeCNAME,
+			Class:  dns.ClassINET,
+			Ttl:    60,
+		},
+		Target: redirectToHostname,
+	}
+
+	// Get A record for `redirectToHostname` from remote DNS server.
+	forwardMsg := &dns.Msg{}
+	forwardMsg.SetQuestion(redirectToHostname, dns.TypeA)
+	forwardMsg.RecursionDesired = true
+	rsp, err := s.forwardToRemoteServer(forwardMsg)
+	if err != nil {
+		s.returnFailureMsg(w, req)
+		return
+	}
+
+	rspMsg.Answer = append(rspMsg.Answer, cname)
+	rspMsg.Answer = append(rspMsg.Answer, rsp.Answer...)
+
+	if err := w.WriteMsg(rspMsg); err != nil {
+		log.Errorf("could not send dns reply: %s", err)
+	}
+}
+
+// forwardToRemoteServer forwards a DNS query to remote DNS servers. Other than configured
+// queries that should be overwritten by the local DNS server, most should be
+// forwarded on.
+func (s *vmDNSServer) forwardToRemoteServer(req *dns.Msg) (*dns.Msg, error) {
+	upstreams := []string{"8.8.8.8:53", "8.8.4.4:53", "1.1.1.1:53"}
+	c := new(dns.Client)
+	for _, upstream := range upstreams {
+		rsp, _, err := c.Exchange(req, upstream)
+		if err == nil && rsp != nil && rsp.Rcode == dns.RcodeSuccess {
+			return rsp, nil
+		}
+		log.Warningf("Forwarding to %s failed or returned no answer, trying next remote DNS server", upstream)
+	}
+	return nil, status.InternalError("forwarding to all upstream dns servers failed")
+}
+
+func (s *vmDNSServer) returnFailureMsg(w dns.ResponseWriter, req *dns.Msg) {
+	failureMsg := new(dns.Msg)
+	failureMsg.SetRcode(req, dns.RcodeServerFailure)
+	if err := w.WriteMsg(failureMsg); err != nil {
+		log.Errorf("could not send dns reply: %s", err)
+	}
 }
 
 // Resizes the ext4 filesystem mounted at the given path to match the underlying
