@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/jsonschema"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/jsonschema"
 )
 
 type Item struct {

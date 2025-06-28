@@ -12,8 +12,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/mcp"
 	"github.com/google/go-cmp/cmp"
+	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/mcp"
 )
 
 const runAsServer = "_MCP_RUN_AS_SERVER"
