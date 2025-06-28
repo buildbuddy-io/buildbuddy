@@ -46,8 +46,6 @@ func (rc *Server) evict(key string, md *sgpb.FileMetadata, reason lru.EvictionRe
 			log.Errorf("Error deleting blob: %s", err)
 		}
 	}
-
-	log.Fatalf("Unable to delete metadata: %+v", md)
 }
 
 func (rc *Server) key(r *sgpb.FileRecord) (string, error) {
