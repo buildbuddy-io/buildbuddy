@@ -1,9 +1,9 @@
+import { AlertCircle, CheckCircle, Clock, Package, RotateCw, XCircle } from "lucide-react";
 import React from "react";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { google as google_grpc } from "../../proto/grpc_code_ts_proto";
-import { google as google_ts } from "../../proto/timestamp_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
-import { RotateCw, Package, Clock, AlertCircle, XCircle, CheckCircle } from "lucide-react";
+import { google as google_ts } from "../../proto/timestamp_ts_proto";
 import { digestToString } from "../util/cache";
 
 const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;

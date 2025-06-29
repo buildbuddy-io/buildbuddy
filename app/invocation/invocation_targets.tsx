@@ -1,12 +1,12 @@
 import React from "react";
 
-import InvocationModel from "./invocation_model";
-import TargetsCardComponent from "./invocation_targets_card";
-import { XCircle, CheckCircle, HelpCircle, Clock, SkipForward } from "lucide-react";
+import { CheckCircle, Clock, HelpCircle, SkipForward, XCircle } from "lucide-react";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { target } from "../../proto/target_ts_proto";
-import TargetGroupCard from "./invocation_target_group_card";
 import rpc_service, { CancelablePromise } from "../service/rpc_service";
+import InvocationModel from "./invocation_model";
+import TargetGroupCard from "./invocation_target_group_card";
+import TargetsCardComponent from "./invocation_targets_card";
 
 interface Props {
   model: InvocationModel;

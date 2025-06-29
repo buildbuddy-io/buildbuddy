@@ -1,9 +1,9 @@
+import { CheckCircle, CircleSlash, PlayCircle, XCircle } from "lucide-react";
 import React from "react";
-import format from "../format/format";
-import { invocation } from "../../proto/invocation_ts_proto";
-import { CheckCircle, PlayCircle, XCircle, CircleSlash } from "lucide-react";
-import Link from "../components/link/link";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
+import { invocation } from "../../proto/invocation_ts_proto";
+import Link from "../components/link/link";
+import format from "../format/format";
 import InvocationModel from "./invocation_model";
 
 type CommandStatus = "failed" | "succeeded" | "in-progress" | "not-run";

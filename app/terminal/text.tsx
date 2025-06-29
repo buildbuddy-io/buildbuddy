@@ -14,8 +14,8 @@
  *   multiple rows.
  */
 
-import parseAnsi, { stripAnsiCodes, AnsiTextSpan } from "./ansi";
 import memoizeOne from "memoize-one";
+import parseAnsi, { AnsiTextSpan, stripAnsiCodes } from "./ansi";
 
 /**
  * Rounding errors start messing with row positioning when there are this many

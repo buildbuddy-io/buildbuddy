@@ -1,16 +1,16 @@
-import React from "react";
-import SetupCodeComponent from "../docs/setup_code";
-import { Profile, readProfile } from "../trace/trace_events";
-import rpcService, { FileEncoding } from "../service/rpc_service";
-import InvocationModel from "./invocation_model";
-import Button from "../components/button/button";
 import { Clock } from "lucide-react";
+import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import Button from "../components/button/button";
+import SetupCodeComponent from "../docs/setup_code";
 import errorService from "../errors/error_service";
 import format from "../format/format";
-import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
-import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import rpcService, { FileEncoding } from "../service/rpc_service";
+import { Profile, readProfile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
+import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
+import InvocationModel from "./invocation_model";
+import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
 
 interface Props {
   model: InvocationModel;

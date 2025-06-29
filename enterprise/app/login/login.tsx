@@ -1,16 +1,16 @@
+import { ArrowRight, Lock, User } from "lucide-react";
 import React from "react";
+import alertService from "../../../app/alert/alert_service";
 import authService from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import Input from "../../../app/components/input/input";
+import error_service from "../../../app/errors/error_service";
+import { GithubIcon } from "../../../app/icons/github";
+import { GoogleIcon } from "../../../app/icons/google";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
-import Input from "../../../app/components/input/input";
-import alertService from "../../../app/alert/alert_service";
-import { grp } from "../../../proto/group_ts_proto";
-import { ArrowRight, Lock, User } from "lucide-react";
 import popup from "../../../app/util/popup";
-import error_service from "../../../app/errors/error_service";
-import { GoogleIcon } from "../../../app/icons/google";
-import { GithubIcon } from "../../../app/icons/github";
+import { grp } from "../../../proto/group_ts_proto";
 
 interface State {
   loading: boolean;

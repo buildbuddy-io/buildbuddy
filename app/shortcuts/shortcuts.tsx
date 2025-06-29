@@ -1,5 +1,5 @@
-import UserPreferences from "../preferences/preferences";
 import { v4 as uuid } from "uuid";
+import UserPreferences from "../preferences/preferences";
 
 export class KeyCombo {
   public static a = new KeyCombo(false, "KeyA");

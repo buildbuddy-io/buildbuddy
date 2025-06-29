@@ -1,11 +1,11 @@
+import { AlertCircle as AlertCircleIcon, PieChart as PieChartIcon } from "lucide-react";
 import React from "react";
-import InvocationModel from "./invocation_model";
-import format from "../format/format";
-import { PieChart as PieChartIcon, AlertCircle as AlertCircleIcon } from "lucide-react";
-import { ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import capabilities from "../capabilities/capabilities";
-import { getChartColor } from "../util/color";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { blaze } from "../../proto/action_cache_ts_proto";
+import capabilities from "../capabilities/capabilities";
+import format from "../format/format";
+import { getChartColor } from "../util/color";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;

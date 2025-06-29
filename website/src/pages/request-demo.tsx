@@ -1,8 +1,8 @@
-import React from "react";
 import Layout from "@theme/Layout";
+import React from "react";
 import common from "../css/common.module.css";
-import styles from "./contact.module.css";
 import message from "../util/message";
+import styles from "./contact.module.css";
 
 let form = {
   company: React.createRef<HTMLInputElement>(),

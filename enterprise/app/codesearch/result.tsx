@@ -1,7 +1,6 @@
+import { ChevronsUpDown, File } from "lucide-react";
 import React from "react";
 import { search } from "../../../proto/search_ts_proto";
-import { ChevronsUpDown, File } from "lucide-react";
-import { OutlinedButton } from "../../../app/components/button/button";
 
 interface SnippetProps {
   result: search.Result;

@@ -1,11 +1,11 @@
-import React from "react";
-import { github } from "../../../proto/github_ts_proto";
-import ReviewThreadComponent from "./review_thread";
-import { FileModel, ReviewModel, ThreadModel } from "./review_model";
-import { ReviewController } from "./review_controller";
 import * as monaco from "monaco-editor";
+import React from "react";
 import { createPortal } from "react-dom";
+import { github } from "../../../proto/github_ts_proto";
 import { getModelForText, getMonacoModelForGithubFile } from "./file_content_service";
+import { ReviewController } from "./review_controller";
+import { FileModel, ReviewModel, ThreadModel } from "./review_model";
+import ReviewThreadComponent from "./review_thread";
 
 interface FileContentMonacoComponentProps {
   fileModel: FileModel;

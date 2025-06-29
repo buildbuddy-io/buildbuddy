@@ -1,15 +1,14 @@
 import { Subject } from "rxjs";
+import { BuildBuddyError } from "../../app/util/errors";
+import popup from "../../app/util/popup";
 import { grp } from "../../proto/group_ts_proto";
 import { user_id } from "../../proto/user_id_ts_proto";
 import { user } from "../../proto/user_ts_proto";
 import capabilities from "../capabilities/capabilities";
-import rpcService, { BuildBuddyServiceRpcName } from "../service/rpc_service";
 import errorService from "../errors/error_service";
-import { BuildBuddyError } from "../../app/util/errors";
-import popup from "../../app/util/popup";
 import router from "../router/router";
+import { BuildBuddyServiceRpcName, default as rpc_service, default as rpcService } from "../service/rpc_service";
 import { User } from "./user";
-import rpc_service from "../service/rpc_service";
 
 export { User };
 

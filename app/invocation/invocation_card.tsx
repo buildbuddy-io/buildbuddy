@@ -1,9 +1,10 @@
 import {
   CheckCircle,
+  Circle,
   Clock,
-  Github,
   GitBranch,
   GitCommit,
+  Github,
   HardDrive,
   HelpCircle,
   LayoutGrid,
@@ -12,14 +13,13 @@ import {
   User,
   Wrench,
   XCircle,
-  Circle,
 } from "lucide-react";
 import React from "react";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
+import { invocation } from "../../proto/invocation_ts_proto";
+import Link from "../components/link/link";
 import format from "../format/format";
 import router from "../router/router";
-import Link from "../components/link/link";
-import { invocation } from "../../proto/invocation_ts_proto";
-import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { exitCode } from "../util/exit_codes";
 
 const durationRefreshIntervalMillis = 3000;

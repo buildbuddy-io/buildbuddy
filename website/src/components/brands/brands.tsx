@@ -1,6 +1,6 @@
+import Image from "@theme/IdealImage";
 import React from "react";
 import styles from "./brands.module.css";
-import Image from "@theme/IdealImage";
 
 function Component() {
   return (

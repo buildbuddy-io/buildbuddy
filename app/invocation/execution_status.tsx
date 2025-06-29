@@ -1,6 +1,6 @@
-import { ExtendedBuildBuddyService, ServerStreamHandler, ServerStream } from "../service/rpc_service";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
+import { ExtendedBuildBuddyService, ServerStream, ServerStreamHandler } from "../service/rpc_service";
 import { streamWithRetry } from "../util/rpc";
 
 export const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage.Value;

@@ -1,6 +1,6 @@
-import React from "react";
 import { PieChart as PieChartIcon } from "lucide-react";
-import { ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import React from "react";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import format from "../format/format";
 import { getChartColor } from "../util/color";
 

@@ -1,11 +1,11 @@
 import Long from "long";
 import React from "react";
+import Link from "../../../app/components/link/link";
 import format from "../../../app/format/format";
+import router from "../../../app/router/router";
 import rpc_service from "../../../app/service/rpc_service";
 import { joinReactNodes } from "../../../app/util/react";
 import { github } from "../../../proto/github_ts_proto";
-import Link from "../../../app/components/link/link";
-import router from "../../../app/router/router";
 
 interface ReviewListComponentProps {
   user?: string;

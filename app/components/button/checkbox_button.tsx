@@ -1,6 +1,6 @@
 import React from "react";
-import { OutlinedButton } from "./button";
 import Checkbox from "../checkbox/checkbox";
+import { OutlinedButton } from "./button";
 
 export type CheckboxButtonProps = JSX.IntrinsicElements["input"] & {
   checkboxOnLeft?: boolean;

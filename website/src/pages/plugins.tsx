@@ -1,14 +1,14 @@
-import React, { useState } from "react";
-import Layout from "@theme/Layout";
-import Hero from "../components/hero/hero";
-import CTA from "../components/cta/cta";
-import contact from "./contact.module.css";
-import common from "../css/common.module.css";
-import styles from "./plugins.module.css";
-import message from "../util/message";
-import { Package, ArrowUpCircle, Palette, Highlighter, Globe, Bell, Network, Brush } from "lucide-react";
-import { copyToClipboard } from "../util/clipboard";
 import useBrokenLinks from "@docusaurus/useBrokenLinks";
+import Layout from "@theme/Layout";
+import { ArrowUpCircle, Bell, Brush, Globe, Highlighter, Network, Package, Palette } from "lucide-react";
+import React, { useState } from "react";
+import CTA from "../components/cta/cta";
+import Hero from "../components/hero/hero";
+import common from "../css/common.module.css";
+import { copyToClipboard } from "../util/clipboard";
+import message from "../util/message";
+import contact from "./contact.module.css";
+import styles from "./plugins.module.css";
 
 let plugins = [
   {

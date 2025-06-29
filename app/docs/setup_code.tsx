@@ -1,14 +1,14 @@
 import React from "react";
+import { api_key } from "../../proto/api_key_ts_proto";
 import { bazel_config } from "../../proto/bazel_config_ts_proto";
 import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
+import Banner from "../components/banner/banner";
 import LinkButton from "../components/button/link_button";
 import Select, { Option } from "../components/select/select";
-import rpcService from "../service/rpc_service";
-import { api_key } from "../../proto/api_key_ts_proto";
-import error_service from "../errors/error_service";
-import Banner from "../components/banner/banner";
 import Spinner from "../components/spinner/spinner";
+import error_service from "../errors/error_service";
+import rpcService from "../service/rpc_service";
 
 interface Props {
   /** Whether to require the cache to be enabled. */

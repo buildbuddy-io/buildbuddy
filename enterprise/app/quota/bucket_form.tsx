@@ -2,8 +2,8 @@ import React from "react";
 import alert_service from "../../../app/alert/alert_service";
 import FilledButton from "../../../app/components/button/button";
 import TextInput, { TextInputProps } from "../../../app/components/input/input";
-import { quota } from "../../../proto/quota_ts_proto";
 import { google as google_duration } from "../../../proto/duration_ts_proto";
+import { quota } from "../../../proto/quota_ts_proto";
 
 export interface BucketFormValues {
   namespace?: string;
