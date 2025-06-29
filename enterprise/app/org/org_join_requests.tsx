@@ -1,11 +1,10 @@
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
+import { accountName } from "../../../app/auth/user";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { user_id } from "../../../proto/user_id_ts_proto";
-import { user } from "../../../proto/user_ts_proto";
-import { accountName } from "../../../app/auth/user";
 
 export interface OrgJoinRequestsComponentProps {
   user: User;

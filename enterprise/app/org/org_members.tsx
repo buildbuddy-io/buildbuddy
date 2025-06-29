@@ -1,14 +1,13 @@
+import { CheckCircle, HelpCircle, ShieldCheck, UserCircle, XCircle } from "lucide-react";
 import React from "react";
+import alertService from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
 import { accountName } from "../../../app/auth/user";
+import capabilities from "../../../app/capabilities/capabilities";
+import Banner from "../../../app/components/banner/banner";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
 import Checkbox from "../../../app/components/checkbox/checkbox";
-import alertService from "../../../app/alert/alert_service";
-import errorService from "../../../app/errors/error_service";
-import rpcService from "../../../app/service/rpc_service";
-import { grp } from "../../../proto/group_ts_proto";
-import Modal from "../../../app/components/modal/modal";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -16,14 +15,15 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
+import Modal from "../../../app/components/modal/modal";
 import Select, { Option } from "../../../app/components/select/select";
-import { user_id } from "../../../proto/user_id_ts_proto";
 import Spinner from "../../../app/components/spinner/spinner";
-import Banner from "../../../app/components/banner/banner";
-import capabilities from "../../../app/capabilities/capabilities";
-import { CheckCircle, HelpCircle, ShieldCheck, UserCircle, XCircle } from "lucide-react";
-import { GoogleIcon } from "../../../app/icons/google";
+import errorService from "../../../app/errors/error_service";
 import { GithubIcon } from "../../../app/icons/github";
+import { GoogleIcon } from "../../../app/icons/google";
+import rpcService from "../../../app/service/rpc_service";
+import { grp } from "../../../proto/group_ts_proto";
+import { user_id } from "../../../proto/user_id_ts_proto";
 
 export type OrgMembersProps = {
   user: User;

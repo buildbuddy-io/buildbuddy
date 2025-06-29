@@ -1,6 +1,6 @@
 import React from "react";
-import { TraceEvent } from "./trace_events";
 import { truncateDecimals } from "../util/math";
+import { TraceEvent } from "./trace_events";
 
 export interface EventHovercardProps {
   buildDuration: number;

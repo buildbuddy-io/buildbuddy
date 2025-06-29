@@ -1,10 +1,10 @@
 import React from "react";
 
-import Layout from "@theme/Layout";
 import Link from "@docusaurus/Link";
-import type { Props } from "@theme/BlogTagsListPage";
-import BlogSidebar from "../BlogSidebar";
 import Translate from "@docusaurus/Translate";
+import type { Props } from "@theme/BlogTagsListPage";
+import Layout from "@theme/Layout";
+import BlogSidebar from "../BlogSidebar";
 
 function getCategoryOfTag(tag_label: string) {
   // tag's category should be customizable

@@ -1,24 +1,24 @@
-import React from "react";
 import { AlertCircle } from "lucide-react";
+import React from "react";
 import { User } from "../../../app/auth/auth_service";
-import rpc_service from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
-import FilledButton from "../../../app/components/button/button";
-import ApiKeysComponent from "../api_keys/api_keys";
-import EditOrgComponent from "../org/edit_org";
-import OrgMembersComponent from "../org/org_members";
-import SecretsComponent from "../secrets/secrets";
-import router from "../../../app/router/router";
-import UserPreferences from "../../../app/preferences/preferences";
-import GitHubLink from "./github_link";
-import QuotaComponent from "../quota/quota";
-import UserGitHubLink from "./user_github_link";
 import Banner from "../../../app/components/banner/banner";
+import FilledButton from "../../../app/components/button/button";
 import Link from "../../../app/components/link/link";
-import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
+import UserPreferences from "../../../app/preferences/preferences";
+import router from "../../../app/router/router";
+import rpc_service from "../../../app/service/rpc_service";
+import ApiKeysComponent from "../api_keys/api_keys";
 import EncryptionComponent from "../encryption/encryption";
 import IpRulesComponent from "../iprules/iprules";
+import EditOrgComponent from "../org/edit_org";
 import OrgJoinRequests from "../org/org_join_requests";
+import OrgMembersComponent from "../org/org_members";
+import QuotaComponent from "../quota/quota";
+import SecretsComponent from "../secrets/secrets";
+import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
+import GitHubLink from "./github_link";
+import UserGitHubLink from "./user_github_link";
 
 export interface SettingsProps {
   user: User;

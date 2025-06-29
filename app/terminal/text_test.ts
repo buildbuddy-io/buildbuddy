@@ -1,4 +1,4 @@
-import { normalizeSpace, computeRows } from "./text";
+import { normalizeSpace } from "./text";
 
 describe("normalizeSpace", () => {
   it("should handle a single tabstop in a single line of plaintext", () => {

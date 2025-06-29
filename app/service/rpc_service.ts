@@ -1,13 +1,13 @@
-import { Subject } from "rxjs";
-import { buildbuddy, $stream } from "../../proto/buildbuddy_service_ts_proto";
-import { context } from "../../proto/context_ts_proto";
-import { CancelablePromise } from "../util/async";
-import * as protobufjs from "protobufjs";
-import capabilities from "../capabilities/capabilities";
-import { FetchError, GRPCStatusError, HTTPStatusError, parseGRPCStatus } from "../util/errors";
-import { google as google_status } from "../../proto/grpc_status_ts_proto";
-import { google as google_code } from "../../proto/grpc_code_ts_proto";
 import { BrowserHeaders } from "browser-headers";
+import * as protobufjs from "protobufjs";
+import { Subject } from "rxjs";
+import { $stream, buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
+import { context } from "../../proto/context_ts_proto";
+import { google as google_code } from "../../proto/grpc_code_ts_proto";
+import { google as google_status } from "../../proto/grpc_status_ts_proto";
+import capabilities from "../capabilities/capabilities";
+import { CancelablePromise } from "../util/async";
+import { FetchError, GRPCStatusError, HTTPStatusError, parseGRPCStatus } from "../util/errors";
 
 /** Return type for unary RPCs. */
 export { CancelablePromise } from "../util/async";

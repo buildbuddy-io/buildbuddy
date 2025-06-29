@@ -1,8 +1,8 @@
 import React from "react";
-import Modal from "../../../app/components/modal/modal";
-import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
 import Dialog, { DialogBody, DialogFooter, DialogHeader, DialogTitle } from "../../../app/components/dialog/dialog";
+import Modal from "../../../app/components/modal/modal";
 import UserPreferences from "../../../app/preferences/preferences";
+import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
 
 interface State {
   showing: boolean;

@@ -1,12 +1,12 @@
-import React from "react";
 import { Cpu, Hash, Package } from "lucide-react";
+import React from "react";
 
 import * as format from "../../../app/format/format";
 import { stats } from "../../../proto/stats_ts_proto";
 import {
-  isAnyNonDateFilterSet,
-  formatDateRangeFromUrlParams,
   formatDateRangeDurationFromSearchParams,
+  formatDateRangeFromUrlParams,
+  isAnyNonDateFilterSet,
 } from "../filter/filter_util";
 
 interface Props {

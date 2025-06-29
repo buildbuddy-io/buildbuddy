@@ -1,13 +1,13 @@
 import { ArrowDownCircle, FileCode } from "lucide-react";
 import React from "react";
 
-import { zip } from "../../proto/zip_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { zip } from "../../proto/zip_ts_proto";
 import capabilities from "../capabilities/capabilities";
-import rpcService from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
-import { getFileDigest } from "../util/cache";
 import { TextLink } from "../components/link/link";
+import rpcService from "../service/rpc_service";
+import { getFileDigest } from "../util/cache";
 
 interface Props {
   name: string;

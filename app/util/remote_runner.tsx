@@ -1,10 +1,10 @@
 import { git } from "../../proto/git_ts_proto";
-import InvocationModel from "../invocation/invocation_model";
-import { runner } from "../../proto/runner_ts_proto";
-import rpcService from "../service/rpc_service";
 import { github } from "../../proto/github_ts_proto";
-import error_service from "../errors/error_service";
 import { build } from "../../proto/remote_execution_ts_proto";
+import { runner } from "../../proto/runner_ts_proto";
+import error_service from "../errors/error_service";
+import InvocationModel from "../invocation/invocation_model";
+import rpcService from "../service/rpc_service";
 
 export async function supportsRemoteRun(repoUrl: string): Promise<boolean> {
   const rsp = await rpcService.service.getLinkedGitHubRepos(new github.GetLinkedReposRequest());

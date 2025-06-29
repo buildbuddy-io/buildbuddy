@@ -1,6 +1,3 @@
-import React from "react";
-import { target } from "../../proto/target_ts_proto";
-import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import {
   ArrowDownCircle,
   Check,
@@ -15,17 +12,20 @@ import {
   SkipForward,
   XCircle,
 } from "lucide-react";
+import React from "react";
+import { api as api_common } from "../../proto/api/v1/common_ts_proto";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { target } from "../../proto/target_ts_proto";
+import capabilities from "../capabilities/capabilities";
+import DigestComponent from "../components/digest/digest";
+import Link, { TextLink } from "../components/link/link";
+import Spinner from "../components/spinner/spinner";
+import error_service from "../errors/error_service";
+import format from "../format/format";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
+import FlakyTargetChipComponent from "../target/flaky_target_chip";
 import { copyToClipboard } from "../util/clipboard";
 import { renderDuration, renderTestSize } from "./target_util";
-import Link, { TextLink } from "../components/link/link";
-import rpc_service, { CancelablePromise } from "../service/rpc_service";
-import error_service from "../errors/error_service";
-import Spinner from "../components/spinner/spinner";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import format from "../format/format";
-import DigestComponent from "../components/digest/digest";
-import FlakyTargetChipComponent from "../target/flaky_target_chip";
-import capabilities from "../capabilities/capabilities";
 
 export interface TargetGroupCardProps {
   invocationId: string;
@@ -75,7 +75,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
   private loadMore(all?: boolean, callback?: () => void) {
     this.fetchRPC?.cancel();
     this.setState({ loading: true });
-    rpc_service.service
+    rpcService.service
       .getTarget({
         invocationId: this.props.invocationId,
         status: this.props.group.status,
@@ -108,7 +108,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
     if (file.uri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", file.uri);
     } else if (file.uri.startsWith("bytestream://")) {
-      rpc_service.downloadBytestreamFile(file.name, file.uri, this.props.invocationId);
+      rpcService.downloadBytestreamFile(file.name, file.uri, this.props.invocationId);
     }
   }
 
@@ -248,7 +248,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
                       <div className="artifact-line">
                         <TextLink
                           plain
-                          href={rpc_service.getBytestreamUrl(output.uri, this.props.invocationId, {
+                          href={rpcService.getBytestreamUrl(output.uri, this.props.invocationId, {
                             filename: output.name,
                           })}
                           className="artifact-name"

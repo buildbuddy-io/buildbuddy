@@ -1,11 +1,11 @@
-import React from "react";
-import InvocationModel from "./invocation_model";
 import { Copy, Info } from "lucide-react";
-import { copyToClipboard } from "../util/clipboard";
-import alert_service from "../alert/alert_service";
+import React from "react";
 import { command_line } from "../../proto/command_line_ts_proto";
+import alert_service from "../alert/alert_service";
 import Banner from "../components/banner/banner";
 import format from "../format/format";
+import { copyToClipboard } from "../util/clipboard";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;

@@ -42,6 +42,7 @@
     "monaco-editor": "0.47.0",
     "path-browserify": "^1.0.1",
     "prettier": "3.3.3",
+    "prettier-plugin-organize-imports": "^4.1.0",
     "protobufjs": "^7.4.0",
     "react": "^18.3.1",
     "react-date-range": "^2.0.1",

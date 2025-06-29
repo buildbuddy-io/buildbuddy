@@ -1,5 +1,7 @@
-import React, { CSSProperties } from "react";
 import { ZoomIn, ZoomOut } from "lucide-react";
+import React, { CSSProperties } from "react";
+import { FilterInput } from "../components/filter_input/filter_input";
+import router from "../router/router";
 import { AnimatedValue } from "../util/animated_value";
 import { AnimationLoop } from "../util/animation_loop";
 import { ClientXY } from "../util/dom";
@@ -7,12 +9,9 @@ import { clamp } from "../util/math";
 import { modifierKey } from "../util/platform";
 import * as constants from "./constants";
 import EventHovercard from "./event_hovercard";
-import Panel from "./trace_viewer_panel";
-import { TraceEvent } from "./trace_events";
+import { Profile, TraceEvent } from "./trace_events";
 import { buildTraceViewerModel, panelScrollHeight } from "./trace_viewer_model";
-import { Profile } from "./trace_events";
-import router from "../router/router";
-import { FilterInput } from "../components/filter_input/filter_input";
+import Panel from "./trace_viewer_panel";
 
 export interface TraceViewProps {
   profile: Profile;
