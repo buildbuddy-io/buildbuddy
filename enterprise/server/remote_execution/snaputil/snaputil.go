@@ -72,6 +72,15 @@ const (
 	OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable = "none-available"
 )
 
+// Values for platform.SnapshotReadPolicyPropertyName:
+const (
+	// TODO: Add comments
+	// TODO: Add warnings if these conflict with save policy
+	ReadNewestSnapshot     = "newest"
+	ReadLocalSnapshotFirst = "local-first"
+	ReadLocalSnapshotOnly  = "local-only"
+)
+
 func (s ChunkSource) String() string {
 	switch s {
 	case ChunkSourceUnmapped:
