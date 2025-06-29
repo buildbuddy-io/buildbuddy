@@ -12,7 +12,7 @@ import capabilities from "../capabilities/capabilities";
 import faviconService from "../favicon/favicon";
 import UserPreferences from "../preferences/preferences";
 import router from "../router/router";
-import { Cancelable, CancelablePromise, default as rpc_service, default as rpcService } from "../service/rpc_service";
+import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
 import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import TargetComponent from "../target/target";
 import TargetV2Component from "../target/target_v2";
@@ -333,7 +333,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   fetchRunnerExecution() {
     this.runnerExecutionRPC?.cancel();
-    this.runnerExecutionRPC = rpc_service.service
+    this.runnerExecutionRPC = rpcService.service
       .getExecution({
         executionLookup: new execution_stats.ExecutionLookup({
           invocationId: this.props.invocationId,
@@ -520,7 +520,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     });
     const isBazelInvocation = this.state.model.isBazelInvocation();
     const fetchBuildLogs = () => {
-      rpc_service.downloadLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
+      rpcService.downloadLog(this.props.invocationId, Number(this.state.model?.invocation.attempt ?? 0));
     };
 
     const suggestions = getSuggestions({

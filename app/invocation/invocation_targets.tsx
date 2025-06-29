@@ -3,7 +3,7 @@ import React from "react";
 import { CheckCircle, Clock, HelpCircle, SkipForward, XCircle } from "lucide-react";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { target } from "../../proto/target_ts_proto";
-import rpc_service, { CancelablePromise } from "../service/rpc_service";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import TargetGroupCard from "./invocation_target_group_card";
 import TargetsCardComponent from "./invocation_targets_card";
@@ -71,7 +71,7 @@ export default class TargetsComponent extends React.Component<Props, State> {
       this.setState({ searchLoading: false, searchResponse: undefined });
       return;
     }
-    this.searchRPC = rpc_service.service
+    this.searchRPC = rpcService.service
       .getTarget({
         invocationId: this.props.model.getInvocationId(),
         filter: this.props.filter,

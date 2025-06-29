@@ -31,7 +31,7 @@ import { pinBottomMiddleToMouse, Tooltip } from "../components/tooltip/tooltip";
 import error_service from "../errors/error_service";
 import * as format from "../format/format";
 import router from "../router/router";
-import rpc_service from "../service/rpc_service";
+import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
 import * as proto from "../util/proto";
 import { durationToMillis, timestampToDate } from "../util/proto";
@@ -164,7 +164,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
     const isInitialFetch = !this.state.didInitialFetch;
 
-    rpc_service.service
+    rpcService.service
       .getCacheScoreCard(
         cache.GetCacheScoreCardRequest.create({
           invocationId: this.props.model.getInvocationId(),
@@ -428,7 +428,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
   private handleDownloadClicked(result: cache.ScoreCard.Result) {
     if (result.digest?.hash) {
-      rpc_service.downloadBytestreamFile(
+      rpcService.downloadBytestreamFile(
         result.digest.hash,
         this.props.model.getBytestreamURL(result.digest),
         this.props.model.getInvocationId()
@@ -543,7 +543,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     // or if there is an invalid result
     this.state.digestToCacheMetadata.set(digest.hash, null);
 
-    const service = rpc_service.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_cache"));
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_cache"));
 
     service
       .getCacheMetadata(
@@ -838,7 +838,7 @@ fi
   }
 
   private async fetchInvocation(invocationId: string): Promise<invocation.Invocation> {
-    const response = await rpc_service.service.getInvocation(
+    const response = await rpcService.service.getInvocation(
       new invocation.GetInvocationRequest({
         lookup: new invocation.InvocationLookup({
           invocationId,

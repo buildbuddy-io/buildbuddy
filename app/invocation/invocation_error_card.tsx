@@ -2,7 +2,7 @@ import { AlertCircle } from "lucide-react";
 import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { failure_details } from "../../proto/failure_details_ts_proto";
-import rpc_service, { CancelablePromise } from "../service/rpc_service";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
 import TerminalComponent from "../terminal/terminal";
 import { exitCode } from "../util/exit_codes";
 import InvocationModel from "./invocation_model";
@@ -57,7 +57,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
     for (const error of model.errors) {
       if (error.action?.stderr?.uri) {
         promises.push(
-          rpc_service
+          rpcService
             .fetchBytestreamFile(error.action?.stderr?.uri, this.props.model.getInvocationId(), "text")
             .then((stderr) => {
               error.actionStderr = stderr;
@@ -67,7 +67,7 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
       }
       if (error.action?.stdout?.uri) {
         promises.push(
-          rpc_service
+          rpcService
             .fetchBytestreamFile(error.action?.stdout?.uri, this.props.model.getInvocationId(), "text")
             .then((stdout) => {
               error.actionStdout = stdout;
