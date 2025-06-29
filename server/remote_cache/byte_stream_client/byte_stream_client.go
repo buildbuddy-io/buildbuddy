@@ -199,7 +199,7 @@ func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, 
 	// Sanitize the error so as to not expose internal services via the
 	// error message.
 	if !status.IsNotFoundError(allErrs) {
-		log.Warningf("Error byte-streaming from %q: %s", stripUser(url), allErrs.Error())
+		log.Warningf("Error byte-streaming from %q: %s", stripUser(url), allErrs)
 	}
 	return status.UnavailableErrorf("failed to read byte stream resource %q", stripUser(url))
 }
