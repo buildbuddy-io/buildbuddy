@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -111,6 +112,7 @@ const (
 	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
 	RetryPropertyName                       = "retry"
 	SkipResavingActionSnapshotsPropertyName = "skip-resaving-action-snapshots"
+	persistentVolumesPropertyName           = "persistent-volumes"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -270,6 +272,27 @@ type Properties struct {
 	// This property is ignored for bazel executions, because the bazel client
 	// handles retries itself.
 	Retry bool
+
+	// Persistent volumes shared across all actions within a group. Requires
+	// `executor.enable_persistent_volumes` to be enabled.
+	PersistentVolumes []PersistentVolume
+}
+
+type PersistentVolume struct {
+	name          string
+	containerPath string
+}
+
+// Name is the name of the persistent volume. The returned value is non-empty
+// and contains only alphanumeric characters, hyphens, and underscores.
+func (v *PersistentVolume) Name() string {
+	return v.name
+}
+
+// ContainerPath is the path in the container where the persistent volume is
+// mounted. The returned value is guaranteed to be non-empty.
+func (v *PersistentVolume) ContainerPath() string {
+	return v.containerPath
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -382,6 +405,11 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		overrideSnapshotKey = key
 	}
 
+	persistentVolumes, err := ParsePersistentVolumes(stringListProp(m, persistentVolumesPropertyName)...)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
@@ -422,6 +450,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		EnvOverrides:              envOverrides,
 		OverrideSnapshotKey:       overrideSnapshotKey,
 		Retry:                     boolProp(m, RetryPropertyName, true),
+		PersistentVolumes:         persistentVolumes,
 	}, nil
 }
 
@@ -745,6 +774,29 @@ func durationProp(props map[string]string, name string, defaultValue time.Durati
 		return 0, status.InvalidArgumentErrorf("execution property value %q: invalid duration format", name)
 	}
 	return d, nil
+}
+
+var volumeNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+func ParsePersistentVolumes(values ...string) ([]PersistentVolume, error) {
+	volumes := make([]PersistentVolume, 0, len(values))
+	for _, v := range values {
+		name, containerPath, ok := strings.Cut(v, ":")
+		if !ok || name == "" || containerPath == "" {
+			return nil, status.InvalidArgumentErrorf(`invalid persistent volume %q: expected "<name>:<container_path>"`, v)
+		}
+		// Name can only contain alphanumeric characters, hyphens, and
+		// underscores. In particular it cannot contain path separators or
+		// relative directory references.
+		if !volumeNameRegex.MatchString(name) {
+			return nil, status.InvalidArgumentErrorf(`invalid persistent volume %q: name can only contain alphanumeric characters, hyphens, and underscores`, v)
+		}
+		volumes = append(volumes, PersistentVolume{
+			name:          name,
+			containerPath: containerPath,
+		})
+	}
+	return volumes, nil
 }
 
 func containerImageName(input string) string {
