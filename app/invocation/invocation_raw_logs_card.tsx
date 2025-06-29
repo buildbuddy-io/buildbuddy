@@ -5,7 +5,7 @@ import Banner from "../components/banner/banner";
 import LinkButton from "../components/button/link_button";
 import { FilterInput } from "../components/filter_input/filter_input";
 import format from "../format/format";
-import rpc_service from "../service/rpc_service";
+import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 
 interface Props {
@@ -69,7 +69,7 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
             <div className="title">Raw logs</div>
             <LinkButton
               className="download-raw-logs-button"
-              href={rpc_service.getDownloadUrl({
+              href={rpcService.getDownloadUrl({
                 invocation_id: this.props.model.getInvocationId(),
                 artifact: "raw_json",
               })}

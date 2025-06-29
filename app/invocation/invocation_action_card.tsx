@@ -26,7 +26,7 @@ import Spinner from "../components/spinner/spinner";
 import errorService from "../errors/error_service";
 import format, { durationUsec } from "../format/format";
 import UserPreferences from "../preferences/preferences";
-import { Cancelable, CancelablePromise, default as rpc_service, default as rpcService } from "../service/rpc_service";
+import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
 import TerminalComponent from "../terminal/terminal";
 import { Profile, readProfile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
@@ -347,9 +347,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
-    const service = rpc_service.getRegionalServiceOrDefault(
-      this.props.model.stringCommandLineOption("remote_executor")
-    );
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
     return service
       .getExecution({
         executionLookup: new execution_stats.ExecutionLookup({
