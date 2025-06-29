@@ -9,10 +9,10 @@ import (
 	"iter"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/jsonschema"
+	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/mcp"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/mcp"
-	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/jsonschema"
 )
 
 func TestList(t *testing.T) {

@@ -19,9 +19,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/internal/jsonrpc2"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/internal/jsonrpc2"
 )
 
 func TestStreamableTransports(t *testing.T) {
@@ -583,4 +583,3 @@ func TestEventID(t *testing.T) {
 		})
 	}
 }
-
