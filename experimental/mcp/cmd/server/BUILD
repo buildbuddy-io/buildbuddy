@@ -9,6 +9,7 @@ go_library(
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/remoteauth",
         "//experimental/mcp/resources",
+        "//experimental/mcp/templates",
         "//experimental/mcp/tools",
         "//experimental/modelcontextprotocol/go-sdk/mcp",
         "//proto:remote_execution_go_proto",
@@ -22,6 +23,7 @@ go_library(
         "//server/util/log",
         "//server/util/monitoring",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 

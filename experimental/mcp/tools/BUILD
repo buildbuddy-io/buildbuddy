@@ -9,7 +9,6 @@ go_library(
         "//experimental/modelcontextprotocol/go-sdk/mcp",
         "//proto/api/v1:api_v1_go_proto",
         "//server/environment",
-        "//server/util/log",
         "//server/util/status",
     ],
 )

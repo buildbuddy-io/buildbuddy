@@ -5,5 +5,8 @@ go_library(
     srcs = ["resources.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/experimental/mcp/resources",
     visibility = ["//visibility:public"],
-    deps = ["//experimental/modelcontextprotocol/go-sdk/mcp"],
+    deps = [
+        "//experimental/modelcontextprotocol/go-sdk/mcp",
+        "//server/environment",
+    ],
 )

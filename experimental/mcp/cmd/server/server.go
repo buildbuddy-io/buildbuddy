@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/resources"
+	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/templates"
 	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/tools"
 	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/mcp"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"google.golang.org/grpc/metadata"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -86,23 +88,40 @@ func main() {
 
 	// NewServer creates a new MCP server. The resulting server has no features:
 	// add features using [Server.AddTools], [Server.AddPrompts] and [Server.AddResources].
-	sseServer := mcp.NewServer("sse", "v0.0.1", nil)
+	sseServer := mcp.NewServer("sse", "v0.0.1", &mcp.ServerOptions{})
 
 	toolHandler, err := tools.NewHandler(env)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 	sseServer.AddTools(toolHandler.GetAllTools()...)
-	sseServer.AddResources(resources.GetAllResources()...)
+
+	templateHandler, err := templates.NewHandler(env)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	sseServer.AddResourceTemplates(templateHandler.GetAllResourceTemplates()...)
+
+	resourceHandler, err := resources.NewHandler(env)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	sseServer.AddResources(resourceHandler.GetAllResources()...)
 
 	handler := mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
 		url := request.URL.Path
-
 		log.Infof("Handling request for URL %q", url)
-		log.Infof("auth header? %q", request.Header.Get("x-buildbuddy-api-key"))
+
+		// If the client has attached an auth header, add it to the
+		// context so that if we make outgoing requests they'll be
+		// authed.
+		if apiKey := request.Header.Get(authutil.APIKeyHeader); apiKey != "" {
+			ctx := metadata.AppendToOutgoingContext(request.Context(), authutil.APIKeyHeader, apiKey)
+			newRequest := request.WithContext(ctx)
+			*request = *newRequest
+		}
 		switch url {
 		case "/sse":
-			// TODO(tylerw): maybe make a new server here that wraps sseServer and includes teh request context?
 			return sseServer
 		default:
 			log.Errorf("Unhandled server URL: %q", url)
