@@ -1,11 +1,11 @@
-import React from "react";
-import moment from "moment";
+import { ScaleBand, scaleBand } from "d3-scale";
 import Long from "long";
+import moment from "moment";
+import React from "react";
+import { useResizeDetector } from "react-resize-detector";
+import { MouseCoords, pinBottomLeftOffsetFromMouse, Tooltip } from "../../../app/components/tooltip/tooltip";
 import { clamp } from "../../../app/util/math";
 import { stats } from "../../../proto/stats_ts_proto";
-import { ScaleBand, scaleBand } from "d3-scale";
-import { useResizeDetector } from "react-resize-detector";
-import { pinBottomLeftOffsetFromMouse, MouseCoords, Tooltip } from "../../../app/components/tooltip/tooltip";
 
 interface HeatmapProps {
   heatmapData: stats.GetStatHeatmapResponse;

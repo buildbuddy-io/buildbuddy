@@ -1,11 +1,11 @@
 import { AlertCircle } from "lucide-react";
 import React from "react";
-import InvocationModel from "./invocation_model";
-import { failure_details } from "../../proto/failure_details_ts_proto";
-import TerminalComponent from "../terminal/terminal";
-import rpc_service, { CancelablePromise } from "../service/rpc_service";
-import { exitCode } from "../util/exit_codes";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { failure_details } from "../../proto/failure_details_ts_proto";
+import rpc_service, { CancelablePromise } from "../service/rpc_service";
+import TerminalComponent from "../terminal/terminal";
+import { exitCode } from "../util/exit_codes";
+import InvocationModel from "./invocation_model";
 
 const debugMessage =
   "Use --sandbox_debug to see verbose messages from the sandbox and retain the sandbox build root for debugging";

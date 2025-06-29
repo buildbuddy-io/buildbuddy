@@ -1,10 +1,10 @@
+import { Boxes, ChevronDown } from "lucide-react";
 import React from "react";
 import { OutlinedButton } from "../../../app/components/button/button";
 import { OutlinedButtonGroup } from "../../../app/components/button/button_group";
 import Menu, { MenuItem } from "../../../app/components/menu/menu";
 import Popup, { PopupContainer } from "../../../app/components/popup/popup";
 import Spinner from "../../../app/components/spinner/spinner";
-import { Boxes, ChevronDown } from "lucide-react";
 
 export interface CodeBuildButtonProps {
   onCommandClicked: (args: string) => void;

@@ -1,5 +1,5 @@
-import { google as google_status } from "../../proto/grpc_status_ts_proto";
 import { google as google_code } from "../../proto/grpc_code_ts_proto";
+import { google as google_status } from "../../proto/grpc_status_ts_proto";
 
 export type ErrorCode = Omit<GRPCCodeName, "OK">;
 

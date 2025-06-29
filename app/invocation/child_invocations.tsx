@@ -1,6 +1,6 @@
 import React from "react";
-import ChildInvocationCard from "./child_invocation_card";
 import { invocation } from "../../proto/invocation_ts_proto";
+import ChildInvocationCard from "./child_invocation_card";
 
 export type ChildInvocationProps = {
   childInvocations: invocation.Invocation[];
