@@ -182,6 +182,11 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	workerStart := s.env.GetClock().Now()
+	stage := &stagedGauge{estimatedSize: st.GetSchedulingMetadata().GetTaskSize()}
+	stage.Set("init")
+	defer stage.End()
+
 	ctx = interceptors.AddAuthToContext(s.env, ctx)
 	ctx = bazel_request.ParseRequestMetadataOnce(ctx)
 
@@ -229,7 +234,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	md := &repb.ExecutedActionMetadata{
 		Worker:                   s.hostID,
 		QueuedTimestamp:          task.QueuedTimestamp,
-		WorkerStartTimestamp:     timestamppb.New(s.env.GetClock().Now()),
+		WorkerStartTimestamp:     timestamppb.New(workerStart),
 		WorkerCompletedTimestamp: timestamppb.New(s.env.GetClock().Now()),
 		ExecutorId:               s.id,
 		IoStats:                  &repb.IOStats{},
@@ -254,15 +259,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return false, finalErr
 	}
 
-	stage := &stagedGauge{estimatedSize: md.EstimatedTaskSize}
-	defer stage.End()
-
 	if err := validateCommand(st.GetExecutionTask().GetCommand()); err != nil {
 		return finishWithErrFn(status.WrapError(err, "validate command"))
 	}
 
 	if *checkActionResultBeforeExecution && !req.GetSkipCacheLookup() {
 		log.CtxDebugf(ctx, "Checking action cache for existing result.")
+		stage.Set("check_cache")
 		if err := stateChangeFn(repb.ExecutionStage_CACHE_CHECK, operation.InProgressExecuteResponse()); err != nil {
 			return true, err
 		}
@@ -279,6 +282,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 
 	log.CtxDebugf(ctx, "Getting a runner for task.")
+	stage.Set("get_runner")
 	r, err := s.runnerPool.Get(ctx, st)
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
