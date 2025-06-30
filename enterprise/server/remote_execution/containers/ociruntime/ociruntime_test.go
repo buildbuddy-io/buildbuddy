@@ -1817,3 +1817,57 @@ func TestMounts(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 }
+
+func TestPersistentVolumes(t *testing.T) {
+	setupNetworking(t)
+	image := manuallyProvisionedBusyboxImage(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.oci.enable_persistent_volumes", true)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	volumes, err := platform.ParsePersistentVolumes("tmp_cache:/tmp/.cache", "user_cache:/root/.cache")
+	require.NoError(t, err)
+	wd1 := testfs.MakeDirAll(t, buildRoot, "work1")
+	c1, err := provider.New(ctx, &container.Init{
+		Props: &platform.Properties{
+			ContainerImage:    image,
+			PersistentVolumes: volumes,
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c1.Remove(ctx)
+		require.NoError(t, err)
+	})
+	res := c1.Run(ctx, &repb.Command{
+		Arguments: []string{"touch", "/tmp/.cache/foo", "/root/.cache/bar"},
+	}, wd1, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+
+	wd2 := testfs.MakeDirAll(t, buildRoot, "work2")
+	c2, err := provider.New(ctx, &container.Init{
+		Props: &platform.Properties{
+			ContainerImage:    image,
+			PersistentVolumes: volumes,
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c2.Remove(ctx)
+		require.NoError(t, err)
+	})
+	res = c2.Run(ctx, &repb.Command{
+		Arguments: []string{"stat", "/tmp/.cache/foo", "/root/.cache/bar"},
+	}, wd2, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+}
