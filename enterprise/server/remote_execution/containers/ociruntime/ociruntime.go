@@ -468,7 +468,9 @@ func (c *ociContainer) initPersistentVolumes(ctx context.Context) error {
 	}
 
 	for _, volume := range c.persistentVolumes {
-		hostPath := filepath.Join(filepath.Dir(c.workDir), "shared", partition, volume.Name())
+		// Initialize the volume at "{build_root}/volumes/{partition}/{volume_name}"
+		// Example: "/buildbuddy/executor/buildroot/volumes/GR123/node_modules_cache"
+		hostPath := filepath.Join(filepath.Dir(c.workDir), "volumes", partition, volume.Name())
 		if err := os.MkdirAll(hostPath, 0755); err != nil {
 			return fmt.Errorf("create persistent volume backing path %q: %w", hostPath, err)
 		}
