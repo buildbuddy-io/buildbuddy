@@ -2,7 +2,6 @@ package interceptors
 
 import (
 	"context"
-	"flag"
 	"net/netip"
 	"runtime"
 	"strings"
@@ -40,8 +39,6 @@ const (
 
 var (
 	headerContextKeys map[string]string
-
-	enableGRPCMetricsByGroupID = flag.Bool("app.enable_grpc_metrics_by_group_id", false, "If enabled, grpc metrics by group ID will be recorded")
 )
 
 func init() {
