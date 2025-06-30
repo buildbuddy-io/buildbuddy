@@ -966,8 +966,6 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	vmd := c.getVMMetadata().CloneVT()
 	vmd.LastExecutedTask = c.getVMTask()
 
-	savePolicy := platform.FindEffectiveValue(c.task, platform.RemoteSnapshotSavePolicyPropertyName)
-
 	// NOTE: Even if a remote snapshot is not saved, we'll still save a local snapshot and workloads
 	// should hit an executor with a local snapshot due to affinity routing on
 	// the git branch key.
@@ -986,6 +984,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		// the default branch.
 		isLikelyDefaultSnapshot := !c.hasFallbackKeys()
 
+		savePolicy := platform.FindEffectiveValue(c.task, platform.RemoteSnapshotSavePolicyPropertyName)
 		if savePolicy == snaputil.AlwaysSaveRemoteSnapshot || isLikelyDefaultSnapshot {
 			shouldCacheRemotely = true
 		} else if savePolicy == snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable {
@@ -997,9 +996,9 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 			// doesn't already exist.
 			shouldCacheRemotely = !c.hasRemoteSnapshotForKey(ctx, loader, c.SnapshotKeySet().GetBranchKey())
 		}
-	}
-	if !shouldCacheRemotely {
-		log.CtxInfof(ctx, "Not saving remote snapshot under policy %s, for keys %s", savePolicy, c.SnapshotKeySet().String())
+		if !shouldCacheRemotely {
+			log.CtxInfof(ctx, "Not saving remote snapshot under policy %q, for keys %s", savePolicy, c.SnapshotKeySet().String())
+		}
 	}
 
 	opts := &snaploader.CacheSnapshotOptions{
