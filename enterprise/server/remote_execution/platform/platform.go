@@ -111,6 +111,7 @@ const (
 	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
 	RetryPropertyName                       = "retry"
 	SkipResavingActionSnapshotsPropertyName = "skip-resaving-action-snapshots"
+	PersistentVolumesPropertyName           = "persistent-volumes"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
