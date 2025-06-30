@@ -4158,6 +4158,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.1.0",
     )
     go_repository(
+        name = "com_github_psanford_memfs",
+        importpath = "github.com/psanford/memfs",
+        sum = "h1:xzjEJAHum+mV5Dd5KyohRlCyP03o4yq6vNpEUtAJQzI=",
+        version = "v0.0.0-20241019191636-4ef911798f9b",
+    )
+    go_repository(
         name = "com_github_puerkitobio_purell",
         importpath = "github.com/PuerkitoBio/purell",
         sum = "h1:WEQqlqaGbrPkxLJWfBwQmfEAE1Z7ONdDLqrN38tNFfI=",

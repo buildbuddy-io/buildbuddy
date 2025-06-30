@@ -14,6 +14,7 @@ go_library(
         "//server/util/rexec",
         "//server/util/shlex",
         "//server/util/status",
+        "@com_github_psanford_memfs//:memfs",
         "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )

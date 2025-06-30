@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -120,11 +121,13 @@ func main() {
 		url := request.URL.Path
 		log.Infof("Handling request for URL %q", url)
 
+		log.Printf("request Header: %+v", request.Header)
 		// If the client has attached an auth header, add it to the
 		// context so that if we make outgoing requests they'll be
 		// authed.
 		if apiKey := request.Header.Get(authutil.APIKeyHeader); apiKey != "" {
 			ctx := metadata.AppendToOutgoingContext(request.Context(), authutil.APIKeyHeader, apiKey)
+			ctx = context.WithValue(ctx, "mcp-session-id", request.Header.Get("Mcp-Session-Id"))
 			newRequest := request.WithContext(ctx)
 			*request = *newRequest
 		}

@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/mcp"
@@ -11,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/psanford/memfs"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -37,10 +40,14 @@ func NewHandler(env environment.Env) (*ToolHandler, error) {
 
 func (t *ToolHandler) Register(server *mcp.Server) error {
 	server.AddTools(
-		mcp.NewServerTool("echo", "echo any string back", t.Echo),
-		mcp.NewServerTool("GetInvocation", "list all invocations or get specific invocations by ID", t.GetInvocation),
-		mcp.NewServerTool("Run", "Run a bash command (on BuildBuddy). Use this when asked to run any commands.", t.Run, mcp.Input(
-			mcp.Property("cmd", mcp.Description("the bash command to run")))),
+		mcp.NewServerTool("echo_string", "echo back any string with emojis around it", t.Echo),
+		mcp.NewServerTool("get_invocation", "list all invocations or get specific invocations by ID", t.GetInvocation),
+		mcp.NewServerTool("run_command", "Execute a command. Use this when asked to run any commands.", t.Run, mcp.Input(
+			mcp.Property("cmd", mcp.Description("the command to run")))),
+		mcp.NewServerTool("file_write", "Create a new file with the provided contents in the working direcotry, overwriting the file if it already exists", t.FileWrite, mcp.Input(
+			mcp.Property("path", mcp.Description("The path of the file you want to write")),
+			mcp.Property("content", mcp.Description("Full text content of the file you want to write.")),
+		)),
 	)
 
 	return nil
@@ -53,7 +60,7 @@ type EchoParams struct {
 func (t *ToolHandler) Echo(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[EchoParams]) (*mcp.CallToolResultFor[any], error) {
 	return &mcp.CallToolResultFor[any]{
 		Content: []*mcp.Content{
-			mcp.NewTextContent(fmt.Sprintf("~%q~", params.Arguments.Value)),
+			mcp.NewTextContent(fmt.Sprintf("🎉🎉🎉 %s 🎉🎉🎉", params.Arguments.Value)),
 		},
 	}, nil
 }
@@ -102,7 +109,6 @@ func (t *ToolHandler) Run(ctx context.Context, cc *mcp.ServerSession, params *mc
 		},
 	}
 	rexec.NormalizeCommand(cmd)
-	log.Printf("cmd: %+v", cmd)
 	action := &repb.Action{
 		//InputRootDigest: inputRootDigest,
 		DoNotCache: true,
@@ -162,4 +168,51 @@ func (t *ToolHandler) GetInvocation(ctx context.Context, cc *mcp.ServerSession, 
 			}),
 		},
 	}, nil
+}
+
+type FileWriteParams struct {
+	Path string `json:"path"`
+	Content string `json:"content"`
+}
+
+func (t *ToolHandler) FileWrite(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[FileWriteParams]) (*mcp.CallToolResultFor[any], error) {
+	if params.Arguments.Path == "" {
+		return nil, status.InvalidArgumentError("A path is required")
+	}
+	sessionID, ok := ctx.Value("mcp-session-id").(string)
+	if !ok {
+		return nil, status.InvalidArgumentError("No session ID found")
+	}
+	log.Printf("sessionID: %q", sessionID)
+	fp := strings.TrimPrefix(params.Arguments.Path, "file://")
+	fs := NewSerializableFS()
+	if err := fs.MkdirAll(filepath.Dir(fp), 0o777); err != nil {
+		return nil, err
+	}
+	if err := fs.WriteFile(fp, []byte(params.Arguments.Content), 0o777); err != nil {
+		return nil, err
+	}
+	return &mcp.CallToolResultFor[any]{
+		Content: []*mcp.Content{
+			mcp.NewTextContent(fmt.Sprintf("Wrote file: %s", params.Arguments.Path)),
+		},
+	}, nil
+}
+
+type SerializableMemFS struct {
+	*memfs.FS
+}
+
+func NewSerializableFS() *SerializableMemFS {
+	return &SerializableMemFS{
+		FS: memfs.New(),
+	}
+}
+
+func (fs *SerializableMemFS) Marshal() ([]byte, error) {
+	return nil, status.UnimplementedError("no")
+}
+
+func Unmarshal(buf []byte) (*SerializableMemFS, error) {
+	return nil, status.UnimplementedError("no")
 }
