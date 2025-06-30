@@ -22,7 +22,7 @@ import (
 )
 
 var (
-	//go:embed ratings.proto.json
+	//go:embed ratings.json
 	ratingsProtoText []byte
 
 	codesearchBackend = flag.String("codesearch_backend", "grpc://localhost:2633", "Codesearch backend address (e.g. localhost:2633, or a remote gRPC server address).")

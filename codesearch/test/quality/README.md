@@ -25,7 +25,7 @@ relevant expected results.
 ## Annotating queries
 
 Creating new test cases involves finding a target query, collecting the expected "ideal results",
-and adding this information to [ratings.proto.json](ratings.proto.json). The format is protojson,
+and adding this information to [ratings.json](ratings.json). The format is protojson,
 and the file contains a single `Suite` message from
 [search_rating.proto](/proto/search_rating.proto).
 
@@ -51,7 +51,7 @@ When adding new cases:
    4. A relevance of 0.5 is a "poor" result - it's a valid match, but should be towards the end
       of the results (e.g. generated code, or low value test usages of a function).
 
-   Note that the order of the `IdealResults` in [ratings.proto.json](ratings.proto.json) is
+   Note that the order of the `IdealResults` in [ratings.json](ratings.json) is
    irrelevant. The provided relevance values indicate how each result will contribute to the
    overall score.
 

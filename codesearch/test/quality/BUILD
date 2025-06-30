@@ -3,14 +3,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 filegroup(
     name = "ratings_data",
     srcs = glob([
-        "ratings.proto.json",
+        "ratings.json",
     ]),
 )
 
 go_library(
     name = "rater_lib",
     srcs = ["rater.go"],
-    embedsrcs = ["ratings.proto.json"],
+    embedsrcs = ["ratings.json"],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/test/quality",
     visibility = ["//visibility:private"],
     deps = [
