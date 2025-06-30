@@ -13,6 +13,7 @@ import router from "../../../app/router/router";
 import Select, { Option } from "../../../app/components/select/select";
 import LinkButton from "../../../app/components/button/link_button";
 import { Cpu, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
+import { TextLink } from "../../../app/components/link/link";
 
 enum FetchType {
   Executors,
@@ -38,7 +39,13 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
   render() {
     return (
       <>
-        <p>Self-hosted executors can be deployed by running a simple Docker image on any machine.</p>
+        <p>
+          Self-hosted executors can be deployed on Kubernetes using the{" "}
+          <TextLink href="https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-executor">
+            Helm charts
+          </TextLink>
+          , or by running the Docker image directly.
+        </p>
         <p>The example below shows how to run an executor manually using the Docker CLI.</p>
         API key:
         <Select
