@@ -496,7 +496,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         }
         break;
       default:
-        description = kind.toUpperCase();
+        description = kind.charAt(0) + kind.slice(1);
         break;
     }
     return description;
