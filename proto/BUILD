@@ -804,6 +804,15 @@ proto_library(
 )
 
 proto_library(
+    name = "search_rating_proto",
+    srcs = ["search_rating.proto"],
+    deps = [
+        ":git_proto",
+        ":search_proto",
+    ],
+)
+
+proto_library(
     name = "codesearch_service_proto",
     srcs = ["codesearch_service.proto"],
     deps = [
@@ -1980,6 +1989,16 @@ go_proto_library(
         "@io_kythe//kythe/proto:filetree_go_proto",
         "@io_kythe//kythe/proto:graph_go_proto",
         "@io_kythe//kythe/proto:xref_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "search_rating_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/search_rating",
+    proto = ":search_rating_proto",
+    deps = [
+        ":git_go_proto",
+        ":search_go_proto",
     ],
 )
 
