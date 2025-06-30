@@ -1894,12 +1894,6 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
 		return task
 	}
-	isolationType := platform.FindEffectiveValue(taskProto, platform.WorkloadIsolationPropertyName)
-	if isolationType != string(platform.FirecrackerContainerType) {
-		return task
-	}
-	expOptions := make([]any, 0, 2)
-	expOptions = append(expOptions, experiments.WithContext("executor_hostname", executorHostname))
 
 	selfHosted := false
 	if is := s.env.GetClientIdentityService(); is != nil {
@@ -1907,7 +1901,11 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		// Client identity is only set on managed executors.
 		selfHosted = err != nil || identity.Client != interfaces.ClientIdentityExecutor
 	}
-	expOptions = append(expOptions, experiments.WithContext("self_hosted_executor", selfHosted))
+
+	expOptions := []any{
+		experiments.WithContext("executor_hostname", executorHostname),
+		experiments.WithContext("self_hosted", selfHosted),
+	}
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
 	// RPC doesn't get this metadata, because the executor doesn't get it until
@@ -1915,21 +1913,38 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	// with the value in the task.
 	ctx = bazel_request.OverrideRequestMetadata(ctx, taskProto.GetRequestMetadata())
 
-	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
-	if skipResavingGroup == "" {
-		return task
-	}
-	taskProto.Experiments = append(taskProto.Experiments, "skip-resaving-action-snapshots:"+skipResavingGroup)
 	if taskProto.GetPlatformOverrides() == nil {
-		taskProto.PlatformOverrides = new(repb.Platform)
+		taskProto.PlatformOverrides = &repb.Platform{}
 	}
-	plat := taskProto.GetPlatformOverrides()
-	if strings.EqualFold(skipResavingGroup, "treatment") { // No point in setting the property when it's false.
+	plat := taskProto.PlatformOverrides
+
+	// Note: this "skip-resaving-action-snapshots" experiment uses "treatment"
+	// and "control" as the values rather than the variant names, since we
+	// didn't have the Details methods at the time which allow retrieving the
+	// variant name. Going forward, we can store "treatment" / "control" as the
+	// variant name and set the platform property values as the flag value.
+	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
+	if strings.EqualFold(skipResavingGroup, "treatment") {
 		plat.Properties = append(plat.Properties, &repb.Platform_Property{
 			Name:  platform.SkipResavingActionSnapshotsPropertyName,
 			Value: "true",
 		})
 	}
+	if skipResavingGroup != "" {
+		taskProto.Experiments = append(taskProto.Experiments, "skip-resaving-action-snapshots:"+skipResavingGroup)
+	}
+
+	persistentVolumes, details := fp.StringDetails(ctx, "remote_execution.persistent_volumes", "", expOptions...)
+	if persistentVolumes != "" {
+		plat.Properties = append(plat.Properties, &repb.Platform_Property{
+			Name:  platform.PersistentVolumesPropertyName,
+			Value: persistentVolumes,
+		})
+	}
+	if details.Variant() != "" {
+		taskProto.Experiments = append(taskProto.Experiments, "remote_execution.persistent_volumes:"+details.Variant())
+	}
+
 	if newTask, err := proto.Marshal(taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to marshal ExecutionTask: %s", err)
 		return task

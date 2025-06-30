@@ -112,7 +112,7 @@ const (
 	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
 	RetryPropertyName                       = "retry"
 	SkipResavingActionSnapshotsPropertyName = "skip-resaving-action-snapshots"
-	persistentVolumesPropertyName           = "persistent-volumes"
+	PersistentVolumesPropertyName           = "persistent-volumes"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -405,7 +405,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		overrideSnapshotKey = key
 	}
 
-	persistentVolumes, err := ParsePersistentVolumes(stringListProp(m, persistentVolumesPropertyName)...)
+	persistentVolumes, err := ParsePersistentVolumes(stringListProp(m, PersistentVolumesPropertyName)...)
 	if err != nil {
 		return nil, err
 	}
