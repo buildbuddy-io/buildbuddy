@@ -29,11 +29,7 @@
           "repo": "buildbuddy",
           "filename": "tools/checkstyle/checkstyle.sh",
           "match_count": 1,
-          "snippet_line_numbers": [
-            79,
-            80,
-            81
-          ],
+          "snippet_line_numbers": [79, 80, 81],
           "relevance": 1.0
         },
         {
@@ -41,10 +37,7 @@
           "repo": "buildbuddy",
           "filename": "proto/remote_asset.proto",
           "match_count": 1,
-          "snippet_line_numbers": [
-            14,
-            15
-          ],
+          "snippet_line_numbers": [14, 15],
           "relevance": 1.0
         },
         {
@@ -52,10 +45,7 @@
           "repo": "buildbuddy",
           "filename": "proto/remote_execution.proto",
           "match_count": 1,
-          "snippet_line_numbers": [
-            14,
-            15
-          ],
+          "snippet_line_numbers": [14, 15],
           "relevance": 1.0
         }
       ]
@@ -71,11 +61,7 @@
           "repo": "buildbuddy",
           "filename": "codesearch/types/types.go",
           "match_count": 1,
-          "snippet_line_numbers": [
-            80,
-            81,
-            82
-          ],
+          "snippet_line_numbers": [80, 81, 82],
           "relevance": 2.0
         },
         {
@@ -83,12 +69,7 @@
           "repo": "buildbuddy",
           "filename": "codesearch/index/index.go",
           "match_count": 2,
-          "snippet_line_numbers": [
-            415,
-            416,
-            418,
-            419
-          ],
+          "snippet_line_numbers": [415, 416, 418, 419],
           "relevance": 2.0
         },
         {
@@ -104,11 +85,7 @@
           "repo": "buildbuddy",
           "filename": "codesearch/searcher/searcher_test.go",
           "match_count": 1,
-          "snippet_line_numbers": [
-            90,
-            91,
-            92
-          ],
+          "snippet_line_numbers": [90, 91, 92],
           "relevance": 1.0
         }
       ]
