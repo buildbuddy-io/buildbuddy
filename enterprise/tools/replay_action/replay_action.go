@@ -46,6 +46,8 @@ var (
 	actionDigest             = flag.String("action_digest", "", "The digest of the action you want to replay.")
 	sourceRemoteInstanceName = flag.String("source_remote_instance_name", "", "The remote instance name used in the source action")
 
+	showOutput = flag.Bool("show_output", true, "Show stdout/stderr from the action.")
+
 	// Less common options below.
 	overrideCommand = flag.String("override_command", "", "If set, run this script (with 'sh -c') instead of the original action command line. All other properties such as environment variables and platform properties will be preserved from the original command.")
 	targetHeaders   = flag.Slice("target_headers", []string{}, "A list of headers to set (format: 'key=val'")
@@ -143,7 +145,7 @@ func fetchStdoutOrStderr(ctx context.Context, from bspb.ByteStreamClient, d *rep
 
 	// Print stdout/stderr to the terminal only if we're not running
 	// concurrently (to avoid clobbering).
-	if buf.String() != "" && *jobs == 1 {
+	if *showOutput && buf.String() != "" && *jobs == 1 {
 		log.Infof("%s:\n%s", name, buf.String())
 	}
 
@@ -484,7 +486,7 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			}
 
 			jb, _ := (protojson.MarshalOptions{Multiline: true}).Marshal(response)
-			log.CtxInfof(ctx, "ExecuteResponse: %s", string(jb))
+			log.CtxDebugf(ctx, "ExecuteResponse: %s", string(jb))
 			result := response.GetResult()
 			if result.GetExitCode() > 0 {
 				log.CtxWarningf(ctx, "Action exited with code %d", result.GetExitCode())
