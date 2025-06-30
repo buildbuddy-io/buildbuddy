@@ -3,13 +3,21 @@ package tools
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/mcp"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
+
+const digestFunction = repb.DigestFunction_BLAKE3
 
 type ToolHandler struct {
 	env environment.Env
@@ -21,11 +29,21 @@ func NewHandler(env environment.Env) (*ToolHandler, error) {
 	}, nil
 }
 
-func (t *ToolHandler) GetAllTools() []*mcp.ServerTool {
-	return []*mcp.ServerTool{
+/*
+   server.AddTools(mcp.NewServerTool("greet", "say hi", SayHi, mcp.Input(
+           mcp.Property("name", mcp.Description("the name to say hi to")),
+   )))
+*/
+
+func (t *ToolHandler) Register(server *mcp.Server) error {
+	server.AddTools(
 		mcp.NewServerTool("echo", "echo any string back", t.Echo),
 		mcp.NewServerTool("GetInvocation", "list all invocations or get specific invocations by ID", t.GetInvocation),
-	}
+		mcp.NewServerTool("Run", "Run a bash command (on BuildBuddy). Use this when asked to run any commands.", t.Run, mcp.Input(
+			mcp.Property("cmd", mcp.Description("the bash command to run")))),
+	)
+
+	return nil
 }
 
 type EchoParams struct {
@@ -36,6 +54,85 @@ func (t *ToolHandler) Echo(ctx context.Context, cc *mcp.ServerSession, params *m
 	return &mcp.CallToolResultFor[any]{
 		Content: []*mcp.Content{
 			mcp.NewTextContent(fmt.Sprintf("~%q~", params.Arguments.Value)),
+		},
+	}, nil
+}
+
+type RunParams struct {
+	Cmd string `json:"cmd"`
+}
+
+func (t *ToolHandler) Run(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[RunParams]) (*mcp.CallToolResultFor[any], error) {
+	log.Printf("Run() params: %+v", params)
+	if params.Arguments.Cmd == "" {
+		return nil, status.InvalidArgumentError("cmd must be set")
+	}
+	executionClient := t.env.GetRemoteExecutionClient()
+	if executionClient == nil {
+		return nil, status.InternalError("no registered execution client")
+	}
+	bytestreamClient := t.env.GetByteStreamClient()
+	if bytestreamClient == nil {
+		return nil, status.InternalError("no registered bytestream client")
+	}
+	instanceName := "123456" // TODO(tylerw): set to session ID.
+
+	args, err := shlex.Split(params.Arguments.Cmd)
+	if err != nil {
+		return nil, status.InternalErrorf("invalid command: %s", err)
+	}
+	cmd := &repb.Command{
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "MCP", Value: "true"},
+			{Name: "PATH", Value: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
+		},
+		Arguments: args,
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "Pool", Value: "workflows"},
+				{Name: "hosted-bazel-affinity-key", Value: instanceName}, // use sessionID as affinity key.
+				{Name: "container-image", Value: "docker://gcr.io/flame-public/rbe-ubuntu24-04@sha256:f7db0d4791247f032fdb4451b7c3ba90e567923a341cc6dc43abfc283436791a"},
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "preserve-workspace", Value: "true"},
+				{Name: "workload-isolation-type", Value: "firecracker"},
+				{Name: "retry", Value: "true"},
+				{Name: "EstimatedComputeUnits", Value: "1"},
+				{Name: "EstimatedFreeDiskBytes", Value: "2000000000"}, // 2GB
+			},
+		},
+	}
+	rexec.NormalizeCommand(cmd)
+	log.Printf("cmd: %+v", cmd)
+	action := &repb.Action{
+		//InputRootDigest: inputRootDigest,
+		DoNotCache: true,
+		Timeout:    durationpb.New(10 * time.Second),
+	}
+	rn, err := rexec.Prepare(ctx, t.env, instanceName, digestFunction, action, cmd, "")
+	if err != nil {
+		log.Errorf("Prepare error: %s", err)
+		return nil, status.WrapError(err, "prepare")
+	}
+	log.Printf("prepared rn: %s", rn)
+	stream, err := rexec.Start(ctx, t.env, rn)
+	if err != nil {
+		log.Errorf("Start error: %s", err)
+		return nil, status.WrapError(err, "start")
+	}
+	rsp, err := rexec.Wait(stream)
+	if err != nil {
+		log.Errorf("Wait error: %s", err)
+		return nil, status.WrapError(err, "wait")
+	}
+	commandResult, err := rexec.GetResult(ctx, t.env, instanceName, digestFunction, rsp.ExecuteResponse.GetResult())
+	if err != nil {
+		log.Errorf("GetResult error: %s", err)
+		return nil, status.WrapError(err, "get result")
+	}
+	log.Printf("commandResult: %+v", commandResult)
+	return &mcp.CallToolResultFor[any]{
+		Content: []*mcp.Content{
+			mcp.NewTextContent(string(commandResult.Stdout)),
 		},
 	}, nil
 }

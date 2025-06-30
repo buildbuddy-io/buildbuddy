@@ -85,28 +85,36 @@ func main() {
 		log.Fatal(err.Error())
 	}
 	env.SetApiClient(apipb.NewApiServiceClient(apiConn))
+	env.SetRemoteExecutionClient(repb.NewExecutionClient(apiConn))
 
 	// NewServer creates a new MCP server. The resulting server has no features:
 	// add features using [Server.AddTools], [Server.AddPrompts] and [Server.AddResources].
+
 	sseServer := mcp.NewServer("sse", "v0.0.1", &mcp.ServerOptions{})
 
 	toolHandler, err := tools.NewHandler(env)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	sseServer.AddTools(toolHandler.GetAllTools()...)
+	if err := toolHandler.Register(sseServer); err != nil {
+		log.Fatal(err.Error())
+	}
 
 	templateHandler, err := templates.NewHandler(env)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	sseServer.AddResourceTemplates(templateHandler.GetAllResourceTemplates()...)
+	if err := templateHandler.Register(sseServer); err != nil {
+		log.Fatal(err.Error())
+	}
 
 	resourceHandler, err := resources.NewHandler(env)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	sseServer.AddResources(resourceHandler.GetAllResources()...)
+	if err := resourceHandler.Register(sseServer); err != nil {
+		log.Fatal(err.Error())
+	}
 
 	handler := mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
 		url := request.URL.Path

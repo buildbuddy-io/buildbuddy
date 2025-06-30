@@ -15,6 +15,6 @@ func NewHandler(env environment.Env) (*ResourceHandler, error) {
 	}, nil
 }
 
-func (r *ResourceHandler) GetAllResources() []*mcp.ServerResource {
+func (r *ResourceHandler) Register(server *mcp.Server) error {
 	return nil
 }
