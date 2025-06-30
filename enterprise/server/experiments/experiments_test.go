@@ -1,3 +1,6 @@
+// TODO: figure out how to properly shut down flagd in these tests.
+// https://github.com/open-feature/go-sdk/issues/397
+
 package experiments_test
 
 import (
@@ -92,6 +95,22 @@ func TestPrimitiveFlags(t *testing.T) {
 	require.Equal(t, int64(1), fp.Int64(ctx, "int_flag", 0))
 	require.Equal(t, 99.9999999, fp.Float64(ctx, "float_flag", 1.0))
 	require.Equal(t, map[string]any{"foo": "foo value"}, fp.Object(ctx, "object_flag", nil))
+
+	b, d := fp.BooleanDetails(ctx, "bool_flag", false)
+	require.True(t, b)
+	require.Equal(t, "on", d.Variant())
+	s, d := fp.StringDetails(ctx, "string_flag", "default")
+	require.Equal(t, "value-is-foo", s)
+	require.Equal(t, "foo", d.Variant())
+	i, d := fp.Int64Details(ctx, "int_flag", 0)
+	require.Equal(t, int64(1), i)
+	require.Equal(t, "small", d.Variant())
+	f, d := fp.Float64Details(ctx, "float_flag", 0)
+	require.Equal(t, 99.9999999, f)
+	require.Equal(t, "big", d.Variant())
+	m, d := fp.ObjectDetails(ctx, "object_flag", nil)
+	require.Equal(t, map[string]any{"foo": "foo value"}, m)
+	require.Equal(t, "foo", d.Variant())
 }
 
 func writeFlagConfig(t testing.TB, data string) string {
@@ -159,7 +178,6 @@ func TestStablePercentage(t *testing.T) {
 		// Create a new provider after each write. Otherwise the test can race
 		// with the provider's internal goroutine that reads the file.
 		provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
-		// defering provider.Shutdown() causes a "close of closed channel" panic
 		openfeature.SetProviderAndWait(provider)
 		fp, err := experiments.NewFlagProvider("test-name")
 		require.NoError(t, err)
@@ -214,7 +232,6 @@ func TestSelection(t *testing.T) {
 	offlineFlagPath := writeFlagConfig(t, testFlags)
 	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
 	openfeature.SetProviderAndWait(provider)
-	defer provider.Shutdown()
 
 	fp, err := experiments.NewFlagProvider("test-name")
 	require.NoError(t, err)
