@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/goredisstore.v8"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -336,7 +338,9 @@ func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
 	key, err := quota.GetKey(ctx, qm.env)
 	if err != nil {
-		log.CtxWarningf(ctx, "Failed to get quota key for namespace %s: %s", namespace, err)
+		metrics.QuotaKeyEmptyCount.With(prometheus.Labels{
+			metrics.QuotaNamespace: namespace,
+		}).Inc()
 		return nil
 	}
 	b := qm.findBucket(namespace, key)
@@ -355,6 +359,10 @@ func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity in
 	if allow {
 		return nil
 	} else {
+		metrics.QuotaExceeded.With(prometheus.Labels{
+			metrics.QuotaNamespace: namespace,
+			metrics.QuotaKey:       key,
+		}).Inc()
 		return status.ResourceExhaustedErrorf("quota exceeded for %q", namespace)
 	}
 }

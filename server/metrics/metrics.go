@@ -152,14 +152,11 @@ const (
 	// Status of the task size write request: `ok`, `missing_stats` or `error`.
 	TaskSizeWriteStatusLabel = "status"
 
-	// The full name of the grpc method: `/<service>/<method>`
-	GRPCFullMethodLabel = "grpc_full_method"
+	// The namespace that is protected by quota manager.
+	QuotaNamespace = "quota_namespace"
 
 	// The key used for quota accounting, either a group ID or an IP address.
 	QuotaKey = "quota_key"
-
-	// Whether the request was allowed by quota manager.
-	QuotaAllowed = "quota_allowed"
 
 	// Describes the type of cache request
 	CacheRequestType = "type"
@@ -2260,15 +2257,23 @@ var (
 		HealthCheckName,
 	})
 
-	RPCsHandledTotalByQuotaKey = promauto.NewCounterVec(prometheus.CounterOpts{
+	QuotaExceeded = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "quota",
-		Name:      "rpcs_handled_total_by_quota_key",
-		Help:      "Total number of RPCs completed on the server by quota_key, regardless of success or failure.",
+		Name:      "quota_exceeded_count",
+		Help:      "Total number of calls banned by quota server",
 	}, []string{
-		GRPCFullMethodLabel,
+		QuotaNamespace,
 		QuotaKey,
-		QuotaAllowed,
+	})
+
+	QuotaKeyEmptyCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "quota",
+		Name:      "quota_key_empty_count",
+		Help:      "Total number of calls with empty quota key",
+	}, []string{
+		QuotaNamespace,
 	})
 
 	ClickhouseInsertedCount = promauto.NewCounterVec(prometheus.CounterOpts{
