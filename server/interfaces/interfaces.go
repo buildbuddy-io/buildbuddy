@@ -1761,12 +1761,30 @@ type HitTrackerFactory interface {
 // ExperimentFlagProvider can be use for getting a flag value for a request to
 // enable or disable some experimental functionality. The experiment config is
 // managed outside of the app.
+//
+// Two different sets of methods are provided:
+//   - Boolean, String, Float64, Int64, Object: returns the flag value directly.
+//   - BooleanDetails, StringDetails, Float64Details, Int64Details, ObjectDetails:
+//     returns the flag value and details, including variant name.
 type ExperimentFlagProvider interface {
 	Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool
 	String(ctx context.Context, flagName string, defaultValue string, opts ...any) string
 	Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64
 	Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64
 	Object(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) map[string]any
+
+	BooleanDetails(ctx context.Context, flagName string, defaultValue bool, opts ...any) (bool, ExperimentFlagDetails)
+	StringDetails(ctx context.Context, flagName string, defaultValue string, opts ...any) (string, ExperimentFlagDetails)
+	Float64Details(ctx context.Context, flagName string, defaultValue float64, opts ...any) (float64, ExperimentFlagDetails)
+	Int64Details(ctx context.Context, flagName string, defaultValue int64, opts ...any) (int64, ExperimentFlagDetails)
+	ObjectDetails(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) (map[string]any, ExperimentFlagDetails)
+}
+
+// ExperimentFlagDetails contains details about the flag evaluation.
+type ExperimentFlagDetails interface {
+	// Variant returns the variant name. If the flag is either not configured or
+	// could not be evaluated, it returns an empty string.
+	Variant() string
 }
 
 // Wrapper around a bspb.ByteStream_ReadServer that supports directly providing
