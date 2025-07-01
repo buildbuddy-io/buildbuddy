@@ -1051,8 +1051,11 @@ func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient
 	return nil
 }
 
-// bytestreamReadFiles reads the given digest from the bytestream and creates
-// files pointing to those contents.
+// bytestreamReadToFilesystem streams a blob to the filesystem locations
+// listed in fps. The blob is fetched once and linked into the remaining
+// locations.
+// The blob is optionally added to the file cache, if the file cache
+// is enabled.
 func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer, opts *DownloadTreeOpts) error {
 	fp, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
 		fp0 := fps[0]
@@ -1103,6 +1106,7 @@ func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsCl
 	return nil
 }
 
+// bytestreamReadToFilecache streams a blob directly into the filecache.
 func (ff *BatchFileFetcher) bytestreamReadToFilecache(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer) error {
 	_, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
 		fp0 := fps[0]
