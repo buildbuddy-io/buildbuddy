@@ -11,6 +11,7 @@ Here is a rough high level architecture diagram:
 ![Architecture diagram](arch.jpg)
 
 The components of the BuildBuddy architecture which are relevant to search are:
+
 1. Search indexer: indexes documents for efficient regex search querying
 2. Search query service: returns ranked document matches for regex search queries
 3. Kythe indexer: produces annotation graphs describing the relationships between different code
@@ -53,6 +54,7 @@ Querying the indices is a very close port of Russ Cox's regex->trigram algorithm
 
 The index itself can be queried with [s-expressions](https://en.wikipedia.org/wiki/S-expression).
 The following grammar is supported:
+
 ```lisp
 	(:eq fieldName "ngram") # Find matches for "ngram" in fieldName. Example: (:eq filename ".go")
 	(:none)                 # Match nothing.
@@ -127,20 +129,21 @@ The codesearch implementation has no explicit known bugs, but is also relatively
 Query and index performance have been evaluated, but not tested at significant scale.
 
 Areas that deserve additional attention:
+
 1. Result ranking. Currently this uses [BM25](https://en.wikipedia.org/wiki/Okapi_BM25), but
-  significant domain-specific improvements could be made here - everything from heuristic based
-  weighting to rank test files lower, to page-rank-esque algorithms using Kythe data to rank
-  definitions and popular usages higher.
+   significant domain-specific improvements could be made here - everything from heuristic based
+   weighting to rank test files lower, to page-rank-esque algorithms using Kythe data to rank
+   definitions and popular usages higher.
 2. Scaling. It's unclear how far the current deployment will scale. The current architecture would
-  support query service (but not index service!) replication without many (any?) changes. The
-  architecture could, in theory, support index sharding to distribute query and indexing load,
-  however this would be a significant project that would bring all the usual
-  large-scale-distributed-system challenges, and should probably only be undertaken if clearly
-  necessary. Depending on usage patterns, a simpler alternative might be to partition
-  based on Buildbuddy organizations, altough this would deviate from the general desire for a
-  multi-tenant architecture.
+   support query service (but not index service!) replication without many (any?) changes. The
+   architecture could, in theory, support index sharding to distribute query and indexing load,
+   however this would be a significant project that would bring all the usual
+   large-scale-distributed-system challenges, and should probably only be undertaken if clearly
+   necessary. Depending on usage patterns, a simpler alternative might be to partition
+   based on Buildbuddy organizations, altough this would deviate from the general desire for a
+   multi-tenant architecture.
 3. Search result quality measuring and monitoring. See the
-  [POC ratings harness](test/quality/README.md) for some ideas here.
+   [POC ratings harness](test/quality/README.md) for some ideas here.
 
 ## Kythe
 
@@ -151,12 +154,13 @@ to/from generated code). The Kythe repo has a
 is not included in the release and is of unknown quality.
 
 Immediate Kythe TODOs would include:
-* Support proto<->Go navigation. This includes plumbing the required argument to `protoc`, and build
+
+- Support proto<->Go navigation. This includes plumbing the required argument to `protoc`, and build
   system changes to support the extra metadata file output. It may also include Go indexer changes.
   See [Kythe generated code docs](https://kythe.io/docs/schema/indexing-generated-code.html) for
   general background on how linking generated code works.
-* Test/finish the Typescript indexer.
-* Make the Kythe workflow work on a wider range of repositories by supporting custom build setup
+- Test/finish the Typescript indexer.
+- Make the Kythe workflow work on a wider range of repositories by supporting custom build setup
   steps. See this [POC](https://github.com/buildbuddy-io/buildbuddy/pull/9743) for one idea on how
   to do this.
 
@@ -168,12 +172,12 @@ with the Codesearch indices, so for fast-changing codebases, the Kythe data will
 
 There are alternative technologies:
 
-* [Treesitter](https://tree-sitter.github.io/tree-sitter/) is used
+- [Treesitter](https://tree-sitter.github.io/tree-sitter/) is used
   by GitHub. It is parser-based, and so will never achieve the same accuracy as Kythe. However, it
   is faster, supports incremental indexing, has much broader language support, is actively
   developed, and seems to have good community support (many third-party language bindings exist).
 
-* [SCIP](https://github.com/sourcegraph/scip) is Sourcegraph's open-source protocol for indexing
+- [SCIP](https://github.com/sourcegraph/scip) is Sourcegraph's open-source protocol for indexing
   source code, with a primary goal of "supporting code navigation at the fidelity of
   state-of-the-art IDEs". This seems less mature (at least in the open-source domain) than
   Treesitter, and is a bit lower level.
@@ -250,13 +254,14 @@ on everything, but use Kythe annotations if/when they are available.
 ## Running Kythe
 
 1. Download the latest
-  [BuildBuddy Kythe pre-release](https://github.com/buildbuddy-io/kythe/releases), extract it, and set an environment variable (`KYTHE_DIR`) pointing to the extracted directory.
+   [BuildBuddy Kythe pre-release](https://github.com/buildbuddy-io/kythe/releases), extract it, and set an environment variable (`KYTHE_DIR`) pointing to the extracted directory.
 2. Build with a command something like this:
 
    ```
    bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR //...
    ```
-See the [Kythe indexing workflow](//enterprise/server/workflow/config/config.go) for more detail.
+
+   See the [Kythe indexing workflow](//enterprise/server/workflow/config/config.go) for more detail.
 
 ## Exploring Kythe annotation data directly
 
@@ -269,6 +274,7 @@ Note that you can also perform all these operations through the Codesearch Kythe
 it can just be a bit more cumbersome.
 
 The general process for exploring is:
+
 1. Use `ls -uris` iteratively to find the URI for the file you are interested in
 2. Use `decor` to find the URI for the specific line/anchor/ticket you are interested in
 3. Use a combination of `xrefs` and `edges` to track down the specific link or data you are looking
