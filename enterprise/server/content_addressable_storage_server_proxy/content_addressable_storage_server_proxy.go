@@ -163,6 +163,10 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.Digests)))
 
+	// Store auth headers in context so they can be reused between the
+	// atime_updater and the hit_tracker_client.
+	ctx = authutil.ContextWithCachedAuthHeaders(ctx, s.authenticator)
+
 	mergedResp := repb.BatchReadBlobsResponse{}
 	mergedDigests := []*repb.Digest{}
 	localResp := &repb.BatchReadBlobsResponse{}
