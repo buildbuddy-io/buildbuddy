@@ -1,7 +1,7 @@
+import Image from "@theme/IdealImage";
 import React from "react";
 import common from "../../css/common.module.css";
 import styles from "./oss.module.css";
-import Image from "@theme/IdealImage";
 
 const repos = [
   {

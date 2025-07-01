@@ -1,12 +1,10 @@
-import React from "react";
-import Layout from "@theme/Layout";
-import BlogPostItem from "../BlogPostItem";
-import BlogPostPaginator from "@theme/BlogPostPaginator";
 import type { Props } from "@theme/BlogPostPage";
-import BlogSidebar from "../BlogSidebar";
+import BlogPostPaginator from "@theme/BlogPostPaginator";
 import EditThisPage from "@theme/EditThisPage";
-
-import styles from "./styles.module.css";
+import Layout from "@theme/Layout";
+import React from "react";
+import BlogPostItem from "../BlogPostItem";
+import BlogSidebar from "../BlogSidebar";
 
 function BlogPostPage(props: Props): JSX.Element {
   const { content: BlogPostContents, sidebar } = props;

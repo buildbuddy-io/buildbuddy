@@ -18,7 +18,6 @@ ts_library(
         "//app/capabilities",
         "//app/compare:compare_invocations",
         "//app/components/button",
-        "//app/components/dialog",
         "//app/docs:setup",
         "//app/errors:error_service",
         "//app/favicon",

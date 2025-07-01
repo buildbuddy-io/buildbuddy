@@ -1,13 +1,13 @@
+import { ArrowDownCircle, FileCode } from "lucide-react";
 import React from "react";
-import InvocationModel from "./invocation_model";
-import rpcService, { CancelablePromise } from "../service/rpc_service";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { target } from "../../proto/target_ts_proto";
-import { ArrowDownCircle, FileCode } from "lucide-react";
-import TargetGroupCard from "./invocation_target_group_card";
-import format from "../format/format";
 import DigestComponent from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
+import format from "../format/format";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
+import InvocationModel from "./invocation_model";
+import TargetGroupCard from "./invocation_target_group_card";
 
 interface Props {
   model: InvocationModel;

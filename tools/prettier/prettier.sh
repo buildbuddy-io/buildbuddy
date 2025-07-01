@@ -19,6 +19,12 @@ f=
 set -e
 # --- end runfiles.bash initialization v3 ---
 
+# If PRETTIER_PLUGIN is not set, we are likely running from buildfix.sh
+# and should use the relative path to the plugin.
+if [[ -z "${PRETTIER_PLUGIN-}" ]]; then
+  export PRETTIER_PLUGIN="$(pwd)/node_modules/prettier-plugin-organize-imports/index.js"
+fi
+
 if [[ -n "${BUILD_WORKSPACE_DIRECTORY}" ]]; then
   cd "$BUILD_WORKSPACE_DIRECTORY"
 fi
@@ -89,4 +95,4 @@ else
   PRETTIER_COMMAND=("$(rlocation buildbuddy/tools/prettier/prettier_bin_/prettier_bin)")
 fi
 
-BAZEL_BINDIR=. "${PRETTIER_COMMAND[@]}" "${paths[@]}" "$@"
+BAZEL_BINDIR=. "${PRETTIER_COMMAND[@]}" --plugin="${PRETTIER_PLUGIN}" "${paths[@]}" "$@"

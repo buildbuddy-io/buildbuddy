@@ -1,18 +1,18 @@
 import React from "react";
 
 import {
-  ResponsiveContainer,
-  ComposedChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
   Bar,
-  Line,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
   Legend,
+  Line,
+  ReferenceArea,
+  ResponsiveContainer,
   Tooltip,
   TooltipProps,
-  Cell,
-  ReferenceArea,
+  XAxis,
+  YAxis,
 } from "recharts";
 import { CategoricalChartState } from "recharts/types/chart/types";
 import { TrendsChartId } from "../../../app/router/router";

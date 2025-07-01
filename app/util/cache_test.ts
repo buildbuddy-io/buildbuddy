@@ -1,7 +1,7 @@
 import Long from "long";
-import { BytestreamURL, parseBytestreamURL } from "./cache";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
+import { BytestreamURL, parseBytestreamURL } from "./cache";
 
 const Digest = build.bazel.remote.execution.v2.Digest;
 const DigestFunction = build.bazel.remote.execution.v2.DigestFunction;

@@ -1,5 +1,5 @@
-import React from "react";
 import * as monaco from "monaco-editor";
+import React from "react";
 import Select, { Option } from "../../../../app/components/select/select";
 
 interface Props {

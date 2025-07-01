@@ -13,7 +13,5 @@ ts_library(
         "//app/components/dialog:simple_modal_dialog",
         "//app/components/input",
         "//app/errors:error_service",
-        "//app/service:rpc_service",
-        "//proto:group_ts_proto",
     ],
 )

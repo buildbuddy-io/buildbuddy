@@ -67,7 +67,6 @@ ts_library(
         "//app/router",
         "//enterprise/app/review:review_controller",
         "//enterprise/app/review:review_model",
-        "//proto:github_ts_proto",
     ],
 )
 

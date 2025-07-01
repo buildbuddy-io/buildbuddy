@@ -1,17 +1,17 @@
-import React from "react";
 import Layout from "@theme/Layout";
+import React from "react";
 import common from "../css/common.module.css";
 
-import Hero from "../components/hero/hero";
 import Brands from "../components/brands/brands";
-import Customers from "../components/customers/customers";
-import RBE from "../components/rbe/rbe";
-import Logs from "../components/logs/logs";
-import Enterprise from "../components/enterprise/enterprise";
-import Quote from "../components/quote/quote";
-import Integrations from "../components/integrations/integrations";
-import OSS from "../components/oss/oss";
 import CTA from "../components/cta/cta";
+import Customers from "../components/customers/customers";
+import Enterprise from "../components/enterprise/enterprise";
+import Hero from "../components/hero/hero";
+import Integrations from "../components/integrations/integrations";
+import Logs from "../components/logs/logs";
+import OSS from "../components/oss/oss";
+import Quote from "../components/quote/quote";
+import RBE from "../components/rbe/rbe";
 
 function Index() {
   return (

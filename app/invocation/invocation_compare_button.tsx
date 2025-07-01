@@ -1,10 +1,10 @@
 import React from "react";
 import { Subscription } from "rxjs";
+import capabilities from "../capabilities/capabilities";
 import { OutlinedButton } from "../components/button/button";
 import Menu, { MenuItem } from "../components/menu/menu";
 import Popup from "../components/popup/popup";
 import router from "../router/router";
-import capabilities from "../capabilities/capabilities";
 import service, { IdAndModel } from "./invocation_comparison_service";
 
 export interface InvocationCompareButtonComponentProps {

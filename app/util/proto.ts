@@ -1,7 +1,7 @@
 import Long from "long";
 import { Reader } from "protobufjs";
-import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_duration } from "../../proto/duration_ts_proto";
+import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 
 /**
  * Generic interface exposed by message classes.

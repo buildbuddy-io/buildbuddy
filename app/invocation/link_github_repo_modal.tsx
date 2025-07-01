@@ -1,14 +1,14 @@
 import React from "react";
 import { OutlinedButton } from "../components/button/button";
-import Modal from "../components/modal/modal";
+import LinkButton from "../components/button/link_button";
 import Dialog, {
-  DialogHeader,
-  DialogTitle,
   DialogBody,
   DialogFooter,
   DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
 } from "../components/dialog/dialog";
-import LinkButton from "../components/button/link_button";
+import Modal from "../components/modal/modal";
 
 export interface LinkGithubRepoModalProps {
   isOpen: boolean;

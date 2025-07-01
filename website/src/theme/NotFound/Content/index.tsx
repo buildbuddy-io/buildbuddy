@@ -1,9 +1,8 @@
-import React from "react";
-import clsx from "clsx";
-import Translate from "@docusaurus/Translate";
-import type { Props } from "@theme/NotFound/Content";
 import Heading from "@theme/Heading";
 import Image from "@theme/IdealImage";
+import type { Props } from "@theme/NotFound/Content";
+import clsx from "clsx";
+import React from "react";
 
 export default function NotFoundContent({ className }: Props): JSX.Element {
   return (

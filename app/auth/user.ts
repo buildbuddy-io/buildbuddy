@@ -1,7 +1,7 @@
 import { grp } from "../../proto/group_ts_proto";
 import { user_id } from "../../proto/user_id_ts_proto";
-import { BuildBuddyServiceRpcName } from "../service/rpc_service";
 import { user } from "../../proto/user_ts_proto";
+import { BuildBuddyServiceRpcName } from "../service/rpc_service";
 
 export class User {
   displayUser: user_id.DisplayUser;

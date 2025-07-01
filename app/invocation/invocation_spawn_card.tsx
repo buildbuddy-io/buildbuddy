@@ -1,18 +1,18 @@
-import React from "react";
-import InvocationModel from "./invocation_model";
-import Select, { Option } from "../components/select/select";
-import { build } from "../../proto/remote_execution_ts_proto";
-import rpcService from "../service/rpc_service";
-import { OutlinedButton } from "../components/button/button";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { tools } from "../../proto/spawn_ts_proto";
-import format from "../format/format";
-import error_service from "../errors/error_service";
-import * as varint from "varint";
 import { AlertCircle, CheckCircle, Download } from "lucide-react";
+import React from "react";
+import * as varint from "varint";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { build } from "../../proto/remote_execution_ts_proto";
+import { tools } from "../../proto/spawn_ts_proto";
+import { OutlinedButton } from "../components/button/button";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
+import Select, { Option } from "../components/select/select";
+import error_service from "../errors/error_service";
+import format from "../format/format";
+import rpcService from "../service/rpc_service";
 import { digestToString } from "../util/cache";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;

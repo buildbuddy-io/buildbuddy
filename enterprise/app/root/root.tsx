@@ -1,54 +1,47 @@
+import { AlertCircle, Check, Copy, LogOut } from "lucide-react";
 import React, { Suspense } from "react";
+import AlertComponent from "../../../app/alert/alert";
 import authService, { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import CompareInvocationsComponent from "../../../app/compare/compare_invocations";
+import { OutlinedButton } from "../../../app/components/button/button";
 import SetupComponent from "../../../app/docs/setup";
-import AlertComponent from "../../../app/alert/alert";
+import errorService from "../../../app/errors/error_service";
 import faviconService from "../../../app/favicon/favicon";
 import FooterComponent from "../../../app/footer/footer";
-import WorkflowsComponent from "../workflows/workflows";
 import InvocationComponent from "../../../app/invocation/invocation";
 import MenuComponent from "../../../app/menu/menu";
 import router, { Path } from "../../../app/router/router";
-import errorService from "../../../app/errors/error_service";
+import Shortcuts from "../../../app/shortcuts/shortcuts";
+import AuditLogsComponent from "../auditlogs/auditlogs";
+import GroupSearchComponent from "../group_search/group_search";
 import HistoryComponent from "../history/history";
 import LoginComponent from "../login/login";
 import CreateOrgComponent from "../org/create_org";
 import JoinOrgComponent from "../org/join_org";
 import RepoComponent from "../repo/repo";
 import SettingsComponent from "../settings/settings";
-import SidebarComponent from "../sidebar/sidebar";
 import ShortcutsComponent from "../shortcuts/shortcuts";
+import SidebarComponent from "../sidebar/sidebar";
 import TapComponent from "../tap/tap";
 import TrendsComponent from "../trends/trends";
-import Shortcuts from "../../../app/shortcuts/shortcuts";
 import UsageComponent from "../usage/usage";
-import GroupSearchComponent from "../group_search/group_search";
-import AuditLogsComponent from "../auditlogs/auditlogs";
-import { AlertCircle, Check, Copy, LogOut } from "lucide-react";
-import { OutlinedButton } from "../../../app/components/button/button";
-import Dialog, {
-  DialogBody,
-  DialogFooter,
-  DialogFooterButtons,
-  DialogHeader,
-  DialogTitle,
-} from "../../../app/components/dialog/dialog";
+import WorkflowsComponent from "../workflows/workflows";
 const CodeComponent = React.lazy(() => import("../code/code"));
 const CodeComponentV2 = React.lazy(() => import("../code/code_v2"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 const CodeReviewComponent = React.lazy(() => import("../review/review"));
 
-import ExecutorsComponent from "../executors/executors";
-import UserPreferences from "../../../app/preferences/preferences";
-import OrgAccessDeniedComponent from "../org/org_access_denied";
-import rpc_service from "../../../app/service/rpc_service";
-import { api_key } from "../../../proto/api_key_ts_proto";
-import { copyToClipboard } from "../../../app/util/clipboard";
 import alert_service from "../../../app/alert/alert_service";
 import PickerComponent from "../../../app/picker/picker";
-import CodeSearchComponent from "../codesearch/codesearch";
+import UserPreferences from "../../../app/preferences/preferences";
+import rpc_service from "../../../app/service/rpc_service";
+import { copyToClipboard } from "../../../app/util/clipboard";
+import { api_key } from "../../../proto/api_key_ts_proto";
 import CliLoginComponent from "../cli_login/cli_login";
+import CodeSearchComponent from "../codesearch/codesearch";
+import ExecutorsComponent from "../executors/executors";
+import OrgAccessDeniedComponent from "../org/org_access_denied";
 
 interface State {
   user?: User;

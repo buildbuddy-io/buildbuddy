@@ -12,8 +12,6 @@ ts_library(
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//app/components/button",
-        "//app/components/filter_input",
-        "//app/components/input",
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/router",
@@ -33,7 +31,6 @@ ts_library(
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
-        "//app/components/button",
         "//proto:search_ts_proto",
     ],
 )

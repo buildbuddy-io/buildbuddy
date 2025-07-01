@@ -1,9 +1,9 @@
+import { Menu } from "lucide-react";
 import React from "react";
 import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
-import router, { Path } from "../router/router";
 import UserPreferences from "../preferences/preferences";
-import { Menu } from "lucide-react";
+import router from "../router/router";
 
 interface Props {
   children?: any;
