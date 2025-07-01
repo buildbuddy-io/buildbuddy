@@ -247,6 +247,17 @@ on everything, but use Kythe annotations if/when they are available.
   $ grpcurl -plaintext -H "x-buildbuddy-api-key:YOUR_DEV_API_KEY" -d '{"decorations_request":{"location": {"ticket":"kythe://buildbuddy?path=proto/spawn_diff.proto"}, "references":true, "target_definitions": true, "semantic_scopes": true, "diagnostics": true}}' localhost:2633 codesearch.service.CodesearchService.KytheProxy
 ```
 
+## Running Kythe
+
+1. Download the latest
+  [BuildBuddy Kythe pre-release](https://github.com/buildbuddy-io/kythe/releases), extract it, and set an environment variable (`KYTHE_DIR`) pointing to the extracted directory.
+2. Build with a command something like this:
+
+   ```
+   bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR //...
+   ```
+See the [Kythe indexing workflow](//enterprise/server/workflow/config/config.go) for more detail.
+
 ## Exploring Kythe annotation data directly
 
 These commands require the Kythe leveldb tables (`kythe_tables` from the workflow), not the
