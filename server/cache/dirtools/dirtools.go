@@ -860,12 +860,16 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	return nil
 }
 
-func (ff *BatchFileFetcher) checkFileCache(filePointers []*FilePointer, opts *DownloadTreeOpts) error {
+func (ff *BatchFileFetcher) checkAndMaybeLinkFromFileCache(filePointers []*FilePointer, opts *DownloadTreeOpts) error {
 	if ff.onlyDownloadToFileCache {
-		for _, fp := range filePointers {
-			if !ff.env.GetFileCache().ContainsFile(ff.ctx, fp.FileNode) {
-				return status.NotFoundErrorf("File %s not found in cache", fp.FileNode.Digest.Hash)
-			}
+		if len(filePointers) == 0 {
+			return status.FailedPreconditionErrorf("file pointers list is empty")
+		}
+		// All the file pointers refer to the same artifact so we only need to
+		// check once.
+		fp := filePointers[0]
+		if !ff.env.GetFileCache().ContainsFile(ff.ctx, fp.FileNode) {
+			return status.NotFoundErrorf("File %s not found in cache", fp.FileNode.Digest.Hash)
 		}
 	} else {
 		err := ff.treeWrangler.LinkFromFileCache(ff.ctx, filePointers, opts)
@@ -886,7 +890,9 @@ type digestToFetch struct {
 
 func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 	defer func() {
-		ff.doneErr <- retErr
+		if retErr != nil {
+			ff.doneErr <- retErr
+		}
 	}()
 
 	newRequest := func() *repb.BatchReadBlobsRequest {
@@ -939,7 +945,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 			linkEG.Go(func() error {
 				// If the digest is in the file cache, there's nothing
 				// more to do.
-				if err := ff.checkFileCache(filePointers, opts); err == nil {
+				if err := ff.checkAndMaybeLinkFromFileCache(filePointers, opts); err == nil {
 					ff.notifyFetchCompleted(dk)
 					return nil
 				}
