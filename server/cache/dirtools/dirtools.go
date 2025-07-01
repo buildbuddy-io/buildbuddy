@@ -930,7 +930,7 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) error {
 			}
 
 			linkEG.Go(func() error {
-				// If the the digest is in the file cache, there's nothing
+				// If the digest is in the file cache, there's nothing
 				// more to do.
 				if err := ff.checkFileCache(filePointers, opts); err == nil {
 					ff.notifyFetchCompleted(dk)
