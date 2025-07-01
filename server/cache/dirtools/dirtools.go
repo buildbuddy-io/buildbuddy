@@ -787,12 +787,12 @@ func (ff *BatchFileFetcher) supportsCompression() bool {
 
 func (ff *BatchFileFetcher) notifyFetchCompleted(fk fetchKey) {
 	ff.mu.Lock()
+	defer ff.mu.Unlock()
 	delete(ff.remainingFetches, fk)
 	for _, w := range ff.fetchWaiters[fk] {
 		w <- struct{}{}
 	}
 	delete(ff.fetchWaiters, fk)
-	ff.mu.Unlock()
 }
 
 func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, opts *DownloadTreeOpts) error {
