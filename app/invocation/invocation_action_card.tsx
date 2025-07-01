@@ -318,7 +318,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       })
       .catch((e) => {
         const error = BuildBuddyError.parse(e);
-        if (error.code === "NotFound") {
+        if (error.code === "NotFound" || error.code === "Unimplemented") {
           return;
         }
         errorService.handleError(e);
