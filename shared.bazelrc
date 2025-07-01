@@ -269,6 +269,7 @@ common:probers-shared --config=remote-shared
 common:probers-shared --config=target-linux-x86
 common:probers-shared --config=download-minimal
 common:probers-shared --config=cache-shared
+common:probers-shared --remote_header=x-buildbuddy-trace=force
 
 # Build with --config=probers to use BuildBuddy RBE in the probers org.
 common:probers --config=probers-shared
