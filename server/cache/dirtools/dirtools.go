@@ -1322,19 +1322,19 @@ type inputTreeWrangler struct {
 	reqs   chan taskRequest
 	done   chan struct{}
 
-	mkdirAllLatency          prometheus.Observer
-	symlinkLatency           prometheus.Observer
-	linkFromFileCacheLatency prometheus.Observer
+	mkdirAllLatencyUsec          prometheus.Observer
+	symlinkLatencyUsec           prometheus.Observer
+	linkFromFileCacheLatencyUsec prometheus.Observer
 }
 
 func newInputTreeWrangler(env environment.Env) *inputTreeWrangler {
 	w := &inputTreeWrangler{
-		env:                      env,
-		done:                     make(chan struct{}),
-		reqs:                     make(chan taskRequest, inputTreeOpsQueueSize),
-		mkdirAllLatency:          metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "mkdirall"}),
-		symlinkLatency:           metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "symlink"}),
-		linkFromFileCacheLatency: metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_from_file_cache"}),
+		env:                          env,
+		done:                         make(chan struct{}),
+		reqs:                         make(chan taskRequest, inputTreeOpsQueueSize),
+		mkdirAllLatencyUsec:          metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "mkdirall"}),
+		symlinkLatencyUsec:           metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "symlink"}),
+		linkFromFileCacheLatencyUsec: metrics.InputTreeSetupOpLatencyUsec.With(prometheus.Labels{metrics.OpLabel: "link_from_file_cache"}),
 	}
 	if *inputTreeSetupParallelism == -1 {
 		w.direct = true
@@ -1386,7 +1386,7 @@ func (w *inputTreeWrangler) MkdirAll(ctx context.Context, path string, perm os.F
 	if err != nil {
 		return err
 	}
-	w.mkdirAllLatency.Observe(time.Since(start).Seconds())
+	w.mkdirAllLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
 	return nil
 }
 
@@ -1396,7 +1396,7 @@ func (w *inputTreeWrangler) Symlink(ctx context.Context, oldname string, newname
 	if err != nil {
 		return err
 	}
-	w.symlinkLatency.Observe(time.Since(start).Seconds())
+	w.symlinkLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
 	return nil
 }
 
@@ -1406,7 +1406,7 @@ func (w *inputTreeWrangler) LinkFromFileCache(ctx context.Context, filePointers 
 	if err != nil {
 		return err
 	}
-	w.linkFromFileCacheLatency.Observe(time.Since(start).Seconds())
+	w.linkFromFileCacheLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
 	return nil
 }
 
