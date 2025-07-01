@@ -663,12 +663,8 @@ func writeFile(fp *FilePointer, data []byte, opts *DownloadTreeOpts) error {
 	return f.Close()
 }
 
-func (ff *BatchFileFetcher) writeToFileCache(fps []*FilePointer, data []byte) error {
-	if len(fps) == 0 {
-		return status.FailedPreconditionError("no files to write to cache")
-	}
-	fp := fps[0]
-	w, err := ff.env.GetFileCache().Writer(ff.ctx, fp.FileNode, ff.digestFunction)
+func (ff *BatchFileFetcher) writeToFileCache(fileNode *repb.FileNode, data []byte) error {
+	w, err := ff.env.GetFileCache().Writer(ff.ctx, fileNode, ff.digestFunction)
 	if err != nil {
 		return err
 	}
@@ -829,12 +825,12 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 			if !ok || len(ptrs) == 0 {
 				continue
 			}
+			ptr := ptrs[0]
 			if ff.onlyDownloadToFileCache {
-				if err := ff.writeToFileCache(ptrs, res.Data); err != nil {
+				if err := ff.writeToFileCache(ptr.FileNode, res.Data); err != nil {
 					return err
 				}
 			} else {
-				ptr := ptrs[0]
 				if err := writeFile(ptr, res.Data, opts); err != nil {
 					return err
 				}
