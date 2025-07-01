@@ -35,6 +35,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -64,8 +65,8 @@ func groupIDStringFromContext(ctx context.Context) string {
 // The granularity is driven by file cache properties.
 // File cache contents is isolated by group, digest and executable attribute.
 type downloadDedupeKey struct {
-	groupID string
-	key     fetchKey
+	groupID  string
+	fetchKey fetchKey
 }
 
 var DownloadDeduper = singleflight.Group[downloadDedupeKey, *FilePointer]{}
@@ -725,6 +726,7 @@ type BatchFileFetcher struct {
 	filesToFetch            FileMap
 	opts                    *DownloadTreeOpts
 	onlyDownloadToFileCache bool
+	doneErr                 chan error
 
 	mu               sync.Mutex
 	remainingFetches map[fetchKey]struct{}
@@ -737,7 +739,11 @@ type BatchFileFetcher struct {
 // newBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
 // `fileCache` is optional. If present, it's used to cache a copy of the data for use by future reads.
 // `casClient` is optional. If not specified, all requests will use the ByteStream API.
-func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, filesToFetch FileMap, opts *DownloadTreeOpts) *BatchFileFetcher {
+func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, filesToFetch FileMap, opts *DownloadTreeOpts) (*BatchFileFetcher, error) {
+	if env.GetByteStreamClient() == nil {
+		return nil, status.FailedPreconditionError("ByteStreamClient not available")
+	}
+
 	remainingFetches := make(map[fetchKey]struct{})
 	for k := range filesToFetch {
 		remainingFetches[k] = struct{}{}
@@ -753,9 +759,10 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		filesToFetch:            filesToFetch,
 		opts:                    opts,
 		onlyDownloadToFileCache: opts.RootDir == "",
+		doneErr:                 make(chan error, 1),
 		remainingFetches:        remainingFetches,
 		fetchWaiters:            make(map[fetchKey][]chan struct{}),
-	}
+	}, nil
 }
 
 func (ff *BatchFileFetcher) supportsCompression() bool {
@@ -877,7 +884,11 @@ type digestToFetch struct {
 	fps []*FilePointer
 }
 
-func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) error {
+func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
+	defer func() {
+		ff.doneErr <- retErr
+	}()
+
 	newRequest := func() *repb.BatchReadBlobsRequest {
 		r := &repb.BatchReadBlobsRequest{
 			InstanceName:   ff.instanceName,
@@ -954,7 +965,15 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) error {
 			size := f.key.SizeBytes
 			if size > rpcutil.GRPCMaxSizeBytes || ff.env.GetContentAddressableStorageClient() == nil {
 				eg.Go(func() error {
-					return ff.bytestreamReadFiles(ctx, ff.instanceName, f.key, f.fps, opts)
+					if len(f.fps) == 0 {
+						return status.FailedPreconditionError("empty file pointer list for key")
+					}
+					dedupeKey := downloadDedupeKey{groupID: groupIDStringFromContext(ctx), fetchKey: f.key}
+					if ff.onlyDownloadToFileCache {
+						return ff.bytestreamReadToFilecache(ctx, ff.env.GetByteStreamClient(), dedupeKey, f.fps)
+					} else {
+						return ff.bytestreamReadToFilesystem(ctx, ff.env.GetByteStreamClient(), dedupeKey, f.fps, opts)
+					}
 				})
 				continue
 			}
@@ -1005,70 +1024,57 @@ func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
 	return ff.stats.CloneVT()
 }
 
+func (ff *BatchFileFetcher) bytestreamReadToWriter(ctx context.Context, bsClient bspb.ByteStreamClient, fileNode *repb.FileNode, w interfaces.CommittedWriteCloser) error {
+	resourceName := digest.NewCASResourceName(fileNode.Digest, ff.instanceName, ff.digestFunction)
+	if ff.supportsCompression() {
+		resourceName.SetCompressor(repb.Compressor_ZSTD)
+	}
+
+	if err := cachetools.GetBlob(ctx, bsClient, resourceName, w); err != nil {
+		_ = w.Close()
+		return err
+	}
+
+	if err := w.Commit(); err != nil {
+		return status.WrapError(err, "could not commit byte stream writer")
+	}
+
+	if err := w.Close(); err != nil {
+		return status.WrapError(err, "could not close byte stream writer")
+	}
+
+	ff.statsMu.Lock()
+	ff.stats.FileDownloadSizeBytes += fileNode.GetDigest().SizeBytes
+	ff.stats.FileDownloadCount += 1
+	ff.statsMu.Unlock()
+
+	return nil
+}
+
 // bytestreamReadFiles reads the given digest from the bytestream and creates
 // files pointing to those contents.
-func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceName string, key fetchKey, fps []*FilePointer, opts *DownloadTreeOpts) error {
-	bsClient := ff.env.GetByteStreamClient()
-	if bsClient == nil {
-		return status.FailedPreconditionErrorf("cannot bytestream read files when bsClient is not set")
-	}
-
-	if len(fps) == 0 {
-		return nil
-	}
-
-	dedupeKey := downloadDedupeKey{groupID: groupIDStringFromContext(ctx), key: key}
+func (ff *BatchFileFetcher) bytestreamReadToFilesystem(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer, opts *DownloadTreeOpts) error {
 	fp, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
 		fp0 := fps[0]
 
-		var w interfaces.CommittedWriteCloser
-		if ff.onlyDownloadToFileCache {
-			fcw, err := ff.env.GetFileCache().Writer(ctx, fp0.FileNode, ff.digestFunction)
-			if err != nil {
-				return nil, status.WrapError(err, "could not create filecache writer")
-			}
-			w = fcw
-		} else {
-			var mode os.FileMode = 0644
-			if fp0.FileNode.IsExecutable {
-				mode = 0755
-			}
-			f, err := os.OpenFile(fp0.FullPath, os.O_RDWR|os.O_CREATE, mode)
-			if err != nil {
-				return nil, err
-			}
-			w = ioutil.NewCustomCommitWriteCloser(f)
+		var mode os.FileMode = 0644
+		if fp0.FileNode.IsExecutable {
+			mode = 0755
 		}
-
-		resourceName := digest.NewCASResourceName(fp0.FileNode.Digest, instanceName, ff.digestFunction)
-		if ff.supportsCompression() {
-			resourceName.SetCompressor(repb.Compressor_ZSTD)
+		f, err := os.OpenFile(fp0.FullPath, os.O_RDWR|os.O_CREATE, mode)
+		if err != nil {
+			return nil, err
 		}
+		w := ioutil.NewCustomCommitWriteCloser(f)
 
-		if err := cachetools.GetBlob(ctx, bsClient, resourceName, w); err != nil {
-			_ = w.Close()
+		if err := ff.bytestreamReadToWriter(ctx, bsClient, fp0.FileNode, w); err != nil {
 			return nil, err
 		}
 
-		ff.statsMu.Lock()
-		ff.stats.FileDownloadSizeBytes += key.SizeBytes
-		ff.stats.FileDownloadCount += 1
-		ff.statsMu.Unlock()
-
-		if err := w.Commit(); err != nil {
-			return nil, status.WrapError(err, "could not commit byte stream input writer")
-		}
-
-		if err := w.Close(); err != nil {
-			return nil, status.WrapError(err, "could not close byte stream input writer")
-		}
-
-		if !ff.onlyDownloadToFileCache {
-			fileCache := ff.env.GetFileCache()
-			if fileCache != nil {
-				if err := fileCache.AddFile(ff.ctx, fp0.FileNode, fp0.FullPath); err != nil {
-					log.Warningf("Error adding file to filecache: %s", err)
-				}
+		fileCache := ff.env.GetFileCache()
+		if fileCache != nil {
+			if err := fileCache.AddFile(ff.ctx, fp0.FileNode, fp0.FullPath); err != nil {
+				log.Warningf("Error adding file to filecache: %s", err)
 			}
 		}
 
@@ -1078,23 +1084,45 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		return err
 	}
 
-	if !ff.onlyDownloadToFileCache {
-		// Depending on whether or not this bytestream request was deduped, fp
-		// will either be == fps[0], or a different fp from a concurrent request
-		// made by the same user.
-		// Check for that case, to avoid copying a file over itself, and copy fp
-		// to all of the destination fps.
-		for _, dest := range fps {
-			if fp == dest {
-				continue
-			}
-			if err := copyFile(fp, dest, opts); err != nil {
-				return err
-			}
+	// Depending on whether or not this bytestream request was deduped, fp
+	// will either be == fps[0], or a different fp from a concurrent request
+	// made by the same user.
+	// Check for that case, to avoid copying a file over itself, and copy fp
+	// to all of the destination fps.
+	for _, dest := range fps {
+		if fp == dest {
+			continue
+		}
+		if err := copyFile(fp, dest, opts); err != nil {
+			return err
 		}
 	}
 
-	ff.notifyFetchCompleted(key)
+	ff.notifyFetchCompleted(dedupeKey.fetchKey)
+
+	return nil
+}
+
+func (ff *BatchFileFetcher) bytestreamReadToFilecache(ctx context.Context, bsClient bspb.ByteStreamClient, dedupeKey downloadDedupeKey, fps []*FilePointer) error {
+	_, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
+		fp0 := fps[0]
+
+		w, err := ff.env.GetFileCache().Writer(ctx, fp0.FileNode, ff.digestFunction)
+		if err != nil {
+			return nil, status.WrapError(err, "could not create filecache writer")
+		}
+
+		if err := ff.bytestreamReadToWriter(ctx, bsClient, fp0.FileNode, w); err != nil {
+			return nil, err
+		}
+
+		return fp0, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	ff.notifyFetchCompleted(dedupeKey.fetchKey)
 
 	return nil
 }
@@ -1122,6 +1150,8 @@ func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) erro
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
+	case err := <-ff.doneErr:
+		return status.WrapError(err, "fetcher failed")
 	case <-done:
 		return nil
 	}
@@ -1510,7 +1540,11 @@ func (f *TreeFetcher) Start() error {
 		return err
 	}
 
-	f.ff = newBatchFileFetcher(ctx, f.env, f.instanceName, f.digestFunction, f.filesToFetch, f.opts)
+	ff, err := newBatchFileFetcher(ctx, f.env, f.instanceName, f.digestFunction, f.filesToFetch, f.opts)
+	if err != nil {
+		return err
+	}
+	f.ff = ff
 
 	go func() {
 		// Download any files into the directory structure.

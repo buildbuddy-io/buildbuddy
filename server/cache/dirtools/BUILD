@@ -24,6 +24,7 @@ go_library(
         "//server/util/status",
         "//third_party/singleflight",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_x_sync//errgroup",
     ],
