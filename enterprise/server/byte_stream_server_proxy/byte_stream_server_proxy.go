@@ -111,7 +111,7 @@ func (s *ByteStreamServerProxy) read(ctx context.Context, req *bspb.ReadRequest,
 		return metrics.HitStatusLabel, nil
 	}
 
-	localErr := s.local.ReadCASResource(rn, req.GetReadOffset(), req.GetReadLimit(), stream)
+	localErr := s.local.ReadCASResource(ctx, rn, req.GetReadOffset(), req.GetReadLimit(), stream)
 	// If some responses were streamed to the client, just return the
 	// error. Otherwise, fall-back to remote. We might be able to continue
 	// streaming to the client by doing an offset read from the remote
