@@ -60,10 +60,12 @@ func (h *NoOpHitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMet
 }
 
 func (h *NoOpHitTrackerFactory) NewRemoteACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
+	alert.CtxUnexpectedEvent(ctx, "Tried to do remote AC hit tracking from a server that is itself remote.")
 	return &NoOpHitTracker{}
 }
 
 func (h *NoOpHitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
+	alert.CtxUnexpectedEvent(ctx, "Tried to do remote CAS hit tracking from a server that is itself remote.")
 	return &NoOpHitTracker{}
 }
 
