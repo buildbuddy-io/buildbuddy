@@ -301,7 +301,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 	}
 	srcContains, srcErr := conf.src.Contains(ctx, r)
 
-	if srcErr != nil && conf.dest != nil && conf.doubleRead() {
+	if srcContains && srcErr != nil && conf.dest != nil && conf.doubleRead() {
 		go func() {
 			// Timeout is slightly larger than p99.9 latency.
 			ctx, cancel := background.ExtendContextForFinalization(ctx, 2*time.Second)
@@ -310,7 +310,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 			if dstErr != nil {
 				log.CtxWarningf(ctx, "Migration dest %v contains failed: %s", r.GetDigest(), dstErr)
 				mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
-			} else if srcContains && !dstContains {
+			} else if !dstContains {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "contains",
 					metrics.GroupID:          groupID(ctx),
@@ -319,7 +319,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 					log.CtxWarningf(ctx, "Migration digest %v src contains, dest does not", r.GetDigest())
 				}
 				mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
-			} else if srcContains && dstContains {
+			} else {
 				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
 					metrics.CacheRequestType: "contains",
 					metrics.GroupID:          groupID(ctx),
@@ -704,79 +704,46 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 	if err != nil {
 		return nil, err
 	}
-	if conf.dest == nil {
-		return conf.src.Reader(ctx, r, uncompressedOffset, limit)
-	}
-
-	eg := &errgroup.Group{}
-	var dstErr error
-	var destReader io.ReadCloser
-	var decompressor io.WriteCloser
-	pr, pw := io.Pipe()
-
-	doubleRead := conf.doubleRead()
-
-	shouldDecompressAndVerify := false
-	if doubleRead && r.GetCompressor() == repb.Compressor_ZSTD {
-		shouldDecompressAndVerify = conf.decompressRead()
-	}
-
-	if doubleRead {
-		eg.Go(func() error {
-			destReader, dstErr = conf.dest.Reader(ctx, r, uncompressedOffset, limit)
-			if dstErr != nil {
-				shouldDecompressAndVerify = false
-				return nil
-			}
-			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
-				metrics.CacheRequestType: "reader",
-				metrics.GroupID:          groupID(ctx),
-			}).Inc()
-			if shouldDecompressAndVerify {
-				dr, err := compression.NewZstdDecompressingReader(destReader)
-				if err != nil {
-					log.CtxWarningf(ctx, "Migration failed to get dest decompressing reader for %v: %s", r, err)
-				} else {
-					destReader = dr
-				}
-				decompressor, err = compression.NewZstdDecompressor(pw)
-				if err != nil {
-					log.CtxWarningf(ctx, "Migration failed to get source decompressor for %v: %s", r, err)
-				}
-			}
-			return nil
-		})
-	}
-
-	// TODO
 	srcReader, srcErr := conf.src.Reader(ctx, r, uncompressedOffset, limit)
-	eg.Wait()
+	if srcErr != nil || conf.dest == nil || !conf.doubleRead() {
+		return srcReader, srcErr
+	}
 
-	bothCacheNotFound := status.IsNotFoundError(srcErr) && status.IsNotFoundError(dstErr)
-	shouldLogErr := mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)
-	if dstErr != nil && !bothCacheNotFound {
+	destReader, dstErr := conf.dest.Reader(ctx, r, uncompressedOffset, limit)
+	if dstErr != nil {
+		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
+			log.CtxWarningf(ctx, "Migration failed to get dest reader for %v: %s", r, dstErr)
+		}
 		if status.IsNotFoundError(dstErr) {
+			mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/, conf)
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{
 				metrics.CacheRequestType: "reader",
 				metrics.GroupID:          groupID(ctx)}).Inc()
+		} else {
+			mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 		}
-		if shouldLogErr {
-			log.CtxWarningf(ctx, "Migration failed to get dest reader for %v: %s", r, dstErr)
+		return srcReader, srcErr
+	}
+	metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{
+		metrics.CacheRequestType: "reader",
+		metrics.GroupID:          groupID(ctx),
+	}).Inc()
+
+	var decompressor io.WriteCloser
+	pr, pw := io.Pipe()
+	shouldDecompressAndVerify := r.GetCompressor() == repb.Compressor_ZSTD && conf.decompressRead()
+	if shouldDecompressAndVerify {
+		dr, err := compression.NewZstdDecompressingReader(destReader)
+		if err != nil {
+			log.CtxWarningf(ctx, "Migration failed to get dest decompressing reader for %v: %s", r, err)
+		} else {
+			destReader = dr
+		}
+		decompressor, err = compression.NewZstdDecompressor(pw)
+		if err != nil {
+			log.CtxWarningf(ctx, "Migration failed to get source decompressor for %v: %s", r, err)
 		}
 	}
-
-	if srcErr != nil {
-		if destReader != nil {
-			err := destReader.Close()
-			if err != nil {
-				log.CtxWarningf(ctx, "Migration dest reader close err: %s", err)
-			}
-		}
-		log.CtxDebugf(ctx, "Migration %v src reader err, doubleRead is %v: %s", r, doubleRead, srcErr)
-		return nil, srcErr
-	}
-
-	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 
 	dr := &doubleReader{
 		ctx:          ctx,
