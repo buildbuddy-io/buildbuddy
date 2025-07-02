@@ -299,14 +299,14 @@
   background-color: #bbdefb;
 }
 
-.org-members .org-member-email {
+.org-members .org-member-name {
   font-weight: 600;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.org-members .org-member-email svg {
+.org-members .org-member-name svg {
   width: 16px;
   height: 16px;
 }
