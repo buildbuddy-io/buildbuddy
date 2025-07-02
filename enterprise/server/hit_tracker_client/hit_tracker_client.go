@@ -232,9 +232,6 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 	groupHits := h.hitsByGroup[groupID]
 	h.mu.Unlock()
 	authHeaders := authutil.GetAuthHeaders(ctx)
-	for k, v := range authutil.GetAuthHeaders(ctx) {
-		authHeaders[k] = v
-	}
 	usageHeaders := make(map[string][]string, 0)
 	for k, v := range usageutil.GetUsageHeaders(ctx) {
 		// TODO(jdhollen): pass other headers once we're actually storing them separately.
