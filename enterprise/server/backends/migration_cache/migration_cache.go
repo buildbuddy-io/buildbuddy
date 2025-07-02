@@ -301,7 +301,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 	}
 	srcContains, srcErr := conf.src.Contains(ctx, r)
 
-	if conf.dest != nil && conf.doubleRead() {
+	if srcErr != nil && conf.dest != nil && conf.doubleRead() {
 		go func() {
 			// Timeout is slightly larger than p99.9 latency.
 			ctx, cancel := background.ExtendContextForFinalization(ctx, 2*time.Second)
