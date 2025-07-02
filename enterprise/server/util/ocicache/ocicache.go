@@ -72,7 +72,7 @@ func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
 }
 
 func manifestMiss(ctx context.Context, repo gcrname.Repository, hash gcr.Hash) {
-	log.CtxInfof(ctx, "OCI cache manifest miss in %s:%s", repo, hash)
+	log.CtxInfof(ctx, "OCI cache manifest miss %s:%s", repo, hash)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.MissStatusLabel)
 }
 
