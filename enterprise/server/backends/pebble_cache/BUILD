@@ -40,6 +40,7 @@ go_library(
         "@com_github_elastic_gosigar//:gosigar",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
+        "@io_opentelemetry_go_otel//attribute",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_text//language",
         "@org_golang_x_text//message",
