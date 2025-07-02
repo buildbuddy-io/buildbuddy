@@ -74,7 +74,7 @@ func GetUsageHeaders(ctx context.Context) map[string][]string {
 	clientKeys := metadata.ValueFromIncomingContext(ctx, ClientHeaderName)
 	if len(clientKeys) > 0 {
 		if len(clientKeys) > 1 {
-			log.Warningf("Expected at most 1 usage client header (found %d)", len(clientKeys))
+			log.CtxWarningf(ctx, "Expected at most 1 usage client header (found %d)", len(clientKeys))
 		}
 		headers[ClientHeaderName] = clientKeys
 	}
