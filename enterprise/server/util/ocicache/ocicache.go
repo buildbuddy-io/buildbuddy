@@ -113,6 +113,7 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	err = any.UnmarshalTo(&mc)
 	if err != nil {
 		manifestMiss(ctx, repo)
+		log.CtxWarningf(ctx, "Error unmarshalling manifest content in %q: %s", repo, err)
 		return nil, status.InternalErrorf("could not unmarshal metadata for manifest in %q: %s", repo, err)
 	}
 	manifestHit(ctx, repo)
