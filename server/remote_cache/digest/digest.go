@@ -229,9 +229,9 @@ func (r *ACResourceName) ActionCacheString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
-		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + r.GetDigest().GetHash() + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 	}
-	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + strings.ToLower(r.rn.DigestFunction.String()) + "/" + r.GetDigest().GetHash() + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + strings.ToLower(r.rn.DigestFunction.String()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 }
 
 func CacheTypeToPrefix(cacheType rspb.CacheType) string {
