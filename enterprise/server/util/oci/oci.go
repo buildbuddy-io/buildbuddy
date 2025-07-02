@@ -338,6 +338,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			acClient,
 			digestOrTagRef.Context(),
 			desc.Digest,
+			digestOrTagRef,
 		)
 		if err != nil && !status.IsNotFoundError(err) {
 			log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)

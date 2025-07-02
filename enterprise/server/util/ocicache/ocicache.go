@@ -71,26 +71,28 @@ func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
 	}).Inc()
 }
 
-func manifestMiss(ctx context.Context, repo gcrname.Repository, hash gcr.Hash) {
-	log.CtxInfof(ctx, "OCI cache manifest miss %s:%s", repo, hash)
+func manifestMiss(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
+	log.CtxInfof(ctx, "OCI cache manifest miss %s:%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.MissStatusLabel)
 }
 
-func manifestHit(ctx context.Context, repo gcrname.Repository, hash gcr.Hash) {
-	log.CtxInfof(ctx, "OCI cache manifest hit %s:%s", repo, hash)
+func manifestHit(ctx context.Context, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) {
+	log.CtxInfof(ctx, "OCI cache manifest hit %s:%s (original ref %q)", repo, hash, originalRef)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.HitStatusLabel)
 }
 
-func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash) (*ocipb.OCIManifestContent, error) {
+// FetchManifestFromAC fetches the given manifest from the AC if present.
+// TODO(dan) remote originalRef argument once we've debugged frequency of manifest cache misses.
+func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, originalRef gcrname.Reference) (*ocipb.OCIManifestContent, error) {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
-		manifestMiss(ctx, repo, hash)
+		manifestMiss(ctx, repo, hash, originalRef)
 		log.CtxWarningf(ctx, "Error creating key for manifest in %q: %s", repo, err)
 		return nil, err
 	}
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
-		manifestMiss(ctx, repo, hash)
+		manifestMiss(ctx, repo, hash, originalRef)
 		if !status.IsNotFoundError(err) {
 			log.CtxWarningf(ctx, "Error getting action result for manifest in %q: %s", repo, err)
 		}
@@ -98,13 +100,13 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	}
 	meta := ar.GetExecutionMetadata()
 	if meta == nil {
-		manifestMiss(ctx, repo, hash)
+		manifestMiss(ctx, repo, hash, originalRef)
 		log.CtxWarningf(ctx, "Missing execution metadata for manifest in %q", repo)
 		return nil, status.InternalErrorf("missing execution metadata for manifest in %q", repo)
 	}
 	aux := meta.GetAuxiliaryMetadata()
 	if aux == nil || len(aux) != 1 {
-		manifestMiss(ctx, repo, hash)
+		manifestMiss(ctx, repo, hash, originalRef)
 		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest in %q", repo)
 		return nil, status.InternalErrorf("missing auxiliary metadata for manifest in %q", repo)
 	}
@@ -112,11 +114,11 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	var mc ocipb.OCIManifestContent
 	err = any.UnmarshalTo(&mc)
 	if err != nil {
-		manifestMiss(ctx, repo, hash)
+		manifestMiss(ctx, repo, hash, originalRef)
 		log.CtxWarningf(ctx, "Error unmarshalling manifest content in %q: %s", repo, err)
 		return nil, status.InternalErrorf("could not unmarshal metadata for manifest in %q: %s", repo, err)
 	}
-	manifestHit(ctx, repo, hash)
+	manifestHit(ctx, repo, hash, originalRef)
 	return &mc, nil
 }
 
