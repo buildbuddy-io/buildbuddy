@@ -67,6 +67,7 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 		log.CtxWarningf(ctx, "Error writing manifest %s:%s (original ref %q) to AC: %s", repo, hash, originalRef, err)
 		return err
 	}
+	log.CtxInfof(ctx, "Successfully wrote manifest %s:%s (original ref %q)", repo, hash, originalRef)
 	return nil
 }
 
