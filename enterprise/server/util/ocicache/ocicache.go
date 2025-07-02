@@ -71,36 +71,40 @@ func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
 	}).Inc()
 }
 
-func manifestMiss(ctx context.Context) {
-	log.CtxDebug(ctx, "oci cache manifest miss")
+func manifestMiss(ctx context.Context, repo gcrname.Repository) {
+	log.CtxInfof(ctx, "OCI cache manifest miss in %q", repo)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.MissStatusLabel)
 }
 
-func manifestHit(ctx context.Context) {
-	log.CtxDebug(ctx, "oci cache manifest hit")
+func manifestHit(ctx context.Context, repo gcrname.Repository) {
+	log.CtxInfof(ctx, "OCI cache manifest hit in %q", repo)
 	updateCacheEventMetric(metrics.OCIManifestResourceTypeLabel, metrics.HitStatusLabel)
 }
 
 func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash) (*ocipb.OCIManifestContent, error) {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
-		manifestMiss(ctx)
+		manifestMiss(ctx, repo)
+		log.CtxWarningf(ctx, "Error creating key for manifest in %q: %s", repo, err)
 		return nil, err
 	}
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
-		manifestMiss(ctx)
+		manifestMiss(ctx, repo)
+		if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Error getting action result for manifest in %q: %s", repo, err)
+		}
 		return nil, err
 	}
 	meta := ar.GetExecutionMetadata()
 	if meta == nil {
-		manifestMiss(ctx)
+		manifestMiss(ctx, repo)
 		log.CtxWarningf(ctx, "Missing execution metadata for manifest in %q", repo)
 		return nil, status.InternalErrorf("missing execution metadata for manifest in %q", repo)
 	}
 	aux := meta.GetAuxiliaryMetadata()
 	if aux == nil || len(aux) != 1 {
-		manifestMiss(ctx)
+		manifestMiss(ctx, repo)
 		log.CtxWarningf(ctx, "Missing auxiliary metadata for manifest in %q", repo)
 		return nil, status.InternalErrorf("missing auxiliary metadata for manifest in %q", repo)
 	}
@@ -108,10 +112,10 @@ func FetchManifestFromAC(ctx context.Context, acClient repb.ActionCacheClient, r
 	var mc ocipb.OCIManifestContent
 	err = any.UnmarshalTo(&mc)
 	if err != nil {
-		manifestMiss(ctx)
+		manifestMiss(ctx, repo)
 		return nil, status.InternalErrorf("could not unmarshal metadata for manifest in %q: %s", repo, err)
 	}
-	manifestHit(ctx)
+	manifestHit(ctx, repo)
 	return &mc, nil
 }
 
