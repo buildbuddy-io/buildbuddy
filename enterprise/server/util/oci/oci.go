@@ -338,6 +338,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			acClient,
 			digestOrTagRef.Context(),
 			desc.Digest,
+			digestOrTagRef,
 		)
 		if err != nil && !status.IsNotFoundError(err) {
 			log.CtxWarningf(ctx, "Error fetching manifest from cache: %s", err)
@@ -372,6 +373,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			digestOrTagRef.Context(),
 			remoteDesc.Digest,
 			string(remoteDesc.MediaType),
+			digestOrTagRef,
 		)
 		if err != nil {
 			log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
