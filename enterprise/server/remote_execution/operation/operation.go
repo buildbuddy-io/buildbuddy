@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -410,4 +411,13 @@ func Decode(serializedOperation string) (*longrunning.Operation, error) {
 		return nil, err
 	}
 	return op, nil
+}
+
+func IsRetryEvent(op *longrunning.Operation) bool {
+	rsp := ExtractExecuteResponse(op)
+	auxMeta := rexec.ExecutionAuxiliaryMetadata(rsp)
+	if auxMeta != nil {
+		return auxMeta.GetRetry()
+	}
+	return false
 }

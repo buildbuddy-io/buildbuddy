@@ -242,9 +242,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		DoNotCache:               task.GetAction().GetDoNotCache(),
 	}
 	finishWithErrFn := func(finalErr error) (retry bool, err error) {
-		if shouldRetry(task, finalErr) {
-			return true, finalErr
-		}
+		auxMetadata.Retry = shouldRetry(task, finalErr)
 		resp := operation.ErrorResponse(finalErr)
 		md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 		if err := appendAuxiliaryMetadata(md, auxMetadata); err != nil {
@@ -253,6 +251,16 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		resp.Result = &repb.ActionResult{
 			ExecutionMetadata: md,
 		}
+
+		if auxMetadata.GetRetry() {
+			// If the server will automatically retry the execution, don't mark
+			// it as complete so that the client will continue to wait on it.
+			if err := stateChangeFn(repb.ExecutionStage_EXECUTING, resp); err != nil {
+				log.CtxErrorf(ctx, "Failed to publish retry attempt: %s", err)
+			}
+			return true, finalErr
+		}
+
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest.GetDigest(), resp); err != nil {
 			return true, err
 		}
