@@ -97,7 +97,7 @@ func AddUsageHeadersToContext(ctx context.Context, headers map[string][]string) 
 			} else if key == OriginHeaderName {
 				ctx = metadata.AppendToOutgoingContext(ctx, OriginHeaderName, value)
 			} else {
-				log.Warningf("Ignoring unrecognized usage header: %s", key)
+				log.CtxWarningf(ctx, "Ignoring unrecognized usage header: %s", key)
 			}
 		}
 	}
