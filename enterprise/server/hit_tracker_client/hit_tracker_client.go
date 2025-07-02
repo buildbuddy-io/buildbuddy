@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -85,18 +86,21 @@ type cacheHits struct {
 	gid                    groupID
 	mu                     sync.Mutex
 	authHeaders            map[string][]string
+	usageHeaders           map[string][]string
 	hits                   []*hitpb.CacheHit
 }
 
-func (c *cacheHits) enqueue(hit *hitpb.CacheHit, authHeaders map[string][]string) bool {
+func (c *cacheHits) enqueue(hit *hitpb.CacheHit, authHeaders map[string][]string, usageHeaders map[string][]string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.hits) >= c.maxPendingHitsPerGroup {
 		return false
 	}
 
-	// Store the latest auth headers for this group for use in the async RPC.
+	// Store the latest headers for this group for use in the async RPC.
+	// TODO(jdhollen): send separate requests for different usage headers.
 	c.authHeaders = authHeaders
+	c.usageHeaders = usageHeaders
 	c.hits = append(c.hits, hit)
 	return true
 }
@@ -228,7 +232,15 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 	groupHits := h.hitsByGroup[groupID]
 	h.mu.Unlock()
 	authHeaders := authutil.GetAuthHeaders(ctx)
-	if groupHits.enqueue(hit, authHeaders) {
+	usageHeaders := make(map[string][]string, 0)
+	for k, v := range usageutil.GetUsageHeaders(ctx) {
+		// TODO(jdhollen): pass other headers once we're actually storing them separately.
+		if k == usageutil.OriginHeaderName {
+			usageHeaders[k] = v
+		}
+	}
+
+	if groupHits.enqueue(hit, authHeaders, usageHeaders) {
 		metrics.RemoteHitTrackerUpdates.WithLabelValues(
 			string(groupID),
 			"enqueued",
@@ -340,9 +352,10 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 		delete(h.hitsByGroup, hitsToSend.gid)
 	} else {
 		hitsToEnqueue := cacheHits{
-			gid:         hitsToSend.gid,
-			authHeaders: hitsToSend.authHeaders,
-			hits:        hitsToSend.hits[h.maxHitsPerUpdate:],
+			gid:          hitsToSend.gid,
+			authHeaders:  hitsToSend.authHeaders,
+			usageHeaders: hitsToSend.usageHeaders,
+			hits:         hitsToSend.hits[h.maxHitsPerUpdate:],
 		}
 		hitsToSend.hits = hitsToSend.hits[:h.maxHitsPerUpdate]
 		h.hitsQueue = append(h.hitsQueue, &hitsToEnqueue)
@@ -351,6 +364,7 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 	h.mu.Unlock()
 
 	ctx = authutil.AddAuthHeadersToContext(ctx, hitsToSend.authHeaders, h.authenticator)
+	ctx = usageutil.AddUsageHeadersToContext(ctx, hitsToSend.usageHeaders)
 	trackRequest := hitpb.TrackRequest{Hits: hitsToSend.hits}
 	groupID := hitsToSend.gid
 	hitCount := len(hitsToSend.hits)

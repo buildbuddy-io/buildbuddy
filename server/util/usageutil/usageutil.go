@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -65,6 +66,42 @@ func ClientOrigin() string {
 // gRPC requests with label propagation enabled.
 func SetClientType(value string) {
 	clientType = value
+}
+
+func GetUsageHeaders(ctx context.Context) map[string][]string {
+	headers := map[string][]string{}
+
+	clientKeys := metadata.ValueFromIncomingContext(ctx, ClientHeaderName)
+	if len(clientKeys) > 0 {
+		if len(clientKeys) > 1 {
+			log.CtxWarningf(ctx, "Expected at most 1 usage client header (found %d)", len(clientKeys))
+		}
+		headers[ClientHeaderName] = clientKeys
+	}
+	originKeys := metadata.ValueFromIncomingContext(ctx, OriginHeaderName)
+	if len(originKeys) > 0 {
+		if len(originKeys) > 1 {
+			log.CtxWarningf(ctx, "Expected at most 1 usage origin header (found %d)", len(originKeys))
+		}
+		headers[OriginHeaderName] = originKeys
+	}
+
+	return headers
+}
+
+func AddUsageHeadersToContext(ctx context.Context, headers map[string][]string) context.Context {
+	for key, values := range headers {
+		for _, value := range values {
+			if key == ClientHeaderName {
+				ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, value)
+			} else if key == OriginHeaderName {
+				ctx = metadata.AppendToOutgoingContext(ctx, OriginHeaderName, value)
+			} else {
+				log.CtxWarningf(ctx, "Ignoring unrecognized usage header: %s", key)
+			}
+		}
+	}
+	return ctx
 }
 
 func originLabel(ctx context.Context) string {
