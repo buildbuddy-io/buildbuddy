@@ -40,9 +40,10 @@ const (
 	cacheDigestFunction = repb.DigestFunction_SHA256
 )
 
-func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string) error {
+func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash, contentType string, originalRef gcrname.Reference) error {
 	arRN, err := manifestACKey(repo, hash)
 	if err != nil {
+		log.CtxWarningf(ctx, "Error creating key for manifest %s:%s (original ref %q): %s", repo, hash, originalRef, err)
 		return err
 	}
 
@@ -52,6 +53,7 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 	}
 	any, err := anypb.New(m)
 	if err != nil {
+		log.CtxWarningf(ctx, "Error constructing manifest contents %s:%s (original ref %q): %s", repo, hash, originalRef, err)
 		return err
 	}
 	ar := &repb.ActionResult{
@@ -61,7 +63,11 @@ func WriteManifestToAC(ctx context.Context, raw []byte, acClient repb.ActionCach
 			},
 		},
 	}
-	return cachetools.UploadActionResult(ctx, acClient, arRN, ar)
+	if err := cachetools.UploadActionResult(ctx, acClient, arRN, ar); err != nil {
+		log.CtxWarningf(ctx, "Error writing manifest %s:%s (original ref %q) to AC: %s", repo, hash, originalRef, err)
+		return err
+	}
+	return nil
 }
 
 func updateCacheEventMetric(ociResourceTypeLabel, cacheEventType string) {
@@ -435,7 +441,7 @@ func (r *readThroughCacher) Close() error {
 	return err
 }
 
-func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
+func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64, originalRef gcrname.Reference) error {
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
 		if contentLength > maxManifestSize {
 			return status.FailedPreconditionErrorf("manifest too large (%d bytes) to write to cache (limit %d bytes)", contentLength, maxManifestSize)
@@ -449,7 +455,7 @@ func WriteBlobOrManifestToCacheAndWriter(ctx context.Context, upstream io.Reader
 		if written != contentLength {
 			return status.DataLossErrorf("expected manifest of length %d, only able to write %d bytes", contentLength, written)
 		}
-		return WriteManifestToAC(ctx, buf.Bytes(), acClient, repo, hash, contentType)
+		return WriteManifestToAC(ctx, buf.Bytes(), acClient, repo, hash, contentType, originalRef)
 	}
 	tr := io.TeeReader(upstream, w)
 	return WriteBlobToCache(ctx, tr, bsClient, acClient, repo, hash, contentType, contentLength)

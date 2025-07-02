@@ -373,6 +373,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 			digestOrTagRef.Context(),
 			remoteDesc.Digest,
 			string(remoteDesc.MediaType),
+			digestOrTagRef,
 		)
 		if err != nil {
 			log.CtxWarningf(ctx, "Could not write manifest to cache: %s", err)
