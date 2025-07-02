@@ -301,7 +301,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (b
 	}
 	srcContains, srcErr := conf.src.Contains(ctx, r)
 
-	if srcContains && srcErr != nil && conf.dest != nil && conf.doubleRead() {
+	if srcContains && srcErr == nil && conf.dest != nil && conf.doubleRead() {
 		go func() {
 			// Timeout is slightly larger than p99.9 latency.
 			ctx, cancel := background.ExtendContextForFinalization(ctx, 2*time.Second)
@@ -338,7 +338,7 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 	}
 	srcMetadata, srcErr := conf.src.Metadata(ctx, r)
 
-	if srcErr != nil && conf.dest != nil && conf.doubleRead() {
+	if srcErr == nil && conf.dest != nil && conf.doubleRead() {
 		go func() {
 			// Timeout is slightly larger than p99.9 latency.
 			ctx, cancel := background.ExtendContextForFinalization(ctx, 5*time.Second)
@@ -705,7 +705,12 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, unco
 		return nil, err
 	}
 	srcReader, srcErr := conf.src.Reader(ctx, r, uncompressedOffset, limit)
-	if srcErr != nil || conf.dest == nil || !conf.doubleRead() {
+	if srcErr != nil || conf.dest == nil {
+		return srcReader, srcErr
+	}
+	if !conf.doubleRead() {
+		// We still want to copy if the source was successful.
+		mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/, conf)
 		return srcReader, srcErr
 	}
 

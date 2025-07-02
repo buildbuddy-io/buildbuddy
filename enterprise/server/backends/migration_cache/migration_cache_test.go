@@ -70,6 +70,22 @@ func setMigrationState(t *testing.T, migrationState string) {
 	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
 }
 
+func setDoubleReadPercentage(t *testing.T, doubleRead float64) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		migration_cache.MigrationCacheConfigFlag: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "singleton",
+			Variants: map[string]any{"singleton": map[string]any{
+				migration_cache.MigrationStateField:           migration_cache.SrcPrimary,
+				migration_cache.AsyncDestWriteField:           false,
+				migration_cache.DoubleReadPercentageField:     doubleRead,
+				migration_cache.DecompressReadPercentageField: 0.0,
+			}},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+}
+
 func getAnonContext(t *testing.T, env environment.Env) context.Context {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
 	require.NoError(t, err, "error ataching user prefix")
@@ -1164,6 +1180,49 @@ func TestDelete(t *testing.T) {
 
 	_, err = destCache.Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestReadsCopyData(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDirSrc := testfs.MakeTempDir(t)
+
+	// Data should be copied during reads even when double read percentage is 0.
+	setDoubleReadPercentage(t, 0)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	require.NoError(t, err)
+	destCache.Start()
+	config := &migration_cache.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	// Read
+	r, buf := testdigest.RandomCASResourceBuf(t, 10)
+	require.NoError(t, srcCache.Set(ctx, r, buf))
+	reader, err := mc.Reader(ctx, r, 0, 0)
+	require.NoError(t, err)
+	reader.Close()
+	waitForCopy(t, ctx, destCache, r)
+
+	// Get
+	r, buf = testdigest.RandomCASResourceBuf(t, 10)
+	require.NoError(t, srcCache.Set(ctx, r, buf))
+	_, err = mc.Get(ctx, r)
+	require.NoError(t, err)
+	waitForCopy(t, ctx, destCache, r)
+
+	// GetMulti
+	r, buf = testdigest.RandomCASResourceBuf(t, 10)
+	require.NoError(t, srcCache.Set(ctx, r, buf))
+	_, err = mc.GetMulti(ctx, []*rspb.ResourceName{r})
+	require.NoError(t, err)
+	waitForCopy(t, ctx, destCache, r)
 }
 
 func TestReadWrite(t *testing.T) {
