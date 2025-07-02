@@ -365,14 +365,14 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
               {!this.props.user.selectedGroup.externalUserManagement && (
                 <div>
                   <Checkbox
-                    title={`Select ${member?.user?.email || member?.user?.name?.full}`}
+                    title={`Select ${accountName(member.user)}`}
                     className="org-member-checkbox"
                     checked={this.state.selectedUserIds.has(member?.user?.userId?.id || "")}
                   />
                 </div>
               )}
-              <div className="org-member-email">
-                {member?.user?.email || member?.user?.name?.full} {iconFromAccountType(member.user?.accountType)}
+              <div className="org-member-name">
+                {accountName(member.user)} {iconFromAccountType(member.user?.accountType)}
               </div>
               <div className="org-member-role">
                 {getRoleLabel(member?.role || 0)} {this.isLoggedInUser(member) && <>(You)</>}
