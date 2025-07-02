@@ -1202,27 +1202,28 @@ func TestReadsCopyData(t *testing.T) {
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
-	// Read
-	r, buf := testdigest.RandomCASResourceBuf(t, 10)
-	require.NoError(t, srcCache.Set(ctx, r, buf))
-	reader, err := mc.Reader(ctx, r, 0, 0)
-	require.NoError(t, err)
-	reader.Close()
-	waitForCopy(t, ctx, destCache, r)
-
-	// Get
-	r, buf = testdigest.RandomCASResourceBuf(t, 10)
-	require.NoError(t, srcCache.Set(ctx, r, buf))
-	_, err = mc.Get(ctx, r)
-	require.NoError(t, err)
-	waitForCopy(t, ctx, destCache, r)
-
-	// GetMulti
-	r, buf = testdigest.RandomCASResourceBuf(t, 10)
-	require.NoError(t, srcCache.Set(ctx, r, buf))
-	_, err = mc.GetMulti(ctx, []*rspb.ResourceName{r})
-	require.NoError(t, err)
-	waitForCopy(t, ctx, destCache, r)
+	t.Run("Reader", func(t *testing.T) {
+		r, buf := testdigest.RandomCASResourceBuf(t, 10)
+		require.NoError(t, srcCache.Set(ctx, r, buf))
+		reader, err := mc.Reader(ctx, r, 0, 0)
+		require.NoError(t, err)
+		reader.Close()
+		waitForCopy(t, ctx, destCache, r)
+	})
+	t.Run("Get", func(t *testing.T) {
+		r, buf := testdigest.RandomCASResourceBuf(t, 10)
+		require.NoError(t, srcCache.Set(ctx, r, buf))
+		_, err = mc.Get(ctx, r)
+		require.NoError(t, err)
+		waitForCopy(t, ctx, destCache, r)
+	})
+	t.Run("GetMulti", func(t *testing.T) {
+		r, buf := testdigest.RandomCASResourceBuf(t, 10)
+		require.NoError(t, srcCache.Set(ctx, r, buf))
+		_, err = mc.GetMulti(ctx, []*rspb.ResourceName{r})
+		require.NoError(t, err)
+		waitForCopy(t, ctx, destCache, r)
+	})
 }
 
 func TestReadWrite(t *testing.T) {
