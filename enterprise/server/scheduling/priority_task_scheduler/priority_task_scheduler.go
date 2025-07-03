@@ -487,7 +487,7 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 	}
 
 	if *roundTaskCpuSize {
-		rounded := int64(math.Ceil(float64(req.GetTaskSize().GetEstimatedMilliCpu())/1000.0))*1000
+		rounded := int64(math.Ceil(float64(req.GetTaskSize().GetEstimatedMilliCpu())/1000.0)) * 1000
 		if rounded < q.cpuMillisCapacity {
 			req.GetTaskSize().EstimatedMilliCpu = rounded
 		}
