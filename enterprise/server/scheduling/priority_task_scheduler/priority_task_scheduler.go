@@ -885,7 +885,7 @@ func (q *PriorityTaskScheduler) Start() error {
 				case <-q.rootContext.Done():
 					return
 				case <-ticker.Chan():
-					for trimmed := q.trimQueue(); trimmed; {
+					for ok := true; ok; ok = q.trimQueue() {
 					}
 				}
 			}
