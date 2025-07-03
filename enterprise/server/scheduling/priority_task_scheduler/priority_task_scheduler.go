@@ -43,7 +43,7 @@ var (
 	queueTrimInterval       = flag.Duration("executor.queue_trim_interval", 0, "The interval between attempts to prune tasks that have already been completed by other executors.  A value <= 0 disables this feature.")
 	excessCapacityThreshold = flag.Float64("executor.excess_capacity_threshold", .40, "A percentage (of RAM and CPU) utilization below which this executor may request additional work")
 	region                  = flag.String("executor.region", "", "Region metadata associated with executions.")
-	roundTaskCpuSize        = flag.Bool("executor.round_task_cpu_size", false, "If true, round tasks' CPU size so that they always occupy whole-number CPUs.")
+	roundTaskCpuSize        = flag.Bool("executor.round_task_cpu_size", false, "If true, round tasks' CPU sizes up to the nearest whole number.")
 )
 
 var shuttingDownLogOnce sync.Once
