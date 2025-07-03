@@ -35,6 +35,8 @@ var (
 	memoryOOMGroup            = flag.Bool("remote_execution.memory_oom_group", true, "If there is an OOM within any process in a cgroup, fail the entire execution with an OOM error.")
 	pidLimit                  = flag.Int64("remote_execution.pids_limit", 2048, "Maximum number of processes allowed per task at any time.")
 	additionalPIDsLimitPerCPU = flag.Int64("remote_execution.additional_pids_limit_per_cpu", 1024, "Additional number of processes allowed per estimated CPU.")
+	MinimumMilliCPU           = flag.Int64("remote_execution.minimum_millicpu", 1000, "Minimum milliCPU size to use for task sizing.")
+	MinimumMemoryBytes        = flag.Int64("remote_execution.minimum_memory_bytes", 6_000_000, "Minimum memory size to use for task sizing.")
 	// TODO: enforce a lower CPU hard limit for tasks in general, instead of
 	// just limiting the task size that gets stored in redis.
 	milliCPULimit = flag.Int64("remote_execution.stored_task_size_millicpu_limit", 7500, "Limit placed on milliCPU calculated from task execution statistics.")
@@ -54,13 +56,6 @@ const (
 	WorkflowMemEstimate     = int64(8 * 1e9)   // 8 GB
 	DefaultCPUEstimate      = int64(600)
 	DefaultFreeDiskEstimate = int64(100 * 1e6) // 100 MB
-
-	// Minimum size values.
-	// These are an extra safeguard against overscheduling, and help account
-	// for task overhead that is not measured explicitly (e.g. task setup).
-
-	MinimumMilliCPU    = int64(250)
-	MinimumMemoryBytes = int64(6_000_000) // 6 MB
 
 	// Additional resources needed depending on task characteristics
 
@@ -494,8 +489,8 @@ func ApplyLimits(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
 	}
 	clone := size.CloneVT()
 
-	minMemoryBytes := MinimumMemoryBytes
-	minMilliCPU := MinimumMilliCPU
+	minMemoryBytes := *MinimumMemoryBytes
+	minMilliCPU := *MinimumMilliCPU
 	// Test actions have higher minimums, determined by the test size ("small",
 	// "medium", etc.)
 	if s, ok := testSize(task); ok {

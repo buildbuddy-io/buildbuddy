@@ -199,8 +199,8 @@ func TestApplyLimits(t *testing.T) {
 			EstimatedMilliCpu:      10,
 			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDisk * 10,
 		})
-	assert.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
-	assert.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
+	assert.Equal(t, *tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
+	assert.Equal(t, *tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
 	assert.Equal(t, tasksize.MaxEstimatedFreeDiskRecycleFalse, sz.EstimatedFreeDiskBytes)
 }
 
@@ -218,8 +218,8 @@ func TestApplyLimitsNonRecyleableLargeDisk(t *testing.T) {
 		EstimatedMilliCpu:      10,
 		EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDiskRecycleFalse * 10,
 	})
-	assert.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
-	assert.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
+	assert.Equal(t, *tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
+	assert.Equal(t, *tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
 	assert.Equal(t, tasksize.MaxEstimatedFreeDiskRecycleFalse, sz.EstimatedFreeDiskBytes)
 }
 
@@ -379,8 +379,8 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 	require.NoError(t, err)
 
 	ts := sizer.Get(ctx, task)
-	assert.Equal(t, tasksize.MinimumMilliCPU, ts.GetEstimatedMilliCpu())
-	assert.Equal(t, tasksize.MinimumMemoryBytes, ts.GetEstimatedMemoryBytes())
+	assert.Equal(t, *tasksize.MinimumMilliCPU, ts.GetEstimatedMilliCpu())
+	assert.Equal(t, *tasksize.MinimumMemoryBytes, ts.GetEstimatedMemoryBytes())
 
 	// Test actions have different minimums.
 	task = &repb.ExecutionTask{
