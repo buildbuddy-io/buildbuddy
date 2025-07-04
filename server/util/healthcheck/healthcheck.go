@@ -3,7 +3,6 @@ package healthcheck
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -32,10 +32,10 @@ var (
 	logGoroutineProfileOnShutdown = flag.Bool("log_goroutine_profile_on_shutdown", false, "Whether to log all goroutine stack traces on shutdown.")
 	reportNotReady                = flag.Bool("report_not_ready", false, "If set to true, the app will always report as being unready.")
 	maxUnreadyDuration            = flag.Duration("max_unready_duration", 0, "If > 0, the app will terminate if it does not become ready after this long")
+	healthCheckPeriod             = flag.Duration("health_check_period", 3*time.Second, "How frequently to run health checks to determine readiness status.", flag.Internal)
 )
 
 const (
-	healthCheckPeriod  = 3 * time.Second // The time to wait between health checks.
 	healthCheckTimeout = 2 * time.Second // How long a health check may take, max.
 )
 
@@ -78,7 +78,7 @@ func NewHealthChecker(serverType string) *HealthChecker {
 
 	go hc.handleShutdownFuncs()
 	go func() {
-		ticker := time.NewTicker(healthCheckPeriod)
+		ticker := time.NewTicker(*healthCheckPeriod)
 		defer ticker.Stop()
 		for {
 			select {
