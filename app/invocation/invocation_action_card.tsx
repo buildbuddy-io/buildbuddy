@@ -225,12 +225,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
    * locate the ExecuteResponse that was returned for this particular
    * invocation.
    */
-  fetchActionResult() {
+  fetchActionResult(): CancelablePromise<void> | null {
     let digestParam = this.props.search.get("actionDigest");
     const digest = parseActionDigest(digestParam ?? "");
     if (!digest) {
       alert_service.error("Missing action digest in URL");
-      return;
+      return null;
     }
     const actionResultUrl = this.props.model.getActionCacheURL(digest);
     this.actionResultRPC = rpcService
@@ -242,6 +242,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.fetchStderr(actionResult);
       })
       .catch((e) => console.error("Failed to fetch action result:", e));
+
+    return this.actionResultRPC as CancelablePromise<void>;
   }
 
   private executeResponseRPC?: CancelablePromise<build.bazel.remote.execution.v2.ExecuteResponse | null>;
@@ -316,13 +318,28 @@ export default class InvocationActionCardComponent extends React.Component<Props
       })
       .catch((e) => {
         const error = BuildBuddyError.parse(e);
-        if (error.code === "NotFound") {
+        if (error.code === "NotFound" || error.code === "Unimplemented") {
           return;
         }
         errorService.handleError(e);
       })
       .finally(() => {
-        if (!executionFound && streamFallback) {
+        if (executionFound) return;
+
+        const fetchResult = this.fetchActionResult();
+        if (fetchResult !== null) {
+          fetchResult.catch((e) => {
+            const error = BuildBuddyError.parse(e);
+            if (error.code !== "NotFound") {
+              console.error("Error during AC fallback:", e);
+              // Optionally handle other non-NotFound errors from AC fetch.
+            } else {
+              console.debug("Action result not found in AC.");
+            }
+          });
+        }
+
+        if (streamFallback) {
           console.debug("Falling back to WaitExecution");
           this.streamExecution();
         }
@@ -485,6 +502,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         timestampToDate(metadata.workerStartTimestamp).getTime();
       timingDescription = (
         <div>
+          <div className="metadata-title">Timing</div>
           <div>
             Queued for {format.durationMillis(queuedDurationMillis)} @{" "}
             {format.formatTimestamp(metadata.queuedTimestamp)}
@@ -496,11 +514,25 @@ export default class InvocationActionCardComponent extends React.Component<Props
           <div>Completed @ {format.formatTimestamp(metadata.workerCompletedTimestamp)}</div>
         </div>
       );
+    } else if (metadata.workerStartTimestamp && metadata.workerCompletedTimestamp) {
+      const workerDurationMillis =
+        timestampToDate(metadata.workerCompletedTimestamp).getTime() -
+        timestampToDate(metadata.workerStartTimestamp).getTime();
+
+      timingDescription = (
+        <div>
+          <div className="metadata-title">Timing</div>
+          <div>
+            Executed in {format.durationMillis(workerDurationMillis)} @{" "}
+            {format.formatTimestamp(metadata.workerStartTimestamp)}
+          </div>
+          <div>Completed @ {format.formatTimestamp(metadata.workerCompletedTimestamp)}</div>
+        </div>
+      );
     }
 
     return (
       <>
-        <div className="metadata-title">Timing</div>
         {timingDescription}
         <div>
           {this.state.profileLoading ? (
@@ -1176,12 +1208,22 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         <div className="action-property-title">Execution metadata</div>
                         {this.state.actionResult.executionMetadata ? (
                           <div className="action-list">
-                            <div className="metadata-title">Executor Host ID</div>
-                            <div className="metadata-detail">{this.state.actionResult.executionMetadata.worker} </div>
-                            <div className="metadata-title">Executor ID</div>
-                            <div className="metadata-detail">
-                              {this.state.actionResult.executionMetadata.executorId}
-                            </div>
+                            {this.state.actionResult.executionMetadata.worker && (
+                              <>
+                                <div className="metadata-title">Executor Host ID</div>
+                                <div className="metadata-detail">
+                                  {this.state.actionResult.executionMetadata.worker}{" "}
+                                </div>
+                              </>
+                            )}
+                            {this.state.actionResult.executionMetadata.executorId && (
+                              <>
+                                <div className="metadata-title">Executor ID</div>
+                                <div className="metadata-detail">
+                                  {this.state.actionResult.executionMetadata.executorId}
+                                </div>
+                              </>
+                            )}
                             {vmMetadata && (
                               <>
                                 <div className="metadata-title">VM ID</div>
@@ -1364,10 +1406,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           )}
                         </div>
                       </div>
-                      <div className="action-section">
-                        <div className="action-property-title">Server logs</div>
-                        {this.state.serverLogs ? (
-                          this.state.serverLogs.map((log) => (
+                      {this.state.serverLogs && (
+                        <div className="action-section">
+                          <div className="action-property-title">Server logs</div>
+                          {this.state.serverLogs.map((log) => (
                             <div key={log.name}>
                               <TerminalComponent
                                 title={<b className="server-log-title">{log.name}</b>}
@@ -1375,11 +1417,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 lightTheme={this.props.preferences.lightTerminalEnabled}
                               />
                             </div>
-                          ))
-                        ) : (
-                          <div>None</div>
-                        )}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     !this.state.executeResponse && <div>{this.renderNotFoundDetails({ result: true })}</div>
