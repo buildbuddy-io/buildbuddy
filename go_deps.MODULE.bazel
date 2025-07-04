@@ -246,6 +246,7 @@ use_repo(
     "com_github_mattn_go_shellwords",
     "com_github_mattn_go_sqlite3",
     "com_github_mdlayher_vsock",
+    "com_github_miekg_dns",
     "com_github_mitchellh_go_ps",
     "com_github_mwitkow_grpc_proxy",
     "com_github_ncruces_go_sqlite3",
