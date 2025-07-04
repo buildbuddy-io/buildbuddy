@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"golang.org/x/sync/errgroup"
@@ -49,7 +50,7 @@ var (
 	showOutput = flag.Bool("show_output", true, "Show stdout/stderr from the action.")
 
 	// Less common options below.
-	overrideCommand = flag.String("override_command", "", "If set, run this script (with 'sh -c') instead of the original action command line. All other properties such as environment variables and platform properties will be preserved from the original command.")
+	overrideCommand = flag.String("override_command", "", "If set, run this script (with 'sh -c') instead of the original action command line. All other properties such as environment variables and platform properties will be preserved from the original command. The original command can be referenced via the $ORIGINAL_COMMAND environment variable.")
 	targetHeaders   = flag.Slice("target_headers", []string{}, "A list of headers to set (format: 'key=val'")
 	skipCopyFiles   = flag.Bool("skip_copy_files", false, "Skip copying files to the target. May be useful for speeding up replays after running the script at least once.")
 	n               = flag.Int("n", 1, "Number of times to replay each execution. By default they'll be replayed in serial. Set --jobs to 2 or higher to run concurrently.")
@@ -252,7 +253,7 @@ func main() {
 		resourceNames = append(resourceNames, rn)
 	}
 	for _, executionID := range *executionIDs {
-		rn, err := digest.ParseDownloadResourceName(executionID)
+		rn, err := digest.ParseUploadResourceName(executionID)
 		if err != nil {
 			log.Fatalf("Invalid execution ID %q: %s", executionID, err)
 		}
@@ -397,6 +398,13 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 		if err := cachetools.GetBlobAsProto(srcCtx, r.sourceBSClient, sourceCRN, cmd); err != nil {
 			log.Fatalf("Failed to get command: %s", err)
 		}
+		// Set ORIGINAL_COMMAND in env to the original command, shell-quoted.
+		// This way it can be wrapped with other commands, e.g.
+		// --override_command='strace $ORIGINAL_COMMAND'
+		cmd.EnvironmentVariables = append(cmd.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+			Name:  "ORIGINAL_COMMAND",
+			Value: shlex.Quote(cmd.Arguments...),
+		})
 		cmd.Arguments = []string{"sh", "-c", *overrideCommand}
 
 		// Upload the new command and action.
