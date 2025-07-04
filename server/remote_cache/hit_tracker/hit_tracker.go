@@ -150,6 +150,7 @@ type HitTracker struct {
 	iid         string
 	groupID     string
 	actionCache bool
+	serverName  string
 
 	// The request metadata, may be nil or incomplete.
 	requestMetadata *repb.RequestMetadata
@@ -159,14 +160,22 @@ type HitTracker struct {
 }
 
 func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	return h.newHitTracker(ctx, requestMetadata, true)
+	return h.newHitTracker(ctx, requestMetadata, true, usageutil.ServerName())
 }
 
 func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	return h.newHitTracker(ctx, requestMetadata, false)
+	return h.newHitTracker(ctx, requestMetadata, false, usageutil.ServerName())
 }
 
-func (h HitTrackerFactory) newHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, actionCache bool) interfaces.HitTracker {
+func (h HitTrackerFactory) NewRemoteACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
+	return h.newHitTracker(ctx, requestMetadata, true, server)
+}
+
+func (h HitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
+	return h.newHitTracker(ctx, requestMetadata, false, server)
+}
+
+func (h HitTrackerFactory) newHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, actionCache bool, serverName string) interfaces.HitTracker {
 	groupID := interfaces.AuthAnonymousUser
 	if a := h.env.GetAuthenticator(); a != nil {
 		if u, err := a.AuthenticatedUser(ctx); err == nil {
@@ -183,6 +192,7 @@ func (h HitTrackerFactory) newHitTracker(ctx context.Context, requestMetadata *r
 		groupID:         groupID,
 		actionCache:     actionCache,
 		requestMetadata: requestMetadata,
+		serverName:      serverName,
 	}
 }
 
@@ -532,7 +542,7 @@ func (h *HitTracker) recordCacheUsage(ctx context.Context, d *repb.Digest, actio
 	} else {
 		return nil
 	}
-	labels, err := usageutil.Labels(ctx)
+	labels, err := usageutil.LabelsForUsageRecording(ctx, h.serverName)
 	if err != nil {
 		return status.WrapError(err, "get usage labels")
 	}
