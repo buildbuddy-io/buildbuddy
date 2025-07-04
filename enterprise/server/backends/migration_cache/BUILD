@@ -28,6 +28,7 @@ go_library(
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_time//rate",

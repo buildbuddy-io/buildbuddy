@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/jonboulle/clockwork"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -773,10 +774,11 @@ type gcsMetadataWriter struct {
 	ctx        context.Context
 	blobName   string
 	customTime time.Time
-	gcs        PebbleGCSStorage
 }
 
 func (g *gcsMetadataWriter) Commit() error {
+	_, spn := tracing.StartSpan(g.ctx)
+	defer spn.End()
 	err := g.CommittedWriteCloser.Commit()
 
 	switch {
@@ -812,6 +814,8 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	if fs.gcs == nil || fs.appName == "" {
 		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	blobNameBytes, err := fs.BlobKey(fs.appName, fileRecord)
 	if err != nil {
 		return nil, err
@@ -832,7 +836,6 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
 		customTime:           customTime,
-		gcs:                  fs.gcs,
 	}, nil
 }
 

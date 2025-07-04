@@ -16,6 +16,7 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_jonboulle_clockwork//:clockwork",
     ],
 )
