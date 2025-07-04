@@ -1001,16 +1001,24 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		}
 	}
 
+	readPolicy := platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName)
+	writeManifestLocally := true
+	if shouldCacheRemotely && (readPolicy == "" || readPolicy == snaputil.ReadNewestSnapshot) {
+		// TODO: Add comment
+		writeManifestLocally = false
+	}
+
 	opts := &snaploader.CacheSnapshotOptions{
-		VMMetadata:           vmd,
-		VMConfiguration:      c.vmConfig,
-		VMStateSnapshotPath:  filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:      c.executorConfig.GuestKernelImagePath,
-		InitrdImagePath:      c.executorConfig.InitrdImagePath,
-		ChunkedFiles:         map[string]*copy_on_write.COWStore{},
-		Recycled:             c.recycled,
-		Remote:               shouldCacheRemotely,
-		SkippedCacheRemotely: c.supportsRemoteSnapshots && !shouldCacheRemotely,
+		VMMetadata:            vmd,
+		VMConfiguration:       c.vmConfig,
+		VMStateSnapshotPath:   filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
+		KernelImagePath:       c.executorConfig.GuestKernelImagePath,
+		InitrdImagePath:       c.executorConfig.InitrdImagePath,
+		ChunkedFiles:          map[string]*copy_on_write.COWStore{},
+		Recycled:              c.recycled,
+		CacheSnapshotRemotely: shouldCacheRemotely,
+		SkippedCacheRemotely:  c.supportsRemoteSnapshots && !shouldCacheRemotely,
+		WriteManifestLocally:  writeManifestLocally,
 	}
 	if snapshotSharingEnabled {
 		if c.rootStore != nil {

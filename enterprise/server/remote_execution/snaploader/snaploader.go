@@ -311,6 +311,11 @@ func (s *Snapshot) GetChunkedFiles() []*fcpb.ChunkedFile {
 	return s.manifest.GetChunkedFiles()
 }
 
+type GetSnapshotOptions struct {
+	RemoteReadEnabled bool
+	ReadPolicy        string
+}
+
 // CacheSnapshotOptions contains any assets or configuration to be associated
 // with a stored snapshot.
 //
@@ -336,7 +341,13 @@ type CacheSnapshotOptions struct {
 	Recycled bool
 
 	// Whether to save the snapshot to the remote cache (in addition to locally)
-	Remote bool
+	CacheSnapshotRemotely bool
+
+	// Whether to save the snapshot manifest to the local cache.
+	// If true, future runs on this executor will start from the local manifest,
+	// even if there is a newer manifest for the snapshot key available in the
+	// remote cache.
+	WriteManifestLocally bool
 
 	// Whether we skipped caching remotely due to newly applied remote snapshot limits.
 	SkippedCacheRemotely bool
@@ -395,11 +406,11 @@ func New(env environment.Env) (*FileCacheLoader, error) {
 	return &FileCacheLoader{env: env}, nil
 }
 
-func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKeySet, remoteEnabled bool) (*Snapshot, error) {
+func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKeySet, opts *GetSnapshotOptions) (*Snapshot, error) {
 	var lastErr error
 	allKeys := append([]*fcpb.SnapshotKey{keys.GetBranchKey()}, keys.FallbackKeys...)
 	for _, key := range allKeys {
-		manifest, err := l.getSnapshot(ctx, key, remoteEnabled)
+		manifest, err := l.getSnapshot(ctx, key, opts)
 		if err != nil {
 			lastErr = err
 			continue
@@ -407,31 +418,36 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKe
 		return &Snapshot{
 			key:           key,
 			manifest:      manifest,
-			remoteEnabled: remoteEnabled,
+			remoteEnabled: opts.RemoteReadEnabled,
 		}, nil
 	}
 	return nil, lastErr
 }
 
-func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
+func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *GetSnapshotOptions) (*fcpb.SnapshotManifest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	// Always prioritize the local manifest if it exists. It may point to a more
 	// updated snapshot than the remote manifest, which is updated less frequently.
-	// Note that the master snapshot is never cached locally.
+	// Note that if platform.SnapshotReadPolicy=newest, the master snapshot is
+	// never cached locally.
 	if *snaputil.EnableLocalSnapshotSharing {
-		supportsRemoteFallback := remoteEnabled && *snaputil.EnableRemoteSnapshotSharing
+		supportsRemoteFallback := opts.RemoteReadEnabled && *snaputil.EnableRemoteSnapshotSharing
 		manifest, err := l.getLocalManifest(ctx, key, supportsRemoteFallback)
-		if err == nil || !remoteEnabled || !*snaputil.EnableRemoteSnapshotSharing {
+		if err == nil || !opts.RemoteReadEnabled || !*snaputil.EnableRemoteSnapshotSharing {
 			if err == nil {
 				log.CtxInfof(ctx, "Using local manifest")
 			}
 			return manifest, err
 		}
 		log.CtxInfof(ctx, "Fetch local manifest err: %s", err)
-	} else if !remoteEnabled {
+	} else if !opts.RemoteReadEnabled {
 		return nil, status.InternalErrorf("invalid state: EnableLocalSnapshotSharing=false and remoteEnabled=false")
+	}
+
+	if opts.ReadPolicy == snaputil.ReadLocalSnapshotOnly {
+		return nil, status.NotFoundErrorf("local manifest not found")
 	}
 
 	// Fall back to fetching remote manifest.
@@ -733,7 +749,7 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	if err != nil {
 		return err
 	}
-	if *snaputil.EnableRemoteSnapshotSharing && !*snaputil.RemoteSnapshotReadonly && opts.Remote {
+	if *snaputil.EnableRemoteSnapshotSharing && !*snaputil.RemoteSnapshotReadonly && opts.CacheSnapshotRemotely {
 		// Cache master snapshot manifest
 		d, err := RemoteManifestKey(key)
 		if err != nil {
@@ -764,7 +780,10 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 			}
 			log.CtxInfof(ctx, "Cached remote snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, true /*remote*/, snapshotID))
 		}
+	}
 
+	// TODO: Add warning if the configuration means a manifest is never written
+	if !opts.WriteManifestLocally {
 		return nil
 	}
 
