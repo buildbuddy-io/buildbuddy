@@ -1,4 +1,18 @@
 actions:
+  - name: Maggie
+    container_image: ubuntu-22.04
+    triggers:
+      push:
+        branches:
+          - "master"
+          - "bb_release_*"
+      pull_request:
+        branches:
+          - "*"
+    platform_properties:
+      remote-snapshot-save-policy: none-available
+    steps:
+      - run: "echo 0"
   - name: Test
     container_image: ubuntu-22.04
     triggers:
