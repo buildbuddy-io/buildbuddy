@@ -217,6 +217,9 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 
 type NoOpAtimeUpdater struct{}
 
-func (a *NoOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) {
+func (a *NoOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) bool {
+	return true
 }
-func (a *NoOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ *digest.CASResourceName) {}
+func (a *NoOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ *digest.CASResourceName) bool {
+	return true
+}

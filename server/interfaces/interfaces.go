@@ -1681,8 +1681,8 @@ type RegistryService interface {
 }
 
 type AtimeUpdater interface {
-	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value)
-	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName)
+	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool
+	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
 }
 
 type CPULeaser interface {
