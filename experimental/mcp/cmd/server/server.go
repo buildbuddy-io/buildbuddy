@@ -8,11 +8,10 @@ import (
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/resources"
 	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/templates"
 	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/tools"
-	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -63,12 +62,6 @@ func main() {
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := real_environment.NewRealEnv(healthChecker)
-
-	authenticator, err := remoteauth.NewRemoteAuthenticator()
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	env.SetAuthenticator(authenticator)
 
 	monitoring.StartMonitoringHandler(env, *monitoringAddr)
 

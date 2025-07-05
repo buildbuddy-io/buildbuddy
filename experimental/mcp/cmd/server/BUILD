@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/backends/configsecrets",
-        "//enterprise/server/remoteauth",
         "//experimental/mcp/resources",
         "//experimental/mcp/templates",
         "//experimental/mcp/tools",

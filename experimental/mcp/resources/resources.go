@@ -1,7 +1,7 @@
 package resources
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 )
 

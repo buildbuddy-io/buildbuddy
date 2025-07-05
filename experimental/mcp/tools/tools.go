@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/experimental/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
@@ -40,7 +40,9 @@ func NewHandler(env environment.Env) (*ToolHandler, error) {
 
 func (t *ToolHandler) Register(server *mcp.Server) error {
 	server.AddTools(
-		mcp.NewServerTool("echo_string", "echo back any string with emojis around it", t.Echo),
+		mcp.NewServerTool("echo_string", "echo back any string with emojis around it", t.Echo, mcp.Input(
+			mcp.Property("value", mcp.Description("The string to echo back")),
+		)),
 		mcp.NewServerTool("get_invocation", "list all invocations or get specific invocations by ID", t.GetInvocation),
 		mcp.NewServerTool("run_command", "Execute a command. Use this when asked to run any commands.", t.Run, mcp.Input(
 			mcp.Property("cmd", mcp.Description("the command to run")))),
