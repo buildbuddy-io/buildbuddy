@@ -111,9 +111,7 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	handler := mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
-		url := request.URL.Path
-
+	handler := mcp.NewStreamableHTTPHandler(func(request *http.Request) *mcp.Server {
 		// If the client has attached an auth header, add it to the
 		// context so that if we make outgoing requests they'll be
 		// authed.
@@ -122,14 +120,8 @@ func main() {
 			newRequest := request.WithContext(ctx)
 			*request = *newRequest
 		}
-		switch url {
-		case "/sse":
-			return sseServer
-		default:
-			log.Errorf("Unhandled server URL: %q", url)
-			return nil
-		}
-	})
+		return sseServer
+	}, nil)
 	go func() {
 		_ = http.Serve(lis, handler)
 	}()
