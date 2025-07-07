@@ -78,7 +78,7 @@ func (u *atimeUpdate) toProto() *repb.FindMissingBlobsRequest {
 type atimeUpdates struct {
 	mu          sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
 	authHeaders map[string][]string
-	updates     []*atimeUpdate // TODO(iain): use sync.Map here
+	updates     []*atimeUpdate
 	numDigests  int
 
 	maxUpdatesPerGroup int
