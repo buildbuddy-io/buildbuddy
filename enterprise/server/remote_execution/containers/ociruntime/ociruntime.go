@@ -80,8 +80,8 @@ var (
 	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
 	devices                 = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
 	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
-	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.high based on resource requests to limit how much memory a task can claim.")
-	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0.2, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume cgroup_memory_limit_cushion * ")
+	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
+	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume cgroup_memory_limit_cushion * ")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -887,7 +887,7 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
 	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
 	if *enableCgroupMemoryLimit && c.memoryBytes > 0 {
-		c.cgroupSettings.MemoryThrottleLimitBytes = proto.Int64(c.memoryBytes + int64(float64(c.memoryBytes)*(*cgroupMemoryCushion)))
+		c.cgroupSettings.MemoryLimitBytes = proto.Int64(c.memoryBytes + int64(float64(c.memoryBytes)*(*cgroupMemoryCushion)))
 	}
 
 	path := c.cgroupPath()
