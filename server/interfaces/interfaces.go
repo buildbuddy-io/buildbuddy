@@ -1346,7 +1346,7 @@ type QuotaManager interface {
 	// when it's not allowed.
 	// If the rate limit has not been exceeded, the underlying storage is updated
 	// by the supplied quantity.
-	Allow(ctx context.Context, namespace string, quantity int64) error
+	Allow(ctx context.Context, resourceType qpb.ResourceType, resourceName string, quantity int64) error
 
 	GetNamespace(ctx context.Context, req *qpb.GetNamespaceRequest) (*qpb.GetNamespaceResponse, error)
 	RemoveNamespace(ctx context.Context, req *qpb.RemoveNamespaceRequest) (*qpb.RemoveNamespaceResponse, error)

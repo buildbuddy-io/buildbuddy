@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 
+	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 )
@@ -336,7 +337,7 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if qm := env.GetQuotaManager(); qm != nil {
-			err := qm.Allow(ctx, info.FullMethod, 1)
+			err := qm.Allow(ctx, qpb.ResourceType_RPC, info.FullMethod, 1)
 			if err != nil {
 				return nil, err
 			}
@@ -348,7 +349,7 @@ func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercepto
 func quotaStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if qm := env.GetQuotaManager(); qm != nil {
-			err := qm.Allow(stream.Context(), info.FullMethod, 1)
+			err := qm.Allow(stream.Context(), qpb.ResourceType_RPC, info.FullMethod, 1)
 			if err != nil {
 				return err
 			}
