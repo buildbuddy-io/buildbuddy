@@ -12808,7 +12808,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"cpu\", stall_type=\"some\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"cpu\", stall_type=\"some\", region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -12889,7 +12889,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"cpu\", stall_type=\"full\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"cpu\", stall_type=\"full\", region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -12970,7 +12970,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"memory\", stall_type=\"some\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"memory\", stall_type=\"some\", region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -13051,7 +13051,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"memory\", stall_type=\"full\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"memory\", stall_type=\"full\", region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -13132,7 +13132,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"io\", stall_type=\"some\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"io\", stall_type=\"some\", region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -13213,7 +13213,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"io\", stall_type=\"full\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"io\", stall_type=\"full\", region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
