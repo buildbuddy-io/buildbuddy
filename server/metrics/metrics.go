@@ -161,6 +161,9 @@ const (
 	// Describes the type of cache request
 	CacheRequestType = "type"
 
+	// Origin of the cache request (for usage tracking): should be "internal" or "external"
+	CacheRequestOrigin = "origin"
+
 	// Describes the name of the server that handles a client request, such as "byte_stream_server" or "cas_server"
 	ServerName = "server_name"
 
@@ -539,6 +542,7 @@ var (
 		Help:      "Number of bytes downloaded from the remote cache.",
 	}, []string{
 		GroupID,
+		CacheRequestOrigin,
 	})
 	// #### Examples
 	//
@@ -593,6 +597,7 @@ var (
 		Help:      "Number of bytes uploaded to the remote cache",
 	}, []string{
 		GroupID,
+		CacheRequestOrigin,
 	})
 
 	// #### Examples

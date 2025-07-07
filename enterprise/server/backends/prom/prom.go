@@ -79,7 +79,7 @@ sum by (cache_type) (increase(exported_buildbuddy_remote_cache_num_hits[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_download_size_bytes_exported",
-			LabelNames:       []string{podNameLabel},
+			LabelNames:       []string{podNameLabel, metrics.CacheRequestOrigin},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_download_size_bytes"),
 				Help: proto.String("Number of bytes downloaded from the remote cache."),
@@ -90,7 +90,7 @@ sum(increase(exported_buildbuddy_remote_cache_download_size_bytes[1w]))`,
 		},
 		{
 			sourceMetricName: "buildbuddy_remote_cache_upload_size_bytes_exported",
-			LabelNames:       []string{podNameLabel},
+			LabelNames:       []string{podNameLabel, metrics.CacheRequestOrigin},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_cache_upload_size_bytes"),
 				Help: proto.String("Number of bytes uploaded to the remote cache."),
