@@ -19,6 +19,8 @@ import (
 )
 
 var (
+	atimeUpdaterEnqueueChanSize = flag.Int("cache_proxy.remote_atime_queue_size", 1000*1000, "The size of the channel to use for buffering enqueued atime updates.")
+
 	// The maximum gRPC message size is 4MB. Each digest proto is
 	// 64 bytes (hash) + 8 bytes (size) + 2 bytes (tags) = 74 bytes. The
 	// remaining fields in FindMissingBlobsRequest should be small (1kb?), so
@@ -75,7 +77,7 @@ func (u *atimeUpdate) toProto() *repb.FindMissingBlobsRequest {
 type atimeUpdates struct {
 	mu          sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
 	authHeaders map[string][]string
-	updates     []*atimeUpdate
+	updates     []*atimeUpdate // TODO(iain): use sync.Map here
 	numDigests  int
 
 	maxUpdatesPerGroup int
@@ -100,8 +102,18 @@ func (u *atimeUpdates) findOrCreatePendingUpdate(instanceName string, digestFunc
 	return pendingUpdate
 }
 
+// An enqueued atime update
+type enqueuedAtimeUpdates struct {
+	groupID        string
+	authHeaders    map[string][]string
+	instanceName   string
+	digests        []*repb.Digest
+	digestFunction repb.DigestFunction_Value
+}
 type atimeUpdater struct {
 	authenticator interfaces.Authenticator
+
+	enqueueChan chan *enqueuedAtimeUpdates
 
 	ticker <-chan time.Time
 	quit   chan struct{}
@@ -117,16 +129,30 @@ type atimeUpdater struct {
 }
 
 func Register(env *real_environment.RealEnv) error {
+	updater, err := new(env)
+	if err != nil {
+		return err
+	}
+	// TODO(iain): make an effort to drain queue on server shutdown.
+	go updater.batcher()
+	go updater.sender()
+	env.SetAtimeUpdater(updater)
+	env.GetHealthChecker().RegisterShutdownFunction(updater.shutdown)
+	return nil
+}
+
+func new(env *real_environment.RealEnv) (*atimeUpdater, error) {
 	authenticator := env.GetAuthenticator()
 	if authenticator == nil {
-		return fmt.Errorf("An Authenticator is required to enable the AtimeUpdater.")
+		return nil, fmt.Errorf("An Authenticator is required to enable the AtimeUpdater.")
 	}
 	remote := env.GetContentAddressableStorageClient()
 	if remote == nil {
-		return fmt.Errorf("A remote CAS client is required to enable the AtimeUpdater.")
+		return nil, fmt.Errorf("A remote CAS client is required to enable the AtimeUpdater.")
 	}
 	updater := atimeUpdater{
 		authenticator:       authenticator,
+		enqueueChan:         make(chan *enqueuedAtimeUpdates, *atimeUpdaterEnqueueChanSize),
 		ticker:              env.GetClock().NewTicker(*atimeUpdaterBatchUpdateInterval).Chan(),
 		quit:                make(chan struct{}, 1),
 		updates:             make(map[string]*atimeUpdates),
@@ -135,11 +161,7 @@ func Register(env *real_environment.RealEnv) error {
 		maxDigestsPerGroup:  *atimeUpdaterMaxDigestsPerGroup,
 		remote:              remote,
 	}
-	// TODO(iain): make an effort to drain queue on server shutdown.
-	go updater.start()
-	env.SetAtimeUpdater(&updater)
-	env.GetHealthChecker().RegisterShutdownFunction(updater.shutdown)
-	return nil
+	return &updater, nil
 }
 
 func (u *atimeUpdater) groupID(ctx context.Context) string {
@@ -150,18 +172,58 @@ func (u *atimeUpdater) groupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
-func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) {
+func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool {
 	if len(digests) == 0 {
-		return
+		return true
 	}
 
 	groupID := u.groupID(ctx)
 	authHeaders := authutil.GetAuthHeaders(ctx)
 	if len(authHeaders) == 0 {
 		log.Infof("Dropping remote atime update due to missing auth headers in context")
-		return
+		return false
+	}
+	update := enqueuedAtimeUpdates{
+		groupID:        groupID,
+		authHeaders:    authHeaders,
+		instanceName:   instanceName,
+		digests:        digests,
+		digestFunction: digestFunction,
 	}
 
+	// Try to send the update to the enqueueChan, where it will be processed by
+	// the batcher, but only if this will not block.
+	select {
+	case u.enqueueChan <- &update:
+		return true
+	default:
+		metrics.RemoteAtimeUpdates.WithLabelValues(
+			groupID,
+			"dropped_channel_full",
+		).Add(float64(len(digests)))
+		return false
+	}
+}
+
+func (u *atimeUpdater) EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool {
+	return u.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
+}
+
+// Runs a loop that consumes updates from enqueueChan and adds them to the
+// batches of pending atime updates to be sent to the backend.
+func (u *atimeUpdater) batcher() {
+	for {
+		select {
+		case <-u.quit:
+			return
+		case update := <-u.enqueueChan:
+			u.batch(update)
+		}
+	}
+}
+
+func (u *atimeUpdater) batch(update *enqueuedAtimeUpdates) {
+	groupID := update.groupID
 	u.mu.Lock()
 	updates, ok := u.updates[groupID]
 	if !ok {
@@ -173,24 +235,24 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	// Uniqueify the incoming digests. Note this wrecks the order of the
 	// requested updates. Too bad. Keep track of the counts for metrics below.
 	keys := map[digest.Key]int{}
-	for _, digestProto := range digests {
+	for _, digestProto := range update.digests {
 		keys[digest.NewKey(digestProto)]++
 	}
 
 	// Always use the most recent auth headers for a group for remote atime updates.
 	updates.mu.Lock()
-	updates.authHeaders = authHeaders
+	updates.authHeaders = update.authHeaders
 
 	// First, find the update that the new digests can be merged into, or create
 	// a new one if one doesn't exist.
-	pendingUpdate := updates.findOrCreatePendingUpdate(instanceName, digestFunction)
+	pendingUpdate := updates.findOrCreatePendingUpdate(update.instanceName, update.digestFunction)
 	updates.mu.Unlock()
 	if pendingUpdate == nil {
-		log.CtxInfof(ctx, "Too many pending FindMissingBlobsRequests for updating remote atime for group %s, dropping %d pending atime updates", groupID, len(keys))
+		log.Infof("Too many pending FindMissingBlobsRequests for updating remote atime for group %s, dropping %d pending atime updates", groupID, len(keys))
 		metrics.RemoteAtimeUpdates.WithLabelValues(
 			groupID,
 			"dropped_too_many_batches",
-		).Add(float64(len(digests)))
+		).Add(float64(len(update.digests)))
 		return
 	}
 
@@ -206,8 +268,8 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 		updates.mu.Lock()
 		if updates.numDigests+1 > u.maxDigestsPerGroup {
 			updates.mu.Unlock()
-			dropped = len(digests) - enqueued - duplicate
-			log.CtxWarningf(ctx, "maxDigestsPerGroup exceeded for group %s, dropping %d digests", groupID, dropped)
+			dropped = len(update.digests) - enqueued - duplicate
+			log.Warningf("maxDigestsPerGroup exceeded for group %s, dropping %d digests", groupID, dropped)
 			break
 		}
 		updates.numDigests++
@@ -217,8 +279,8 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 		duplicate += count - 1
 	}
 
-	if enqueued+duplicate+dropped != len(digests) {
-		log.Debugf("atime-updater metrics don't add up. incoming digests: %d, added: %d, duplicates: %d, dropped: %d", len(digests), enqueued, duplicate, dropped)
+	if enqueued+duplicate+dropped != len(update.digests) {
+		log.Debugf("atime-updater metrics don't add up. incoming digests: %d, added: %d, duplicates: %d, dropped: %d", len(update.digests), enqueued, duplicate, dropped)
 	}
 
 	metrics.RemoteAtimeUpdates.WithLabelValues(
@@ -235,11 +297,8 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	).Add(float64(dropped))
 }
 
-func (u *atimeUpdater) EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) {
-	u.Enqueue(ctx, rn.GetInstanceName(), []*repb.Digest{rn.GetDigest()}, rn.GetDigestFunction())
-}
-
-func (u *atimeUpdater) start() {
+// Starts the loop that sends atime updates to the backend.
+func (u *atimeUpdater) sender() {
 	for {
 		select {
 		case <-u.quit:
