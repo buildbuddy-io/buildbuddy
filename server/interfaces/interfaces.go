@@ -1469,6 +1469,7 @@ type ExecutionCollector interface {
 	// available starting from the start index.
 	GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error)
 	DeleteExecutions(ctx context.Context, iid string) error
+	SoftDeleteExecutions(ctx context.Context, iid string) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
 	AddExecutionInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, bidirectional bool) error

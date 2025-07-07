@@ -352,9 +352,12 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 
 	// Always clean up executions in Collector because we are not retrying
 	defer func() {
-		err := r.env.GetExecutionCollector().DeleteExecutions(ctx, inv.InvocationID)
+		// Clickhouse ReplicatedMergeTree tables can have replication lag, which can cause
+		// reads of executions data to fail. Keep the data in Redis a little bit
+		// longer, so clients can read executions data from Redis in these cases.
+		err := r.env.GetExecutionCollector().SoftDeleteExecutions(ctx, inv.InvocationID)
 		if err != nil {
-			log.CtxErrorf(ctx, "failed to clean up executions in collector: %s", err)
+			log.CtxErrorf(ctx, "failed to soft delete executions in collector: %s", err)
 		}
 	}()
 

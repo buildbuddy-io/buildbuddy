@@ -276,6 +276,12 @@ func (c *collector) DeleteExecutions(ctx context.Context, iid string) error {
 	return c.rdb.Del(ctx, getExecutionKey(iid)).Err()
 }
 
+// SoftDeleteExecutions decreases the TTL of executions data so they're cleaned up soon,
+// but not immediately.
+func (c *collector) SoftDeleteExecutions(ctx context.Context, iid string) error {
+	return c.rdb.Expire(ctx, getExecutionKey(iid), 5*time.Minute).Err()
+}
+
 func (c *collector) DeleteExecutionInvocationLinks(ctx context.Context, executionID string) error {
 	return c.rdb.Del(ctx, getExecutionInvocationLinksKey(executionID)).Err()
 }
