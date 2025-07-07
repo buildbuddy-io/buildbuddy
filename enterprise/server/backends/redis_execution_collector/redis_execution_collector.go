@@ -276,10 +276,10 @@ func (c *collector) DeleteExecutions(ctx context.Context, iid string) error {
 	return c.rdb.Del(ctx, getExecutionKey(iid)).Err()
 }
 
-// SoftDeleteExecutions decreases the TTL of executions data so they're cleaned up soon,
-// but not immediately.
-func (c *collector) SoftDeleteExecutions(ctx context.Context, iid string) error {
-	return c.rdb.Expire(ctx, getExecutionKey(iid), 5*time.Minute).Err()
+// ExpireExecutions sets the TTL of executions data. This can be used to clean
+// up executions data after some delay.
+func (c *collector) ExpireExecutions(ctx context.Context, iid string, ttl time.Duration) error {
+	return c.rdb.Expire(ctx, getExecutionKey(iid), ttl).Err()
 }
 
 func (c *collector) DeleteExecutionInvocationLinks(ctx context.Context, executionID string) error {
