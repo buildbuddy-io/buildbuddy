@@ -100,6 +100,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/mdlayher/vsock v1.2.1
 	github.com/mitchellh/go-ps v1.0.0
+	github.com/modelcontextprotocol/go-sdk v0.1.1-0.20250704183533-328a25d50356
 	github.com/mwitkow/grpc-proxy v0.0.0-20230212185441-f345521cb9c9
 	github.com/ncruces/go-sqlite3 v0.25.2
 	github.com/nishanths/exhaustive v0.7.11
@@ -116,6 +117,7 @@ require (
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.62.0
 	github.com/prometheus/procfs v0.15.1
+	github.com/psanford/memfs v0.0.0-20241019191636-4ef911798f9b
 	github.com/rantav/go-grpc-channelz v0.0.3
 	github.com/rs/zerolog v1.29.1
 	github.com/shirou/gopsutil/v3 v3.23.12
@@ -355,7 +357,6 @@ require (
 	github.com/moby/sys/signal v0.7.0 // indirect
 	github.com/moby/sys/user v0.3.0 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
-	github.com/modelcontextprotocol/go-sdk v0.1.1-0.20250704183533-328a25d50356 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
@@ -371,7 +372,6 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20221212215047-62379fc7944b // indirect
-	github.com/psanford/memfs v0.0.0-20241019191636-4ef911798f9b // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/russellhaering/goxmldsig v1.4.0 // indirect

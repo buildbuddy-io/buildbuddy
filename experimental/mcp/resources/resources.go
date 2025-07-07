@@ -1,8 +1,8 @@
 package resources
 
 import (
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type ResourceHandler struct {

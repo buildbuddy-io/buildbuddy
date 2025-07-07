@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -92,6 +93,7 @@ type RealEnv struct {
 	httpServerWaitGroup              *sync.WaitGroup
 	listenAddr                       string
 	buildbuddyServer                 interfaces.BuildBuddyServer
+	buildbuddyClient                 bbspb.BuildBuddyServiceClient
 	sslService                       interfaces.SSLService
 	quotaManager                     interfaces.QuotaManager
 	buildEventServer                 pepb.PublishBuildEventServer
@@ -508,6 +510,14 @@ func (r *RealEnv) GetBuildBuddyServer() interfaces.BuildBuddyServer {
 
 func (r *RealEnv) SetBuildBuddyServer(buildbuddyServer interfaces.BuildBuddyServer) {
 	r.buildbuddyServer = buildbuddyServer
+}
+
+func (r *RealEnv) GetBuildBuddyClient() bbspb.BuildBuddyServiceClient {
+	return r.buildbuddyClient
+}
+
+func (r *RealEnv) SetBuildBuddyClient(c bbspb.BuildBuddyServiceClient) {
+	r.buildbuddyClient = c
 }
 
 func (r *RealEnv) GetSSLService() interfaces.SSLService {

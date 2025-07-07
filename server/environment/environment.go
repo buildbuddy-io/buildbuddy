@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -95,6 +96,7 @@ type Env interface {
 	GetInternalHTTPMux() interfaces.HttpServeMux
 	GetListenAddr() string
 	GetBuildBuddyServer() interfaces.BuildBuddyServer
+	GetBuildBuddyClient() bbspb.BuildBuddyServiceClient
 	GetSSLService() interfaces.SSLService
 	GetBuildEventServer() pepb.PublishBuildEventServer
 	GetGitHubStatusService() interfaces.GitHubStatusService

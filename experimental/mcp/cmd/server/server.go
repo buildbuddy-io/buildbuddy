@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/resources"
 	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/templates"
 	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/tools"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -20,9 +18,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc/metadata"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -73,6 +73,7 @@ func main() {
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(cacheConn))
 	env.SetActionCacheClient(repb.NewActionCacheClient(cacheConn))
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(cacheConn))
+	env.SetBuildBuddyClient(bbspb.NewBuildBuddyServiceClient(cacheConn))
 
 	apiConn, err := grpc_client.DialInternal(env, *remoteAPI)
 	if err != nil {
@@ -112,15 +113,12 @@ func main() {
 
 	handler := mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
 		url := request.URL.Path
-		log.Infof("Handling request for URL %q", url)
 
-		log.Printf("request Header: %+v", request.Header)
 		// If the client has attached an auth header, add it to the
 		// context so that if we make outgoing requests they'll be
 		// authed.
 		if apiKey := request.Header.Get(authutil.APIKeyHeader); apiKey != "" {
 			ctx := metadata.AppendToOutgoingContext(request.Context(), authutil.APIKeyHeader, apiKey)
-			ctx = context.WithValue(ctx, "mcp-session-id", request.Header.Get("Mcp-Session-Id"))
 			newRequest := request.WithContext(ctx)
 			*request = *newRequest
 		}
