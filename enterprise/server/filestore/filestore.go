@@ -492,7 +492,6 @@ type Store interface {
 	FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetadata) string
 	FileMetadataKey(r *sgpb.FileRecord) ([]byte, error)
 	PebbleKey(r *sgpb.FileRecord) (PebbleKey, error)
-	BlobKey(appName string, r *sgpb.FileRecord) ([]byte, error)
 
 	NewReader(ctx context.Context, fileDir string, md *sgpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
 	NewWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
@@ -515,7 +514,7 @@ type Store interface {
 type PebbleGCSStorage interface {
 	SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error
 	Reader(ctx context.Context, blobName string) (io.ReadCloser, error)
-	ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time) (interfaces.CommittedWriteCloser, error)
+	ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error)
 	DeleteBlob(ctx context.Context, blobName string) error
 	UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error
 }
@@ -622,10 +621,10 @@ func (fs *fileStorer) FileMetadataKey(r *sgpb.FileRecord) ([]byte, error) {
 	return pmk.Bytes(UndefinedKeyVersion)
 }
 
-// BlobKey is the partial path where a blob will be written.
+// blobKey is the partial path where a blob will be written.
 // For example, given a fileRecord with FileKey: "foo/bar", the filestore will
 // write the file at a path like "/buildbuddy-app-1/blobs/foo/bar".
-func (fs *fileStorer) BlobKey(appName string, r *sgpb.FileRecord) ([]byte, error) {
+func blobKey(appName string, r *sgpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// blobkeys look like this:
 	//   // {appName}/{partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
@@ -812,7 +811,7 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	if fs.gcs == nil || fs.appName == "" {
 		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	blobNameBytes, err := fs.BlobKey(fs.appName, fileRecord)
+	blobNameBytes, err := blobKey(fs.appName, fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -822,8 +821,15 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	}
 	blobName := string(blobNameBytes) + "-" + salt
 
+	estimatedSize := fileRecord.GetDigest().GetSizeBytes()
+	if fileRecord.GetCompressor() != repb.Compressor_IDENTITY {
+		// Guess that the compressed data will be 1/5th the size. The estimated
+		// size triggers an optimization for very large files, so it's better to
+		// underestimate.
+		estimatedSize /= 5
+	}
 	customTime := fs.clock.Now()
-	wc, err := fs.gcs.ConditionalWriter(ctx, blobName, true /*=overwriteExisting*/, customTime)
+	wc, err := fs.gcs.ConditionalWriter(ctx, blobName, true /*=overwriteExisting*/, customTime, estimatedSize)
 	if err != nil {
 		return nil, err
 	}

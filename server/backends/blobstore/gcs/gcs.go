@@ -208,7 +208,11 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 // If overwriteExisting is false, then calling Commit() on the returned
 // interfaces.CommittedWriteCloser may return an AlreadyExistsError indicating
 // that an object with the same name already existed and was not overwritten.
-func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time) (interfaces.CommittedWriteCloser, error) {
+//
+// If estimatedSize is < googleapi.DefaultUploadChunkSize, allow splitting the
+// upload into multiple chunks and retrying failed chunks. Prefer to
+// underestimate the size, because overestimating it can waste lots of memory.
+func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	start := time.Now()
 
@@ -219,9 +223,16 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 		ow = g.bucketHandle.Object(blobName).If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
 	}
 
-	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer
-	// Always disable buffering in the client for these writes.
-	ow.ChunkSize = 0
+	if estimatedSize < googleapi.DefaultUploadChunkSize {
+		// For most writes, disable buffering. This means that the GCS client
+		// library won't retry failed writes, but it saves up to
+		// googleapi.DefaultUploadChunkSize (16MiB) per write.
+		// For writes over that threshold, allow splitting them up into chunks,
+		// so that we don't send a single POST with the whole write. This allows
+		// the GCS client library to resume the upload if sending a chunk fails.
+		// See https://pkg.go.dev/cloud.google.com/go/storage#Writer
+		ow.ChunkSize = 0
+	}
 	ow.ObjectAttrs.CustomTime = customTime
 
 	cwc := ioutil.NewCustomCommitWriteCloser(ow)
