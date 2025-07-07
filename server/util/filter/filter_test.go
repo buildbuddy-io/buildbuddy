@@ -104,6 +104,90 @@ func TestValidGenericFilters(t *testing.T) {
 			expectedQStr:  "NOT( invocation_status = ? OR invocation_status = ? )",
 			expectedQArgs: []interface{}{2, 3},
 		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_CAS_CACHE_MISSES_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_GREATER_THAN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					IntValue: []int64{0},
+				},
+			},
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "cas_cache_misses > ?",
+			expectedQArgs: []interface{}{int64(0)},
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_ACTION_CACHE_MISSES_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_GREATER_THAN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					IntValue: []int64{0},
+				},
+			},
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "action_cache_misses > ?",
+			expectedQArgs: []interface{}{int64(0)},
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_CAS_CACHE_DOWNLOAD_SIZE_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_LESS_THAN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					IntValue: []int64{2001},
+				},
+			},
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "total_download_size_bytes < ?",
+			expectedQArgs: []interface{}{int64(2001)},
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_CAS_CACHE_DOWNLOAD_SPEED_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_GREATER_THAN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					IntValue: []int64{10_000},
+				},
+			},
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "download_throughput_bytes_per_second > ?",
+			expectedQArgs: []interface{}{int64(10_000)},
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_CAS_CACHE_UPLOAD_SIZE_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_LESS_THAN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					IntValue: []int64{2001},
+				},
+			},
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "total_upload_size_bytes < ?",
+			expectedQArgs: []interface{}{int64(2001)},
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_CAS_CACHE_UPLOAD_SPEED_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_GREATER_THAN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					IntValue: []int64{10_000},
+				},
+			},
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "upload_throughput_bytes_per_second > ?",
+			expectedQArgs: []interface{}{int64(10_000)},
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_TIME_SAVED_USEC_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_GREATER_THAN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					IntValue: []int64{456},
+				},
+			},
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "total_cached_action_exec_usec > ?",
+			expectedQArgs: []interface{}{int64(456)},
+		},
 	}
 	for _, tc := range cases {
 		qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "clickhouse")
