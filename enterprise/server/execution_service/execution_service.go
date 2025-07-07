@@ -232,6 +232,7 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 		}
 	}
 
+	log.CtxWarningf(ctx, "Flushed are %+v, buffered %+v, in progress %+v, deduped %+v", flushedExecutions, bufferedExecutions, inProgressExecutions, dedupedExecutions)
 	return dedupedExecutions, nil
 }
 
@@ -271,6 +272,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 		return nil, err
 	}
 
+	log.CtxDebugf(ctx, "Primary executions are %+v,\n olap are %+v", primaryDBExecutions, olapExecutions)
 	// Combine the executions from the primary DB and OLAP.
 	// Prefer OLAP executions if they exist, otherwise fall back to primary DB.
 	executions := make([]*espb.Execution, 0, len(olapExecutions))
