@@ -77,7 +77,7 @@ func (u *atimeUpdate) toProto() *repb.FindMissingBlobsRequest {
 type atimeUpdates struct {
 	mu          sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
 	authHeaders map[string][]string
-	updates     []*atimeUpdate
+	updates     []*atimeUpdate // TODO(iain): use sync.Map here
 	numDigests  int
 
 	maxUpdatesPerGroup int
@@ -134,8 +134,8 @@ func Register(env *real_environment.RealEnv) error {
 		return err
 	}
 	// TODO(iain): make an effort to drain queue on server shutdown.
-	go updater.startBatcher()
-	go updater.startSender()
+	go updater.batcher()
+	go updater.sender()
 	env.SetAtimeUpdater(updater)
 	env.GetHealthChecker().RegisterShutdownFunction(updater.shutdown)
 	return nil
@@ -174,7 +174,7 @@ func (u *atimeUpdater) groupID(ctx context.Context) string {
 
 func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool {
 	if len(digests) == 0 {
-		return false
+		return true
 	}
 
 	groupID := u.groupID(ctx)
@@ -211,7 +211,7 @@ func (u *atimeUpdater) EnqueueByResourceName(ctx context.Context, rn *digest.CAS
 
 // Runs a loop that consumes updates from enqueueChan and adds them to the
 // batches of pending atime updates to be sent to the backend.
-func (u *atimeUpdater) startBatcher() {
+func (u *atimeUpdater) batcher() {
 	for {
 		select {
 		case <-u.quit:
@@ -298,7 +298,7 @@ func (u *atimeUpdater) batch(update *enqueuedAtimeUpdates) {
 }
 
 // Starts the loop that sends atime updates to the backend.
-func (u *atimeUpdater) startSender() {
+func (u *atimeUpdater) sender() {
 	for {
 		select {
 		case <-u.quit:

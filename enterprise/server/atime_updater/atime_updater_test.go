@@ -476,8 +476,8 @@ func TestEnqueue_Raciness(t *testing.T) {
 	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 1_000)
 	flags.Set(t, "cache_proxy.remote_atime_update_interval", time.Millisecond)
 	authenticator, updater, _, clock := setup(t)
-	go updater.startBatcher()
-	go updater.startSender()
+	go updater.batcher()
+	go updater.sender()
 	anonCtx := authenticatedContext(t.Context(), "", authenticator)
 	group1Ctx := authenticatedContext(t.Context(), user1, authenticator)
 	group2Ctx := authenticatedContext(t.Context(), user2, authenticator)
@@ -505,6 +505,8 @@ func TestEnqueue_Raciness(t *testing.T) {
 			clock.Advance(time.Second)
 		}
 	}
+
+	updater.quit <- struct{}{}
 }
 
 func casResourceName(t *testing.T, d *repb.Digest, instanceName string) *digest.CASResourceName {

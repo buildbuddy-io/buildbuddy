@@ -1681,7 +1681,13 @@ type RegistryService interface {
 }
 
 type AtimeUpdater interface {
+	// Enqueues atime updates for the provided instanceName, digestFunction,
+	// and set of digests provided. Returns true if the updates were
+	// successfully enqueued, false if not.
 	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool
+
+	// Enqueues atime updates for the provided resource name. Returns true if
+	// the update was successfully enqueued, false if not.
 	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
 }
 
