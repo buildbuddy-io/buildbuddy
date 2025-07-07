@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -674,9 +675,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.Jwt = jwt
 	}
 
-	platformPropOverrides := platform.RemoteHeaderOverrides(ctx)
-	if len(platformPropOverrides) > 0 {
-		executionTask.PlatformOverrides = &repb.Platform{Properties: platformPropOverrides}
+	executionTask.PlatformOverrides = &repb.Platform{
+		Properties: platform.RemoteHeaderOverrides(ctx),
 	}
 
 	taskGroupID := interfaces.AuthAnonymousUser
@@ -687,6 +687,26 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	props, err := platform.ParseProperties(executionTask)
 	if err != nil {
 		return "", nil, err
+	}
+
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+		expOverrides := fp.Object(
+			ctx, "remote_execution.task_size_overrides", nil,
+			// Set user-requested task size in the experiment context.
+			experiments.WithContext("EstimatedComputeUnits", props.EstimatedComputeUnits),
+			experiments.WithContext("EstimatedMilliCPU", props.EstimatedMilliCPU),
+			experiments.WithContext("EstimatedMemoryBytes", props.EstimatedMemoryBytes),
+		)
+		for propertyName, propertyValueAny := range expOverrides {
+			if propertyValue, ok := propertyValueAny.(string); ok {
+				executionTask.PlatformOverrides.Properties = append(executionTask.PlatformOverrides.Properties, &repb.Platform_Property{
+					Name:  propertyName,
+					Value: propertyValue,
+				})
+			} else {
+				log.CtxWarningf(ctx, "Invalid platform property value %v (type %T) for property %q (expected string)", propertyValueAny, propertyValueAny, propertyName)
+			}
+		}
 	}
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
