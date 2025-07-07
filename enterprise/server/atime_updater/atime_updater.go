@@ -318,7 +318,11 @@ func (u *atimeUpdater) sendUpdates(ctx context.Context) int {
 	updatesSent := 0
 	authHeaders := map[string]map[string][]string{}
 	u.updates.Range(func(key, value interface{}) bool {
-		groupID := key.(string)
+		groupID, ok := key.(string)
+		if !ok {
+			alert.UnexpectedEvent("atimeUpdater.updates contains key with unexpected type")
+			return true
+		}
 		updates, ok := value.(*atimeUpdates)
 		if !ok {
 			alert.UnexpectedEvent("atimeUpdater.updates contains value with unexpected type")
