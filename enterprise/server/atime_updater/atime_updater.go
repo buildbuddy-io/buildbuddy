@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
@@ -118,8 +119,7 @@ type atimeUpdater struct {
 	ticker <-chan time.Time
 	quit   chan struct{}
 
-	mu      sync.Mutex               // protects updates
-	updates map[string]*atimeUpdates // pending updates keyed by groupID.
+	updates sync.Map // pending updates keyed by groupID (string -> *atimeUpdates)
 
 	maxDigestsPerUpdate int
 	maxUpdatesPerGroup  int
@@ -155,7 +155,6 @@ func new(env *real_environment.RealEnv) (*atimeUpdater, error) {
 		enqueueChan:         make(chan *enqueuedAtimeUpdates, *atimeUpdaterEnqueueChanSize),
 		ticker:              env.GetClock().NewTicker(*atimeUpdaterBatchUpdateInterval).Chan(),
 		quit:                make(chan struct{}, 1),
-		updates:             make(map[string]*atimeUpdates),
 		maxDigestsPerUpdate: *atimeUpdaterMaxDigestsPerUpdate,
 		maxUpdatesPerGroup:  *atimeUpdaterMaxUpdatesPerGroup,
 		maxDigestsPerGroup:  *atimeUpdaterMaxDigestsPerGroup,
@@ -224,13 +223,12 @@ func (u *atimeUpdater) batcher() {
 
 func (u *atimeUpdater) batch(update *enqueuedAtimeUpdates) {
 	groupID := update.groupID
-	u.mu.Lock()
-	updates, ok := u.updates[groupID]
+	rawUpdates, _ := u.updates.LoadOrStore(groupID, &atimeUpdates{maxUpdatesPerGroup: u.maxUpdatesPerGroup})
+	updates, ok := rawUpdates.(*atimeUpdates)
 	if !ok {
-		updates = &atimeUpdates{maxUpdatesPerGroup: u.maxUpdatesPerGroup}
-		u.updates[groupID] = updates
+		alert.UnexpectedEvent("atimeUpdater.updates contains value with invalid type")
+		return
 	}
-	u.mu.Unlock()
 
 	// Uniqueify the incoming digests. Note this wrecks the order of the
 	// requested updates. Too bad. Keep track of the counts for metrics below.
@@ -319,20 +317,25 @@ func (u *atimeUpdater) sendUpdates(ctx context.Context) int {
 	updatesToSend := map[string]*repb.FindMissingBlobsRequest{}
 	updatesSent := 0
 	authHeaders := map[string]map[string][]string{}
-	u.mu.Lock()
-	for groupID, updates := range u.updates {
+	u.updates.Range(func(key, value interface{}) bool {
+		groupID := key.(string)
+		updates, ok := value.(*atimeUpdates)
+		if !ok {
+			alert.UnexpectedEvent("atimeUpdater.updates contains value with unexpected type")
+			return true
+		}
 		updates.mu.Lock()
 		update := u.getUpdate(updates)
 		if update == nil {
 			updates.mu.Unlock()
-			continue
+			return true
 		}
 		updatesToSend[groupID] = update
 		authHeaders[groupID] = updates.authHeaders
 		updates.numDigests -= len(update.BlobDigests)
 		updates.mu.Unlock()
-	}
-	u.mu.Unlock()
+		return true
+	})
 
 	for groupID, update := range updatesToSend {
 		updatesSent++
