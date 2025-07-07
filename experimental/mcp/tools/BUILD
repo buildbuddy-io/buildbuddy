@@ -22,3 +22,5 @@ go_library(
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
+
+package(default_visibility = ["//experimental:__subpackages__"])

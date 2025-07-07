@@ -32,3 +32,5 @@ go_binary(
     embed = [":server_lib"],
     visibility = ["//visibility:public"],
 )
+
+package(default_visibility = ["//experimental:__subpackages__"])

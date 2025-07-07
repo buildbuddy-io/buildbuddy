@@ -10,3 +10,5 @@ go_library(
         "@com_github_modelcontextprotocol_go_sdk//mcp",
     ],
 )
+
+package(default_visibility = ["//experimental:__subpackages__"])
