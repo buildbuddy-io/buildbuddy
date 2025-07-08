@@ -139,3 +139,11 @@
 .trace-viewer .filter {
   margin-bottom: 16px;
 }
+
+.trace-viewer .zoom-factor {
+  background: rgba(255, 240, 130, 0.6);
+  padding: 6px 8px;
+  margin-right: 4px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}

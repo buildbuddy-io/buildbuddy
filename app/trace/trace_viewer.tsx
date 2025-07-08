@@ -57,6 +57,12 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
   private canvasRefs: React.RefObject<HTMLCanvasElement>[] = this.model.panels.map((_) =>
     React.createRef<HTMLCanvasElement>()
   );
+  private zoomFactorRefs: React.RefObject<HTMLSpanElement>[] = this.model.panels.map((_) =>
+    React.createRef<HTMLSpanElement>()
+  );
+  private zoomOutButtonRefs: React.RefObject<HTMLButtonElement>[] = this.model.panels.map((_) =>
+    React.createRef<HTMLButtonElement>()
+  );
   private panels: Panel[] = [];
 
   private animation = new AnimationLoop((dt: number) => this.update(dt));
@@ -229,6 +235,25 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
       }
 
       panel.draw();
+    }
+
+    const zoomMin = this.canvasXPerModelX.min;
+    let zoomFactor = 1;
+    if (zoomMin > 0 && isFinite(zoomMin)) {
+      zoomFactor = this.canvasXPerModelX.value / zoomMin;
+    }
+    const roundedZoomFactor = Math.round(zoomFactor * 100) / 100;
+    const zoomFactorString = `${roundedZoomFactor}x`;
+    for (let i = 0; i < this.model.panels.length; i++) {
+      const zoomFactorRef = this.zoomFactorRefs[i];
+      if (zoomFactorRef.current) {
+        zoomFactorRef.current.innerText = zoomFactorString;
+        zoomFactorRef.current.style.display = roundedZoomFactor === 1 ? "none" : "inline-block";
+      }
+      const zoomOutButtonRef = this.zoomOutButtonRefs[i];
+      if (zoomOutButtonRef.current) {
+        zoomOutButtonRef.current.style.display = roundedZoomFactor === 1 ? "none" : "inline-block";
+      }
     }
 
     if (this.canvasXPerModelX.isAtTarget) this.animation.stop();
@@ -617,7 +642,9 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
                 style={{
                   bottom: `${constants.SCROLLBAR_SIZE}px`,
                 }}>
+                <span ref={this.zoomFactorRefs[i]} className="zoom-factor button" />
                 <button
+                  ref={this.zoomOutButtonRefs[i]}
                   className="button icon-button"
                   onClick={(e) => this.onClickZoom(e, -1)}
                   title={`Zoom out (${modifierKey()}+scroll)`}>
