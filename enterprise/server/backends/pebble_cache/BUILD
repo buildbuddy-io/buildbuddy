@@ -34,7 +34,6 @@ go_library(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/statusz",
-        "//server/util/timeutil",
         "//server/util/tracing",
         "@com_github_docker_go_units//:go-units",
         "@com_github_elastic_gosigar//:gosigar",

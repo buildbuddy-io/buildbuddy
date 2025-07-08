@@ -23,7 +23,6 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
-        "//server/util/timeutil",
         "@com_github_docker_go_units//:go-units",
         "@com_github_hashicorp_serf//serf",
         "@com_github_jonboulle_clockwork//:clockwork",
