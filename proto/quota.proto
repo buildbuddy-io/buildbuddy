@@ -6,7 +6,7 @@ import "proto/context.proto";
 package quota;
 
 enum ResourceType {
-  UNDEFINED = 0;
+  UNKNOWN = 0;
   RPC = 1;
 }
 

@@ -53,8 +53,8 @@ const (
 
 var (
 	namespacePrefix = map[qpb.ResourceType]string{
-		qpb.ResourceType_UNDEFINED: "undefined",
-		qpb.ResourceType_RPC:       "rpc",
+		qpb.ResourceType_UNKNOWN: "unknown",
+		qpb.ResourceType_RPC:     "rpc",
 	}
 )
 
