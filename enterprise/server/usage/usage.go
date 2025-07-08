@@ -164,14 +164,17 @@ func NewTracker(env environment.Env, clock clockwork.Clock, flushLock interfaces
 }
 
 // emitMetrics emit metrics that are eventually exposed to consumers.
-func (ut *tracker) emitMetrics(groupID string, uc *tables.UsageCounts) {
-	labels := prometheus.Labels{metrics.GroupID: groupID}
+func (ut *tracker) emitMetrics(groupID string, origin string, uc *tables.UsageCounts) {
+	if origin == "" {
+		origin = "external"
+	}
+	exportedLabels := prometheus.Labels{metrics.GroupID: groupID, metrics.CacheRequestOrigin: origin}
 	if uc.TotalDownloadSizeBytes > 0 {
-		metrics.CacheDownloadSizeBytesExported.With(labels).Add(float64(uc.TotalDownloadSizeBytes))
+		metrics.CacheDownloadSizeBytesExported.With(exportedLabels).Add(float64(uc.TotalDownloadSizeBytes))
 	}
 
 	if uc.TotalUploadSizeBytes > 0 {
-		metrics.CacheUploadSizeBytesExported.With(labels).Add(float64(uc.TotalUploadSizeBytes))
+		metrics.CacheUploadSizeBytesExported.With(exportedLabels).Add(float64(uc.TotalUploadSizeBytes))
 	}
 
 	if uc.CASCacheHits > 0 {
@@ -228,7 +231,7 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 		return status.WrapError(err, "add collection hash to set in redis")
 	}
 
-	ut.emitMetrics(groupID, uc)
+	ut.emitMetrics(groupID, labels.Origin, uc)
 	return nil
 }
 
@@ -399,12 +402,14 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, la
 				AND period_start_usec = ?
 				AND origin = ?
 				AND client = ?
+				AND server = ?
 			`+dbh.SelectForUpdateModifier(),
 			tu.Region,
 			tu.GroupID,
 			tu.PeriodStartUsec,
 			tu.Origin,
 			tu.Client,
+			tu.Server,
 		).Take(&tables.Usage{})
 		if err != nil && !db.IsRecordNotFound(err) {
 			return err
@@ -528,6 +533,9 @@ func encodeCollection(c *Collection) string {
 	if c.UsageLabels.Client != "" {
 		s += "&client=" + url.QueryEscape(c.UsageLabels.Client)
 	}
+	if c.UsageLabels.Server != "" {
+		s += "&server=" + url.QueryEscape(c.UsageLabels.Server)
+	}
 	return s
 }
 
@@ -545,6 +553,7 @@ func decodeCollection(s string) (*Collection, url.Values, error) {
 			// Note: these need to match the DB field names.
 			Origin: q.Get("origin"),
 			Client: q.Get("client"),
+			Server: q.Get("server"),
 		},
 	}
 	return c, q, nil

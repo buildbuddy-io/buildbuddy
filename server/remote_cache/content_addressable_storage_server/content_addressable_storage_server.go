@@ -3,6 +3,7 @@ package content_addressable_storage_server
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -222,7 +223,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			}
 		}
 		checksum.Write(decompressedData)
-		computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
+		computedDigest := hex.EncodeToString(checksum.Sum(nil))
 		if computedDigest != rn.GetDigest().GetHash() {
 			err := status.DataLossErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, rn.GetDigest().GetHash())
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{

@@ -43,7 +43,6 @@ ts_library(
     srcs = ["grid.tsx"],
     deps = [
         "//:node_modules/@types/long",
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/long",
@@ -92,7 +91,6 @@ ts_library(
     name = "flakes",
     srcs = ["flakes.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/moment",

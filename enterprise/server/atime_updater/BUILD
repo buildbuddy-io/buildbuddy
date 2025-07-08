@@ -13,6 +13,7 @@ go_library(
         "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/digest",
+        "//server/util/alert",
         "//server/util/authutil",
         "//server/util/log",
         "@org_golang_google_grpc//status",

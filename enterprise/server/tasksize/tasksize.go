@@ -33,8 +33,8 @@ var (
 	cpuQuotaPeriod            = flag.Duration("remote_execution.cpu_quota_period", 100*time.Millisecond, "How often the CPU quota is refreshed.")
 	memoryLimitBytes          = flag.Int64("remote_execution.memory_limit_bytes", 0, "Task cgroup memory limit in bytes.")
 	memoryOOMGroup            = flag.Bool("remote_execution.memory_oom_group", true, "If there is an OOM within any process in a cgroup, fail the entire execution with an OOM error.")
-	pidLimit                  = flag.Int64("remote_execution.pids_limit", 2048, "Maximum number of processes allowed per task at any time.")
-	additionalPIDsLimitPerCPU = flag.Int64("remote_execution.additional_pids_limit_per_cpu", 1024, "Additional number of processes allowed per estimated CPU.")
+	pidLimit                  = flag.Int64("remote_execution.pids_limit", 4096, "Maximum number of processes allowed per task at any time.")
+	additionalPIDsLimitPerCPU = flag.Int64("remote_execution.additional_pids_limit_per_cpu", 4096, "Additional number of processes allowed per estimated CPU.")
 	// TODO: enforce a lower CPU hard limit for tasks in general, instead of
 	// just limiting the task size that gets stored in redis.
 	milliCPULimit = flag.Int64("remote_execution.stored_task_size_millicpu_limit", 7500, "Limit placed on milliCPU calculated from task execution statistics.")

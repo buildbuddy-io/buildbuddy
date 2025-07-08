@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -22,16 +23,16 @@ const (
 var (
 	origin = flag.String("grpc_client_origin_header", "", "Header value to set for x-buildbuddy-origin.")
 
-	// Header value to set for x-buildbuddy-client.
-	// See: WithLocalServerLabels
-	clientType string
+	// The server name to record in usage.  This will be used for the "client" usage label when sending RPCS
+	// and the "server" usage label when a usage-generating request terminates at this server.
+	serverName string
 )
 
-// Labels returns usage labels for the given request context.
-func Labels(ctx context.Context) (*tables.UsageLabels, error) {
+func LabelsForUsageRecording(ctx context.Context, server string) (*tables.UsageLabels, error) {
 	return &tables.UsageLabels{
 		Origin: originLabel(ctx),
 		Client: clientLabel(ctx),
+		Server: server,
 	}, nil
 }
 
@@ -50,7 +51,7 @@ func WithLocalServerLabels(ctx context.Context) context.Context {
 	// Note: we set the header values here even if they're empty so that they
 	// override other header values, e.g. bazel request metadata.
 	ctx = metadata.AppendToOutgoingContext(ctx, OriginHeaderName, *origin)
-	ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, clientType)
+	ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, serverName)
 	return ctx
 }
 
@@ -60,10 +61,50 @@ func ClientOrigin() string {
 	return *origin
 }
 
-// SetClientType sets the value of the x-buildbuddy-client header for *outgoing*
-// gRPC requests with label propagation enabled.
-func SetClientType(value string) {
-	clientType = value
+// SetServerName will be used for x-buildbuddy-client header for *outgoing* gRPC
+// requests and recorded for usage-generating requests that terminated at this server.
+func SetServerName(value string) {
+	serverName = value
+}
+
+func ServerName() string {
+	return serverName
+}
+
+func GetUsageHeaders(ctx context.Context) map[string][]string {
+	headers := map[string][]string{}
+
+	clientKeys := metadata.ValueFromIncomingContext(ctx, ClientHeaderName)
+	if len(clientKeys) > 0 {
+		if len(clientKeys) > 1 {
+			log.CtxWarningf(ctx, "Expected at most 1 usage client header (found %d)", len(clientKeys))
+		}
+		headers[ClientHeaderName] = clientKeys
+	}
+	originKeys := metadata.ValueFromIncomingContext(ctx, OriginHeaderName)
+	if len(originKeys) > 0 {
+		if len(originKeys) > 1 {
+			log.CtxWarningf(ctx, "Expected at most 1 usage origin header (found %d)", len(originKeys))
+		}
+		headers[OriginHeaderName] = originKeys
+	}
+
+	return headers
+}
+
+func AddUsageHeadersToContext(ctx context.Context, headers map[string][]string) context.Context {
+	for key, values := range headers {
+		for _, value := range values {
+			if key == ClientHeaderName {
+				ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, value)
+			} else if key == OriginHeaderName {
+				ctx = metadata.AppendToOutgoingContext(ctx, OriginHeaderName, value)
+			} else {
+				log.CtxWarningf(ctx, "Ignoring unrecognized usage header: %s", key)
+			}
+		}
+	}
+	return ctx
 }
 
 func originLabel(ctx context.Context) string {

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -80,7 +81,11 @@ const (
 	// empty or unset.
 	unsetContainerImageVal = "none"
 
-	RecycleRunnerPropertyName               = "recycle-runner"
+	recycleRunnerPropertyName = "recycle-runner"
+	// dockerReuse is treated as an alias for recycle-runner.
+	dockerReusePropertyName = "dockerReuse"
+
+	RunnerRecyclingKey                      = "runner-recycling-key"
 	RemoteSnapshotSavePolicyPropertyName    = "remote-snapshot-save-policy"
 	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
 	PreserveWorkspacePropertyName           = "preserve-workspace"
@@ -107,6 +112,7 @@ const (
 	SnapshotKeyOverridePropertyName         = "snapshot-key-override"
 	RetryPropertyName                       = "retry"
 	SkipResavingActionSnapshotsPropertyName = "skip-resaving-action-snapshots"
+	PersistentVolumesPropertyName           = "persistent-volumes"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -266,6 +272,27 @@ type Properties struct {
 	// This property is ignored for bazel executions, because the bazel client
 	// handles retries itself.
 	Retry bool
+
+	// Persistent volumes shared across all actions within a group. Requires
+	// `executor.enable_persistent_volumes` to be enabled.
+	PersistentVolumes []PersistentVolume
+}
+
+type PersistentVolume struct {
+	name          string
+	containerPath string
+}
+
+// Name is the name of the persistent volume. The returned value is non-empty
+// and contains only alphanumeric characters, hyphens, and underscores.
+func (v *PersistentVolume) Name() string {
+	return v.name
+}
+
+// ContainerPath is the path in the container where the persistent volume is
+// mounted. The returned value is guaranteed to be non-empty.
+func (v *PersistentVolume) ContainerPath() string {
+	return v.containerPath
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -304,7 +331,14 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	if pool == DefaultPoolValue {
 		pool = ""
 	}
-	recycleRunner := boolProp(m, RecycleRunnerPropertyName, false)
+	// Runner recycling is enabled if any of the following are true:
+	// - recycle-runner is true
+	// - dockerReuse is true (supported for compatibility reasons)
+	// - persistentWorkerKey is set (persistent workers are implemented using
+	//   runner recycling)
+	recycleRunner := boolProp(m, recycleRunnerPropertyName, false) ||
+		boolProp(m, dockerReusePropertyName, false) ||
+		stringProp(m, persistentWorkerKeyPropertyName, "") != ""
 	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	// Only Enable VFS if it is also enabled via flags.
@@ -371,6 +405,11 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		overrideSnapshotKey = key
 	}
 
+	persistentVolumes, err := ParsePersistentVolumes(stringListProp(m, PersistentVolumesPropertyName)...)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
@@ -411,6 +450,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		EnvOverrides:              envOverrides,
 		OverrideSnapshotKey:       overrideSnapshotKey,
 		Retry:                     boolProp(m, RetryPropertyName, true),
+		PersistentVolumes:         persistentVolumes,
 	}, nil
 }
 
@@ -736,6 +776,29 @@ func durationProp(props map[string]string, name string, defaultValue time.Durati
 	return d, nil
 }
 
+var volumeNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+func ParsePersistentVolumes(values ...string) ([]PersistentVolume, error) {
+	volumes := make([]PersistentVolume, 0, len(values))
+	for _, v := range values {
+		name, containerPath, ok := strings.Cut(v, ":")
+		if !ok || name == "" || containerPath == "" {
+			return nil, status.InvalidArgumentErrorf(`invalid persistent volume %q: expected "<name>:<container_path>"`, v)
+		}
+		// Name can only contain alphanumeric characters, hyphens, and
+		// underscores. In particular it cannot contain path separators or
+		// relative directory references.
+		if !volumeNameRegex.MatchString(name) {
+			return nil, status.InvalidArgumentErrorf(`invalid persistent volume %q: name can only contain alphanumeric characters, hyphens, and underscores`, v)
+		}
+		volumes = append(volumes, PersistentVolume{
+			name:          name,
+			containerPath: containerPath,
+		})
+	}
+	return volumes, nil
+}
+
 func containerImageName(input string) string {
 	withoutDockerPrefix := strings.TrimPrefix(input, DockerPrefix)
 	if *containerRegistryRegion == "" {
@@ -755,7 +818,7 @@ func parseSnapshotKeyJSON(in string) (*fcpb.SnapshotKey, error) {
 func findValue(platform *repb.Platform, name string) (value string, ok bool) {
 	name = strings.ToLower(name)
 	for _, prop := range platform.GetProperties() {
-		if prop.GetName() == name {
+		if strings.ToLower(prop.GetName()) == name {
 			return strings.TrimSpace(prop.GetValue()), true
 		}
 	}
@@ -794,6 +857,16 @@ func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 // IsTrue returns whether the given platform property value is truthy.
 func IsTrue(value string) bool {
 	return strings.EqualFold(value, "true")
+}
+
+// IsRecyclingEnabled returns whether runner recycling is enabled for the given
+// task.
+func IsRecyclingEnabled(task *repb.ExecutionTask) bool {
+	parsed, err := ParseProperties(task)
+	if err != nil {
+		return false
+	}
+	return parsed.RecycleRunner
 }
 
 func DockerSocket() string {

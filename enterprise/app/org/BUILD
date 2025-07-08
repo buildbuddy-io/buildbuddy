@@ -78,11 +78,11 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/auth:auth_service",
+        "//app/auth:user",
         "//app/components/button",
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
-        "//proto:user_ts_proto",
     ],
 )
 
@@ -96,6 +96,7 @@ ts_library(
         "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:auth_service",
+        "//app/auth:user",
         "//app/capabilities",
         "//app/components/banner",
         "//app/components/button",
@@ -123,7 +124,6 @@ ts_library(
         "//app/auth:auth_service",
         "//app/auth:user",
         "//app/components/button",
-        "//app/router",
         "//proto:user_ts_proto",
     ],
 )

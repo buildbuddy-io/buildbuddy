@@ -1,6 +1,6 @@
+import alertService from "../alert/alert_service";
 import router from "../router/router";
 import { BuildBuddyError, ErrorCode } from "../util/errors";
-import alertService from "../alert/alert_service";
 
 const ERROR_SEARCH_PARAM = "error";
 

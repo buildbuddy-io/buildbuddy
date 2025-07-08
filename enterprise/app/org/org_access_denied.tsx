@@ -1,8 +1,7 @@
-import { User } from "../../../app/auth/user";
 import React from "react";
-import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import authService from "../../../app/auth/auth_service";
-import router from "../../../app/router/router";
+import { User } from "../../../app/auth/user";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import { user } from "../../../proto/user_ts_proto";
 
 export type Props = {

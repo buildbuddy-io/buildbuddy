@@ -1,13 +1,13 @@
-import React from "react";
-import { User } from "../../../app/auth/user";
-import router from "../../../app/router/router";
-import auth_service from "../../../app/auth/auth_service";
-import Select, { Option } from "../../../app/components/select/select";
-import Button from "../../../app/components/button/button";
-import { grp } from "../../../proto/group_ts_proto";
-import rpc_service, { Cancelable } from "../../../app/service/rpc_service";
-import error_service from "../../../app/errors/error_service";
 import { CheckCircle, TerminalIcon, XCircle } from "lucide-react";
+import React from "react";
+import auth_service from "../../../app/auth/auth_service";
+import { User } from "../../../app/auth/user";
+import Button from "../../../app/components/button/button";
+import Select, { Option } from "../../../app/components/select/select";
+import error_service from "../../../app/errors/error_service";
+import router from "../../../app/router/router";
+import rpc_service, { Cancelable } from "../../../app/service/rpc_service";
+import { grp } from "../../../proto/group_ts_proto";
 
 export interface CliLoginProps {
   user: User;

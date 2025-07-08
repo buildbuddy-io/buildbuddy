@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
@@ -28,8 +29,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -592,4 +595,62 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		return nil, err
 	}
 	return &apipb.RunResponse{InvocationId: rsp.InvocationId}, nil
+}
+
+func (s *APIServer) CreateUserApiKey(ctx context.Context, req *apipb.CreateUserApiKeyRequest) (*apipb.CreateUserApiKeyResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	authdb := s.env.GetAuthDB()
+	if authdb == nil {
+		return nil, status.UnimplementedError("not implemented")
+	}
+	userdb := s.env.GetUserDB()
+	if userdb == nil {
+		return nil, status.UnimplementedError("not implemented")
+	}
+
+	// Get user's role-based capabilities within the group.
+	reqUser, err := userdb.GetUserByIDWithoutAuthCheck(ctx, req.GetUserId())
+	if err != nil {
+		return nil, err
+	}
+	var groupRole *tables.GroupRole
+	for _, g := range reqUser.Groups {
+		if g.Group.GroupID == u.GetGroupID() {
+			groupRole = g
+			break
+		}
+	}
+	if groupRole == nil {
+		return nil, status.PermissionDeniedError("permission denied")
+	}
+	roleBasedCapabilities, err := role.ToCapabilities(role.Role(groupRole.Role))
+	if err != nil {
+		return nil, err
+	}
+	// Apply the user API key capabilities mask.
+	roleBasedCapabilities = capabilities.ApplyMask(roleBasedCapabilities, capabilities.UserAPIKeyCapabilitiesMask)
+
+	// Note: authdb performs additional authentication checks, such as making
+	// sure the authenticated user has ORG_ADMIN capability if needed.
+	apiKey, err := authdb.CreateUserAPIKey(
+		ctx, u.GetGroupID(), req.GetUserId(), req.GetLabel(),
+		roleBasedCapabilities, req.GetExpiresIn().AsDuration(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	rsp := &apipb.CreateUserApiKeyResponse{
+		ApiKey: &apipb.ApiKey{
+			ApiKeyId: apiKey.APIKeyID,
+			Value:    apiKey.Value,
+			Label:    apiKey.Label,
+		},
+	}
+	if apiKey.ExpiryUsec != 0 {
+		rsp.ApiKey.ExpirationTimestamp = timestamppb.New(time.UnixMicro(apiKey.ExpiryUsec))
+	}
+	return rsp, nil
 }

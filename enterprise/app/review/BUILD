@@ -67,7 +67,6 @@ ts_library(
         "//app/router",
         "//enterprise/app/review:review_controller",
         "//enterprise/app/review:review_model",
-        "//proto:github_ts_proto",
     ],
 )
 
@@ -104,7 +103,6 @@ ts_library(
     name = "review_thread",
     srcs = ["review_thread.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/moment",
         "//:node_modules/react",

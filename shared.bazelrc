@@ -152,7 +152,7 @@ common:anon-bes --bes_results_url=https://app.buildbuddy.io/invocation/
 common:anon-bes --bes_backend=grpcs://remote.buildbuddy.io
 
 common:authed-bes --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
-common:authed-bes --bes_backend=grpcs://buildbuddy.buildbuddy.io
+common:authed-bes --bes_backend=grpcs://buildbuddy.remote.buildbuddy.io
 
 # Build with --config=local to send build logs to your local server
 common:local --bes_results_url=http://localhost:8080/invocation/
@@ -175,7 +175,7 @@ common:local-rbe-mac --config=local
 
 # Build with --config=dev to send build logs to the dev server
 common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
-common:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
+common:dev --bes_backend=grpcs://buildbuddy.remote.buildbuddy.dev
 
 # Common flags to be used with remote cache
 common:cache-shared --remote_cache_compression
@@ -184,11 +184,11 @@ common:cache-shared --remote_timeout=10m
 
 common:cache-dev --config=cache-shared
 common:cache-dev --config=dev
-common:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
+common:cache-dev --remote_cache=grpcs://buildbuddy.remote.buildbuddy.dev
 
 # Build with --config=cache to use prod cache.
 common:cache --config=cache-shared
-common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
+common:cache --remote_cache=grpcs://buildbuddy.remote.buildbuddy.io
 
 # Target+Exec Platforms configuration
 common:workspace-target-darwin-arm64 --platforms=@buildbuddy_toolchain//:platform_darwin_arm64
@@ -213,7 +213,7 @@ common:remote-shared --verbose_failures
 
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared
-common:remote-prod-shared --remote_executor=grpcs://buildbuddy.buildbuddy.io
+common:remote-prod-shared --remote_executor=grpcs://buildbuddy.remote.buildbuddy.io
 # Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
 # but performance tests should not be run remotely since the environment
 # is not consistent or stable.
@@ -223,7 +223,7 @@ common:remote-prod-shared --test_tag_filters=-performance
 # Note: Dev BES needed to override the default prod BES urls.
 common:remote-dev-shared --config=dev
 common:remote-dev-shared --config=remote-shared
-common:remote-dev-shared --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+common:remote-dev-shared --remote_executor=grpcs://buildbuddy.remote.buildbuddy.dev
 # Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
 # but performance tests should not be run remotely since the environment
 # is not consistent or stable.
@@ -273,16 +273,16 @@ common:probers-shared --config=cache-shared
 # Build with --config=probers to use BuildBuddy RBE in the probers org.
 common:probers --config=probers-shared
 common:probers --bes_results_url=https://buildbuddy-probers-us-west1.buildbuddy.io/invocation/
-common:probers --bes_backend=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
-common:probers --remote_cache=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
-common:probers --remote_executor=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
+common:probers --bes_backend=grpcs://buildbuddy-probers-us-west1.remote.buildbuddy.io
+common:probers --remote_cache=grpcs://buildbuddy-probers-us-west1.remote.buildbuddy.io
+common:probers --remote_executor=grpcs://buildbuddy-probers-us-west1.remote.buildbuddy.io
 
 # Build with --config=probers-dev to use BuildBuddy RBE in the probers org.
 common:probers-dev --config=probers-shared
 common:probers-dev --bes_results_url=https://buildbuddy-probers.buildbuddy.dev/invocation/
-common:probers-dev --bes_backend=grpcs://buildbuddy-probers.buildbuddy.dev
-common:probers-dev --remote_cache=grpcs://buildbuddy-probers.buildbuddy.dev
-common:probers-dev --remote_executor=grpcs://buildbuddy-probers.buildbuddy.dev
+common:probers-dev --bes_backend=grpcs://buildbuddy-probers.remote.buildbuddy.dev
+common:probers-dev --remote_cache=grpcs://buildbuddy-probers.remote.buildbuddy.dev
+common:probers-dev --remote_executor=grpcs://buildbuddy-probers.remote.buildbuddy.dev
 
 # Configuration used for Buildbuddy auto-release probers
 common:auto-release --config=probers

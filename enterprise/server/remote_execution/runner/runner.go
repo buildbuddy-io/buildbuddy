@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"math"
@@ -206,16 +207,9 @@ type taskRunner struct {
 }
 
 func (r *taskRunner) String() string {
-	ph, err := platformHash(r.key.Platform)
-	if err != nil {
-		ph = "<ERR!>"
-	}
 	// Note: we don't log r.state here as this can make log statements calling
 	// this function racy. Beware of this if re-adding r.state below.
-	return fmt.Sprintf(
-		"%s:%d:%s:%s:%s",
-		r.debugID, r.taskNumber, r.key.GetGroupId(),
-		truncate(r.key.InstanceName, 8, "..."), truncate(ph, 8, ""))
+	return fmt.Sprintf("%s:%d:%s", r.debugID, r.taskNumber, keyString(r.key))
 }
 
 func (r *taskRunner) pullCredentials() (oci.Credentials, error) {
@@ -743,11 +737,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		}
 
 		r := p.runners[evictIndex]
-		if p.pausedRunnerCount() >= p.maxRunnerCount {
-			log.Infof("Evicting runner %s (pool max count %d exceeded).", r, p.maxRunnerCount)
-		} else if p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
-			log.Infof("Evicting runner %s (max memory %d exceeded).", r, p.maxRunnerMemoryUsageBytes)
-		}
+		log.Infof("Evicting runner %s (pool max count %d exceeded).", r, p.maxRunnerCount)
 		p.runners = append(p.runners[:evictIndex], p.runners[evictIndex+1:]...)
 
 		metrics.RunnerPoolEvictions.Inc()
@@ -1121,15 +1111,21 @@ func isOverlayfsEnabledForAction(ctx context.Context, props *platform.Properties
 }
 
 func keyString(k *rnpb.RunnerKey) string {
-	ph, err := platformHash(k.Platform)
+	ph, err := platformHash(k.GetPlatform())
 	if err != nil {
 		ph = "<ERR!>"
 	}
+	pwk := ""
+	if k.GetPersistentWorkerKey() != "" {
+		pwk = ":w-" + truncate(k.GetPersistentWorkerKey(), 4, "")
+	}
 	return fmt.Sprintf(
-		"%s:%s:%s",
+		"%s:%s:%s%s",
 		k.GetGroupId(),
 		truncate(k.InstanceName, 8, "..."),
-		truncate(ph, 8, ""))
+		truncate(ph, 8, ""),
+		pwk,
+	)
 }
 
 func (p *pool) String() string {
@@ -1434,7 +1430,8 @@ func platformHash(p *repb.Platform) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%x", sha256.Sum256(b)), nil
+	sha := sha256.Sum256(b)
+	return hex.EncodeToString(sha[:]), nil
 }
 
 type labeledError struct {

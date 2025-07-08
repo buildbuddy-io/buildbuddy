@@ -607,6 +607,64 @@ func TestExecUsageStats(t *testing.T) {
 	assert.Greater(t, s.GetCpuNanos(), int64(0), "CPU")
 }
 
+func TestStatsPostExec(t *testing.T) {
+	setupNetworking(t)
+
+	image := realBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		# Use 32MB of memory (in /dev/shm).
+		# Using this approach instead of allocating a big string,
+		# because it seems like 'sh' takes a while to actually free the string,
+		# but for what we're trying to test here, we need the memory to be freed
+		# immediately (before it can be caught by our stats polling).
+		cat /dev/zero | head -c 32000000 > /dev/shm/FILE
+
+		# Hold the memory long enough for the stats polling to register it.
+		sleep 0.25
+
+		# Free the memory then immediately exit.
+		rm /dev/shm/FILE
+	`}}
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+
+	// Stats() should report ~0 memory usage since the task has completed,
+	// even though it used 32MB of memory.
+	stats, err := c.Stats(ctx)
+	require.NoError(t, err)
+	require.Less(t, stats.GetMemoryBytes(), int64(2e6), "final memory usage should be much less than 32MB")
+}
+
 func TestPullCreateExecRemove(t *testing.T) {
 	setupNetworking(t)
 
@@ -1758,4 +1816,58 @@ func TestMounts(t *testing.T) {
 	assert.Equal(t, "bar", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
+}
+
+func TestPersistentVolumes(t *testing.T) {
+	setupNetworking(t)
+	image := manuallyProvisionedBusyboxImage(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	flags.Set(t, "executor.oci.enable_persistent_volumes", true)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	volumes, err := platform.ParsePersistentVolumes("tmp_cache:/tmp/.cache", "user_cache:/root/.cache")
+	require.NoError(t, err)
+	wd1 := testfs.MakeDirAll(t, buildRoot, "work1")
+	c1, err := provider.New(ctx, &container.Init{
+		Props: &platform.Properties{
+			ContainerImage:    image,
+			PersistentVolumes: volumes,
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c1.Remove(ctx)
+		require.NoError(t, err)
+	})
+	res := c1.Run(ctx, &repb.Command{
+		Arguments: []string{"touch", "/tmp/.cache/foo", "/root/.cache/bar"},
+	}, wd1, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+
+	wd2 := testfs.MakeDirAll(t, buildRoot, "work2")
+	c2, err := provider.New(ctx, &container.Init{
+		Props: &platform.Properties{
+			ContainerImage:    image,
+			PersistentVolumes: volumes,
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c2.Remove(ctx)
+		require.NoError(t, err)
+	})
+	res = c2.Run(ctx, &repb.Command{
+		Arguments: []string{"stat", "/tmp/.cache/foo", "/root/.cache/bar"},
+	}, wd2, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
 }

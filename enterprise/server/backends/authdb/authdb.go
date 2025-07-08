@@ -656,7 +656,7 @@ func (d *AuthDB) authorizeGroupAdminRole(ctx context.Context, groupID string) er
 	return authutil.AuthorizeOrgAdmin(u, groupID)
 }
 
-func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
+func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []cappb.Capability, expiresIn time.Duration, visibleToDevelopers bool) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
@@ -672,6 +672,9 @@ func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string,
 		Label:               label,
 		Capabilities:        capabilities.ToInt(caps),
 		VisibleToDevelopers: visibleToDevelopers,
+	}
+	if expiresIn > 0 {
+		ak.ExpiryUsec = d.clock.Now().Add(expiresIn).UnixMicro()
 	}
 	return d.createAPIKey(ctx, d.h, ak)
 }
@@ -750,7 +753,7 @@ func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, gro
 	return d.authorizeGroupAdminRole(ctx, groupID)
 }
 
-func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label string, caps []cappb.Capability) (*tables.APIKey, error) {
+func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label string, caps []cappb.Capability, expiresIn time.Duration) (*tables.APIKey, error) {
 	if !*userOwnedKeysEnabled {
 		return nil, status.UnimplementedError("not implemented")
 	}
@@ -815,6 +818,9 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 		GroupID:      u.GetGroupID(),
 		Label:        label,
 		Capabilities: capabilities.ToInt(caps),
+	}
+	if expiresIn > 0 {
+		ak.ExpiryUsec = d.clock.Now().Add(expiresIn).UnixMicro()
 	}
 	return d.createAPIKey(ctx, d.h, ak)
 }

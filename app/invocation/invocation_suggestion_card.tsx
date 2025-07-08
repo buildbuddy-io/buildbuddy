@@ -1,12 +1,12 @@
-import React from "react";
 import { AlertCircle, AlertTriangle, HelpCircle } from "lucide-react";
-import { TextLink } from "../components/link/link";
-import InvocationModel from "./invocation_model";
-import capabilities from "../capabilities/capabilities";
-import { User } from "../auth/user";
-import { grp } from "../../proto/group_ts_proto";
+import React from "react";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
+import { grp } from "../../proto/group_ts_proto";
+import { User } from "../auth/user";
+import capabilities from "../capabilities/capabilities";
+import { TextLink } from "../components/link/link";
 import { bytes as formatBytes } from "../format/format";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   suggestions: Suggestion[];

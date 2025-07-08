@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -58,6 +59,16 @@ func (h *NoOpHitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMet
 	return &NoOpHitTracker{}
 }
 
+func (h *NoOpHitTrackerFactory) NewRemoteACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
+	alert.CtxUnexpectedEvent(ctx, "Tried to do remote AC hit tracking from a server that is itself remote.")
+	return &NoOpHitTracker{}
+}
+
+func (h *NoOpHitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
+	alert.CtxUnexpectedEvent(ctx, "Tried to do remote CAS hit tracking from a server that is itself remote.")
+	return &NoOpHitTracker{}
+}
+
 func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, conn grpc.ClientConnInterface) *HitTrackerFactory {
 	factory := HitTrackerFactory{
 		authenticator:          env.GetAuthenticator(),
@@ -85,18 +96,21 @@ type cacheHits struct {
 	gid                    groupID
 	mu                     sync.Mutex
 	authHeaders            map[string][]string
+	usageHeaders           map[string][]string
 	hits                   []*hitpb.CacheHit
 }
 
-func (c *cacheHits) enqueue(hit *hitpb.CacheHit, authHeaders map[string][]string) bool {
+func (c *cacheHits) enqueue(hit *hitpb.CacheHit, authHeaders map[string][]string, usageHeaders map[string][]string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.hits) >= c.maxPendingHitsPerGroup {
 		return false
 	}
 
-	// Store the latest auth headers for this group for use in the async RPC.
+	// Store the latest headers for this group for use in the async RPC.
+	// TODO(jdhollen): send separate requests for different usage headers.
 	c.authHeaders = authHeaders
+	c.usageHeaders = usageHeaders
 	c.hits = append(c.hits, hit)
 	return true
 }
@@ -118,6 +132,14 @@ type HitTrackerFactory struct {
 }
 
 func (h *HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return h.NewRemoteACHitTracker(ctx, requestMetadata, usageutil.ServerName())
+}
+
+func (h *HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	return h.NewRemoteCASHitTracker(ctx, requestMetadata, usageutil.ServerName())
+}
+
+func (h *HitTrackerFactory) NewRemoteACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
 	if !proxy_util.SkipRemote(ctx) {
 		// For Action Cache hit-tracking hitting the remote cache, the
 		// authoritative cache should always take care of hit-tracking.
@@ -126,13 +148,13 @@ func (h *HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata
 
 	// Use a hit-tracker that sends information
 	// about local cache hits to the RPC service at the configured backend.
-	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_AC}
+	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_AC, serverName: server}
 }
 
-func (h *HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+func (h *HitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
 	// For CAS hit-tracking, use a hit-tracker that sends information about
 	// local cache hits to the RPC service at the configured backend.
-	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_CAS}
+	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_CAS, serverName: server}
 }
 
 type NoOpHitTracker struct{}
@@ -165,10 +187,11 @@ func (t *NoOpTransferTimer) Record(bytesTransferred int64, duration time.Duratio
 
 type HitTrackerClient struct {
 	ctx             context.Context
-	enqueueFn       func(context.Context, *hitpb.CacheHit)
+	enqueueFn       func(context.Context, *hitpb.CacheHit, string)
 	client          hitpb.HitTrackerServiceClient
 	requestMetadata *repb.RequestMetadata
 	cacheType       rspb.CacheType
+	serverName      string
 }
 
 // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4875) Implement
@@ -202,14 +225,14 @@ func (h *HitTrackerFactory) groupID(ctx context.Context) groupID {
 	return groupID(claims.GetGroupID())
 }
 
-func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
+func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit, server string) {
 	groupID := h.groupID(ctx)
 
 	h.mu.Lock()
 	if h.shouldFlushSynchronously() {
 		h.mu.Unlock()
 		log.CtxInfof(ctx, "hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
-		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}}); err != nil {
+		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}, Server: server}); err != nil {
 			log.CtxWarningf(ctx, "Error sending HitTrackerService.Track RPC: %v", err)
 		}
 		return
@@ -227,8 +250,16 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 
 	groupHits := h.hitsByGroup[groupID]
 	h.mu.Unlock()
-	authHeaders := authutil.GetAuthHeaders(ctx, h.authenticator)
-	if groupHits.enqueue(hit, authHeaders) {
+	authHeaders := authutil.GetAuthHeaders(ctx)
+	usageHeaders := make(map[string][]string, 0)
+	for k, v := range usageutil.GetUsageHeaders(ctx) {
+		// TODO(jdhollen): pass other headers once we're actually storing them separately.
+		if k == usageutil.OriginHeaderName {
+			usageHeaders[k] = v
+		}
+	}
+
+	if groupHits.enqueue(hit, authHeaders, usageHeaders) {
 		metrics.RemoteHitTrackerUpdates.WithLabelValues(
 			string(groupID),
 			"enqueued",
@@ -244,7 +275,7 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 
 type TransferTimer struct {
 	ctx              context.Context
-	enqueueFn        func(context.Context, *hitpb.CacheHit)
+	enqueueFn        func(context.Context, *hitpb.CacheHit, string)
 	invocationID     string
 	requestMetadata  *repb.RequestMetadata
 	digest           *repb.Digest
@@ -252,6 +283,7 @@ type TransferTimer struct {
 	client           hitpb.HitTrackerServiceClient
 	cacheType        rspb.CacheType
 	cacheRequestType capb.RequestType
+	serverName       string
 }
 
 func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
@@ -265,7 +297,7 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 		Duration:         durationpb.New(time.Since(t.start)),
 		CacheRequestType: t.cacheRequestType,
 	}
-	t.enqueueFn(t.ctx, hit)
+	t.enqueueFn(t.ctx, hit, t.serverName)
 	return nil
 }
 
@@ -283,6 +315,7 @@ func (h *HitTrackerClient) TrackDownload(digest *repb.Digest) interfaces.Transfe
 		client:           h.client,
 		cacheType:        h.cacheType,
 		cacheRequestType: capb.RequestType_READ,
+		serverName:       h.serverName,
 	}
 }
 
@@ -297,6 +330,7 @@ func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferT
 			client:           h.client,
 			cacheType:        h.cacheType,
 			cacheRequestType: capb.RequestType_WRITE,
+			serverName:       h.serverName,
 		}
 	}
 	// If writes hit the backing cache, it will handle hit tracking.
@@ -340,9 +374,10 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 		delete(h.hitsByGroup, hitsToSend.gid)
 	} else {
 		hitsToEnqueue := cacheHits{
-			gid:         hitsToSend.gid,
-			authHeaders: hitsToSend.authHeaders,
-			hits:        hitsToSend.hits[h.maxHitsPerUpdate:],
+			gid:          hitsToSend.gid,
+			authHeaders:  hitsToSend.authHeaders,
+			usageHeaders: hitsToSend.usageHeaders,
+			hits:         hitsToSend.hits[h.maxHitsPerUpdate:],
 		}
 		hitsToSend.hits = hitsToSend.hits[:h.maxHitsPerUpdate]
 		h.hitsQueue = append(h.hitsQueue, &hitsToEnqueue)
@@ -351,6 +386,7 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 	h.mu.Unlock()
 
 	ctx = authutil.AddAuthHeadersToContext(ctx, hitsToSend.authHeaders, h.authenticator)
+	ctx = usageutil.AddUsageHeadersToContext(ctx, hitsToSend.usageHeaders)
 	trackRequest := hitpb.TrackRequest{Hits: hitsToSend.hits}
 	groupID := hitsToSend.gid
 	hitCount := len(hitsToSend.hits)

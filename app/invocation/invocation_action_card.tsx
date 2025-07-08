@@ -1,22 +1,15 @@
+import { ArrowRight, Copy, Download, File, FileQuestion, FileSymlink, Folder, Info, MoreVertical } from "lucide-react";
 import React, { ReactElement } from "react";
 import shlex from "shlex";
-import format, { durationUsec } from "../format/format";
-import InvocationModel from "./invocation_model";
-import { ArrowRight, Copy, Download, File, FileQuestion, FileSymlink, Folder, Info, MoreVertical } from "lucide-react";
-import { build } from "../../proto/remote_execution_ts_proto";
+import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
-import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
-import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
-import rpcService, { Cancelable, CancelablePromise } from "../service/rpc_service";
-import DigestComponent from "../components/digest/digest";
-import { TextLink } from "../components/link/link";
-import TerminalComponent from "../terminal/terminal";
-import { parseActionDigest, digestToString } from "../util/cache";
-import UserPreferences from "../preferences/preferences";
-import alert_service from "../alert/alert_service";
+import { build } from "../../proto/remote_execution_ts_proto";
+import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { workflow } from "../../proto/workflow_ts_proto";
-import errorService from "../errors/error_service";
+import alert_service from "../alert/alert_service";
+import capabilities from "../capabilities/capabilities";
+import Button, { OutlinedButton } from "../components/button/button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -24,21 +17,27 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../components/dialog/dialog";
-import Button, { OutlinedButton } from "../components/button/button";
+import DigestComponent from "../components/digest/digest";
+import { TextLink } from "../components/link/link";
+import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
-import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
-import capabilities from "../capabilities/capabilities";
-import { getErrorReason } from "../util/rpc";
-import rpc_service from "../service/rpc_service";
-import { execution_stats } from "../../proto/execution_stats_ts_proto";
-import { BuildBuddyError, HTTPStatusError } from "../util/errors";
+import Popup from "../components/popup/popup";
+import Spinner from "../components/spinner/spinner";
+import errorService from "../errors/error_service";
+import format, { durationUsec } from "../format/format";
+import UserPreferences from "../preferences/preferences";
+import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
+import TerminalComponent from "../terminal/terminal";
 import { Profile, readProfile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
-import Spinner from "../components/spinner/spinner";
-import { MessageClass, timestampToDate } from "../util/proto";
+import { digestToString, parseActionDigest } from "../util/cache";
 import { copyToClipboard } from "../util/clipboard";
-import Popup from "../components/popup/popup";
-import Menu, { MenuItem } from "../components/menu/menu";
+import { BuildBuddyError, HTTPStatusError } from "../util/errors";
+import { MessageClass, timestampToDate } from "../util/proto";
+import { getErrorReason } from "../util/rpc";
+import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
+import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
+import InvocationModel from "./invocation_model";
 
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
 
@@ -348,9 +347,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
-    const service = rpc_service.getRegionalServiceOrDefault(
-      this.props.model.stringCommandLineOption("remote_executor")
-    );
+    const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
     return service
       .getExecution({
         executionLookup: new execution_stats.ExecutionLookup({

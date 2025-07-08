@@ -43,10 +43,15 @@ var (
 
 type Claims struct {
 	jwt.StandardClaims
-	APIKeyID      string `json:"api_key_id,omitempty"`
-	UserID        string `json:"user_id"`
-	GroupID       string `json:"group_id"`
-	Impersonating bool   `json:"impersonating"`
+	APIKeyID string `json:"api_key_id,omitempty"`
+	UserID   string `json:"user_id"`
+	GroupID  string `json:"group_id"`
+	// APIKeyOwnerGroupID identifies the group that owns the API key used
+	// for authentication. Will be empty if authentication was not performed
+	// using an API key.
+	// The GroupID field above should be used in most cases!
+	APIKeyOwnerGroupID string `json:"api_key_owner_group_id,omitempty"`
+	Impersonating      bool   `json:"impersonating"`
 	// TODO(bduffany): remove this field
 	AllowedGroups          []string                      `json:"allowed_groups"`
 	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
@@ -59,8 +64,10 @@ type Claims struct {
 	CustomerSSO bool `json:"customer_sso,omitempty"`
 }
 
-func (c *Claims) GetAPIKeyID() string {
-	return c.APIKeyID
+func (c *Claims) GetAPIKeyInfo() interfaces.APIKeyInfo {
+	return interfaces.APIKeyInfo{
+		ID: c.APIKeyID, OwnerGroupID: c.APIKeyOwnerGroupID,
+	}
 }
 
 func (c *Claims) GetUserID() string {
@@ -178,6 +185,7 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		APIKeyID:               akg.GetAPIKeyID(),
 		UserID:                 akg.GetUserID(),
 		GroupID:                effectiveGroup,
+		APIKeyOwnerGroupID:     akg.GetGroupID(),
 		AllowedGroups:          allowedGroups,
 		GroupMemberships:       groupMemberships,
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),

@@ -62,6 +62,7 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
 
@@ -109,6 +110,7 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
 
@@ -156,5 +158,6 @@ go_test(
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )

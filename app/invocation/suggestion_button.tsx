@@ -1,22 +1,22 @@
+import { Bot, ChevronDown } from "lucide-react";
 import React from "react";
-import Button, { OutlinedButton } from "../components/button/button";
 import { CancelablePromise } from "../../app/service/rpc_service";
+import { User } from "../auth/user";
+import capabilities from "../capabilities/capabilities";
+import Button, { OutlinedButton } from "../components/button/button";
 import { OutlinedButtonGroup } from "../components/button/button_group";
-import Modal from "../components/modal/modal";
 import Dialog, {
-  DialogHeader,
-  DialogTitle,
   DialogBody,
   DialogFooter,
   DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
 } from "../components/dialog/dialog";
 import Menu, { MenuItem } from "../components/menu/menu";
+import Modal from "../components/modal/modal";
 import Popup, { PopupContainer } from "../components/popup/popup";
-import InvocationModel from "./invocation_model";
 import Spinner from "../components/spinner/spinner";
-import { Bot, ChevronDown } from "lucide-react";
-import capabilities from "../capabilities/capabilities";
-import { User } from "../auth/user";
+import InvocationModel from "./invocation_model";
 
 export interface SuggestionButtonProps {
   model: InvocationModel;

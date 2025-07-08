@@ -1,7 +1,7 @@
 import React from "react";
+import format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
-import format from "../../../app/format/format";
 
 interface State {
   reposWithStats: string[];

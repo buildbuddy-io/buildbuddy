@@ -1,7 +1,7 @@
-import moment from "moment";
-import { stats } from "../../../proto/stats_ts_proto";
 import { timeDay, timeMinute } from "d3-time";
+import moment from "moment";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
+import { stats } from "../../../proto/stats_ts_proto";
 
 export enum TrendsTab {
   OVERVIEW,

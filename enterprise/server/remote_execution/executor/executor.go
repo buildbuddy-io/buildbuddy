@@ -182,6 +182,11 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	workerStart := s.env.GetClock().Now()
+	stage := &stagedGauge{estimatedSize: st.GetSchedulingMetadata().GetTaskSize()}
+	stage.Set("init")
+	defer stage.End()
+
 	ctx = interceptors.AddAuthToContext(s.env, ctx)
 	ctx = bazel_request.ParseRequestMetadataOnce(ctx)
 
@@ -229,7 +234,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	md := &repb.ExecutedActionMetadata{
 		Worker:                   s.hostID,
 		QueuedTimestamp:          task.QueuedTimestamp,
-		WorkerStartTimestamp:     timestamppb.New(s.env.GetClock().Now()),
+		WorkerStartTimestamp:     timestamppb.New(workerStart),
 		WorkerCompletedTimestamp: timestamppb.New(s.env.GetClock().Now()),
 		ExecutorId:               s.id,
 		IoStats:                  &repb.IOStats{},
@@ -254,15 +259,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		return false, finalErr
 	}
 
-	stage := &stagedGauge{estimatedSize: md.EstimatedTaskSize}
-	defer stage.End()
-
 	if err := validateCommand(st.GetExecutionTask().GetCommand()); err != nil {
 		return finishWithErrFn(status.WrapError(err, "validate command"))
 	}
 
 	if *checkActionResultBeforeExecution && !req.GetSkipCacheLookup() {
 		log.CtxDebugf(ctx, "Checking action cache for existing result.")
+		stage.Set("check_cache")
 		if err := stateChangeFn(repb.ExecutionStage_CACHE_CHECK, operation.InProgressExecuteResponse()); err != nil {
 			return true, err
 		}
@@ -279,6 +282,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 
 	log.CtxDebugf(ctx, "Getting a runner for task.")
+	stage.Set("get_runner")
 	r, err := s.runnerPool.Get(ctx, st)
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
@@ -288,12 +292,19 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	auxMetadata.IsolationType = r.GetIsolationType()
 	actionMetrics.Isolation = r.GetIsolationType()
-	finishedCleanly := false
+	reuseRunner := false
+	var cmdResult *interfaces.CommandResult
 	defer func() {
+		// Respect the DoNotRecycle bit set by the container implementation,
+		// since specific implementations will have better knowledge about the
+		// runner being in a potentially unrecoverable state.
+		if cmdResult != nil && cmdResult.DoNotRecycle {
+			reuseRunner = false
+		}
 		// Note: recycling is done in the foreground here in order to ensure
 		// that the runner is fully cleaned up (if applicable) before its
 		// resource claims are freed up by the priority_task_scheduler.
-		s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
+		s.runnerPool.TryRecycle(ctx, r, reuseRunner)
 	}()
 
 	log.CtxDebugf(ctx, "Preparing runner for task.")
@@ -302,7 +313,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// an image.
 	_ = stream.SetState(repb.ExecutionProgress_PULLING_CONTAINER_IMAGE)
 	if err := r.PrepareForTask(ctx); err != nil {
-		return finishWithErrFn(err)
+		return finishWithErrFn(status.WrapError(err, "prepare runner filesystem"))
 	}
 
 	md.InputFetchStartTimestamp = timestamppb.New(s.env.GetClock().Now())
@@ -311,15 +322,34 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	stage.Set("input_fetch")
 	_ = stream.SetState(repb.ExecutionProgress_DOWNLOADING_INPUTS)
 	if err := r.DownloadInputs(ctx, md.IoStats); err != nil {
-		return finishWithErrFn(err)
+		// If we failed to download inputs, and preserve-workspace is not
+		// enabled, then it should be safe to attempt recycling:
+		//
+		// - If the download failed due to filesystem issues, then we'd expect
+		//   the workspace cleanup to either fail (which prevents recycling),
+		//   or succeed, getting the filesystem back in a usable state.
+		//
+		// - If the download failed due to a networking error, then we'll
+		//   just cleanup the workspace and it'll be as though nothing
+		//   happened.
+		//
+		// - We really don't expect other types of errors to happen, since the
+		//   only IO going on here should be filesystem operations and CAS
+		//   downloads.
+		if !platform.IsTrue(platform.FindEffectiveValue(task, platform.PreserveWorkspacePropertyName)) {
+			reuseRunner = true
+		}
+		return finishWithErrFn(status.WrapError(err, "download inputs"))
 	}
 
 	md.InputFetchCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	md.ExecutionStartTimestamp = timestamppb.New(s.env.GetClock().Now())
 	execTimeouts, err := parseTimeouts(task)
 	if err != nil {
+		// Don't fail recycling if the user requested invalid timeouts.
+		reuseRunner = true
 		// These errors are failure-specific. Pass through unchanged.
-		return finishWithErrFn(err)
+		return finishWithErrFn(status.WrapError(err, "parse timeouts"))
 	}
 	auxMetadata.Timeout = durationpb.New(execTimeouts.TerminateAfter)
 
@@ -361,7 +391,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// to our caller while execution is ongoing.
 	updateTicker := time.NewTicker(*execProgressCallbackPeriod)
 	defer updateTicker.Stop()
-	var cmdResult *interfaces.CommandResult
 	for cmdResult == nil {
 		select {
 		case cmdResult = <-cmdResultChan:
@@ -433,7 +462,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	stage.Set("output_upload")
 	_ = stream.SetState(repb.ExecutionProgress_UPLOADING_OUTPUTS)
 	if err := r.UploadOutputs(ctx, md.IoStats, executeResponse, cmdResult); err != nil {
-		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
+		// If we failed to upload outputs, the runner may still be recyclable -
+		// see comments near DownloadInputs.
+		if cmdResult.Error == nil && !platform.IsTrue(platform.FindEffectiveValue(task, platform.PreserveWorkspacePropertyName)) {
+			reuseRunner = true
+		}
+		return finishWithErrFn(status.UnavailableErrorf("upload outputs: %s", err.Error()))
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
@@ -442,17 +476,20 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// If there's an error that we know the client won't retry, return an error
 	// so that the scheduler can retry it.
 	if cmdResult.Error != nil && shouldRetry(task, cmdResult.Error) {
-		return finishWithErrFn(cmdResult.Error)
+		return finishWithErrFn(status.WrapError(cmdResult.Error, "command execution failed"))
 	}
 	// Otherwise, send the error back to the client via the ExecuteResponse
 	// status.
 	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, executeResponse); err != nil {
 		log.CtxErrorf(ctx, "Failed to publish ExecuteResponse: %s", err)
-		return finishWithErrFn(err)
+		if cmdResult.Error == nil {
+			reuseRunner = true
+		}
+		return finishWithErrFn(status.WrapError(err, "publish execute response"))
 	}
-	if cmdResult.Error == nil && !cmdResult.DoNotRecycle {
+	if cmdResult.Error == nil {
 		log.CtxDebugf(ctx, "Task finished cleanly.")
-		finishedCleanly = true
+		reuseRunner = true
 	}
 	return false, nil
 }

@@ -117,7 +117,6 @@ ts_library(
     name = "target_test_log_card",
     srcs = ["target_test_log_card.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/moment",
@@ -137,7 +136,6 @@ ts_library(
     name = "target_flaky_test_card",
     srcs = ["target_flaky_test_card.tsx"],
     deps = [
-        "//:node_modules/@types/moment",
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/moment",

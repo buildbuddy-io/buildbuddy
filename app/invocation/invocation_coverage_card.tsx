@@ -1,15 +1,15 @@
-import React from "react";
-import SetupCodeComponent from "../docs/setup_code";
-import rpcService from "../service/rpc_service";
-import InvocationModel from "./invocation_model";
-import Button from "../components/button/button";
 import { ListChecks } from "lucide-react";
-import errorService from "../errors/error_service";
+import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { LcovItem, parseLcov } from "../util/lcov";
-import format from "../format/format";
-import { percentageColor } from "../util/color";
+import Button from "../components/button/button";
 import { TextLink } from "../components/link/link";
+import SetupCodeComponent from "../docs/setup_code";
+import errorService from "../errors/error_service";
+import format from "../format/format";
+import rpcService from "../service/rpc_service";
+import { percentageColor } from "../util/color";
+import { LcovItem, parseLcov } from "../util/lcov";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;

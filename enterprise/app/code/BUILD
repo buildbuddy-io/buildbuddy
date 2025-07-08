@@ -158,6 +158,7 @@ ts_library(
         "//enterprise/app/sidekick/module",
         "//proto:git_ts_proto",
         "//proto:github_ts_proto",
+        "//proto:kythe_common_ts_proto",
         "//proto:kythe_xref_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:runner_ts_proto",

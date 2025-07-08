@@ -1,10 +1,10 @@
-import React, { useState } from "react";
-import clsx from "clsx";
 import { ThemeClassNames } from "@docusaurus/theme-common";
 import { useAnnouncementBar, useScrollPosition } from "@docusaurus/theme-common/internal";
-import useIsBrowser from "@docusaurus/useIsBrowser";
 import { translate } from "@docusaurus/Translate";
+import useIsBrowser from "@docusaurus/useIsBrowser";
 import DocSidebarItems from "@theme/DocSidebarItems";
+import clsx from "clsx";
+import React, { useState } from "react";
 import styles from "./styles.module.css";
 function useShowAnnouncementBar() {
   const { isActive } = useAnnouncementBar();

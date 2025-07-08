@@ -1,7 +1,7 @@
+import Long from "long";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
-import Long from "long";
 
 const Digest = build.bazel.remote.execution.v2.Digest;
 type Digest = build.bazel.remote.execution.v2.Digest;

@@ -1,8 +1,8 @@
 import React from "react";
-import Modal from "../modal/modal";
-import Dialog, { DialogHeader, DialogTitle, DialogBody, DialogFooter, DialogFooterButtons } from "./dialog";
-import Spinner from "../spinner/spinner";
 import FilledButton, { OutlinedButton } from "../button/button";
+import Modal from "../modal/modal";
+import Spinner from "../spinner/spinner";
+import Dialog, { DialogBody, DialogFooter, DialogFooterButtons, DialogHeader, DialogTitle } from "./dialog";
 
 export interface SimpleModalDialogProps {
   children: React.ReactNode;

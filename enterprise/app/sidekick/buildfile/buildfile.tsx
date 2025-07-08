@@ -1,6 +1,6 @@
-import React from "react";
-import * as monaco from "monaco-editor";
 import { PlayCircle } from "lucide-react";
+import * as monaco from "monaco-editor";
+import React from "react";
 
 interface Props {
   editor: monaco.editor.IStandaloneCodeEditor;

@@ -201,7 +201,7 @@ func (c *classifier) Classify(arg arguments.Argument) Classified {
 			return &Target{arg}
 		}
 	case options.Option:
-		if arg.Supports("startup") {
+		if c.command == nil {
 			return &StartupOption{arg}
 		}
 		return &CommandOption{arg}

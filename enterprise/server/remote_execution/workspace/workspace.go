@@ -280,13 +280,16 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		return &dirtools.TransferInfo{}, nil
 	}
 
-	opts := &dirtools.DownloadTreeOpts{}
+	opts := &dirtools.DownloadTreeOpts{
+		RootDir:         ws.inputRoot(),
+		CaseInsensitive: ws.Opts.CaseInsensitive,
+	}
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
 	execReq := ws.task.GetExecuteRequest()
-	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, ws.inputRoot(), opts)
+	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
 	if err == nil {
 		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
 			return txInfo, err
@@ -399,7 +402,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			// runner should be removed and cannot affect any files in the
 			// workspace anymore, so it is safe to rename the outputs files in
 			// upperdir here rather than copying.
-			recyclingEnabled := platform.IsTrue(platform.FindValue(platform.GetProto(ws.task.GetAction(), ws.task.GetCommand()), platform.RecycleRunnerPropertyName))
+			recyclingEnabled := platform.IsRecyclingEnabled(ws.task)
 			opts := overlayfs.ApplyOpts{AllowRename: !recyclingEnabled}
 			if err := ws.overlay.Apply(egCtx, opts); err != nil {
 				return status.WrapError(err, "apply overlay upperdir changes")

@@ -563,7 +563,7 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(
     name = "buildbuddy_go_image_base",
-    digest = "sha256:e20cc14ff3d02fa6f2dfc7820a65c58fd43ec6f7a1a5882f1475d3c786676685",
+    digest = "sha256:54b60abf4fff72d703e028d1c412a727776a6a191a00d7598214ef67b496ef95",
     registry = "gcr.io",
     repository = "distroless/cc-debian12",
 )
@@ -621,12 +621,12 @@ buildbuddy(
     name = "buildbuddy_toolchain",
     container_image = UBUNTU20_04_IMAGE,
     # This is the MSVC available on Github Action win22 image
-    # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md
+    # https://github.com/actions/runner-images/blob/win22/20250623.1/images/windows/Windows2022-Readme.md
     msvc_edition = "Enterprise",
     msvc_release = "2022",
     # From 'Microsoft Visual C++ 2022 Minimum Runtime' for x64 architecture
-    # https://github.com/actions/runner-images/blob/win22/20250303.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
-    msvc_version = "14.43.34808",
+    # https://github.com/actions/runner-images/blob/win22/20250623.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
+    msvc_version = "14.44.35207",
 )
 
 http_archive(

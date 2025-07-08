@@ -1,10 +1,10 @@
+import { grp } from "../../proto/group_ts_proto";
+import { user as user_proto } from "../../proto/user_ts_proto";
 import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
-import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import format from "../format/format";
 import rpc_service from "../service/rpc_service";
-import { user as user_proto } from "../../proto/user_ts_proto";
-import { grp } from "../../proto/group_ts_proto";
+import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 
 import {
   END_DATE_PARAM_NAME,

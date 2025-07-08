@@ -6256,8 +6256,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_otel",
         importpath = "go.opentelemetry.io/otel",
-        sum = "h1:xKWKPxrxB6OtMCbmMY021CqC45J+3Onta9MqjhnusiQ=",
-        version = "v1.35.0",
+        sum = "h1:UumtzIklRBY6cI/lllNZlALOF5nNIzJVb16APdvgTXg=",
+        version = "v1.36.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_exporters_jaeger",
@@ -6303,6 +6303,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "io_opentelemetry_go_otel_exporters_prometheus",
+        build_directives = [
+            "gazelle:resolve go github.com/prometheus/client_model/go @com_github_prometheus_client_model//io/prometheus/client:go",
+        ],
         importpath = "go.opentelemetry.io/otel/exporters/prometheus",
         sum = "h1:GnCIi0QyG0yy2MrJLzVrIM7laaJstj//flf1zEJCG+E=",
         version = "v0.56.0",
@@ -6310,8 +6313,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_otel_metric",
         importpath = "go.opentelemetry.io/otel/metric",
-        sum = "h1:0znxYu2SNyuMSQT4Y9WDWej0VpcsxkuklLa4/siN90M=",
-        version = "v1.35.0",
+        sum = "h1:MoWPKVhQvJ+eeXWHFBOPoBOi20jh6Iq2CcCREuTYufE=",
+        version = "v1.36.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_oteltest",
@@ -6322,8 +6325,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_otel_sdk",
         importpath = "go.opentelemetry.io/otel/sdk",
-        sum = "h1:95zS4k/2GOy069d321O8jWgYsW3MzVV+KuSPKp7Wr1A=",
-        version = "v1.34.0",
+        sum = "h1:b6SYIuLRs88ztox4EyrvRti80uXIFy+Sqzoh9kFULbs=",
+        version = "v1.36.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_sdk_export_metric",
@@ -6334,14 +6337,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_otel_sdk_metric",
         importpath = "go.opentelemetry.io/otel/sdk/metric",
-        sum = "h1:5CeK9ujjbFVL5c1PhLuStg1wxA7vQv7ce1EK0Gyvahk=",
-        version = "v1.34.0",
+        sum = "h1:r0ntwwGosWGaa0CrSt8cuNuTcccMXERFwHX4dThiPis=",
+        version = "v1.36.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_trace",
         importpath = "go.opentelemetry.io/otel/trace",
-        sum = "h1:dPpEfJu1sDIqruz7BHFG3c7528f6ddfSWfFDVt/xgMs=",
-        version = "v1.35.0",
+        sum = "h1:ahxWNuqZjpdiFAyrIoQ4GIiAIhxAunQR6MUoKrsNd4w=",
+        version = "v1.36.0",
     )
     go_repository(
         name = "io_opentelemetry_go_proto_otlp",

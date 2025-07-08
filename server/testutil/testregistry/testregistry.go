@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -194,11 +195,12 @@ type bytesLayer struct {
 //
 // testtar.EntryBytes may be useful for constructing tarball contents.
 func NewBytesLayer(t *testing.T, b []byte) gcr.Layer {
+	sha := sha256.Sum256(b)
 	layer, err := partial.UncompressedToLayer(&bytesLayer{
 		mediaType: types.OCILayer,
 		diffID: gcr.Hash{
 			Algorithm: "sha256",
-			Hex:       fmt.Sprintf("%x", sha256.Sum256(b)),
+			Hex:       hex.EncodeToString(sha[:]),
 		},
 		content: b,
 	})

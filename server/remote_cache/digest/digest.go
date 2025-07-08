@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
 	"hash"
 	"io"
@@ -228,9 +229,9 @@ func (r *ACResourceName) ActionCacheString() string {
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
-		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + r.GetDigest().GetHash() + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 	}
-	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + strings.ToLower(r.rn.DigestFunction.String()) + "/" + r.GetDigest().GetHash() + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
+	return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + strings.ToLower(r.rn.DigestFunction.String()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 }
 
 func CacheTypeToPrefix(cacheType rspb.CacheType) string {
@@ -386,10 +387,25 @@ func isOldStyleDigestFunction(digestFunction repb.DigestFunction_Value) bool {
 	}
 }
 
+var blake3Hashes = sync.Pool{New: func() any { return blake3.New() }}
+
 func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
-	h, err := HashForDigestType(digestType)
-	if err != nil {
-		return nil, err
+	var h hash.Hash
+	if digestType == repb.DigestFunction_BLAKE3 {
+		// blake3.New() allocates over 10KiB. Use a pool to avoid this.
+		// sha256.New() allocates under 360 bytes, so we don't pool it.
+		// The other hash functions are not used frequently enough to pool.
+		h = blake3Hashes.Get().(hash.Hash)
+		defer func() {
+			h.Reset()
+			blake3Hashes.Put(h)
+		}()
+	} else {
+		var err error
+		h, err = HashForDigestType(digestType)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Read file in 32KB chunks (default)
@@ -398,7 +414,7 @@ func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, 
 		return nil, err
 	}
 	return &repb.Digest{
-		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
+		Hash:      hex.EncodeToString(h.Sum(nil)),
 		SizeBytes: n,
 	}, nil
 }

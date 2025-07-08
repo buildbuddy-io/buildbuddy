@@ -1,5 +1,5 @@
-import React from "react";
 import * as monaco from "monaco-editor";
+import React from "react";
 
 import { ArrowUp, GitCommit, Github, HistoryIcon, Star, Trash2 } from "lucide-react";
 import { roundedDurationSec } from "../../../../app/format/format";

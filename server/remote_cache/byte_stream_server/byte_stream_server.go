@@ -2,7 +2,7 @@ package byte_stream_server
 
 import (
 	"context"
-	"fmt"
+	"encoding/hex"
 	"hash"
 	"io"
 
@@ -94,16 +94,16 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
-	return s.ReadCASResource(rn, req.GetReadOffset(), req.GetReadLimit(), stream)
+	return s.ReadCASResource(stream.Context(), rn, req.GetReadOffset(), req.GetReadLimit(), stream)
 }
 
 // This version of Read accepts the parameters of a ReadRequest directly so it
 // can be called by ByteStreamServerProxy to avoid re-parsing resource names.
-func (s *ByteStreamServer) ReadCASResource(r *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error {
+func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error {
 	if !s.supportsCompressor(r.GetCompressor()) {
 		return status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
 	}
-	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return err
 	}
@@ -572,7 +572,7 @@ func (s *Checksum) Write(p []byte) (int, error) {
 
 func (s *Checksum) Check(r *digest.CASResourceName) error {
 	d := r.GetDigest()
-	computedDigest := fmt.Sprintf("%x", s.hash.Sum(nil))
+	computedDigest := hex.EncodeToString(s.hash.Sum(nil))
 	if computedDigest != d.GetHash() {
 		return status.DataLossErrorf("Hash of uploaded bytes %q [%s] did not match provided digest: %q [%s].", computedDigest, s.digestFunction, d.GetHash(), r.GetDigestFunction())
 	}

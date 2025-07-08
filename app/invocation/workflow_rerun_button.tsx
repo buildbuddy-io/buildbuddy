@@ -1,28 +1,28 @@
+import Long from "long";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import React from "react";
-import { build } from "../../proto/remote_execution_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
+import { firecracker } from "../../proto/firecracker_ts_proto";
+import { build } from "../../proto/remote_execution_ts_proto";
 import { workflow } from "../../proto/workflow_ts_proto";
+import { User } from "../auth/user";
 import Button, { OutlinedButton } from "../components/button/button";
 import { OutlinedButtonGroup } from "../components/button/button_group";
-import Modal from "../components/modal/modal";
 import Dialog, {
-  DialogHeader,
-  DialogTitle,
   DialogBody,
   DialogFooter,
   DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
 } from "../components/dialog/dialog";
 import Menu, { MenuItem } from "../components/menu/menu";
+import Modal from "../components/modal/modal";
 import Popup, { PopupContainer } from "../components/popup/popup";
+import Spinner from "../components/spinner/spinner";
 import errorService from "../errors/error_service";
 import router from "../router/router";
 import rpcService, { CancelablePromise } from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
-import Spinner from "../components/spinner/spinner";
-import { ChevronDown, RefreshCw } from "lucide-react";
-import Long from "long";
-import { User } from "../auth/user";
-import { firecracker } from "../../proto/firecracker_ts_proto";
 
 export interface WorkflowRerunButtonProps {
   model: InvocationModel;
@@ -184,11 +184,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
     // Vm metadata is stored in the auxiliary metadata field of the execution metadata.
     const auxiliaryMetadata = executeResponse.result?.executionMetadata?.auxiliaryMetadata;
     if (!auxiliaryMetadata || auxiliaryMetadata.length == 0) {
-      // If there's no snapshot key in the execute response (i.e. for Mac workflows
-      // or those on self-hosted executors that don't use firecracker with
-      // snapshotting), invalidate the snapshot by bumping the instance name
-      const repoUrl = this.props.model.workflowConfigured?.pushedRepoUrl;
-      rpcService.service.invalidateAllSnapshotsForRepo(new workflow.InvalidateAllSnapshotsForRepoRequest({ repoUrl }));
+      await this.invalidateAllSnapshots();
       return;
     }
 
@@ -201,13 +197,27 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       }
     }
     if (snapshotKey === null || snapshotKey === undefined) {
-      throw new Error("empty snapshot key in execute response");
+      await this.invalidateAllSnapshots();
+      return;
     }
 
     rpcService.service.invalidateSnapshot(
       new workflow.InvalidateSnapshotRequest({
         snapshotKey: snapshotKey,
       })
+    );
+  }
+
+  // invalidateAllSnapshots invalidates snapshots for all workflows for the given
+  // repo URL by bumping the instance name.
+  // While this is heavy handed, only invalidating the snapshot for the current
+  // workflow is only supported for firecracker. All other workloads (i.e. for
+  // Mac workflows or workflows on self-hosted executors that don't use firecracker
+  // and don't have a snapshot key in the execute response) must use this approach.
+  private async invalidateAllSnapshots() {
+    const repoUrl = this.props.model.workflowConfigured?.pushedRepoUrl;
+    return rpcService.service.invalidateAllSnapshotsForRepo(
+      new workflow.InvalidateAllSnapshotsForRepoRequest({ repoUrl })
     );
   }
 
@@ -275,6 +285,12 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
           </OutlinedButtonGroup>
           <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)} anchor="right">
             <Menu>
+              {/*TODO(Maggie): Add a separate button to invalidate runners for all workflows
+              for cases where invalidating a single snapshot is invalid.
+              Make the behavior more explicit with the button name:
+              `Clear cached runners for this Workflow and re-run `
+              `Clear cached runners for all Workflows and re-run`
+              */}
               <MenuItem onClick={this.onOpenDialog.bind(this)}>Re-run from clean workspace</MenuItem>
             </Menu>
           </Popup>

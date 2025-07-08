@@ -91,12 +91,18 @@ type GroupMembership struct {
 	Role role.Role `json:"role"`
 }
 
+type APIKeyInfo struct {
+	ID           string
+	OwnerGroupID string
+}
+
 type UserInfo interface {
 	jwt.Claims
 
-	// ID of the API Key used to authenticate the request or empty if an API
-	// key was not used.
-	GetAPIKeyID() string
+	// GetAPIKeyInfo returns the metadata for the API key used for
+	// authentication. An empty struct will be returned if an API key
+	// was not used.
+	GetAPIKeyInfo() APIKeyInfo
 	// ID of the authenticated user. Empty if authenticated using an Org API
 	// key.
 	GetUserID() string
@@ -470,7 +476,7 @@ type AuthDB interface {
 	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
 
 	// CreateAPIKey creates a group-level API key.
-	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []cappb.Capability, expiresIn time.Duration, visibleToDevelopers bool) (*tables.APIKey, error)
 
 	// CreateAPIKeyWithoutAuthCheck creates a group-level API key without
 	// checking that the user has admin rights on the group. This should only
@@ -491,7 +497,7 @@ type AuthDB interface {
 	// user must be a member of the group. If the request is not authenticated
 	// as the given user, then the authenticated user or API key must have
 	// ORG_ADMIN capability.
-	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []cappb.Capability) (*tables.APIKey, error)
+	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []cappb.Capability, expiresIn time.Duration) (*tables.APIKey, error)
 
 	// GetAPIKey returns an API key by ID. The key may be user-owned or
 	// group-owned.
@@ -897,7 +903,7 @@ type SchedulerService interface {
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
-	GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType PoolType) (*PoolInfo, error)
+	GetPoolInfo(ctx context.Context, os, arch, requestedPool, workflowID string, poolType PoolType) (*PoolInfo, error)
 	GetSharedExecutorPoolGroupID() string
 }
 
@@ -1336,10 +1342,11 @@ type DistributedLock interface {
 // QuotaManager manages quota.
 type QuotaManager interface {
 	// Allow checks whether a user (identified from the ctx) has exceeded a rate
-	// limit inside the namespace.
+	// limit inside the namespace and returns ResourceExhaustedError
+	// when it's not allowed.
 	// If the rate limit has not been exceeded, the underlying storage is updated
 	// by the supplied quantity.
-	Allow(ctx context.Context, namespace string, quantity int64) (bool, error)
+	Allow(ctx context.Context, namespace string, quantity int64) error
 
 	GetNamespace(ctx context.Context, req *qpb.GetNamespaceRequest) (*qpb.GetNamespaceResponse, error)
 	RemoveNamespace(ctx context.Context, req *qpb.RemoveNamespaceRequest) (*qpb.RemoveNamespaceResponse, error)
@@ -1674,8 +1681,14 @@ type RegistryService interface {
 }
 
 type AtimeUpdater interface {
-	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value)
-	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName)
+	// Enqueues atime updates for the provided instanceName, digestFunction,
+	// and set of digests provided. Returns true if the updates were
+	// successfully enqueued, false if not.
+	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) bool
+
+	// Enqueues atime updates for the provided resource name. Returns true if
+	// the update was successfully enqueued, false if not.
+	EnqueueByResourceName(ctx context.Context, rn *digest.CASResourceName) bool
 }
 
 type CPULeaser interface {
@@ -1749,22 +1762,46 @@ type HitTrackerFactory interface {
 
 	// Creates a new HitTracker for tracking ByteStream/CAS hits.
 	NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) HitTracker
+
+	// Creates a new HitTracker for tracking Action Cache hits.
+	NewRemoteACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) HitTracker
+
+	// Creates a new HitTracker for tracking ByteStream/CAS hits.
+	NewRemoteCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) HitTracker
 }
 
 // ExperimentFlagProvider can be use for getting a flag value for a request to
 // enable or disable some experimental functionality. The experiment config is
 // managed outside of the app.
+//
+// Two different sets of methods are provided:
+//   - Boolean, String, Float64, Int64, Object: returns the flag value directly.
+//   - BooleanDetails, StringDetails, Float64Details, Int64Details, ObjectDetails:
+//     returns the flag value and details, including variant name.
 type ExperimentFlagProvider interface {
 	Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool
 	String(ctx context.Context, flagName string, defaultValue string, opts ...any) string
 	Float64(ctx context.Context, flagName string, defaultValue float64, opts ...any) float64
 	Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64
 	Object(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) map[string]any
+
+	BooleanDetails(ctx context.Context, flagName string, defaultValue bool, opts ...any) (bool, ExperimentFlagDetails)
+	StringDetails(ctx context.Context, flagName string, defaultValue string, opts ...any) (string, ExperimentFlagDetails)
+	Float64Details(ctx context.Context, flagName string, defaultValue float64, opts ...any) (float64, ExperimentFlagDetails)
+	Int64Details(ctx context.Context, flagName string, defaultValue int64, opts ...any) (int64, ExperimentFlagDetails)
+	ObjectDetails(ctx context.Context, flagName string, defaultValue map[string]any, opts ...any) (map[string]any, ExperimentFlagDetails)
+}
+
+// ExperimentFlagDetails contains details about the flag evaluation.
+type ExperimentFlagDetails interface {
+	// Variant returns the variant name. If the flag is either not configured or
+	// could not be evaluated, it returns an empty string.
+	Variant() string
 }
 
 // Wrapper around a bspb.ByteStream_ReadServer that supports directly providing
 // a parsed CAS resource name for Read() to avoid having to reparse one.
 type ByteStreamServer interface {
 	bspb.ByteStreamServer
-	ReadCASResource(rn *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error
+	ReadCASResource(ctx context.Context, rn *digest.CASResourceName, offset, limit int64, stream bspb.ByteStream_ReadServer) error
 }

@@ -67,7 +67,7 @@ func (m *mockGCS) Reader(ctx context.Context, blobName string) (io.ReadCloser, e
 	return io.NopCloser(bytes.NewReader(blob.data)), nil
 }
 
-func (m *mockGCS) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time) (interfaces.CommittedWriteCloser, error) {
+func (m *mockGCS) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	_, exists := m.items[blobName]

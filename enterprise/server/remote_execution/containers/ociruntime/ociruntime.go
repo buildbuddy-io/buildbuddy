@@ -35,10 +35,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -68,14 +71,17 @@ const (
 )
 
 var (
-	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
-	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
-	dns         = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
-	netPoolSize = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
-	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
-	capAdd      = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
-	mounts      = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
-	devices     = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
+	Runtime                 = flag.String("executor.oci.runtime", "", "OCI runtime")
+	runtimeRoot             = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	dns                     = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
+	netPoolSize             = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	enableLxcfs             = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
+	capAdd                  = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
+	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
+	devices                 = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
+	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
+	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
+	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -359,16 +365,18 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		networkPool:    p.networkPool,
 		lxcfsMount:     p.lxcfsMount,
 
-		blockDevice:    args.BlockDevice,
-		cgroupParent:   args.CgroupParent,
-		cgroupSettings: &scpb.CgroupSettings{},
-		imageRef:       args.Props.ContainerImage,
-		networkEnabled: args.Props.DockerNetwork != "off",
-		tiniEnabled:    args.Props.DockerInit,
-		user:           args.Props.DockerUser,
-		forceRoot:      args.Props.DockerForceRoot,
+		blockDevice:       args.BlockDevice,
+		cgroupParent:      args.CgroupParent,
+		cgroupSettings:    &scpb.CgroupSettings{},
+		imageRef:          args.Props.ContainerImage,
+		networkEnabled:    args.Props.DockerNetwork != "off",
+		tiniEnabled:       args.Props.DockerInit,
+		user:              args.Props.DockerUser,
+		forceRoot:         args.Props.DockerForceRoot,
+		persistentVolumes: args.Props.PersistentVolumes,
 
-		milliCPU: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
+		milliCPU:    args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
+		memoryBytes: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
 	}
 	if settings := args.Task.GetSchedulingMetadata().GetCgroupSettings(); settings != nil {
 		container.cgroupSettings = settings
@@ -391,22 +399,25 @@ type ociContainer struct {
 	imageCacheRoot string
 	imageStore     *ImageStore
 
-	cid              string
-	workDir          string
-	mergedMounts     []string
-	overlayfsMounted bool
-	stats            container.UsageStats
-	networkPool      *networking.ContainerNetworkPool
-	network          *networking.ContainerNetwork
-	lxcfsMount       string
-	releaseCPUs      func()
+	cid                    string
+	workDir                string
+	mergedMounts           []string
+	overlayfsMounted       bool
+	persistentVolumes      []platform.PersistentVolume
+	persistentVolumeMounts []specs.Mount
+	stats                  container.UsageStats
+	networkPool            *networking.ContainerNetworkPool
+	network                *networking.ContainerNetwork
+	lxcfsMount             string
+	releaseCPUs            func()
 
 	imageRef       string
 	networkEnabled bool
 	user           string
 	forceRoot      bool
 
-	milliCPU int64 // milliCPU allocation from task size
+	milliCPU    int64 // milliCPU allocation from task size
+	memoryBytes int64 // memory allocation from task size in bytes
 }
 
 // Returns the OCI bundle directory for the container.
@@ -439,6 +450,42 @@ func (c *ociContainer) containerName() string {
 		return c.cid
 	}
 	return c.cid[:cidPrefixLen]
+}
+
+func (c *ociContainer) initPersistentVolumes(ctx context.Context) error {
+	if len(c.persistentVolumes) == 0 {
+		return nil
+	}
+	if !*enablePersistentVolumes {
+		return status.UnimplementedError("persistent volumes are not enabled")
+	}
+
+	partition := "default"
+	if executor_auth.APIKey() != "" {
+		// If authentication is enabled, host mounts are only available to
+		// authenticated users.
+		c, err := claims.ClaimsFromContext(ctx)
+		if err != nil {
+			return status.UnauthenticatedErrorf("persistent volumes require authentication")
+		}
+		partition = c.GroupID
+	}
+
+	for _, volume := range c.persistentVolumes {
+		// Initialize the volume at "{build_root}/volumes/{partition}/{volume_name}"
+		// Example: "/buildbuddy/executor/buildroot/volumes/GR123/node_modules_cache"
+		hostPath := filepath.Join(filepath.Dir(c.workDir), "volumes", partition, volume.Name())
+		if err := os.MkdirAll(hostPath, 0755); err != nil {
+			return fmt.Errorf("create persistent volume backing path %q: %w", hostPath, err)
+		}
+		c.persistentVolumeMounts = append(c.persistentVolumeMounts, specs.Mount{
+			Destination: volume.ContainerPath(),
+			Type:        "bind",
+			Source:      hostPath,
+			Options:     []string{"bind", "rprivate"},
+		})
+	}
+	return nil
 }
 
 // createBundle creates the OCI bundle directory, which includes the OCI spec
@@ -543,6 +590,9 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 		cmd = cmd.CloneVT()
 		cmd.Arguments = append([]string{tiniMountPoint, "--"}, cmd.Arguments...)
 	}
+	if err := c.initPersistentVolumes(ctx); err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("init persistent volumes: %s", err))
+	}
 	if err := c.createBundle(ctx, cmd); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("create OCI bundle: %s", err))
 	}
@@ -572,6 +622,9 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 			[]string{tiniMountPoint, "--"},
 			pid1.Arguments...,
 		)
+	}
+	if err := c.initPersistentVolumes(ctx); err != nil {
+		return status.UnavailableErrorf("init persistent volumes: %s", err)
 	}
 	// Provision bundle directory (OCI config JSON, rootfs, etc.)
 	if err := c.createBundle(ctx, pid1); err != nil {
@@ -833,6 +886,9 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
 	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
+	if *enableCgroupMemoryLimit && c.memoryBytes > 0 {
+		c.cgroupSettings.MemoryLimitBytes = proto.Int64(c.memoryBytes + int64(float64(c.memoryBytes)*(*cgroupMemoryCushion)))
+	}
 
 	path := c.cgroupPath()
 	if err := os.MkdirAll(path, 0755); err != nil {
@@ -1179,6 +1235,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Options:     []string{"bind", "rprivate", "ro"},
 		})
 	}
+	spec.Mounts = append(spec.Mounts, c.persistentVolumeMounts...)
 	spec.Mounts = append(spec.Mounts, *mounts...)
 	spec.Linux.Devices = append(spec.Linux.Devices, *devices...)
 	return &spec, nil
@@ -1410,7 +1467,7 @@ func newCID() (string, error) {
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%x", b), nil
+	return hex.EncodeToString(b[:]), nil
 }
 
 // layerPath returns the path where the extracted image layer with the given

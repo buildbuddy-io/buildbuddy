@@ -1,7 +1,7 @@
 import React from "react";
-import NamespacesComponent from "./namespaces";
-import NamespaceComponent from "./namespace";
 import BucketComponent from "./bucket";
+import NamespaceComponent from "./namespace";
+import NamespacesComponent from "./namespaces";
 
 export interface QuotaProps {
   path: string;

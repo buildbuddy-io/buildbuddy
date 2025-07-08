@@ -3,6 +3,7 @@ syntax = "proto3";
 package api.v1;
 
 import "proto/api/v1/action.proto";
+import "proto/api/v1/api_key.proto";
 import "proto/api/v1/file.proto";
 import "proto/api/v1/invocation.proto";
 import "proto/api/v1/log.proto";
@@ -58,5 +59,14 @@ service ApiService {
   // legacy workflows.
   rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
 
+  // Run a command (typically a Bazel command) on a remote runner.
   rpc Run(RunRequest) returns (RunResponse);
+
+  // Creates an API key (authentication token) for a given user. To create API
+  // keys for users within an organization, this API must be called with an Org
+  // admin key. Org admin keys can be created via the BuildBuddy UI by
+  // navigating to Settings > Org API keys, then creating a new key with the
+  // "Org admin" capability.
+  rpc CreateUserApiKey(CreateUserApiKeyRequest)
+      returns (CreateUserApiKeyResponse);
 }

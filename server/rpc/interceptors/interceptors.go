@@ -2,17 +2,14 @@ package interceptors
 
 import (
 	"context"
-	"flag"
 	"net/netip"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -20,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -43,8 +39,6 @@ const (
 
 var (
 	headerContextKeys map[string]string
-
-	enableGRPCMetricsByGroupID = flag.Bool("app.enable_grpc_metrics_by_group_id", false, "If enabled, grpc metrics by group ID will be recorded")
 )
 
 func init() {
@@ -341,41 +335,25 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 
 func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		allow := true
-		var err error
 		if qm := env.GetQuotaManager(); qm != nil {
-			allow, err = qm.Allow(ctx, info.FullMethod, 1)
+			err := qm.Allow(ctx, info.FullMethod, 1)
 			if err != nil {
-				log.Warningf("Quota Manager failed: %s", err)
+				return nil, err
 			}
 		}
-		if *enableGRPCMetricsByGroupID {
-			if key, err := quota.GetKey(ctx, env); err == nil {
-				metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key, strconv.FormatBool(allow)).Inc()
-			}
-		}
-		r, err := handler(ctx, req)
-		return r, err
+		return handler(ctx, req)
 	}
 }
 
 func quotaStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		allow := true
-		var err error
 		if qm := env.GetQuotaManager(); qm != nil {
-			allow, err = qm.Allow(stream.Context(), info.FullMethod, 1)
+			err := qm.Allow(stream.Context(), info.FullMethod, 1)
 			if err != nil {
-				log.Warningf("Quota Manager failed: %s", err)
+				return err
 			}
 		}
-		if *enableGRPCMetricsByGroupID {
-			if key, err := quota.GetKey(stream.Context(), env); err == nil {
-				metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key, strconv.FormatBool(allow)).Inc()
-			}
-		}
-		err = handler(srv, stream)
-		return err
+		return handler(srv, stream)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -146,6 +147,14 @@ func setup(t testing.TB) (interfaces.Authenticator, *HitTrackerFactory, *testHit
 	return authenticator, newHitTrackerClient(ctx, te, conn), hitTrackerService
 }
 
+func authenticatedContext(user string, authenticator interfaces.Authenticator) context.Context {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, "fakeheader"))
+	if user != "" {
+		ctx = authenticator.AuthContextFromAPIKey(ctx, user)
+	}
+	return authutil.ContextWithCachedAuthHeaders(ctx, authenticator)
+}
+
 func TestACHitTracker(t *testing.T) {
 	_, hitTrackerFactory, hitTrackerService := setup(t)
 	ctx := context.Background()
@@ -229,7 +238,7 @@ func TestCASHitTracker_SplitsUpdates(t *testing.T) {
 	// Pause the hit-tracker RPC service and send an RPC that'll block the
 	// hit-tracker-client worker so updates are queued.
 	hitTrackerService.wg.Add(1)
-	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
+	group1Ctx := authenticatedContext(user1, authenticator)
 	hitTracker := hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
 	hitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
 
@@ -267,7 +276,7 @@ func TestCASHitTracker_DropsUpdates(t *testing.T) {
 	// Pause the hit-tracker RPC service and send an RPC that'll block the
 	// hit-tracker-client worker so updates are queued.
 	hitTrackerService.wg.Add(1)
-	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
+	group1Ctx := authenticatedContext(user1, authenticator)
 	hitTracker := hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
 	hitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
 
