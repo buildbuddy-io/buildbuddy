@@ -16,6 +16,7 @@ go_library(
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",
+        "//server/util/shlex",
         "//server/util/status",
         "//server/util/uuid",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

@@ -975,6 +975,9 @@ func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*
 //
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
+	if _, found := c.getLookasideEntry(ctx, r); found {
+		return true, nil
+	}
 	ps := c.readPeers(r.GetDigest())
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(r, ps)); err != nil {
