@@ -604,16 +604,23 @@ func BenchmarkEnqueue(b *testing.B) {
 		// enqueued. Recreate for each benchmark to prevent this.
 		b.StopTimer()
 		authenticator, updater, _, _ := setup(b)
+		contexts := []context.Context{
+			authenticatedContext(b.Context(), "", authenticator),
+			authenticatedContext(b.Context(), user1, authenticator),
+			authenticatedContext(b.Context(), user2, authenticator),
+		}
 		b.StartTimer()
 		wg := sync.WaitGroup{}
 		for i := 0; i < 10_000; i++ {
 			for _, instance := range instances {
 				for _, digest := range digests {
-					wg.Add(1)
-					go func() {
-						updater.Enqueue(authenticatedContext(b.Context(), "", authenticator), instance, []*repb.Digest{digest}, repb.DigestFunction_SHA256)
-						wg.Done()
-					}()
+					for _, ctx := range contexts {
+						wg.Add(1)
+						go func() {
+							updater.Enqueue(ctx, instance, []*repb.Digest{digest}, repb.DigestFunction_SHA256)
+							wg.Done()
+						}()
+					}
 				}
 			}
 		}
