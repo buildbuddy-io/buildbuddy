@@ -43,58 +43,13 @@ func NewHandler(env environment.Env) (*ToolHandler, error) {
 func (t *ToolHandler) Register(server *mcp.Server) error {
 	// TODO(tylerw): as soon as https://github.com/modelcontextprotocol/go-sdk/pull/94 is in
 	// consolidate this mess.
-	server.AddTools(
-		mcp.NewServerTool("echo_string", "echo back any string with emojis around it", t.Echo, mcp.Input(
-			mcp.Property("value", mcp.Description("The string to echo back")),
-		)),
-		mcp.NewServerTool("get_invocation", "lookup a specific invocation by ID", t.GetInvocation),
-		mcp.NewServerTool("search_invocation", "search invocations by various attributes", t.SearchInvocation, mcp.Input(
-			mcp.Property("user", mcp.Description("The unix-user who performed the build")),
-			mcp.Property("host", mcp.Description("The host this build was executed on")),
-			mcp.Property("group_id", mcp.Description("The group to search. The user must be a member")),
-			mcp.Property("repo_url", mcp.Description("The git repo the build was for")),
-			mcp.Property("commit_sha", mcp.Description("The commit sha used for the build")),
-			mcp.Property("roles", mcp.Description("The ROLE metadata set on the build. If multiple filters are specified, they are combined with OR")),
-			mcp.Property("updated_after", mcp.Description("The timestamp on or after which the build was last updated (inclusive). RFC3339 format.")),
-			mcp.Property("updated_before", mcp.Description("The timestamp up to which the build was last updated (exclusive). RFC3339 format.")),
-			mcp.Property("branch_name", mcp.Description("The git branch used for the build.")),
-			mcp.Property("command", mcp.Description("The bazel command that was used. Ex: 'build', 'test', 'run'.")),
-			mcp.Property("minimum_duration", mcp.Description("The minimum invocation duration, in Golang duration string format.")),
-			mcp.Property("maximum_duration", mcp.Description("The maximum invocation duration, in Golang duration string format.")),
-			mcp.Property("pattern", mcp.Description("The pattern for the targets built (exact match). Ex: '//...'.")),
-			mcp.Property("tags", mcp.Description("Plaintext tags for the targets built (exact match). Ex: 'my-cool-tag'")),
-			mcp.Property("sort_field", mcp.Description("One of: CREATED_AT_USEC_SORT_FIELD, UPDATED_AT_USEC_SORT_FIELD, DURATION_SORT_FIELD, ACTION_CACHE_HIT_RATIO_SORT_FIELD, CONTENT_ADDRESSABLE_STORE_CACHE_HIT_RATIO_SORT_FIELD, CACHE_DOWNLOADED_SORT_FIELD, CACHE_UPLOADED_SORT_FIELD, CACHE_TRANSFERRED_SORT_FIELD")),
-			mcp.Property("sort_ascending", mcp.Description("If true, sort results in ascending order, otherwise they will be sorted in descending order")),
-		)),
-		mcp.NewServerTool("search_flaky_target", "search for flaky targets by various attributes", t.SearchFlakyTarget, mcp.Input(
-			mcp.Property("labels", mcp.Description("If specified, a list of targets for which we should fetch flake data. If this list is empty, this request will instead return a sorted list of the flakiest tests in the last 30 days.")),
-			mcp.Property("started_after", mcp.Description("The timestamp on or after which the test was started. RFC3339 format.")),
-			mcp.Property("started_before", mcp.Description("The timestamp up to which the test was started (exclusive). RFC3339 format.")),
-			mcp.Property("repo", mcp.Description("If specified, stats will be restricted to invocations in this repo.")),
-			mcp.Property("branch_name", mcp.Description("If specified, only return runs on this branch")),
-		)),
-		mcp.NewServerTool("run_command", "Execute a command. Use this when asked to run any commands.", t.Run, mcp.Input(
-			mcp.Property("cmd", mcp.Description("the command to run")))),
-		mcp.NewServerTool("file_write", "Create a new file with the provided contents in the working direcotry, overwriting the file if it already exists", t.FileWrite, mcp.Input(
-			mcp.Property("path", mcp.Description("The path of the file you want to write")),
-			mcp.Property("content", mcp.Description("Full text content of the file you want to write.")),
-		)),
-	)
-
+	mcp.AddTool(server, &mcp.Tool{Name: "get_invocation", Description: "Lookup a specific invocation by ID"}, t.GetInvocation)
+	mcp.AddTool(server, &mcp.Tool{Name: "search_invocation", Description: "Search invocations by various attributes"}, t.SearchInvocation)
+	mcp.AddTool(server, &mcp.Tool{Name: "run_command", Description: "Run a command on buildbuddy"}, t.Run)
+	mcp.AddTool(server, &mcp.Tool{Name: "file_write", Description: "Create a new file with the provided contents in the working direcotry, overwriting the file if it already exists"}, t.FileWrite)
 	return nil
 }
 
-type EchoParams struct {
-	Value string `json:"value"`
-}
-
-func (t *ToolHandler) Echo(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[EchoParams]) (*mcp.CallToolResultFor[any], error) {
-	return &mcp.CallToolResultFor[any]{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("🎉🎉🎉 %s 🎉🎉🎉", params.Arguments.Value)},
-		},
-	}, nil
-}
 
 type RunParams struct {
 	Cmd string `json:"cmd"`
@@ -113,7 +68,7 @@ func (t *ToolHandler) Run(ctx context.Context, cc *mcp.ServerSession, params *mc
 	if bytestreamClient == nil {
 		return nil, status.InternalError("no registered bytestream client")
 	}
-	instanceName := cc.ID()
+	instanceName := "/mcp/" + cc.ID()
 	log.Printf("instanceName is: %q", instanceName)
 
 	args, err := shlex.Split(params.Arguments.Cmd)
@@ -129,7 +84,7 @@ func (t *ToolHandler) Run(ctx context.Context, cc *mcp.ServerSession, params *mc
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "Pool", Value: "workflows"},
-				{Name: "hosted-bazel-affinity-key", Value: instanceName}, // use sessionID as affinity key.
+				{Name: "hosted-bazel-affinity-key", Value: cc.ID()}, // use sessionID as affinity key.
 				{Name: "container-image", Value: "docker://gcr.io/flame-public/rbe-ubuntu24-04@sha256:f7db0d4791247f032fdb4451b7c3ba90e567923a341cc6dc43abfc283436791a"},
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "preserve-workspace", Value: "true"},
@@ -142,7 +97,6 @@ func (t *ToolHandler) Run(ctx context.Context, cc *mcp.ServerSession, params *mc
 	}
 	rexec.NormalizeCommand(cmd)
 	action := &repb.Action{
-		//InputRootDigest: inputRootDigest,
 		DoNotCache: true,
 		Timeout:    durationpb.New(10 * time.Second),
 	}

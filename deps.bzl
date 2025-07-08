@@ -3675,8 +3675,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_modelcontextprotocol_go_sdk",
         importpath = "github.com/modelcontextprotocol/go-sdk",
-        sum = "h1:y3bFpQLZJY/OwqX4PWR1hpP0dHRljspQOu8jfOYZxSk=",
-        version = "v0.1.1-0.20250704183533-328a25d50356",
+        sum = "h1:+SJFDruaCul1ZvT0OwqbM/P7NKIHGXrnwzvXjduQqDU=",
+        version = "v0.1.1-0.20250707185452-aebd2449813d",
     )
     go_repository(
         name = "com_github_modern_go_concurrent",

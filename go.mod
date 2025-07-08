@@ -100,7 +100,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/mdlayher/vsock v1.2.1
 	github.com/mitchellh/go-ps v1.0.0
-	github.com/modelcontextprotocol/go-sdk v0.1.1-0.20250704183533-328a25d50356
+	github.com/modelcontextprotocol/go-sdk v0.1.1-0.20250707185452-aebd2449813d
 	github.com/mwitkow/grpc-proxy v0.0.0-20230212185441-f345521cb9c9
 	github.com/ncruces/go-sqlite3 v0.25.2
 	github.com/nishanths/exhaustive v0.7.11
