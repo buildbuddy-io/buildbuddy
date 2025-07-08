@@ -427,6 +427,8 @@ func TestGetSet_EmptyData(t *testing.T) {
 	require.True(t, bytes.Equal([]byte{}, data))
 }
 
+// TestCopyDataInBackground ensures that the copy queue works even when there
+// are many parallel requests.
 func TestCopyDataInBackground(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
 		name := "forward"
@@ -462,14 +464,10 @@ func TestCopyDataInBackground(t *testing.T) {
 			defer mc.Stop()
 
 			eg, ctx := errgroup.WithContext(ctx)
-			lock := sync.RWMutex{}
 			for i := 0; i < numTests; i++ {
 				eg.Go(func() error {
 					r, buf := testdigest.RandomCASResourceBuf(t, 100)
-					lock.Lock()
-					defer lock.Unlock()
-
-					err = srcCache.Set(ctx, r, buf)
+					err := srcCache.Set(ctx, r, buf)
 					require.NoError(t, err)
 
 					// Get should queue copy in background
@@ -1182,13 +1180,14 @@ func TestDelete(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err))
 }
 
+// TestReadsCopyData ensures that methods that actually read data (as opposed to
+// just checking presence) trigger copies even when double read percentage is 0.
 func TestReadsCopyData(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDirSrc := testfs.MakeTempDir(t)
 
-	// Data should be copied during reads even when double read percentage is 0.
 	setDoubleReadPercentage(t, 0)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
