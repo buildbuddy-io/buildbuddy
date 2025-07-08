@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -244,7 +245,12 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 				// calling code can catch.
 				err = status.AlreadyExistsError("blob already exists")
 			}
-			if gerr.Code == http.StatusTooManyRequests {
+			// http.StatusTooManyRequests can be returned due to conflicting
+			// writes on the same object, or due to too much QPS to GCS. The
+			// only way to tell the difference is to look at the message.
+			if gerr.Code == http.StatusTooManyRequests &&
+				strings.HasPrefix(gerr.Message, "The object") &&
+				strings.Contains(gerr.Message, "exceeded the rate limit for object mutation operations") {
 				// Rewrite the error to a ResourceExhaustedError that
 				// calling code can catch.
 				err = status.ResourceExhaustedError("too many concurrent writes")

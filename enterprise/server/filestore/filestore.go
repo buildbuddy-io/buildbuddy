@@ -783,6 +783,8 @@ func (g *gcsMetadataWriter) Commit() error {
 		log.Debugf("Write gcs blob %q (already exists)", g.blobName)
 		return nil
 	case status.IsResourceExhaustedError(err):
+		// gcs.ConditionalWriter returns this when there are too many writes to
+		// the same object. We can assume that another write was successful.
 		log.Debugf("Write gcs blob %q (too many writes)", g.blobName)
 		return nil
 	default:
