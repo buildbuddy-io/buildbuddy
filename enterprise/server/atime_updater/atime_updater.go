@@ -226,7 +226,7 @@ func (u *atimeUpdater) batch(update *enqueuedAtimeUpdates) {
 	rawUpdates, _ := u.updates.LoadOrStore(groupID, &atimeUpdates{maxUpdatesPerGroup: u.maxUpdatesPerGroup})
 	updates, ok := rawUpdates.(*atimeUpdates)
 	if !ok {
-		alert.UnexpectedEvent("atimeUpdater.updates contains value with invalid type")
+		alert.UnexpectedEvent("atimeUpdater.updates contains value with invalid type: %T", rawUpdates)
 		return
 	}
 
@@ -320,12 +320,12 @@ func (u *atimeUpdater) sendUpdates(ctx context.Context) int {
 	u.updates.Range(func(key, value interface{}) bool {
 		groupID, ok := key.(string)
 		if !ok {
-			alert.UnexpectedEvent("atimeUpdater.updates contains key with unexpected type")
+			alert.UnexpectedEvent("atimeUpdater.updates contains key with unexpected type: %T", key)
 			return true
 		}
 		updates, ok := value.(*atimeUpdates)
 		if !ok {
-			alert.UnexpectedEvent("atimeUpdater.updates contains value with unexpected type")
+			alert.UnexpectedEvent("atimeUpdater.updates contains value with unexpected type: %T", value)
 			return true
 		}
 		updates.mu.Lock()
