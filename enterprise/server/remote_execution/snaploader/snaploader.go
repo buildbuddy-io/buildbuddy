@@ -163,6 +163,12 @@ func gitRefs(task *repb.ExecutionTask) (branchRef string, fallbackRefs []string)
 			fallbackRefs = append(fallbackRefs, v)
 		}
 	}
+
+	if platform.IsTrue(platform.FindEffectiveValue(task, platform.UniversalSnapshotFallbackPropertyName)) {
+		// As a last resort, fallback to a snapshot from any branch.
+		fallbackRefs = append(fallbackRefs, "")
+	}
+
 	return branchRef, fallbackRefs
 }
 
@@ -351,6 +357,11 @@ type CacheSnapshotOptions struct {
 	// even if there is a newer manifest for the snapshot key available in the
 	// remote cache.
 	WriteManifestLocally bool
+
+	// Whether to write a ref-agnostic snapshot. Snapshots from any branch
+	// will be able to start from this universal snapshot, even if it wasn't
+	// written from the default ref, as a last-resort fallback.
+	CacheUniversalSnapshot bool
 }
 
 type UnpackedSnapshot struct {
@@ -787,6 +798,22 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		}
 	}
 
+	// TODO: Should this only cache locally?
+	if opts.CacheUniversalSnapshot {
+		// Cache snapshot manifest for a key without a ref. This can be used
+		// as a last-resort fallback for a run without any other snapshots.
+		universalKey := key.CloneVT()
+		universalKey.Ref = ""
+		universalD, err := RemoteManifestKey(universalKey)
+		if err != nil {
+			return err
+		}
+		universalACDigest := digest.NewACResourceName(universalD, universalKey.InstanceName, repb.DigestFunction_BLAKE3)
+		if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), universalACDigest, ar); err != nil {
+			return err
+		}
+		log.CtxInfof(ctx, "Updated remote universal snapshot manifest %s", snapshotDebugString(ctx, l.env, universalKey, true /*remote*/, "" /*=snapshotID*/))
+	}
 	if !opts.WriteManifestLocally || !opts.CacheSnapshotLocally {
 		return nil
 	}
@@ -826,6 +853,23 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		}
 
 		log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, false /*remote*/, snapshotID))
+	}
+
+	if opts.CacheUniversalSnapshot {
+		// Cache snapshot manifest for a key without a ref. This can be used
+		// as a last-resort fallback for a run without any other snapshots.
+		universalKey := key.CloneVT()
+		universalKey.Ref = ""
+
+		universalD, err := LocalManifestKey(gid, key)
+		if err != nil {
+			return err
+		}
+		universalManifestNode := &repb.FileNode{Digest: universalD}
+		if _, err := l.env.GetFileCache().Write(ctx, universalManifestNode, b); err != nil {
+			return err
+		}
+		log.CtxInfof(ctx, "Updated local universal snapshot manifest %s", snapshotDebugString(ctx, l.env, universalKey, false /*remote*/, "" /*=snapshotID*/))
 	}
 
 	return nil

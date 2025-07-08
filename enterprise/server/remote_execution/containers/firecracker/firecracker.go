@@ -1027,16 +1027,17 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		!(readPolicy == "" || readPolicy == snaputil.AlwaysReadNewestSnapshot))
 
 	opts := &snaploader.CacheSnapshotOptions{
-		VMMetadata:            vmd,
-		VMConfiguration:       c.vmConfig,
-		VMStateSnapshotPath:   filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:       c.executorConfig.GuestKernelImagePath,
-		InitrdImagePath:       c.executorConfig.InitrdImagePath,
-		ChunkedFiles:          map[string]*copy_on_write.COWStore{},
-		Recycled:              c.recycled,
-		CacheSnapshotRemotely: snapshotDetails.saveRemoteSnapshot,
-		CacheSnapshotLocally:  snapshotDetails.saveLocalSnapshot,
-		WriteManifestLocally:  writeManifestLocally,
+		VMMetadata:             vmd,
+		VMConfiguration:        c.vmConfig,
+		VMStateSnapshotPath:    filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
+		KernelImagePath:        c.executorConfig.GuestKernelImagePath,
+		InitrdImagePath:        c.executorConfig.InitrdImagePath,
+		ChunkedFiles:           map[string]*copy_on_write.COWStore{},
+		Recycled:               c.recycled,
+		CacheSnapshotRemotely:  snapshotDetails.saveRemoteSnapshot,
+		CacheSnapshotLocally:   snapshotDetails.saveLocalSnapshot,
+		WriteManifestLocally:   writeManifestLocally,
+		CacheUniversalSnapshot: platform.IsTrue(platform.FindEffectiveValue(c.task, platform.UniversalSnapshotFallbackPropertyName)),
 	}
 	if snapshotSharingEnabled {
 		if c.rootStore != nil {
