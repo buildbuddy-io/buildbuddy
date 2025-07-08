@@ -44,6 +44,7 @@ import (
 	"github.com/elastic/gosigar"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
@@ -1609,6 +1610,8 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 }
 
 func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -2248,6 +2251,11 @@ func (z *zstdCompressor) Close() error {
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
+	}
+	defer spn.End()
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
