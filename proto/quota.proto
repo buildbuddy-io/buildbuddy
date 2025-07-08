@@ -6,8 +6,8 @@ import "proto/context.proto";
 package quota;
 
 enum ResourceType {
-	UNDEFINED = 0;
-	RPC = 1;
+  UNDEFINED = 0;
+  RPC = 1;
 }
 
 message Rate {
@@ -113,4 +113,3 @@ message GetNamespaceResponse {
 
   repeated Namespace namespaces = 2;
 }
-
