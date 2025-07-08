@@ -39,7 +39,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
@@ -2581,12 +2580,8 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 		RateLimit:                   float64(*evictionRateLimit),
 		MaxSizeBytes:                int64(JanitorCutoffThreshold * float64(part.MaxSizeBytes)),
 		Clock:                       clock,
-		OnEvict: func(ctx context.Context, sample *approxlru.Sample[*evictionKey]) error {
-			return pe.evict(ctx, sample)
-		},
-		OnSample: func(ctx context.Context, n int) ([]*approxlru.Sample[*evictionKey], error) {
-			return pe.sample(ctx, n)
-		},
+		OnEvict:                     pe.evict,
+		OnSample:                    pe.sample,
 	})
 	if err != nil {
 		return nil, err
@@ -2669,8 +2664,8 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
-	timer := e.clock.NewTimer(SamplerSleepDuration)
-	defer timeutil.StopAndDrainClockworkTimer(timer)
+	timer := e.clock.NewTimer(0)
+	defer timer.Stop()
 
 	randomKeyBuf := make([]byte, 64)
 
@@ -2783,7 +2778,6 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 		SizeBytes: sizeBytes,
 		Timestamp: atime,
 	}
-	timeutil.StopAndDrainClockworkTimer(timer)
 	timer.Reset(SamplerSleepDuration)
 	select {
 	case e.samples <- sample:

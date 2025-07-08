@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/jonboulle/clockwork"
 
 	"github.com/docker/go-units"
@@ -332,8 +331,8 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
-	timer := pu.clock.NewTimer(SamplerSleepDuration)
-	defer timeutil.StopAndDrainClockworkTimer(timer)
+	timer := pu.clock.NewTimer(0)
+	defer timer.Stop()
 
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
@@ -425,7 +424,6 @@ func (pu *partitionUsage) maybeAddToSampleChan(ctx context.Context, iter pebble.
 		SizeBytes: sizeBytes,
 		Timestamp: atime,
 	}
-	timeutil.StopAndDrainClockworkTimer(timer)
 	timer.Reset(SamplerSleepDuration)
 	select {
 	case pu.samples <- sample:
@@ -704,7 +702,6 @@ func (ut *Tracker) broadcastLoop(ctx context.Context) {
 				log.Warningf("could not gossip node partition usage info: %s", err)
 			}
 			if broadcasted {
-				timeutil.StopAndDrainClockworkTimer(idleTimer)
 				idleTimer.Reset(storePartitionUsageMaxAge)
 			}
 		case <-idleTimer.Chan():
