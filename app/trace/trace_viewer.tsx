@@ -87,15 +87,25 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
 
   private unobserveResize?: () => void;
 
+  private debounceTimer: number | undefined;
+
   // Index of the most recently highlighted search result in `this.searchableEvents`.
   // A value of -1 indicates that the next search should start from the
   // beginning.
   private searchIndex = -1;
 
+  // Cache of indices into `searchableEvents` that match the current filter.
+  private matchIndices: number[] = [];
+
   // Flat list of all events in the events panel sorted by timestamp, along
   // with their section and track indices, so we can efficiently jump to the
   // next match when the user presses Enter.
-  private readonly searchableEvents: { event: TraceEvent; sectionIndex: number; trackIndex: number }[] = [];
+  private readonly searchableEvents: {
+    event: TraceEvent;
+    sectionIndex: number;
+    trackIndex: number;
+    searchText: string;
+  }[] = [];
 
   constructor(props: TraceViewProps) {
     super(props);
@@ -118,7 +128,10 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
         for (let trackIndex = 0; trackIndex < section.tracks.length; trackIndex++) {
           const track = section.tracks[trackIndex];
           for (const event of track.events) {
-            this.searchableEvents.push({ event, sectionIndex, trackIndex });
+            const searchText = [event.name, event.cat, event.args?.target, event.args?.mnemonic, event.out]
+              .join(" ")
+              .toLowerCase();
+            this.searchableEvents.push({ event, sectionIndex, trackIndex, searchText });
           }
         }
       }
@@ -136,14 +149,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     );
 
     this.update(); // Initial render
-    this.updateMatchCounts(); // Calculate initial match counts based on filter from URL
-
-    const initialFilter = this.getFilterFromUrl();
-    if (initialFilter) {
-      // Attempt to scroll to the first match if a filter is present on load.
-      // Needs a slight delay to allow panels to render before scrolling.
-      requestAnimationFrame(() => this.scrollToNextMatch(1));
-    }
+    this.performSearch(); // Calculate initial matches and update UI
 
     const resizeObserver = new ResizeObserver(() => this.update());
     resizeObserver.observe(this.rootRef.current!);
@@ -168,6 +174,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     window.removeEventListener("mouseup", this.onWindowMouseUp);
     this.unobserveResize?.();
     document.body.style.cursor = "";
+    window.clearTimeout(this.debounceTimer);
   }
 
   private getFilterFromUrl() {
@@ -361,20 +368,12 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
 
   private updateFilter = (value: string) => {
     router.setQueryParam(FILTER_URL_PARAM, value);
-    // Reset search state when the filter changes.
-    this.searchIndex = -1;
-    if (this.panels.length) {
-      this.panels[0].highlightEvent = undefined;
-    }
-    // Update filter state FIRST, then calculate counts and update UI.
-    this.setState({ filter: value }, () => {
-      this.updateMatchCounts(); // Calculate total matches for the new filter
-      this.update(); // Re-render panels with the new filter
-      // Automatically jump to the first match if the new filter is not empty.
-      if (value) {
-        this.scrollToNextMatch(/* direction */ 1);
-      }
-    });
+    this.setState({ filter: value });
+
+    window.clearTimeout(this.debounceTimer);
+    this.debounceTimer = window.setTimeout(() => {
+      this.performSearch();
+    }, 300);
   };
 
   private onCanvasMouseDown(e: React.MouseEvent, panelIndex: number) {
@@ -402,71 +401,67 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     }
   };
 
-  // Returns true if the given event matches the provided filter string.
-  private eventMatchesFilter(event: TraceEvent, filter: string): boolean {
-    if (!filter) return true;
-    const f = filter.toLowerCase();
-    return (
-      event.name.toLowerCase().includes(f) ||
-      event.cat.toLowerCase().includes(f) ||
-      event.args?.target?.toLowerCase().includes(f) ||
-      event.args?.mnemonic?.toLowerCase().includes(f) ||
-      event.out?.toLowerCase().includes(f)
-    );
-  }
-
-  // Calculates and updates the total number of matches and the index of the current match.
-  private updateMatchCounts() {
+  // Performs a search based on the current filter, updating the cached list
+  // of matches. Then, scrolls to the first match if applicable.
+  private performSearch() {
     const filter = this.getFilter();
-    let total = 0;
-    let current = 0; // 1-based index
+
+    // Reset search state.
+    this.searchIndex = -1;
+    this.matchIndices = [];
+    if (this.panels.length) {
+      this.panels[0].highlightEvent = undefined;
+    }
+
+    // Find all matches for the new filter.
     if (filter) {
-      let matchIndex = 0;
+      const lowerCaseFilter = filter.toLowerCase();
       for (let i = 0; i < this.searchableEvents.length; i++) {
-        const { event } = this.searchableEvents[i];
-        if (this.eventMatchesFilter(event, filter)) {
-          total++;
-          matchIndex++;
-          if (i === this.searchIndex) {
-            current = matchIndex; // Store the 1-based index of the current match
-          }
+        if (this.searchableEvents[i].searchText.includes(lowerCaseFilter)) {
+          this.matchIndices.push(i);
         }
       }
     }
 
-    // Only update state if counts have actually changed to avoid unnecessary re-renders
-    if (this.state.totalMatches !== total || this.state.currentMatch !== current) {
-      this.setState({ totalMatches: total, currentMatch: current });
+    // Update the UI with the new match count.
+    this.setState({ totalMatches: this.matchIndices.length, currentMatch: 0 });
+    this.update(); // Re-render panels with the new filter
+
+    // Automatically jump to the first match.
+    if (this.matchIndices.length > 0) {
+      // Needs a slight delay to allow panels to render before scrolling.
+      requestAnimationFrame(() => this.scrollToNextMatch(1));
     }
   }
 
   // Scrolls to and highlights the next event that matches the current search filter.
   private scrollToNextMatch(direction: number) {
-    const filter = this.getFilter();
-    if (!filter) return;
-
-    // Find the next matching event after `this.searchIndex`.
-    const total = this.searchableEvents.length;
-    if (!total) return;
-
-    let nextIndex = this.searchIndex;
-    for (let i = 0; i < total; i++) {
-      const rawIndex = nextIndex + direction;
-      nextIndex = ((rawIndex % total) + total) % total;
-      const { event } = this.searchableEvents[nextIndex];
-      if (this.eventMatchesFilter(event, filter)) {
-        this.highlightAndScrollToEvent(nextIndex);
-        // updateMatchCounts is called inside highlightAndScrollToEvent, which updates state and triggers render
-        return;
+    if (!this.matchIndices.length) {
+      // If there are no matches, ensure any existing highlight is cleared.
+      if (this.panels.length) {
+        this.panels[0].highlightEvent = undefined;
       }
+      this.searchIndex = -1;
+      this.setState({ currentMatch: 0 });
+      this.update();
+      return;
     }
-    // If no match was found (e.g., filter yields no results), clear the highlight and reset searchIndex.
-    if (this.panels.length) {
-      this.panels[0].highlightEvent = undefined;
+
+    let nextMatchIndex;
+    const currentMatchIndex = this.matchIndices.indexOf(this.searchIndex);
+
+    if (currentMatchIndex === -1) {
+      // If no match is currently selected, start from the beginning or end.
+      nextMatchIndex = direction > 0 ? 0 : this.matchIndices.length - 1;
+    } else {
+      // Cycle through the matches.
+      const total = this.matchIndices.length;
+      nextMatchIndex = (currentMatchIndex + direction + total) % total;
     }
-    this.searchIndex = -1; // Reset search index if no match found
-    this.update(); // Redraw to clear highlight
-    this.updateMatchCounts(); // Update counter to 0/0
+
+    const searchableEventIndex = this.matchIndices[nextMatchIndex];
+    this.highlightAndScrollToEvent(searchableEventIndex);
+    this.setState({ currentMatch: nextMatchIndex + 1 });
   }
 
   // Highlights the event at `searchableEvents[index]` and scrolls it into view.
@@ -513,7 +508,6 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
       // Already fully in view and large enough – only update the canvas so the highlight is
       // rendered.
       this.update();
-      this.updateMatchCounts(); // Update current match counter after highlighting
       return;
     }
 
@@ -582,7 +576,6 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
 
     // Redraw immediately.
     this.update();
-    this.updateMatchCounts(); // Update current match counter after highlighting
   }
 
   render() {
