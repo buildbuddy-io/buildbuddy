@@ -10,6 +10,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -485,10 +487,88 @@ func propagateRequestMetadataIDsToSpanStreamServerInterceptor() grpc.StreamServe
 	}
 }
 
+func meteredUnaryInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+		serverZone := resources.GetZone()
+		clientZones := metadata.ValueFromIncomingContext(ctx, "gcpzone")
+		clientZone := "unknown"
+		if len(clientZones) == 1 {
+			clientZone = clientZones[0]
+		}
+		resp, err = handler(ctx, req)
+		metrics.InterZoneEgress.With(prometheus.Labels{
+			"source":      clientZone,
+			"destination": serverZone,
+		}).Add(float64(proto.Size(req.(proto.Message))))
+		metrics.InterZoneEgress.With(prometheus.Labels{
+			"source":      serverZone,
+			"destination": clientZone,
+		}).Add(float64(proto.Size(resp.(proto.Message))))
+		return resp, err
+	}
+}
+
+type meteredStream struct {
+	clientZone    string
+	serverZone    string
+	wrappedStream grpc.ServerStream
+}
+
+func (s meteredStream) SetHeader(header metadata.MD) error {
+	return s.wrappedStream.SetHeader(header)
+}
+
+func (s meteredStream) SendHeader(header metadata.MD) error {
+	return s.wrappedStream.SendHeader(header)
+}
+
+func (s meteredStream) SetTrailer(trailer metadata.MD) {
+	s.wrappedStream.SetTrailer(trailer)
+}
+
+func (s meteredStream) Context() context.Context {
+	return s.wrappedStream.Context()
+}
+
+func (s meteredStream) SendMsg(m any) error {
+	metrics.InterZoneEgress.With(prometheus.Labels{
+		"source":      s.serverZone,
+		"destination": s.clientZone,
+	}).Add(float64(proto.Size(m.(proto.Message))))
+	return s.wrappedStream.SendMsg(m)
+}
+
+func (s meteredStream) RecvMsg(m any) error {
+	metrics.InterZoneEgress.With(prometheus.Labels{
+		"source":      s.clientZone,
+		"destination": s.serverZone,
+	}).Add(float64(proto.Size(m.(proto.Message))))
+	return s.wrappedStream.RecvMsg(m)
+}
+
+func meteredStreamInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx := stream.Context()
+		serverZone := resources.GetZone()
+		clientZone := "unknown"
+		clientZones := metadata.ValueFromIncomingContext(ctx, "gcpzone")
+		if len(clientZones) != 1 {
+			clientZone = clientZones[0]
+		}
+		stream = meteredStream{
+			clientZone:    clientZone,
+			serverZone:    serverZone,
+			wrappedStream: stream,
+		}
+		return handler(srv, stream)
+	}
+}
+
 func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnaryServerInterceptor) grpc.ServerOption {
 	interceptors := []grpc.UnaryServerInterceptor{
 		unaryRecoveryInterceptor(),
 		copyHeadersUnaryServerInterceptor(),
+		meteredUnaryInterceptor(),
 		propagateRequestMetadataIDsToSpanUnaryServerInterceptor(),
 		ClientIPUnaryServerInterceptor(),
 		subdomainUnaryServerInterceptor(),
@@ -515,6 +595,7 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 	interceptors := []grpc.StreamServerInterceptor{
 		streamRecoveryInterceptor(),
 		copyHeadersStreamServerInterceptor(),
+		meteredStreamInterceptor(),
 		propagateRequestMetadataIDsToSpanStreamServerInterceptor(),
 		clientIPStreamServerInterceptor(),
 		subdomainStreamServerInterceptor(),

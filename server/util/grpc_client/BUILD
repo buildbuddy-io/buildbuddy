@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",
+        "//server/resources",
         "//server/rpc/interceptors",
         "//server/util/canary",
         "//server/util/flag",
@@ -20,6 +21,7 @@ go_library(
         "@org_golang_google_grpc//experimental",
         "@org_golang_google_grpc//keepalive",
         "@org_golang_google_grpc//mem",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_x_sync//errgroup",
     ],
 )

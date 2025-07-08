@@ -3343,6 +3343,16 @@ var (
 	}, []string{
 		OpLabel,
 	})
+
+	InterZoneEgress = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "egress",
+		Name:      "interzone",
+		Help:      "",
+	}, []string{
+		"source",
+		"destination",
+	})
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in

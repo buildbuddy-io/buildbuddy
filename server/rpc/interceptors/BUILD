@@ -8,6 +8,8 @@ go_library(
     deps = [
         "//server/capabilities_filter",
         "//server/environment",
+        "//server/metrics",
+        "//server/resources",
         "//server/util/alert",
         "//server/util/authutil",
         "//server/util/bazel_request",
