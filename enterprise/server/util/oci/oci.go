@@ -16,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -324,7 +326,8 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // If the referenced manifest is actually an image index, fetchImageFromCacheOrRemote will recur at most once
 // to fetch a child image matching the given platform.
 func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) (gcr.Image, error) {
-	if *readManifestsFromCache {
+	canUseCache := !isAnonymousUser(ctx)
+	if *readManifestsFromCache && canUseCache {
 		desc, err := puller.Head(ctx, digestOrTagRef)
 		if err != nil {
 			if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -365,7 +368,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Ref
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	if *writeManifestsToCache {
+	if *writeManifestsToCache && canUseCache {
 		err := ocicache.WriteManifestToAC(
 			ctx,
 			remoteDesc.Manifest,
@@ -771,7 +774,8 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	if *readLayersFromCache {
+	canUseCache := !isAnonymousUser(l.image.ctx)
+	if *readLayersFromCache && canUseCache {
 		rc, err := l.fetchLayerFromCache()
 		if err != nil && !status.IsNotFoundError(err) {
 			log.CtxWarningf(l.image.ctx, "Error fetching layer from cache: %s", err)
@@ -786,7 +790,7 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	if *writeLayersToCache {
+	if *writeLayersToCache && canUseCache {
 		mediaType, err := l.MediaType()
 		if err != nil {
 			log.CtxWarningf(l.image.ctx, "Could not get media type for layer: %s", err)
@@ -875,4 +879,9 @@ func (l *layerFromDigest) fetchLayerFromCache() (io.ReadCloser, error) {
 		}
 	}()
 	return pr, nil
+}
+
+func isAnonymousUser(ctx context.Context) bool {
+	_, err := claims.ClaimsFromContext(ctx)
+	return authutil.IsAnonymousUserError(err)
 }
