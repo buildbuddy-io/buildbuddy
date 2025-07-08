@@ -193,6 +193,8 @@ func TestOverride_EmptyOver(t *testing.T) {
 
 func TestApplyLimits(t *testing.T) {
 	sz := tasksize.ApplyLimits(
+		context.Background(),
+		testenv.GetTestEnv(t),
 		&repb.ExecutionTask{},
 		&scpb.TaskSize{
 			EstimatedMemoryBytes:   10,
@@ -205,19 +207,22 @@ func TestApplyLimits(t *testing.T) {
 }
 
 func TestApplyLimitsNonRecyleableLargeDisk(t *testing.T) {
-	sz := tasksize.ApplyLimits(&repb.ExecutionTask{
-		Command: &repb.Command{
-			Platform: &repb.Platform{
-				Properties: []*repb.Platform_Property{
-					{Name: "recycle-runner", Value: "false"},
+	sz := tasksize.ApplyLimits(
+		context.Background(),
+		testenv.GetTestEnv(t),
+		&repb.ExecutionTask{
+			Command: &repb.Command{
+				Platform: &repb.Platform{
+					Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "false"},
+					},
 				},
 			},
-		},
-	}, &scpb.TaskSize{
-		EstimatedMemoryBytes:   10,
-		EstimatedMilliCpu:      10,
-		EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDiskRecycleFalse * 10,
-	})
+		}, &scpb.TaskSize{
+			EstimatedMemoryBytes:   10,
+			EstimatedMilliCpu:      10,
+			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDiskRecycleFalse * 10,
+		})
 	assert.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
 	assert.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
 	assert.Equal(t, tasksize.MaxEstimatedFreeDiskRecycleFalse, sz.EstimatedFreeDiskBytes)
@@ -225,6 +230,8 @@ func TestApplyLimitsNonRecyleableLargeDisk(t *testing.T) {
 
 func TestApplyLimits_LargeTest(t *testing.T) {
 	sz := tasksize.ApplyLimits(
+		context.Background(),
+		testenv.GetTestEnv(t),
 		&repb.ExecutionTask{
 			Command: &repb.Command{
 				Platform: &repb.Platform{

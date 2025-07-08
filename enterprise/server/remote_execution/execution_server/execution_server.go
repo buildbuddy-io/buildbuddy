@@ -735,7 +735,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	defaultTaskSize := tasksize.Default(executionTask)
 	requestedTaskSize := tasksize.Requested(executionTask)
-	taskSize := tasksize.ApplyLimits(executionTask, tasksize.Override(defaultTaskSize, requestedTaskSize))
+	taskSize := tasksize.ApplyLimits(ctx, s.env, executionTask, tasksize.Override(defaultTaskSize, requestedTaskSize))
 	measuredSize := sizer.Get(ctx, executionTask)
 	var predictedSize *scpb.TaskSize
 	if measuredSize == nil {

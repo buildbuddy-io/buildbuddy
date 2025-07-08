@@ -195,7 +195,7 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		// executor run this task once to estimate the size.
 		return nil
 	}
-	return ApplyLimits(task, &scpb.TaskSize{
+	return ApplyLimits(ctx, s.env, task, &scpb.TaskSize{
 		EstimatedMemoryBytes: recordedSize.EstimatedMemoryBytes,
 		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
 	})
@@ -205,7 +205,7 @@ func (s *taskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb
 	if s.model == nil {
 		return nil
 	}
-	return ApplyLimits(task, s.model.Predict(ctx, task))
+	return ApplyLimits(ctx, s.env, task, s.model.Predict(ctx, task))
 }
 
 func (s *taskSizer) Update(ctx context.Context, action *repb.Action, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
@@ -488,7 +488,7 @@ func Override(base, over *scpb.TaskSize) *scpb.TaskSize {
 }
 
 // ApplyLimits clamps each value in size to within an allowed range.
-func ApplyLimits(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
+func ApplyLimits(ctx context.Context, env environment.Env, task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
 	if size == nil {
 		return nil
 	}
@@ -508,7 +508,13 @@ func ApplyLimits(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
 	if clone.EstimatedMemoryBytes < minMemoryBytes {
 		clone.EstimatedMemoryBytes = minMemoryBytes
 	}
-	if clone.EstimatedFreeDiskBytes > MaxEstimatedFreeDisk {
+
+	limitMaxDisk := true
+	if efp := env.GetExperimentFlagProvider(); efp != nil {
+		limitMaxDisk = !efp.Boolean(ctx, "disable-task-sizing-disk-limit", false)
+	}
+
+	if limitMaxDisk && clone.EstimatedFreeDiskBytes > MaxEstimatedFreeDisk {
 		request := clone.EstimatedFreeDiskBytes
 		props, err := platform.ParseProperties(task)
 		if err != nil {
