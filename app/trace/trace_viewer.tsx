@@ -38,7 +38,7 @@ const SCROLL_WIDTH_LIMIT = 18_000_000;
 // smaller than this in pixel width, we zoom in to make it at least this wide.
 // Conversely, if the span is very large, we attempt to zoom out (down to the
 // "normal" min-zoom level) so that more context is visible.
-const MIN_SPAN_PIXEL_WIDTH = 40;
+const MIN_SPAN_PIXEL_WIDTH = 1;
 
 const FILTER_URL_PARAM = "timingFilter";
 
@@ -481,8 +481,11 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     const viewportEndY = viewportStartY + panelContainer.clientHeight;
     const isVerticallyVisible = trackTop >= viewportStartY && trackBottom <= viewportEndY;
 
-    if (isHorizontallyVisible && isVerticallyVisible) {
-      // Already fully in view – only update the canvas so the highlight is
+    const eventPixelWidth = (event.dur ?? 0) * scale;
+    const isTooSmall = event.dur && eventPixelWidth < MIN_SPAN_PIXEL_WIDTH;
+
+    if (isHorizontallyVisible && isVerticallyVisible && !isTooSmall) {
+      // Already fully in view and large enough – only update the canvas so the highlight is
       // rendered.
       this.update();
       this.updateMatchCounts(); // Update current match counter after highlighting
