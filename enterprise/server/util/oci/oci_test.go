@@ -24,6 +24,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -812,6 +814,16 @@ func TestResolve_WithCache(t *testing.T) {
 	}
 }
 
+// contextWithUnverifiedJWT creates a JWT with the given claims
+// and attaches it to the returned context.
+// Necessary now that we do not allow anonymous requests to access
+// the OCI cache.
+func contextWithUnverifiedJWT(c *claims.Claims) context.Context {
+	authCtx := claims.AuthContextWithJWT(context.Background(), c, nil)
+	jwt := authCtx.Value(authutil.ContextTokenStringKey).(string)
+	return context.WithValue(context.Background(), authutil.ContextTokenStringKey, jwt)
+}
+
 // TestResolve_Concurrency fetches layer contents from multiple goroutines
 // to make sure doing so does not make unnecessary requests to the remote registry.
 func TestResolve_Concurrency(t *testing.T) {
@@ -860,8 +872,10 @@ func TestResolve_Concurrency(t *testing.T) {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.reset()
+	c := &claims.Claims{UserID: "US123"}
+	testContext := contextWithUnverifiedJWT(c)
 	pulledImage, err := newResolver(t, te).Resolve(
-		context.Background(),
+		testContext,
 		imageAddress,
 		&rgpb.Platform{
 			Arch: runtime.GOARCH,
@@ -947,8 +961,10 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 
 func resolveAndCheck(t *testing.T, tc resolveTestCase, te *testenv.TestEnv, imageAddress string, expected map[string]int, counter *requestCounter) {
 	counter.reset()
+	c := &claims.Claims{UserID: "US123"}
+	testContext := contextWithUnverifiedJWT(c)
 	pulledImage, err := newResolver(t, te).Resolve(
-		context.Background(),
+		testContext,
 		imageAddress,
 		tc.args.platform,
 		tc.args.credentials,
