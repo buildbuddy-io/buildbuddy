@@ -42,11 +42,17 @@ go_test(
     },
     tags = ["docker"],
     deps = [
+        "//proto:context_go_proto",
+        "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
         "//proto:stats_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/clickhouse/schema",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )
