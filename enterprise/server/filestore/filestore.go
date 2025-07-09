@@ -568,10 +568,10 @@ func (fs *fileStorer) FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetad
 	return fp
 }
 
-// FileKey is the partial path where a file will be written.
-// For example, given a fileRecord with FileKey: "foo/bar", the filestore will
+// fileKey is the partial path where a file will be written.
+// For example, given a fileRecord with fileKey: "foo/bar", the filestore will
 // write the file at a path like "/root/dir/blobs/foo/bar".
-func (fs *fileStorer) FileKey(r *sgpb.FileRecord) ([]byte, error) {
+func (fs *fileStorer) fileKey(r *sgpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// filekeys look like this:
 	//   // {partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
@@ -711,7 +711,7 @@ func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *sgpb.St
 }
 
 func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
-	file, err := fs.FileKey(fileRecord)
+	file, err := fs.fileKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
