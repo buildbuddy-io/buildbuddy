@@ -34,6 +34,9 @@ export default class Panel {
 
   filter = "";
 
+  // If set, visually highlight this event to indicate that it is the current search match.
+  highlightEvent?: TraceEvent;
+
   constructor(
     readonly model: PanelModel,
     readonly canvas: HTMLCanvasElement,
@@ -415,15 +418,26 @@ export default class Panel {
       if (width <= 0) {
         // If the event is less than 1px side, and less than 1px away from the previous
         // event start that rendered, don't render it.
-        if (lastEventRendered && Math.abs(modelX - track.xs[i - 1]) * this.canvasXPerModelX <= 1) {
+        if (
+          lastEventRendered &&
+          Math.abs(modelX - track.xs[i - 1]) * this.canvasXPerModelX <= constants.MIN_RENDER_PIXEL_WIDTH
+        ) {
           lastEventRendered = false;
           continue;
         }
-        width = 1;
+        width = constants.MIN_RENDER_PIXEL_WIDTH;
       }
       const x = modelX * this.canvasXPerModelX - this.scrollX;
       this.ctx.fillRect(x, y, width, constants.TRACK_HEIGHT);
       lastEventRendered = true;
+
+      // If this event is the one currently selected via search, draw a border
+      // around it so it's easy to spot.
+      if (track.events[i] === this.highlightEvent) {
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeStyle = "#000";
+        this.ctx.strokeRect(x, y, width, constants.TRACK_HEIGHT);
+      }
 
       const visibleWidth = width + Math.min(0, x);
       if (visibleWidth > constants.EVENT_LABEL_WIDTH_THRESHOLD) {
