@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
@@ -319,6 +320,8 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		Stage:       int64(stage),
 	}
 
+	executionComplete := stage == repb.ExecutionStage_COMPLETED || auxMeta.GetRetry()
+
 	if executeResponse != nil {
 		execution.StatusCode = executeResponse.GetStatus().GetCode()
 		execution.StatusMessage = trimStatus(executeResponse.GetStatus().GetMessage())
@@ -334,8 +337,8 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		execution.CachedResult = executeResponse.GetCachedResult()
 		execution.DoNotCache = executeResponse.GetResult().GetExecutionMetadata().GetDoNotCache()
 
-		// Update stats if the operation has been completed.
-		if stage == repb.ExecutionStage_COMPLETED {
+		// Update stats if the execution has completed.
+		if executionComplete {
 			md := executeResponse.GetResult().GetExecutionMetadata()
 			fillExecutionFromActionMetadata(md, execution)
 		}
@@ -344,13 +347,13 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 	// If the operation completed, write the data to Redis where we buffer it
 	// before flushing to Clickhouse. Updates aren't recommended in Clickhouse,
 	// which is why we store it in Redis before all execution data has been collected.
-	if *writeExecutionProgressStateToRedis || stage == repb.ExecutionStage_COMPLETED {
+	if *writeExecutionProgressStateToRedis || executionComplete {
 		execution.Model.UpdatedAtUsec = time.Now().UnixMicro()
 		executionProto := executil.TableExecToProto(execution, nil /*=invocationLink*/)
 
 		// Set metadata that isn't stored earlier and is sent with the COMPLETED
 		// event, that we want to flush to Clickhouse.
-		if stage == repb.ExecutionStage_COMPLETED {
+		if executionComplete {
 			md := executeResponse.GetResult().GetExecutionMetadata()
 			rmd := bazel_request.GetRequestMetadata(ctx)
 			executionProto.TargetLabel = rmd.GetTargetId()
@@ -411,6 +414,12 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 
 			}
 			executionProto.CommandSnippet = generateCommandSnippet(cmd)
+
+			// If retrying this execution ID, set a unique run ID so each retry
+			// attempt can be tracked separately.
+			if auxMeta.GetRetry() {
+				executionProto.RunId = uuid.New()
+			}
 		}
 
 		if err := s.env.GetExecutionCollector().UpdateInProgressExecution(ctx, executionProto); err != nil {
@@ -941,7 +950,7 @@ func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunni
 	}
 	executeResponse := operation.ExtractExecuteResponse(op)
 	if executeResponse != nil {
-		if executeResponse.GetStatus().GetCode() != 0 {
+		if executeResponse.GetStatus().GetCode() != 0 && !operation.IsRetryEvent(op) {
 			log.CtxWarningf(ctx, "WaitExecution: %q errored, returning %+v", e.opName, executeResponse.GetStatus())
 			return true, gstatus.ErrorProto(executeResponse.GetStatus())
 		}
@@ -1200,24 +1209,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			return err
 		}
 
-		response := operation.ExtractExecuteResponse(op)
-		trimmedResponse := response.CloneVT()
-		if trimmedMetadata := trimmedResponse.GetResult().GetExecutionMetadata(); trimmedMetadata != nil {
-			// Auxiliary metadata shouldn't be sent to bazel or saved in
-			// the action cache.
-			trimmedMetadata.AuxiliaryMetadata = nil
-			// Don't send execution timelines to bazel or save them in the
-			// action cache either.
-			// TODO(bduffany): move these timelines to auxiliary metadata
-			// and clean this up.
-			if trimmedUsageStats := trimmedMetadata.GetUsageStats(); trimmedUsageStats != nil {
-				trimmedUsageStats.Timeline = nil
-			}
-			if err := op.GetResponse().MarshalFrom(trimmedResponse); err != nil {
-				return status.InternalErrorf("Failed to marshall trimmed response: %s", err)
-			}
-		}
-
 		mu.Lock()
 		lastOp = op
 		taskID = op.GetName()
@@ -1233,28 +1224,64 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
+		var actionCASRN *digest.CASResourceName
 		var action *repb.Action
 		var cmd *repb.Command
+		var isRetry bool
+
+		response := operation.ExtractExecuteResponse(op)
+		if response != nil {
+			if len(response.GetResult().GetExecutionMetadata().GetAuxiliaryMetadata()) > 0 {
+				auxMeta = new(espb.ExecutionAuxiliaryMetadata)
+				_, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
+				if err == nil {
+					isRetry = auxMeta.GetRetry()
+				} else {
+					log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
+				}
+			} else if stage == repb.ExecutionStage_COMPLETED {
+				log.CtxInfof(ctx, "Failed to find expected ExecutionAuxiliaryMetadata. Executor is probably self-hosted and not updated since 2024-12-13.")
+			}
+
+			if isRetry || stage == repb.ExecutionStage_COMPLETED {
+				actionCASRN, err = digest.ParseUploadResourceName(taskID)
+				if err != nil {
+					return status.WrapErrorf(err, "Failed to parse taskID")
+				}
+				action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
+				if err != nil {
+					return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
+				}
+				properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
+				if err != nil {
+					return status.InternalErrorf("Failed to parse platform properties: %s", err)
+				}
+			}
+		}
+
+		trimmedResponse := response.CloneVT()
+		if trimmedMetadata := trimmedResponse.GetResult().GetExecutionMetadata(); trimmedMetadata != nil {
+			// We can preserve auxiliary metadata on retries, because only non-bazel
+			// executions (like Workflows) are retried, and we control that client.
+			if !isRetry {
+				// Auxiliary metadata shouldn't be sent to bazel or saved in
+				// the action cache.
+				trimmedMetadata.AuxiliaryMetadata = nil
+			}
+
+			// Don't send execution timelines to bazel or save them in the
+			// action cache either.
+			// TODO(bduffany): move these timelines to auxiliary metadata
+			// and clean this up.
+			if trimmedUsageStats := trimmedMetadata.GetUsageStats(); trimmedUsageStats != nil {
+				trimmedUsageStats.Timeline = nil
+			}
+			if err := op.GetResponse().MarshalFrom(trimmedResponse); err != nil {
+				return status.InternalErrorf("Failed to marshall trimmed response: %s", err)
+			}
+		}
+
 		if stage == repb.ExecutionStage_COMPLETED && response != nil {
-			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
-			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
-			if err != nil {
-				log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
-			} else if !ok {
-				log.CtxInfof(ctx, "Failed to find ExecutionAuxiliaryMetadata. Executor is probably self-hosted and not updated since 2024-12-13.")
-			}
-			actionCASRN, err := digest.ParseUploadResourceName(taskID)
-			if err != nil {
-				return status.WrapErrorf(err, "Failed to parse taskID")
-			}
-			action, cmd, err = s.fetchActionAndCommand(ctx, actionCASRN)
-			if err != nil {
-				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
-			}
-			properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
-			if err != nil {
-				return status.InternalErrorf("Failed to parse platform properties: %s", err)
-			}
 			// Keep this close to, but before the cacheActionResult call: Since any action that can merge into this one
 			// may specify skip_cache_lookup, we need to ensure that the result is not visible in the cache before the
 			// action is merged. At the same time, we don't want the window between the calls to be too large to avoid
@@ -1269,6 +1296,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
 		}
+
 		data, err := proto.Marshal(op)
 		if err != nil {
 			return status.InternalErrorf("Failed to marshal Operation: %s", err)
@@ -1278,7 +1306,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 		}
 
-		if stage == repb.ExecutionStage_COMPLETED {
+		if stage == repb.ExecutionStage_COMPLETED || isRetry {
 			err := func() error {
 				mu.Lock()
 				defer mu.Unlock()
@@ -1300,7 +1328,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				return err
 			}
 
-			if response != nil {
+			// If the server is retrying the execution, don't bother caching
+			// the response.
+			if response != nil && !isRetry {
 				// TODO(vanja) should this be done when the executor got a
 				// cache hit?
 				if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {

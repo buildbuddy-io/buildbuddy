@@ -2505,6 +2505,7 @@ message StoredExecution {
   string worker = 7;
   string executor_hostname = 60;
   int64 stage = 8;
+  string run_id = 67;
 
   // Executor metadata
   bool self_hosted = 58;

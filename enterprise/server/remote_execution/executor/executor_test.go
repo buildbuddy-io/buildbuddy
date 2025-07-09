@@ -19,12 +19,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/durationpb"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -51,7 +56,7 @@ func (s *mockExecutionServer) PublishOperation(stream repb.Execution_PublishOper
 		}
 		s.operations = append(s.operations, op)
 		stage := operation.ExtractStage(op)
-		if stage == repb.ExecutionStage_COMPLETED {
+		if stage == repb.ExecutionStage_COMPLETED || operation.IsRetryEvent(op) {
 			close(s.finished)
 		}
 	}
@@ -147,7 +152,9 @@ func getTask() *repb.ScheduledTask {
 				InstanceName:   "",
 				DigestFunction: repb.DigestFunction_SHA256,
 			},
-			Action: &repb.Action{},
+			Action: &repb.Action{
+				Timeout: durationpb.New(4 * time.Minute),
+			},
 			Command: &repb.Command{
 				Arguments: []string{"echo", "hello"},
 			},
@@ -166,15 +173,29 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 		name                string
 		runOverride         rbetest.RunInterceptor
 		expectFinishCleanly bool
+		bazelTask           bool
 	}{
 		{
 			name:                "Success",
 			expectFinishCleanly: true,
+			bazelTask:           true,
 		},
 		{
 			name:                "Run failure",
 			runOverride:         rbetest.AlwaysReturn(commandutil.ErrorResult(errors.New("run failed"))),
 			expectFinishCleanly: false,
+			bazelTask:           true,
+		},
+		{
+			name:                "Success for non-bazel task",
+			expectFinishCleanly: true,
+			bazelTask:           false,
+		},
+		{
+			name:                "Run failure for non-bazel task",
+			runOverride:         rbetest.AlwaysReturn(commandutil.ErrorResult(errors.New("run failed"))),
+			expectFinishCleanly: false,
+			bazelTask:           false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -182,12 +203,23 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 			exec, _, execClient, mockServer, mockCounter := getExecutor(t, tc.runOverride)
 			task := getTask()
 
+			if !tc.bazelTask {
+				task.GetExecutionTask().GetCommand().Arguments = []string{"./buildbuddy_ci_runner"}
+			}
+
 			publisher, err := operation.Publish(ctx, execClient, task.ExecutionTask.ExecutionId)
 			require.NoError(t, err)
 
 			retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
-			require.NoError(t, err)
-			require.False(t, retry)
+			if !tc.bazelTask && !tc.expectFinishCleanly {
+				// If a non-bazel task failed, we expect an error so the scheduler
+				// will retry it
+				require.Error(t, err)
+				require.True(t, retry)
+			} else {
+				require.NoError(t, err)
+				require.False(t, retry)
+			}
 
 			// Wait until all progress updates have finished sending.
 			<-mockServer.finished
@@ -207,10 +239,33 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 
 			require.GreaterOrEqual(t, len(mockServer.operations), 3)
 			require.GreaterOrEqual(t, operationStageCount[repb.ExecutionStage_EXECUTING], 1)
-			require.Equal(t, 1, operationStageCount[repb.ExecutionStage_COMPLETED])
 
-			completedOp := mockServer.operations[len(mockServer.operations)-1]
-			require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+			finalOp := mockServer.operations[len(mockServer.operations)-1]
+			if !tc.bazelTask && !tc.expectFinishCleanly {
+				// If a non-bazel task is being retried, we don't expected a COMPLETED event
+				// so the client will continue to wait on it.
+				require.Equal(t, repb.ExecutionStage_EXECUTING, operation.ExtractStage(finalOp))
+
+				// The last event should indicate a retry.
+				require.True(t, operation.IsRetryEvent(finalOp))
+			} else {
+				require.Equal(t, 1, operationStageCount[repb.ExecutionStage_COMPLETED])
+				require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(finalOp))
+			}
+
+			// Test that the final operation contains full execution metadata
+			// so that it can be flushed to clickhouse.
+			rsp := operation.ExtractExecuteResponse(finalOp)
+			auxMeta := rexec.ExecutionAuxiliaryMetadata(rsp)
+			expectedMetadata := &espb.ExecutionAuxiliaryMetadata{
+				IsolationType:      "none",
+				ExecuteRequest:     task.GetExecutionTask().GetExecuteRequest(),
+				SchedulingMetadata: task.GetSchedulingMetadata(),
+				Timeout:            durationpb.New(4 * time.Minute),
+				ExecutorHostname:   "hostname",
+				Retry:              !tc.bazelTask && !tc.expectFinishCleanly,
+			}
+			require.Empty(t, cmp.Diff(expectedMetadata, auxMeta, protocmp.Transform()))
 		})
 	}
 }

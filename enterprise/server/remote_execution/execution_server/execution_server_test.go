@@ -509,6 +509,12 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			redisRestart:           true,
 		},
+		{
+			name:                   "RetryExecution",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			retry:                  true,
+			publishMoreMetadata:    true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			testExecuteAndPublishOperation(t, test)
@@ -527,6 +533,7 @@ type publishTest struct {
 	exitCode                 int32
 	publishMoreMetadata      bool
 	redisRestart             bool
+	retry                    bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -589,10 +596,14 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NoError(t, err)
 	stream, err := client.PublishOperation(executorCtx)
 	require.NoError(t, err)
+
 	queuedTime := time.Unix(100, 0)
 	workerStartTime := queuedTime.Add(1 * time.Second)
 	workerEndTime := workerStartTime.Add(5 * time.Second)
-	aux := &espb.ExecutionAuxiliaryMetadata{PlatformOverrides: &repb.Platform{}}
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{},
+		Retry:             test.retry,
+	}
 	for k, v := range test.platformOverrides {
 		aux.PlatformOverrides.Properties = append(
 			aux.PlatformOverrides.Properties,
@@ -676,9 +687,15 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		Result:       actionResult,
 		Status:       gstatus.Convert(test.status).Proto(),
 	}
+	finalStage := repb.ExecutionStage_COMPLETED
+	if test.retry {
+		// If a task is being retried, we don't expected a COMPLETED event
+		// so the client will continue to wait on it.
+		finalStage = repb.ExecutionStage_EXECUTING
+	}
 	op, err = operation.Assemble(
 		taskID,
-		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+		operation.Metadata(finalStage, arn.GetDigest()),
 		expectedExecuteResponse,
 	)
 	require.NoError(t, err)
@@ -688,20 +705,33 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NoError(t, err)
 
 	trimmedExecuteResponse := expectedExecuteResponse.CloneVT()
-	trimmedExecuteResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
+	// We only retry non-Bazel executions (like Workflows). We control the client,
+	// so can send additional metadata.
+	if !test.retry {
+		trimmedExecuteResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
+	}
 	trimmedExecuteResponse.GetResult().GetExecutionMetadata().GetUsageStats().Timeline = nil
 
 	// Wait for the execute response to be streamed back on our initial
-	// /Execute stream.
+	// Execute stream.
 	var executeResponse *repb.ExecuteResponse
 	for {
+		// If retrying, the server won't send a COMPLETED event and close the waitExecution
+		// stream so that the client continues to wait while the execution is retried.
+		if test.retry && executeResponse != nil {
+			break
+		}
+
 		op, err = executionClient.Recv()
 		if err == io.EOF {
 			require.NotNil(t, executeResponse, "expected execute response, got EOF")
 			break
 		}
 		require.NoError(t, err)
-		if stage := operation.ExtractStage(op); stage != repb.ExecutionStage_COMPLETED {
+		stage := operation.ExtractStage(op)
+		completed := stage == repb.ExecutionStage_COMPLETED
+		retry := stage == repb.ExecutionStage_EXECUTING && operation.IsRetryEvent(op)
+		if !completed && !retry {
 			continue
 		}
 		executeResponse = operation.ExtractExecuteResponse(op)
@@ -713,21 +743,26 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	arnAC, err := arn.CheckAC()
 	require.NoError(t, err)
 	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arnAC)
-	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult {
+	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult && !test.retry {
 		require.NoError(t, err)
 		assert.Empty(t, cmp.Diff(trimmedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))
 	} else {
 		require.Equal(t, codes.NotFound, gstatus.Code(err), "Error should be NotFound, but is %v", err)
 	}
 
-	// Should also be able to fetch the ExecuteResponse from cache. See field
+	// Check the ExecuteReseponse in the cache. See field
 	// comment on Execution.execute_response_digest for notes on serialization
 	// format.
 	cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), taskID)
-	require.NoError(t, err)
-	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
+	if test.retry {
+		// If retrying the execution, we don't cache the execution response.
+		require.Equal(t, codes.NotFound, gstatus.Code(err), "Error should be NotFound, but is %v", err)
+	} else {
+		require.NoError(t, err)
+		assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
+	}
 
-	// Should also have recorded usage.
+	// Check usage tracking.
 	ut := env.GetUsageTracker().(*fakeUsageTracker)
 	var executionUsages []usage
 	for _, u := range ut.usages {
@@ -735,12 +770,17 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			executionUsages = append(executionUsages, u)
 		}
 	}
-	assert.Equal(t, []usage{
-		{
-			labels: tables.UsageLabels{Client: "executor"},
-			counts: test.expectedExecutionUsage,
-		},
-	}, executionUsages)
+	if test.retry {
+		// If retrying the execution, we don't cache record usage.
+		require.Zero(t, len(executionUsages))
+	} else {
+		assert.Equal(t, []usage{
+			{
+				labels: tables.UsageLabels{Client: "executor"},
+				counts: test.expectedExecutionUsage,
+			},
+		}, executionUsages)
+	}
 
 	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
 	require.NoError(t, err)
@@ -752,13 +792,18 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 
 	// Check that we recorded the executions
 	assert.Equal(t, 1, len(collectedExecutions))
+
+	stage := repb.ExecutionStage_COMPLETED
+	if test.retry {
+		stage = repb.ExecutionStage_EXECUTING
+	}
 	expectedExecution := &repb.StoredExecution{
 		ExecutionId:                  taskID,
 		GroupId:                      "group1",
 		UserId:                       "user1",
 		InvocationLinkType:           1,
 		InvocationUuid:               strings.ReplaceAll(invocationID, "-", ""),
-		Stage:                        4,
+		Stage:                        int64(stage),
 		StatusCode:                   int32(gstatus.Code(test.status)),
 		StatusMessage:                gstatus.Convert(test.status).Proto().GetMessage(),
 		ExitCode:                     test.exitCode,
@@ -810,8 +855,12 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			&repb.StoredExecution{},
 			"created_at_usec",
 			"updated_at_usec",
+			"run_id",
 		))
 	assert.Emptyf(t, diff, "Recorded execution didn't match the expected one: %s", expectedExecution)
+	if test.retry {
+		require.NotEmpty(t, collectedExecutions[0].RunId)
+	}
 }
 
 func TestMarkFailed(t *testing.T) {

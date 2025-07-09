@@ -44,6 +44,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/usageutil",
+        "//server/util/uuid",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto//googleapis/longrunning",
