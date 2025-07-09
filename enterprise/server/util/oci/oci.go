@@ -327,6 +327,9 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 // to fetch a child image matching the given platform.
 func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef gcrname.Reference, platform gcr.Platform, acClient repb.ActionCacheClient, bsClient bspb.ByteStreamClient, puller *remote.Puller) (gcr.Image, error) {
 	canUseCache := !isAnonymousUser(ctx)
+	if !canUseCache {
+		log.CtxInfof(ctx, "Anonymous user request, skipping manifest cache for %s", digestOrTagRef)
+	}
 	if *readManifestsFromCache && canUseCache {
 		desc, err := puller.Head(ctx, digestOrTagRef)
 		if err != nil {
@@ -775,6 +778,9 @@ func (l *layerFromDigest) Compressed() (io.ReadCloser, error) {
 	}
 
 	canUseCache := !isAnonymousUser(l.image.ctx)
+	if !canUseCache {
+		log.CtxInfof(l.image.ctx, "Anonymous user request, skipping layer cache for %s:%s", l.image.repo, l.image.desc.Digest)
+	}
 	if *readLayersFromCache && canUseCache {
 		rc, err := l.fetchLayerFromCache()
 		if err != nil && !status.IsNotFoundError(err) {
