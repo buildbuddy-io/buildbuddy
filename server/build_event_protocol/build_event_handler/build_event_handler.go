@@ -99,6 +99,11 @@ const (
 	// Max total pattern length to include in the Expanded event returned to the
 	// UI.
 	maxPatternLengthBytes = 10_000
+
+	// Rather than immediately deleting executions data from Redis after flushing
+	// finalized data to Clickhouse, expire it after this TTL so that even if Clickhouse
+	// has replication lag, clients will still be able to read the data from Redis.
+	expireRedisExecutionsTTL = 5 * time.Minute
 )
 
 var (
@@ -352,9 +357,14 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 
 	// Always clean up executions in Collector because we are not retrying
 	defer func() {
-		err := r.env.GetExecutionCollector().DeleteExecutions(ctx, inv.InvocationID)
+		// Clickhouse ReplicatedMergeTree tables can have replication lag, which can cause
+		// reads of executions data to fail.
+		// Rather than immediately deleting executions data from Redis after flushing
+		// finalized data to Clickhouse, keep the data in Redis a little bit
+		// longer, so clients can read executions data from Redis in these cases.
+		err := r.env.GetExecutionCollector().ExpireExecutions(ctx, inv.InvocationID, expireRedisExecutionsTTL)
 		if err != nil {
-			log.CtxErrorf(ctx, "failed to clean up executions in collector: %s", err)
+			log.CtxErrorf(ctx, "failed to soft delete executions in collector: %s", err)
 		}
 	}()
 

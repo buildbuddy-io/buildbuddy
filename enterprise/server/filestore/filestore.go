@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/jonboulle/clockwork"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -772,10 +773,11 @@ type gcsMetadataWriter struct {
 	ctx        context.Context
 	blobName   string
 	customTime time.Time
-	gcs        PebbleGCSStorage
 }
 
 func (g *gcsMetadataWriter) Commit() error {
+	_, spn := tracing.StartSpan(g.ctx)
+	defer spn.End()
 	err := g.CommittedWriteCloser.Commit()
 
 	switch {
@@ -783,6 +785,8 @@ func (g *gcsMetadataWriter) Commit() error {
 		log.Debugf("Write gcs blob %q (already exists)", g.blobName)
 		return nil
 	case status.IsResourceExhaustedError(err):
+		// gcs.ConditionalWriter returns this when there are too many writes to
+		// the same object. We can assume that another write was successful.
 		log.Debugf("Write gcs blob %q (too many writes)", g.blobName)
 		return nil
 	default:
@@ -811,6 +815,8 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	if fs.gcs == nil || fs.appName == "" {
 		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	blobNameBytes, err := blobKey(fs.appName, fileRecord)
 	if err != nil {
 		return nil, err
@@ -838,7 +844,6 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
 		customTime:           customTime,
-		gcs:                  fs.gcs,
 	}, nil
 }
 

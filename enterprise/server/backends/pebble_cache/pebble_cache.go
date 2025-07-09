@@ -39,12 +39,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
@@ -1610,6 +1610,8 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 }
 
 func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -2249,6 +2251,11 @@ func (z *zstdCompressor) Close() error {
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
+	}
+	defer spn.End()
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -2581,12 +2588,8 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 		RateLimit:                   float64(*evictionRateLimit),
 		MaxSizeBytes:                int64(JanitorCutoffThreshold * float64(part.MaxSizeBytes)),
 		Clock:                       clock,
-		OnEvict: func(ctx context.Context, sample *approxlru.Sample[*evictionKey]) error {
-			return pe.evict(ctx, sample)
-		},
-		OnSample: func(ctx context.Context, n int) ([]*approxlru.Sample[*evictionKey], error) {
-			return pe.sample(ctx, n)
-		},
+		OnEvict:                     pe.evict,
+		OnSample:                    pe.sample,
 	})
 	if err != nil {
 		return nil, err
@@ -2669,8 +2672,8 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
-	timer := e.clock.NewTimer(SamplerSleepDuration)
-	defer timeutil.StopAndDrainClockworkTimer(timer)
+	timer := e.clock.NewTimer(0)
+	defer timer.Stop()
 
 	randomKeyBuf := make([]byte, 64)
 
@@ -2783,7 +2786,6 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 		SizeBytes: sizeBytes,
 		Timestamp: atime,
 	}
-	timeutil.StopAndDrainClockworkTimer(timer)
 	timer.Reset(SamplerSleepDuration)
 	select {
 	case e.samples <- sample:

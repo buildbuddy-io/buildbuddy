@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 )
 
 const (
@@ -404,8 +403,7 @@ type ChunkstoreWriter struct {
 
 func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 	delay := time.NewTimer(w.writeTimeoutDuration)
-	// don't leak the timer
-	defer timeutil.StopAndDrainTimer(delay)
+	defer delay.Stop()
 	select {
 	case result, open := <-w.writeResultChannel:
 		if !open || result.Close {
@@ -502,8 +500,7 @@ func (l *writeLoop) run(ctx context.Context) {
 		var req *WriteRequest
 
 		delay := time.NewTimer(time.Until(flushTime))
-		// don't leak the timer
-		defer timeutil.StopAndDrainTimer(delay)
+		defer delay.Stop()
 		// Get the write request for this iteration.
 		select {
 		case req, open = <-l.writeChannel:

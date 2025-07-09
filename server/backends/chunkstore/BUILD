@@ -9,7 +9,6 @@ go_library(
         "//server/interfaces",
         "//server/util/background",
         "//server/util/status",
-        "//server/util/timeutil",
     ],
 )
 
