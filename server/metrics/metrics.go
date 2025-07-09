@@ -3348,7 +3348,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "disk",
 		Name:      "file_writer_in_progress_ops",
-		Help:      "Number of in-progress FileWriter operations.",
+		Help:      "Number of started, but not yet finished, FileWriter operations. This number includes operations that are blocked on the concurrency limiter.",
 	})
 )
 
