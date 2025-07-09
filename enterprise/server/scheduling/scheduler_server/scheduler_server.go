@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -58,6 +59,14 @@ var (
 	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
+
+	// Note: this "skip-resaving-action-snapshots" experiment uses "treatment"
+	// and "control" as the values rather than the variant names, since we
+	// didn't have the Details methods at the time which allow retrieving the
+	// variant name. Going forward, we can store "treatment" / "control" as the
+	// variant name and set the platform property values as the flag value.
+	skipResavingActionSnapshots = expflag.String("skip-resaving-action-snapshots", "", "If true, microvm snapshots will only be saved if they are not already cached locally.")
+	poolOverride                = expflag.Object("remote_execution.pool_override", nil, "If set, overrides pool info for a task before it is dispatched.")
 )
 
 const (
@@ -1128,9 +1137,8 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 		return nil
 	}
 
-	const experimentName = "remote_execution.pool_override"
-	obj := fp.Object(
-		ctx, experimentName, map[string]any{},
+	obj := poolOverride.Get(
+		ctx, s.env,
 		experiments.WithContext("os", os),
 		experiments.WithContext("arch", arch),
 		experiments.WithContext("pool", originalPool.Name),
@@ -1149,7 +1157,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 		if groupID, ok := groupIDValue.(string); ok {
 			override.GroupID = groupID
 		} else {
-			alert.CtxUnexpectedEvent(ctx, "%s: 'group_id' is not a string: %v", experimentName, groupIDValue)
+			alert.CtxUnexpectedEvent(ctx, "%s: 'group_id' is not a string: %v", poolOverride.Name(), groupIDValue)
 			return nil
 		}
 	}
@@ -1157,7 +1165,7 @@ func (s *SchedulerServer) getPoolOverrideFromExperiments(ctx context.Context, os
 		if pool, ok := poolValue.(string); ok {
 			override.Name = pool
 		} else {
-			alert.CtxUnexpectedEvent(ctx, "%s: 'pool' is not a string: %v", experimentName, poolValue)
+			alert.CtxUnexpectedEvent(ctx, "%s: 'pool' is not a string: %v", poolOverride.Name(), poolValue)
 			return nil
 		}
 	}
@@ -1918,12 +1926,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	}
 	plat := taskProto.PlatformOverrides
 
-	// Note: this "skip-resaving-action-snapshots" experiment uses "treatment"
-	// and "control" as the values rather than the variant names, since we
-	// didn't have the Details methods at the time which allow retrieving the
-	// variant name. Going forward, we can store "treatment" / "control" as the
-	// variant name and set the platform property values as the flag value.
-	skipResavingGroup := fp.String(ctx, "skip-resaving-action-snapshots", "", expOptions...)
+	skipResavingGroup := skipResavingActionSnapshots.Get(ctx, s.env, expOptions...)
 	if strings.EqualFold(skipResavingGroup, "treatment") {
 		plat.Properties = append(plat.Properties, &repb.Platform_Property{
 			Name:  platform.SkipResavingActionSnapshotsPropertyName,

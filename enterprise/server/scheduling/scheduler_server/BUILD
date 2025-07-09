@@ -30,6 +30,7 @@ go_library(
         "//server/util/background",
         "//server/util/bazel_request",
         "//server/util/error_util",
+        "//server/util/expflag",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/perms",

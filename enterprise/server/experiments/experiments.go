@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -22,6 +24,7 @@ import (
 var (
 	appName      = flag.String("experiments.app_name", "buildbuddy-app", "Client name to use for experiments")
 	flagdBackend = flag.String("experiments.flagd_backend", "", "Flagd backend to use for evaluating flags")
+	help         = flag.Bool("experiments.help", false, "Print all registered experiments and exit.")
 )
 
 // Register adds a new interfaces.ExperimentFlagProvider to the env. If the
@@ -29,6 +32,11 @@ var (
 // otherwise it will be a noop-provider. This function will not return until
 // the configured provider is ready.
 func Register(env *real_environment.RealEnv) error {
+	if *help {
+		expflag.PrintHelp()
+		os.Exit(0)
+	}
+
 	var provider openfeature.FeatureProvider = openfeature.NoopProvider{}
 	if *flagdBackend != "" {
 		host, port, err := net.SplitHostPort(*flagdBackend)
@@ -70,7 +78,7 @@ type details struct {
 }
 
 // noDetails are returned when flag evaluation fails.
-var noDetails = (*details)(nil)
+var noDetails = expflag.NilDetails
 
 func (d *details) Variant() string {
 	if d == nil {

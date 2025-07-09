@@ -10,6 +10,7 @@ go_library(
         "//server/real_environment",
         "//server/util/bazel_request",
         "//server/util/claims",
+        "//server/util/expflag",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/statusz",
