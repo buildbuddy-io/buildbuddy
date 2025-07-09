@@ -387,7 +387,7 @@ func (h *HitTrackerFactory) sendTrackRequest(ctx context.Context) int {
 
 	ctx = authutil.AddAuthHeadersToContext(ctx, hitsToSend.authHeaders, h.authenticator)
 	ctx = usageutil.AddUsageHeadersToContext(ctx, hitsToSend.usageHeaders)
-	trackRequest := hitpb.TrackRequest{Hits: hitsToSend.hits}
+	trackRequest := hitpb.TrackRequest{Hits: hitsToSend.hits, Server: usageutil.ServerName()}
 	groupID := hitsToSend.gid
 	hitCount := len(hitsToSend.hits)
 	hitsToSend.mu.Unlock()
