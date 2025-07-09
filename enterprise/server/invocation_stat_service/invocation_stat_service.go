@@ -1026,6 +1026,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
+		// Attempt normalization, and if it succeeds, use the normalized URL.
+		if u, err := git.NormalizeRepoURL(repoURL); err == nil {
+			repoURL = u.String()
+		}
 		q.AddWhereClause("repo_url = ?", repoURL)
 	}
 
