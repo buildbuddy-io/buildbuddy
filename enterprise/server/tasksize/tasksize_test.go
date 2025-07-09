@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
@@ -15,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -22,6 +25,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 )
 
 func TestDefault_EmptyTask_DefaultEstimate(t *testing.T) {
@@ -194,7 +198,7 @@ func TestOverride_EmptyOver(t *testing.T) {
 func TestApplyLimits(t *testing.T) {
 	sz := tasksize.ApplyLimits(
 		context.Background(),
-		testenv.GetTestEnv(t),
+		nil,
 		&repb.ExecutionTask{},
 		&scpb.TaskSize{
 			EstimatedMemoryBytes:   10,
@@ -209,7 +213,7 @@ func TestApplyLimits(t *testing.T) {
 func TestApplyLimitsNonRecyleableLargeDisk(t *testing.T) {
 	sz := tasksize.ApplyLimits(
 		context.Background(),
-		testenv.GetTestEnv(t),
+		nil,
 		&repb.ExecutionTask{
 			Command: &repb.Command{
 				Platform: &repb.Platform{
@@ -231,7 +235,7 @@ func TestApplyLimitsNonRecyleableLargeDisk(t *testing.T) {
 func TestApplyLimits_LargeTest(t *testing.T) {
 	sz := tasksize.ApplyLimits(
 		context.Background(),
-		testenv.GetTestEnv(t),
+		nil,
 		&repb.ExecutionTask{
 			Command: &repb.Command{
 				Platform: &repb.Platform{
@@ -252,6 +256,42 @@ func TestApplyLimits_LargeTest(t *testing.T) {
 	assert.Equal(t, int64(300_000_000), sz.EstimatedMemoryBytes)
 	assert.Equal(t, int64(1000), sz.EstimatedMilliCpu)
 	assert.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
+}
+
+func TestApplyLimits_MaxDiskLimitDisabled(t *testing.T) {
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"disable-task-sizing-disk-limit": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+
+	sz := tasksize.ApplyLimits(
+		context.Background(),
+		fp,
+		&repb.ExecutionTask{
+			Command: &repb.Command{
+				Platform: &repb.Platform{
+					Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+					},
+				},
+			},
+		},
+		&scpb.TaskSize{
+			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDisk * 10,
+		})
+	assert.Equal(t, tasksize.MaxEstimatedFreeDisk*10, sz.EstimatedFreeDiskBytes)
 }
 
 func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
