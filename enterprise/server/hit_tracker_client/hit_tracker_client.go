@@ -132,14 +132,6 @@ type HitTrackerFactory struct {
 }
 
 func (h *HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	return h.NewRemoteACHitTracker(ctx, requestMetadata, usageutil.ServerName())
-}
-
-func (h *HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	return h.NewRemoteCASHitTracker(ctx, requestMetadata, usageutil.ServerName())
-}
-
-func (h *HitTrackerFactory) NewRemoteACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
 	if !proxy_util.SkipRemote(ctx) {
 		// For Action Cache hit-tracking hitting the remote cache, the
 		// authoritative cache should always take care of hit-tracking.
@@ -148,13 +140,23 @@ func (h *HitTrackerFactory) NewRemoteACHitTracker(ctx context.Context, requestMe
 
 	// Use a hit-tracker that sends information
 	// about local cache hits to the RPC service at the configured backend.
-	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_AC, serverName: server}
+	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_AC}
+}
+
+func (h *HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
+	// For CAS hit-tracking, use a hit-tracker that sends information about
+	// local cache hits to the RPC service at the configured backend.
+	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_CAS}
+}
+
+func (h *HitTrackerFactory) NewRemoteACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
+	alert.CtxUnexpectedEvent(ctx, "Tried to do remote AC hit tracking from a server that is itself remote.")
+	return h.NewACHitTracker(ctx, requestMetadata)
 }
 
 func (h *HitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata, server string) interfaces.HitTracker {
-	// For CAS hit-tracking, use a hit-tracker that sends information about
-	// local cache hits to the RPC service at the configured backend.
-	return &HitTrackerClient{ctx: ctx, enqueueFn: h.enqueue, client: h.client, requestMetadata: requestMetadata, cacheType: rspb.CacheType_CAS, serverName: server}
+	alert.CtxUnexpectedEvent(ctx, "Tried to do remote CAS hit tracking from a server that is itself remote.")
+	return h.NewCASHitTracker(ctx, requestMetadata)
 }
 
 type NoOpHitTracker struct{}
@@ -225,14 +227,14 @@ func (h *HitTrackerFactory) groupID(ctx context.Context) groupID {
 	return groupID(claims.GetGroupID())
 }
 
-func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit, server string) {
+func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 	groupID := h.groupID(ctx)
 
 	h.mu.Lock()
 	if h.shouldFlushSynchronously() {
 		h.mu.Unlock()
 		log.CtxInfof(ctx, "hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
-		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}, Server: server}); err != nil {
+		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}, Server: usageutil.ServerName()}); err != nil {
 			log.CtxWarningf(ctx, "Error sending HitTrackerService.Track RPC: %v", err)
 		}
 		return
