@@ -2737,7 +2737,8 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			}
 		}
 
-		err = proto.Unmarshal(iter.Value(), fileMetadata)
+		fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
+		err = fileMetadata.UnmarshalVT(iter.Value())
 		if err != nil {
 			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read proto: %s", e.cacheName, err)
 			continue
