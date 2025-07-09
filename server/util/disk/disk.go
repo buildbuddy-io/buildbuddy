@@ -267,7 +267,7 @@ func reserveFileWriterQuota(ctx context.Context) (func(), error) {
 			<-fileWriterQuotaReservations()
 		}, nil
 	case <-ctx.Done():
-		metrics.DiskFileWriterInProgressOps.Inc()
+		metrics.DiskFileWriterInProgressOps.Dec()
 		return nil, ctx.Err()
 	}
 }
