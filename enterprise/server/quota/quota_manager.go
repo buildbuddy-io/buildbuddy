@@ -51,13 +51,6 @@ const (
 	namespaceSeperator = ":"
 )
 
-var (
-	namespacePrefix = map[qpb.ResourceType]string{
-		qpb.ResourceType_UNKNOWN: "unknown",
-		qpb.ResourceType_RPC:     "rpc",
-	}
-)
-
 type assignedBucket struct {
 	bucket    *tables.QuotaBucket
 	quotaKeys []string
@@ -344,15 +337,9 @@ func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
 	return ns.defaultBucket
 }
 
-func (qm *QuotaManager) Allow(ctx context.Context, resourceType qpb.ResourceType, resourceName string, quantity int64) error {
+func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
 	key, err := quota.GetKey(ctx, qm.env)
 
-	prefix, ok := namespacePrefix[resourceType]
-	if !ok {
-		alert.UnexpectedEvent("unexpected-resource-type", "unexpected resource type: %s", resourceType)
-	}
-
-	namespace := prefix + namespaceSeperator + resourceName
 	if err != nil {
 		metrics.QuotaKeyEmptyCount.With(prometheus.Labels{
 			metrics.QuotaNamespace: namespace,
