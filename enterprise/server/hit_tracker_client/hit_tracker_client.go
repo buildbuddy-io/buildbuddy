@@ -189,11 +189,10 @@ func (t *NoOpTransferTimer) Record(bytesTransferred int64, duration time.Duratio
 
 type HitTrackerClient struct {
 	ctx             context.Context
-	enqueueFn       func(context.Context, *hitpb.CacheHit, string)
+	enqueueFn       func(context.Context, *hitpb.CacheHit)
 	client          hitpb.HitTrackerServiceClient
 	requestMetadata *repb.RequestMetadata
 	cacheType       rspb.CacheType
-	serverName      string
 }
 
 // TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4875) Implement
@@ -277,7 +276,7 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 
 type TransferTimer struct {
 	ctx              context.Context
-	enqueueFn        func(context.Context, *hitpb.CacheHit, string)
+	enqueueFn        func(context.Context, *hitpb.CacheHit)
 	invocationID     string
 	requestMetadata  *repb.RequestMetadata
 	digest           *repb.Digest
@@ -285,7 +284,6 @@ type TransferTimer struct {
 	client           hitpb.HitTrackerServiceClient
 	cacheType        rspb.CacheType
 	cacheRequestType capb.RequestType
-	serverName       string
 }
 
 func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
@@ -299,7 +297,7 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 		Duration:         durationpb.New(time.Since(t.start)),
 		CacheRequestType: t.cacheRequestType,
 	}
-	t.enqueueFn(t.ctx, hit, t.serverName)
+	t.enqueueFn(t.ctx, hit)
 	return nil
 }
 
@@ -317,7 +315,6 @@ func (h *HitTrackerClient) TrackDownload(digest *repb.Digest) interfaces.Transfe
 		client:           h.client,
 		cacheType:        h.cacheType,
 		cacheRequestType: capb.RequestType_READ,
-		serverName:       h.serverName,
 	}
 }
 
@@ -332,7 +329,6 @@ func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferT
 			client:           h.client,
 			cacheType:        h.cacheType,
 			cacheRequestType: capb.RequestType_WRITE,
-			serverName:       h.serverName,
 		}
 	}
 	// If writes hit the backing cache, it will handle hit tracking.
