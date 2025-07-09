@@ -98,7 +98,11 @@ export default class BucketForm extends React.Component<BucketFormProps, State> 
         {this.props.namespaceEditable && (
           <div className="labeled-input">
             <label>Namespace name (required)</label>
-            <this.Field name="namespace" initialValue={this.props.initialValues?.namespace} placeholder="/rpc/FooBar" />
+            <this.Field
+              name="namespace"
+              initialValue={this.props.initialValues?.namespace}
+              placeholder="rpc:/service/method"
+            />
             <div className="validation-message">Required.</div>
           </div>
         )}

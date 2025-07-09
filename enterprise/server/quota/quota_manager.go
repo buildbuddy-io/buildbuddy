@@ -47,6 +47,8 @@ const (
 	// The channel name where quota manager publishes and subscribes the messages
 	// when there is an update.
 	pubSubChannelName = "quota-change-notifications"
+
+	namespaceSeperator = ":"
 )
 
 type assignedBucket struct {
@@ -337,6 +339,7 @@ func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
 
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
 	key, err := quota.GetKey(ctx, qm.env)
+
 	if err != nil {
 		metrics.QuotaKeyEmptyCount.With(prometheus.Labels{
 			metrics.QuotaNamespace: namespace,

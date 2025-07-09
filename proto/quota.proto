@@ -42,7 +42,7 @@ message AssignedBucket {
 }
 
 // Namespace indicates a single resource to be protected by quota manager, like
-// "/rpc/GetTargets".
+// "rpc:/service/method".
 message Namespace {
   // The name of the namespace
   string name = 1;
