@@ -2708,7 +2708,9 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			if err != nil {
 				return err
 			}
-			iter.Close()
+			if iter != nil {
+				iter.Close()
+			}
 			iter = newIter
 			// Decay away sampled partition sizes over time.  This value is kinda arbitrary,
 			// but was chosen based on the default sampler refresh period of 5 minutes to
