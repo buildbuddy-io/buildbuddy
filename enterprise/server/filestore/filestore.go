@@ -489,13 +489,10 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 }
 
 type Store interface {
-	FileKey(r *sgpb.FileRecord) ([]byte, error)
 	FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetadata) string
-	FileMetadataKey(r *sgpb.FileRecord) ([]byte, error)
 	PebbleKey(r *sgpb.FileRecord) (PebbleKey, error)
 
 	NewReader(ctx context.Context, fileDir string, md *sgpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
-	NewWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
 
 	InlineReader(f *sgpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error)
 	InlineWriter(ctx context.Context, sizeBytes int64) interfaces.MetadataWriteCloser
@@ -596,32 +593,6 @@ func (fs *fileStorer) FileKey(r *sgpb.FileRecord) ([]byte, error) {
 	}
 }
 
-// FileMetadataKey is the partial key name where a file's metadata will be
-// written in pebble.
-// For example, given a fileRecord with FileMetadataKey: "baz/bap", the filestore will
-// write the file's metadata under pebble key like:
-//   - baz/bap
-func (fs *fileStorer) FileMetadataKey(r *sgpb.FileRecord) ([]byte, error) {
-	// This function cannot change without a data migration.
-	//
-	// Metadata keys look like this when PrioritizeHashInMetadataKey is off:
-	//    {partID}/{groupID}/{ac|cas}/{hash}
-	//    for example:
-	//      PART123456/GR123/ac/44321/abcd12345asdasdasd123123123asdasdasd
-	//      PART123456/GR123/cas/abcd12345asdasdasd123123123asdasdasd
-	//
-	// Metadata keys look like this when PrioritizeHashInMetadataKey is on:
-	//    {partID}/{groupID}/{hash}/{ac|cas}
-	//    for example:
-	//      PART123456/GR123/abcd12345asdasdasd123123123asdasdasd/ac/44321
-	//      PART123456/GR123/abcd12345asdasdasd123123123asdasdasd/cas
-	pmk, err := fs.PebbleKey(r)
-	if err != nil {
-		return nil, err
-	}
-	return pmk.Bytes(UndefinedKeyVersion)
-}
-
 // blobKey is the partial path where a blob will be written.
 // For example, given a fileRecord with FileKey: "foo/bar", the filestore will
 // write the file at a path like "/buildbuddy-app-1/blobs/foo/bar".
@@ -668,13 +639,6 @@ func (fs *fileStorer) PebbleKey(r *sgpb.FileRecord) (PebbleKey, error) {
 		encryptionKeyID:    r.GetEncryption().GetKeyId(),
 		digestFunction:     r.GetDigestFunction(),
 	}, nil
-}
-
-func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
-	// New files are written using this method. Existing files will be read
-	// from wherever they were originally written according to their stored
-	// StorageMetadata.
-	return fs.FileWriter(ctx, fileDir, fileRecord)
 }
 
 func (fs *fileStorer) NewReader(ctx context.Context, fileDir string, md *sgpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error) {
