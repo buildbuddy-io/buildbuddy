@@ -581,6 +581,7 @@ func (qm *QuotaManager) reloadNamespaces() error {
 		}
 		return true
 	})
+	log.Info("quota manager reloaded namespaces")
 	return nil
 }
 
