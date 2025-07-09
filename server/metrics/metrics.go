@@ -3343,6 +3343,13 @@ var (
 	}, []string{
 		OpLabel,
 	})
+
+	DiskFileWriterInProgressOps = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "disk",
+		Name:      "file_writer_in_progress_ops",
+		Help:      "Number of in-progress FileWriter operations.",
+	})
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in

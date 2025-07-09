@@ -3,6 +3,7 @@ package disk
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -11,9 +12,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -30,6 +33,8 @@ const (
 
 var (
 	tmpWriteFileRe = regexp.MustCompile(`\.[0-9a-zA-Z]{10}\.tmp$`)
+
+	fileWriterConcurrencyLimit = flag.Int("file_writer_concurrency_limit", 5_000, "Limit on concurrent file writer operations that may result in syscalls.")
 )
 
 type Partition struct {
@@ -245,6 +250,28 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 	return &readCloser{io.NewSectionReader(f, offset, length), f}, nil
 }
 
+// A buffered channel used for reservations.
+// Users obtain a reservation by writing a reservation to the channel.
+// The write will block if the concurrency limit has been reached.
+// The reservation is released by dequeing a value from the channel.
+var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
+	return make(chan struct{}, *fileWriterConcurrencyLimit)
+})
+
+func reserveFileWriterQuota(ctx context.Context) (func(), error) {
+	metrics.DiskFileWriterInProgressOps.Inc()
+	select {
+	case fileWriterQuotaReservations() <- struct{}{}:
+		return func() {
+			metrics.DiskFileWriterInProgressOps.Dec()
+			<-fileWriterQuotaReservations()
+		}, nil
+	case <-ctx.Done():
+		metrics.DiskFileWriterInProgressOps.Inc()
+		return nil, ctx.Err()
+	}
+}
+
 type writeMover struct {
 	*os.File
 	tmpFileIsClosed bool
@@ -255,10 +282,20 @@ type writeMover struct {
 func (w *writeMover) Write(p []byte) (int, error) {
 	_, spn := tracing.StartSpan(w.ctx)
 	defer spn.End()
+	releaseQuota, err := reserveFileWriterQuota(context.Background())
+	if err != nil {
+		return 0, err
+	}
+	defer releaseQuota()
 	return w.File.Write(p)
 }
 
 func (w *writeMover) Commit() error {
+	releaseQuota, err := reserveFileWriterQuota(context.Background())
+	if err != nil {
+		return err
+	}
+	defer releaseQuota()
 	tmpName := w.File.Name()
 	if err := w.File.Close(); err != nil {
 		return err
@@ -268,6 +305,11 @@ func (w *writeMover) Commit() error {
 }
 
 func (w *writeMover) Close() error {
+	releaseQuota, err := reserveFileWriterQuota(context.Background())
+	if err != nil {
+		return err
+	}
+	defer releaseQuota()
 	if !w.tmpFileIsClosed {
 		w.File.Close()
 	}
@@ -278,6 +320,12 @@ func (w *writeMover) Close() error {
 }
 
 func FileWriter(ctx context.Context, fullPath string) (interfaces.CommittedWriteCloser, error) {
+	releaseQuota, err := reserveFileWriterQuota(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseQuota()
+
 	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
 		return nil, err
 	}
