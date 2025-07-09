@@ -88,7 +88,7 @@ var (
 	}
 )
 
-type DnsOverride struct {
+type DNSOverride struct {
 	HostnameToOverride string `yaml:"hostname_to_override"`
 	RedirectToHostname string `yaml:"redirect_to_hostname"`
 }
