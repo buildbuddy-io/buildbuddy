@@ -258,6 +258,9 @@ var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
 	return make(chan struct{}, *fileWriterConcurrencyLimit)
 })
 
+// reserveFileWriterQuota blocks until quota is available.
+// If a reservation is obtained, the returned function must be called
+// to release the quota.
 func reserveFileWriterQuota(ctx context.Context) (func(), error) {
 	metrics.DiskFileWriterInProgressOps.Inc()
 	select {
