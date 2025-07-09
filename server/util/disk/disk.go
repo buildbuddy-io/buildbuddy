@@ -34,7 +34,7 @@ const (
 var (
 	tmpWriteFileRe = regexp.MustCompile(`\.[0-9a-zA-Z]{10}\.tmp$`)
 
-	fileWriterConcurrencyLimit = flag.Int("file_writer_concurrency_limit", 5_000, "Limit on concurrent file writer operations that may result in syscalls.")
+	fileWriterConcurrencyLimit = flag.Int("file_writer_concurrency_limit", 5_000, "Limit on concurrent file writer operations that may result in syscalls. Can be disabled by setting the value to 0.")
 )
 
 type Partition struct {
@@ -263,6 +263,11 @@ var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
 // to release the quota.
 func reserveFileWriterQuota(ctx context.Context) (func(), error) {
 	metrics.DiskFileWriterInProgressOps.Inc()
+	if *fileWriterConcurrencyLimit == 0 {
+		return func() {
+			metrics.DiskFileWriterInProgressOps.Dec()
+		}, nil
+	}
 	select {
 	case fileWriterQuotaReservations() <- struct{}{}:
 		return func() {
