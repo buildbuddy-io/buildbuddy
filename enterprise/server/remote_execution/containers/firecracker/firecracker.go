@@ -93,7 +93,7 @@ var (
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
 	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
-	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DnsOverride{}, "DNS entries to override in the guest.")
+	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -1985,6 +1985,15 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// even if it's empty.
 	metadata := map[string]string{}
 	if c.vmConfig.EnableNetworking {
+		for _, o := range *dnsOverrides {
+			if o.RedirectToHostname == "" || o.HostnameToOverride == "" {
+				return status.InvalidArgumentErrorf("invalid empty dns overrides")
+			}
+			// Ensure hostnames end with '.' so they are not resolved as relative names.
+			if !strings.HasSuffix(o.HostnameToOverride, ".") {
+				o.HostnameToOverride += "."
+			}
+		}
 		marshalledOverrides, err := json.Marshal(*dnsOverrides)
 		if err != nil {
 			return status.WrapError(err, "marshall dns overrides")

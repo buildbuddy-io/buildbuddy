@@ -9,6 +9,7 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/goinit",
     deps = [
+        "//enterprise/server/util/firecracker_util",
         "//enterprise/server/util/vsock",
         "//enterprise/server/vmexec",
         "//enterprise/server/vmvfs:vmvfs_lib",

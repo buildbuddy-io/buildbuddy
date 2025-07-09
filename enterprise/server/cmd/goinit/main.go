@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"math"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -21,6 +20,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/firecracker_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs"
@@ -47,7 +47,6 @@ const (
 
 	dockerdInitTimeout       = 30 * time.Second
 	dockerdDefaultSocketPath = "/var/run/docker.sock"
-	mmdsURL                  = "http://169.254.169.254/"
 
 	// EXT4_IOC_RESIZE_FS is the ioctl constant for resizing an ext4 FS.
 	// Computed from C: https://gist.github.com/bduffany/ce9b594c2166ea1a4564cba1b5ed652d
@@ -67,7 +66,6 @@ var (
 
 	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
 	isVMVFS  = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
-	isVMDNS  = flag.Bool("vmdns", false, "Whether to run as the vmdns server.")
 )
 
 var (
@@ -190,7 +188,7 @@ func startDockerd(ctx context.Context) error {
 		return err
 	}
 
-	dockerdDaemonJSON, err := fetchMMDSKey("dockerd_daemon_json")
+	dockerdDaemonJSON, err := firecracker_util.FetchMMDSKey("dockerd_daemon_json")
 	if err != nil {
 		return err
 	}
@@ -273,15 +271,11 @@ func main() {
 	// If we were re-exec'd by the init binary as a child process, run the
 	// appropriate handler.
 	if *isVMExec {
-		die(runVMExecServer(rootContext))
+		die(runVMExecProcess(rootContext))
 		return
 	}
 	if *isVMVFS {
 		die(vmvfs.Run())
-		return
-	}
-	if *isVMDNS {
-		die(runVMDNSServer(rootContext))
 		return
 	}
 
@@ -379,6 +373,8 @@ func main() {
 		log.Errorf("Unable to increase file open descriptor limit: %s", err)
 	}
 
+	// NOTE: Ensure the default route has been configured before attempting to
+	// fetch data from MMDS, which makes network requests.
 	if *setDefaultRoute {
 		die(configureDefaultRoute("eth0", "192.168.241.1"))
 	}
@@ -392,25 +388,23 @@ func main() {
 		"ff02::2		ip6-allrouters",
 	}
 	die(os.WriteFile("/etc/hosts", []byte(strings.Join(hosts, "\n")), 0755))
+
 	nameServers := []string{
 		"nameserver 8.8.8.8",
 		"nameserver 8.8.4.4",
 		"nameserver 1.1.1.1",
 	}
-
-	var dnsOverrides []*networking.DnsOverride
-	// Ensure default route has been configured before fetching data from the
-	// networked metadata service.
 	if *setDefaultRoute {
-		dnsOverridesJSON, err := fetchMMDSKey("dns_overrides")
+		dnsOverridesJSON, err := firecracker_util.FetchMMDSKey("dns_overrides")
 		if err != nil {
 			die(err)
 		}
+		var dnsOverrides []*networking.DNSOverride
 		die(json.Unmarshal(dnsOverridesJSON, &dnsOverrides))
-	}
-	if len(dnsOverrides) > 0 {
-		// Point to local DNS server to handle any DNS overrides.
-		nameServers = append([]string{"nameserver 127.0.0.1"}, nameServers...)
+		if len(dnsOverrides) > 0 {
+			// Point to local DNS server to handle any DNS overrides.
+			nameServers = append([]string{"nameserver 127.0.0.1"}, nameServers...)
+		}
 	}
 	die(os.WriteFile("/etc/resolv.conf", []byte(strings.Join(nameServers, "\n")), 0755))
 	if _, err := os.Stat("/etc/mtab"); err != nil {
@@ -473,15 +467,6 @@ func main() {
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 	})
-	if len(dnsOverrides) > 0 {
-		// Run local DNS server.
-		eg.Go(func() error {
-			cmd := exec.CommandContext(ctx, os.Args[0], append(os.Args[1:], "--vmdns")...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			return cmd.Run()
-		})
-	}
 
 	if *initDockerd {
 		die(startDockerd(ctx))
@@ -494,6 +479,39 @@ func main() {
 
 	// Halt the system explicitly to prevent a kernel panic.
 	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+}
+
+func runVMExecProcess(ctx context.Context) error {
+	eg := &errgroup.Group{}
+
+	// Only attempt to run the local DNS server if networking is enabled.
+	if *setDefaultRoute {
+		// Wait for the DNS server to initialize before starting and accepting
+		// commands on the vmExec server to guarantee DNS requests are handled
+		// correctly.
+		dnsServer, err := vmexec.NewVMDNSServer()
+		if err != nil {
+			return err
+		}
+
+		if dnsServer != nil {
+			eg.Go(func() error {
+				if err := runVMDNSServer(dnsServer); err != nil {
+					log.Fatal(err.Error())
+				}
+				return nil
+			})
+		}
+	}
+
+	eg.Go(func() error {
+		if err := runVMExecServer(ctx); err != nil {
+			log.Fatal(err.Error())
+		}
+		return nil
+	})
+
+	return eg.Wait()
 }
 
 func runVMExecServer(ctx context.Context) error {
@@ -526,123 +544,18 @@ func runVMExecServer(ctx context.Context) error {
 	return server.Serve(listener)
 }
 
-type vmDNSServer struct {
-	overrides []*networking.DnsOverride
-}
-
-func runVMDNSServer(ctx context.Context) error {
+func runVMDNSServer(dnsServer *vmexec.DNSServer) error {
 	log.Infof("Starting vm dns server on port 53")
 
-	var dnsOverrides []*networking.DnsOverride
-	dnsOverridesJSON, err := fetchMMDSKey("dns_overrides")
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(dnsOverridesJSON, &dnsOverrides); err != nil {
-		return err
-	}
-
 	mux := dns.NewServeMux()
+	mux.Handle(".", dnsServer)
 
-	// Ensure hostnames end with '.' so they are not resolved as relative names.
-	for _, o := range dnsOverrides {
-		if o.RedirectToHostname == "" {
-			return status.InvalidArgumentError("empty redirect hostname")
-		}
-		if !strings.HasSuffix(o.HostnameToOverride, ".") {
-			o.HostnameToOverride += "."
-		}
-	}
-
-	mux.Handle(".", &vmDNSServer{overrides: dnsOverrides})
 	s := &dns.Server{
 		Addr:    "127.0.0.1:53",
 		Net:     "udp4",
 		Handler: mux,
 	}
 	return s.ListenAndServe()
-}
-
-func (s *vmDNSServer) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
-	for _, o := range s.overrides {
-		if strings.HasSuffix(req.Question[0].Name, o.HostnameToOverride) && !strings.HasSuffix(req.Question[0].Name, o.RedirectToHostname) {
-			s.overrideResponse(w, req, o.RedirectToHostname)
-			return
-		}
-	}
-
-	// For all other requests, forward to a remote DNS server.
-	rsp, err := s.forwardToRemoteServer(req)
-	if err != nil {
-		s.returnFailureMsg(w, req)
-		return
-	}
-
-	if err := w.WriteMsg(rsp); err != nil {
-		log.Errorf("could not send dns reply: %s", err)
-	}
-}
-
-// overrideResponse returns a DNS response pointing requests originally directed
-// to `hostname_to_override` => `redirect_to_hostname`.
-// The response also contains the A record for `redirect_to_hostname` so the
-// client can follow the request to the final IP addr it should hit.
-func (s *vmDNSServer) overrideResponse(w dns.ResponseWriter, req *dns.Msg, redirectToHostname string) {
-	rspMsg := &dns.Msg{}
-	rspMsg.SetReply(req)
-	rspMsg.Rcode = dns.RcodeSuccess
-	rspMsg.RecursionAvailable = true
-
-	cname := &dns.CNAME{
-		Hdr: dns.RR_Header{
-			Name:   req.Question[0].Name,
-			Rrtype: dns.TypeCNAME,
-			Class:  dns.ClassINET,
-			Ttl:    60,
-		},
-		Target: redirectToHostname,
-	}
-
-	// Get A record for `redirectToHostname` from remote DNS server.
-	forwardMsg := &dns.Msg{}
-	forwardMsg.SetQuestion(redirectToHostname, dns.TypeA)
-	forwardMsg.RecursionDesired = true
-	rsp, err := s.forwardToRemoteServer(forwardMsg)
-	if err != nil {
-		s.returnFailureMsg(w, req)
-		return
-	}
-
-	rspMsg.Answer = append(rspMsg.Answer, cname)
-	rspMsg.Answer = append(rspMsg.Answer, rsp.Answer...)
-
-	if err := w.WriteMsg(rspMsg); err != nil {
-		log.Errorf("could not send dns reply: %s", err)
-	}
-}
-
-// forwardToRemoteServer forwards a DNS query to remote DNS servers. Other than configured
-// queries that should be overwritten by the local DNS server, most should be
-// forwarded on.
-func (s *vmDNSServer) forwardToRemoteServer(req *dns.Msg) (*dns.Msg, error) {
-	upstreams := []string{"8.8.8.8:53", "8.8.4.4:53", "1.1.1.1:53"}
-	c := new(dns.Client)
-	for _, upstream := range upstreams {
-		rsp, _, err := c.Exchange(req, upstream)
-		if err == nil && rsp != nil && rsp.Rcode == dns.RcodeSuccess {
-			return rsp, nil
-		}
-		log.Warningf("Forwarding to %s failed or returned no answer, trying next remote DNS server", upstream)
-	}
-	return nil, status.InternalError("forwarding to all upstream dns servers failed")
-}
-
-func (s *vmDNSServer) returnFailureMsg(w dns.ResponseWriter, req *dns.Msg) {
-	failureMsg := new(dns.Msg)
-	failureMsg.SetRcode(req, dns.RcodeServerFailure)
-	if err := w.WriteMsg(failureMsg); err != nil {
-		log.Errorf("could not send dns reply: %s", err)
-	}
 }
 
 // Resizes the ext4 filesystem mounted at the given path to match the underlying
@@ -684,23 +597,4 @@ func resizeExt4FS(devicePath, mountPath string) error {
 		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
 	}
 	return nil
-}
-
-func fetchMMDSKey(key string) ([]byte, error) {
-	resp, err := http.Get(mmdsURL + key)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("MMDS request failed with status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return body, nil
 }
