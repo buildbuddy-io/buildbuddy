@@ -151,24 +151,26 @@ the following snapshot keys in order:
    the run.
 1. The latest snapshot matching the default branch of the repo associated
    with the run.
+1. The latest snapshot that was saved on any branch.
 
 For example, consider a remote run that runs on pull requests
-(PRs). Given a PR that is attempting to merge the branch `users-ui` into a
-PR base branch `users-api`, BuildBuddy will first try to resume the latest
-snapshot associated with the `users-ui` branch. If that doesn't exist,
-we'll try to resume from the snapshot associated with the `users-api`
-branch. If that doesn't exist, we'll look for a snapshot for the `main`
-branch (the repo's default branch). If all of that fails, only then do we
-boot a new VM from scratch. When the remote run finishes and we save a
-snapshot, we only overwrite the snapshot for the `users-ui` branch,
-meaning that the `users-api` and `main` branch snapshots will not be
-affected.
+(PRs). Imagine a PR that is attempting to merge the branch `users-ui` into a
+PR base branch `users-api`:
 
-One common issue is not running any remote runs on your default branch.
-Every time there is a new PR branch, for example, the remote run will start from
-scratch because there is not a shared default snapshot for them to start from. One
-solution is to trigger a remote run on every push to the default branch, to make sure
-the default snapshot stays up to date.
+1. BuildBuddy will first try to resume the latest snapshot associated with the `users-ui` branch.
+1. If that doesn't exist, we'll try to resume from the snapshot associated with the `users-api` branch.
+1. If that doesn't exist, we'll look for a snapshot for the `main`
+   branch (the repo's default branch).
+1. If that doesn't exist, we'll look for a snapshot on any branch.
+   1.If all of that fails, only then do we boot a new VM from scratch.
+1. When the remote run finishes and we save a
+   snapshot, we only overwrite the snapshot for the `users-ui` branch,
+   meaning that the `users-api` and `main` branch snapshots will not be
+   affected.
+
+**NOTE:** We recommend always running Workflows on your default branch, so that this
+snapshot matching strategy works optimally. This can be accomplished by triggering a Workflow on every push to the default branch. This ensures that workflow runs on new branches
+will always have a good snapshot to start from. Otherwise, if there is not a snapshot to resume from, new workloads will always start from new slow runners.
 
 For more technical details on our VM implementation, see our BazelCon
 talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.com/watch?v=YycEXBlv7ZA).
@@ -332,6 +334,8 @@ BuildBuddy-managed Macs.
 
 ## Optimal usage of remote runners
 
+### Remote execution
+
 While our remote runners support running arbitrary bash code, they were specifically
 designed and optimized to run the Bazel client server and power Bazel commands with
 remote execution (RBE).
@@ -342,6 +346,12 @@ on disks for remote runners.
 
 It's more effective when a smaller remote runner is used to orchestrate farming out most computation to
 traditional Bazel remote executors.
+
+### Running on the default branch
+
+We recommend always running remote workloads on your default branch, so that the
+[snapshot matching strategy works optimally](#firecracker-vms-linux-only). This can be accomplished by triggering a run on every push to the default branch. This ensures that runs on new branches
+will always have a good snapshot to start from. Otherwise, if there is not a snapshot to resume from, new workloads will always start from new slow runners.
 
 ## Getting started
 
