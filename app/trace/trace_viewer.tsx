@@ -33,13 +33,6 @@ interface TraceViewerState {
 // value.
 const SCROLL_WIDTH_LIMIT = 18_000_000;
 
-// When jumping to a matched span via the search bar, ensure that the span is
-// large enough on screen so it can be seen and interacted with. If the span is
-// smaller than this in pixel width, we zoom in to make it at least this wide.
-// Conversely, if the span is very large, we attempt to zoom out (down to the
-// "normal" min-zoom level) so that more context is visible.
-const MIN_SPAN_PIXEL_WIDTH = 1;
-
 const FILTER_URL_PARAM = "timingFilter";
 
 /**
@@ -502,7 +495,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     const isVerticallyVisible = trackTop >= viewportStartY && trackBottom <= viewportEndY;
 
     const eventPixelWidth = (event.dur ?? 0) * scale;
-    const isTooSmall = event.dur && eventPixelWidth < MIN_SPAN_PIXEL_WIDTH;
+    const isTooSmall = event.dur && eventPixelWidth < constants.MIN_RENDER_PIXEL_WIDTH;
 
     if (isHorizontallyVisible && isVerticallyVisible && !isTooSmall) {
       // Already fully in view and large enough – only update the canvas so the highlight is
@@ -522,8 +515,8 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
       let desiredScale = currentScale;
 
       // Zoom in if span is too small.
-      if (currentPixelWidth < MIN_SPAN_PIXEL_WIDTH) {
-        desiredScale = MIN_SPAN_PIXEL_WIDTH / event.dur;
+      if (currentPixelWidth < constants.MIN_RENDER_PIXEL_WIDTH) {
+        desiredScale = constants.MIN_RENDER_PIXEL_WIDTH / event.dur;
       }
       // Zoom out (all the way to min) if span is extremely large relative to
       // the viewport width.

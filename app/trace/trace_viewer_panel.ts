@@ -418,11 +418,14 @@ export default class Panel {
       if (width <= 0) {
         // If the event is less than 1px side, and less than 1px away from the previous
         // event start that rendered, don't render it.
-        if (lastEventRendered && Math.abs(modelX - track.xs[i - 1]) * this.canvasXPerModelX <= 1) {
+        if (
+          lastEventRendered &&
+          Math.abs(modelX - track.xs[i - 1]) * this.canvasXPerModelX <= constants.MIN_RENDER_PIXEL_WIDTH
+        ) {
           lastEventRendered = false;
           continue;
         }
-        width = 1;
+        width = constants.MIN_RENDER_PIXEL_WIDTH;
       }
       const x = modelX * this.canvasXPerModelX - this.scrollX;
       this.ctx.fillRect(x, y, width, constants.TRACK_HEIGHT);
