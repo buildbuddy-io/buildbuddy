@@ -2745,7 +2745,7 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 			return status.InternalErrorf("failed to start shard c%dn%d: %s", rd.GetRangeId(), newReplicaID, err)
 		}
 	}
-	// StartShard ensures the node is up-to-date. We can promote non-voter to voter. (Note: there is an edge case where the first appempt of AddReplica failed at wait for catch up; and the second attempt
+	// StartShard ensures the node is up-to-date. We can promote non-voter to voter.
 	// Propose the config change (this adds the node as a non-voter to the raft cluster).
 	// Get the config change index for promoting a non-voter to a voter
 	configChangeID, err := s.getConfigChangeID(ctx, rd.GetRangeId())
