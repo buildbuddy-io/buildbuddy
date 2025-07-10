@@ -107,7 +107,6 @@ func (c *cacheHits) enqueue(hit *hitpb.CacheHit, authHeaders map[string][]string
 	}
 
 	// Store the latest headers for this group for use in the async RPC.
-	// TODO(jdhollen): send separate requests for different usage headers.
 	c.authHeaders = authHeaders
 	c.hits = append(c.hits, hit)
 	return true
