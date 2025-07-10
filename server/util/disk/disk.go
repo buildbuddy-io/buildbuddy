@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"golang.org/x/sync/semaphore"
 )
 
 const (
@@ -254,30 +256,39 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 // Users obtain a reservation by writing a reservation to the channel.
 // The write will block if the concurrency limit has been reached.
 // The reservation is released by dequeing a value from the channel.
-var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
-	return make(chan struct{}, *fileWriterConcurrencyLimit)
+// var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
+// return make(chan struct{}, *fileWriterConcurrencyLimit)
+// })
+var fileWriterQuotaReservations = sync.OnceValue(func() *semaphore.Weighted {
+	return semaphore.NewWeighted(int64(*fileWriterConcurrencyLimit))
 })
+
+var inProgressOps int64
 
 // reserveFileWriterQuota blocks until quota is available.
 // If a reservation is obtained, the returned function must be called
 // to release the quota.
 func reserveFileWriterQuota(ctx context.Context) (func(), error) {
-	metrics.DiskFileWriterInProgressOps.Inc()
 	if *fileWriterConcurrencyLimit == 0 {
-		return func() {
-			metrics.DiskFileWriterInProgressOps.Dec()
-		}, nil
+		return func() {}, nil
 	}
-	select {
-	case fileWriterQuotaReservations() <- struct{}{}:
-		return func() {
-			metrics.DiskFileWriterInProgressOps.Dec()
-			<-fileWriterQuotaReservations()
-		}, nil
-	case <-ctx.Done():
-		metrics.DiskFileWriterInProgressOps.Dec()
-		return nil, ctx.Err()
-	}
+	metrics.DiskFileWriterInProgressOps.Set(float64(atomic.AddInt64(&inProgressOps, 1)))
+	fileWriterQuotaReservations().Acquire(ctx, 1)
+	return func() {
+		metrics.DiskFileWriterInProgressOps.Set(float64(atomic.AddInt64(&inProgressOps, -1)))
+		fileWriterQuotaReservations().Release(1)
+	}, nil
+
+	// select {
+	// case fileWriterQuotaReservations() <- struct{}{}:
+	// return func() {
+	// metrics.DiskFileWriterInProgressOps.Dec()
+	// <-fileWriterQuotaReservations()
+	// }, nil
+	// case <-ctx.Done():
+	// metrics.DiskFileWriterInProgressOps.Dec()
+	// return nil, ctx.Err()
+	// }
 }
 
 type writeMover struct {

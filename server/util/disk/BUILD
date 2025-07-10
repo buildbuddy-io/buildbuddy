@@ -17,6 +17,7 @@ go_library(
         "//server/util/random",
         "//server/util/status",
         "//server/util/tracing",
+        "@org_golang_x_sync//semaphore",
     ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "@org_golang_x_sys//unix",
@@ -40,7 +41,9 @@ go_test(
     deps = [
         ":disk",
         "//server/testutil/testfs",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
             "//server/testutil/testmount",
