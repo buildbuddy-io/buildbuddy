@@ -345,6 +345,24 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		if status.IsDeadlineExceededError(err) {
 			err = status.UnavailableError(status.Message(err))
 		}
+
+		// Bazel will attempt to reupload inputs if it sees a
+		// FailedPreconditionError with a particular format:
+		// https://github.com/buildbuddy-io/buildbuddy/blob/41bd3c440b2c79cb219c3523449db1c7f9d4ce1d/proto/remote_execution.proto#L108-L117.
+		//
+		// Bazel does *not* attempt to reupload if it sees a NotFound error. So
+		// here, we coerce NotFound to this special FailedPrecondition error so
+		// that bazel will reupload inputs in the rare cases where inputs are
+		// missing.
+		//
+		// At the time of writing (bazel 8.x), bazel does not actually care
+		// about the "subject" part of the spec, and will instead just reupload
+		// all inputs. So for now, we just return an empty digest in the subject
+		// field.
+		if status.IsNotFoundError(err) {
+			err = digest.MissingDigestError(&repb.Digest{Hash: digest.EmptySha256})
+		}
+
 		return finishWithErrFn(status.WrapError(err, "download inputs"))
 	}
 
