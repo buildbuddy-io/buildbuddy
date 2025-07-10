@@ -1162,19 +1162,22 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	s.log.Infof("Starting new raft node c%dn%d", req.GetRangeId(), req.GetReplicaId())
 	rc := raftConfig.GetRaftConfig(req.GetRangeId(), req.GetReplicaId())
 	rc.IsNonVoting = req.GetIsNonVoting()
-	err := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
-	if err != nil {
-		if err == dragonboat.ErrShardAlreadyExist {
-			nu, nuErr := s.nodeHost.GetNodeUser(req.GetRangeId())
-			if nuErr != nil {
-				return nil, status.InternalErrorf("failed to get node user: %s", err)
-			}
-			if nu.ReplicaID() == req.GetReplicaId() {
-				return nil, status.AlreadyExistsError(err.Error())
-			}
+	startShardErr := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
+	if startShardErr != nil {
+		if startShardErr != dragonboat.ErrShardAlreadyExist {
+			return nil, status.WrapErrorf(startShardErr, "failed to start node c%dn%d on dragonboat", req.GetRangeId(), req.GetReplicaId())
+		}
+		nu, nuErr := s.nodeHost.GetNodeUser(req.GetRangeId())
+		if nuErr != nil {
+			return nil, status.InternalErrorf("failed to get node user: %s", startShardErr)
+		}
+		if nu.ReplicaID() != req.GetReplicaId() {
 			return nil, status.InternalErrorf("cannot start c%dn%d because c%dn%d already exists", nu.ShardID(), nu.ReplicaID(), req.GetRangeId(), req.GetReplicaId())
 		}
-		return nil, status.WrapErrorf(err, "failed to start node c%dn%d on dragonboat", req.GetRangeId(), req.GetReplicaId())
+
+		// If the shard already exists, we want to wait for the replica to catch up
+		// if last_applied_index is set in the request
+		startShardErr = status.AlreadyExistsError(startShardErr.Error())
 	}
 
 	if req.GetLastAppliedIndex() > 0 {
@@ -1184,7 +1187,7 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	}
 
 	rsp := &rfpb.StartShardResponse{}
-	return rsp, nil
+	return rsp, startShardErr
 }
 
 func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID uint64) error {
@@ -2741,10 +2744,6 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 		if !status.IsAlreadyExistsError(err) {
 			return status.InternalErrorf("failed to start shard c%dn%d: %s", rd.GetRangeId(), newReplicaID, err)
 		}
-		// The shard has been started in an previous attempt; but let's still wait for this replica to catch up.
-		if err := s.waitForReplicaToCatchUp(ctx, rd.GetRangeId(), lastAppliedIndex); err != nil {
-			return status.InternalErrorf("failed to wait for replica to catch up: %s", err)
-		}
 	}
 	// StartShard ensures the node is up-to-date. We can promote non-voter to voter.
 	// Propose the config change (this adds the node as a non-voter to the raft cluster).
@@ -3125,6 +3124,7 @@ func (s *Store) addStagingReplicaToRangeDescriptor(ctx context.Context, rangeID,
 
 func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
+
 	for i, replica := range newDescriptor.GetStaging() {
 		if replica.GetReplicaId() == replicaID {
 			newDescriptor.Replicas = append(newDescriptor.GetReplicas(), newDescriptor.Staging[i])
