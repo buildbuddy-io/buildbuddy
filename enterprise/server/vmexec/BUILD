@@ -13,7 +13,7 @@ go_library(
     ],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
-        "//enterprise/server/util/firecracker_util",
+        "//enterprise/server/util/firecrackerutil",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
         "//server/remote_cache/digest",

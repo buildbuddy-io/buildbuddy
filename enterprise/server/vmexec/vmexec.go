@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/firecracker_util"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/firecrackerutil"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -638,7 +638,7 @@ type DNSServer struct {
 // where the DNS server is expected to be started or stopped)
 func NewVMDNSServer() (*DNSServer, error) {
 	var dnsOverrides []*networking.DNSOverride
-	dnsOverridesJSON, err := firecracker_util.FetchMMDSKey("dns_overrides")
+	dnsOverridesJSON, err := firecrackerutil.FetchMMDSKey("dns_overrides")
 	if err != nil {
 		return nil, status.WrapError(err, "fetch dns_overrides from MMDS")
 	}

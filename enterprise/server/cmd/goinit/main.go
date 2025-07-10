@@ -20,7 +20,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/firecracker_util"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/firecrackerutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs"
@@ -188,7 +188,7 @@ func startDockerd(ctx context.Context) error {
 		return err
 	}
 
-	dockerdDaemonJSON, err := firecracker_util.FetchMMDSKey("dockerd_daemon_json")
+	dockerdDaemonJSON, err := firecrackerutil.FetchMMDSKey("dockerd_daemon_json")
 	if err != nil {
 		return err
 	}
@@ -395,7 +395,7 @@ func main() {
 		"nameserver 1.1.1.1",
 	}
 	if *setDefaultRoute {
-		dnsOverridesJSON, err := firecracker_util.FetchMMDSKey("dns_overrides")
+		dnsOverridesJSON, err := firecrackerutil.FetchMMDSKey("dns_overrides")
 		if err != nil {
 			die(err)
 		}
