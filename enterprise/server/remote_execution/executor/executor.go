@@ -339,6 +339,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		if !platform.IsTrue(platform.FindEffectiveValue(task, platform.PreserveWorkspacePropertyName)) {
 			reuseRunner = true
 		}
+		// Coerce DeadlineExceeded error code to Unavailable. We haven't applied
+		// the action timeout yet, so any DeadlineExceeded errors at this point
+		// would be internal timeouts.
+		if status.IsDeadlineExceededError(err) {
+			err = status.UnavailableError(status.Message(err))
+		}
 		return finishWithErrFn(status.WrapError(err, "download inputs"))
 	}
 

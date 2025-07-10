@@ -105,7 +105,7 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.CASR
 
 	receiver := rpcutil.NewReceiver[*bspb.ReadResponse](ctx, stream)
 	for {
-		rsp, err := receiver.RecvWithTimeoutCause(*casRPCTimeout, status.DeadlineExceededError("Timed out waiting for Read response"))
+		rsp, err := receiver.RecvWithTimeoutCause(*casRPCTimeout, status.DeadlineExceededError("timed out waiting for Read response"))
 		if err == io.EOF {
 			// Close before returning from this loop to make sure all bytes are
 			// flushed from the decompressor to the output/checksum writers.

@@ -1291,21 +1291,19 @@ func DownloadInputsNoop(ctx context.Context, ioStats *repb.IOStats) error {
 // test.
 type testRunnerPool struct {
 	interfaces.RunnerPool
-	runInterceptor            RunInterceptor
-	recycleInterceptor        RecycleInterceptor
-	downloadInputsInterceptor DownloadInputsFunc
+	runInterceptor     RunInterceptor
+	recycleInterceptor RecycleInterceptor
 }
 
 type TestRunnerOverrides struct {
 	RunInterceptor     RunInterceptor
 	RecycleInterceptor RecycleInterceptor
-	DownloadInputsMock DownloadInputsFunc
 }
 
 func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, opts TestRunnerOverrides) interfaces.RunnerPool {
 	realPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{})
 	require.NoError(t, err)
-	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor, opts.DownloadInputsMock}
+	return &testRunnerPool{realPool, opts.RunInterceptor, opts.RecycleInterceptor}
 }
 
 func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (interfaces.Runner, error) {
@@ -1313,7 +1311,7 @@ func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (int
 	if err != nil {
 		return nil, err
 	}
-	return &testRunner{realRunner, p.runInterceptor, p.downloadInputsInterceptor}, nil
+	return &testRunner{realRunner, p.runInterceptor}, nil
 }
 
 func (p *testRunnerPool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
@@ -1328,8 +1326,7 @@ func (p *testRunnerPool) TryRecycle(ctx context.Context, r interfaces.Runner, fi
 // testRunner is a Runner implementation that allows mocking out its methods.
 type testRunner struct {
 	interfaces.Runner
-	run            RunInterceptor
-	downloadInputs DownloadInputsFunc
+	run RunInterceptor
 }
 
 func (r *testRunner) Run(ctx context.Context, ioStats *repb.IOStats) *interfaces.CommandResult {
@@ -1337,13 +1334,6 @@ func (r *testRunner) Run(ctx context.Context, ioStats *repb.IOStats) *interfaces
 		return r.Runner.Run(ctx, ioStats)
 	}
 	return r.run(ctx, r.Runner.Run)
-}
-
-func (r *testRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
-	if r.downloadInputs == nil {
-		return r.Runner.DownloadInputs(ctx, ioStats)
-	}
-	return r.downloadInputs(ctx, ioStats)
 }
 
 type FakeTaskSizer struct {
