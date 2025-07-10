@@ -30,7 +30,7 @@ import (
 var (
 	remoteHitTrackerTarget       = flag.String("cache_proxy.remote_hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracking service.")
 	remoteHitTrackerPollInterval = flag.Duration("cache_proxy.remote_hit_tracker.update_interval", 250*time.Millisecond, "The time interval to wait between sending remote cache-hit-tracking RPCs.")
-	maxPendingHitsPerGroup       = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 2_500_000, "The maximum number of pending cache-hit updates to store in memory for a given group.")
+	maxPendingHitsPerKey         = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 2_500_000, "The maximum number of pending cache-hit updates to store in memory for a given (group, usagelabels) tuple.")
 	maxHitsPerUpdate             = flag.Int("cache_proxy.remote_hit_tracker.max_hits_per_update", 250_000, "The maximum number of cache-hit updates to send in one request to the hit-tracking backend.")
 	remoteHitTrackerWorkers      = flag.Int("cache_proxy.remote_hit_tracker.workers", 1, "The number of workers to use to send asynchronous remote cache-hit-tracking RPCs.")
 )
@@ -74,7 +74,7 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 		authenticator:        env.GetAuthenticator(),
 		pollInterval:         *remoteHitTrackerPollInterval,
 		quit:                 make(chan struct{}, 1),
-		maxPendingHitsPerKey: *maxPendingHitsPerGroup,
+		maxPendingHitsPerKey: *maxPendingHitsPerKey,
 		maxHitsPerUpdate:     *maxHitsPerUpdate,
 		hitsByCollection:     map[string]*cacheHits{},
 		client:               hitpb.NewHitTrackerServiceClient(conn),
@@ -92,7 +92,7 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 
 type groupID string
 type cacheHits struct {
-	maxPendingHitsPerGroup int
+	maxPendingHits         int
 	encodedCollection      string
 	mu                     sync.Mutex
 	authHeaders            map[string][]string
@@ -102,7 +102,7 @@ type cacheHits struct {
 func (c *cacheHits) enqueue(hit *hitpb.CacheHit, authHeaders map[string][]string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.hits) >= c.maxPendingHitsPerGroup {
+	if len(c.hits) >= c.maxPendingHits {
 		return false
 	}
 
@@ -253,9 +253,9 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 
 	if _, ok := h.hitsByCollection[k]; !ok {
 		hits := cacheHits{
-			maxPendingHitsPerGroup: h.maxPendingHitsPerKey,
-			encodedCollection:      k,
-			hits:                   []*hitpb.CacheHit{},
+			maxPendingHits:    h.maxPendingHitsPerKey,
+			encodedCollection: k,
+			hits:              []*hitpb.CacheHit{},
 		}
 		h.hitsByCollection[k] = &hits
 		h.hitsQueue = append(h.hitsQueue, &hits)
