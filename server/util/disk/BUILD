@@ -37,6 +37,14 @@ go_test(
         "disk_linux_test.go",
         "disk_test.go",
     ],
+    exec_properties = select({
+        # Run in firecracker to work around "maximum fs stacking depth exceeded"
+        # errors when creating nested overlayfs mounts.
+        "@io_bazel_rules_go//go/platform:linux": {
+            "test.workload-isolation-type": "firecracker",
+        },
+        "//conditions:default": {},
+    }),
     deps = [
         ":disk",
         "//server/testutil/testfs",
