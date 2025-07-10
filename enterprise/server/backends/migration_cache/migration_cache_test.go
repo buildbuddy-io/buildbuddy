@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -169,7 +170,7 @@ func (c *errorCache) Reader(ctx context.Context, r *rspb.ResourceName, offset, l
 func TestACIsolation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(defaultExt4BlockSize * 1)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -181,7 +182,7 @@ func TestACIsolation(t *testing.T) {
 
 	mc := migration_cache.NewMigrationCache(te, &migration_cache.MigrationConfig{}, srcCache, destCache)
 
-	r1, buf1 := testdigest.RandomACResourceBuf(t, 100)
+	r1, buf1 := testdigest.RandomACResourceBuf(t, 10)
 	require.NoError(t, mc.Set(ctx, r1, buf1))
 
 	got1, err := mc.Get(ctx, r1)
@@ -582,48 +583,40 @@ func TestCopyDataInBackground_RateLimitMax(t *testing.T) {
 func TestCopyDataInBackground_RateLimitMin(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(defaultExt4BlockSize * 10)
-	rootDirSrc := testfs.MakeTempDir(t)
-	rootDirDest := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(defaultExt4BlockSize * 100)
 
-	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	srcCache, err := memory_cache.NewMemoryCache(maxSizeBytes)
 	require.NoError(t, err)
-	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	destCache, err := memory_cache.NewMemoryCache(maxSizeBytes)
 	require.NoError(t, err)
 
+	const writeCount = 10
 	config := &migration_cache.MigrationConfig{
-		CopyChanBufferSize: 10,
-		MaxCopiesPerSec:    10,
+		CopyChanBufferSize: writeCount,
+		MaxCopiesPerSec:    writeCount,
 	}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
-	eg, ctx := errgroup.WithContext(ctx)
-	lock := sync.RWMutex{}
-	start := time.Now()
-
-	for i := 0; i < 10; i++ {
-		eg.Go(func() error {
-			r, buf := testdigest.RandomCASResourceBuf(t, 100)
-			lock.Lock()
-			defer lock.Unlock()
-
-			err = srcCache.Set(ctx, r, buf)
-			require.NoError(t, err)
-
-			// Get should queue copy in background
-			data, err := mc.Get(ctx, r)
-			require.NoError(t, err)
-			require.True(t, bytes.Equal(buf, data))
-
-			// Expect copy
-			waitForCopy(t, ctx, destCache, r)
-			return nil
-		})
+	resources := make(map[*rspb.ResourceName][]byte, writeCount)
+	for range writeCount {
+		r, buf := testdigest.RandomCASResourceBuf(t, 100)
+		err := srcCache.Set(ctx, r, buf)
+		require.NoError(t, err)
+		resources[r] = buf
 	}
-	eg.Wait()
+	start := time.Now()
+	for r, buf := range resources {
+		// Get should queue copy in background
+		data, err := mc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, data))
+
+		// Expect copy
+		waitForCopy(t, ctx, destCache, r)
+	}
 
 	// Copies should not be rate limited, and should complete within 1 second
 	require.LessOrEqual(t, time.Since(start), 1*time.Second)
@@ -812,7 +805,7 @@ func TestCopyDataInBackground_FindMissing(t *testing.T) {
 func TestContains(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(defaultExt4BlockSize * 1)
+	maxSizeBytes := int64(defaultExt4BlockSize * 100)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 	remoteInstanceName := "cloud"

@@ -37,7 +37,7 @@ go_library(
 
 go_test(
     name = "migration_cache_test",
-    size = "medium",
+    size = "small",
     srcs = ["migration_cache_test.go"],
     deps = [
         ":migration_cache",
@@ -46,6 +46,7 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/backends/disk_cache",
+        "//server/backends/memory_cache",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
