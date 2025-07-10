@@ -2835,7 +2835,6 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 		if replicaMembership.isNonVoting {
 			state = addReplicaStateNonVoter
 		} else {
-			log.Infof("this replica is a voter")
 			state = addReplicaStateVoter
 		}
 	} else {
@@ -3110,7 +3109,6 @@ func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, 
 }
 
 func (s *Store) addStagingReplicaToRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, nhid string, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
-	log.Infof("addStagingReplica")
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
 	newDescriptor.Staging = append(newDescriptor.GetStaging(), &rfpb.ReplicaDescriptor{
 		RangeId:   rangeID,
@@ -3140,7 +3138,6 @@ func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replic
 	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
-	log.Infof("addReplicaToRangeDescriptor finished. old: %+v, new: %+v", oldDescriptor, newDescriptor)
 	return newDescriptor, nil
 }
 
