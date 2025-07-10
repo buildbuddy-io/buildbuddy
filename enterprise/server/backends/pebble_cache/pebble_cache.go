@@ -2652,30 +2652,24 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		return err
 	}
 	defer db.Close()
+
+	randomKeyBuf := make([]byte, 64)
 	start, end := keyRange([]byte(e.partitionKeyPrefix() + "/"))
-	iterCreatedAt := time.Now()
-	iter, err := db.NewIter(&pebble.IterOptions{
-		LowerBound: start,
-		UpperBound: end,
-	})
-	if err != nil {
-		return err
-	}
+	leftInBatch := 0
+	var iterCreatedAt time.Time
+	var iter pebble.Iterator
 	// We update the iter variable later on, so we need to wrap the Close call
 	// in a func to operate on the correct iterator instance.
 	defer func() {
-		iter.Close()
+		if iter != nil {
+			iter.Close()
+		}
 	}()
 
-	totalCount := 0
-	shouldCreateNewIter := false
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
-
 	timer := e.clock.NewTimer(0)
 	defer timer.Stop()
-
-	randomKeyBuf := make([]byte, 64)
 
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
@@ -2701,16 +2695,12 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			}
 		}
 
-		if totalCount > e.samplesPerBatch || time.Since(iterCreatedAt) > e.samplerIterRefreshPeriod {
-			// Going to refresh the iterator in the next iteration.
-			shouldCreateNewIter = true
-		}
-
 		// Refresh the iterator once a while
-		if shouldCreateNewIter {
-			shouldCreateNewIter = false
-			totalCount = 0
+		if leftInBatch <= 0 || time.Since(iterCreatedAt) > e.samplerIterRefreshPeriod {
+			leftInBatch = e.samplesPerBatch
 			iterCreatedAt = time.Now()
+			// This iterator won't be positioned (Valid() will return false),
+			// so we will position it below.
 			newIter, err := db.NewIter(&pebble.IterOptions{
 				LowerBound: start,
 				UpperBound: end,
@@ -2718,7 +2708,9 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			if err != nil {
 				return err
 			}
-			iter.Close()
+			if iter != nil {
+				iter.Close()
+			}
 			iter = newIter
 			// Decay away sampled partition sizes over time.  This value is kinda arbitrary,
 			// but was chosen based on the default sampler refresh period of 5 minutes to
@@ -2730,23 +2722,23 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			}
 			e.mu.Unlock()
 		}
-		totalCount += 1
+		leftInBatch--
 		if !iter.Valid() {
-			// This should happen once every totalCount times or when
-			// we exausted the iter.
+			// This happens when we create a new iterator or exhaust the
+			// existing one.
 			randomKey, err := e.randomKey(randomKeyBuf)
 			if err != nil {
 				log.Warningf("[%s] cannot generate samples for eviction: failed to get random key: %s", e.cacheName, err)
 				return err
 			}
-			valid := iter.SeekGE(randomKey)
-			if !valid {
-				shouldCreateNewIter = true
+			if valid := iter.SeekGE(randomKey); !valid {
+				leftInBatch = 0 // Force creating a new iterator
 				continue
 			}
 		}
 
-		err = proto.Unmarshal(iter.Value(), fileMetadata)
+		fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
+		err = fileMetadata.UnmarshalVT(iter.Value())
 		if err != nil {
 			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read proto: %s", e.cacheName, err)
 			continue
@@ -2762,9 +2754,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		}
 
 		e.maybeAddToSampleChan(iter, fileMetadata, quitChan, timer)
-
 		iter.Next()
-		fileMetadata.ResetVT()
 	}
 }
 
