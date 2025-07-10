@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
@@ -216,12 +216,14 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 
 	t := ut.currentPeriod()
 
-	collection := &Collection{
-		GroupID:     groupID,
-		UsageLabels: *labels,
+	collection := &usageutil.Collection{
+		GroupID: groupID,
+		Origin:  labels.Origin,
+		Client:  labels.Client,
+		Server:  labels.Server,
 	}
 	// Increment the hash values
-	encodedCollection := encodeCollection(collection)
+	encodedCollection := usageutil.EncodeCollection(collection)
 	countsKey := countsRedisKey(t, encodedCollection)
 	if err := ut.env.GetMetricsCollector().IncrementCountsWithExpiry(ctx, countsKey, counts, redisKeyTTL); err != nil {
 		return status.WrapError(err, "increment counts in redis")
@@ -332,7 +334,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 		}
 
 		for _, encodedCollection := range encodedCollections {
-			collection, _, err := decodeCollection(encodedCollection)
+			collection, _, err := usageutil.DecodeCollection(encodedCollection)
 			if err != nil {
 				return status.WrapError(err, "decode collection")
 			}
@@ -351,7 +353,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 				return err
 			}
 			// Update counts in the DB
-			if err := ut.flushCounts(ctx, collection.GroupID, p, &collection.UsageLabels, counts); err != nil {
+			if err := ut.flushCounts(ctx, collection.GroupID, p, collection.UsageLabels(), counts); err != nil {
 				return err
 			}
 			// Remove the collection data from Redis now that it has been
@@ -449,7 +451,7 @@ func (ut *tracker) isSettled(c period) bool {
 // only fields that are supported by this app; i.e. it returns false if the
 // Collection was written by a newer app.
 func (ut *tracker) supportsCollection(ctx context.Context, encodedCollection string) (bool, error) {
-	_, vals, err := decodeCollection(encodedCollection)
+	_, vals, err := usageutil.DecodeCollection(encodedCollection)
 	if err != nil {
 		return false, nil
 	}
@@ -514,49 +516,6 @@ func (c period) Next() period {
 // later be reconstructed with parsePeriod.
 func (c period) String() string {
 	return c.Start().Format(redisTimeKeyFormat)
-}
-
-type Collection struct {
-	// TODO: maybe make GroupID a field of tables.UsageLabels.
-	GroupID string
-	tables.UsageLabels
-}
-
-// encodeCollection encodes the collection to a human readable format.
-func encodeCollection(c *Collection) string {
-	// Using a handwritten encoding scheme for performance reasons (this
-	// runs on every cache request).
-	s := "group_id=" + c.GroupID
-	if c.UsageLabels.Origin != "" {
-		s += "&origin=" + url.QueryEscape(c.UsageLabels.Origin)
-	}
-	if c.UsageLabels.Client != "" {
-		s += "&client=" + url.QueryEscape(c.UsageLabels.Client)
-	}
-	if c.UsageLabels.Server != "" {
-		s += "&server=" + url.QueryEscape(c.UsageLabels.Server)
-	}
-	return s
-}
-
-// decodeCollection decodes a string encoded using encodeCollection.
-// It returns the raw url.Values so that apps can detect collections encoded
-// by newer apps.
-func decodeCollection(s string) (*Collection, url.Values, error) {
-	q, err := url.ParseQuery(s)
-	if err != nil {
-		return nil, nil, err
-	}
-	c := &Collection{
-		GroupID: q.Get("group_id"),
-		UsageLabels: tables.UsageLabels{
-			// Note: these need to match the DB field names.
-			Origin: q.Get("origin"),
-			Client: q.Get("client"),
-			Server: q.Get("server"),
-		},
-	}
-	return c, q, nil
 }
 
 func collectionsRedisKey(c period) string {

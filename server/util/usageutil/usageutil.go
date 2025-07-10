@@ -3,6 +3,7 @@ package usageutil
 import (
 	"context"
 	"flag"
+	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -92,17 +93,12 @@ func GetUsageHeaders(ctx context.Context) map[string][]string {
 	return headers
 }
 
-func AddUsageHeadersToContext(ctx context.Context, headers map[string][]string) context.Context {
-	for key, values := range headers {
-		for _, value := range values {
-			if key == ClientHeaderName {
-				ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, value)
-			} else if key == OriginHeaderName {
-				ctx = metadata.AppendToOutgoingContext(ctx, OriginHeaderName, value)
-			} else {
-				log.CtxWarningf(ctx, "Ignoring unrecognized usage header: %s", key)
-			}
-		}
+func AddUsageHeadersToContext(ctx context.Context, client string, origin string) context.Context {
+	if client != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, ClientHeaderName, client)
+	}
+	if origin != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, OriginHeaderName, origin)
 	}
 	return ctx
 }
@@ -125,4 +121,54 @@ func clientLabel(ctx context.Context) string {
 		return bazelClientLabel
 	}
 	return ""
+}
+
+type Collection struct {
+	// TODO: maybe make GroupID a field of tables.UsageLabels.
+	GroupID string
+	Origin  string
+	Server  string
+	Client  string
+}
+
+func (c *Collection) UsageLabels() *tables.UsageLabels {
+	return &tables.UsageLabels{
+		Origin: c.Origin,
+		Client: c.Client,
+		Server: c.Server,
+	}
+}
+
+// EncodeCollection encodes the collection to a human readable format.
+func EncodeCollection(c *Collection) string {
+	// Using a handwritten encoding scheme for performance reasons (this
+	// runs on every cache request).
+	s := "group_id=" + c.GroupID
+	if c.Origin != "" {
+		s += "&origin=" + url.QueryEscape(c.Origin)
+	}
+	if c.Client != "" {
+		s += "&client=" + url.QueryEscape(c.Client)
+	}
+	if c.Server != "" {
+		s += "&server=" + url.QueryEscape(c.Server)
+	}
+	return s
+}
+
+// DecodeCollection decodes a string encoded using encodeCollection.
+// It returns the raw url.Values so that apps can detect collections encoded
+// by newer apps.
+func DecodeCollection(s string) (*Collection, url.Values, error) {
+	q, err := url.ParseQuery(s)
+	if err != nil {
+		return nil, nil, err
+	}
+	c := &Collection{
+		GroupID: q.Get("group_id"),
+		Origin:  q.Get("origin"),
+		Client:  q.Get("client"),
+		Server:  q.Get("server"),
+	}
+	return c, q, nil
 }

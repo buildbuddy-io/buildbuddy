@@ -20,6 +20,7 @@ go_library(
         "//server/util/db",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/usageutil",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
