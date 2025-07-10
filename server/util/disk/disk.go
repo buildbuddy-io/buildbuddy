@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -257,25 +258,30 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 var fileWriterQuotaReservations = sync.OnceValue(func() chan struct{} {
 	return make(chan struct{}, *fileWriterConcurrencyLimit)
 })
+var fileWriterInProgressCounter atomic.Int64
 
 // reserveFileWriterQuota blocks until quota is available.
 // If a reservation is obtained, the returned function must be called
 // to release the quota.
 func reserveFileWriterQuota(ctx context.Context) (func(), error) {
-	metrics.DiskFileWriterInProgressOps.Inc()
+	updateMetric := func(delta int64) {
+		metrics.DiskFileWriterInProgressOps.Set(float64(fileWriterInProgressCounter.Add(delta)))
+	}
+
+	updateMetric(1)
 	if *fileWriterConcurrencyLimit == 0 {
 		return func() {
-			metrics.DiskFileWriterInProgressOps.Dec()
+			updateMetric(-1)
 		}, nil
 	}
 	select {
 	case fileWriterQuotaReservations() <- struct{}{}:
 		return func() {
-			metrics.DiskFileWriterInProgressOps.Dec()
+			updateMetric(-1)
 			<-fileWriterQuotaReservations()
 		}, nil
 	case <-ctx.Done():
-		metrics.DiskFileWriterInProgressOps.Dec()
+		updateMetric(-1)
 		return nil, ctx.Err()
 	}
 }
