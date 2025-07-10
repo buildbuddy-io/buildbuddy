@@ -270,7 +270,7 @@ func TestCASHitTracker_SplitsUpdates(t *testing.T) {
 
 func TestCASHitTracker_DropsUpdates(t *testing.T) {
 	flags.Set(t, "cache_proxy.remote_hit_tracker.max_hits_per_update", 10)
-	flags.Set(t, "cache_proxy.remote_hit_tracker.max_pending_hits_per_group", 10)
+	flags.Set(t, "cache_proxy.remote_hit_tracker.max_pending_hits_per_key", 10)
 	authenticator, hitTrackerFactory, hitTrackerService := setup(t)
 
 	// Pause the hit-tracker RPC service and send an RPC that'll block the
@@ -312,7 +312,7 @@ func BenchmarkEnqueue(b *testing.B) {
 
 	numToEnqueue := 1_000_000
 	flags.Set(b, "cache_proxy.remote_hit_tracker.max_hits_per_update", b.N*numToEnqueue)
-	flags.Set(b, "cache_proxy.remote_hit_tracker.max_pending_hits_per_group", b.N*numToEnqueue)
+	flags.Set(b, "cache_proxy.remote_hit_tracker.max_pending_hits_per_key", b.N*numToEnqueue)
 
 	b.ReportAllocs()
 	for b.Loop() {
