@@ -1,4 +1,4 @@
-package firecracker_util
+package firecrackerutil
 
 import (
 	"fmt"
