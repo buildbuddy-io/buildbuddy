@@ -1889,7 +1889,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 }
 
 func getSizeOnLocalDisk(key []byte, md *sgpb.FileMetadata, includeMetadata bool) int64 {
-	mdSize := int64(md.SizeVT()) + int64(len(key))
+	mdSize := int64(proto.Size(md)) + int64(len(key))
 	payloadSize := int64(0)
 
 	storageMetadata := md.GetStorageMetadata()
