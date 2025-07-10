@@ -230,6 +230,7 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 	if h.shouldFlushSynchronously() {
 		h.mu.Unlock()
 		log.CtxInfof(ctx, "hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
+		// Note: no need to mess with client/origin headers here, they're forwarded along from the incoming ctx.
 		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}, Server: usageutil.ServerName()}); err != nil {
 			log.CtxWarningf(ctx, "Error sending HitTrackerService.Track RPC: %v", err)
 		}
