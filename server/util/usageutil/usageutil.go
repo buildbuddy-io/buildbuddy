@@ -123,6 +123,10 @@ func clientLabel(ctx context.Context) string {
 	return ""
 }
 
+// A Collection consists of all of the fields that we currently use to identify
+// different types of usage--these fields are ultimately written out to the
+// `Usages` table as `UsageLabels`, where they determine cost bucketing.
+// See documentation on `UsageLabels` for an explanation of each field.
 type Collection struct {
 	// TODO: maybe make GroupID a field of tables.UsageLabels.
 	GroupID string
