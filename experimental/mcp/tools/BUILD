@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/experimental/mcp/tools",
     visibility = ["//visibility:public"],
     deps = [
+        "//experimental/mcp/schema",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
@@ -17,7 +18,7 @@ go_library(
         "//server/util/shlex",
         "//server/util/status",
         "@com_github_modelcontextprotocol_go_sdk//mcp",
-        "@com_github_psanford_memfs//:memfs",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],

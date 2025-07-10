@@ -3,8 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -12,10 +10,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/schema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/psanford/memfs"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -41,12 +40,19 @@ func NewHandler(env environment.Env) (*ToolHandler, error) {
 }
 
 func (t *ToolHandler) Register(server *mcp.Server) error {
-	// TODO(tylerw): as soon as https://github.com/modelcontextprotocol/go-sdk/pull/94 is in
-	// consolidate this mess.
-	mcp.AddTool(server, &mcp.Tool{Name: "get_invocation", Description: "Lookup a specific invocation by ID"}, t.GetInvocation)
-	mcp.AddTool(server, &mcp.Tool{Name: "search_invocation", Description: "Search invocations by various attributes"}, t.SearchInvocation)
-	mcp.AddTool(server, &mcp.Tool{Name: "run_command", Description: "Run a command on buildbuddy"}, t.Run)
-	mcp.AddTool(server, &mcp.Tool{Name: "file_write", Description: "Create a new file with the provided contents in the working direcotry, overwriting the file if it already exists"}, t.FileWrite)
+	getInvocationTool := &mcp.Tool{Name: "get_invocation", Description: "Lookup a specific invocation by ID"}
+	getInvocationSchemaIn, err := schema.For[GetInvocationParams]()
+	if err != nil {
+		return err
+	}
+	getInvocationTool.InputSchema = getInvocationSchemaIn
+	mcp.AddTool(server, getInvocationTool, t.GetInvocation)
+
+	
+	mcp.AddTool(server, &mcp.Tool{Name: "search_invocation", Description: "Search for invocations by various attributes"}, t.SearchInvocation)
+
+	// TODO(tylerw): make this work with remote file apis?
+	mcp.AddTool(server, &mcp.Tool{Name: "execute_command", Description: "Execute a command on buildbuddy"}, t.Run)
 	return nil
 }
 
@@ -56,7 +62,6 @@ type RunParams struct {
 }
 
 func (t *ToolHandler) Run(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[RunParams]) (*mcp.CallToolResultFor[any], error) {
-	log.Printf("Run() params: %+v", params)
 	if params.Arguments.Cmd == "" {
 		return nil, status.InvalidArgumentError("cmd must be set")
 	}
@@ -69,8 +74,6 @@ func (t *ToolHandler) Run(ctx context.Context, cc *mcp.ServerSession, params *mc
 		return nil, status.InternalError("no registered bytestream client")
 	}
 	instanceName := "/mcp/" + cc.ID()
-	log.Printf("instanceName is: %q", instanceName)
-
 	args, err := shlex.Split(params.Arguments.Cmd)
 	if err != nil {
 		return nil, status.InternalErrorf("invalid command: %s", err)
@@ -102,18 +105,15 @@ func (t *ToolHandler) Run(ctx context.Context, cc *mcp.ServerSession, params *mc
 	}
 	rn, err := rexec.Prepare(ctx, t.env, instanceName, digestFunction, action, cmd, "")
 	if err != nil {
-		log.Errorf("Prepare error: %s", err)
 		return nil, status.WrapError(err, "prepare")
 	}
-	log.Printf("prepared rn: %s", rn)
+	log.Printf("Started remote execution of: %s", params.Arguments.Cmd)
 	stream, err := rexec.Start(ctx, t.env, rn)
 	if err != nil {
-		log.Errorf("Start error: %s", err)
 		return nil, status.WrapError(err, "start")
 	}
 	rsp, err := rexec.Wait(stream)
 	if err != nil {
-		log.Errorf("Wait error: %s", err)
 		return nil, status.WrapError(err, "wait")
 	}
 	commandResult, err := rexec.GetResult(ctx, t.env, instanceName, digestFunction, rsp.ExecuteResponse.GetResult())
@@ -121,7 +121,7 @@ func (t *ToolHandler) Run(ctx context.Context, cc *mcp.ServerSession, params *mc
 		log.Errorf("GetResult error: %s", err)
 		return nil, status.WrapError(err, "get result")
 	}
-	log.Printf("commandResult: %+v", commandResult)
+	log.Printf("Result: %+v (%s)", commandResult, commandResult.Stdout)
 	return &mcp.CallToolResultFor[any]{
 		Content: []mcp.Content{
 			&mcp.TextContent{Text: string(commandResult.Stdout)},
@@ -130,28 +130,32 @@ func (t *ToolHandler) Run(ctx context.Context, cc *mcp.ServerSession, params *mc
 }
 
 type GetInvocationParams struct {
-	InvocationID *string `json:"invocation_id"`
+	InvocationID *string `json:"invocation_id" jsonschema:"a buildbuddy invocation ID"`
 }
 
 func (t *ToolHandler) GetInvocation(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[GetInvocationParams]) (*mcp.CallToolResultFor[any], error) {
 	if t.env.GetApiClient() == nil {
 		return nil, status.InternalError("no registered api client")
 	}
-	log.Printf("params: %+v", params)
 	req := &apipb.GetInvocationRequest{}
 	if params.Arguments.InvocationID != nil {
 		req.Selector = &apipb.InvocationSelector{
 			InvocationId: *params.Arguments.InvocationID,
 		}
 	}
-	log.Printf("req: %+v", req)
 	rsp, err := t.env.GetApiClient().GetInvocation(ctx, req)
 	if err != nil {
 		return nil, err // TODO(tylerw): handle
 	}
-	log.Printf("rsp: %+v", rsp)
+	buf, err := protojson.MarshalOptions{Multiline: true}.Marshal(rsp)
+	if err != nil {
+		return nil, err
+	}
 	return &mcp.CallToolResultFor[any]{
 		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(buf),
+			},
 			&mcp.EmbeddedResource{
 				Resource: &mcp.ResourceContents{
 					URI:  prodInvocationPrefix + *params.Arguments.InvocationID + "#details",
@@ -165,6 +169,121 @@ func (t *ToolHandler) GetInvocation(ctx context.Context, cc *mcp.ServerSession, 
 				},
 			},
 		},
+	}, nil
+}
+
+type SearchInvocationParams struct {
+	User            *string  `json:"user"`
+	Host            *string  `json:"host"`
+	GroupID         *string  `json:"group_id"`
+	RepoURL         *string  `json:"repo_url"`
+	CommitSHA       *string  `json:"commit_sha"`
+	Roles           []string `json:"roles"`
+	UpdatedAfter    *string  `json:"updated_after"`
+	UpdatedBefore   *string  `json:"updated_before"`
+	BranchName      *string  `json:"branch_name"`
+	Command         *string  `json:"command"`
+	MinimumDuration *string  `json:"minimum_duration"`
+	MaximumDuration *string  `json:"maximum_duration"`
+	Pattern         *string  `json:"pattern"`
+	Tags            []string `json:"tags"`
+
+	Count           *int  `json:"count"`
+	SortField     *string `json:"sort_field"`
+	SortAscending *bool   `json:"sort_ascending"`
+}
+
+func valueOrDefault[T any](v *T) T {
+	var defaultVal T
+	if v == nil {
+		return defaultVal
+	}
+	return *v
+}
+
+func (t *ToolHandler) SearchInvocation(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[SearchInvocationParams]) (*mcp.CallToolResultFor[any], error) {
+	if t.env.GetBuildBuddyClient() == nil {
+		return nil, status.InternalError("no registered api client")
+	}
+
+	query := &inpb.InvocationQuery{
+		User:      valueOrDefault(params.Arguments.User),
+		Host:      valueOrDefault(params.Arguments.Host),
+		GroupId:   valueOrDefault(params.Arguments.GroupID),
+		RepoUrl:   valueOrDefault(params.Arguments.RepoURL),
+		CommitSha: valueOrDefault(params.Arguments.CommitSHA),
+		Role:      params.Arguments.Roles,
+		Status: []inspb.OverallStatus{  // Don't search in-progress invocations.
+			inspb.OverallStatus_SUCCESS,
+			inspb.OverallStatus_FAILURE,
+		},
+		BranchName: valueOrDefault(params.Arguments.BranchName),
+		Command:    valueOrDefault(params.Arguments.Command),
+		Pattern:    valueOrDefault(params.Arguments.Pattern),
+		Tags:       params.Arguments.Tags,
+	}
+
+	if params.Arguments.UpdatedAfter != nil {
+		if t, err := time.Parse(time.RFC3339, *params.Arguments.UpdatedAfter); err == nil {
+			query.UpdatedAfter = timestamppb.New(t)
+		}
+	}
+	if params.Arguments.UpdatedBefore != nil {
+		if t, err := time.Parse(time.RFC3339, *params.Arguments.UpdatedBefore); err == nil {
+			query.UpdatedBefore = timestamppb.New(t)
+		}
+	}
+	if params.Arguments.MinimumDuration != nil {
+		if d, err := time.ParseDuration(*params.Arguments.MinimumDuration); err == nil {
+			query.MinimumDuration = durationpb.New(d)
+		}
+	}
+	if params.Arguments.MaximumDuration != nil {
+		if d, err := time.ParseDuration(*params.Arguments.MaximumDuration); err == nil {
+			query.MaximumDuration = durationpb.New(d)
+		}
+	}
+	count :=  valueOrDefault(params.Arguments.Count)
+	if count == 0 {
+		count = 1
+	}
+	req := &inpb.SearchInvocationRequest{Query: query, Count: int32(count)}
+
+	if params.Arguments.SortField != nil {
+		if sf, ok := inpb.InvocationSort_SortField_value[*params.Arguments.SortField]; ok {
+			req.Sort = &inpb.InvocationSort{
+				SortField: inpb.InvocationSort_SortField(sf),
+				Ascending: valueOrDefault(params.Arguments.SortAscending),
+			}
+		} else {
+			log.Infof("unsupported sort value: %q", *params.Arguments.SortField)
+		}
+	}
+	rsp, err := t.env.GetBuildBuddyClient().SearchInvocation(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	content := make([]mcp.Content, 0, len(rsp.GetInvocation())*2)
+	for _, inv := range rsp.GetInvocation() {
+		content = append(content, &mcp.TextContent{
+			Text: "https://app.buildbuddy.io/invocation/" + inv.GetInvocationId(),
+		})
+		content = append(content, &mcp.EmbeddedResource{
+			Resource: &mcp.ResourceContents{
+				URI:  prodInvocationPrefix + inv.GetInvocationId() + "#details",
+				Text: "resources/invocation/details",
+			},
+		})
+
+		content = append(content, &mcp.EmbeddedResource{
+			Resource: &mcp.ResourceContents{
+				URI:  prodInvocationPrefix + inv.GetInvocationId() + "#logs",
+				Text: "resources/invocation/logs",
+			},
+		})
+	}
+	return &mcp.CallToolResultFor[any]{
+		Content: content,
 	}, nil
 }
 
@@ -225,152 +344,3 @@ func (t *ToolHandler) SearchFlakyTarget(ctx context.Context, cc *mcp.ServerSessi
 	}, nil
 }
 
-type SearchInvocationParams struct {
-	User            *string  `json:"user"`
-	Host            *string  `json:"host"`
-	GroupID         *string  `json:"group_id"`
-	RepoURL         *string  `json:"repo_url"`
-	CommitSHA       *string  `json:"commit_sha"`
-	Roles           []string `json:"roles"`
-	UpdatedAfter    *string  `json:"updated_after"`
-	UpdatedBefore   *string  `json:"updated_before"`
-	BranchName      *string  `json:"branch_name"`
-	Command         *string  `json:"command"`
-	MinimumDuration *string  `json:"minimum_duration"`
-	MaximumDuration *string  `json:"maximum_duration"`
-	Pattern         *string  `json:"pattern"`
-	Tags            []string `json:"tags"`
-
-	SortField     *string `json:"sort_field"`
-	SortAscending *bool   `json:"sort_ascending"`
-}
-
-func valueOrDefault[T any](v *T) T {
-	var defaultVal T
-	if v == nil {
-		return defaultVal
-	}
-	return *v
-}
-
-func (t *ToolHandler) SearchInvocation(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[SearchInvocationParams]) (*mcp.CallToolResultFor[any], error) {
-	if t.env.GetBuildBuddyClient() == nil {
-		return nil, status.InternalError("no registered api client")
-	}
-
-	query := &inpb.InvocationQuery{
-		User:      valueOrDefault(params.Arguments.User),
-		Host:      valueOrDefault(params.Arguments.Host),
-		GroupId:   valueOrDefault(params.Arguments.GroupID),
-		RepoUrl:   valueOrDefault(params.Arguments.RepoURL),
-		CommitSha: valueOrDefault(params.Arguments.CommitSHA),
-		Role:      params.Arguments.Roles,
-		Status: []inspb.OverallStatus{
-			inspb.OverallStatus_SUCCESS,
-			inspb.OverallStatus_FAILURE,
-		},
-		BranchName: valueOrDefault(params.Arguments.BranchName),
-		Command:    valueOrDefault(params.Arguments.Command),
-		Pattern:    valueOrDefault(params.Arguments.Pattern),
-		Tags:       params.Arguments.Tags,
-	}
-
-	if params.Arguments.UpdatedAfter != nil {
-		if t, err := time.Parse(time.RFC3339, *params.Arguments.UpdatedAfter); err == nil {
-			query.UpdatedAfter = timestamppb.New(t)
-		}
-	}
-	if params.Arguments.UpdatedBefore != nil {
-		if t, err := time.Parse(time.RFC3339, *params.Arguments.UpdatedBefore); err == nil {
-			query.UpdatedBefore = timestamppb.New(t)
-		}
-	}
-	if params.Arguments.MinimumDuration != nil {
-		if d, err := time.ParseDuration(*params.Arguments.MinimumDuration); err == nil {
-			query.MinimumDuration = durationpb.New(d)
-		}
-	}
-	if params.Arguments.MaximumDuration != nil {
-		if d, err := time.ParseDuration(*params.Arguments.MaximumDuration); err == nil {
-			query.MaximumDuration = durationpb.New(d)
-		}
-	}
-	req := &inpb.SearchInvocationRequest{Query: query}
-
-	if params.Arguments.SortField != nil {
-		if sf, ok := inpb.InvocationSort_SortField_value[*params.Arguments.SortField]; ok {
-			req.Sort = &inpb.InvocationSort{
-				SortField: inpb.InvocationSort_SortField(sf),
-				Ascending: valueOrDefault(params.Arguments.SortAscending),
-			}
-		}
-	}
-	log.Printf("SearchInvocation req: %+v", req)
-	rsp, err := t.env.GetBuildBuddyClient().SearchInvocation(ctx, req)
-	if err != nil {
-		return nil, err // TODO(tylerw): handle
-	}
-	content := make([]mcp.Content, 0, len(rsp.GetInvocation())*2)
-	for _, inv := range rsp.GetInvocation() {
-		content = append(content, &mcp.EmbeddedResource{
-			Resource: &mcp.ResourceContents{
-				URI:  prodInvocationPrefix + inv.GetInvocationId() + "#details",
-				Text: "resources/invocation/details",
-			},
-		})
-
-		content = append(content, &mcp.EmbeddedResource{
-			Resource: &mcp.ResourceContents{
-				URI:  prodInvocationPrefix + inv.GetInvocationId() + "#logs",
-				Text: "resources/invocation/logs",
-			},
-		})
-	}
-	return &mcp.CallToolResultFor[any]{
-		Content: content,
-	}, nil
-}
-
-type FileWriteParams struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
-}
-
-func (t *ToolHandler) FileWrite(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[FileWriteParams]) (*mcp.CallToolResultFor[any], error) {
-	if params.Arguments.Path == "" {
-		return nil, status.InvalidArgumentError("A path is required")
-	}
-	sessionID := cc.ID()
-	log.Printf("sessionID: %q", sessionID)
-	fp := strings.TrimPrefix(params.Arguments.Path, "file://")
-	fs := NewSerializableFS()
-	if err := fs.MkdirAll(filepath.Dir(fp), 0o777); err != nil {
-		return nil, err
-	}
-	if err := fs.WriteFile(fp, []byte(params.Arguments.Content), 0o777); err != nil {
-		return nil, err
-	}
-	return &mcp.CallToolResultFor[any]{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Wrote file: %s", params.Arguments.Path)},
-		},
-	}, nil
-}
-
-type SerializableMemFS struct {
-	*memfs.FS
-}
-
-func NewSerializableFS() *SerializableMemFS {
-	return &SerializableMemFS{
-		FS: memfs.New(),
-	}
-}
-
-func (fs *SerializableMemFS) Marshal() ([]byte, error) {
-	return nil, status.UnimplementedError("no")
-}
-
-func Unmarshal(buf []byte) (*SerializableMemFS, error) {
-	return nil, status.UnimplementedError("no")
-}
