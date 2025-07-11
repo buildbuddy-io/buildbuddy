@@ -1123,14 +1123,33 @@ func (s *Store) SnapshotCluster(ctx context.Context, rangeID uint64) error {
 	}
 }
 
-func (s *Store) ListReplicasForTest() []*rfpb.ReplicaDescriptor {
+// ListReplicasForTest lists replicas that are opened in the machine
+func (s *Store) ListOpenReplicasForTest() []*rfpb.ReplicaDescriptor {
 	replicas := []*rfpb.ReplicaDescriptor{}
-	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.DefaultNodeHostInfoOption)
+	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
+		SkipLogInfo: true,
+	})
 	for _, shardInfo := range nhInfo.ShardInfoList {
 		replicas = append(replicas, &rfpb.ReplicaDescriptor{
 			RangeId:   shardInfo.ShardID,
 			ReplicaId: shardInfo.ReplicaID,
 		})
+	}
+	return replicas
+}
+
+// ListAllReplicasInHistoryForTest lists all replicas that have been opened on
+// the machine; even if they are removed from membership.
+func (s *Store) ListAllReplicasInHistoryForTest() []*rfpb.ReplicaDescriptor {
+	replicas := []*rfpb.ReplicaDescriptor{}
+	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
+	for _, logInfo := range nhInfo.LogInfo {
+		if s.nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
+			replicas = append(replicas, &rfpb.ReplicaDescriptor{
+				RangeId:   logInfo.ShardID,
+				ReplicaId: logInfo.ReplicaID,
+			})
+		}
 	}
 	return replicas
 }
@@ -1343,7 +1362,6 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	if markedForRemoval {
 		rd, err = s.removeReplicaFromRangeDescriptor(ctx, remoteRD.GetRangeId(), req.GetReplicaId(), remoteRD)
 		if err != nil {
-			// TODO: returns a special error so that the caller can retry.
 			return nil, status.InternalErrorf("failed to remove replica c%dn%d from range descriptor: %s", remoteRD.GetRangeId(), req.GetReplicaId(), err)
 		}
 	}
