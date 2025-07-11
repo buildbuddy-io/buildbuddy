@@ -620,6 +620,26 @@ func TestUpdateGroupUsers_Role(t *testing.T) {
 		err)
 }
 
+func TestUpdateGroupUsers_AddNonExistentUser(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	us1Group := getGroup(t, ctx1, env).Group
+
+	err := udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId:           &uidpb.UserId{Id: "US91723123789123789123192731289731223897"},
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+		Role:             grpb.Group_ADMIN_ROLE,
+	}})
+	require.ErrorContains(t, err, "does not exist")
+	require.True(t, status.IsNotFoundError(err))
+}
+
 func TestGetAPIKeyForInternalUseOnly(t *testing.T) {
 	ctx := context.Background()
 	env := newTestEnv(t)

@@ -297,8 +297,11 @@ func (d *UserDB) createGroup(ctx context.Context, tx interfaces.DB, userID strin
 	if err != nil {
 		return "", err
 	}
-	if err = d.addUserToGroup(ctx, tx, userID, groupID); err != nil {
-		return "", err
+	// user ID will be empty if the group is being created using an API key.
+	if userID != "" {
+		if err = d.addUserToGroup(ctx, tx, userID, groupID); err != nil {
+			return "", err
+		}
 	}
 	return groupID, nil
 }
@@ -413,6 +416,14 @@ func (d *UserDB) addUserToGroup(ctx context.Context, tx interfaces.DB, userID, g
 	r := role.Default
 	if row.Count == 0 {
 		r = role.Admin
+	}
+
+	_, err = d.getUser(ctx, tx, userID)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return status.NotFoundErrorf("user %q does not exist", userID)
+		}
+		return err
 	}
 
 	existing, err := getUserGroup(ctx, tx, userID, groupID)
