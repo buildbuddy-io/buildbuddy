@@ -327,8 +327,9 @@ const (
 	LocalOnlyCacheProxyRequestLabel = "local_only"
 	DefaultCacheProxyRequestLabel   = "default"
 
-	OCIManifestResourceTypeLabel = "manifest"
-	OCIBlobResourceTypeLabel     = "blob"
+	OCIManifestResourceTypeLabel     = "manifest"
+	OCIBlobResourceTypeLabel         = "blob"
+	OCIBlobMetadataResourceTypeLabel = "blob_metadata"
 )
 
 // Other constants
