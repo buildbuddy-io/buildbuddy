@@ -63,7 +63,6 @@ type testHitTracker struct {
 	t                  testing.TB
 	authenticator      interfaces.Authenticator
 	wg                 sync.WaitGroup
-	mu                 sync.Mutex
 	casDownloads       map[string]*atomic.Int64
 	casBytesDownloaded map[string]*atomic.Int64
 	casUploads         map[string]*atomic.Int64
@@ -75,7 +74,7 @@ type testHitTracker struct {
 }
 
 func newTestHitTracker(t testing.TB, authenticator interfaces.Authenticator) *testHitTracker {
-	return &testHitTracker{
+	out := &testHitTracker{
 		t:                  t,
 		authenticator:      authenticator,
 		casDownloads:       map[string]*atomic.Int64{},
@@ -87,6 +86,17 @@ func newTestHitTracker(t testing.TB, authenticator interfaces.Authenticator) *te
 		acUploads:          map[string]*atomic.Int64{},
 		acBytesUploaded:    map[string]*atomic.Int64{},
 	}
+	for _, k := range []string{anonKey, group1Key, group1InternalKey} {
+		out.casDownloads[k] = &atomic.Int64{}
+		out.casBytesDownloaded[k] = &atomic.Int64{}
+		out.casUploads[k] = &atomic.Int64{}
+		out.casBytesUploaded[k] = &atomic.Int64{}
+		out.acDownloads[k] = &atomic.Int64{}
+		out.acBytesDownloaded[k] = &atomic.Int64{}
+		out.acUploads[k] = &atomic.Int64{}
+		out.acBytesUploaded[k] = &atomic.Int64{}
+	}
+	return out
 }
 
 func (ht *testHitTracker) Track(ctx context.Context, req *hitpb.TrackRequest) (*hitpb.TrackResponse, error) {
@@ -97,41 +107,17 @@ func (ht *testHitTracker) Track(ctx context.Context, req *hitpb.TrackRequest) (*
 	for _, hit := range req.GetHits() {
 		if hit.GetCacheRequestType() == capb.RequestType_READ {
 			if hit.GetResource().GetCacheType() == rspb.CacheType_AC {
-				ht.mu.Lock()
-				if _, ok := ht.acDownloads[key]; !ok {
-					ht.acDownloads[key] = &atomic.Int64{}
-					ht.acBytesDownloaded[key] = &atomic.Int64{}
-				}
-				ht.mu.Unlock()
 				ht.acDownloads[key].Add(1)
 				ht.acBytesDownloaded[key].Add(hit.GetSizeBytes())
 			} else {
-				ht.mu.Lock()
-				if _, ok := ht.casDownloads[key]; !ok {
-					ht.casDownloads[key] = &atomic.Int64{}
-					ht.casBytesDownloaded[key] = &atomic.Int64{}
-				}
-				ht.mu.Unlock()
 				ht.casDownloads[key].Add(1)
 				ht.casBytesDownloaded[key].Add(hit.GetSizeBytes())
 			}
 		} else if hit.GetCacheRequestType() == capb.RequestType_WRITE {
 			if hit.GetResource().GetCacheType() == rspb.CacheType_AC {
-				ht.mu.Lock()
-				if _, ok := ht.acUploads[key]; !ok {
-					ht.acUploads[key] = &atomic.Int64{}
-					ht.acBytesUploaded[key] = &atomic.Int64{}
-				}
-				ht.mu.Unlock()
 				ht.acUploads[key].Add(1)
 				ht.acBytesUploaded[key].Add(hit.GetSizeBytes())
 			} else {
-				ht.mu.Lock()
-				if _, ok := ht.casUploads[key]; !ok {
-					ht.casUploads[key] = &atomic.Int64{}
-					ht.casBytesUploaded[key] = &atomic.Int64{}
-				}
-				ht.mu.Unlock()
 				ht.casUploads[key].Add(1)
 				ht.casBytesUploaded[key].Add(hit.GetSizeBytes())
 			}
@@ -214,8 +200,8 @@ func TestACHitTracker_SkipRemote(t *testing.T) {
 	require.Equal(t, int64(2000), hitTrackerService.acBytesDownloaded[anonKey].Load())
 	require.Equal(t, int64(1), hitTrackerService.acUploads[anonKey].Load())
 	require.Equal(t, int64(4000), hitTrackerService.acBytesUploaded[anonKey].Load())
-	require.Nil(t, hitTrackerService.casDownloads[anonKey])
-	require.Nil(t, hitTrackerService.casUploads[anonKey])
+	require.Equal(t, int64(0), hitTrackerService.casDownloads[anonKey].Load())
+	require.Equal(t, int64(0), hitTrackerService.casUploads[anonKey].Load())
 }
 
 func TestCASHitTracker(t *testing.T) {
@@ -230,7 +216,7 @@ func TestCASHitTracker(t *testing.T) {
 	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond)
 	require.Equal(t, int64(2000), hitTrackerService.casBytesDownloaded[anonKey].Load())
 	// By default, we don't expect CAS upload tracking
-	require.Nil(t, hitTrackerService.casUploads[anonKey])
+	require.Equal(t, int64(0), hitTrackerService.casUploads[anonKey].Load())
 }
 
 func TestCASHitTracker_SkipRemote(t *testing.T) {
