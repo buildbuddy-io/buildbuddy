@@ -236,19 +236,7 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 		return
 	}
 
-	groupID := h.groupID(ctx)
-	c := &usageutil.Collection{
-		GroupID: h.groupID(ctx),
-		Server:  usageutil.ServerName(),
-	}
-	for h, v := range usageutil.GetUsageHeaders(ctx) {
-		if h == usageutil.OriginHeaderName {
-			c.Origin = v[0]
-		} else if h == usageutil.ClientHeaderName {
-			c.Client = v[0]
-		}
-	}
-
+	c := usageutil.CollectionFromRPCContext(ctx)
 	k := usageutil.EncodeCollection(c)
 
 	if _, ok := h.hitsByCollection[k]; !ok {
@@ -267,7 +255,7 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 
 	if usageKeyHits.enqueue(hit, authHeaders) {
 		metrics.RemoteHitTrackerUpdates.WithLabelValues(
-			string(groupID),
+			string(c.GroupID),
 			"enqueued",
 		).Add(1)
 		return

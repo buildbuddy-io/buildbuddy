@@ -5,8 +5,10 @@ import (
 	"flag"
 	"net/url"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc/metadata"
 )
@@ -72,25 +74,30 @@ func ServerName() string {
 	return serverName
 }
 
-func GetUsageHeaders(ctx context.Context) map[string][]string {
-	headers := map[string][]string{}
-
+func CollectionFromRPCContext(ctx context.Context) *Collection {
+	groupID := interfaces.AuthAnonymousUser
+	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
+		groupID = claims.GetGroupID()
+	}
+	c := &Collection{
+		GroupID: groupID,
+		Server:  ServerName(),
+	}
 	clientKeys := metadata.ValueFromIncomingContext(ctx, ClientHeaderName)
 	if len(clientKeys) > 0 {
 		if len(clientKeys) > 1 {
 			log.CtxWarningf(ctx, "Expected at most 1 usage client header (found %d)", len(clientKeys))
 		}
-		headers[ClientHeaderName] = clientKeys
+		c.Client = clientKeys[0]
 	}
 	originKeys := metadata.ValueFromIncomingContext(ctx, OriginHeaderName)
 	if len(originKeys) > 0 {
 		if len(originKeys) > 1 {
 			log.CtxWarningf(ctx, "Expected at most 1 usage origin header (found %d)", len(originKeys))
 		}
-		headers[OriginHeaderName] = originKeys
+		c.Origin = originKeys[0]
 	}
-
-	return headers
+	return c
 }
 
 func AddUsageHeadersToContext(ctx context.Context, client string, origin string) context.Context {

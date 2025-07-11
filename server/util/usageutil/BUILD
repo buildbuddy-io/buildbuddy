@@ -6,8 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/usageutil",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/interfaces",
         "//server/tables",
         "//server/util/bazel_request",
+        "//server/util/claims",
         "//server/util/log",
         "@org_golang_google_grpc//metadata",
     ],
