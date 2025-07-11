@@ -28,7 +28,6 @@ import (
 const (
 	user1  = "USER1"
 	group1 = "GROUP1"
-
 )
 
 var (
@@ -52,7 +51,7 @@ var (
 	})
 	group1InternalKey = usageutil.EncodeCollection(&usageutil.Collection{
 		GroupID: group1,
-		Origin: "internal",
+		Origin:  "internal",
 	})
 )
 
@@ -77,16 +76,16 @@ type testHitTracker struct {
 
 func newTestHitTracker(t testing.TB, authenticator interfaces.Authenticator) *testHitTracker {
 	return &testHitTracker{
-		t:             t,
-		authenticator: authenticator,
-		casDownloads: map[string]*atomic.Int64{},
+		t:                  t,
+		authenticator:      authenticator,
+		casDownloads:       map[string]*atomic.Int64{},
 		casBytesDownloaded: map[string]*atomic.Int64{},
-		casUploads: map[string]*atomic.Int64{},
-		casBytesUploaded: map[string]*atomic.Int64{},
-		acDownloads: map[string]*atomic.Int64{},
-		acBytesDownloaded: map[string]*atomic.Int64{},
-		acUploads: map[string]*atomic.Int64{},
-		acBytesUploaded: map[string]*atomic.Int64{},
+		casUploads:         map[string]*atomic.Int64{},
+		casBytesUploaded:   map[string]*atomic.Int64{},
+		acDownloads:        map[string]*atomic.Int64{},
+		acBytesDownloaded:  map[string]*atomic.Int64{},
+		acUploads:          map[string]*atomic.Int64{},
+		acBytesUploaded:    map[string]*atomic.Int64{},
 	}
 }
 
@@ -143,13 +142,13 @@ func (ht *testHitTracker) Track(ctx context.Context, req *hitpb.TrackRequest) (*
 
 func (ht *testHitTracker) acDownloadExpectation(key string, expectation int64) func() bool {
 	return func() bool {
-		return ht.acDownloads[key] != nil && ht.acDownloads[key].Load() == expectation;
+		return ht.acDownloads[key] != nil && ht.acDownloads[key].Load() == expectation
 	}
 }
 
 func (ht *testHitTracker) casDownloadExpectation(key string, expectation int64) func() bool {
 	return func() bool {
-		return ht.casDownloads[key] != nil && ht.casDownloads[key].Load() == expectation;
+		return ht.casDownloads[key] != nil && ht.casDownloads[key].Load() == expectation
 	}
 }
 
