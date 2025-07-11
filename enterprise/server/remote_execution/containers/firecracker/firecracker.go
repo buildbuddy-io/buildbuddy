@@ -474,6 +474,10 @@ type Provider struct {
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
+	if err := validateFlags(); err != nil {
+		return nil, err
+	}
+
 	executorConfig, err := GetExecutorConfig(env.GetServerContext(), buildRoot, cacheRoot)
 	if err != nil {
 		return nil, err
@@ -542,6 +546,19 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		return nil, err
 	}
 	return c, nil
+}
+
+func validateFlags() error {
+	for _, o := range *dnsOverrides {
+		if o.RedirectToHostname == "" || o.HostnameToOverride == "" {
+			return status.InvalidArgumentErrorf("invalid empty dns override %+v", o)
+		}
+		// Ensure hostnames end with '.' so they are not resolved as relative names.
+		if !strings.HasSuffix(o.HostnameToOverride, ".") {
+			return status.InvalidArgumentErrorf("hostname_to_override %s should end with a '.'", o.HostnameToOverride)
+		}
+	}
+	return nil
 }
 
 // FirecrackerContainer executes commands inside of a firecracker VM.
@@ -1985,15 +2002,6 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// even if it's empty.
 	metadata := map[string]string{}
 	if c.vmConfig.EnableNetworking {
-		for _, o := range *dnsOverrides {
-			if o.RedirectToHostname == "" || o.HostnameToOverride == "" {
-				return status.InvalidArgumentErrorf("invalid empty dns overrides")
-			}
-			// Ensure hostnames end with '.' so they are not resolved as relative names.
-			if !strings.HasSuffix(o.HostnameToOverride, ".") {
-				o.HostnameToOverride += "."
-			}
-		}
 		marshalledOverrides, err := json.Marshal(*dnsOverrides)
 		if err != nil {
 			return status.WrapError(err, "marshall dns overrides")

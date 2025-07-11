@@ -3,12 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -22,31 +20,22 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/firecrackerutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmdns"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jsimonetti/rtnetlink/rtnl"
 	"github.com/miekg/dns"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
-	"google.golang.org/grpc"
-
-	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
-	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 const (
 	commonMountFlags = syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_NOSUID
 	cgroupMountFlags = syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_RELATIME
-
-	dockerdInitTimeout       = 30 * time.Second
-	dockerdDefaultSocketPath = "/var/run/docker.sock"
 
 	// EXT4_IOC_RESIZE_FS is the ioctl constant for resizing an ext4 FS.
 	// Computed from C: https://gist.github.com/bduffany/ce9b594c2166ea1a4564cba1b5ed652d
@@ -214,30 +203,6 @@ func startDockerd(ctx context.Context) error {
 	return cmd.Start()
 }
 
-func waitForDockerd(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, dockerdInitTimeout)
-	defer cancel()
-	r := retry.New(ctx, &retry.Options{
-		InitialBackoff: 10 * time.Microsecond,
-		MaxBackoff:     100 * time.Millisecond,
-		Multiplier:     1.5,
-		MaxRetries:     math.MaxInt, // retry until context deadline
-	})
-	for r.Next() {
-		args := []string{}
-		if *enableDockerdTCP {
-			args = append(args, "--host=tcp://127.0.0.1:2375")
-		}
-		args = append(args, "ps")
-		err := exec.CommandContext(ctx, "docker", args...).Run()
-		if err == nil {
-			log.Infof("dockerd is ready")
-			return nil
-		}
-	}
-	return status.DeadlineExceededErrorf("docker init timed out after %s", dockerdInitTimeout)
-}
-
 // This is mostly cribbed from github.com/superfly/init-snapshot
 // which was very helpful <3!
 func main() {
@@ -395,12 +360,10 @@ func main() {
 		"nameserver 1.1.1.1",
 	}
 	if *setDefaultRoute {
-		dnsOverridesJSON, err := firecrackerutil.FetchMMDSKey("dns_overrides")
+		dnsOverrides, err := vmdns.FetchDNSOverrides()
 		if err != nil {
 			die(err)
 		}
-		var dnsOverrides []*networking.DNSOverride
-		die(json.Unmarshal(dnsOverridesJSON, &dnsOverrides))
 		if len(dnsOverrides) > 0 {
 			// Point to local DNS server to handle any DNS overrides.
 			nameServers = append([]string{"nameserver 127.0.0.1"}, nameServers...)
@@ -485,77 +448,31 @@ func runVMExecProcess(ctx context.Context) error {
 	eg := &errgroup.Group{}
 
 	// Only attempt to run the local DNS server if networking is enabled.
+	var dnsOverrides []*networking.DNSOverride
 	if *setDefaultRoute {
-		// Wait for the DNS server to initialize before starting and accepting
-		// commands on the vmExec server to guarantee DNS requests are handled
-		// correctly.
-		dnsServer, err := vmexec.NewVMDNSServer()
+		var err error
+		dnsOverrides, err = vmdns.FetchDNSOverrides()
 		if err != nil {
 			return err
 		}
 
-		if dnsServer != nil {
+		if len(dnsOverrides) > 0 {
 			eg.Go(func() error {
-				if err := runVMDNSServer(dnsServer); err != nil {
-					log.Fatal(err.Error())
-				}
+				s := vmdns.NewVMDNSServer(dnsOverrides, &dns.Client{})
+				die(s.Run())
+				die(fmt.Errorf("vmdns server exited unexpectedly"))
 				return nil
 			})
 		}
 	}
 
 	eg.Go(func() error {
-		if err := runVMExecServer(ctx); err != nil {
-			log.Fatal(err.Error())
-		}
+		die(vmexec.Run(ctx, uint32(*vmExecPort), workspaceDevice, *initDockerd, *enableDockerdTCP, dnsOverrides))
+		die(fmt.Errorf("vmexec server exited unexpectedly"))
 		return nil
 	})
 
 	return eg.Wait()
-}
-
-func runVMExecServer(ctx context.Context) error {
-	listener, err := vsock.NewGuestListener(ctx, uint32(*vmExecPort))
-	if err != nil {
-		return err
-	}
-	log.Infof("Starting vm exec listener on vsock port: %d", *vmExecPort)
-	server := grpc.NewServer(grpc.MaxRecvMsgSize(grpc_server.MaxRecvMsgSizeBytes()))
-
-	vmService, err := vmexec.NewServer(workspaceDevice)
-	if err != nil {
-		return err
-	}
-	vmxpb.RegisterExecServer(server, vmService)
-	hc := healthcheck.NewHealthChecker("vmexec")
-	// For now, don't register any explicit health checks; if we can ping the
-	// health check service at all (within a short timeframe) then assume all is
-	// well.
-	hlpb.RegisterHealthServer(server, hc)
-
-	// If applicable, wait for dockerd to start before accepting commands, so
-	// that commands depending on dockerd do not need to explicitly wait for it.
-	if *initDockerd {
-		if err := waitForDockerd(ctx); err != nil {
-			return err
-		}
-	}
-
-	return server.Serve(listener)
-}
-
-func runVMDNSServer(dnsServer *vmexec.DNSServer) error {
-	log.Infof("Starting vm dns server on port 53")
-
-	mux := dns.NewServeMux()
-	mux.Handle(".", dnsServer)
-
-	s := &dns.Server{
-		Addr:    "127.0.0.1:53",
-		Net:     "udp4",
-		Handler: mux,
-	}
-	return s.ListenAndServe()
 }
 
 // Resizes the ext4 filesystem mounted at the given path to match the underlying

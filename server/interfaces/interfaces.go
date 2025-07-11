@@ -18,6 +18,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-github/v59/github"
 	"github.com/hashicorp/serf/serf"
+	"github.com/miekg/dns"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
@@ -650,6 +651,10 @@ type WorkspaceService interface {
 
 type SnapshotService interface {
 	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
+}
+
+type DNSClient interface {
+	Exchange(m *dns.Msg, address string) (r *dns.Msg, rtt time.Duration, err error)
 }
 
 // GitHubApp represents a specific instance of either the read-only or read-write
