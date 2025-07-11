@@ -141,6 +141,7 @@ const (
 	megabyte = 1e6
 
 	DefaultPartitionID           = "default"
+	partitionDirectoryPrefix     = "PT"
 	partitionMetadataFlushPeriod = 5 * time.Second
 	metricsRefreshPeriod         = 30 * time.Second
 
@@ -1535,6 +1536,18 @@ func (p *PebbleCache) lookupFileMetadata(ctx context.Context, db pebble.IPebbleD
 	return err
 }
 
+func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte, fileMetadata *sgpb.FileMetadata) error {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer spn.End()
+
+	err := pebble.GetProto(reader, keyBytes, fileMetadata)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) bool {
 	if !status.IsNotFoundError(causeErr) && !os.IsNotExist(causeErr) {
 		return false
@@ -1876,7 +1889,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 }
 
 func getSizeOnLocalDisk(key []byte, md *sgpb.FileMetadata, includeMetadata bool) int64 {
-	mdSize := int64(md.SizeVT()) + int64(len(key))
+	mdSize := int64(proto.Size(md)) + int64(len(key))
 	payloadSize := int64(0)
 
 	storageMetadata := md.GetStorageMetadata()
@@ -2445,9 +2458,15 @@ func (p *PebbleCache) DoneScanning() bool {
 	return brokenFilesDone && orphanedFilesDone
 }
 
+type watermark struct {
+	timestamp time.Time
+	sizeBytes int64
+}
+
 // TestingWaitForGC should be used by tests only.
 // This function waits until any active file deletion has finished.
 func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
+	lastSize := make(map[string]watermark)
 	for {
 		p.statusMu.Lock()
 		evictors := p.evictors
@@ -2461,6 +2480,12 @@ func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 			totalSizeBytes := e.sizeBytes
 			e.mu.Unlock()
 
+			if lastSize[e.part.ID].sizeBytes != totalSizeBytes {
+				lastSize[e.part.ID] = watermark{
+					timestamp: time.Now(),
+					sizeBytes: totalSizeBytes,
+				}
+			}
 			if totalSizeBytes <= maxAllowedSize {
 				done += 1
 			}
@@ -2471,7 +2496,8 @@ func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return status.CanceledError("context canceled waiting for GC")
-		case <-time.After(100 * time.Millisecond): // Take a break so we don't busy loop
+		default:
+			continue
 		}
 	}
 	return nil
@@ -2586,12 +2612,7 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 }
 
 func (e *partitionEvictor) startSampleGenerator(quitChan chan struct{}) {
-	eg := &errgroup.Group{}
-	eg.Go(func() error {
-		return e.generateSamplesForEviction(quitChan)
-	})
-	eg.Wait()
-
+	e.generateSamplesForEviction(quitChan)
 	// Drain samples chan before exiting
 	for len(e.samples) > 0 {
 		<-e.samples
@@ -2754,8 +2775,11 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 	select {
 	case e.samples <- sample:
 	case <-quitChan:
-	case <-timer.Chan(): // e.samples is full.
+		return
+	case <-timer.Chan():
+		// e.samples is full.
 	}
+
 }
 
 func (e *partitionEvictor) updateMetrics() {
@@ -3006,7 +3030,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	defer db.Close()
 
 	var key filestore.PebbleKey
-	_, err = key.FromBytes(sample.Key.bytes)
+	version, err := key.FromBytes(sample.Key.bytes)
 	if err != nil {
 		log.Warningf("[%s] unable to read key %s: %s", e.cacheName, sample.Key, err)
 		return
@@ -3015,7 +3039,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	defer unlockFn()
 
 	md := sgpb.FileMetadataFromVTPool()
-	err = pebble.GetProto(db, sample.Key.bytes, md)
+	err = readFileMetadata(e.ctx, db, sample.Key.bytes, md)
 	defer md.ReturnToVTPool()
 	if err != nil {
 		log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
@@ -3028,7 +3052,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 		return
 	}
 
-	if err := e.deleteFile(sample.Key.bytes, key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), sample.SizeBytes, sample.Key.storageMetadata); err != nil {
+	if err := e.deleteFile(sample.Key.bytes, key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), version, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
 		log.Errorf("[%s] Error evicting file for key %q: %s (ignoring)", e.cacheName, sample.Key, err)
 		return
 	}
@@ -3069,7 +3093,7 @@ func deleteDirIfEmptyAndOld(dir string) error {
 	return os.Remove(dir)
 }
 
-func (e *partitionEvictor) deleteFile(rawKey []byte, key filestore.PebbleKey, groupID string, lastModifyUsec int64, storedSizeBytes int64, storageMetadata *sgpb.StorageMetadata) error {
+func (e *partitionEvictor) deleteFile(rawKey []byte, key filestore.PebbleKey, groupID string, lastModifyUsec int64, version filestore.PebbleKeyVersion, storedSizeBytes int64, storageMetadata *sgpb.StorageMetadata) error {
 	db, err := e.dbGetter.DB()
 	if err != nil {
 		return err
