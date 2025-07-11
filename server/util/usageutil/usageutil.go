@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -82,20 +81,8 @@ func CollectionFromRPCContext(ctx context.Context) *Collection {
 	c := &Collection{
 		GroupID: groupID,
 		Server:  ServerName(),
-	}
-	clientKeys := metadata.ValueFromIncomingContext(ctx, ClientHeaderName)
-	if len(clientKeys) > 0 {
-		if len(clientKeys) > 1 {
-			log.CtxWarningf(ctx, "Expected at most 1 usage client header (found %d)", len(clientKeys))
-		}
-		c.Client = clientKeys[0]
-	}
-	originKeys := metadata.ValueFromIncomingContext(ctx, OriginHeaderName)
-	if len(originKeys) > 0 {
-		if len(originKeys) > 1 {
-			log.CtxWarningf(ctx, "Expected at most 1 usage origin header (found %d)", len(originKeys))
-		}
-		c.Origin = originKeys[0]
+		Client:  clientLabel(ctx),
+		Origin:  originLabel(ctx),
 	}
 	return c
 }
