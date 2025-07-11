@@ -29,6 +29,10 @@ const (
 	// the jwt cache will result in fewer evictions (if the cache fills up) at
 	// the cost of more memory use.
 	jwtCacheSize = 10_000
+
+	// This BB subdomain is user-agnostic. It doesn't require additional
+	// API key authentication, like with other group-specific subdomains.
+	universalSubdomain = "remote"
 )
 
 var (
@@ -205,6 +209,9 @@ func (a *RemoteAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt
 
 func (a *RemoteAuthenticator) authenticate(ctx context.Context) (string, error) {
 	sd := subdomain.Get(ctx)
+	if sd == universalSubdomain {
+		sd = ""
+	}
 	resp, err := a.authClient.Authenticate(ctx, &authpb.AuthenticateRequest{Subdomain: &sd})
 	if err != nil {
 		return "", err
