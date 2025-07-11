@@ -51,7 +51,7 @@ go_test(
     name = "pebble_cache_test",
     size = "medium",
     srcs = ["pebble_cache_test.go"],
-    shard_count = 8,
+    shard_count = 2,
     deps = [
         ":pebble_cache",
         "//enterprise/server/backends/kms",
