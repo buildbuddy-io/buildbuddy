@@ -262,7 +262,7 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 	}
 
 	metrics.RemoteHitTrackerUpdates.WithLabelValues(
-		string(groupID),
+		c.GroupID,
 		"dropped_too_many_updates",
 	).Add(1)
 }
