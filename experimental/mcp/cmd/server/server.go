@@ -7,9 +7,8 @@ import (
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
-	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/resources"
-	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/templates"
-	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/tools"
+	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/execution"
+	"github.com/buildbuddy-io/buildbuddy/experimental/mcp/invocation"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -85,29 +84,25 @@ func main() {
 	// NewServer creates a new MCP server. The resulting server has no features:
 	// add features using [Server.AddTools], [Server.AddPrompts] and [Server.AddResources].
 
-	sseServer := mcp.NewServer("sse", "v0.0.1", &mcp.ServerOptions{})
+	server := mcp.NewServer(&mcp.Implementation{
+		Name:    "BuildBuddy MCP Server",
+		Title:   "BuildBuddy",
+		Version: "v0.0.1",
+	}, &mcp.ServerOptions{})
 
-	toolHandler, err := tools.NewHandler(env)
+	executionHandler, err := execution.NewHandler(env)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	if err := toolHandler.Register(sseServer); err != nil {
+	if err := executionHandler.Register(server); err != nil {
 		log.Fatal(err.Error())
 	}
 
-	templateHandler, err := templates.NewHandler(env)
+	invocationHandler, err := invocation.NewHandler(env)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	if err := templateHandler.Register(sseServer); err != nil {
-		log.Fatal(err.Error())
-	}
-
-	resourceHandler, err := resources.NewHandler(env)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	if err := resourceHandler.Register(sseServer); err != nil {
+	if err := invocationHandler.Register(server); err != nil {
 		log.Fatal(err.Error())
 	}
 
@@ -120,7 +115,7 @@ func main() {
 			newRequest := request.WithContext(ctx)
 			*request = *newRequest
 		}
-		return sseServer
+		return server
 	}, nil)
 	go func() {
 		_ = http.Serve(lis, handler)

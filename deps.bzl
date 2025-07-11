@@ -3675,8 +3675,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_modelcontextprotocol_go_sdk",
         importpath = "github.com/modelcontextprotocol/go-sdk",
-        sum = "h1:+SJFDruaCul1ZvT0OwqbM/P7NKIHGXrnwzvXjduQqDU=",
-        version = "v0.1.1-0.20250707185452-aebd2449813d",
+        sum = "h1:9FMo6a2EURmY8Dx1iV5eRsPXfHq1bXDr5tfgNm2zpfc=",
+        version = "v0.1.1-0.20250710205738-6c6243c0b0b6",
     )
     go_repository(
         name = "com_github_modern_go_concurrent",
@@ -4162,12 +4162,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/psanford/httpreadat",
         sum = "h1:VleW1HS2zO7/4c7c7zNl33fO6oYACSagjJIyMIwZLUE=",
         version = "v0.1.0",
-    )
-    go_repository(
-        name = "com_github_psanford_memfs",
-        importpath = "github.com/psanford/memfs",
-        sum = "h1:xzjEJAHum+mV5Dd5KyohRlCyP03o4yq6vNpEUtAJQzI=",
-        version = "v0.0.0-20241019191636-4ef911798f9b",
     )
     go_repository(
         name = "com_github_puerkitobio_purell",
@@ -4997,6 +4991,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/yeya24/promlinter",
         sum = "h1:xFKDQ82orCU5jQujdaD8stOHiv8UN68BSdn2a8u8Y3o=",
         version = "v0.2.0",
+    )
+    go_repository(
+        name = "com_github_yosida95_uritemplate_v3",
+        importpath = "github.com/yosida95/uritemplate/v3",
+        sum = "h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=",
+        version = "v3.0.2",
     )
     go_repository(
         name = "com_github_yosssi_ace",

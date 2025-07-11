@@ -7,9 +7,8 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/backends/configsecrets",
-        "//experimental/mcp/resources",
-        "//experimental/mcp/templates",
-        "//experimental/mcp/tools",
+        "//experimental/mcp/execution",
+        "//experimental/mcp/invocation",
         "//proto:buildbuddy_service_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto/api/v1:api_v1_go_proto",
