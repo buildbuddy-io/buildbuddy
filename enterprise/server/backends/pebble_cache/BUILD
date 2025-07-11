@@ -49,9 +49,8 @@ go_library(
 
 go_test(
     name = "pebble_cache_test",
-    size = "medium",
+    size = "small",
     srcs = ["pebble_cache_test.go"],
-    shard_count = 8,
     deps = [
         ":pebble_cache",
         "//enterprise/server/backends/kms",
