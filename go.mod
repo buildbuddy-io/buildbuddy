@@ -112,10 +112,10 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/planetscale/vtprotobuf v0.6.1-0.20241121165744-79df5c4772f2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
-	github.com/prometheus/client_golang v1.21.0
-	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.62.0
-	github.com/prometheus/procfs v0.15.1
+	github.com/prometheus/client_golang v1.22.0
+	github.com/prometheus/client_model v0.6.2
+	github.com/prometheus/common v0.65.0
+	github.com/prometheus/procfs v0.17.0
 	github.com/rantav/go-grpc-channelz v0.0.3
 	github.com/rs/zerolog v1.29.1
 	github.com/shirou/gopsutil/v3 v3.23.12
@@ -147,9 +147,9 @@ require (
 	golang.org/x/crypto v0.38.0
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
 	golang.org/x/mod v0.24.0
-	golang.org/x/net v0.38.0
-	golang.org/x/oauth2 v0.25.0
-	golang.org/x/sync v0.14.0
+	golang.org/x/net v0.40.0
+	golang.org/x/oauth2 v0.30.0
+	golang.org/x/sync v0.15.0
 	golang.org/x/sys v0.33.0
 	golang.org/x/text v0.25.0
 	golang.org/x/time v0.9.0
@@ -160,7 +160,7 @@ require (
 	google.golang.org/genproto/googleapis/bytestream v0.0.0-20241209162323-e6fa225c2576
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f
 	google.golang.org/grpc v1.70.0
-	google.golang.org/protobuf v1.36.5
+	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/clickhouse v0.5.1
