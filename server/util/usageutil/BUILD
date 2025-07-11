@@ -10,7 +10,6 @@ go_library(
         "//server/tables",
         "//server/util/bazel_request",
         "//server/util/claims",
-        "//server/util/log",
         "@org_golang_google_grpc//metadata",
     ],
 )
