@@ -282,11 +282,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 }
 
 func (pu *partitionUsage) startSampleGenerator(ctx context.Context) {
-	eg := &errgroup.Group{}
-	eg.Go(func() error {
-		return pu.generateSamplesForEviction(ctx)
-	})
-	eg.Wait()
+	pu.generateSamplesForEviction(ctx)
 	// Drain samples chan before exiting
 	for len(pu.samples) > 0 {
 		<-pu.samples
