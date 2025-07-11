@@ -664,9 +664,9 @@ func TestRedactTxt(t *testing.T) {
 		},
 		{
 			name: "environment variables",
-			txt: "common --repo_env=AWS_ACCESS_KEY_ID=super_secret_access_key_id # gitleaks:allow" +
+			txt: "common --repo_env=AWS_ACCESS_KEY_ID=super_secret_access_key_id # gitleaks:allow\n" +
 				"common --repo_env=AWS_SECRET_ACCESS_KEY=super_secret_access_key # gitleaks:allow",
-			expected: "common --repo_env=AWS_ACCESS_KEY_ID=<REDACTED> # gitleaks:allow" +
+			expected: "common --repo_env=AWS_ACCESS_KEY_ID=<REDACTED> # gitleaks:allow\n" +
 				"common --repo_env=AWS_SECRET_ACCESS_KEY=<REDACTED> # gitleaks:allow",
 		},
 	} {

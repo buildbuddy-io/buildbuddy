@@ -102,6 +102,10 @@ var (
 	}
 )
 
+// =============================================================================
+// URL Secret Redaction
+// =============================================================================
+
 func stripURLSecrets(input string) string {
 	return urlSecretRegex.ReplaceAllString(input, "${1}<REDACTED>${2}")
 }
@@ -186,6 +190,25 @@ func stripURLSecretsFromCmdLine(tokens []string) {
 	}
 }
 
+func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
+	switch p := file.GetFile().(type) {
+	case *bespb.File_Uri:
+		p.Uri = stripURLSecrets(p.Uri)
+	}
+	return file
+}
+
+func stripURLSecretsFromFiles(files []*bespb.File) []*bespb.File {
+	for index, file := range files {
+		files[index] = stripURLSecretsFromFile(file)
+	}
+	return files
+}
+
+// =============================================================================
+// Remote Header Redaction
+// =============================================================================
+
 func stripRemoteHeadersFromCmdLine(tokens []string) {
 	for i, token := range tokens {
 		for _, name := range headerOptionNames {
@@ -197,13 +220,17 @@ func stripRemoteHeadersFromCmdLine(tokens []string) {
 	}
 }
 
-func stripExplicitCommandLineFromCmdLine(tokens []string) {
-	for i, token := range tokens {
-		if strings.HasPrefix(token, buildMetadataOptionPrefix+explicitCommandLineName+"=") {
-			tokens[i] = ""
-		}
+func redactRemoteHeaders(txt string) string {
+	for _, header := range headerOptionNames {
+		regex := regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
+		txt = regex.ReplaceAllLiteralString(txt, fmt.Sprintf("--%s=<REDACTED>", header))
 	}
+	return txt
 }
+
+// =============================================================================
+// Environment Variable Redaction
+// =============================================================================
 
 func stripNonAllowedEnvVars(tokens []string) {
 	for i, token := range tokens {
@@ -211,19 +238,17 @@ func stripNonAllowedEnvVars(tokens []string) {
 	}
 }
 
-func redactCmdLine(tokens []string) {
-	stripURLSecretsFromCmdLine(tokens)
-	stripRemoteHeadersFromCmdLine(tokens)
-	stripExplicitCommandLineFromCmdLine(tokens)
-	stripNonAllowedEnvVars(tokens)
+// redactEnvVarsInText redacts environment variables in unstructured text
+// Uses a more conservative regex that only matches the value part, not trailing text
+func redactEnvVarsInText(txt string) string {
+	// Create a regex that matches env vars but stops at whitespace or common delimiters
+	envVarTextRegex := regexp.MustCompile(`(--(?:` + strings.Join(envVarOptionNames, "|") + `)=\w+=)[^\s#]*`)
+	return envVarTextRegex.ReplaceAllString(txt, "${1}<REDACTED>")
 }
 
-func RedactText(txt string) string {
-	txt = stripURLSecrets(txt)
-	txt = redactRemoteHeaders(txt)
-	txt = redactBuildBuddyAPIKeys(txt)
-	return txt
-}
+// =============================================================================
+// BuildBuddy API Key Redaction
+// =============================================================================
 
 // redactBuildBuddyAPIKeys redacts BuildBuddy API keys in the input string.
 // It looks for HTTP headers, URL secrets, environment variables, and the configured API key.
@@ -246,28 +271,9 @@ func redactBuildBuddyAPIKeys(txt string) string {
 	return txt
 }
 
-func redactRemoteHeaders(txt string) string {
-	for _, header := range headerOptionNames {
-		regex := regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
-		txt = regex.ReplaceAllLiteralString(txt, fmt.Sprintf("--%s=<REDACTED>", header))
-	}
-	return txt
-}
-
-func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
-	switch p := file.GetFile().(type) {
-	case *bespb.File_Uri:
-		p.Uri = stripURLSecrets(p.Uri)
-	}
-	return file
-}
-
-func stripURLSecretsFromFiles(files []*bespb.File) []*bespb.File {
-	for index, file := range files {
-		files[index] = stripURLSecretsFromFile(file)
-	}
-	return files
-}
+// =============================================================================
+// Git Repository URL Credential Redaction
+// =============================================================================
 
 func stripRepoURLCredentialsFromBuildMetadata(metadata *bespb.BuildMetadata) {
 	for _, repoURLKey := range knownGitRepoURLKeys {
@@ -315,6 +321,69 @@ func stripRepoURLCredentialsFromCommandLineOption(option *clpb.Option) {
 			return
 		}
 	}
+}
+
+// =============================================================================
+// Command Line Filtering and Cleanup
+// =============================================================================
+
+func stripExplicitCommandLineFromCmdLine(tokens []string) {
+	for i, token := range tokens {
+		if strings.HasPrefix(token, buildMetadataOptionPrefix+explicitCommandLineName+"=") {
+			tokens[i] = ""
+		}
+	}
+}
+
+// =============================================================================
+// Residual Secrets Redaction (for bazel run commands)
+// =============================================================================
+
+func redactResidualChunkList(chunkList *clpb.ChunkList) {
+	filteredChunks := make([]string, 0, len(chunkList.Chunk))
+
+	filterNext := false
+	for _, c := range chunkList.Chunk {
+		if filterNext {
+			filterNext = false
+			filteredChunks = append(filteredChunks, redactedPlaceholder)
+			continue
+		}
+
+		if residualSecretRegex.MatchString(c) {
+			if strings.Contains(c, "=") {
+				chunks := strings.SplitN(c, "=", 2)
+				filteredChunks = append(filteredChunks, chunks[0]+"="+redactedPlaceholder)
+				continue
+			}
+			filteredChunks = append(filteredChunks, c)
+			filterNext = true
+			continue
+		}
+
+		filteredChunks = append(filteredChunks, c)
+	}
+
+	chunkList.Chunk = filteredChunks
+}
+
+// =============================================================================
+// High-Level Redaction Functions
+// =============================================================================
+
+func redactCmdLine(tokens []string) {
+	stripURLSecretsFromCmdLine(tokens)
+	stripRemoteHeadersFromCmdLine(tokens)
+	stripExplicitCommandLineFromCmdLine(tokens)
+	stripNonAllowedEnvVars(tokens)
+}
+
+func RedactText(txt string) string {
+	txt = stripURLSecrets(txt)
+	txt = redactRemoteHeaders(txt)
+	txt = redactBuildBuddyAPIKeys(txt)
+	txt = redactEnvVarsInText(txt)
+	return txt
 }
 
 func filterCommandLineOptions(options []*clpb.Option) []*clpb.Option {
@@ -439,34 +508,6 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 		}
 	}
 	return nil
-}
-
-func redactResidualChunkList(chunkList *clpb.ChunkList) {
-	filteredChunks := make([]string, 0, len(chunkList.Chunk))
-
-	filterNext := false
-	for _, c := range chunkList.Chunk {
-		if filterNext {
-			filterNext = false
-			filteredChunks = append(filteredChunks, redactedPlaceholder)
-			continue
-		}
-
-		if residualSecretRegex.MatchString(c) {
-			if strings.Contains(c, "=") {
-				chunks := strings.SplitN(c, "=", 2)
-				filteredChunks = append(filteredChunks, chunks[0]+"="+redactedPlaceholder)
-				continue
-			}
-			filteredChunks = append(filteredChunks, c)
-			filterNext = true
-			continue
-		}
-
-		filteredChunks = append(filteredChunks, c)
-	}
-
-	chunkList.Chunk = filteredChunks
 }
 
 func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
