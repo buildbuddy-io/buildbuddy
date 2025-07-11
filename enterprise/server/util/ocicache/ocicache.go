@@ -149,6 +149,16 @@ func manifestACKey(repo gcrname.Repository, refhash gcr.Hash) (*digest.ACResourc
 	), nil
 }
 
+func blobMetadataMiss(ctx context.Context) {
+	log.CtxDebug(ctx, "oci cache blob metadata miss")
+	updateCacheEventMetric(metrics.OCIBlobMetadataResourceTypeLabel, metrics.MissStatusLabel)
+}
+
+func blobMetadataHit(ctx context.Context) {
+	log.CtxDebug(ctx, "oci cache blob metadata hit")
+	updateCacheEventMetric(metrics.OCIBlobMetadataResourceTypeLabel, metrics.HitStatusLabel)
+}
+
 func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo gcrname.Repository, hash gcr.Hash) (*ocipb.OCIBlobMetadata, error) {
 	arKey := &ocipb.OCIActionResultKey{
 		Registry:      repo.RegistryStr(),
@@ -159,10 +169,12 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	}
 	arKeyBytes, err := proto.Marshal(arKey)
 	if err != nil {
+		blobMetadataMiss(ctx)
 		return nil, err
 	}
 	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), cacheDigestFunction)
 	if err != nil {
+		blobMetadataMiss(ctx)
 		return nil, err
 	}
 	arRN := digest.NewACResourceName(
@@ -172,6 +184,7 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	)
 	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
 	if err != nil {
+		blobMetadataMiss(ctx)
 		return nil, err
 	}
 
@@ -188,6 +201,7 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 		}
 	}
 	if blobMetadataCASDigest == nil || blobCASDigest == nil {
+		blobMetadataMiss(ctx)
 		return nil, status.NotFoundErrorf("missing blob metadata digest or blob digest for %s", repo)
 	}
 	blobMetadataRN := digest.NewCASResourceName(
@@ -198,8 +212,10 @@ func FetchBlobMetadataFromCache(ctx context.Context, bsClient bspb.ByteStreamCli
 	blobMetadata := &ocipb.OCIBlobMetadata{}
 	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
 	if err != nil {
+		blobMetadataMiss(ctx)
 		return nil, err
 	}
+	blobMetadataHit(ctx)
 	return blobMetadata, nil
 }
 
