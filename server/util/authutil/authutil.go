@@ -197,6 +197,13 @@ func ContextWithCachedAuthHeaders(ctx context.Context, authenticator interfaces.
 func GetAuthHeaders(ctx context.Context) map[string][]string {
 	rawHeaders := ctx.Value(authHeadersKey)
 	if rawHeaders == nil {
+		// The cache proxy directly calls internal grpc servers, instead of going
+		// through a grpc client. Values from the outgoing context are therefore never
+		// translated to the incoming context, where this function expects to find
+		// them.
+		rawHeaders = getAuthHeadersFromOutgoingContext(ctx)
+	}
+	if rawHeaders == nil {
 		alert.UnexpectedEvent("No auth headers found in context, did you remember to call authutil.StoreAuthHeadersInContext?")
 		return map[string][]string{}
 	}
@@ -205,6 +212,24 @@ func GetAuthHeaders(ctx context.Context) map[string][]string {
 	if !ok {
 		alert.UnexpectedEvent("Auth headers in context have the wrong type")
 		return map[string][]string{}
+	}
+	return headers
+}
+
+func getAuthHeadersFromOutgoingContext(ctx context.Context) map[string][]string {
+	outgoing, _ := metadata.FromOutgoingContext(ctx)
+	if outgoing == nil {
+		return nil
+	}
+	headers := map[string][]string{}
+	if h, ok := outgoing[ClientIdentityHeaderName]; ok {
+		headers[ClientIdentityHeaderName] = h
+	}
+	if h, ok := outgoing[ContextTokenStringKey]; ok {
+		headers[ContextTokenStringKey] = h
+	}
+	if len(headers) == 0 {
+		return nil
 	}
 	return headers
 }
