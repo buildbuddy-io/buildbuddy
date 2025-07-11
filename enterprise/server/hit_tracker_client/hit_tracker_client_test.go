@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -53,6 +54,11 @@ var (
 		GroupID: group1,
 		Origin:  "internal",
 	})
+	group1InternalBazelKey = usageutil.EncodeCollection(&usageutil.Collection{
+		GroupID: group1,
+		Client:  "bazel",
+		Origin:  "internal",
+	})
 )
 
 func digestProto(hash string, sizeBytes int64) *repb.Digest {
@@ -86,7 +92,7 @@ func newTestHitTracker(t testing.TB, authenticator interfaces.Authenticator) *te
 		acUploads:          map[string]*atomic.Int64{},
 		acBytesUploaded:    map[string]*atomic.Int64{},
 	}
-	for _, k := range []string{anonKey, group1Key, group1InternalKey} {
+	for _, k := range []string{anonKey, group1Key, group1InternalKey, group1InternalBazelKey} {
 		out.casDownloads[k] = &atomic.Int64{}
 		out.casBytesDownloaded[k] = &atomic.Int64{}
 		out.casUploads[k] = &atomic.Int64{}
@@ -160,6 +166,18 @@ func authenticatedContext(user string, authenticator interfaces.Authenticator) c
 		ctx = authenticator.AuthContextFromAPIKey(ctx, user)
 	}
 	return authutil.ContextWithCachedAuthHeaders(ctx, authenticator)
+}
+
+func authenticatedContextWithInternalBazelClient(user string, authenticator interfaces.Authenticator) context.Context {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, "fakeheader", usageutil.OriginHeaderName, "internal"))
+	if user != "" {
+		ctx = authenticator.AuthContextFromAPIKey(ctx, user)
+	}
+	return bazel_request.OverrideRequestMetadata(authutil.ContextWithCachedAuthHeaders(ctx, authenticator), &repb.RequestMetadata{
+		ToolDetails: &repb.ToolDetails{
+			ToolName: "bazel",
+		},
+	})
 }
 
 func authenticatedContextWithOrigin(user string, authenticator interfaces.Authenticator, origin string) context.Context {
@@ -275,6 +293,10 @@ func TestCASHitTracker_SplitsUpdates(t *testing.T) {
 
 	anotherGroup1Tracker := hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
 	anotherGroup1Tracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
+
+	group1BazelCtx := authenticatedContextWithInternalBazelClient(user1, authenticator)
+	group1WithBazelClientTracker := hitTrackerFactory.NewCASHitTracker(group1BazelCtx, &repb.RequestMetadata{})
+	group1WithBazelClientTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_030_000, repb.Compressor_IDENTITY, "test")
 	hitTrackerService.wg.Done()
 
 	// Expect 10x [A, B, C, D, E] for ANON.
@@ -291,6 +313,11 @@ func TestCASHitTracker_SplitsUpdates(t *testing.T) {
 	expectation = hitTrackerService.casDownloadExpectation(group1InternalKey, 2)
 	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 2 internal cache hits for group 1")
 	require.Equal(t, int64(2_000_002), hitTrackerService.casBytesDownloaded[group1InternalKey].Load())
+
+	// Same for Group 1's update that claims to be 'bazel' and 'internal'.
+	expectation = hitTrackerService.casDownloadExpectation(group1InternalBazelKey, 1)
+	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 1 internal bazel cache hit for group 1")
+	require.Equal(t, int64(2_030_000), hitTrackerService.casBytesDownloaded[group1InternalBazelKey].Load())
 }
 
 func TestCASHitTracker_DropsUpdates(t *testing.T) {
