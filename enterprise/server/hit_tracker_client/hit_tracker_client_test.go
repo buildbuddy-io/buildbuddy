@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
@@ -27,6 +28,7 @@ import (
 const (
 	user1  = "USER1"
 	group1 = "GROUP1"
+
 )
 
 var (
@@ -41,6 +43,17 @@ var (
 	iDigest = digestProto(strings.Repeat("i", 64), 3)
 	jDigest = digestProto(strings.Repeat("j", 64), 3)
 	kDigest = digestProto(strings.Repeat("k", 64), 3)
+
+	anonKey = usageutil.EncodeCollection(&usageutil.Collection{
+		GroupID: interfaces.AuthAnonymousUser,
+	})
+	group1Key = usageutil.EncodeCollection(&usageutil.Collection{
+		GroupID: group1,
+	})
+	group1InternalKey = usageutil.EncodeCollection(&usageutil.Collection{
+		GroupID: group1,
+		Origin: "internal",
+	})
 )
 
 func digestProto(hash string, sizeBytes int64) *repb.Digest {
@@ -51,6 +64,7 @@ type testHitTracker struct {
 	t                  testing.TB
 	authenticator      interfaces.Authenticator
 	wg                 sync.WaitGroup
+	mu                 sync.Mutex
 	casDownloads       map[string]*atomic.Int64
 	casBytesDownloaded map[string]*atomic.Int64
 	casUploads         map[string]*atomic.Int64
@@ -65,70 +79,78 @@ func newTestHitTracker(t testing.TB, authenticator interfaces.Authenticator) *te
 	return &testHitTracker{
 		t:             t,
 		authenticator: authenticator,
-		casDownloads: map[string]*atomic.Int64{
-			interfaces.AuthAnonymousUser: &atomic.Int64{},
-			group1:                       &atomic.Int64{},
-		},
-		casBytesDownloaded: map[string]*atomic.Int64{
-			interfaces.AuthAnonymousUser: &atomic.Int64{},
-			group1:                       &atomic.Int64{},
-		},
-		casUploads: map[string]*atomic.Int64{
-			interfaces.AuthAnonymousUser: &atomic.Int64{},
-			group1:                       &atomic.Int64{},
-		},
-		casBytesUploaded: map[string]*atomic.Int64{
-			interfaces.AuthAnonymousUser: &atomic.Int64{},
-			group1:                       &atomic.Int64{},
-		},
-		acDownloads: map[string]*atomic.Int64{
-			interfaces.AuthAnonymousUser: &atomic.Int64{},
-			group1:                       &atomic.Int64{},
-		},
-		acBytesDownloaded: map[string]*atomic.Int64{
-			interfaces.AuthAnonymousUser: &atomic.Int64{},
-			group1:                       &atomic.Int64{},
-		},
-		acUploads: map[string]*atomic.Int64{
-			interfaces.AuthAnonymousUser: &atomic.Int64{},
-			group1:                       &atomic.Int64{},
-		},
-		acBytesUploaded: map[string]*atomic.Int64{
-			interfaces.AuthAnonymousUser: &atomic.Int64{},
-			group1:                       &atomic.Int64{},
-		},
+		casDownloads: map[string]*atomic.Int64{},
+		casBytesDownloaded: map[string]*atomic.Int64{},
+		casUploads: map[string]*atomic.Int64{},
+		casBytesUploaded: map[string]*atomic.Int64{},
+		acDownloads: map[string]*atomic.Int64{},
+		acBytesDownloaded: map[string]*atomic.Int64{},
+		acUploads: map[string]*atomic.Int64{},
+		acBytesUploaded: map[string]*atomic.Int64{},
 	}
 }
 
 func (ht *testHitTracker) Track(ctx context.Context, req *hitpb.TrackRequest) (*hitpb.TrackResponse, error) {
 	ht.wg.Wait()
 
-	groupID := interfaces.AuthAnonymousUser
-	user, err := ht.authenticator.AuthenticatedUser(ctx)
-	if err == nil {
-		groupID = user.GetGroupID()
-	}
+	key := usageutil.EncodeCollection(usageutil.CollectionFromRPCContext(ctx))
 
 	for _, hit := range req.GetHits() {
 		if hit.GetCacheRequestType() == capb.RequestType_READ {
 			if hit.GetResource().GetCacheType() == rspb.CacheType_AC {
-				ht.acDownloads[groupID].Add(1)
-				ht.acBytesDownloaded[groupID].Add(hit.GetSizeBytes())
+				ht.mu.Lock()
+				if _, ok := ht.acDownloads[key]; !ok {
+					ht.acDownloads[key] = &atomic.Int64{}
+					ht.acBytesDownloaded[key] = &atomic.Int64{}
+				}
+				ht.mu.Unlock()
+				ht.acDownloads[key].Add(1)
+				ht.acBytesDownloaded[key].Add(hit.GetSizeBytes())
 			} else {
-				ht.casDownloads[groupID].Add(1)
-				ht.casBytesDownloaded[groupID].Add(hit.GetSizeBytes())
+				ht.mu.Lock()
+				if _, ok := ht.casDownloads[key]; !ok {
+					ht.casDownloads[key] = &atomic.Int64{}
+					ht.casBytesDownloaded[key] = &atomic.Int64{}
+				}
+				ht.mu.Unlock()
+				ht.casDownloads[key].Add(1)
+				ht.casBytesDownloaded[key].Add(hit.GetSizeBytes())
 			}
 		} else if hit.GetCacheRequestType() == capb.RequestType_WRITE {
 			if hit.GetResource().GetCacheType() == rspb.CacheType_AC {
-				ht.acUploads[groupID].Add(1)
-				ht.acBytesUploaded[groupID].Add(hit.GetSizeBytes())
+				ht.mu.Lock()
+				if _, ok := ht.acUploads[key]; !ok {
+					ht.acUploads[key] = &atomic.Int64{}
+					ht.acBytesUploaded[key] = &atomic.Int64{}
+				}
+				ht.mu.Unlock()
+				ht.acUploads[key].Add(1)
+				ht.acBytesUploaded[key].Add(hit.GetSizeBytes())
 			} else {
-				ht.casUploads[groupID].Add(1)
-				ht.casBytesUploaded[groupID].Add(hit.GetSizeBytes())
+				ht.mu.Lock()
+				if _, ok := ht.casUploads[key]; !ok {
+					ht.casUploads[key] = &atomic.Int64{}
+					ht.casBytesUploaded[key] = &atomic.Int64{}
+				}
+				ht.mu.Unlock()
+				ht.casUploads[key].Add(1)
+				ht.casBytesUploaded[key].Add(hit.GetSizeBytes())
 			}
 		}
 	}
 	return &hitpb.TrackResponse{}, nil
+}
+
+func (ht *testHitTracker) acDownloadExpectation(key string, expectation int64) func() bool {
+	return func() bool {
+		return ht.acDownloads[key] != nil && ht.acDownloads[key].Load() == expectation;
+	}
+}
+
+func (ht *testHitTracker) casDownloadExpectation(key string, expectation int64) func() bool {
+	return func() bool {
+		return ht.casDownloads[key] != nil && ht.casDownloads[key].Load() == expectation;
+	}
 }
 
 func setup(t testing.TB) (interfaces.Authenticator, *HitTrackerFactory, *testHitTracker) {
@@ -155,6 +177,14 @@ func authenticatedContext(user string, authenticator interfaces.Authenticator) c
 	return authutil.ContextWithCachedAuthHeaders(ctx, authenticator)
 }
 
+func authenticatedContextWithOrigin(user string, authenticator interfaces.Authenticator, origin string) context.Context {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, "fakeheader", usageutil.OriginHeaderName, origin))
+	if user != "" {
+		ctx = authenticator.AuthContextFromAPIKey(ctx, user)
+	}
+	return authutil.ContextWithCachedAuthHeaders(ctx, authenticator)
+}
+
 func TestACHitTracker(t *testing.T) {
 	_, hitTrackerFactory, hitTrackerService := setup(t)
 	ctx := context.Background()
@@ -166,10 +196,10 @@ func TestACHitTracker(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Hit tracking should be disabled by default
-	require.Equal(t, int64(0), hitTrackerService.casDownloads[interfaces.AuthAnonymousUser].Load())
-	require.Equal(t, int64(0), hitTrackerService.casUploads[interfaces.AuthAnonymousUser].Load())
-	require.Equal(t, int64(0), hitTrackerService.acDownloads[interfaces.AuthAnonymousUser].Load())
-	require.Equal(t, int64(0), hitTrackerService.acUploads[interfaces.AuthAnonymousUser].Load())
+	require.Empty(t, int64(0), hitTrackerService.casDownloads)
+	require.Empty(t, int64(0), hitTrackerService.casUploads)
+	require.Empty(t, int64(0), hitTrackerService.acDownloads)
+	require.Empty(t, int64(0), hitTrackerService.acUploads)
 }
 
 func TestACHitTracker_SkipRemote(t *testing.T) {
@@ -180,13 +210,13 @@ func TestACHitTracker_SkipRemote(t *testing.T) {
 	hitTracker.TrackDownload(bDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 	hitTracker.TrackUpload(cDigest).CloseWithBytesTransferred(3000, 4000, repb.Compressor_IDENTITY, "test")
 
-	expectation := func() bool { return hitTrackerService.acDownloads[interfaces.AuthAnonymousUser].Load() == 1 }
+	expectation := hitTrackerService.acDownloadExpectation(anonKey, 1)
 	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond)
-	require.Equal(t, int64(2000), hitTrackerService.acBytesDownloaded[interfaces.AuthAnonymousUser].Load())
-	require.Equal(t, int64(1), hitTrackerService.acUploads[interfaces.AuthAnonymousUser].Load())
-	require.Equal(t, int64(4000), hitTrackerService.acBytesUploaded[interfaces.AuthAnonymousUser].Load())
-	require.Equal(t, int64(0), hitTrackerService.casDownloads[interfaces.AuthAnonymousUser].Load())
-	require.Equal(t, int64(0), hitTrackerService.casUploads[interfaces.AuthAnonymousUser].Load())
+	require.Equal(t, int64(2000), hitTrackerService.acBytesDownloaded[anonKey].Load())
+	require.Equal(t, int64(1), hitTrackerService.acUploads[anonKey].Load())
+	require.Equal(t, int64(4000), hitTrackerService.acBytesUploaded[anonKey].Load())
+	require.Nil(t, hitTrackerService.casDownloads[anonKey])
+	require.Nil(t, hitTrackerService.casUploads[anonKey])
 }
 
 func TestCASHitTracker(t *testing.T) {
@@ -197,11 +227,11 @@ func TestCASHitTracker(t *testing.T) {
 	hitTracker.TrackDownload(bDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 	hitTracker.TrackUpload(cDigest).CloseWithBytesTransferred(3000, 4000, repb.Compressor_IDENTITY, "test")
 
-	expectation := func() bool { return hitTrackerService.casDownloads[interfaces.AuthAnonymousUser].Load() == 1 }
+	expectation := hitTrackerService.casDownloadExpectation(anonKey, 1)
 	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond)
-	require.Equal(t, int64(2000), hitTrackerService.casBytesDownloaded[interfaces.AuthAnonymousUser].Load())
+	require.Equal(t, int64(2000), hitTrackerService.casBytesDownloaded[anonKey].Load())
 	// By default, we don't expect CAS upload tracking
-	require.Equal(t, int64(0), hitTrackerService.casUploads[interfaces.AuthAnonymousUser].Load(), "Expected 1 HitTracker.Track upload")
+	require.Nil(t, hitTrackerService.casUploads[anonKey])
 }
 
 func TestCASHitTracker_SkipRemote(t *testing.T) {
@@ -212,11 +242,11 @@ func TestCASHitTracker_SkipRemote(t *testing.T) {
 	hitTracker.TrackDownload(bDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 	hitTracker.TrackUpload(cDigest).CloseWithBytesTransferred(3000, 4000, repb.Compressor_IDENTITY, "test")
 
-	expectation := func() bool { return hitTrackerService.casDownloads[interfaces.AuthAnonymousUser].Load() == 1 }
+	expectation := hitTrackerService.casDownloadExpectation(anonKey, 1)
 	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond)
-	require.Equal(t, int64(2000), hitTrackerService.casBytesDownloaded[interfaces.AuthAnonymousUser].Load())
-	require.Equal(t, int64(1), hitTrackerService.casUploads[interfaces.AuthAnonymousUser].Load(), "Expected 1 HitTracker.Track upload")
-	require.Equal(t, int64(4000), hitTrackerService.casBytesUploaded[interfaces.AuthAnonymousUser].Load())
+	require.Equal(t, int64(2000), hitTrackerService.casBytesDownloaded[anonKey].Load())
+	require.Equal(t, int64(1), hitTrackerService.casUploads[anonKey].Load(), "Expected 1 HitTracker.Track upload")
+	require.Equal(t, int64(4000), hitTrackerService.casBytesUploaded[anonKey].Load())
 }
 
 func TestCASHitTracker_NoDeduplication(t *testing.T) {
@@ -226,9 +256,9 @@ func TestCASHitTracker_NoDeduplication(t *testing.T) {
 	hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 	hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1000, 2000, repb.Compressor_IDENTITY, "test")
 
-	expectation := func() bool { return hitTrackerService.casDownloads[interfaces.AuthAnonymousUser].Load() == 2 }
+	expectation := hitTrackerService.casDownloadExpectation(anonKey, 2)
 	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond)
-	require.Equal(t, int64(4000), hitTrackerService.casBytesDownloaded[interfaces.AuthAnonymousUser].Load())
+	require.Equal(t, int64(4000), hitTrackerService.casBytesDownloaded[anonKey].Load())
 }
 
 func TestCASHitTracker_SplitsUpdates(t *testing.T) {
@@ -239,33 +269,43 @@ func TestCASHitTracker_SplitsUpdates(t *testing.T) {
 	// hit-tracker-client worker so updates are queued.
 	hitTrackerService.wg.Add(1)
 	group1Ctx := authenticatedContext(user1, authenticator)
-	hitTracker := hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
-	hitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
+	group1Tracker := hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
+	group1Tracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
+
+	group1InternalCtx := authenticatedContextWithOrigin(user1, authenticator, "internal")
+	internalHitTracker := hitTrackerFactory.NewCASHitTracker(group1InternalCtx, &repb.RequestMetadata{})
+	internalHitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
+	internalHitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
 
 	anonCtx := context.Background()
-	hitTracker = hitTrackerFactory.NewCASHitTracker(anonCtx, &repb.RequestMetadata{})
+	anonTracker := hitTrackerFactory.NewCASHitTracker(anonCtx, &repb.RequestMetadata{})
 
 	for i := 0; i < 10; i++ {
-		hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
-		hitTracker.TrackDownload(bDigest).CloseWithBytesTransferred(10, 20, repb.Compressor_IDENTITY, "test")
-		hitTracker.TrackDownload(cDigest).CloseWithBytesTransferred(100, 200, repb.Compressor_IDENTITY, "test")
-		hitTracker.TrackDownload(dDigest).CloseWithBytesTransferred(1_000, 2_000, repb.Compressor_IDENTITY, "test")
-		hitTracker.TrackDownload(eDigest).CloseWithBytesTransferred(10_000, 20_000, repb.Compressor_IDENTITY, "test")
+		anonTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
+		anonTracker.TrackDownload(bDigest).CloseWithBytesTransferred(10, 20, repb.Compressor_IDENTITY, "test")
+		anonTracker.TrackDownload(cDigest).CloseWithBytesTransferred(100, 200, repb.Compressor_IDENTITY, "test")
+		anonTracker.TrackDownload(dDigest).CloseWithBytesTransferred(1_000, 2_000, repb.Compressor_IDENTITY, "test")
+		anonTracker.TrackDownload(eDigest).CloseWithBytesTransferred(10_000, 20_000, repb.Compressor_IDENTITY, "test")
 	}
 
-	hitTracker = hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
-	hitTracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
+	anotherGroup1Tracker := hitTrackerFactory.NewCASHitTracker(group1Ctx, &repb.RequestMetadata{})
+	anotherGroup1Tracker.TrackDownload(fDigest).CloseWithBytesTransferred(1_000_000, 2_000_000, repb.Compressor_IDENTITY, "test")
 	hitTrackerService.wg.Done()
 
 	// Expect 10x [A, B, C, D, E] for ANON.
-	expectation := func() bool { return hitTrackerService.casDownloads[interfaces.AuthAnonymousUser].Load() == 50 }
-	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 10 updates for group ANON")
-	require.Equal(t, int64(222_220), hitTrackerService.casBytesDownloaded[interfaces.AuthAnonymousUser].Load())
+	expectation := hitTrackerService.casDownloadExpectation(anonKey, 50)
+	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 50 updates for group ANON")
+	require.Equal(t, int64(222_220), hitTrackerService.casBytesDownloaded[anonKey].Load())
 
 	// Group 1's update shouldn't be affected by ANON's batching
-	expectation = func() bool { return hitTrackerService.casDownloads[group1].Load() == 2 }
-	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 1 cache hits for group 1")
-	require.Equal(t, int64(4_000_000), hitTrackerService.casBytesDownloaded[group1].Load())
+	expectation = hitTrackerService.casDownloadExpectation(group1Key, 2)
+	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 2 external cache hits for group 1")
+	require.Equal(t, int64(4_000_000), hitTrackerService.casBytesDownloaded[group1Key].Load())
+
+	// Group 1's update that claims to be 'internal' should be separate from its non-internal update.
+	expectation = hitTrackerService.casDownloadExpectation(group1InternalKey, 2)
+	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 2 internal cache hits for group 1")
+	require.Equal(t, int64(2_000_002), hitTrackerService.casBytesDownloaded[group1InternalKey].Load())
 }
 
 func TestCASHitTracker_DropsUpdates(t *testing.T) {
@@ -296,14 +336,14 @@ func TestCASHitTracker_DropsUpdates(t *testing.T) {
 	hitTrackerService.wg.Done()
 
 	// Expect A, B, C, D, E, A, B, C, D, E to be sent for ANON.
-	expectation := func() bool { return hitTrackerService.casDownloads[interfaces.AuthAnonymousUser].Load() == 10 }
+	expectation := hitTrackerService.casDownloadExpectation(anonKey, 10)
 	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 10 updates for group ANON")
-	require.Equal(t, int64(44_444), hitTrackerService.casBytesDownloaded[interfaces.AuthAnonymousUser].Load())
+	require.Equal(t, int64(44_444), hitTrackerService.casBytesDownloaded[anonKey].Load())
 
 	// Even though group 1's second update came at the end, it should still be sent.
-	expectation = func() bool { return hitTrackerService.casDownloads[group1].Load() == 2 }
+	expectation = hitTrackerService.casDownloadExpectation(group1Key, 2)
 	require.Eventually(t, expectation, 10*time.Second, 100*time.Millisecond, "Expected 2 cache hits for group 1")
-	require.Equal(t, int64(4_000_000), hitTrackerService.casBytesDownloaded[group1].Load())
+	require.Equal(t, int64(4_000_000), hitTrackerService.casBytesDownloaded[group1Key].Load())
 }
 
 func BenchmarkEnqueue(b *testing.B) {
