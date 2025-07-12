@@ -300,7 +300,6 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	}
 }
 
-
 func TestAutomaticSplitting(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 8000)

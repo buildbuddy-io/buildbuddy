@@ -68,22 +68,22 @@ import (
 )
 
 var (
-	zombieNodeScanInterval    = flag.Duration("cache.raft.zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
-	zombieMinDuration         = flag.Duration("cache.raft.zombie_min_duration", 1*time.Minute, "The minimum duration a replica must remain in a zombie state to be considered a zombie.")
-	replicaScanInterval       = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
-	clientSessionTTL          = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
-	enableDriver              = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
-	enableTxnCleanup          = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
-	enableRegistryPreload     = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
+	zombieNodeScanInterval = flag.Duration("cache.raft.zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
+	zombieMinDuration      = flag.Duration("cache.raft.zombie_min_duration", 1*time.Minute, "The minimum duration a replica must remain in a zombie state to be considered a zombie.")
+	replicaScanInterval    = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
+	clientSessionTTL       = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
+	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
+	enableTxnCleanup       = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
+	enableRegistryPreload  = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
 )
 
 const (
-	deleteSessionsRateLimit        = 1
-	removeZombieRateLimit          = 1
-	numReplicaStarter              = 50
-	checkReplicaCaughtUpInterval   = 1 * time.Second
-	maxWaitTimeForReplicaRange     = 30 * time.Second
-	metricsRefreshPeriod           = 30 * time.Second
+	deleteSessionsRateLimit      = 1
+	removeZombieRateLimit        = 1
+	numReplicaStarter            = 50
+	checkReplicaCaughtUpInterval = 1 * time.Second
+	maxWaitTimeForReplicaRange   = 30 * time.Second
+	metricsRefreshPeriod         = 30 * time.Second
 
 	// listenerID for replicaStatusWaiter
 	listenerID = "replicaStatusWaiter"
@@ -151,9 +151,9 @@ type Store struct {
 	updateTagsWorker *updateTagsWorker
 	txnCoordinator   *txn.Coordinator
 
-	driverQueue           *driver.Queue
-	deleteSessionWorker   *deleteSessionWorker
-	replicaJanitor        *replicaJanitor
+	driverQueue         *driver.Queue
+	deleteSessionWorker *deleteSessionWorker
+	replicaJanitor      *replicaJanitor
 
 	clock clockwork.Clock
 
@@ -2216,7 +2216,6 @@ func (w *replicaWorker) Start(ctx context.Context) {
 		}
 	}
 }
-
 
 type deleteSessionWorker struct {
 	rateLimiter       *rate.Limiter
