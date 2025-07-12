@@ -225,7 +225,7 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 
 	for {
 		clock.Advance(11 * time.Second)
-		list := s1.ListOpenReplicasForTest()
+		list := s1.ListAllReplicasInHistoryForTest()
 		if len(list) == 1 {
 			break
 		}
@@ -277,19 +277,19 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 
 	for {
 		clock.Advance(11 * time.Second)
-		list1 := s1.ListOpenReplicasForTest()
+		list1 := s1.ListAllReplicasInHistoryForTest()
 		if len(list1) != 1 {
 			time.Sleep(10 * time.Millisecond)
 			log.Infof("s1(%s) has more than 1 replica", s1.NHID())
 			continue
 		}
-		list2 := s2.ListOpenReplicasForTest()
+		list2 := s2.ListAllReplicasInHistoryForTest()
 		if len(list2) != 1 {
 			time.Sleep(10 * time.Millisecond)
 			log.Infof("s2(%s) has more than 1 replica", s2.NHID())
 			continue
 		}
-		list3 := s3.ListOpenReplicasForTest()
+		list3 := s3.ListAllReplicasInHistoryForTest()
 		if len(list3) != 1 {
 			time.Sleep(10 * time.Millisecond)
 			log.Infof("s3(%s) has more than 1 replica", s3.NHID())
