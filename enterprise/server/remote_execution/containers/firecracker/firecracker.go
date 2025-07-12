@@ -2239,8 +2239,10 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	stage := "init"
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 	defer func() {
-		// Attach VM metadata to the result
-		result.VMMetadata = c.getVMMetadata()
+		if c.recyclingEnabled {
+			// Attach snapshot-related metadata to the execution result.
+			result.VMMetadata = c.getVMMetadata()
+		}
 
 		// Attach VM logs to the result
 		if result.AuxiliaryLogs == nil {
