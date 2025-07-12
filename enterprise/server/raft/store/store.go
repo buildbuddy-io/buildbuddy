@@ -1642,39 +1642,26 @@ func (rj *replicaJanitor) nextAttemptTime(attemptNumber int) time.Time {
 
 func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescriptor) *zombieCleanupTask {
 	rd, foundRange := rangeMap[ss.rangeID]
-	if !ss.opened {
-		// The replica hasn't been started on raft.
-		if foundRange {
-			// The range is found in meta range.
-			ss.rd = rd
-			for _, repl := range rd.GetRemoved() {
-				if repl.GetReplicaId() == ss.replicaID {
-					// The replica is marked for removal; and we want to finish
-					// the clean up process.
-					ss.action = zombieCleanupRemoveData
-					return ss
-				}
-			}
-			ss.action = zombieCleanupNoAction
-		} else {
-			// This shard is in LogInfo, but not started and it's not found in
-			// meta range; so we should remove the data of this shard so that
-			// it won't be re-created during start-up
-			ss.action = zombieCleanupRemoveData
-		}
-		return ss
-	}
-
-	// The replica has been started on raft.
 	if foundRange {
 		ss.rd = rd
-		for _, repl := range rd.GetReplicas() {
+		replicas := append(rd.GetReplicas(), rd.GetStaging()...)
+		replicas = append(replicas, rd.GetRemoved()...)
+		// The range is found in meta range.
+		for _, repl := range replicas {
 			if repl.GetReplicaId() == ss.replicaID {
-				// The replica is active; so this is not a zombie
+				// We have the info for this replica in range descriptor. Don't
+				// touch it, leave it to the driver.
 				ss.action = zombieCleanupNoAction
 				return ss
 			}
 		}
+	}
+	if !ss.opened {
+		// This shard is in LogInfo, but not started and it's not found in
+		// meta range; so we should remove the data of this shard so that
+		// it won't be re-created during start-up
+		ss.action = zombieCleanupRemoveData
+		return ss
 	}
 
 	// The replica is a zombie, and it should be removed.
@@ -1846,7 +1833,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		}
 
 		if task.rd == nil {
-			// When an AddReplica/SplitRange failed in the middle, it can cause the shards to be
+			// When SplitRange failed in the middle, it can cause the shards to be
 			// created without any range descriptors created.
 			rd, err = j.store.newRangeDescriptorFromRaftMembership(ctx, task.rangeID)
 			if err != nil {
