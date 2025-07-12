@@ -278,6 +278,45 @@ func TestFindNodeForAllocation(t *testing.T) {
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
 		},
 		{
+			desc: "choose-node-with-staging",
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					ReplicaCount:   10,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					ReplicaCount:   1,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					ReplicaCount:   4,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 10,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					ReplicaCount:   3,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+			},
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+				},
+				Staging: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+				},
+			},
+			expected: &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+		},
+		{
 			desc: "find-node-with-least-ranges",
 			usages: []*rfpb.StoreUsage{
 				{

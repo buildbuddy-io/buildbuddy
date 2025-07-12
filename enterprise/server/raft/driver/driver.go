@@ -411,7 +411,7 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 	desiredQuorum := computeQuorum(minReplicas)
 	quorum := computeQuorum(curReplicas)
 
-	if curReplicas < minReplicas {
+	if curReplicas < minReplicas || len(rd.GetStaging()) > 0 {
 		action = DriverAddReplica
 		adjustedPriority := action.Priority() + float64(desiredQuorum-curReplicas)
 		change := rq.addReplica(rd)
@@ -640,6 +640,10 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats
 	var candidates []*candidate
 	existing := append(rd.GetReplicas(), rd.GetRemoved()...)
 	for _, su := range storesWithStats.Usages {
+		if storeHasReplica(su.GetNode(), rd.GetStaging()) {
+			// There is a staging replica, complete it.
+			return su.GetNode()
+		}
 		if storeHasReplica(su.GetNode(), existing) {
 			rq.log.Debugf("skip node %+v because the replica is already on the node", su.GetNode())
 			continue
