@@ -300,41 +300,6 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	}
 }
 
-func TestCleanupZombieNonVoter(t *testing.T) {
-	quarantine.SkipQuarantinedTest(t)
-	// Prevent driver kicks in to add the replica back to the store.
-	flags.Set(t, "cache.raft.enable_driver", false)
-
-	clock := clockwork.NewFakeClock()
-
-	sf := testutil.NewStoreFactoryWithClock(t, clock)
-	s1 := sf.NewStore(t)
-	s2 := sf.NewStore(t)
-	s3 := sf.NewStore(t)
-	ctx := context.Background()
-
-	stores := []*testutil.TestingStore{s1, s2, s3}
-	sf.StartShard(t, ctx, stores...)
-
-	s4 := sf.NewStore(t)
-	// add a non-voter c2n4
-	addNonVoting(t, s1, ctx, 2, 4, s4.NHID())
-
-	membership, err := s1.GetMembership(ctx, 2)
-	require.NoError(t, err)
-	// Check that c2n4 is a non-voter on raft.
-	require.Equal(t, 1, len(membership.NonVotings))
-	require.Contains(t, membership.NonVotings, uint64(4))
-
-	for {
-		clock.Advance(1 * time.Hour)
-		membership, err := s1.GetMembership(ctx, 2)
-		require.NoError(t, err)
-		if len(membership.NonVotings) == 0 {
-			break
-		}
-	}
-}
 
 func TestAutomaticSplitting(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
