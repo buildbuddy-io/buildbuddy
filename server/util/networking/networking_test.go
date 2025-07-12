@@ -193,8 +193,8 @@ func TestContainerNetworking(t *testing.T) {
 }
 
 func TestAllowTrafficToHostDefaultIP(t *testing.T) {
-	testnetworking.Setup(t)
 	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
+	testnetworking.Setup(t)
 	ctx := context.Background()
 	err := networking.EnableMasquerading(ctx)
 	require.NoError(t, err)
@@ -244,7 +244,6 @@ func TestNetworkStats(t *testing.T) {
 	// each test case in serial, then runs all test cases concurrently).
 	const maxConcurrency = 8
 
-	testnetworking.Setup(t)
 	// Start a tx/rx test server listening on the default interface since we
 	// need an IP to be able to reach it from within the netns.
 	server := httptest.NewUnstartedServer(http.HandlerFunc(trafficTestHandler))
@@ -255,6 +254,7 @@ func TestNetworkStats(t *testing.T) {
 	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
 	// Enable stats.
 	flags.Set(t, "executor.network_stats_enabled", true)
+	testnetworking.Setup(t)
 
 	overrideSysctlsForTest(t, map[string]string{
 		// Set large network buffer sizes to help reduce TCP re-transmissions,
