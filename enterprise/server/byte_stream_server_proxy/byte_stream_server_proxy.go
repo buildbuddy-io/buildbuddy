@@ -365,7 +365,7 @@ func (s *ByteStreamServerProxy) dualWrite(ctx context.Context, stream bspb.ByteS
 		return forwarding.recvErr
 	}
 	if localErr != nil {
-		log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", err)
+		log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", localErr)
 	}
 	if forwarding.remoteSendErr != nil && forwarding.remoteSendErr != io.EOF {
 		// Remote failed, so fail the whole request
