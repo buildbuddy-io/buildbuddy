@@ -87,6 +87,7 @@ const (
 
 	RunnerRecyclingKey                      = "runner-recycling-key"
 	RemoteSnapshotSavePolicyPropertyName    = "remote-snapshot-save-policy"
+	UniversalSnapshotFallbackPropertyName   = "universal-snapshot-fallback"
 	RunnerRecyclingMaxWaitPropertyName      = "runner-recycling-max-wait"
 	PreserveWorkspacePropertyName           = "preserve-workspace"
 	overlayfsWorkspacePropertyName          = "overlayfs-workspace"
