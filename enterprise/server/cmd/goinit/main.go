@@ -3,13 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"math"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -20,16 +20,19 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/firecrackerutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jsimonetti/rtnetlink/rtnl"
+	"github.com/miekg/dns"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -44,7 +47,6 @@ const (
 
 	dockerdInitTimeout       = 30 * time.Second
 	dockerdDefaultSocketPath = "/var/run/docker.sock"
-	mmdsURL                  = "http://169.254.169.254/"
 
 	// EXT4_IOC_RESIZE_FS is the ioctl constant for resizing an ext4 FS.
 	// Computed from C: https://gist.github.com/bduffany/ce9b594c2166ea1a4564cba1b5ed652d
@@ -186,7 +188,7 @@ func startDockerd(ctx context.Context) error {
 		return err
 	}
 
-	dockerdDaemonJSON, err := fetchMMDSKey("dockerd_daemon_json")
+	dockerdDaemonJSON, err := firecrackerutil.FetchMMDSKey("dockerd_daemon_json")
 	if err != nil {
 		return err
 	}
@@ -269,7 +271,7 @@ func main() {
 	// If we were re-exec'd by the init binary as a child process, run the
 	// appropriate handler.
 	if *isVMExec {
-		die(runVMExecServer(rootContext))
+		die(runVMExecProcess(rootContext))
 		return
 	}
 	if *isVMVFS {
@@ -371,6 +373,12 @@ func main() {
 		log.Errorf("Unable to increase file open descriptor limit: %s", err)
 	}
 
+	// NOTE: Ensure the default route has been configured before attempting to
+	// fetch data from MMDS, which makes network requests.
+	if *setDefaultRoute {
+		die(configureDefaultRoute("eth0", "192.168.241.1"))
+	}
+
 	die(mkdirp("/etc", 0755))
 	die(os.WriteFile("/etc/hostname", []byte("localhost\n"), 0755))
 	hosts := []string{
@@ -380,10 +388,23 @@ func main() {
 		"ff02::2		ip6-allrouters",
 	}
 	die(os.WriteFile("/etc/hosts", []byte(strings.Join(hosts, "\n")), 0755))
+
 	nameServers := []string{
 		"nameserver 8.8.8.8",
 		"nameserver 8.8.4.4",
 		"nameserver 1.1.1.1",
+	}
+	if *setDefaultRoute {
+		dnsOverridesJSON, err := firecrackerutil.FetchMMDSKey("dns_overrides")
+		if err != nil {
+			die(err)
+		}
+		var dnsOverrides []*networking.DNSOverride
+		die(json.Unmarshal(dnsOverridesJSON, &dnsOverrides))
+		if len(dnsOverrides) > 0 {
+			// Point to local DNS server to handle any DNS overrides.
+			nameServers = append([]string{"nameserver 127.0.0.1"}, nameServers...)
+		}
 	}
 	die(os.WriteFile("/etc/resolv.conf", []byte(strings.Join(nameServers, "\n")), 0755))
 	if _, err := os.Stat("/etc/mtab"); err != nil {
@@ -398,10 +419,6 @@ func main() {
 	// See https://github.com/torvalds/linux/blob/929ed21dfdb6ee94391db51c9eedb63314ef6847/fs/notify/inotify/inotify_user.c#L838-L844
 	if err := os.WriteFile("/proc/sys/fs/inotify/max_user_watches", []byte("65536"), 0); err != nil {
 		die(fmt.Errorf("failed to set fs.inotify.max_user_watches: %s", err))
-	}
-
-	if *setDefaultRoute {
-		die(configureDefaultRoute("eth0", "192.168.241.1"))
 	}
 
 	die(os.Setenv("PATH", *path))
@@ -464,6 +481,39 @@ func main() {
 	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
 
+func runVMExecProcess(ctx context.Context) error {
+	eg := &errgroup.Group{}
+
+	// Only attempt to run the local DNS server if networking is enabled.
+	if *setDefaultRoute {
+		// Wait for the DNS server to initialize before starting and accepting
+		// commands on the vmExec server to guarantee DNS requests are handled
+		// correctly.
+		dnsServer, err := vmexec.NewVMDNSServer()
+		if err != nil {
+			return err
+		}
+
+		if dnsServer != nil {
+			eg.Go(func() error {
+				if err := runVMDNSServer(dnsServer); err != nil {
+					log.Fatal(err.Error())
+				}
+				return nil
+			})
+		}
+	}
+
+	eg.Go(func() error {
+		if err := runVMExecServer(ctx); err != nil {
+			log.Fatal(err.Error())
+		}
+		return nil
+	})
+
+	return eg.Wait()
+}
+
 func runVMExecServer(ctx context.Context) error {
 	listener, err := vsock.NewGuestListener(ctx, uint32(*vmExecPort))
 	if err != nil {
@@ -492,6 +542,20 @@ func runVMExecServer(ctx context.Context) error {
 	}
 
 	return server.Serve(listener)
+}
+
+func runVMDNSServer(dnsServer *vmexec.DNSServer) error {
+	log.Infof("Starting vm dns server on port 53")
+
+	mux := dns.NewServeMux()
+	mux.Handle(".", dnsServer)
+
+	s := &dns.Server{
+		Addr:    "127.0.0.1:53",
+		Net:     "udp4",
+		Handler: mux,
+	}
+	return s.ListenAndServe()
 }
 
 // Resizes the ext4 filesystem mounted at the given path to match the underlying
@@ -533,23 +597,4 @@ func resizeExt4FS(devicePath, mountPath string) error {
 		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
 	}
 	return nil
-}
-
-func fetchMMDSKey(key string) ([]byte, error) {
-	resp, err := http.Get(mmdsURL + key)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("MMDS request failed with status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return body, nil
 }
