@@ -513,7 +513,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, opts *interf
 	if len(opts.Statuses) == 0 {
 		return nil, status.InvalidArgumentError("A valid status or statuses are required")
 	}
-	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+	if err := authutil.AuthorizeTargetGroupAccess(ctx, d.env, groupID); err != nil {
 		return nil, err
 	}
 

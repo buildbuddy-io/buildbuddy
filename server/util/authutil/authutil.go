@@ -70,10 +70,34 @@ func AuthorizeOrgAdmin(u interfaces.UserInfo, groupID string) error {
 	return status.PermissionDeniedError("you are not a member of the requested organization")
 }
 
-// AuthorizeGroupAccess checks whether the user is a member of the given group.
+// AuthorizeGroupAccess checks whether the user identified in the context is
+// authorized to access the group identified in the context.
+//
+// This serves as a minimum authorization check on user actions.
+// Where applicable, make sure to check additional capabilities.
+//
+// API requests automatically go through interceptors that populate
+// the user and selected group information into the context. If you need
+// to retrieve the target group ID of the API request, call GetGroupID()
+// on the returned UserInfo.
+func AuthorizeGroupAccess(ctx context.Context, env environment.Env) (interfaces.UserInfo, error) {
+	user, err := env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if user.HasCapability(cappb.Capability_GROUP_ACCESS) {
+		return user, nil
+	}
+	return nil, status.PermissionDeniedError("You do not have access to the requested group")
+}
+
+// AuthorizeTargetGroupAccess checks whether the user identified in the context
+// is a member of the given group.
 // Where applicable, make sure to check the user's capabilities within the group
 // as well.
-func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID string) error {
+//
+// In most cases AuthorizeGroupAccess should be used instead.
+func AuthorizeTargetGroupAccess(ctx context.Context, env environment.Env, groupID string) error {
 	if groupID == "" {
 		return status.InvalidArgumentError("group ID is required")
 	}
@@ -83,14 +107,16 @@ func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID stri
 	}
 	for _, gm := range user.GetGroupMemberships() {
 		if gm.GroupID == groupID {
-			return nil
+			if slices.Contains(gm.Capabilities, cappb.Capability_GROUP_ACCESS) {
+				return nil
+			}
 		}
 	}
 	return status.PermissionDeniedError("You do not have access to the requested group")
 }
 
 func AuthorizeGroupAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
-	if err := AuthorizeGroupAccess(ctx, env, groupID); err != nil {
+	if err := AuthorizeTargetGroupAccess(ctx, env, groupID); err != nil {
 		return err
 	}
 	if blocklist.IsBlockedForStatsQuery(groupID) {
