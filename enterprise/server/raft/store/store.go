@@ -748,6 +748,8 @@ func (s *Store) lookupRange(rangeID uint64) *rfpb.RangeDescriptor {
 	return s.openRanges[rangeID]
 }
 
+// findTargetReplicaIDForLeadershipTransfer finds a target replica ID to tranfer
+// leader to. Returns 0 if no such replica is found.
 func (s *Store) findTargetReplicaIDForLeadershipTransfer(ctx context.Context, rd *rfpb.RangeDescriptor, fromReplicaID uint64) uint64 {
 	// Pick the first node in the map that isn't us. Map ordering is
 	// random; which is a good thing, it means we're randomly picking
