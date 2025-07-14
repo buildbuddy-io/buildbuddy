@@ -1259,11 +1259,6 @@ func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) erro
 func (s *Store) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req *rfpb.RemoveReplicaRequest) error {
 	replicaID := req.GetReplicaId()
 
-	rangeID := req.GetRangeId()
-	if rangeID == 0 {
-		rangeID = rd.GetRangeId()
-	}
-
 	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		_, err := c.RemoveReplica(ctx, req)
 		return err
@@ -1271,6 +1266,11 @@ func (s *Store) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req
 	_, err := s.sender.TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
 		return nil
 	})
+
+	rangeID := req.GetRangeId()
+	if rangeID == 0 {
+		rangeID = rd.GetRangeId()
+	}
 
 	if err != nil {
 		return status.WrapErrorf(err, "failed to remove replica c%dn%d", rangeID, replicaID)
