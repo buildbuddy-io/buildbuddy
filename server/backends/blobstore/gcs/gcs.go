@@ -312,8 +312,17 @@ func (d *decompressingCloser) Close() error {
 	return firstError
 }
 
-func (g *GCSBlobStore) Reader(ctx context.Context, blobName string) (io.ReadCloser, error) {
-	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
+func (g *GCSBlobStore) Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error) {
+	if offset < 0 {
+		// GCS treats negative offsets as relative to the end of the object, but
+		// we don't generally support that.
+		offset = 0
+	}
+	if limit == 0 {
+		// We use 0 to request the whole object, but GCS uses -1.
+		limit = -1
+	}
+	reader, err := g.bucketHandle.Object(blobName).NewRangeReader(ctx, offset, limit)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
 			return nil, status.NotFoundError(err.Error())

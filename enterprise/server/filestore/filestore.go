@@ -511,7 +511,7 @@ type Store interface {
 
 type PebbleGCSStorage interface {
 	SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error
-	Reader(ctx context.Context, blobName string) (io.ReadCloser, error)
+	Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error)
 	ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error)
 	DeleteBlob(ctx context.Context, blobName string) error
 	UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error
@@ -729,7 +729,7 @@ func (fs *fileStorer) BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GC
 	if fs.gcs == nil || fs.appName == "" {
 		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	return fs.gcs.Reader(ctx, b.GetBlobName())
+	return fs.gcs.Reader(ctx, b.GetBlobName(), offset, limit)
 }
 
 type gcsMetadataWriter struct {
