@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -113,14 +112,13 @@ func TestAddGetRemoveRange(t *testing.T) {
 }
 
 func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
-	// TODO(lulu): the setup of the test is no longer valid with the introduction
-	// of staging replicas.
-	t.Skip("work in progress")
-	quarantine.SkipQuarantinedTest(t)
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "gossip.retransmit_mult", 10)
 	clock := clockwork.NewFakeClock()
 
+	// set up r1 and r2 on s1, s2, s3; start r2 on s4 as voter; but r2 is not
+	// in range descriptor.
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -128,58 +126,50 @@ func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	s4 := sf.NewStore(t)
 	ctx := context.Background()
 
-	stores := []*testutil.TestingStore{s1, s2, s3, s4}
+	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
-	testutil.WaitForRangeLease(t, ctx, stores, 2)
-
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-	rd := s.GetRange(2)
-	newRD := rd.CloneVT()
 
-	require.Equal(t, len(newRD.GetReplicas()), 4)
+	addNode(t, s, ctx, 2, 4, s4.NHID())
 
-	// Remove replica of range 2 on nh1 in meta range
-	log.Infof("nh1: %s", s1.NHID())
-	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(rd.GetReplicas())-1)
-	for _, repl := range rd.GetReplicas() {
-		if repl.GetNhid() == s1.NHID() {
-			continue
-		}
-		replicas = append(replicas, repl)
-	}
-	newRD.Replicas = replicas
-	require.Equal(t, 3, len(replicas))
-	newRD.Generation = rd.GetGeneration() + 1
-
-	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
+	_, err := s4.StartShard(ctx, &rfpb.StartShardRequest{
+		RangeId:   2,
+		ReplicaId: 4,
+		Join:      true,
+	})
 	require.NoError(t, err)
 
+	now := time.Now()
 	for {
-		clock.Advance(11 * time.Second)
-		list := s1.ListOpenReplicasForTest()
+		list := s4.ListOpenReplicasForTest()
 		if len(list) == 1 {
 			repl := list[0]
-			// nh1 only has shard 1
-			require.Equal(t, uint64(1), repl.GetRangeId())
+			// nh1 only has shard 2
+			require.Equal(t, uint64(2), repl.GetRangeId())
 			break
+		} else {
+			log.Infof("list open replicas for test: %d", len(list))
 		}
+		if time.Since(now) > 30*time.Second {
+			require.FailNowf(t, "timeout waiting for c2n4 to open on s4: ", "nhid:%s", s3.NHID())
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
-	for i := 0; i <= 30; i++ {
-		rd := s1.GetRange(2)
-		if rd == nil {
+	log.Info("====test setup complete====")
+
+	now = time.Now()
+	for {
+		clock.Advance(11 * time.Second)
+		list := s4.ListAllReplicasInHistoryForTest()
+		if len(list) == 0 {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	_, err = s1.GetReplica(2)
-	require.True(t, status.IsOutOfRangeError(err))
-	// verify that the shard is not removed from other servers
-	for _, s := range []*testutil.TestingStore{s2, s3, s4} {
-		list := s.ListOpenReplicasForTest()
-		require.Equal(t, 2, len(list), s.NHID())
+		if time.Since(now) > 30*time.Second {
+			require.FailNow(t, "timeout waiting for zombie janitor clean up")
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

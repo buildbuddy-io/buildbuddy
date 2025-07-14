@@ -748,6 +748,37 @@ func (s *Store) lookupRange(rangeID uint64) *rfpb.RangeDescriptor {
 	return s.openRanges[rangeID]
 }
 
+func (s *Store) findTargetReplicaIDForLeadershipTransfer(ctx context.Context, rd *rfpb.RangeDescriptor, fromReplicaID uint64) uint64 {
+	// Pick the first node in the map that isn't us. Map ordering is
+	// random; which is a good thing, it means we're randomly picking
+	// another node in the cluster and requesting they take the lead.
+	targetReplicaID := uint64(0)
+	backupReplicaID := uint64(0)
+	for _, repl := range rd.GetReplicas() {
+		if repl.GetReplicaId() == fromReplicaID {
+			continue
+		}
+		if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
+			// During rollout, after a machine restarted, it takes some time
+			// for the connections to that machine to be re-established. If
+			// we move leader to such machines, it can cause
+			// sender.SyncPropose to retry until the connections are
+			// re-established. To prevent such scenerios, we don't want to
+			// move leaders to such machines if possible.
+			backupReplicaID = repl.GetReplicaId()
+			continue
+		}
+		targetReplicaID = repl.GetReplicaId()
+		break
+	}
+
+	if targetReplicaID == 0 {
+		log.Debugf("cannot find a replica with ready connections to transfer leadership to for shard %d, choose a random replica: %d", rd.GetRangeId(), backupReplicaID)
+		targetReplicaID = backupReplicaID
+	}
+	return targetReplicaID
+}
+
 func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
@@ -763,34 +794,9 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 			continue
 		}
 
-		// Pick the first node in the map that isn't us. Map ordering is
-		// random; which is a good thing, it means we're randomly picking
-		// another node in the cluster and requesting they take the lead.
-		targetReplicaID := uint64(0)
-		backupReplicaID := uint64(0)
 		rd := s.GetRange(clusterInfo.ShardID)
-		for _, repl := range rd.GetReplicas() {
-			if repl.GetReplicaId() == clusterInfo.ReplicaID {
-				continue
-			}
-			if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
-				// During rollout, after a machine restarted, it takes some time
-				// for the connections to that machine to be re-established. If
-				// we move leader to such machines, it can cause
-				// sender.SyncPropose to retry until the connections are
-				// re-established. To prevent such scenerios, we don't want to
-				// move leaders to such machines if possible.
-				backupReplicaID = clusterInfo.ReplicaID
-				continue
-			}
-			targetReplicaID = repl.GetReplicaId()
-			break
-		}
+		targetReplicaID := s.findTargetReplicaIDForLeadershipTransfer(ctx, rd, clusterInfo.ReplicaID)
 
-		if targetReplicaID == 0 {
-			log.Debugf("cannot find a replica with ready connections to transfer leadership to for shard %d, choose a random replica: %d", clusterInfo.ShardID, backupReplicaID)
-			targetReplicaID = backupReplicaID
-		}
 		if targetReplicaID != 0 {
 			eg.Go(func() error {
 				log.Debugf("request to transfer leadership of shard %d to replica %d from replica %d", clusterInfo.ShardID, targetReplicaID, clusterInfo.ReplicaID)
@@ -1071,6 +1077,20 @@ func (s *Store) isLeader(rangeID uint64, replicaID uint64) bool {
 	return leaderID == replicaID && term > 0
 }
 
+// rangeDescriptorHasReplica checks whether replica ID exists in staging,
+// replicas, or removed list.
+func rangeDescriptorHasReplica(rd *rfpb.RangeDescriptor, replicaID uint64) bool {
+	replicas := append(rd.GetReplicas(), rd.GetStaging()...)
+	replicas = append(replicas, rd.GetRemoved()...)
+	// The range is found in meta range.
+	for _, repl := range replicas {
+		if repl.GetReplicaId() == replicaID {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Store) GetRegistry(ctx context.Context, req *rfpb.GetRegistryRequest) (*rfpb.GetRegistryResponse, error) {
 	connections := s.registry.ListNodes()
 	return &rfpb.GetRegistryResponse{
@@ -1238,6 +1258,12 @@ func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) erro
 // removeReplica attempts to delete a replica from a Raft cluster.
 func (s *Store) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req *rfpb.RemoveReplicaRequest) error {
 	replicaID := req.GetReplicaId()
+
+	rangeID := req.GetRangeId()
+	if rangeID == 0 {
+		rangeID = rd.GetRangeId()
+	}
+
 	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		_, err := c.RemoveReplica(ctx, req)
 		return err
@@ -1246,10 +1272,6 @@ func (s *Store) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req
 		return nil
 	})
 
-	rangeID := req.GetRangeId()
-	if rangeID == 0 {
-		rangeID = rd.GetRangeId()
-	}
 	if err != nil {
 		return status.WrapErrorf(err, "failed to remove replica c%dn%d", rangeID, replicaID)
 	}
@@ -1636,16 +1658,13 @@ func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescr
 	rd, foundRange := rangeMap[ss.rangeID]
 	if foundRange {
 		ss.rd = rd
-		replicas := append(rd.GetReplicas(), rd.GetStaging()...)
-		replicas = append(replicas, rd.GetRemoved()...)
-		// The range is found in meta range.
-		for _, repl := range replicas {
-			if repl.GetReplicaId() == ss.replicaID {
-				// We have the info for this replica in range descriptor. Don't
-				// touch it, leave it to the driver.
-				ss.action = zombieCleanupNoAction
-				return ss
-			}
+
+		foundReplica := rangeDescriptorHasReplica(rd, ss.replicaID)
+		if foundReplica {
+			// We have the info for this replica in range descriptor. Don't
+			// touch it, leave it to the driver.
+			ss.action = zombieCleanupNoAction
+			return ss
 		}
 	}
 	if !ss.opened {
@@ -1846,8 +1865,20 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			if err != nil {
 				return zombieCleanupRemoveReplica, status.InternalErrorf("failed to fetch up-to-date range descriptor from meta range:%s", err)
 			}
-			removeDataReq.Range = rd
+
+			if j.store.isLeader(task.rangeID, task.replicaID) && !rangeDescriptorHasReplica(rd, task.replicaID) {
+				// The replica is not in the range descriptor; and if it is the
+				// leader, we won't be able to call the sender to remove it from
+				// raft membership. This is because, none of the replicas in the
+				// range descriptor can get lease.
+				if targetReplicaID := j.store.findTargetReplicaIDForLeadershipTransfer(ctx, rd, task.replicaID); targetReplicaID != 0 {
+					if err := j.store.nodeHost.RequestLeaderTransfer(task.rangeID, targetReplicaID); err != nil {
+						return zombieCleanupRemoveReplica, status.InternalErrorf("failed to transfer leader for range %d from %d to %d: %s", task.rangeID, task.replicaID, targetReplicaID, err)
+					}
+				}
+			}
 			removeReplicaReq.Range = rd
+			removeDataReq.Range = rd
 		}
 
 		// Skip removeReplica if we don't have rd. This is possible when we were
