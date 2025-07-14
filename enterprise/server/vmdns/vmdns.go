@@ -121,11 +121,14 @@ func (s *DNSServer) returnFailureMsg(w dns.ResponseWriter, req *dns.Msg) {
 // TODO(Maggie): Support dynamically editing DNS overrides (Be careful in cases
 // where the DNS server is expected to be started or stopped)
 func FetchDNSOverrides() ([]*networking.DNSOverride, error) {
-	var dnsOverrides []*networking.DNSOverride
 	dnsOverridesJSON, err := firecrackerutil.FetchMMDSKey("dns_overrides")
 	if err != nil {
 		return nil, status.WrapError(err, "fetch dns_overrides from MMDS")
 	}
+	if len(dnsOverridesJSON) == 0 {
+		return nil, nil
+	}
+	var dnsOverrides []*networking.DNSOverride
 	if err := json.Unmarshal(dnsOverridesJSON, &dnsOverrides); err != nil {
 		return nil, status.WrapError(err, "unmarshall dns_overrides")
 	}

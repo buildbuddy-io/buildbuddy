@@ -57,6 +57,10 @@ type ContainerOpts struct {
 	// across multiple VM instances.
 	NetworkPool *networking.VMNetworkPool
 
+	// MarshalledDNSOverrides is an optional field to overrides DNS responses
+	// in the guest. It is the marshalled form of []*networking.DNSOverride
+	MarshalledDNSOverrides string
+
 	// Optional flags -- these will default to sane values.
 	// They are here primarily for debugging and running
 	// VMs outside of the normal action-execution framework.

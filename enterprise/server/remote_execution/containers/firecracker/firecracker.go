@@ -468,16 +468,13 @@ func getHostKernelVersion() (string, error) {
 }
 
 type Provider struct {
-	env            environment.Env
-	executorConfig *ExecutorConfig
-	networkPool    *networking.VMNetworkPool
+	env                    environment.Env
+	executorConfig         *ExecutorConfig
+	networkPool            *networking.VMNetworkPool
+	marshalledDNSOverrides string
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
-	if err := validateFlags(); err != nil {
-		return nil, err
-	}
-
 	executorConfig, err := GetExecutorConfig(env.GetServerContext(), buildRoot, cacheRoot)
 	if err != nil {
 		return nil, err
@@ -497,10 +494,17 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 		networkPool = networking.NewVMNetworkPool(*netPoolSize)
 		env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
 	}
+
+	dns, err := parseDNSOverrides()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Provider{
-		env:            env,
-		executorConfig: executorConfig,
-		networkPool:    networkPool,
+		env:                    env,
+		executorConfig:         executorConfig,
+		networkPool:            networkPool,
+		marshalledDNSOverrides: dns,
 	}, nil
 }
 
@@ -540,6 +544,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
 		ExecutorConfig:         p.executorConfig,
 		NetworkPool:            p.networkPool,
+		MarshalledDNSOverrides: p.marshalledDNSOverrides,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
@@ -548,17 +553,25 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	return c, nil
 }
 
-func validateFlags() error {
+// parseDNSOverrides validates the `dnsOverrides` flag and marshalls it to a string.
+func parseDNSOverrides() (string, error) {
+	if len(*dnsOverrides) == 0 {
+		return "", nil
+	}
 	for _, o := range *dnsOverrides {
 		if o.RedirectToHostname == "" || o.HostnameToOverride == "" {
-			return status.InvalidArgumentErrorf("invalid empty dns override %+v", o)
+			return "", status.InvalidArgumentErrorf("invalid empty dns override %+v", o)
 		}
 		// Ensure hostnames end with '.' so they are not resolved as relative names.
 		if !strings.HasSuffix(o.HostnameToOverride, ".") {
-			return status.InvalidArgumentErrorf("hostname_to_override %s should end with a '.'", o.HostnameToOverride)
+			return "", status.InvalidArgumentErrorf("hostname_to_override %s should end with a '.'", o.HostnameToOverride)
 		}
 	}
-	return nil
+	marshalledOverrides, err := json.Marshal(*dnsOverrides)
+	if err != nil {
+		return "", status.WrapError(err, "marshall dns overrides")
+	}
+	return string(marshalledOverrides), nil
 }
 
 // FirecrackerContainer executes commands inside of a firecracker VM.
@@ -605,7 +618,8 @@ type FirecrackerContainer struct {
 	// including VM startup time
 	currentTaskInitTime time.Time
 
-	executorConfig *ExecutorConfig
+	executorConfig         *ExecutorConfig
+	marshalledDNSOverrides string
 
 	// when VFS is enabled, this contains the layout for the next execution
 	fsLayout  *container.FileSystemLayout
@@ -681,23 +695,24 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	}
 
 	c := &FirecrackerContainer{
-		vmConfig:         opts.VMConfiguration.CloneVT(),
-		executorConfig:   opts.ExecutorConfig,
-		jailerRoot:       opts.ExecutorConfig.JailerRoot,
-		containerImage:   opts.ContainerImage,
-		user:             opts.User,
-		actionWorkingDir: opts.ActionWorkingDirectory,
-		cpuWeightMillis:  opts.CPUWeightMillis,
-		cgroupParent:     opts.CgroupParent,
-		networkPool:      opts.NetworkPool,
-		cgroupSettings:   &scpb.CgroupSettings{},
-		blockDevice:      opts.BlockDevice,
-		env:              env,
-		resolver:         resolver,
-		task:             task,
-		loader:           loader,
-		vmLog:            vmLog,
-		cancelVmCtx:      func(err error) {},
+		vmConfig:               opts.VMConfiguration.CloneVT(),
+		executorConfig:         opts.ExecutorConfig,
+		marshalledDNSOverrides: opts.MarshalledDNSOverrides,
+		jailerRoot:             opts.ExecutorConfig.JailerRoot,
+		containerImage:         opts.ContainerImage,
+		user:                   opts.User,
+		actionWorkingDir:       opts.ActionWorkingDirectory,
+		cpuWeightMillis:        opts.CPUWeightMillis,
+		cgroupParent:           opts.CgroupParent,
+		networkPool:            opts.NetworkPool,
+		cgroupSettings:         &scpb.CgroupSettings{},
+		blockDevice:            opts.BlockDevice,
+		env:                    env,
+		resolver:               resolver,
+		task:                   task,
+		loader:                 loader,
+		vmLog:                  vmLog,
+		cancelVmCtx:            func(err error) {},
 	}
 
 	if opts.CgroupSettings != nil {
@@ -2002,11 +2017,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// even if it's empty.
 	metadata := map[string]string{}
 	if c.vmConfig.EnableNetworking {
-		marshalledOverrides, err := json.Marshal(*dnsOverrides)
-		if err != nil {
-			return status.WrapError(err, "marshall dns overrides")
-		}
-		metadata["dns_overrides"] = string(marshalledOverrides)
+		metadata["dns_overrides"] = c.marshalledDNSOverrides
 	}
 	if c.vmConfig.InitDockerd {
 		dockerDaemonConfig, err := getDockerDaemonConfig()

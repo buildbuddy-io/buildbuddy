@@ -460,6 +460,9 @@ func runVMExecProcess(ctx context.Context) error {
 			eg.Go(func() error {
 				s := vmdns.NewVMDNSServer(dnsOverrides, &dns.Client{})
 				die(s.Run())
+				// The server exiting for any reason is unexpected. It should
+				// never return nil, so kill the process if it does to prevent
+				// unexpected behavior.
 				die(fmt.Errorf("vmdns server exited unexpectedly"))
 				return nil
 			})
@@ -468,6 +471,9 @@ func runVMExecProcess(ctx context.Context) error {
 
 	eg.Go(func() error {
 		die(vmexec.Run(ctx, uint32(*vmExecPort), workspaceDevice, *initDockerd, *enableDockerdTCP, dnsOverrides))
+		// The server exiting for any reason is unexpected. It should
+		// never return nil, so kill the process if it does to prevent
+		// unexpected behavior.
 		die(fmt.Errorf("vmexec server exited unexpectedly"))
 		return nil
 	})

@@ -22,15 +22,6 @@ const (
 	notOverwrittenIP = "8.8.8.8"
 )
 
-// mockMetadataService implements interfaces.FirecrackerMMDS.
-type mockMetadataService struct {
-	returnData []byte
-}
-
-func (s *mockMetadataService) FetchMMDSKey(key string) ([]byte, error) {
-	return s.returnData, nil
-}
-
 // mockDNSClient implements interfaces.DNSClient.
 type mockDNSClient struct{}
 
