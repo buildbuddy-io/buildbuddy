@@ -1480,7 +1480,7 @@ func (sm *Replica) commitIndexBatch(wb pebble.Batch, entryIndex uint64) error {
 	sm.updateInMemoryState(wb)
 
 	if sm.lastAppliedIndex >= entryIndex {
-		sm.log.Errorf("[%s] lastAppliedIndex not moving forward: current %d, new: %d", sm.lastAppliedIndex, entryIndex)
+		sm.log.Errorf("[%s] lastAppliedIndex not moving forward: current %d, new: %d", sm.name(), sm.lastAppliedIndex, entryIndex)
 	}
 	sm.lastAppliedIndex = entryIndex
 	return nil
