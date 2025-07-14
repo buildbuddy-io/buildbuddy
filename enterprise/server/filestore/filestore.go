@@ -655,11 +655,8 @@ func (fs *fileStorer) NewReader(ctx context.Context, fileDir string, md *sgpb.St
 }
 
 func (fs *fileStorer) InlineReader(f *sgpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error) {
-	data := f.GetData()
-	if offset > 0 {
-		data = data[offset:]
-	}
-	if limit != 0 && limit < int64(len(data)) {
+	data := f.GetData()[offset:]
+	if limit > 0 && limit < int64(len(data)) {
 		data = data[:limit]
 	}
 	return io.NopCloser(bytes.NewReader(data)), nil
