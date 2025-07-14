@@ -93,6 +93,7 @@ var (
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
 	enableLinux6_1                        = flag.Bool("executor.firecracker_enable_linux_6_1", false, "Enable the 6.1 guest kernel for firecracker microVMs. x86_64 only.", flag.Internal)
+	dnsOverrides                          = flag.Slice("executor.firecracker_dns_overrides", []*networking.DNSOverride{}, "DNS entries to override in the guest.")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -467,9 +468,10 @@ func getHostKernelVersion() (string, error) {
 }
 
 type Provider struct {
-	env            environment.Env
-	executorConfig *ExecutorConfig
-	networkPool    *networking.VMNetworkPool
+	env                    environment.Env
+	executorConfig         *ExecutorConfig
+	networkPool            *networking.VMNetworkPool
+	marshalledDNSOverrides string
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
@@ -492,10 +494,17 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 		networkPool = networking.NewVMNetworkPool(*netPoolSize)
 		env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
 	}
+
+	dns, err := parseDNSOverrides()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Provider{
-		env:            env,
-		executorConfig: executorConfig,
-		networkPool:    networkPool,
+		env:                    env,
+		executorConfig:         executorConfig,
+		networkPool:            networkPool,
+		marshalledDNSOverrides: dns,
 	}, nil
 }
 
@@ -535,12 +544,34 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
 		ExecutorConfig:         p.executorConfig,
 		NetworkPool:            p.networkPool,
+		MarshalledDNSOverrides: p.marshalledDNSOverrides,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// parseDNSOverrides validates the `dnsOverrides` flag and marshalls it to a string.
+func parseDNSOverrides() (string, error) {
+	if len(*dnsOverrides) == 0 {
+		return "", nil
+	}
+	for _, o := range *dnsOverrides {
+		if o.RedirectToHostname == "" || o.HostnameToOverride == "" {
+			return "", status.InvalidArgumentErrorf("invalid empty dns override %+v", o)
+		}
+		// Ensure hostnames end with '.' so they are not resolved as relative names.
+		if !strings.HasSuffix(o.HostnameToOverride, ".") {
+			return "", status.InvalidArgumentErrorf("hostname_to_override %s should end with a '.'", o.HostnameToOverride)
+		}
+	}
+	marshalledOverrides, err := json.Marshal(*dnsOverrides)
+	if err != nil {
+		return "", status.WrapError(err, "marshall dns overrides")
+	}
+	return string(marshalledOverrides), nil
 }
 
 // FirecrackerContainer executes commands inside of a firecracker VM.
@@ -587,7 +618,8 @@ type FirecrackerContainer struct {
 	// including VM startup time
 	currentTaskInitTime time.Time
 
-	executorConfig *ExecutorConfig
+	executorConfig         *ExecutorConfig
+	marshalledDNSOverrides string
 
 	// when VFS is enabled, this contains the layout for the next execution
 	fsLayout  *container.FileSystemLayout
@@ -663,23 +695,24 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	}
 
 	c := &FirecrackerContainer{
-		vmConfig:         opts.VMConfiguration.CloneVT(),
-		executorConfig:   opts.ExecutorConfig,
-		jailerRoot:       opts.ExecutorConfig.JailerRoot,
-		containerImage:   opts.ContainerImage,
-		user:             opts.User,
-		actionWorkingDir: opts.ActionWorkingDirectory,
-		cpuWeightMillis:  opts.CPUWeightMillis,
-		cgroupParent:     opts.CgroupParent,
-		networkPool:      opts.NetworkPool,
-		cgroupSettings:   &scpb.CgroupSettings{},
-		blockDevice:      opts.BlockDevice,
-		env:              env,
-		resolver:         resolver,
-		task:             task,
-		loader:           loader,
-		vmLog:            vmLog,
-		cancelVmCtx:      func(err error) {},
+		vmConfig:               opts.VMConfiguration.CloneVT(),
+		executorConfig:         opts.ExecutorConfig,
+		marshalledDNSOverrides: opts.MarshalledDNSOverrides,
+		jailerRoot:             opts.ExecutorConfig.JailerRoot,
+		containerImage:         opts.ContainerImage,
+		user:                   opts.User,
+		actionWorkingDir:       opts.ActionWorkingDirectory,
+		cpuWeightMillis:        opts.CPUWeightMillis,
+		cgroupParent:           opts.CgroupParent,
+		networkPool:            opts.NetworkPool,
+		cgroupSettings:         &scpb.CgroupSettings{},
+		blockDevice:            opts.BlockDevice,
+		env:                    env,
+		resolver:               resolver,
+		task:                   task,
+		loader:                 loader,
+		vmLog:                  vmLog,
+		cancelVmCtx:            func(err error) {},
 	}
 
 	if opts.CgroupSettings != nil {
@@ -1562,9 +1595,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 					HostDevName: tapDeviceName,
 					MacAddress:  tapDeviceMac,
 				},
-				// We only use MMDS for the dockerd config,
-				// which is only needed if dockerd is enabled.
-				AllowMMDS: c.vmConfig.InitDockerd,
+				AllowMMDS: true,
 			},
 		}
 	}
@@ -1980,14 +2011,22 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger()),
 	}
+
+	// The /init script unconditionally checks for this key if networking is
+	// enabled and will fail if it isn't set, so make sure to always set it,
+	// even if it's empty.
+	metadata := map[string]string{}
+	if c.vmConfig.EnableNetworking {
+		metadata["dns_overrides"] = c.marshalledDNSOverrides
+	}
 	if c.vmConfig.InitDockerd {
 		dockerDaemonConfig, err := getDockerDaemonConfig()
 		if err != nil {
 			return status.UnavailableErrorf("get Docker daemon config: %s", err)
 		}
-		metadata := map[string]string{
-			"dockerd_daemon_json": string(dockerDaemonConfig),
-		}
+		metadata["dockerd_daemon_json"] = string(dockerDaemonConfig)
+	}
+	if len(metadata) > 0 {
 		machineOpts = append(machineOpts, withMetadata(metadata))
 	}
 	if c.isBalloonEnabled() {

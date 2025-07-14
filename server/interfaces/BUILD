@@ -47,6 +47,7 @@ go_library(
         "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_google_go_github_v59//github",
         "@com_github_hashicorp_serf//serf",
+        "@com_github_miekg_dns//:dns",
         "@com_github_prometheus_client_model//io/prometheus/client:go",
         "@io_gorm_gorm//:gorm",
         "@org_golang_google_genproto//googleapis/longrunning",
