@@ -1258,7 +1258,6 @@ func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) erro
 // removeReplica attempts to delete a replica from a Raft cluster.
 func (s *Store) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req *rfpb.RemoveReplicaRequest) error {
 	replicaID := req.GetReplicaId()
-
 	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		_, err := c.RemoveReplica(ctx, req)
 		return err
