@@ -313,6 +313,8 @@ func (d *decompressingCloser) Close() error {
 }
 
 func (g *GCSBlobStore) Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	if offset < 0 {
 		// GCS treats negative offsets as relative to the end of the object, but
 		// we don't generally support that.
