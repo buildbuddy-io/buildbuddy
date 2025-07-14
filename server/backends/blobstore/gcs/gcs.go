@@ -313,6 +313,8 @@ func (d *decompressingCloser) Close() error {
 }
 
 func (g *GCSBlobStore) Reader(ctx context.Context, blobName string) (io.ReadCloser, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {

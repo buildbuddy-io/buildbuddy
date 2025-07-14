@@ -1932,6 +1932,11 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
+	}
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
