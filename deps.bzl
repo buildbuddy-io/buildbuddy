@@ -519,8 +519,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bazelbuild_bazel_gazelle",
         importpath = "github.com/bazelbuild/bazel-gazelle",
-        sum = "h1:NQmf8f7+7OcecUdnAgYoPete6RzAutjEuYjNhE9LU68=",
-        version = "v0.43.0",
+        sum = "h1:+z0ri9qQgeo7sZxntJpNl6U67gOo3URbuCjoqCk8c04=",
+        version = "v0.44.0",
     )
     go_repository(
         name = "com_github_bazelbuild_bazelisk",
@@ -540,8 +540,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bazelbuild_rules_go",
         importpath = "github.com/bazelbuild/rules_go",
-        sum = "h1:u160DT+RRb+Xb2aSO4piN8xhs4aZvWz2UDXCq48F4ao=",
-        version = "v0.53.0",
+        sum = "h1:cQYGcunY8myOB+0Ym6PGQRhc/milkRcNv0my3XgxaDU=",
+        version = "v0.55.1",
     )
     go_repository(
         name = "com_github_bazelbuild_rules_webtesting",
