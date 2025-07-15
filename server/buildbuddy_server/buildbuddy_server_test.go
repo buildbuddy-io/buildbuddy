@@ -62,6 +62,7 @@ func createInvocationForTesting(te environment.Env, user string) (string, error)
 	if err != nil {
 		return "", err
 	}
+	defer channel.Close()
 
 	// Send started event with api key
 	options := ""
@@ -93,7 +94,7 @@ func createInvocationForTesting(te environment.Env, user string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	return testInvocationID, err
+	return testInvocationID, nil
 }
 
 func TestGetInvocation(t *testing.T) {
