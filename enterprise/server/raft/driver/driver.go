@@ -7,6 +7,7 @@ import (
 	"flag"
 	"math"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -81,6 +82,21 @@ const (
 	// We need to wait to perform the current operation.
 	RequeueWait
 )
+
+func (r RequeueType) String() string {
+	switch r {
+	case RequeueNoop:
+		return "requeue-noop"
+	case RequeueCheckOtherActions:
+		return "requeue-check-other-actions"
+	case RequeueRetry:
+		return "requeue-retry"
+	case RequeueWait:
+		return "requeue-wait"
+	default:
+		return "requeue-unknown"
+	}
+}
 
 const (
 	// how long do we wait until we process the next item
@@ -1259,7 +1275,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	return nil
 }
 
-func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action DriverAction) RequeueType {
+func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action DriverAction) (requeueType RequeueType) {
 	var change *change
 	rangeID := repl.RangeID()
 	rd := rq.store.GetRange(rangeID)
@@ -1271,39 +1287,43 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action Drive
 	switch action {
 	case DriverNoop:
 	case DriverFinishReplicaRemoval:
-		rq.log.Debugf("finish replica removal (range_id: %d)", rangeID)
 		change = rq.finishReplicaRemoval(rd)
 	case DriverSplitRange:
-		rq.log.Debugf("split range (range_id: %d)", rangeID)
 		change = rq.splitRange(rd)
 	case DriverAddReplica:
-		rq.log.Debugf("add replica (range_id: %d)", rangeID)
 		change = rq.addReplica(rd)
 	case DriverReplaceDeadReplica:
-		rq.log.Debugf("replace dead replica (range_id: %d)", rangeID)
 		change = rq.replaceDeadReplica(rd)
 	case DriverRemoveReplica:
-		rq.log.Debugf("remove replica (range_id: %d)", rangeID)
 		change = rq.removeReplica(ctx, rd, repl)
 	case DriverRemoveDeadReplica:
-		rq.log.Debugf("remove dead replica (range_id: %d)", rangeID)
 		change = rq.removeDeadReplica(rd)
 	case DriverRebalanceReplica:
-		rq.log.Debugf("consider rebalance replica: (range_id: %d)", rangeID)
 		change = rq.rebalanceReplica(rd, repl)
 	case DriverRebalanceLease:
-		rq.log.Debugf("consider rebalance lease: (range_id: %d)", rangeID)
 		change = rq.rebalanceLease(ctx, rd, repl)
 	}
 
+	rq.log.Debugf("driver action: %s, range_id: %d, hasChange=%t", action, rangeID, change != nil)
+
+	defer func() {
+		if change == nil {
+			action = DriverNoop
+		}
+		metrics.RaftDriverActionCount.With(prometheus.Labels{
+			metrics.RaftDriverAction:      action.String(),
+			metrics.RaftDriverRequeueType: requeueType.String(),
+			metrics.RaftRangeIDLabel:      strconv.Itoa(int(rangeID)),
+		}).Inc()
+	}()
+
 	if change == nil {
-		rq.log.Debugf("nothing to do for replica: (range_id: %d)", rangeID)
 		return RequeueNoop
 	}
 
 	err := rq.applyChange(ctx, change)
 	if err != nil {
-		rq.log.Warningf("Error apply change to range_id: %d: %s", rangeID, err)
+		rq.log.Warningf("Error apply change for action %s to range_id: %d: %s", action, rangeID, err)
 	}
 
 	if action == DriverNoop || action == DriverRebalanceReplica || action == DriverRebalanceLease {
@@ -1311,7 +1331,7 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action Drive
 	}
 
 	if err != nil {
-		rq.log.Errorf("failed to process replica (range_id: %d: %s", rangeID, err)
+		rq.log.Errorf("failed to process replica for action (range_id: %d): %s", action, rangeID, err)
 		return RequeueRetry
 	} else {
 		return RequeueCheckOtherActions

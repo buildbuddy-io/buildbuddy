@@ -3066,6 +3066,21 @@ func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, 
 		return status.InternalErrorf("failed to update range descriptor for rangeID=%d, err: %s", rangeID, err)
 	}
 	s.log.Infof("range descriptor for rangeID %d updated to gen %d", rangeID, new.GetGeneration())
+
+	if stagingDiff := len(new.GetStaging()) - len(old.GetStaging()); stagingDiff > 0 {
+		metrics.RaftIntermediateReplicaCount.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+			metrics.RaftReplicaState: "staging",
+		}).Add(float64(stagingDiff))
+	}
+
+	if removedDiff := len(new.GetRemoved()) - len(old.GetRemoved()); removedDiff > 0 {
+		metrics.RaftIntermediateReplicaCount.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+			metrics.RaftReplicaState: "removed",
+		}).Add(float64(removedDiff))
+	}
+
 	return nil
 }
 
@@ -3099,6 +3114,7 @@ func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replic
 	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
+
 	return newDescriptor, nil
 }
 
