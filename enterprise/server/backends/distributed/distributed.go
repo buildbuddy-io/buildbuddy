@@ -568,6 +568,7 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 				c.log.CtxWarningf(handoffOrder.ctx, "unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
 				return
 			}
+			c.log.CtxDebugf(handoffOrder.ctx, "completed hinted handoff to peer: %q", peer)
 		default:
 			// read was unsuccessful -- no more handoffOrders to process.
 			return
