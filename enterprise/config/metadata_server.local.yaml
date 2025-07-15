@@ -4,3 +4,4 @@ cache:
   raft:
     max_range_size_bytes: 1000000
     atime_update_threshold: 1m
+    enable_registry_preload: true
