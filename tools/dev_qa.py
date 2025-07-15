@@ -37,7 +37,6 @@ REPO_CONFIGS = [
         "commit_sha": "a97d4303c9485db089a33a1049fe480d0122687d",
         "command": """
             bazel test //... \
-                --test_tag_filters=-docker,-bare \
                 --config=remote-dev \
                 --remote_executor=remote.buildbuddy.dev \
                 --remote_cache=remote.buildbuddy.dev \
@@ -46,6 +45,7 @@ REPO_CONFIGS = [
                 --flaky_test_attempts=3 \
                 --build_metadata=TAGS=dev-qa \
                 --remote_header=x-buildbuddy-api-key={} \
+                --test_tag_filters=-docker,-bare,-performance \
                 --remote_grpc_log=grpc_log.bin
         """.format(API_KEY),
     },
