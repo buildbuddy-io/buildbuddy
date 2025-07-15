@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/quarantine"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -985,11 +984,6 @@ func TestGetMulti(t *testing.T) {
 }
 
 func TestHintedHandoff(t *testing.T) {
-	// TestHintedHandoff has flaked multiple times recently:
-	//   https://app.buildbuddy.io/invocation/831b22ac-123b-4190-9a32-d9f06a2719b9
-	//   https://app.buildbuddy.io/invocation/be67e9bc-5104-4538-a86c-86656f8af43d
-	//   https://app.buildbuddy.io/invocation/010bd6d5-eae4-4a02-a1ad-b81311c3a461
-	quarantine.SkipQuarantinedTest(t)
 	env, authenticator, ctx := getEnvAuthAndCtx(t)
 
 	// Authenticate as user1.
@@ -1047,7 +1041,7 @@ func TestHintedHandoff(t *testing.T) {
 	// or distributedCaches so they should not be referenced
 	// below when reading / writing, although the running nodes
 	// still have reference to them via the Nodes list.
-	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	err = dc3.Shutdown(shutdownCtx)
 	cancel()
 	assert.Nil(t, err)

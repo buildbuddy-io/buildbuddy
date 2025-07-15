@@ -51,7 +51,6 @@ go_test(
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/content_addressable_storage_server",
-        "//server/testutil/quarantine",
         "//server/testutil/testauth",
         "//server/testutil/testcompression",
         "//server/testutil/testdigest",
