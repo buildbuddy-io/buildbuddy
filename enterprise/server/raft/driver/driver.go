@@ -1331,7 +1331,7 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action Drive
 	}
 
 	if err != nil {
-		rq.log.Errorf("failed to process replica for action (range_id: %d): %s", action, rangeID, err)
+		rq.log.Errorf("failed to process replica for action %s (range_id: %d): %s", action, rangeID, err)
 		return RequeueRetry
 	} else {
 		return RequeueCheckOtherActions
