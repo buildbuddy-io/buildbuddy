@@ -539,6 +539,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 }
 
 func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
+	flags.Set(t, "grpc_client.pool_size", 1)
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -585,7 +586,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	// or distributedCaches so they should not be referenced
 	// below when reading / writing, although the running nodes
 	// still have reference to them via the Nodes list.
-	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	err := dc3.Shutdown(shutdownCtx)
 	cancel()
 	assert.Nil(t, err)
@@ -595,14 +596,13 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
-			t.Fatal(err)
-		}
+		err := distributedCaches[j].Set(ctx, rn, buf)
+		require.NoError(t, err, "Set failed for %v on distributedCache %d", rn, j)
 		resourcesWritten = append(resourcesWritten, rn)
-		for _, baseCache := range baseCaches {
+		for i, baseCache := range baseCaches {
 			exists, err := baseCache.Contains(ctx, rn)
-			assert.Nil(t, err)
-			assert.True(t, exists)
+			assert.Nil(t, err, "baseCache %d Contains failed for %v", i, rn)
+			assert.True(t, exists, "baseCache %d doesn't contain %v", i, rn)
 			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
 	}
@@ -984,6 +984,10 @@ func TestGetMulti(t *testing.T) {
 }
 
 func TestHintedHandoff(t *testing.T) {
+	// Using gRPC client pooling results in a inconsistent view of peer health.
+	// This means that sometimes the hinted handoff will fail because one of the
+	// pooled channels still thinks that the peer is unhealthy.
+	flags.Set(t, "grpc_client.pool_size", 1)
 	env, authenticator, ctx := getEnvAuthAndCtx(t)
 
 	// Authenticate as user1.
@@ -1051,14 +1055,13 @@ func TestHintedHandoff(t *testing.T) {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
-			t.Fatal(err)
-		}
+		err := distributedCaches[j].Set(ctx, rn, buf)
+		require.NoError(t, err, "Set failed for %v on distributedCache %d", rn, j)
 		digestsWritten = append(digestsWritten, rn)
-		for _, baseCache := range baseCaches {
+		for i, baseCache := range baseCaches {
 			exists, err := baseCache.Contains(ctx, rn)
-			assert.Nil(t, err)
-			assert.True(t, exists)
+			assert.Nil(t, err, "baseCache %d Contains failed for %v", i, rn)
+			assert.True(t, exists, "baseCache %d doesn't contain %v", i, rn)
 			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
 	}
@@ -1071,14 +1074,13 @@ func TestHintedHandoff(t *testing.T) {
 
 	// Wait for all peers to finish their backfill requests.
 	for _, distributedCache := range distributedCaches {
+		distributedCache.hintedHandoffsMu.RLock()
 		for _, backfillChannel := range distributedCache.hintedHandoffsByPeer {
-			if backfillChannel == nil {
-				continue
-			}
 			for len(backfillChannel) > 0 {
 				time.Sleep(10 * time.Millisecond)
 			}
 		}
+		distributedCache.hintedHandoffsMu.RUnlock()
 	}
 
 	// Figure out the set of digests that were hinted-handoffs. We'll verify
@@ -1097,8 +1099,8 @@ func TestHintedHandoff(t *testing.T) {
 	// Ensure that dc3 successfully received all the hinted handoffs.
 	for _, r := range hintedHandoffs {
 		exists, err := memoryCache3.Contains(ctx, r)
-		assert.Nil(t, err)
-		assert.True(t, exists)
+		assert.Nil(t, err, "memoryCache3.Contains failed for %v", r)
+		assert.True(t, exists, "memoryCache3 doesn't contain %v", r)
 		readAndCompareDigest(t, ctx, dc3, r)
 	}
 }

@@ -563,14 +563,11 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 	for {
 		select {
 		case handoffOrder := <-handoffs:
-			ctx, cancel := background.ExtendContextForFinalization(handoffOrder.ctx, 10*time.Second)
-			err := c.sendFile(ctx, handoffOrder.r, peer)
+			err := c.sendFile(handoffOrder.ctx, handoffOrder.r, peer)
 			if err != nil {
-				c.log.CtxWarningf(ctx, "unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
+				c.log.CtxWarningf(handoffOrder.ctx, "unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
 				return
 			}
-			c.log.CtxDebugf(ctx, "completed hinted handoff to peer: %q", peer)
-			cancel()
 		default:
 			// read was unsuccessful -- no more handoffOrders to process.
 			return
@@ -869,6 +866,8 @@ func (c *Cache) remoteDelete(ctx context.Context, peer string, r *rspb.ResourceN
 }
 
 func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string) error {
+	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
+	defer cancel()
 	if exists, err := c.distributedProxy.RemoteContains(ctx, dest, rn); err == nil && exists {
 		return nil
 	}
