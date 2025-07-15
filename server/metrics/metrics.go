@@ -210,6 +210,15 @@ const (
 	// Raft Event Type, such as "range-removed", "range-usage-updated"
 	RaftEventType = "raft_event"
 
+	// Raft Driver Action
+	RaftDriverAction = "driver_action"
+
+	// Raft Driver Requeue Type
+	RaftDriverRequeueType = "driver_requeue_type"
+
+	// Raft Replica State: staging, removing
+	RaftReplicaState = "replica_state"
+
 	// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
 
@@ -2667,6 +2676,27 @@ var (
 		Help:      "The duration of a nodehost method",
 	}, []string{
 		RaftNodeHostMethodLabel,
+		RaftRangeIDLabel,
+	})
+
+	RaftDriverActionCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "driver_actions",
+		Help:      "The total number of driver action",
+	}, []string{
+		RaftDriverAction,
+		RaftDriverRequeueType,
+		RaftRangeIDLabel,
+	})
+
+	RaftIntermediateReplicaCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "intermediate_replicas_count",
+		Help:      "The number of intermediate replicas",
+	}, []string{
+		RaftReplicaState,
 		RaftRangeIDLabel,
 	})
 
