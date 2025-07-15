@@ -640,7 +640,6 @@ func getEnvAndCtx(t testing.TB, user string) (*testenv.TestEnv, context.Context)
 
 func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, testDataFile string) string {
 	handler := build_event_handler.NewBuildEventHandler(te)
-	defer handler.Stop()
 
 	f, err := os.Open(path.Join("testdata", testDataFile))
 	require.NoError(t, err)
@@ -690,7 +689,6 @@ func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, testDataFile str
 
 func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
 	handler := build_event_handler.NewBuildEventHandler(te)
-	defer handler.Stop()
 	channel, err := handler.OpenChannel(context.Background(), iid)
 	require.NoError(t, err)
 	defer channel.Close()
