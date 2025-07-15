@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -109,24 +110,6 @@ REPO_CONFIGS = [
                 --remote_grpc_log=grpc_log.bin
         """.format(API_KEY),
     },
-    {
-        "name": "tensorflow",
-        "repo_url": "https://github.com/tensorflow/tensorflow",
-        "commit_sha": "df75ddb32a31ba79b58679d833dfa1af478d04a8",
-        "command": """
-            bazel build tensorflow \
-                --config=rbe_linux_cpu \
-                --config=monolithic \
-                --remote_executor=remote.buildbuddy.dev \
-                --remote_cache=remote.buildbuddy.dev \
-                --bes_backend=remote.buildbuddy.dev \
-                --bes_results_url=https://app.buildbuddy.dev/invocation/ \
-                --nogoogle_default_credentials \
-                --build_metadata=TAGS=dev-qa \
-                --remote_header=x-buildbuddy-api-key={} \
-                --remote_grpc_log=grpc_log.bin
-        """.format(API_KEY),
-    },
 ]
 
 BUILDBUDDY_TOOLCHAIN_SNIPPET = """
@@ -204,6 +187,12 @@ def run_test(name, repo_url, commit_sha, command, clean_repos=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(usage=USAGE)
     parser.add_argument(
+        "--print_matrix",
+        default=False,
+        action="store_true",
+        help="Print the matrix of repos to test, and exit.",
+    )
+    parser.add_argument(
         "--repos",
         default="buildbuddy,bazel-gazelle,abseil-cpp,rules_python",
         help="Which repos to test.",
@@ -222,6 +211,19 @@ if __name__ == "__main__":
         help="Don't continue if a command fails.",
     )
     args = parser.parse_args()
+
+    if args.print_matrix:
+        print(json.dumps({
+            "include": [
+                {
+                    "name": repo["name"],
+                    "repo": repo["repo_url"],
+                    "ref": repo["commit_sha"],
+                }
+                for repo in REPO_CONFIGS
+            ]
+        }))
+        sys.exit(0)
 
     if args.repos == "all":
         repos = REPO_CONFIGS
