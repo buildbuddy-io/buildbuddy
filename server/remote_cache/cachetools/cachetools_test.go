@@ -411,6 +411,14 @@ func (f *fakeCasClient) GetTree(ctx context.Context, in *repb.GetTreeRequest, op
 	}, nil
 }
 
+func (f *fakeCasClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest, opts ...grpc.CallOption) (*repb.SpliceBlobResponse, error) {
+	panic("unimplemented")
+}
+
+func (f *fakeCasClient) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (*repb.SplitBlobResponse, error) {
+	panic("unimplemented")
+}
+
 type fakeFilecache struct {
 	mu         sync.Mutex
 	files      map[string][]byte

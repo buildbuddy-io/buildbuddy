@@ -126,6 +126,16 @@ func (f *fakeCAS) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressab
 	return status.InternalError("Unexpected call to GetTree")
 }
 
+func (f *fakeCAS) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	f.t.Fatal("Unexpected call to SpliceBlob")
+	return nil, status.InternalError("SpliceBlob RPC is not currently implemented")
+}
+
+func (f *fakeCAS) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	f.t.Fatal("Unexpected call to SplitBlob")
+	return nil, status.InternalError("SplitBlob RPC is not currently implemented")
+}
+
 func runFakeCAS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*fakeCAS, repb.ContentAddressableStorageClient) {
 	cas := fakeCAS{t: t, authenticator: env.GetAuthenticator(), updates: []update{}}
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
