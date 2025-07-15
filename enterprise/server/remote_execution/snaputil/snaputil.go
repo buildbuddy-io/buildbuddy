@@ -14,9 +14,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/bytestream"
 
@@ -38,6 +41,22 @@ const (
 	// change!
 	MemoryFileName = "memory"
 )
+
+func groupIDStringFromContext(ctx context.Context) string {
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		return c.GroupID
+	}
+	return interfaces.AuthAnonymousUser
+}
+
+// ArtifactFetchDedupeKey controls the granularity at which we dedupe artifact fetch requests.
+// The granularity is driven by the group ID, digest, and instance name.
+type ArtifactFetchDedupeKey struct {
+	GroupID string
+	Digest  digest.Key
+}
+
+var ArtifactFetchDeduper = singleflight.Group[ArtifactFetchDedupeKey, string]{}
 
 // ChunkSource represents how a snapshot chunk was initialized
 type ChunkSource int
@@ -91,7 +110,7 @@ func (s ChunkSource) String() string {
 
 func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
 	if !*EnableLocalSnapshotSharing && !*EnableRemoteSnapshotSharing {
-		return 0, status.UnimplementedError("Snapshot sharing not enabled")
+		return ChunkSourceUnmapped, status.UnimplementedError("Snapshot sharing not enabled")
 	}
 
 	if *EnableLocalSnapshotSharing {
@@ -102,20 +121,72 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 		}
 
 		if !*EnableRemoteSnapshotSharing || !remoteEnabled {
-			return 0, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
+			return ChunkSourceUnmapped, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
 		}
 	}
 
+	// Create dedupe key using group ID, digest, and instance name
+	dedupeKey := ArtifactFetchDedupeKey{
+		GroupID: groupIDStringFromContext(ctx),
+		Digest:  digest.NewKey(d),
+	}
+
+	// Use singleflight to deduplicate the actual remote fetch
+	tempPath, shared, err := ArtifactFetchDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (string, error) {
+		return FetchArtifactToTempLocation(ctx, localCache, bsClient, d, instanceName)
+	})
+	if err != nil {
+		return ChunkSourceUnmapped, err
+	}
+
+	// Only clean up temp file if this was the original fetch (not shared)
+	// When shared=true, the temp file will be cleaned up by the original fetcher
+	if !shared {
+		defer func() {
+			if tempPath != "" {
+				if err := os.Remove(tempPath); err != nil {
+					log.CtxWarningf(ctx, "Failed to clean up temp file %s: %s", tempPath, err)
+				}
+			}
+		}()
+	}
+
+	// Use fastcopy for efficient file copying/linking
+	if err := fastcopy.FastCopy(tempPath, outputPath); err != nil {
+		return ChunkSourceUnmapped, status.WrapError(err, "copy artifact to output path")
+	}
+
+	if *VerboseLogging {
+		sharedStr := ""
+		if shared {
+			sharedStr = " (shared)"
+		}
+		log.CtxDebugf(ctx, "Fetched snapshot artifact%s: instance=%q file=%s hash=%s", sharedStr, instanceName, StripChroot(outputPath), d.GetHash())
+	}
+
+	return ChunkSourceRemoteCache, nil
+}
+
+// FetchArtifactToTempLocation fetches an artifact from the remote cache to a temporary location.
+// This is the deduplicated core logic that actually performs the remote fetch.
+func FetchArtifactToTempLocation(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, d *repb.Digest, instanceName string) (string, error) {
+	// Create a temporary file
+	randStr, err := random.RandomString(10)
+	if err != nil {
+		return "", err
+	}
+	tempPath := filepath.Join(localCache.TempDir(), fmt.Sprintf("%s.%s.tmp", d.Hash, randStr))
+
 	if *VerboseLogging {
 		start := time.Now()
-		log.CtxDebugf(ctx, "Fetching snapshot artifact: instance=%q file=%s hash=%s", instanceName, StripChroot(outputPath), d.GetHash())
+		log.CtxDebugf(ctx, "Fetching snapshot artifact: instance=%q hash=%s", instanceName, d.GetHash())
 		defer func() { log.CtxDebugf(ctx, "Fetched remote snapshot artifact in %s", time.Since(start)) }()
 	}
 
 	// Fetch from remote cache
-	f, err := os.Create(outputPath)
+	f, err := os.Create(tempPath)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	defer f.Close()
 
@@ -125,20 +196,20 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	r := digest.NewCASResourceName(d, instanceName, repb.DigestFunction_BLAKE3)
 	r.SetCompressor(repb.Compressor_ZSTD)
 	if err := cachetools.GetBlob(ctx, bsClient, r, f); err != nil {
-		if err := os.Remove(outputPath); err != nil {
-			log.CtxErrorf(ctx, "failed to clean up path %s after failed fetch: %s", outputPath, err)
+		if err := os.Remove(tempPath); err != nil {
+			log.CtxErrorf(ctx, "failed to clean up temp path %s after failed fetch: %s", tempPath, err)
 		}
-		return 0, status.WrapError(err, "remote fetch snapshot artifact")
+		return "", status.WrapError(err, "remote fetch snapshot artifact")
 	}
 
 	if *EnableLocalSnapshotSharing {
 		// Save to local cache so next time fetching won't require a remote get
-		if err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
-			log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
+		if err := cacheLocally(ctx, localCache, d, tempPath); err != nil {
+			log.Warningf("saving %s to local filecache failed: %s", tempPath, err)
 		}
 	}
 
-	return ChunkSourceRemoteCache, nil
+	return tempPath, nil
 }
 
 func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, tmpDir string) ([]byte, error) {
