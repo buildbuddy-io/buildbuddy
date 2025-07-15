@@ -5080,7 +5080,10 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "gitlab.com/arm-research/smarter/smarter-device-manager",
         sha256 = "f4c2a3654e52b8af0676c6619cd2055b832620067b0cdfbf1a0ed9f8f2c921f8",
         strip_prefix = "smarter-device-manager-v1.20.11",
-        urls = ["https://gitlab.com/arm-research/smarter/smarter-device-manager/-/archive/v1.20.11/smarter-device-manager-v1.20.11.zip"],
+        urls = [
+            "https://storage.googleapis.com/buildbuddy-tools/archives/smarter-device-manager-v1.20.11.zip",
+            "https://gitlab.com/arm-research/smarter/smarter-device-manager/-/archive/v1.20.11/smarter-device-manager-v1.20.11.zip",
+        ],
     )
     go_repository(
         name = "com_google_cloud_go",
