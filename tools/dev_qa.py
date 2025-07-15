@@ -33,7 +33,7 @@ REPO_CONFIGS = [
     {
         "name": "buildbuddy",
         "repo_url": "https://github.com/buildbuddy-io/buildbuddy",
-        "commit_sha": "7dd9ee4ccba0e92eac1b1c37d7406241f7a26827",
+        "commit_sha": "a97d4303c9485db089a33a1049fe480d0122687d",
         "command": """
             bazel test //... \
                 --test_tag_filters=-docker,-bare \
