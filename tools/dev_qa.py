@@ -36,6 +36,7 @@ REPO_CONFIGS = [
         "commit_sha": "7dd9ee4ccba0e92eac1b1c37d7406241f7a26827",
         "command": """
             bazel test //... \
+                --test_tag_filters=-docker,-bare \
                 --config=remote-dev \
                 --remote_executor=remote.buildbuddy.dev \
                 --remote_cache=remote.buildbuddy.dev \
