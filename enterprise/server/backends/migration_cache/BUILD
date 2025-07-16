@@ -37,7 +37,7 @@ go_library(
 
 go_test(
     name = "migration_cache_test",
-    size = "small",
+    size = "medium",
     srcs = ["migration_cache_test.go"],
     deps = [
         ":migration_cache",

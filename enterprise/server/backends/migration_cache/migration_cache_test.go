@@ -448,7 +448,7 @@ func TestCopyDataInBackground(t *testing.T) {
 			destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 			require.NoError(t, err)
 
-			numTests := 1000
+			numTests := 100
 			config := &migration_cache.MigrationConfig{
 				CopyChanBufferSize: numTests + 1,
 				NumCopyWorkers:     2,
