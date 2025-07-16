@@ -3740,6 +3740,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_mwitkow_grpc_proxy",
+        patch_args = ["-p1"],
+        patch_tool = "patch",
+        patches = ["@{}//buildpatches:proxy.patch".format(workspace_name)],
         importpath = "github.com/mwitkow/grpc-proxy",
         sum = "h1:62uLwA3l2JMH84liO4ZhnjTH5PjFyCYxbHLgXPaJMtI=",
         version = "v0.0.0-20230212185441-f345521cb9c9",
@@ -6446,6 +6449,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
             # server gracefully, it's safe for us to allow gRPC to wait for all
             # ongoing requests to finish.
             "@{}//buildpatches:org_golang_google_grpc_remove_drain_panic.patch".format(workspace_name),
+            "@{}//buildpatches:grpc.patch".format(workspace_name),
         ],
         sum = "h1:pWFv03aZoHzlRKHWicjsZytKAiYCtNS0dHbXnIdq7jQ=",
         version = "v1.70.0",

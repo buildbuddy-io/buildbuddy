@@ -1,0 +1,42 @@
+diff --git a/proxy/handler.go b/proxy/handler.go
+index 745a739..b7b7df8 100644
+--- a/proxy/handler.go
++++ b/proxy/handler.go
+@@ -5,7 +5,9 @@ package proxy
+ 
+ import (
+ 	"context"
++	"log"
+ 	"io"
++	"time"
+ 
+ 	"google.golang.org/grpc"
+ 	"google.golang.org/grpc/codes"
+@@ -44,6 +46,7 @@ func RegisterService(server *grpc.Server, director StreamDirector, serviceName s
+ // The indented use here is as a transparent proxy, where the server doesn't know about the services implemented by the
+ // backends. It should be used as a `grpc.UnknownServiceHandler`.
+ func TransparentHandler(director StreamDirector) grpc.StreamHandler {
++	log.Println("mwproxy: Initializing TransparentHandler")
+ 	streamer := &handler{director: director}
+ 	return streamer.handler
+ }
+@@ -56,16 +59,19 @@ type handler struct {
+ // It is invoked like any gRPC server stream and uses the emptypb.Empty type server
+ // to proxy calls between the input and output streams.
+ func (s *handler) handler(srv interface{}, serverStream grpc.ServerStream) error {
++	log.Printf("mwproxy: Top of mwitkow handler at %s", time.Now())
+ 	// little bit of gRPC internals never hurt anyone
+ 	fullMethodName, ok := grpc.MethodFromServerStream(serverStream)
+ 	if !ok {
+ 		return status.Errorf(codes.Internal, "lowLevelServerStream not exists in context")
+ 	}
++	log.Printf("mwproxy: Handling %s at %s", fullMethodName, time.Now())
+ 	// We require that the director's returned context inherits from the serverStream.Context().
+ 	outgoingCtx, backendConn, err := s.director(serverStream.Context(), fullMethodName)
+ 	if err != nil {
+ 		return err
+ 	}
++	log.Printf("mwproxy: Post director func at %s", time.Now())
+ 
+ 	clientCtx, clientCancel := context.WithCancel(outgoingCtx)
+ 	defer clientCancel()

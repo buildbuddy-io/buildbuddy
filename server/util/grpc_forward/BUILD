@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/util/flag",
         "//server/util/grpc_client",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_mwitkow_grpc_proxy//proxy",
         "@org_golang_google_grpc//:grpc",

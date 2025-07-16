@@ -62,6 +62,11 @@ go_deps.module_override(
 )
 go_deps.module_override(
     patch_strip = 1,
+    patches = ["@@//buildpatches:proxy.patch"],
+    path = "github.com/mwitkow/grpc-proxy",
+)
+go_deps.module_override(
+    patch_strip = 1,
     patches = [
         # Remove panic() from serverHandlerTransport.Drain
         # gRPC GracefulStop stops accepting new requests and lets any existing

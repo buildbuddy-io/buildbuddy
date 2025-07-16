@@ -2,15 +2,16 @@ package grpc_forward
 
 import (
 	"context"
-	"strings"
-	"sync"
-
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/mwitkow/grpc-proxy/proxy"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"strings"
+	"sync"
+	"time"
 )
 
 // proxyPair defines a prefix to match against the incoming grpc method name
@@ -68,17 +69,24 @@ func getProxyDirector() directorFunc {
 		return nil
 	}
 	return func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
+		log.CtxWarningf(ctx, "grpc_forward:director : looking for method %s", fullMethodName)
+		start := time.Now()
 		target, err := lookupProxyTarget(fullMethodName)
 		if err != nil {
 			return nil, nil, err
 		}
+		log.CtxWarningf(ctx, "grpc_forward:director: looking for proxy target took %s", time.Since(start))
 
+		start = time.Now()
 		pool, err := getConnectionPool(target)
 		if err != nil {
 			return nil, nil, err
 		}
+		log.CtxWarningf(ctx, "grpc_forward:director: get connection pool took %s", time.Since(start))
 
+		start = time.Now()
 		cc := pool.WaitForConn()
+		log.CtxWarningf(ctx, "grpc_forward:director: wait for conn took %s", time.Since(start))
 		if md, ok := metadata.FromIncomingContext(ctx); ok {
 			ctx = metadata.NewOutgoingContext(ctx, md.Copy())
 		}

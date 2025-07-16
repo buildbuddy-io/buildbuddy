@@ -1,0 +1,44 @@
+diff --git a/server.go b/server.go
+index 9d5b2884..83a0c2e6 100644
+--- a/server.go
++++ b/server.go
+@@ -24,6 +24,7 @@ import (
+ 	"fmt"
+ 	"io"
+ 	"math"
++	"log"
+ 	"net"
+ 	"net/http"
+ 	"reflect"
+@@ -518,6 +519,7 @@ func binaryLogger(bl binarylog.Logger) ServerOption {
+ // The handling function and stream interceptor (if set) have full access to
+ // the ServerStream, including its Context.
+ func UnknownServiceHandler(streamHandler StreamHandler) ServerOption {
++	log.Println("Top of UnknownServiceHandler")
+ 	return newFuncServerOption(func(o *serverOptions) {
+ 		o.unknownStreamDesc = &StreamDesc{
+ 			StreamName: "unknown_service_handler",
+@@ -1741,6 +1743,7 @@ func (s *Server) processStreamingRPC(ctx context.Context, stream *transport.Serv
+ }
+ 
+ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.ServerStream) {
++	log.Printf("go-grpc: Top of handleStream at %s", time.Now())
+ 	ctx := stream.Context()
+ 	ctx = contextWithServer(ctx, s)
+ 	var ti *traceInfo
+@@ -1763,6 +1766,7 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Ser
+ 	if sm != "" && sm[0] == '/' {
+ 		sm = sm[1:]
+ 	}
++	log.Printf("go-grpc: Stream method is %s", sm)
+ 	pos := strings.LastIndex(sm, "/")
+ 	if pos == -1 {
+ 		if ti != nil {
+@@ -1815,6 +1819,7 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Ser
+ 			return
+ 		}
+ 	}
++	log.Printf("go-grpc: About to call unknownStreamDesc at %s", time.Now())
+ 	// Unknown service, or known server unknown method.
+ 	if unknownDesc := s.opts.unknownStreamDesc; unknownDesc != nil {
+ 		s.processStreamingRPC(ctx, stream, nil, unknownDesc, ti)
