@@ -596,6 +596,11 @@ func (d *doubleReader) shouldVerifyNumBytes() bool {
 		return false
 	}
 
+	// If the destination reader failed, don't verify the number of bytes read.
+	if d.lastDestErr != nil && d.lastDestErr != io.EOF {
+		return false
+	}
+
 	if d.r.GetCompressor() != repb.Compressor_ZSTD {
 		return true
 	}
@@ -669,6 +674,7 @@ func (d *doubleReader) Close() error {
 				n, err := io.Copy(io.Discard, d.dest)
 				if err != nil {
 					log.CtxWarningf(d.ctx, "Migration %v read err: failed to read remaining bytes from dest cache: %s", d.r, err)
+					d.lastDestErr = err
 				}
 				d.bytesReadDest += int(n)
 			}
