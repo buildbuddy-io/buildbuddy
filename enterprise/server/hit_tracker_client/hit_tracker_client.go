@@ -74,7 +74,7 @@ func (h *NoOpHitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requ
 func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, conn grpc.ClientConnInterface) *HitTrackerFactory {
 	factory := HitTrackerFactory{
 		authenticator:        env.GetAuthenticator(),
-		pollInterval:         *remoteHitTrackerPollInterval,
+		ticker:               env.GetClock().NewTicker(*remoteHitTrackerPollInterval).Chan(),
 		quit:                 make(chan struct{}, 1),
 		enqueueChan:          make(chan *enqueuedCacheHit, *enqueueChanSize),
 		maxPendingHitsPerKey: *maxPendingHitsPerKey,
@@ -126,9 +126,9 @@ type enqueuedCacheHit struct {
 type HitTrackerFactory struct {
 	authenticator interfaces.Authenticator
 
-	pollInterval time.Duration
-	quit         chan struct{}
-	wg           sync.WaitGroup
+	ticker <-chan time.Time
+	quit   chan struct{}
+	wg     sync.WaitGroup
 
 	enqueueChan chan *enqueuedCacheHit
 
@@ -353,14 +353,12 @@ func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferT
 	return &NoOpTransferTimer{}
 }
 
-// TODO(iain): this function will ALWAYS wait pollInterval between requests.
-// Use time.Tick to make it wait AT LEAST pollInterval instead.
 func (h *HitTrackerFactory) sender(ctx context.Context) {
 	for {
 		select {
 		case <-h.quit:
 			return
-		case <-time.After(h.pollInterval):
+		case <-h.ticker:
 		}
 		// Keep flushing until there is nothing to flush.
 		for h.sendTrackRequest(ctx) > 0 {
