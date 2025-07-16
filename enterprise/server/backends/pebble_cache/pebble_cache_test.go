@@ -1229,7 +1229,7 @@ func TestCompression_ParallelRequests(t *testing.T) {
 			blobSize:               100,
 		},
 		{
-			desc:                   "chunking off inline",
+			desc:                   "chunking off non_inline",
 			maxInlineFileSizeBytes: 1,
 			blobSize:               100,
 		},
