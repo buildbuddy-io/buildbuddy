@@ -254,13 +254,11 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 
 	select {
 	case h.enqueueChan <- &enqueuedHit:
-		return
 	default:
 		metrics.RemoteHitTrackerUpdates.WithLabelValues(
 			enqueuedHit.collection.GroupID,
 			"dropped_channel_full",
 		).Inc()
-		return
 	}
 }
 func (h *HitTrackerFactory) batch(enqueuedHit *enqueuedCacheHit) {
@@ -268,17 +266,16 @@ func (h *HitTrackerFactory) batch(enqueuedHit *enqueuedCacheHit) {
 	k := usageutil.EncodeCollection(c)
 
 	h.mu.Lock()
-	if _, ok := h.hitsByCollection[k]; !ok {
-		hits := cacheHits{
+	usageKeyHits, ok := h.hitsByCollection[k]
+	if !ok {
+		usageKeyHits = &cacheHits{
 			maxPendingHits:    h.maxPendingHitsPerKey,
 			encodedCollection: k,
 			hits:              []*hitpb.CacheHit{},
 		}
-		h.hitsByCollection[k] = &hits
-		h.hitsQueue = append(h.hitsQueue, &hits)
+		h.hitsByCollection[k] = usageKeyHits
+		h.hitsQueue = append(h.hitsQueue, usageKeyHits)
 	}
-
-	usageKeyHits := h.hitsByCollection[k]
 	h.mu.Unlock()
 
 	if usageKeyHits.enqueue(enqueuedHit.hit, enqueuedHit.authHeaders) {
@@ -356,6 +353,8 @@ func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferT
 	return &NoOpTransferTimer{}
 }
 
+// TODO(iain): this function will ALWAYS wait pollInterval between requests.
+// Use time.Tick to make it wait AT LEAST pollInterval instead.
 func (h *HitTrackerFactory) sender(ctx context.Context) {
 	for {
 		select {
