@@ -33,6 +33,7 @@ API_KEY = os.environ.get(
 REPO_CONFIGS = [
     {
         "name": "buildbuddy",
+        "owner": "buildbuddy-io",
         "repo_url": "https://github.com/buildbuddy-io/buildbuddy",
         "commit_sha": "a97d4303c9485db089a33a1049fe480d0122687d",
         "command": """
@@ -51,6 +52,7 @@ REPO_CONFIGS = [
     },
     {
         "name": "bazel-gazelle",
+        "owner": "bazelbuild",
         "repo_url": "https://github.com/bazelbuild/bazel-gazelle",
         "commit_sha": "f44f85943a3f6bde872e2d39c5b552e21a797975",
         "command": """
@@ -72,6 +74,7 @@ REPO_CONFIGS = [
     },
     {
         "name": "abseil-cpp",
+        "owner": "abseil",
         "repo_url": "https://github.com/abseil/abseil-cpp",
         "commit_sha": "e968256406fd7898d7fde880e31e54b041d32a7e",
         "command": """
@@ -93,6 +96,7 @@ REPO_CONFIGS = [
     },
     {
         "name": "rules_python",
+        "owner": "bazelbuild",
         "repo_url": "https://github.com/bazelbuild/rules_python",
         "commit_sha": "da10ac49efee1b02cbfa3b22a39e68bf3fe5bbe2",
         "command": """
@@ -217,7 +221,7 @@ if __name__ == "__main__":
             "include": [
                 {
                     "name": repo["name"],
-                    "repo": repo["repo_url"],
+                    "repo": f"{repo["owner"]}/{repo["name"]}",
                     "ref": repo["commit_sha"],
                 }
                 for repo in REPO_CONFIGS
