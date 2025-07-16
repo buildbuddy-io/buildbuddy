@@ -739,25 +739,26 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		if err := c.newID(ctx); err != nil {
 			return nil, err
 		}
-		cd, err := digest.ComputeForMessage(c.vmConfig, repb.DigestFunction_SHA256)
-		if err != nil {
-			return nil, err
-		}
 
-		runnerID := c.id
-		if snaputil.IsChunkedSnapshotSharingEnabled() {
-			runnerID = ""
-		}
-		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, cd.GetHash(), runnerID)
-		if err != nil {
-			return nil, err
-		}
 		// If recycling is enabled and a snapshot exists, then when calling
 		// Create(), load the snapshot instead of creating a new VM.
-
 		recyclingEnabled := platform.IsRecyclingEnabled(task)
 		c.recyclingEnabled = recyclingEnabled
 		if recyclingEnabled && snaputil.IsChunkedSnapshotSharingEnabled() {
+
+			cd, err := digest.ComputeForMessage(c.vmConfig, repb.DigestFunction_SHA256)
+			if err != nil {
+				return nil, err
+			}
+			runnerID := c.id
+			if snaputil.IsChunkedSnapshotSharingEnabled() {
+				runnerID = ""
+			}
+			c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, cd.GetHash(), runnerID)
+			if err != nil {
+				return nil, err
+			}
+
 			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
 			c.createFromSnapshot = (err == nil)
 			label := ""
