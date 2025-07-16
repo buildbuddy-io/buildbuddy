@@ -28,6 +28,8 @@ import (
 )
 
 var (
+	enqueueChanSize = flag.Int("cache_proxy.remote_hit_tracker.remote_hit_queue_size", 3_000_000, "The size of the channel to use for buffering enqueued hits.")
+
 	remoteHitTrackerTarget       = flag.String("cache_proxy.remote_hit_tracker.target", "", "The gRPC target of the remote cache-hit-tracking service.")
 	remoteHitTrackerPollInterval = flag.Duration("cache_proxy.remote_hit_tracker.update_interval", 250*time.Millisecond, "The time interval to wait between sending remote cache-hit-tracking RPCs.")
 	maxPendingHitsPerKey         = flag.Int("cache_proxy.remote_hit_tracker.max_pending_hits_per_key", 3_000_000, "The maximum number of pending cache-hit updates to store in memory for a given (group, usagelabels) tuple.")
@@ -74,15 +76,17 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 		authenticator:        env.GetAuthenticator(),
 		pollInterval:         *remoteHitTrackerPollInterval,
 		quit:                 make(chan struct{}, 1),
+		enqueueChan:          make(chan *enqueuedCacheHit, *enqueueChanSize),
 		maxPendingHitsPerKey: *maxPendingHitsPerKey,
 		maxHitsPerUpdate:     *maxHitsPerUpdate,
 		hitsByCollection:     map[string]*cacheHits{},
 		client:               hitpb.NewHitTrackerServiceClient(conn),
 	}
+	go factory.batcher()
 	for i := 0; i < *remoteHitTrackerWorkers; i++ {
 		factory.wg.Add(1)
 		go func() {
-			factory.runWorker(ctx)
+			factory.sender(ctx)
 			factory.wg.Done()
 		}()
 	}
@@ -112,6 +116,13 @@ func (c *cacheHits) enqueue(hit *hitpb.CacheHit, authHeaders map[string][]string
 	return true
 }
 
+// An enqueued cache hit
+type enqueuedCacheHit struct {
+	collection  *usageutil.Collection
+	hit         *hitpb.CacheHit
+	authHeaders map[string][]string
+}
+
 type HitTrackerFactory struct {
 	authenticator interfaces.Authenticator
 
@@ -119,11 +130,13 @@ type HitTrackerFactory struct {
 	quit         chan struct{}
 	wg           sync.WaitGroup
 
+	enqueueChan chan *enqueuedCacheHit
+
 	mu                   sync.Mutex
 	maxPendingHitsPerKey int
 	maxHitsPerUpdate     int
 	hitsByCollection     map[string]*cacheHits
-	hitsQueue            []*cacheHits
+	hitsQueue            []*cacheHits // Used to round-robin send collection keys
 
 	client hitpb.HitTrackerServiceClient
 }
@@ -224,10 +237,7 @@ func (h *HitTrackerFactory) groupID(ctx context.Context) string {
 }
 
 func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
-
-	h.mu.Lock()
 	if h.shouldFlushSynchronously() {
-		h.mu.Unlock()
 		log.CtxInfof(ctx, "hit_tracker_client.enqueue after worker shutdown, sending RPC synchronously")
 		// Note: no need to mess with client/origin headers here, they're forwarded along from the incoming ctx.
 		if _, err := h.client.Track(ctx, &hitpb.TrackRequest{Hits: []*hitpb.CacheHit{hit}, Server: usageutil.ServerName()}); err != nil {
@@ -236,24 +246,39 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 		return
 	}
 
-	c := usageutil.CollectionFromRPCContext(ctx)
+	enqueuedHit := enqueuedCacheHit{
+		collection:  usageutil.CollectionFromRPCContext(ctx),
+		hit:         hit,
+		authHeaders: authutil.GetAuthHeaders(ctx),
+	}
+
+	select {
+	case h.enqueueChan <- &enqueuedHit:
+	default:
+		metrics.RemoteHitTrackerUpdates.WithLabelValues(
+			enqueuedHit.collection.GroupID,
+			"dropped_channel_full",
+		).Inc()
+	}
+}
+func (h *HitTrackerFactory) batch(enqueuedHit *enqueuedCacheHit) {
+	c := enqueuedHit.collection
 	k := usageutil.EncodeCollection(c)
 
-	if _, ok := h.hitsByCollection[k]; !ok {
-		hits := cacheHits{
+	h.mu.Lock()
+	usageKeyHits, ok := h.hitsByCollection[k]
+	if !ok {
+		usageKeyHits = &cacheHits{
 			maxPendingHits:    h.maxPendingHitsPerKey,
 			encodedCollection: k,
 			hits:              []*hitpb.CacheHit{},
 		}
-		h.hitsByCollection[k] = &hits
-		h.hitsQueue = append(h.hitsQueue, &hits)
+		h.hitsByCollection[k] = usageKeyHits
+		h.hitsQueue = append(h.hitsQueue, usageKeyHits)
 	}
-
-	usageKeyHits := h.hitsByCollection[k]
 	h.mu.Unlock()
-	authHeaders := authutil.GetAuthHeaders(ctx)
 
-	if usageKeyHits.enqueue(hit, authHeaders) {
+	if usageKeyHits.enqueue(enqueuedHit.hit, enqueuedHit.authHeaders) {
 		metrics.RemoteHitTrackerUpdates.WithLabelValues(
 			string(c.GroupID),
 			"enqueued",
@@ -328,7 +353,9 @@ func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferT
 	return &NoOpTransferTimer{}
 }
 
-func (h *HitTrackerFactory) runWorker(ctx context.Context) {
+// TODO(iain): this function will ALWAYS wait pollInterval between requests.
+// Use time.Tick to make it wait AT LEAST pollInterval instead.
+func (h *HitTrackerFactory) sender(ctx context.Context) {
 	for {
 		select {
 		case <-h.quit:
@@ -337,6 +364,17 @@ func (h *HitTrackerFactory) runWorker(ctx context.Context) {
 		}
 		// Keep flushing until there is nothing to flush.
 		for h.sendTrackRequest(ctx) > 0 {
+		}
+	}
+}
+
+func (h *HitTrackerFactory) batcher() {
+	for {
+		select {
+		case <-h.quit:
+			return
+		case update := <-h.enqueueChan:
+			h.batch(update)
 		}
 	}
 }
