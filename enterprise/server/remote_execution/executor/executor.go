@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -96,7 +97,12 @@ func (s *Executor) HostID() string {
 }
 
 func (s *Executor) Warmup() {
-	s.runnerPool.Warmup(context.Background())
+	ctx := context.Background()
+	auth := s.env.GetAuthenticator()
+	if auth != nil && executor_auth.APIKey() != "" {
+		ctx = auth.AuthContextFromAPIKey(ctx, executor_auth.APIKey())
+	}
+	s.runnerPool.Warmup(ctx)
 }
 
 func timevalDuration(tv syscall.Timeval) time.Duration {
