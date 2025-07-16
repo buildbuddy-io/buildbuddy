@@ -221,7 +221,7 @@ if __name__ == "__main__":
             "include": [
                 {
                     "name": repo["name"],
-                    "repo": f"{repo["owner"]}/{repo["name"]}",
+                    "repo": f"{repo['owner']}/{repo['name']}",
                     "ref": repo["commit_sha"],
                 }
                 for repo in REPO_CONFIGS
