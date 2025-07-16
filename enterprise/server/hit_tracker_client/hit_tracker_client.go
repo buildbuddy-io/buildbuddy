@@ -246,10 +246,21 @@ func (h *HitTrackerFactory) enqueue(ctx context.Context, hit *hitpb.CacheHit) {
 		return
 	}
 
-	h.enqueueChan <- &enqueuedCacheHit{
+	enqueuedHit := enqueuedCacheHit{
 		collection:  usageutil.CollectionFromRPCContext(ctx),
 		hit:         hit,
 		authHeaders: authutil.GetAuthHeaders(ctx),
+	}
+
+	select {
+	case h.enqueueChan <- &enqueuedHit:
+		return
+	default:
+		metrics.RemoteHitTrackerUpdates.WithLabelValues(
+			enqueuedHit.collection.GroupID,
+			"dropped_channel_full",
+		).Inc()
+		return
 	}
 }
 func (h *HitTrackerFactory) batch(enqueuedHit *enqueuedCacheHit) {
