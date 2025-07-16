@@ -276,9 +276,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 24,
+            "w": 12,
             "x": 0,
-            "y": 281
+            "y": 9
           },
           "id": 23,
           "options": {
@@ -328,6 +328,104 @@
             }
           ],
           "title": "instances",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 9
+          },
+          "id": 11,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum (go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"metadata-server\", namespace=\"${namespace}\"}) by (job, pod_name, namespace)",
+              "instant": false,
+              "legendFormat": "{{pod_name}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Heap size",
           "type": "timeseries"
         },
         {
@@ -412,7 +510,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 289
+            "y": 17
           },
           "id": 1,
           "options": {
@@ -438,7 +536,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"metadata.service.MetadataService\", grpc_method=\"Get\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
@@ -452,7 +550,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"metadata.service.MetadataService\", grpc_method=\"Get\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "range": true,
@@ -465,7 +563,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"metadata.service.MetadataService\", grpc_method=\"Get\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "range": true,
@@ -478,14 +576,14 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"google.bytestream.ByteStream\", namespace=\"${namespace}\", grpc_method=\"Read\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"metadata.service.MetadataService\", grpc_method=\"Get\"}[${window}])) ",
               "interval": "",
               "legendFormat": "QPS",
               "range": true,
               "refId": "D"
             }
           ],
-          "title": "/Read",
+          "title": "/Get",
           "type": "timeseries"
         },
         {
@@ -493,6 +591,7 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "description": "",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -507,7 +606,7 @@
                 "barAlignment": 0,
                 "barWidthFactor": 0.6,
                 "drawStyle": "line",
-                "fillOpacity": 0,
+                "fillOpacity": 10,
                 "gradientMode": "none",
                 "hideFrom": {
                   "legend": false,
@@ -521,7 +620,7 @@
                 "scaleDistribution": {
                   "type": "linear"
                 },
-                "showPoints": "auto",
+                "showPoints": "never",
                 "spanNulls": false,
                 "stacking": {
                   "group": "A",
@@ -544,27 +643,45 @@
                   }
                 ]
               },
-              "unit": "bytes"
+              "unit": "s"
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "QPS"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "reqps"
+                  },
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  }
+                ]
+              }
+            ]
           },
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 289
+            "y": 17
           },
-          "id": 11,
+          "id": 2,
           "options": {
+            "alertThreshold": true,
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom",
+              "placement": "right",
               "showLegend": true
             },
             "tooltip": {
               "hideZeros": false,
-              "mode": "single",
+              "mode": "multi",
               "sort": "none"
             }
           },
@@ -576,14 +693,55 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum (go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"metadata-server\", namespace=\"${namespace}\"}) by (job, pod_name, namespace)",
-              "instant": false,
-              "legendFormat": "{{pod_name}}",
+              "exemplar": true,
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"metadata.service.MetadataService\", grpc_method=\"Set\"}[${window}])) by (le)\n)",
+              "interval": "",
+              "legendFormat": "P99",
+              "queryType": "randomWalk",
               "range": true,
               "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "exemplar": true,
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"metadata.service.MetadataService\", grpc_method=\"Set\"}[${window}])) by (le)\n)",
+              "interval": "",
+              "legendFormat": "P95",
+              "range": true,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "exemplar": true,
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"metadata.service.MetadataService\", grpc_method=\"Set\"}[${window}])) by (le)\n)",
+              "interval": "",
+              "legendFormat": "P50",
+              "range": true,
+              "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "exemplar": true,
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"metadata.service.MetadataService\", grpc_method=\"Set\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "QPS",
+              "range": true,
+              "refId": "D"
             }
           ],
-          "title": "Heap size",
+          "title": "/Set",
           "type": "timeseries"
         },
         {
@@ -651,7 +809,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 297
+            "y": 25
           },
           "id": 8,
           "options": {
@@ -684,164 +842,6 @@
             }
           ],
           "title": "RangeCache Hit Rate",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "barWidthFactor": 0.6,
-                "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "never",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "s"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "QPS"
-                },
-                "properties": [
-                  {
-                    "id": "unit",
-                    "value": "reqps"
-                  },
-                  {
-                    "id": "custom.axisPlacement",
-                    "value": "right"
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 297
-          },
-          "id": 2,
-          "options": {
-            "alertThreshold": true,
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "right",
-              "showLegend": true
-            },
-            "tooltip": {
-              "hideZeros": false,
-              "mode": "multi",
-              "sort": "none"
-            }
-          },
-          "pluginVersion": "11.6.2",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "exemplar": true,
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
-              "interval": "",
-              "legendFormat": "P99",
-              "queryType": "randomWalk",
-              "range": true,
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "exemplar": true,
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
-              "interval": "",
-              "legendFormat": "P95",
-              "range": true,
-              "refId": "B"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "exemplar": true,
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
-              "interval": "",
-              "legendFormat": "P50",
-              "range": true,
-              "refId": "C"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "exemplar": true,
-              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
-              "interval": "",
-              "legendFormat": "QPS",
-              "range": true,
-              "refId": "D"
-            }
-          ],
-          "title": "/Write",
           "type": "timeseries"
         },
         {
@@ -908,7 +908,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 305
+            "y": 25
           },
           "id": 5,
           "options": {
@@ -1021,7 +1021,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 314
+            "y": 370
           },
           "id": 16,
           "options": {
@@ -1123,7 +1123,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 314
+            "y": 370
           },
           "id": 51,
           "options": {
@@ -1221,7 +1221,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 322
+            "y": 378
           },
           "id": 64,
           "options": {
@@ -1334,7 +1334,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3
+            "y": 387
           },
           "id": 22,
           "options": {
@@ -1433,7 +1433,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3
+            "y": 387
           },
           "id": 60,
           "options": {
@@ -1532,7 +1532,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 259
+            "y": 643
           },
           "id": 61,
           "options": {
@@ -1629,7 +1629,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 259
+            "y": 643
           },
           "id": 62,
           "options": {
@@ -1726,7 +1726,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 267
+            "y": 651
           },
           "id": 65,
           "options": {
@@ -1837,7 +1837,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 4
+            "y": 388
           },
           "id": 3,
           "options": {
@@ -1948,7 +1948,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 4
+            "y": 388
           },
           "id": 49,
           "options": {
@@ -2046,7 +2046,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 220
+            "y": 604
           },
           "id": 4,
           "options": {
@@ -2171,7 +2171,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 220
+            "y": 604
           },
           "id": 79,
           "options": {
@@ -2268,7 +2268,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 228
+            "y": 612
           },
           "id": 63,
           "options": {
@@ -2380,7 +2380,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 5
+            "y": 389
           },
           "id": 6,
           "options": {
@@ -2504,7 +2504,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 5
+            "y": 389
           },
           "id": 9,
           "options": {
@@ -2631,7 +2631,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 205
+            "y": 589
           },
           "id": 7,
           "options": {
@@ -2743,7 +2743,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 6
+            "y": 390
           },
           "id": 66,
           "options": {
@@ -2840,7 +2840,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 6
+            "y": 390
           },
           "id": 67,
           "options": {
@@ -2937,7 +2937,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 86
+            "y": 470
           },
           "id": 69,
           "options": {
@@ -3034,7 +3034,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 86
+            "y": 470
           },
           "id": 68,
           "options": {
@@ -3145,7 +3145,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 7
+            "y": 391
           },
           "id": 52,
           "options": {
@@ -3242,7 +3242,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 7
+            "y": 391
           },
           "id": 53,
           "options": {
@@ -3353,7 +3353,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 8
+            "y": 392
           },
           "id": 80,
           "options": {
@@ -3450,7 +3450,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 8
+            "y": 392
           },
           "id": 76,
           "options": {
@@ -3547,7 +3547,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 16
+            "y": 400
           },
           "id": 77,
           "options": {
@@ -3659,7 +3659,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 9
+            "y": 393
           },
           "id": 74,
           "options": {
@@ -3757,7 +3757,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 9
+            "y": 393
           },
           "id": 72,
           "options": {
@@ -3855,7 +3855,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 17
+            "y": 401
           },
           "id": 75,
           "options": {
@@ -3954,7 +3954,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 17
+            "y": 401
           },
           "id": 73,
           "options": {
@@ -4065,7 +4065,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 42
+            "y": 426
           },
           "id": 24,
           "options": {
@@ -4197,7 +4197,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 50
+            "y": 434
           },
           "id": 26,
           "options": {
@@ -4352,7 +4352,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 58
+            "y": 442
           },
           "id": 27,
           "options": {
@@ -4447,7 +4447,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 66
+            "y": 450
           },
           "id": 28,
           "options": {
@@ -4542,7 +4542,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 74
+            "y": 458
           },
           "id": 29,
           "options": {
@@ -4637,7 +4637,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 82
+            "y": 466
           },
           "id": 30,
           "options": {
@@ -4732,7 +4732,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 90
+            "y": 474
           },
           "id": 31,
           "options": {
@@ -4842,7 +4842,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 11
+            "y": 395
           },
           "id": 32,
           "options": {
@@ -4939,7 +4939,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 11
+            "y": 395
           },
           "id": 33,
           "options": {
@@ -5036,7 +5036,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 19
+            "y": 403
           },
           "id": 34,
           "options": {
@@ -5133,7 +5133,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 19
+            "y": 403
           },
           "id": 35,
           "options": {
@@ -5230,7 +5230,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 27
+            "y": 411
           },
           "id": 38,
           "options": {
@@ -5327,7 +5327,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 27
+            "y": 411
           },
           "id": 39,
           "options": {
@@ -5424,7 +5424,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 35
+            "y": 419
           },
           "id": 40,
           "options": {
@@ -5521,7 +5521,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 35
+            "y": 419
           },
           "id": 41,
           "options": {
@@ -5618,7 +5618,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 43
+            "y": 427
           },
           "id": 42,
           "options": {
@@ -5715,7 +5715,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 43
+            "y": 427
           },
           "id": 43,
           "options": {
@@ -5812,7 +5812,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 51
+            "y": 435
           },
           "id": 44,
           "options": {
@@ -5909,7 +5909,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 51
+            "y": 435
           },
           "id": 45,
           "options": {
@@ -6006,7 +6006,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 59
+            "y": 443
           },
           "id": 46,
           "options": {
@@ -6119,7 +6119,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 156
+            "y": 540
           },
           "id": 12,
           "options": {
@@ -6242,7 +6242,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 164
+            "y": 548
           },
           "id": 18,
           "options": {
@@ -6356,7 +6356,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 172
+            "y": 556
           },
           "id": 14,
           "options": {
@@ -6455,7 +6455,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 180
+            "y": 564
           },
           "id": 15,
           "options": {
@@ -6555,7 +6555,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 188
+            "y": 572
           },
           "id": 19,
           "options": {
@@ -6617,7 +6617,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 196
+            "y": 580
           },
           "id": 21,
           "maxDataPoints": 25,
@@ -6746,7 +6746,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 204
+            "y": 588
           },
           "id": 13,
           "options": {
@@ -6844,7 +6844,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 212
+            "y": 596
           },
           "id": 48,
           "options": {
