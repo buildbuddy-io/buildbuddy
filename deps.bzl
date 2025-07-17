@@ -6446,6 +6446,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
             # server gracefully, it's safe for us to allow gRPC to wait for all
             # ongoing requests to finish.
             "@{}//buildpatches:org_golang_google_grpc_remove_drain_panic.patch".format(workspace_name),
+            "@{}//buildpatches:grpc.patch".format(workspace_name),
         ],
         sum = "h1:pWFv03aZoHzlRKHWicjsZytKAiYCtNS0dHbXnIdq7jQ=",
         version = "v1.70.0",

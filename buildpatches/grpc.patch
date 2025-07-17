@@ -1,0 +1,28 @@
+diff --git a/server.go b/server.go
+index 9d5b2884..4a0362a7 100644
+--- a/server.go
++++ b/server.go
+@@ -1741,6 +1741,7 @@ func (s *Server) processStreamingRPC(ctx context.Context, stream *transport.Serv
+ }
+ 
+ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.ServerStream) {
++	logger.Warningf("Top of handleStream at %s", time.Now())
+ 	ctx := stream.Context()
+ 	ctx = contextWithServer(ctx, s)
+ 	var ti *traceInfo
+@@ -1763,6 +1764,7 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Ser
+ 	if sm != "" && sm[0] == '/' {
+ 		sm = sm[1:]
+ 	}
++	logger.Warningf("Stream method is %s", sm)
+ 	pos := strings.LastIndex(sm, "/")
+ 	if pos == -1 {
+ 		if ti != nil {
+@@ -1815,6 +1817,7 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Ser
+ 			return
+ 		}
+ 	}
++	logger.Warningf("About to call unknownStreamDesc at %s", time.Now())
+ 	// Unknown service, or known server unknown method.
+ 	if unknownDesc := s.opts.unknownStreamDesc; unknownDesc != nil {
+ 		s.processStreamingRPC(ctx, stream, nil, unknownDesc, ti)
