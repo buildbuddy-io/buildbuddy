@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
-	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -86,7 +85,8 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 	for i := 0; i < *remoteHitTrackerWorkers; i++ {
 		factory.wg.Add(1)
 		go func() {
-			factory.sender(ctx, env.GetClock(), *remoteHitTrackerPollInterval)
+			ticker := env.GetClock().NewTicker(*remoteHitTrackerPollInterval).Chan()
+			factory.sender(ctx, ticker)
 			factory.wg.Done()
 		}()
 	}
@@ -352,8 +352,7 @@ func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferT
 	return &NoOpTransferTimer{}
 }
 
-func (h *HitTrackerFactory) sender(ctx context.Context, clock clockwork.Clock, interval time.Duration) {
-	ticker := clock.NewTicker(interval).Chan()
+func (h *HitTrackerFactory) sender(ctx context.Context, ticker <-chan time.Time) {
 	for {
 		select {
 		case <-h.quit:
