@@ -73,11 +73,13 @@ func (p *Publisher) Start(ctx context.Context) {
 		})
 		var err error
 		for r.Next() {
+			log.Warningf("Mag: Top of Start publishing")
 			err = p.run(ctx)
 			if err == nil {
 				return
 			}
 			log.Debugf("Retrying build event stream due to error: %s", err)
+			log.Warningf("Mag: Retrying build event stream due to error: %s", err)
 		}
 		p.errCh <- err
 	}()
@@ -86,25 +88,34 @@ func (p *Publisher) Start(ctx context.Context) {
 // run performs a single attempt to stream any currently buffered events
 // as well as all subsequently published events to the BES backend.
 func (p *Publisher) run(ctx context.Context) error {
+	start := time.Now()
+	log.Warningf("Mag: About to dial %s: %s", p.besBackend, time.Now())
 	conn, err := grpc_client.DialSimple(p.besBackend)
 	if err != nil {
 		return status.WrapError(err, "error dialing bes_backend")
 	}
+	log.Warningf("Mag: Dial took %s", time.Since(start))
 	defer conn.Close()
+	start = time.Now()
 	besClient := pepb.NewPublishBuildEventClient(conn)
+	log.Warningf("Mag: Create build event client took %s", time.Since(start))
 	if p.apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, p.apiKey)
 	}
+	start = time.Now()
 	stream, err := besClient.PublishBuildToolEventStream(ctx)
 	if err != nil {
 		return status.WrapError(err, "error dialing bes_backend")
 	}
+	log.Warningf("Mag: Create stream took %s", time.Since(start))
 
 	doneReceiving := make(chan error, 1)
 	go func() {
 		defer close(doneReceiving)
 		for {
+			start = time.Now()
 			_, err := stream.Recv()
+			log.Warningf("Mag: Recv stream took %s", time.Since(start))
 			if err == nil {
 				continue
 			}
@@ -121,15 +132,19 @@ func (p *Publisher) run(ctx context.Context) error {
 
 	for obe := range events {
 		req := &pepb.PublishBuildToolEventStreamRequest{OrderedBuildEvent: obe}
+		start = time.Now()
 		if err := stream.Send(req); err != nil {
 			return status.UnavailableErrorf("send failed: %s", err)
 		}
+		log.Warningf("Mag: Send on stream took %s", time.Since(start))
 	}
 	// After successfully transmitting all events, close our side of the stream
 	// and wait for server ACKs before closing the connection.
+	start = time.Now()
 	if err := stream.CloseSend(); err != nil {
 		return status.UnavailableErrorf("close send failed: %s", err)
 	}
+	log.Warningf("Mag: Close send on stream took %s", time.Since(start))
 	// Return any error from receiving ACKs
 	return <-doneReceiving
 }

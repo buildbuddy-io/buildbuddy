@@ -482,11 +482,13 @@ func (r *buildEventReporter) PublishFinishedEvent(exitCode int, exitCodeName str
 }
 
 func (r *buildEventReporter) Stop() error {
+	r.Printf("\n%sStarting stop at %s%s", ansiGray, formatNowUTC(), ansiReset)
 	if r.cancelBackgroundFlush != nil {
 		r.cancelBackgroundFlush()
 		r.cancelBackgroundFlush = nil
 	}
 	r.FlushProgress()
+	r.Printf("\n%sAfter flush progress at %s%s", ansiGray, formatNowUTC(), ansiReset)
 
 	elapsedTimeSeconds := float64(time.Since(r.startTime)) / float64(time.Second)
 	// NB: This is the last message -- if more are added afterwards, be sure to
@@ -500,6 +502,7 @@ func (r *buildEventReporter) Stop() error {
 		}},
 		LastMessage: true,
 	})
+	r.Printf("\n%sAfter publish at %s%s", ansiGray, formatNowUTC(), ansiReset)
 
 	if err := r.bep.Finish(); err != nil {
 		// If we don't publish a build event successfully, then the status may not be
@@ -507,6 +510,7 @@ func (r *buildEventReporter) Stop() error {
 		// that the executor can retry the action, so that we have another chance.
 		return status.UnavailableErrorf("failed to publish build event: %s", err)
 	}
+	r.Printf("\n%sAfter finish at %s%s", ansiGray, formatNowUTC(), ansiReset)
 
 	return nil
 }
