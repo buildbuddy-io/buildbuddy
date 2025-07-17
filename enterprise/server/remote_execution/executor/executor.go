@@ -99,13 +99,8 @@ func (s *Executor) HostID() string {
 func (s *Executor) Warmup() {
 	ctx := context.Background()
 	auth := s.env.GetAuthenticator()
-	if auth == nil {
-		log.CtxWarning(ctx, "No authenticator for executor warmup, cannot auth with executor API key")
-	}
-	if executor_auth.APIKey() == "" {
-		log.CtxWarning(ctx, "Empty executor API key, cannot auth during executor warmup")
-	}
 	if auth != nil && executor_auth.APIKey() != "" {
+		log.CtxInfo(ctx, "Using executor API key during warmup")
 		ctx = auth.AuthContextFromAPIKey(ctx, executor_auth.APIKey())
 	}
 	s.runnerPool.Warmup(ctx)
