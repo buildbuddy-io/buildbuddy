@@ -59,7 +59,6 @@ type Lease struct {
 }
 
 func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, liveness *nodeliveness.Liveness, rangeID uint64, r *replica.Replica) *Lease {
-	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &Lease{
 		nodeHost:              nodeHost,
 		log:                   log,
@@ -72,8 +71,6 @@ func New(nodeHost client.NodeHost, session *client.Session, log log.Logger, live
 		mu:                    sync.RWMutex{},
 		leaseRecord:           &rfpb.RangeLeaseRecord{},
 		timeUntilLeaseRenewal: time.Duration(math.MaxInt64),
-		ctx:                   ctx,
-		cancel:                cancelFunc,
 	}
 }
 
@@ -98,6 +95,9 @@ func (l *Lease) Release(ctx context.Context) error {
 }
 
 func (l *Lease) isStopped() bool {
+	if l.ctx == nil {
+		return true
+	}
 	select {
 	case <-l.ctx.Done():
 		return true
