@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"io"
 	"net/url"
 	"os"
@@ -1033,6 +1035,28 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	return exitCode, nil
 }
 
+func createStream(ctx context.Context, apiKey string) error {
+	start := time.Now()
+	conn, err := grpc_client.DialSimple("grpcs://proxy.metal.buildbuddy.dev")
+	if err != nil {
+		return status.WrapError(err, "error dialing bes_backend")
+	}
+	log.Warnf("Mag: Dial took %s", time.Since(start))
+	defer conn.Close()
+	start = time.Now()
+	besClient := pepb.NewPublishBuildEventClient(conn)
+	log.Warnf("Mag: Create build event client took %s", time.Since(start))
+	if apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
+	}
+	start = time.Now()
+	_, err = besClient.PublishBuildToolEventStream(ctx)
+	if err != nil {
+		return status.WrapError(err, "error creating stream")
+	}
+	log.Warnf("Mag: Create stream took %s", time.Since(start))
+	return nil
+}
 func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, execClient repb.ExecutionClient, req *rnpb.RunRequest) (*inpb.GetInvocationResponse, *repb.ExecuteResponse, error) {
 	var inRsp *inpb.GetInvocationResponse
 	var execRsp *repb.ExecuteResponse
@@ -1213,6 +1237,13 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		}
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+
+	for range 15 {
+		err := createStream(ctx, apiKey)
+		if err != nil {
+			log.Warnf("%s", err)
+		}
+	}
 
 	exitCode, err := Run(ctx, RunOpts{
 		Server:            runner,
