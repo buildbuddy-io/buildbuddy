@@ -278,7 +278,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 9
+            "y": 25
           },
           "id": 23,
           "options": {
@@ -296,7 +296,6 @@
             }
           },
           "pluginVersion": "11.6.2",
-          "repeatDirection": "h",
           "targets": [
             {
               "datasource": {
@@ -393,7 +392,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 9
+            "y": 25
           },
           "id": 11,
           "options": {
@@ -509,7 +508,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 17
+            "y": 33
           },
           "id": 1,
           "options": {
@@ -667,7 +666,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 17
+            "y": 33
           },
           "id": 2,
           "options": {
@@ -808,7 +807,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 25
+            "y": 41
           },
           "id": 8,
           "options": {
@@ -907,7 +906,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 25
+            "y": 41
           },
           "id": 5,
           "options": {
@@ -1020,7 +1019,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 498
+            "y": 922
           },
           "id": 16,
           "options": {
@@ -1122,7 +1121,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 498
+            "y": 922
           },
           "id": 51,
           "options": {
@@ -1220,7 +1219,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 506
+            "y": 930
           },
           "id": 64,
           "options": {
@@ -1333,7 +1332,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 515
+            "y": 939
           },
           "id": 22,
           "options": {
@@ -1432,7 +1431,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 515
+            "y": 939
           },
           "id": 60,
           "options": {
@@ -1531,7 +1530,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 771
+            "y": 947
           },
           "id": 61,
           "options": {
@@ -1628,7 +1627,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 771
+            "y": 947
           },
           "id": 62,
           "options": {
@@ -1725,7 +1724,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 779
+            "y": 955
           },
           "id": 65,
           "options": {
@@ -1836,7 +1835,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 516
+            "y": 4
           },
           "id": 3,
           "options": {
@@ -1947,7 +1946,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 516
+            "y": 4
           },
           "id": 49,
           "options": {
@@ -2045,7 +2044,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 732
+            "y": 28
           },
           "id": 4,
           "options": {
@@ -2170,7 +2169,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 732
+            "y": 28
           },
           "id": 79,
           "options": {
@@ -2267,7 +2266,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 740
+            "y": 36
           },
           "id": 63,
           "options": {
@@ -2370,6 +2369,197 @@
                     "value": 80
                   }
                 ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 5
+          },
+          "id": 81,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(increase(buildbuddy_raft_driver_actions{region=\"${region}\", namespace=\"${namespace}\"}[${window}])) by (driver_action)",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Driver Actions",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 5
+          },
+          "id": 7,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "exemplar": true,
+              "expr": "sum(increase(buildbuddy_raft_moves{region=\"${region}\", namespace=\"${namespace}\"}[${window}])) by (move_type, status)",
+              "interval": "",
+              "legendFormat": "{{move_type}}: {{status}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Raft Moves",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
               },
               "unit": "reqps"
             },
@@ -2379,7 +2569,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 517
+            "y": 13
           },
           "id": 6,
           "options": {
@@ -2503,7 +2693,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 517
+            "y": 13
           },
           "id": 9,
           "options": {
@@ -2621,8 +2811,7 @@
                     "value": 80
                   }
                 ]
-              },
-              "unit": "reqps"
+              }
             },
             "overrides": []
           },
@@ -2630,9 +2819,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 717
+            "y": 21
           },
-          "id": 7,
+          "id": 82,
           "options": {
             "legend": {
               "calcs": [],
@@ -2649,20 +2838,14 @@
           "pluginVersion": "11.6.2",
           "targets": [
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
               "editorMode": "code",
-              "exemplar": true,
-              "expr": "sum(increase(buildbuddy_raft_moves{region=\"${region}\", namespace=\"${namespace}\"}[${window}])) by (move_type, status)",
-              "interval": "",
-              "legendFormat": "{{move_type}}: {{status}}",
+              "expr": "sum(buildbuddy_raft_intermediate_replicas_count{region=\"${region}\", namespace=\"${namespace}\"}) by (replica_state, range_id)",
+              "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Raft Moves",
+          "title": "Intermediate Replicas",
           "type": "timeseries"
         }
       ],
@@ -2742,7 +2925,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 518
+            "y": 38
           },
           "id": 66,
           "options": {
@@ -2839,7 +3022,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 518
+            "y": 38
           },
           "id": 67,
           "options": {
@@ -2936,7 +3119,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 598
+            "y": 46
           },
           "id": 69,
           "options": {
@@ -3033,7 +3216,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 598
+            "y": 46
           },
           "id": 68,
           "options": {
@@ -3144,7 +3327,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 519
+            "y": 55
           },
           "id": 52,
           "options": {
@@ -3241,7 +3424,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 519
+            "y": 55
           },
           "id": 53,
           "options": {
@@ -3352,7 +3535,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 520
+            "y": 40
           },
           "id": 80,
           "options": {
@@ -3378,7 +3561,7 @@
               "editorMode": "code",
               "expr": "count(max by (shardid)(dragonboat_raftnode_has_leader{namespace=\"${namespace}\",region=\"${region}\"}))",
               "instant": false,
-              "legendFormat": "Total number of shards w/o a leader",
+              "legendFormat": "Total number of shards w/ a leader",
               "range": true,
               "refId": "A"
             }
@@ -3449,7 +3632,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 520
+            "y": 40
           },
           "id": 76,
           "options": {
@@ -3546,7 +3729,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 528
+            "y": 48
           },
           "id": 77,
           "options": {
@@ -3658,7 +3841,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 521
+            "y": 25
           },
           "id": 74,
           "options": {
@@ -3756,7 +3939,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 521
+            "y": 25
           },
           "id": 72,
           "options": {
@@ -3854,7 +4037,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 529
+            "y": 33
           },
           "id": 75,
           "options": {
@@ -3953,7 +4136,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 529
+            "y": 33
           },
           "id": 73,
           "options": {
@@ -4064,7 +4247,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 554
+            "y": 2010
           },
           "id": 24,
           "options": {
@@ -4196,7 +4379,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 562
+            "y": 2018
           },
           "id": 26,
           "options": {
@@ -4351,7 +4534,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 570
+            "y": 2026
           },
           "id": 27,
           "options": {
@@ -4446,7 +4629,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 578
+            "y": 2034
           },
           "id": 28,
           "options": {
@@ -4541,7 +4724,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 586
+            "y": 2042
           },
           "id": 29,
           "options": {
@@ -4636,7 +4819,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 594
+            "y": 2050
           },
           "id": 30,
           "options": {
@@ -4731,7 +4914,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 602
+            "y": 2058
           },
           "id": 31,
           "options": {
@@ -4841,7 +5024,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 523
+            "y": 1979
           },
           "id": 32,
           "options": {
@@ -4938,7 +5121,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 523
+            "y": 1979
           },
           "id": 33,
           "options": {
@@ -5035,7 +5218,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 531
+            "y": 1987
           },
           "id": 34,
           "options": {
@@ -5132,7 +5315,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 531
+            "y": 1987
           },
           "id": 35,
           "options": {
@@ -5229,7 +5412,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 539
+            "y": 1995
           },
           "id": 38,
           "options": {
@@ -5326,7 +5509,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 539
+            "y": 1995
           },
           "id": 39,
           "options": {
@@ -5423,7 +5606,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 547
+            "y": 2003
           },
           "id": 40,
           "options": {
@@ -5520,7 +5703,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 547
+            "y": 2003
           },
           "id": 41,
           "options": {
@@ -5617,7 +5800,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 555
+            "y": 2011
           },
           "id": 42,
           "options": {
@@ -5714,7 +5897,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 555
+            "y": 2011
           },
           "id": 43,
           "options": {
@@ -5811,7 +5994,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 563
+            "y": 2019
           },
           "id": 44,
           "options": {
@@ -5908,7 +6091,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 563
+            "y": 2019
           },
           "id": 45,
           "options": {
@@ -6005,7 +6188,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 571
+            "y": 2027
           },
           "id": 46,
           "options": {
@@ -6118,7 +6301,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 668
+            "y": 2124
           },
           "id": 12,
           "options": {
@@ -6241,7 +6424,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 676
+            "y": 2132
           },
           "id": 18,
           "options": {
@@ -6355,7 +6538,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 684
+            "y": 2140
           },
           "id": 14,
           "options": {
@@ -6454,7 +6637,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 692
+            "y": 2148
           },
           "id": 15,
           "options": {
@@ -6554,7 +6737,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 700
+            "y": 2156
           },
           "id": 19,
           "options": {
@@ -6616,7 +6799,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 708
+            "y": 2164
           },
           "id": 21,
           "maxDataPoints": 25,
@@ -6745,7 +6928,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 716
+            "y": 2172
           },
           "id": 13,
           "options": {
@@ -6843,7 +7026,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 724
+            "y": 2180
           },
           "id": 48,
           "options": {
