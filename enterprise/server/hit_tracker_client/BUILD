@@ -22,6 +22,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/usageutil",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/durationpb",

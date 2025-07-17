@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -74,7 +75,6 @@ func (h *NoOpHitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requ
 func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, conn grpc.ClientConnInterface) *HitTrackerFactory {
 	factory := HitTrackerFactory{
 		authenticator:        env.GetAuthenticator(),
-		ticker:               env.GetClock().NewTicker(*remoteHitTrackerPollInterval).Chan(),
 		quit:                 make(chan struct{}, 1),
 		enqueueChan:          make(chan *enqueuedCacheHit, *enqueueChanSize),
 		maxPendingHitsPerKey: *maxPendingHitsPerKey,
@@ -86,7 +86,7 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 	for i := 0; i < *remoteHitTrackerWorkers; i++ {
 		factory.wg.Add(1)
 		go func() {
-			factory.sender(ctx)
+			factory.sender(ctx, env.GetClock(), *remoteHitTrackerPollInterval)
 			factory.wg.Done()
 		}()
 	}
@@ -126,9 +126,8 @@ type enqueuedCacheHit struct {
 type HitTrackerFactory struct {
 	authenticator interfaces.Authenticator
 
-	ticker <-chan time.Time
-	quit   chan struct{}
-	wg     sync.WaitGroup
+	quit chan struct{}
+	wg   sync.WaitGroup
 
 	enqueueChan chan *enqueuedCacheHit
 
@@ -353,12 +352,13 @@ func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferT
 	return &NoOpTransferTimer{}
 }
 
-func (h *HitTrackerFactory) sender(ctx context.Context) {
+func (h *HitTrackerFactory) sender(ctx context.Context, clock clockwork.Clock, interval time.Duration) {
+	ticker := clock.NewTicker(interval).Chan()
 	for {
 		select {
 		case <-h.quit:
 			return
-		case <-h.ticker:
+		case <-ticker:
 		}
 		// Keep flushing until there is nothing to flush.
 		for h.sendTrackRequest(ctx) > 0 {
