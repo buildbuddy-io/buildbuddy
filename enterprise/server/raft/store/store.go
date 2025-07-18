@@ -3078,14 +3078,14 @@ func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, 
 	}
 	s.log.Infof("range descriptor for rangeID %d updated to gen %d", rangeID, new.GetGeneration())
 
-	if stagingDiff := len(new.GetStaging()) - len(old.GetStaging()); stagingDiff > 0 {
+	if stagingDiff := len(new.GetStaging()) - len(old.GetStaging()); stagingDiff != 0 {
 		metrics.RaftIntermediateReplicaCount.With(prometheus.Labels{
 			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
 			metrics.RaftReplicaState: "staging",
 		}).Add(float64(stagingDiff))
 	}
 
-	if removedDiff := len(new.GetRemoved()) - len(old.GetRemoved()); removedDiff > 0 {
+	if removedDiff := len(new.GetRemoved()) - len(old.GetRemoved()); removedDiff != 0 {
 		metrics.RaftIntermediateReplicaCount.With(prometheus.Labels{
 			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
 			metrics.RaftReplicaState: "removed",
