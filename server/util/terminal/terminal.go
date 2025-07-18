@@ -30,7 +30,7 @@ type ScreenWriter struct {
 // process are recorded in ScrollOutWriteErr.
 // A windowHeight of less than 1 indicates a window of unlimited size.
 func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
-	s, err := bkterminal.NewScreen(bkterminal.WithMaxSize(0, windowHeight), bkterminal.WithANSIRenderer())
+	s, err := bkterminal.NewScreen(bkterminal.WithMaxSize(0, windowHeight), bkterminal.WithANSIRenderer(), bkterminal.WithRealWindow())
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,6 @@ func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
 			return nil, err
 		}
 	} else {
-		// 100 is the default number of lines.
 		if err := s.SetSize(Columns, 100); err != nil {
 			return nil, err
 		}
