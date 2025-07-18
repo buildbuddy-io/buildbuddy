@@ -1010,7 +1010,7 @@ func (mc *MigrationCache) monitorCopyChanFullness() {
 }
 
 func (mc *MigrationCache) copy(c *copyData) {
-	ctx, cancel := background.ExtendContextForFinalization(c.ctx, 10*time.Second)
+	ctx, cancel := background.ExtendContextForFinalization(c.ctx, 30*time.Second)
 	c.ctx = ctx
 	defer cancel()
 
@@ -1051,15 +1051,12 @@ func (mc *MigrationCache) copy(c *copyData) {
 		return
 	}
 
-	ctLabel := cacheTypeLabel(c.d.GetCacheType())
-	metrics.MigrationBlobsCopied.With(prometheus.Labels{
-		metrics.CacheTypeLabel: ctLabel,
+	labels := prometheus.Labels{
+		metrics.CacheTypeLabel: cacheTypeLabel(c.d.GetCacheType()),
 		metrics.GroupID:        groupID(ctx),
-	}).Inc()
-	metrics.MigrationBytesCopied.With(prometheus.Labels{
-		metrics.CacheTypeLabel: ctLabel,
-		metrics.GroupID:        groupID(ctx),
-	}).Add(float64(n))
+	}
+	metrics.MigrationBlobsCopied.With(labels).Inc()
+	metrics.MigrationBytesCopied.With(labels).Add(float64(n))
 	log.CtxDebugf(ctx, "Migration successfully copied to dest cache: digest %v", c.d)
 }
 
