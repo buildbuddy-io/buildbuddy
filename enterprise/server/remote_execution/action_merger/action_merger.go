@@ -21,10 +21,12 @@ const (
 	// approximately equal to the longest execution queue times.
 	queuedExecutionTTL = 10 * time.Minute
 
-	// Default TTL for action-merging data about claimed executions. This is
-	// set to twice the length of `remote_execution.lease_duration` to give a
-	// short grace period in the event of missed leases.
-	DefaultClaimedExecutionTTL = 20 * time.Second
+	// The default TTL for action-merging data about claimed execution. This
+	// is expressed in the number of "lease periods," which is defined in
+	// `remote_execution.lease_duration` and should be thought of in terms of
+	// how many missed execution-leases are needed to stop merging against a
+	// given execution.
+	DefaultClaimedExecutionLeasePeriods = 4
 
 	// Redis Hash keys for storing information about action-merging.
 	//
