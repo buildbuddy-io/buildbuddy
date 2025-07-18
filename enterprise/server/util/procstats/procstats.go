@@ -156,7 +156,7 @@ func pidsInTree(pid int) (set.Set[int], error) {
 		c = append(c, p.Pid())
 		children[ppid] = c
 	}
-	pidsVisited := set.Set[int]{}
+	pidsVisited := make(set.Set[int])
 	pidsToExplore := []int{pid}
 	for len(pidsToExplore) > 0 {
 		pid := pidsToExplore[0]
