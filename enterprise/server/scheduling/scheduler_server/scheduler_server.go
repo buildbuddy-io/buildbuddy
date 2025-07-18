@@ -1086,7 +1086,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		clock = options.Clock
 	}
 
-	actionMergingLeaseTTL := action_merger.DefaultClaimedExecutionTTL
+	actionMergingLeaseTTL := action_merger.DefaultClaimedExecutionLeasePeriods * *leaseDuration
 	if options.ActionMergingLeaseTTLOverride > 0*time.Second {
 		actionMergingLeaseTTL = options.ActionMergingLeaseTTLOverride
 	}
