@@ -562,7 +562,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 	buf += s.liveness.String() + "\n"
 
 	su := s.Usage()
-	buf += fmt.Sprintf("%36s | Replicas: %4d | Leases: %4d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
+	buf += fmt.Sprintf("%36s | Replicas: %4d | Leases: %7d | QPS (R): %5d | (W): %5d | Size: %d MB\n",
 		su.GetNode().GetNhid(),
 		su.GetReplicaCount(),
 		su.GetLeaseCount(),
@@ -588,18 +588,29 @@ func (s *Store) Statusz(ctx context.Context) string {
 			buf += fmt.Sprintf("%s error: %s\n", replicaName, err)
 			continue
 		}
+		haveLease := 0
 		isLeader := 0
+		if s.isLeader(r.RangeID(), r.ReplicaID()) {
+			isLeader = 1
+		}
+		numStaging := 0
+		numRemoving := 0
 		if rd := s.lookupRange(r.RangeID()); rd != nil {
 			if s.leaseKeeper.HaveLease(ctx, rd.GetRangeId()) {
-				isLeader = 1
+				haveLease = 1
 			}
+			numStaging = len(rd.GetStaging())
+			numRemoving = len(rd.GetRemoved())
 		}
 
-		buf += fmt.Sprintf("%36s |                | Leader: %4d | QPS (R): %5d | (W): %5d | %s\n",
+		buf += fmt.Sprintf("%36s | Leader: %6d | HaveLease: %4d | QPS (R): %5d | (W): %5d | # Staging: %4d | # Removing: %4d | %s\n",
 			replicaName,
 			isLeader,
+			haveLease,
 			ru.GetReadQps(),
 			ru.GetRaftProposeQps(),
+			numStaging,
+			numRemoving,
 			s.replicaInitStatusWaiter.InitStatus(r.RangeID(), r.ReplicaID()),
 		)
 	}
