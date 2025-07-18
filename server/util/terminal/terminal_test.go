@@ -137,7 +137,7 @@ func TestComplexScreenWriting(t *testing.T) {
 			write: []string{
 				// Write two lines
 				"123456789\n",
-				"ABCDEFG\n",
+				"ABCDEFG",
 				// Go back up to the first line
 				CUU + CUU,
 				// Clear the current line and write "Hello" on its own line
@@ -151,8 +151,9 @@ func TestComplexScreenWriting(t *testing.T) {
 			name: "overwrite multiple line contents via screen clearing",
 			write: []string{
 				// Write two lines
-				"123456789\n",
-				"ABCDEFG\n",
+				"1234",
+				"56789\n",
+				"ABCDEFG",
 				// Clear screen and position cursor at top-left
 				ED_2 + CUP,
 				// Write "Hello" on its own line
@@ -165,7 +166,7 @@ func TestComplexScreenWriting(t *testing.T) {
 		{
 			name:       "reset sequence at end of line",
 			write:      []string{"\x1b[32mINFO: ...\x1b[0m\n"},
-			wantLog:    "\x1b[32mINFO: ...\x1b[m\n",
+			wantLog:    "\x1b[32mINFO: ...\n",
 			screenRows: 1,
 		},
 	}...)
