@@ -3,6 +3,8 @@ package procstats
 import (
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
+
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ps "github.com/mitchellh/go-ps"
 	procutil "github.com/shirou/gopsutil/v3/process"
@@ -117,7 +119,7 @@ func statTree(pid int) (map[int]*repb.UsageStats, error) {
 		return nil, err
 	}
 	stats := make(map[int]*repb.UsageStats, len(pids))
-	for _, pid := range pids {
+	for pid := range pids {
 		s, err := getProcessStats(pid)
 		if err != nil {
 			// If we fail to get stats, the process probably just exited between the
@@ -131,7 +133,18 @@ func statTree(pid int) (map[int]*repb.UsageStats, error) {
 }
 
 // pidsInTree returns all pids in the tree rooted at pid, including pid itself.
-func pidsInTree(pid int) ([]int, error) {
+//
+// Note that on Windows, the parent's process ID (PPID) is not always
+// guaranteed to be the parent process ID in the same way that it is on
+// Linux. This means that "tree" may not be fully accurate on Windows as
+// the process IDs can be recycled.
+// See https://devblogs.microsoft.com/oldnewthing/20150403-00/?p=44313 for more information.
+//
+// TODO(sluongng): On Windows, it might be better to track stats from the JobObjects instead.
+// See enterprise/server/remote_execution/commandutil/commandutil_windows.go and
+// https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-queryinformationjobobject
+// for more information.
+func pidsInTree(pid int) (set.Set[int], error) {
 	procs, err := ps.Processes()
 	if err != nil {
 		return nil, err
@@ -143,12 +156,16 @@ func pidsInTree(pid int) ([]int, error) {
 		c = append(c, p.Pid())
 		children[ppid] = c
 	}
-	pidsVisited := []int{}
+	pidsVisited := make(set.Set[int])
 	pidsToExplore := []int{pid}
 	for len(pidsToExplore) > 0 {
 		pid := pidsToExplore[0]
 		pidsToExplore = pidsToExplore[1:]
-		pidsVisited = append(pidsVisited, pid)
+
+		if pidsVisited.Contains(pid) {
+			continue
+		}
+		pidsVisited.Add(pid)
 		pidsToExplore = append(pidsToExplore, children[pid]...)
 	}
 	return pidsVisited, nil
