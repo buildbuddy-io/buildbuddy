@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats",
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/util/lib/set",
         "@com_github_mitchellh_go_ps//:go-ps",
         "@com_github_shirou_gopsutil_v3//process",
     ],

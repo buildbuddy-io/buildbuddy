@@ -1,9 +1,9 @@
 package procstats
 
 import (
-	"maps"
-	"slices"
 	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ps "github.com/mitchellh/go-ps"
@@ -119,7 +119,7 @@ func statTree(pid int) (map[int]*repb.UsageStats, error) {
 		return nil, err
 	}
 	stats := make(map[int]*repb.UsageStats, len(pids))
-	for _, pid := range pids {
+	for pid := range pids {
 		s, err := getProcessStats(pid)
 		if err != nil {
 			// If we fail to get stats, the process probably just exited between the
@@ -144,7 +144,7 @@ func statTree(pid int) (map[int]*repb.UsageStats, error) {
 // See enterprise/server/remote_execution/commandutil/commandutil_windows.go and
 // https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-queryinformationjobobject
 // for more information.
-func pidsInTree(pid int) ([]int, error) {
+func pidsInTree(pid int) (set.Set[int], error) {
 	procs, err := ps.Processes()
 	if err != nil {
 		return nil, err
@@ -156,19 +156,19 @@ func pidsInTree(pid int) ([]int, error) {
 		c = append(c, p.Pid())
 		children[ppid] = c
 	}
-	pidsVisited := make(map[int]struct{}, len(procs))
+	pidsVisited := set.Set[int]{}
 	pidsToExplore := []int{pid}
 	for len(pidsToExplore) > 0 {
 		pid := pidsToExplore[0]
 		pidsToExplore = pidsToExplore[1:]
 
-		if _, found := pidsVisited[pid]; found {
+		if pidsVisited.Contains(pid) {
 			continue
 		}
-		pidsVisited[pid] = struct{}{}
+		pidsVisited.Add(pid)
 		pidsToExplore = append(pidsToExplore, children[pid]...)
 	}
-	return slices.Collect(maps.Keys(pidsVisited)), nil
+	return pidsVisited, nil
 }
 
 func getProcessStats(pid int) (*repb.UsageStats, error) {
