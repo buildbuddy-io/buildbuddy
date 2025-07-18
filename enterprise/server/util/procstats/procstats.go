@@ -1,6 +1,8 @@
 package procstats
 
 import (
+	"maps"
+	"slices"
 	"time"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -143,15 +145,19 @@ func pidsInTree(pid int) ([]int, error) {
 		c = append(c, p.Pid())
 		children[ppid] = c
 	}
-	pidsVisited := []int{}
+	pidsVisited := make(map[int]struct{}, len(procs))
 	pidsToExplore := []int{pid}
 	for len(pidsToExplore) > 0 {
 		pid := pidsToExplore[0]
 		pidsToExplore = pidsToExplore[1:]
-		pidsVisited = append(pidsVisited, pid)
+
+		if _, found := pidsVisited[pid]; found {
+			continue
+		}
+		pidsVisited[pid] = struct{}{}
 		pidsToExplore = append(pidsToExplore, children[pid]...)
 	}
-	return pidsVisited, nil
+	return slices.Collect(maps.Keys(pidsVisited)), nil
 }
 
 func getProcessStats(pid int) (*repb.UsageStats, error) {
