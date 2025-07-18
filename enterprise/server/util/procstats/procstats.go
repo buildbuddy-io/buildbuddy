@@ -133,6 +133,17 @@ func statTree(pid int) (map[int]*repb.UsageStats, error) {
 }
 
 // pidsInTree returns all pids in the tree rooted at pid, including pid itself.
+//
+// Note that on Windows, the parent's process ID (PPID) is not always
+// guaranteed to be the parent process ID in the same way that it is on
+// Linux. This means that "tree" may not be fully accurate on Windows as
+// the process IDs can be recycled.
+// See https://devblogs.microsoft.com/oldnewthing/20150403-00/?p=44313 for more information.
+//
+// TODO(sluongng): On Windows, it might be better to track stats from the JobObjects instead.
+// See enterprise/server/remote_execution/commandutil/commandutil_windows.go and
+// https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-queryinformationjobobject
+// for more information.
 func pidsInTree(pid int) ([]int, error) {
 	procs, err := ps.Processes()
 	if err != nil {
