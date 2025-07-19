@@ -38,6 +38,14 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               <div className="executor-section-title">Assignable Milli CPU:</div>
               <div>{this.props.node.assignableMilliCpu}</div>
             </div>
+            {this.props.node.assignableCustomResources.map((r) => {
+              return (
+                <div className="executor-section">
+                  <div className="executor-section-title">Assignable {r.name}:</div>
+                  <div>{r.value}</div>
+                </div>
+              );
+            })}
             <div className="executor-section">
               <div className="executor-section-title">Version:</div>
               <div>{this.props.node.version}</div>
