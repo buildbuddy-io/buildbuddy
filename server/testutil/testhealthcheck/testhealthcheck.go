@@ -40,6 +40,10 @@ func (t *TestingHealthChecker) Check(ctx context.Context, req *hlpb.HealthCheckR
 	}, nil
 }
 
+func (t *TestingHealthChecker) List(ctx context.Context, req *hlpb.HealthListRequest) (*hlpb.HealthListResponse, error) {
+	return nil, status.UnimplementedError("List not implemented")
+}
+
 func (t *TestingHealthChecker) Watch(req *hlpb.HealthCheckRequest, stream hlpb.Health_WatchServer) error {
 	return status.UnimplementedError("Watch not implemented")
 }
