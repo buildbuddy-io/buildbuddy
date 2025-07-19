@@ -38,6 +38,14 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               <div className="executor-section-title">Assignable Milli CPU:</div>
               <div>{this.props.node.assignableMilliCpu}</div>
             </div>
+            {this.props.node.assignableCustomResources.map((r) => {
+              return (
+                <div className="executor-section">
+                  <div className="executor-section-title">Assignable custom resource {r.name}:</div>
+                  <div>{r.value}</div>
+                </div>
+              );
+            })}
             <div className="executor-section">
               <div className="executor-section-title">Version:</div>
               <div>{this.props.node.version}</div>
@@ -55,7 +63,8 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                   stat_filter.Metric.create({
                     execution: stat_filter.ExecutionMetricType.EXECUTION_WALL_TIME_EXECUTION_METRIC,
                   })
-                )}#drilldown`}>
+                )}#drilldown`}
+              >
                 <BarChart2 /> View executions
               </Link>
               <div></div>
