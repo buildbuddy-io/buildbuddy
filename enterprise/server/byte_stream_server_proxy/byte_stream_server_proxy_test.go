@@ -70,6 +70,16 @@ func (c *noOpCAS) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressab
 	return status.InternalError("Unexpected call to GetTree")
 }
 
+func (c *noOpCAS) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	c.t.Fatal("Unexpected call to SpliceBlob")
+	return nil, status.InternalError("SpliceBlob RPC is not currently implemented")
+}
+
+func (c *noOpCAS) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	c.t.Fatal("Unexpected call to SplitBlob")
+	return nil, status.InternalError("SplitBlob RPC is not currently implemented")
+}
+
 func requestCountingUnaryInterceptor(count *atomic.Int32) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		count.Add(1)
