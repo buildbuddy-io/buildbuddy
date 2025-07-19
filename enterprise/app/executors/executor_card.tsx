@@ -41,7 +41,7 @@ export default class ExecutorCardComponent extends React.Component<Props> {
             {this.props.node.assignableCustomResources.map((r) => {
               return (
                 <div className="executor-section">
-                  <div className="executor-section-title">Assignable custom resource {r.name}:</div>
+                  <div className="executor-section-title">Assignable {r.name}:</div>
                   <div>{r.value}</div>
                 </div>
               );
