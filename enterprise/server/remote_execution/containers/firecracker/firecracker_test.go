@@ -977,6 +977,117 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 	}
 }
 
+func TestFirecracker_SnapshotSharing_UniversalFallback(t *testing.T) {
+	tests := []struct {
+		name                     string
+		universalSnapshotEnabled string
+	}{
+		{
+			name:                     "Universal fallback enabled",
+			universalSnapshotEnabled: "true",
+		},
+		{
+			name:                     "Universal fallback disabled",
+			universalSnapshotEnabled: "false",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			rootDir := testfs.MakeTempDir(t)
+			cfg := getExecutorConfig(t)
+
+			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+			filecacheRoot := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			env.SetFileCache(fc)
+
+			var containersToCleanup []*firecracker.FirecrackerContainer
+			t.Cleanup(func() {
+				for _, vm := range containersToCleanup {
+					err := vm.Remove(ctx)
+					assert.NoError(t, err)
+				}
+			})
+
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+					EnableNetworking:  false,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: cfg,
+			}
+
+			instanceName := "test-instance-name"
+			taskTemplate := &repb.ExecutionTask{
+				Command: &repb.Command{
+					// Note: platform must match in order to share snapshots
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+						{Name: platform.UniversalSnapshotFallbackPropertyName, Value: tc.universalSnapshotEnabled},
+					}},
+					Arguments: []string{"./buildbuddy_ci_runner"},
+					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+						{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "main"},
+					},
+				},
+				ExecuteRequest: &repb.ExecuteRequest{
+					InstanceName: instanceName,
+				},
+			}
+
+			// pr-1 saves a snapshot
+			taskPR1 := taskTemplate.CloneVT()
+			taskPR1.Command.EnvironmentVariables = append(taskPR1.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+				Name: "GIT_BRANCH", Value: "pr-1",
+			})
+			vm, err := firecracker.NewContainer(ctx, env, taskPR1, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, vm)
+			require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage))
+			err = vm.Create(ctx, workDir)
+			require.NoError(t, err)
+			cmd := appendToLog("pr-1")
+			res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+			require.NoError(t, res.Error)
+			require.Equal(t, "pr-1\n", string(res.Stdout))
+			err = vm.Pause(ctx)
+			require.NoError(t, err)
+
+			// pr-2 tries to resume from a snapshot. Should only succeed if unviersal
+			// snapshot fallbacks are enabled.
+			taskPR2 := taskTemplate.CloneVT()
+			taskPR2.Command.EnvironmentVariables = append(taskPR2.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+				Name: "GIT_BRANCH", Value: "pr-2",
+			})
+			vm2, err := firecracker.NewContainer(ctx, env, taskPR2, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, vm2)
+			require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage))
+			err = vm.Unpause(ctx)
+
+			if tc.universalSnapshotEnabled == "true" {
+				require.NoError(t, err)
+				cmd = appendToLog("pr-2")
+				res = vm.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				require.Equal(t, "pr-1\npr-2\n", string(res.Stdout))
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
 func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
