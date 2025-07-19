@@ -14587,7 +14587,7 @@
               "refId": "A"
             }
           ],
-          "title": "gRPC Server Request Bytes",
+          "title": "gRPC Server Response Bytes",
           "type": "timeseries"
         }
       ],
