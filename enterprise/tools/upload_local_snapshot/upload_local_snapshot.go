@@ -144,7 +144,9 @@ func main() {
 
 	// Sanity check that snapshot exists in remote cache
 	flagutil.SetValueForFlagName("executor.enable_remote_snapshot_sharing", true, nil, false)
-	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, true)
+	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
+		RemoteReadEnabled: true,
+	})
 	if err != nil {
 		log.Fatalf("Snapshot upload failed. Snapshot is not in the remote cache after it should've been uploaded.")
 	}
