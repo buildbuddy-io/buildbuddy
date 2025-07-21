@@ -169,34 +169,54 @@ func TestComplexScreenWriting(t *testing.T) {
 	}
 	basicTestCases := []testCase{
 		{
-			name:    "single write with space",
+			name:    "single write with space with no newline",
 			write:   []string{" "},
-			wantLog: "",
+			wantLog: " ",
+		},
+		{
+			name:    "single write with space with newline",
+			write:   []string{" \n"},
+			wantLog: "\n",
+		},
+		{
+			name:    "leading whitespace with no newline",
+			write:   []string{" 1"},
+			wantLog: " 1",
+		},
+		{
+			name:    "trailing whitespace with no newline",
+			write:   []string{"1 "},
+			wantLog: "1 ",
+		},
+		{
+			name:    "surrounding whitespace with no newline",
+			write:   []string{" 1 "},
+			wantLog: " 1 ",
 		},
 		{
 			name:    "single blankline write",
 			write:   []string{"\n"},
-			wantLog: "",
+			wantLog: "\n",
 		},
 		{
 			name:    "multiple blankline writes",
 			write:   []string{"\n", "\n"},
-			wantLog: "\n",
+			wantLog: "\n\n",
 		},
 		{
 			name:    "multiple writes with multiple lines",
 			write:   []string{"1\n", "2\n"},
-			wantLog: "1\n2",
+			wantLog: "1\n2\n",
 		},
 		{
 			name:    "single write with multiple lines",
 			write:   []string{"1\n2\n"},
-			wantLog: "1\n2",
+			wantLog: "1\n2\n",
 		},
 		{
 			name:    "multiple writes with multiple lines and double-newline",
 			write:   []string{"1\n\n", "2\n"},
-			wantLog: "1\n\n2",
+			wantLog: "1\n\n2\n",
 		},
 		{
 			name:    "multiple writes with mix of trailing and leading whitespace",
@@ -262,7 +282,7 @@ func TestComplexScreenWriting(t *testing.T) {
 				// Clear the current line and write "World" on its own line
 				EL_2 + CHA + "World\n"},
 			wantLog:    "Hello\nWorld\n",
-			screenRows: 2,
+			screenRows: 3,
 		},
 		{
 			name: "overwrite multiple line contents via screen clearing",
@@ -277,12 +297,12 @@ func TestComplexScreenWriting(t *testing.T) {
 				// Write "World" on its own line
 				"World\n"},
 			wantLog:    "Hello\nWorld\n",
-			screenRows: 2,
+			screenRows: 3,
 		},
 		{
 			name:       "reset sequence at end of line",
 			write:      []string{"\x1b[32mINFO: ...\x1b[0m\n"},
-			wantLog:    "\x1b[32mINFO: ...\x1b[m\n",
+			wantLog:    "\x1b[32mINFO: ...\n",
 			screenRows: 1,
 		},
 	}...)
@@ -323,7 +343,7 @@ func TestComplexScreenWriting(t *testing.T) {
 func ansiDebugString(s string) string {
 	// \x1b[0m is interpreted the same as \x1b[m. Normalize these to make
 	// assertions easier.
-	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[m")
+	// s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[m")
 	// Quote the string, so escape sequences like \x1b[32m show up as text
 	// instead of actual colors.
 	content := fmt.Sprintf("%q", s)
