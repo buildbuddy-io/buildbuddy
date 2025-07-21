@@ -104,39 +104,6 @@ func TestGetEventLogChunkMaxBufferSize(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("%04x", 6), rsp.NextChunkId)
 }
 
-/*
-func TestLinesAcrossChunks(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-
-	invocationDB := &mockinvocationdb.MockInvocationDB{DB: make(map[string]*tables.Invocation)}
-	env.SetInvocationDB(invocationDB)
-
-	// Make a bare bones test invocation in the DB
-	testID := "test_id"
-	invocationDB.DB[testID] = &tables.Invocation{
-		InvocationID: testID,
-		Attempt:      1,
-		LastChunkId:  fmt.Sprintf("%04x", uint16(3)),
-	}
-
-	blobstore := mockstore.New()
-	env.SetBlobstore(blobstore)
-
-	blobPath := eventlog.GetEventLogPathFromInvocationIdAndAttempt(testID, 1)
-
-	// Make a chunked log for the invocation. Chunked logs can have more chunks
-	// than LastChunkId would suggest due to latency between blobstore writes
-	// and db writes recording them.
-	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(0))] = make([]byte, 8)
-	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(1))] = make([]byte, 8)
-	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(2))] = make([]byte, 8)
-	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(3))] = make([]byte, 8)
-	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(4))] = make([]byte, 8)
-	blobstore.BlobMap[chunkstore.ChunkName(blobPath, uint16(5))] = make([]byte, 8)
-
-}
-*/
-
 type testLog struct {
 	head bytes.Buffer
 	tail []byte
