@@ -37,6 +37,7 @@ var (
 	outputDirectory = flags.String("output_directory", "", "A directory where Directory contents will be recursively extracted. Implies --type=Directory.")
 	outputFile      = flags.String("output_file", "", "A destination file where the output should be written; stdout will be used if not set")
 	remoteHeader    = flag.New(flags, "remote_header", []string{}, "Arbitrary remote headers to set on the request, in `KEY=VALUE` format. Can be specified multiple times.")
+	apiKey          = flags.String("api_key", "", "Optionally override the API key with this value")
 
 	usage = `
 usage: bb ` + flags.Name() + ` {digest}/{size}
@@ -142,7 +143,9 @@ func HandleDownload(args []string) (int, error) {
 	}
 
 	ctx := context.Background()
-	if apiKey, err := login.GetAPIKey(); err == nil && apiKey != "" {
+	if *apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	} else if apiKey, err := login.GetAPIKey(); err == nil && apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 	}
 	if len(*remoteHeader) > 0 {
