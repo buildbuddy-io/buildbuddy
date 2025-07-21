@@ -167,21 +167,21 @@ func recordSubmitTimeOffsetMetric(hash map[string]string, groupIdForMetrics stri
 		Observe(float64(time.Since(submitTime).Microseconds()))
 }
 
-type Op int
+type DispatchAction int
 
 const (
 	// NEW signals that this is the first attempt at execution for the given
 	// action digest.
-	NEW Op = iota
+	NEW DispatchAction = iota
 	// MERGE signals that this is not the first execution for the given action
 	// digest and the existing execution should be reused.
-	MERGE Op = iota
+	MERGE DispatchAction = iota
 	// HEDGE signals that this is not the first execution for the given action
 	// digest, but an additional execution should be run in the background.
-	HEDGE Op = iota
+	HEDGE DispatchAction = iota
 )
 
-// MaybeMergeExecutions implements action merging by atomically checking if
+// GetOrCreateExecutionID implements action merging by atomically checking if
 // there is an existing execution for the given action digest and registering
 // a new execution if not.
 //
@@ -205,7 +205,7 @@ const (
 // merging data to exist in Redis pointing to a dead execution. For this reason,
 // the TTLs are set somewhat conservatively so this problem self-heals
 // reasonably quickly.
-func MaybeMergeExecutions(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.CASResourceName, doNotCache bool) (string, Op) {
+func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.CASResourceName, doNotCache bool) (string, DispatchAction) {
 	newExecutionID := adResource.NewUploadString()
 	if !*enableActionMerging || doNotCache {
 		return newExecutionID, NEW

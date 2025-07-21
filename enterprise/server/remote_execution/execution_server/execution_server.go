@@ -827,7 +827,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	}
 
 	// Check if there's already an identical action pending execution that this request can be merged into.
-	executionID, op := action_merger.MaybeMergeExecutions(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest, action.DoNotCache)
+	executionID, op := action_merger.GetOrCreateExecutionID(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest, action.DoNotCache)
 	if op == action_merger.NEW {
 		log.CtxInfof(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
 		if err := s.Dispatch(ctx, req, action, executionID); err != nil {
@@ -836,7 +836,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		}
 		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
 		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
-		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
+		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "new")
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
 	} else {
 		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
