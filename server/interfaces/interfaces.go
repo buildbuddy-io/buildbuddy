@@ -1286,6 +1286,7 @@ type HealthChecker interface {
 
 	// Implements the proto healthcheck interface.
 	Check(ctx context.Context, req *hlpb.HealthCheckRequest) (*hlpb.HealthCheckResponse, error)
+	List(ctx context.Context, req *hlpb.HealthListRequest) (*hlpb.HealthListResponse, error)
 	Watch(req *hlpb.HealthCheckRequest, stream hlpb.Health_WatchServer) error
 }
 
