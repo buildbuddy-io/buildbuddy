@@ -8,7 +8,6 @@ go_library(
         "//cli/arg",
         "//cli/log",
         "//cli/login",
-        "//cli/storage",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
