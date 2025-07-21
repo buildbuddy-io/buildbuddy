@@ -249,7 +249,7 @@ func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 	// Dispatch().
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 	require.NoError(t, err)
-	_, err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: ad}, action, "12345678")
 	require.NoError(t, err)
 
 	sched := env.GetSchedulerService().(*schedulerServerMock)
