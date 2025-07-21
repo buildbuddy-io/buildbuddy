@@ -49,7 +49,7 @@ func TestComplexScreenWriting(t *testing.T) {
 		{
 			name:    "single write with space",
 			write:   []string{" "},
-			wantLog: "",
+			wantLog: " ",
 		},
 		{
 			name:    "single blankline write",
