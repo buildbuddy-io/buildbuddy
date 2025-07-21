@@ -289,18 +289,26 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 		return newExecutionID, NEW
 	}
 
+	maxWaitTime := 3 * time.Second
+	startTime := time.Now()
+	for {
+		existsInScheduler, err := schedulerService.ExistsTask(ctx, executionID)
+		if err != nil {
+			log.CtxWarningf(ctx, "Error checking if pending execution %q exists in the scheduler: %s", newExecutionID, err)
+			return newExecutionID, NEW
+		}
+		if existsInScheduler {
+			break
+		}
+		if time.Since(startTime) > maxWaitTime {
+			log.CtxWarningf(ctx, "Pending execution %q does not exist in the scheduler after %s", newExecutionID, maxWaitTime)
+			return newExecutionID, NEW
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
 	// Finally, confirm this execution exists in the scheduler and hasn't been
 	// lost somehow.
-	//ok, err := schedulerService.ExistsTask(ctx, executionID)
-	//if err != nil {
-	//	log.CtxWarningf(ctx, "Error checking if pending execution %q exists in the scheduler: %s", newExecutionID, err)
-	//	return newExecutionID, NEW
-	//}
-	//if !ok {
-	//	log.CtxWarningf(ctx, "Pending execution %q does not exist in the scheduler", newExecutionID)
-	//	return newExecutionID, NEW
-	//}
-
 	if shouldHedge(hash) {
 		return executionID, HEDGE
 	} else {
