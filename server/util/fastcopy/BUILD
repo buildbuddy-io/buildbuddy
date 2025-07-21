@@ -17,9 +17,6 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "@org_golang_x_sys//unix",
         ],
-        "@io_bazel_rules_go//go/platform:windows": [
-            "//server/util/status",
-        ],
         "//conditions:default": [],
     }),
 )
