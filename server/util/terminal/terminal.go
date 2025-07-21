@@ -7,15 +7,16 @@ import (
 )
 
 var (
-	// The number of Columns to use for the terminal-to-html ANSI state machine.
-	// All lines that fit in this number of Columns (characters) will not wrap to
+	// The number of columns to use for the terminal-to-html ANSI state machine.
+	// All lines that fit in this number of columns (characters) will not wrap to
 	// the next line.
 	// We cannot make this number arbitrarily large because the state machine uses
 	// it as the `cap` parameter when making slices to represent lines, which
 	// means we are actually allocating space for slices of this length.
-	// TODO: patch the library to make the cap for slices and the max Columns two
+	// TODO: patch the library to make the cap for slices and the max columns two
 	// different numbers, ideally as a PR.
 	Columns = 256
+	Lines = 100
 )
 
 type ScreenWriter struct {
@@ -41,7 +42,7 @@ func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
 			return nil, err
 		}
 	} else {
-		if err := s.SetSize(Columns, 100); err != nil {
+		if err := s.SetSize(Columns, Lines); err != nil {
 			return nil, err
 		}
 	}

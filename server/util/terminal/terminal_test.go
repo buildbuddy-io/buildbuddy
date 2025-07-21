@@ -176,15 +176,15 @@ func TestComplexScreenWriting(t *testing.T) {
 			// Disable timestamps in logs
 			log.SetFlags(0)
 			log.Printf("Running test case %q", tc.name)
-			// Override columns
-			// DO NOT MERGE - avoid monkey-patching
-			if tc.screenCols != 0 {
-				defaultCols := terminal.Columns
-				terminal.Columns = tc.screenCols
-				t.Cleanup(func() { terminal.Columns = defaultCols })
-			}
 			screen, err := terminal.NewScreenWriter(tc.screenRows)
 			require.NoError(t, err)
+			if tc.screenCols > 0 {
+				if tc.screenRows > 0 {
+					screen.Screen.SetSize(tc.screenCols, tc.screenRows)
+				} else {
+					screen.Screen.SetSize(tc.screenCols, terminal.Lines)
+				}
+			}
 			for _, s := range tc.write {
 				_, err = screen.Write([]byte(s))
 				require.NoError(t, err)
