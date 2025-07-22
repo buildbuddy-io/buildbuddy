@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
@@ -102,6 +103,9 @@ func (s *Executor) Warmup() {
 	if auth != nil && executor_auth.APIKey() != "" {
 		log.CtxInfo(ctx, "Using executor API key during warmup")
 		ctx = auth.AuthContextFromAPIKey(ctx, executor_auth.APIKey())
+		if err, ok := authutil.AuthErrorFromContext(ctx); ok {
+			log.CtxWarningf(ctx, "Error creating auth context from API key: %s", err)
+		}
 	}
 	s.runnerPool.Warmup(ctx)
 }

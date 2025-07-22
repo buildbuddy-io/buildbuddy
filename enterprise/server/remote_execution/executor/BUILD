@@ -22,6 +22,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/rpc/interceptors",
         "//server/util/alert",
+        "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
         "//server/util/canary",
