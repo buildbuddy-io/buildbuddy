@@ -17,5 +17,7 @@ go_library(
         "@com_google_cloud_go_storage//:storage",
         "@org_golang_google_api//googleapi",
         "@org_golang_google_api//option",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )
