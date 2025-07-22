@@ -30,8 +30,8 @@ var (
 	gcsCredentialsFile = flag.String("storage.gcs.credentials_file", "", "A path to a JSON credentials file that will be used to authenticate to GCS.")
 	gcsCredentials     = flag.String("storage.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flag.Secret)
 	gcsProjectID       = flag.String("storage.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
-	useGRPC            = flag.Bool("storage.gcs.use_grpc", false, "Whether to use the gRPC client for GCS", flag.Secret)
-	grpcPoolSize       = flag.Int("storage.gcs.grpc_pool_size", 15, "The number of gRPC connections to open to GCS. Only used when `use_grpc=true`", flag.Secret)
+	useGRPC            = flag.Bool("storage.gcs.use_grpc", false, "Whether to use the gRPC client for GCS", flag.Internal)
+	grpcPoolSize       = flag.Int("storage.gcs.grpc_pool_size", 15, "The number of gRPC connections to open to GCS. Only used when `use_grpc=true`", flag.Internal)
 )
 
 const (
