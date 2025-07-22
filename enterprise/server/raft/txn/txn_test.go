@@ -242,6 +242,92 @@ func TestCommitPreparedTxn(t *testing.T) {
 	}
 }
 
+func TestRecoverTxnToUpdateRangeDescriptor(t *testing.T) {
+	sf := testutil.NewStoreFactory(t)
+	store := sf.NewStore(t)
+	ctx := context.Background()
+	sf.StartShard(t, ctx, store)
+
+	testutil.WaitForRangeLease(t, ctx, []*testutil.TestingStore{store}, 2)
+	oldRD := store.GetRange(2)
+	newRD := oldRD.CloneVT()
+	newRD.Generation++
+	txnBuilder, err := store.GetTxnForRangeDescriptorUpdate(ctx, 2, oldRD, newRD)
+	require.NoError(t, err)
+	txnProto, err := txnBuilder.ToProto()
+	require.NoError(t, err)
+
+	for _, stmt := range txnProto.GetStatements() {
+		prepareTransaction(t, store, txnProto.GetTransactionId(), stmt)
+	}
+
+	clock := clockwork.NewFakeClock()
+	txnRecord := &rfpb.TxnRecord{
+		TxnRequest:    txnProto,
+		TxnState:      rfpb.TxnRecord_PREPARED,
+		Op:            rfpb.FinalizeOperation_COMMIT,
+		CreatedAtUsec: clock.Now().UnixMicro(),
+	}
+	tc := txn.NewCoordinator(store, store.APIClient(), clock)
+
+	err = tc.WriteTxnRecord(ctx, txnRecord)
+	require.NoError(t, err)
+
+	repl2, err := store.GetReplica(2)
+	require.NoError(t, err)
+
+	// commit the transaction statement on range 2
+	err = repl2.CommitTransaction(txnProto.GetTransactionId())
+	require.NoError(t, err)
+
+	// Tries to finalize the txn again.
+	err = tc.ProcessTxnRecord(ctx, txnRecord)
+	require.NoError(t, err)
+
+	{ // Do a DirectRead and verify the txn record doesn't exist
+		key := keys.MakeKey(constants.TxnRecordPrefix, txnProto.GetTransactionId())
+		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+			Key: key,
+		}).ToProto()
+		require.NoError(t, err)
+		readRsp, err := store.Sender().SyncRead(ctx, key, readReq)
+		require.NoError(t, err)
+		readBatch := rbuilder.NewBatchResponseFromProto(readRsp)
+		_, err = readBatch.DirectReadResponse(0)
+		require.True(t, status.IsNotFoundError(err))
+	}
+
+	{ // Do a DirectRead on meta range and verify the value is updated.
+		key := keys.RangeMetaKey(newRD.GetEnd())
+		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+			Key: key,
+		}).ToProto()
+		require.NoError(t, err)
+		readRsp, err := store.Sender().SyncRead(ctx, key, readReq)
+		require.NoError(t, err)
+		readBatch := rbuilder.NewBatchResponseFromProto(readRsp)
+		require.NoError(t, readBatch.AnyError())
+		directRead, err := readBatch.DirectReadResponse(0)
+		require.NoError(t, err)
+		require.Equal(t, newRD, directRead.GetKv().GetValue())
+	}
+
+	{ // Do a DirectRead and verify the value is updated.
+		key := constants.LocalRangeKey
+		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+			Key: key,
+		}).ToProto()
+		require.NoError(t, err)
+		readRsp, err := store.Sender().SyncRead(ctx, key, readReq)
+		require.NoError(t, err)
+		readBatch := rbuilder.NewBatchResponseFromProto(readRsp)
+		require.NoError(t, readBatch.AnyError())
+		directRead, err := readBatch.DirectReadResponse(0)
+		require.NoError(t, err)
+		require.Equal(t, newRD, directRead.GetKv().GetValue())
+	}
+}
+
 func TestFetchTxnRecordsSkipRecent(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	clock := clockwork.NewFakeClock()
