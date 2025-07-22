@@ -143,7 +143,7 @@ func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActio
 	}, gitCleanExclude...)
 	b := sha256.Sum256([]byte(strings.Join(keys, "|")))
 	s := hex.EncodeToString(b[:])
-	return snaputil.SnapshotPartitionPrefix + s
+	return filepath.Join(snaputil.SnapshotPartitionPrefix, s)
 }
 
 // startWorkflowTask represents a workflow to be started in the background in

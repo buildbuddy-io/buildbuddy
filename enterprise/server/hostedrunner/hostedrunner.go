@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -550,5 +551,5 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 }
 
 func instanceName(req *rnpb.RunRequest) string {
-	return snaputil.SnapshotPartitionPrefix + req.GetInstanceName()
+	return filepath.Join(snaputil.SnapshotPartitionPrefix, req.GetInstanceName())
 }
