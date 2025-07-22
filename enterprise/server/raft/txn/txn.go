@@ -261,7 +261,7 @@ func (tc *Coordinator) processTxnRecords(ctx context.Context) error {
 	for _, txnRecord := range txnRecords {
 		txnID := txnRecord.GetTxnRequest().GetTransactionId()
 		if err := tc.ProcessTxnRecord(ctx, txnRecord); err != nil {
-			return status.InternalErrorf("failed to process txn record %q", txnID)
+			return status.InternalErrorf("failed to process txn record %q: %s", txnID, err)
 		}
 		log.Debugf("Successfully processed txn record %q", txnID)
 	}
