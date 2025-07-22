@@ -359,10 +359,7 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	if err != nil {
 		return nil, err
 	}
-	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
-		WriteWithTailCloser: cw,
-		Terminal:            sw,
-	}
+	eventLogWriter.WriteCloserWithContext = NewANSICursorBufferWriter(cw, sw)
 	eventLogWriter.chunkstoreWriter = cw
 
 	return eventLogWriter, nil
@@ -429,32 +426,36 @@ type WriteWithTailCloser interface {
 // N lines.
 type ANSICursorBufferWriter struct {
 	WriteWithTailCloser
-	Terminal *terminal.ScreenWriter
+	terminal *terminal.ScreenWriter
+}
+
+func NewANSICursorBufferWriter(closer WriteWithTailCloser, terminal *terminal.ScreenWriter) *ANSICursorBufferWriter {
+	return &ANSICursorBufferWriter{WriteWithTailCloser: closer, terminal: terminal}
 }
 
 func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, error) {
 	if len(p) == 0 {
 		return w.WriteWithTailCloser.WriteWithTail(ctx, p, nil)
 	}
-	if _, err := w.Terminal.Write(p); err != nil {
+	if _, err := w.terminal.Write(p); err != nil {
 		return 0, err
 	}
-	if !w.Terminal.AccumulatingOutput() {
+	if !w.terminal.AccumulatingOutput() {
 		// We aren't accumulating scrolled-out output, which means this isn't using
 		// curses. Just render the terminal and write the rendered output.
-		n, err := w.WriteWithTailCloser.WriteWithTail(ctx, []byte(w.Terminal.Render()), []byte{})
+		n, err := w.WriteWithTailCloser.WriteWithTail(ctx, []byte(w.terminal.Render()), []byte{})
 		if err != nil {
 			return 0, err
 		}
-		w.Terminal.Reset(0)
+		w.terminal.Reset(0)
 		return n, err
 	}
-	if w.Terminal.WriteErr != nil {
-		return 0, w.Terminal.WriteErr
+	if w.terminal.WriteErr != nil {
+		return 0, w.terminal.WriteErr
 	}
-	popped := w.Terminal.OutputAccumulator.String()
-	w.Terminal.OutputAccumulator.Reset()
-	return w.WriteWithTailCloser.WriteWithTail(ctx, []byte(popped), []byte(w.Terminal.Render()))
+	popped := w.terminal.OutputAccumulator.String()
+	w.terminal.OutputAccumulator.Reset()
+	return w.WriteWithTailCloser.WriteWithTail(ctx, []byte(popped), []byte(w.terminal.Render()))
 }
 
 func (w *ANSICursorBufferWriter) Close(ctx context.Context) error {
