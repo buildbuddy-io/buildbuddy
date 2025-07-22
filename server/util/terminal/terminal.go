@@ -6,7 +6,7 @@ import (
 	bkterminal "github.com/buildkite/terminal-to-html/v3"
 )
 
-var (
+const (
 	// The number of columns to use for the terminal-to-html ANSI state machine.
 	// All lines that fit in this number of columns (characters) will not wrap to
 	// the next line.

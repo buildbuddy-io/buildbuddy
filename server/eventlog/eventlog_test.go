@@ -291,10 +291,7 @@ func TestComplexScreenWriting(t *testing.T) {
 					screen.Screen.SetSize(tc.screenCols, terminal.Lines)
 				}
 			}
-			w := &eventlog.ANSICursorBufferWriter{
-				WriteWithTailCloser: tl,
-				Terminal:            screen,
-			}
+			w := eventlog.NewANSICursorBufferWriter(tl, screen)
 			for _, s := range tc.write {
 				_, err = w.Write(ctx, []byte(s))
 				require.NoError(t, err)
