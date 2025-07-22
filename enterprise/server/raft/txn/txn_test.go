@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
@@ -239,6 +240,85 @@ func TestCommitPreparedTxn(t *testing.T) {
 		require.NoError(t, err)
 		err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 		require.NoError(t, err)
+	}
+}
+
+func TestRecoverTxnToUpdateRangeDescriptor(t *testing.T) {
+	sf := testutil.NewStoreFactory(t)
+	store := sf.NewStore(t)
+	ctx := context.Background()
+	sf.StartShard(t, ctx, store)
+
+	testutil.WaitForRangeLease(t, ctx, []*testutil.TestingStore{store}, 2)
+	oldRD := store.GetRange(2)
+	newRD := oldRD.CloneVT()
+	newRD.Generation++
+	txnBuilder, err := store.GetTxnForRangeDescriptorUpdate(ctx, 2, oldRD, newRD)
+	require.NoError(t, err)
+	txnProto, err := txnBuilder.ToProto()
+	require.NoError(t, err)
+
+	for _, stmt := range txnProto.GetStatements() {
+		prepareTransaction(t, store, txnProto.GetTransactionId(), stmt)
+	}
+
+	clock := clockwork.NewFakeClock()
+	txnRecord := &rfpb.TxnRecord{
+		TxnRequest:    txnProto,
+		TxnState:      rfpb.TxnRecord_PREPARED,
+		Op:            rfpb.FinalizeOperation_COMMIT,
+		CreatedAtUsec: clock.Now().UnixMicro(),
+	}
+	tc := txn.NewCoordinator(store, store.APIClient(), clock)
+
+	err = tc.WriteTxnRecord(ctx, txnRecord)
+	require.NoError(t, err)
+
+	repl2, err := store.GetReplica(2)
+	require.NoError(t, err)
+
+	// commit the transaction statement on range 2
+	err = repl2.CommitTransaction(txnProto.GetTransactionId())
+	require.NoError(t, err)
+
+	// Tries to finalize the txn again.
+	err = tc.ProcessTxnRecord(ctx, txnRecord)
+	require.NoError(t, err)
+
+	{ // Do a DirectRead and verify the txn record doesn't exist
+		key := keys.MakeKey(constants.TxnRecordPrefix, txnProto.GetTransactionId())
+		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+			Key: key,
+		}).ToProto()
+		require.NoError(t, err)
+		readRsp, err := store.Sender().SyncRead(ctx, key, readReq)
+		require.NoError(t, err)
+		readBatch := rbuilder.NewBatchResponseFromProto(readRsp)
+		_, err = readBatch.DirectReadResponse(0)
+		require.True(t, status.IsNotFoundError(err))
+	}
+
+	{ // Do a DirectRead on meta range and verify the value is updated.
+		key := keys.RangeMetaKey(newRD.GetEnd())
+		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+			Key: key,
+		}).ToProto()
+		require.NoError(t, err)
+		readRsp, err := store.Sender().SyncRead(ctx, key, readReq)
+		require.NoError(t, err)
+		readBatch := rbuilder.NewBatchResponseFromProto(readRsp)
+		require.NoError(t, readBatch.AnyError())
+		directRead, err := readBatch.DirectReadResponse(0)
+		require.NoError(t, err)
+		gotRD := &rfpb.RangeDescriptor{}
+		err = proto.Unmarshal(directRead.GetKv().GetValue(), gotRD)
+		require.NoError(t, err)
+		require.True(t, proto.Equal(newRD, gotRD))
+	}
+
+	{ // Verify that local range descriptor is updated.
+		rd := store.GetRange(2)
+		require.True(t, proto.Equal(newRD, rd))
 	}
 }
 

@@ -38,6 +38,7 @@ go_test(
         "//enterprise/server/raft/testutil",
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
+        "//server/util/proto",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",

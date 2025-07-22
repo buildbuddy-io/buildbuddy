@@ -983,8 +983,10 @@ func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.Ran
 	// Ensure the header generation matches what we have locally -- if not,
 	// force client to go back and re-pull the rangeDescriptor from the meta
 	// range.
-	if rd.GetGeneration() != header.GetGeneration() {
-		return nil, nil, status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
+	if !header.GetSkipGenerationCheck() {
+		if rd.GetGeneration() != header.GetGeneration() {
+			return nil, nil, status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
+		}
 	}
 
 	return r, rd, nil
@@ -3013,20 +3015,20 @@ func addMetaRangeEdits(oldLeftRange, newLeftRange, newRightRange *rfpb.RangeDesc
 	})
 	return nil
 }
-func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, new *rfpb.RangeDescriptor) error {
-	s.log.Infof("start to update range descriptor for rangeID %d to gen %d", rangeID, new.GetGeneration())
+
+func (s *Store) GetTxnForRangeDescriptorUpdate(ctx context.Context, rangeID uint64, old, new *rfpb.RangeDescriptor) (*rbuilder.TxnBuilder, error) {
 	oldBuf, err := proto.Marshal(old)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	newBuf, err := proto.Marshal(new)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	localBatch := rbuilder.NewBatchBuilder()
 	if err := addLocalRangeEdits(old, new, localBatch); err != nil {
-		return err
+		return nil, err
 	}
 	metaRangeDescriptorKey := keys.RangeMetaKey(new.GetEnd())
 	metaRangeCasReq := &rfpb.CASRequest{
@@ -3071,6 +3073,15 @@ func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, 
 		// No range validation for meta range. See
 		// go/raft-range-validation-in-txn for more details.
 		stmt.SetRangeValidationRequired(false)
+	}
+	return txn, nil
+}
+
+func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, new *rfpb.RangeDescriptor) error {
+	s.log.Infof("start to update range descriptor for rangeID %d to gen %d", rangeID, new.GetGeneration())
+	txn, err := s.GetTxnForRangeDescriptorUpdate(ctx, rangeID, old, new)
+	if err != nil {
+		return err
 	}
 	err = s.txnCoordinator.RunTxn(ctx, txn)
 	if err != nil {

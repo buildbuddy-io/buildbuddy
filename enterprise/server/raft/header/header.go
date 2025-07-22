@@ -12,6 +12,14 @@ func MakeLinearizableWithRangeValidation(rd *rfpb.RangeDescriptor, replica *rfpb
 	return New(rd, replica, rfpb.Header_LINEARIZABLE)
 }
 
+// MakeLinearizableWithRangeValidation is a MakeFunc that could be passed to various sender functions.
+// The returned header has lease validation and linearizable consistency mode on, but skipping the generation check.
+func MakeLinearizableWithLeaseValidationOnly(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
+	header := New(rd, replica, rfpb.Header_LINEARIZABLE)
+	header.SkipGenerationCheck = true
+	return header
+}
+
 // MakeLinearizableWithoutRangeValidation is a MakeFunc that could be passed to various sender functions.
 // The returned header has range validation off and linearizable consistency mode on.
 func MakeLinearizableWithoutRangeValidation(rd *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor) *rfpb.Header {
