@@ -28,6 +28,7 @@ var (
 	gcsCredentials     = flag.String("storage.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flag.Secret)
 	gcsProjectID       = flag.String("storage.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
 	useGRPC            = flag.Bool("storage.gcs.use_grpc", false, "Whether to use the gRPC client for GCS", flag.Secret)
+	grpcPoolSize       = flag.Int("storage.gcs.grpc_pool_size", 15, "The number of gRPC connections to open to GCS. Only used when `use_grpc=true`", flag.Secret)
 )
 
 const (
@@ -67,6 +68,7 @@ func NewGCSBlobStore(ctx context.Context, bucket, credsFile, creds, projectID st
 	var gcsClient *storage.Client
 	var err error
 	if *useGRPC {
+		opts = append(opts, option.WithGRPCConnectionPool(*grpcPoolSize))
 		gcsClient, err = storage.NewGRPCClient(ctx, opts...)
 	} else {
 		gcsClient, err = storage.NewClient(ctx, opts...)
