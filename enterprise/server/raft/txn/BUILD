@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
+        "//server/metrics",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/retry",
