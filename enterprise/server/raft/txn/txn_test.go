@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
@@ -309,22 +310,15 @@ func TestRecoverTxnToUpdateRangeDescriptor(t *testing.T) {
 		require.NoError(t, readBatch.AnyError())
 		directRead, err := readBatch.DirectReadResponse(0)
 		require.NoError(t, err)
-		require.Equal(t, newRD, directRead.GetKv().GetValue())
+		gotRD := &rfpb.RangeDescriptor{}
+		err = proto.Unmarshal(directRead.GetKv().GetValue(), gotRD)
+		require.NoError(t, err)
+		require.True(t, proto.Equal(newRD, gotRD))
 	}
 
-	{ // Do a DirectRead and verify the value is updated.
-		key := constants.LocalRangeKey
-		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
-			Key: key,
-		}).ToProto()
-		require.NoError(t, err)
-		readRsp, err := store.Sender().SyncRead(ctx, key, readReq)
-		require.NoError(t, err)
-		readBatch := rbuilder.NewBatchResponseFromProto(readRsp)
-		require.NoError(t, readBatch.AnyError())
-		directRead, err := readBatch.DirectReadResponse(0)
-		require.NoError(t, err)
-		require.Equal(t, newRD, directRead.GetKv().GetValue())
+	{ // Verify that local range descriptor is updated.
+		rd := store.GetRange(2)
+		require.True(t, proto.Equal(newRD, rd))
 	}
 }
 

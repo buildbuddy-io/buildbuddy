@@ -186,7 +186,11 @@ func isConflictKeyError(err error) bool {
 func (tc *Coordinator) run(ctx context.Context, stmt *rfpb.TxnRequest_Statement, batch *rfpb.BatchCmdRequest) error {
 	var headerFn header.MakeFunc
 	if stmt.GetRangeValidationRequired() {
-		headerFn = header.MakeLinearizableWithRangeValidation
+		if batch.GetFinalizeOperation() == rfpb.FinalizeOperation_COMMIT {
+			headerFn = header.MakeLinearizableWithLeaseValidationOnly
+		} else {
+			headerFn = header.MakeLinearizableWithRangeValidation
+		}
 	} else {
 		headerFn = header.MakeLinearizableWithoutRangeValidation
 	}
