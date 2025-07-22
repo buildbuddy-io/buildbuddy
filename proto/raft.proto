@@ -454,7 +454,7 @@ message Header {
   // Session is used to guarantee idempotency for writes on the state machine.
   optional Session session = 5;
 
-  // If set, skip the range descriptor generation check 
+  // If set, skip the range descriptor generation check
   bool skip_generation_check = 6;
 }
 
