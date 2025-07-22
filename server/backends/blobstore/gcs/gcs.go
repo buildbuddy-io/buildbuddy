@@ -19,6 +19,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc/codes"
+
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -255,15 +258,15 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 				// Rewrite the error to an AlreadyExistsError that
 				// calling code can catch.
 				err = status.AlreadyExistsError("blob already exists")
-			}
-			// http.StatusTooManyRequests can be returned due to conflicting
-			// writes on the same object, or due to too much QPS to GCS. The
-			// only way to tell the difference is to look at the message.
-			if gerr.Code == http.StatusTooManyRequests &&
-				strings.HasPrefix(gerr.Message, "The object") &&
-				strings.Contains(gerr.Message, "exceeded the rate limit for object mutation operations") {
+			} else if gerr.Code == http.StatusTooManyRequests && objectRateLimitMessage(gerr.Message) {
 				// Rewrite the error to a ResourceExhaustedError that
 				// calling code can catch.
+				err = status.ResourceExhaustedError("too many concurrent writes")
+			}
+		} else if s, ok := gstatus.FromError(err); ok {
+			if s.Code() == codes.FailedPrecondition {
+				err = status.AlreadyExistsError("blob already exists")
+			} else if s.Code() == codes.ResourceExhausted && objectRateLimitMessage(s.Message()) {
 				err = status.ResourceExhaustedError("too many concurrent writes")
 			}
 		}
@@ -412,11 +415,23 @@ func (g *GCSBlobStore) UpdateCustomTime(ctx context.Context, blobName string, t 
 	spn.End()
 
 	if gerr, ok := err.(*googleapi.Error); ok {
-		if gerr.Code == http.StatusTooManyRequests {
+		if gerr.Code == http.StatusTooManyRequests && objectRateLimitMessage(gerr.Message) {
 			// Rewrite the error to an AlreadyExistsError that
 			// calling code can catch.
 			err = status.ResourceExhaustedError("blob atime already updated")
 		}
+	} else if s, ok := gstatus.FromError(err); ok {
+		if s.Code() == codes.ResourceExhausted && objectRateLimitMessage(s.Message()) {
+			err = status.ResourceExhaustedError("blob atime already updated")
+		}
 	}
 	return err
+}
+
+// http.StatusTooManyRequests and status.ResourceExhaustedError can be returned
+// due to conflicting writes on the same object, or due to too much QPS to GCS.
+// The only way to tell the difference is to look at the message.
+func objectRateLimitMessage(s string) bool {
+	return strings.HasPrefix(s, "The object") &&
+		strings.Contains(s, "exceeded the rate limit for object mutation operations")
 }
