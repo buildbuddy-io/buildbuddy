@@ -1419,7 +1419,9 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 			return nil, nil, err
 		}
 		downloadString := digest.NewCASResourceName(d.ToDigest(), *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
-
+		if !strings.HasPrefix(downloadString, "/") {
+			downloadString = "/" + downloadString
+		}
 		runfiles = append(runfiles, &bespb.File{
 			Name: relPath,
 			File: &bespb.File_Uri{

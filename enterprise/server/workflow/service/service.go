@@ -21,6 +21,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
@@ -141,7 +142,8 @@ func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActio
 		wf.InstanceNameSuffix,
 	}, gitCleanExclude...)
 	b := sha256.Sum256([]byte(strings.Join(keys, "|")))
-	return hex.EncodeToString(b[:])
+	s := hex.EncodeToString(b[:])
+	return snaputil.SnapshotPartitionPrefix + s
 }
 
 // startWorkflowTask represents a workflow to be started in the background in
