@@ -16,7 +16,7 @@ const (
 	// TODO: patch the library to make the cap for slices and the max columns two
 	// different numbers, ideally as a PR.
 	Columns = 256
-	Lines = 100
+	Lines   = 100
 )
 
 type ScreenWriter struct {
