@@ -1373,9 +1373,6 @@ func TestSplitMetaRange(t *testing.T) {
 	require.Error(t, err)
 }
 
-func headerFromRangeDescriptor(rd *rfpb.RangeDescriptor) *rfpb.Header {
-	return &rfpb.Header{RangeId: rd.GetRangeId(), Generation: rd.GetGeneration()}
-}
 
 func waitForReplicaToCatchUp(t testing.TB, ctx context.Context, r *replica.Replica, desiredLastAppliedIndex uint64) {
 	// Wait for raft replication to finish bringing the new node up to date.
@@ -1439,7 +1436,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 		require.NotNil(t, replStore)
 		require.Equal(t, replStore.RaftAddress, raftAddr)
 	}
-	header := headerFromRangeDescriptor(rd)
+	header := header.MakeLinearizableWithRangeValidation(rd)
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
@@ -1460,7 +1457,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 		require.NotNil(t, replStore)
 		require.Equal(t, replStore.RaftAddress, raftAddr)
 	}
-	header = headerFromRangeDescriptor(rd)
+	header = header.MakeLinearizableWithRangeValidation(rd)
 	require.Equal(t, 3, len(rd.GetReplicas()))
 
 	// Expect that a new cluster was added with rangeID = 3
@@ -1507,7 +1504,7 @@ func TestPostFactoSplit(t *testing.T) {
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
-	header := headerFromRangeDescriptor(rd)
+	header := header.MakeLinearizableWithRangeValidation(rd)
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
@@ -1598,7 +1595,7 @@ func TestManySplits(t *testing.T) {
 				continue
 			}
 			rd := s.GetRange(rangeID)
-			header := headerFromRangeDescriptor(rd)
+			header := header.MakeLinearizableWithRangeValidation(rd)
 			rsp, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 				Header: header,
 				Range:  rd,
@@ -1775,7 +1772,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
-	header := headerFromRangeDescriptor(rd)
+	header := header.MakeLinearizableWithRangeValidation(rd)
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
