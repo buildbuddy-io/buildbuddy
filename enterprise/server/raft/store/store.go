@@ -2339,6 +2339,99 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 	return nil
 }
 
+type SplitRangeTxn struct {
+	TxnBuilder       *rbuilder.TxnBuilder
+	NewRightRange    *rfpb.RangeDescriptor
+	UpdatedLeftRange *rfpb.RangeDescriptor
+}
+
+func (s *Store) BuildTxnForRangeSplit(leftRange *rfpb.RangeDescriptor, newRangeID uint64, splitKey []byte, replicaIDs []uint64) (SplitRangeTxn, error) {
+	res := SplitRangeTxn{}
+	initialMembers := make(map[uint64]string, len(leftRange.GetReplicas()))
+	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(leftRange.GetReplicas()))
+
+	for i, r := range leftRange.GetReplicas() {
+		if r.GetNhid() == "" {
+			return res, status.InternalErrorf("empty nhid in ReplicaDescriptor %+v", r)
+		}
+		replicaID := replicaIDs[i]
+		replicas = append(replicas, &rfpb.ReplicaDescriptor{
+			RangeId:   newRangeID,
+			ReplicaId: replicaID,
+			Nhid:      proto.String(r.GetNhid()),
+		})
+		initialMembers[replicaID] = r.GetNhid()
+	}
+
+	// Assemble new range descriptor.
+	newRightRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
+	newRightRange.Start = splitKey
+	newRightRange.RangeId = newRangeID
+	newRightRange.Generation += 1
+	newRightRange.Replicas = replicas
+	newRightRangeBuf, err := proto.Marshal(newRightRange)
+	if err != nil {
+		return res, err
+	}
+
+	updatedLeftRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
+	updatedLeftRange.End = splitKey
+	updatedLeftRange.Generation += 1
+	leftBatch := rbuilder.NewBatchBuilder()
+
+	if err := addLocalRangeEdits(leftRange, updatedLeftRange, leftBatch); err != nil {
+		return res, err
+	}
+	// lock the left range when we prepare the transaction. Before we finalize
+	// the transaction, we don't allow keys in the old left range to be written.
+	leftBatch.SetLockMappedRange(true)
+
+	rightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: newRightRangeBuf,
+		},
+	})
+	metaBatch := rbuilder.NewBatchBuilder()
+	if err := addMetaRangeEdits(leftRange, updatedLeftRange, newRightRange, metaBatch); err != nil {
+		return res, err
+	}
+	mrd := s.sender.GetMetaRangeDescriptor()
+
+	tb := rbuilder.NewTxn()
+	leftStmt := tb.AddStatement()
+	leftStmt = leftStmt.SetRangeDescriptor(leftRange).SetBatch(leftBatch)
+	leftStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
+	leftStmt.AddPostCommitHook(rfpb.TransactionHook_PREPARE, &rfpb.StartShardHook{
+		RangeId:       newRangeID,
+		InitialMember: initialMembers,
+	})
+	// Range Validation is required on the existing range to make sure that the
+	// existing leader/range lease holder has the update-to-date range descriptor.
+	// See go/raft-range-validation-in-txn.
+	leftStmt.SetRangeValidationRequired(true)
+
+	rightStmt := tb.AddStatement()
+	rightStmt.SetRangeDescriptor(newRightRange).SetBatch(rightBatch)
+	rightStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
+
+	// No range validation b/c the range descriptor is a new one.
+	// See go/raft-range-validation-in-txn
+	rightStmt.SetRangeValidationRequired(false)
+
+	metaStmt := tb.AddStatement()
+	metaStmt.SetRangeDescriptor(mrd).SetBatch(metaBatch)
+	// The meta range descriptor is from range cache and can be not-up-to date.
+	// Validating meta range can make the txn difficult to succeed.
+	// See go/raft-range-validation-in-txn.
+	metaStmt.SetRangeValidationRequired(false)
+
+	res.TxnBuilder = tb
+	res.NewRightRange = newRightRange
+	res.UpdatedLeftRange = updatedLeftRange
+	return res, nil
+}
+
 func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
 	startTime := time.Now()
 
@@ -2386,85 +2479,12 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		return nil, status.InternalErrorf("could not reserve replica IDs for new range %d: %s", rangeID, err)
 	}
 
-	initialMembers := make(map[uint64]string, len(leftRange.GetReplicas()))
-	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(leftRange.GetReplicas()))
-
-	for i, r := range leftRange.GetReplicas() {
-		if r.GetNhid() == "" {
-			return nil, status.InternalErrorf("empty nhid in ReplicaDescriptor %+v", r)
-		}
-		replicaID := replicaIDs[i]
-		replicas = append(replicas, &rfpb.ReplicaDescriptor{
-			RangeId:   newRangeID,
-			ReplicaId: replicaID,
-			Nhid:      proto.String(r.GetNhid()),
-		})
-		initialMembers[replicaID] = r.GetNhid()
-	}
-
-	// Assemble new range descriptor.
-	newRightRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
-	newRightRange.Start = splitPointResponse.GetSplitKey()
-	newRightRange.RangeId = newRangeID
-	newRightRange.Generation += 1
-	newRightRange.Replicas = replicas
-	newRightRangeBuf, err := proto.Marshal(newRightRange)
+	splitRangeTxn, err := s.BuildTxnForRangeSplit(leftRange, newRangeID, splitPointResponse.GetSplitKey(), replicaIDs)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapErrorf(err, "could not build txn: %s", err)
 	}
 
-	updatedLeftRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
-	updatedLeftRange.End = splitPointResponse.GetSplitKey()
-	updatedLeftRange.Generation += 1
-
-	leftBatch := rbuilder.NewBatchBuilder()
-	if err := addLocalRangeEdits(leftRange, updatedLeftRange, leftBatch); err != nil {
-		return nil, err
-	}
-	// lock the left range when we prepare the transaction. Before we finalize
-	// the transaction, we don't allow keys in the old left range to be written.
-	leftBatch.SetLockMappedRange(true)
-
-	rightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: newRightRangeBuf,
-		},
-	})
-	metaBatch := rbuilder.NewBatchBuilder()
-	if err := addMetaRangeEdits(leftRange, updatedLeftRange, newRightRange, metaBatch); err != nil {
-		return nil, err
-	}
-	mrd := s.sender.GetMetaRangeDescriptor()
-
-	tb := rbuilder.NewTxn()
-	leftStmt := tb.AddStatement()
-	leftStmt = leftStmt.SetRangeDescriptor(leftRange).SetBatch(leftBatch)
-	leftStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
-	leftStmt.AddPostCommitHook(rfpb.TransactionHook_PREPARE, &rfpb.StartShardHook{
-		RangeId:       newRangeID,
-		InitialMember: initialMembers,
-	})
-	// Range Validation is required on the existing range to make sure that the
-	// existing leader/range lease holder has the update-to-date range descriptor.
-	// See go/raft-range-validation-in-txn.
-	leftStmt.SetRangeValidationRequired(true)
-
-	rightStmt := tb.AddStatement()
-	rightStmt.SetRangeDescriptor(newRightRange).SetBatch(rightBatch)
-	rightStmt.AddPostCommitHook(rfpb.TransactionHook_COMMIT, &rfpb.SnapshotClusterHook{})
-
-	// No range validation b/c the range descriptor is a new one.
-	// See go/raft-range-validation-in-txn
-	rightStmt.SetRangeValidationRequired(false)
-
-	metaStmt := tb.AddStatement()
-	metaStmt.SetRangeDescriptor(mrd).SetBatch(metaBatch)
-	// The meta range descriptor is from range cache and can be not-up-to date.
-	// Validating meta range can make the txn difficult to succeed.
-	// See go/raft-range-validation-in-txn.
-	metaStmt.SetRangeValidationRequired(false)
-	if err := s.txnCoordinator.RunTxn(ctx, tb); err != nil {
+	if err := s.txnCoordinator.RunTxn(ctx, splitRangeTxn.TxnBuilder); err != nil {
 		return nil, err
 	}
 
@@ -2474,8 +2494,8 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	}).Observe(float64(time.Since(startTime).Microseconds()))
 
 	return &rfpb.SplitRangeResponse{
-		Left:  updatedLeftRange,
-		Right: newRightRange,
+		Left:  splitRangeTxn.UpdatedLeftRange,
+		Right: splitRangeTxn.NewRightRange,
 	}, nil
 }
 
