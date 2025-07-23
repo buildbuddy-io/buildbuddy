@@ -1032,7 +1032,7 @@ func TestNetwork_Enabled(t *testing.T) {
 		Arguments: []string{"sh", "-ec", `
 			ping -c1 -W1 $(hostname)
 			ping -c1 -W2 8.8.8.8
-			ping -c1 -W2 example.com
+			ping -c1 -W2 google.com
 		`},
 	}
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
