@@ -996,7 +996,14 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 		}
 		openedFile = f
 	} else if node.fileNode != nil {
-		err = p.treeFetcher.Fetch(p.taskCtx(), node.fileNode)
+		p.mu.Lock()
+		tf := p.treeFetcher
+		p.mu.Unlock()
+		if tf == nil {
+			log.CtxWarningf(p.taskCtx(), "Open %d could not open file because tree fetcher is not set", request.GetId())
+			return nil, syscallErrStatus(syscall.EIO)
+		}
+		err = tf.Fetch(p.taskCtx(), node.fileNode)
 		if err != nil {
 			log.CtxWarningf(p.taskCtx(), "Open %q could not fetch file from cache: %s", node.Path(), err)
 			return nil, err
