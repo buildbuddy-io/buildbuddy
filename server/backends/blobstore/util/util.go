@@ -133,9 +133,8 @@ func RecordWriteMetrics(typeLabel string, startTime time.Time, size int, err err
 	}).Observe(float64(size))
 }
 
-func RecordReadMetrics(typeLabel string, startTime time.Time, b []byte, err error) {
+func RecordReadMetrics(typeLabel string, startTime time.Time, size int, err error) {
 	duration := time.Since(startTime)
-	size := len(b)
 	metrics.BlobstoreReadCount.With(prometheus.Labels{
 		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
 		metrics.BlobstoreTypeLabel: typeLabel,
