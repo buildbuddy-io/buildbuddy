@@ -120,7 +120,7 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	if err := reader.Close(); err != nil {
 		log.Errorf("Error closing blobreader: %s", err)
 	}
-	util.RecordReadMetrics(gcsLabel, start, b, err)
+	util.RecordReadMetrics(gcsLabel, start, len(b), err)
 	if g.compress {
 		return util.Decompress(b, err)
 	} else {

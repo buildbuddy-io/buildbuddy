@@ -83,7 +83,7 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 	ctx, spn := tracing.StartSpan(ctx)
 	b, err := disk.ReadFile(ctx, fullPath)
 	spn.End()
-	util.RecordReadMetrics(diskLabel, start, b, err)
+	util.RecordReadMetrics(diskLabel, start, len(b), err)
 	return util.Decompress(b, err)
 }
 

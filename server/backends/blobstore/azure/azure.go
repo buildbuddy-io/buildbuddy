@@ -118,7 +118,7 @@ func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	util.RecordReadMetrics(azureLabel, start, b, err)
+	util.RecordReadMetrics(azureLabel, start, len(b), err)
 	return util.Decompress(b, err)
 }
 
