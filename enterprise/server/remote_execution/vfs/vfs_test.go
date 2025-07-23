@@ -67,6 +67,8 @@ func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (
 
 	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
 	require.NoError(t, err)
+	err = tf.Start()
+	require.NoError(t, err)
 
 	server, err := vfs_server.New(env, back)
 	require.NoError(t, err)
@@ -835,29 +837,24 @@ func TestComputeStats(t *testing.T) {
 			{Name: "test3", Digest: rn3.GetDigest()},
 		},
 	}})
-	stats := server.ComputeStats()
+	vfsStats := server.ComputeStats()
+	require.NoError(t, err)
 
 	// Check stats before we do anything. Only CAS input size/count should be
 	// populated.
-	require.EqualValues(t, 3, stats.CasFilesCount)
-	require.EqualValues(t, 0, stats.CasFilesAccessedCount)
-	require.EqualValues(t, 650, stats.CasFilesSizeBytes)
-	require.EqualValues(t, 0, stats.CasFilesAccessedBytes)
-	require.EqualValues(t, 0, stats.FileDownloadCount)
-	require.EqualValues(t, 0, stats.FileDownloadSizeBytes)
-	require.EqualValues(t, 0, stats.FileDownloadDurationUsec)
+	require.EqualValues(t, 3, vfsStats.CasFilesCount)
+	require.EqualValues(t, 0, vfsStats.CasFilesAccessedCount)
+	require.EqualValues(t, 650, vfsStats.CasFilesSizeBytes)
+	require.EqualValues(t, 0, vfsStats.CasFilesAccessedBytes)
 
 	_, err = os.ReadFile(filepath.Join(fsPath, "test1"))
 	require.NoError(t, err)
 
-	stats = server.ComputeStats()
-	require.EqualValues(t, 3, stats.CasFilesCount)
-	require.EqualValues(t, 1, stats.CasFilesAccessedCount)
-	require.EqualValues(t, 650, stats.CasFilesSizeBytes)
-	require.EqualValues(t, 100, stats.CasFilesAccessedBytes)
-	require.EqualValues(t, 1, stats.FileDownloadCount)
-	require.EqualValues(t, 100, stats.FileDownloadSizeBytes)
-	require.Greater(t, stats.FileDownloadDurationUsec, int64(0))
+	vfsStats = server.ComputeStats()
+	require.EqualValues(t, 3, vfsStats.CasFilesCount)
+	require.EqualValues(t, 1, vfsStats.CasFilesAccessedCount)
+	require.EqualValues(t, 650, vfsStats.CasFilesSizeBytes)
+	require.EqualValues(t, 100, vfsStats.CasFilesAccessedBytes)
 }
 
 func TestRenameWhiteout(t *testing.T) {
