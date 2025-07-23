@@ -36,6 +36,7 @@ go_library(
         "@com_github_docker_go_units//:go-units",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",

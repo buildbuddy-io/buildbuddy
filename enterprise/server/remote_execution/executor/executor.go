@@ -36,6 +36,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -99,13 +100,9 @@ func (s *Executor) HostID() string {
 
 func (s *Executor) Warmup() {
 	ctx := context.Background()
-	auth := s.env.GetAuthenticator()
-	if auth != nil && executor_auth.APIKey() != "" {
+	if executor_auth.APIKey() != "" {
 		log.CtxInfo(ctx, "Using executor API key during warmup")
-		ctx = auth.AuthContextFromAPIKey(ctx, executor_auth.APIKey())
-		if err, ok := authutil.AuthErrorFromContext(ctx); ok {
-			log.CtxWarningf(ctx, "Error creating auth context from API key: %s", err)
-		}
+		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, executor_auth.APIKey())
 	}
 	s.runnerPool.Warmup(ctx)
 }
