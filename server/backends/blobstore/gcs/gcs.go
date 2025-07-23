@@ -41,6 +41,7 @@ type GCSBlobStore struct {
 	projectID    string
 	compress     bool
 	metricLabel  string
+	metricLabel  string
 }
 
 func UseGCSBlobStore() bool {
