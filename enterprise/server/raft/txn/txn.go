@@ -350,7 +350,7 @@ func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 			err := tc.finalizeTxn(ctx, txnID, txnRecord.GetOp(), stmt)
 			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is already finalized, we will get NotFound Error when we finalize and this is fine.
-				return status.WrapErrorf(err, "failed to finalized prepared statement on range %d", stmt.GetRange().GetRangeId())
+				return status.WrapErrorf(err, "failed to finalize prepared statement on range %d", stmt.GetRange().GetRangeId())
 			}
 		}
 	}
