@@ -13,9 +13,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +50,7 @@ func genOptions(scheme, user, password, addr, database string) *redis.Options {
 			}
 			addr = net.JoinHostPort(host, port)
 			if scheme == "rediss" {
-				tls_config = &tls.Config{ServerName: host}
+				tls_config = &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
 			}
 		} else {
 			return &redis.Options{}

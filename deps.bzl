@@ -691,6 +691,18 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.4.1",
     )
     go_repository(
+        name = "com_github_bsm_ginkgo_v2",
+        importpath = "github.com/bsm/ginkgo/v2",
+        sum = "h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=",
+        version = "v2.12.0",
+    )
+    go_repository(
+        name = "com_github_bsm_gomega",
+        importpath = "github.com/bsm/gomega",
+        sum = "h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=",
+        version = "v1.27.10",
+    )
+    go_repository(
         name = "com_github_bufbuild_protocompile",
         importpath = "github.com/bufbuild/protocompile",
         sum = "h1:mixz5lJX4Hiz4FpqFREJHIXLfaLBntfaJv1h+/jS+Qg=",
@@ -1968,18 +1980,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v6.15.8+incompatible",
     )
     go_repository(
-        name = "com_github_go_redis_redis_extra_rediscmd_v8",
-        importpath = "github.com/go-redis/redis/extra/rediscmd/v8",
-        sum = "h1:ftG8tp8SG81xyuL2woNEx5t2RZ8mOJuC2+tumi+/NR8=",
-        version = "v8.11.5",
-    )
-    go_repository(
-        name = "com_github_go_redis_redis_extra_redisotel_v8",
-        importpath = "github.com/go-redis/redis/extra/redisotel/v8",
-        sum = "h1:BqyYJgvdSr2S/6O2l7zmCj26ocUTxDLgagsGIRfkS+Q=",
-        version = "v8.11.5",
-    )
-    go_repository(
         name = "com_github_go_redis_redis_v8",
         importpath = "github.com/go-redis/redis/v8",
         sum = "h1:AcZZR7igkdvfVmQTPnu9WE37LRrO/YrBH5zWyjDC0oI=",
@@ -2246,8 +2246,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_gomodule_redigo",
         importpath = "github.com/gomodule/redigo",
-        sum = "h1:K/R+8tc58AaqLkqG2Ol3Qk+DR/TlNuhuh457pBFPtt0=",
-        version = "v2.0.0+incompatible",
+        sum = "h1:Sl3u+2BI/kk+VEatbj0scLdrFhjPmbxOc1myhDP41ws=",
+        version = "v1.8.9",
     )
     go_repository(
         name = "com_github_google_brotli_go_cbrotli",
@@ -4242,6 +4242,24 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20200313005456-10cdbea86bc0",
     )
     go_repository(
+        name = "com_github_redis_go_redis_extra_rediscmd_v9",
+        importpath = "github.com/redis/go-redis/extra/rediscmd/v9",
+        sum = "h1:vP5CH2rJ3L4yk3o8FdXqiPL1lGl5APjHcxk5/OT6H0Q=",
+        version = "v9.11.0",
+    )
+    go_repository(
+        name = "com_github_redis_go_redis_extra_redisotel_v9",
+        importpath = "github.com/redis/go-redis/extra/redisotel/v9",
+        sum = "h1:dMNmusapfQefntfUqAYAvaVJMrJCdKUaQoPSZtd99WU=",
+        version = "v9.11.0",
+    )
+    go_repository(
+        name = "com_github_redis_go_redis_v9",
+        importpath = "github.com/redis/go-redis/v9",
+        sum = "h1:E3S08Gl/nJNn5vkxd2i78wZxWAPNZgUNTp8WIJUAiIs=",
+        version = "v9.11.0",
+    )
+    go_repository(
         name = "com_github_rivo_uniseg",
         importpath = "github.com/rivo/uniseg",
         sum = "h1:S1pD9weZBuJdFmowNwbpi7BJ8TNftyUImj/0WQi72jY=",
@@ -4700,9 +4718,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_throttled_throttled_v2",
         importpath = "github.com/throttled/throttled/v2",
-        replace = "github.com/buildbuddy-io/throttled/v2",
-        sum = "h1:l9PGL9DJwcCgQcVt/zFzVjJbSzb+BmpU8NBeo6leHKU=",
-        version = "v2.9.1-rc2",
+        sum = "h1:pUbMDnDvUEwtSc9N8HrNjctwlGIVer0hdHNCbb2gl3Y=",
+        version = "v2.13.0",
     )
     go_repository(
         name = "com_github_tidwall_pretty",

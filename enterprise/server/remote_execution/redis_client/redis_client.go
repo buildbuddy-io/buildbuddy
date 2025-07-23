@@ -49,8 +49,7 @@ func RegisterRemoteExecutionRedisPubSubClient(env *real_environment.RealEnv) err
 	// does not  provide such an option so we  set the pool size to a high value to prevent this redis client
 	// from being the bottleneck.
 	opts.PoolSize = *redisPubSubPoolSize
-	opts.IdleTimeout = 1 * time.Minute
-	opts.IdleCheckFrequency = 1 * time.Minute
+	opts.ConnMaxIdleTime = 1 * time.Minute
 	opts.PoolTimeout = 5 * time.Second
 
 	// The retry settings are tuned to play along with the Bazel execution retry settings. If there's an issue
