@@ -245,9 +245,9 @@ func (ws *Workspace) CreateOutputDirs() error {
 	return ws.dirHelper.CreateOutputDirs()
 }
 
-func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSystemLayout, treeFetcher *dirtools.TreeFetcher) error {
+func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
 	if ws.vfsServer != nil {
-		if err := ws.vfsServer.Prepare(ctx, layout, treeFetcher); err != nil {
+		if err := ws.vfsServer.Prepare(ctx, layout, ws.treeFetcher); err != nil {
 			return err
 		}
 	}
@@ -294,7 +294,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	// Inform VFS about the layout of the input tree and give it access to the
 	// running tree fetcher.
 	if ws.vfs != nil {
-		if err := ws.prepareVFS(ctx, layout, ws.treeFetcher); err != nil {
+		if err := ws.prepareVFS(ctx, layout); err != nil {
 			return err
 		}
 		return nil
