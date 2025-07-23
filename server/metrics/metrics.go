@@ -219,6 +219,9 @@ const (
 	// Raft Replica State: staging, removing
 	RaftReplicaState = "replica_state"
 
+	// The status of processing txn record: "success" or "failure"
+	RaftTxnRecordProcessStatus = "txn_record_process_status"
+
 	// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
 
@@ -2698,6 +2701,15 @@ var (
 	}, []string{
 		RaftReplicaState,
 		RaftRangeIDLabel,
+	})
+
+	RaftTxnRecordProcessCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "txn_record_process_count",
+		Help:      "The total number of driver action",
+	}, []string{
+		RaftTxnRecordProcessStatus,
 	})
 
 	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{

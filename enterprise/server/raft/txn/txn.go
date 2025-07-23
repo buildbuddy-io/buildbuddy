@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -244,32 +245,36 @@ func (tj *Coordinator) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-tj.clock.After(txnCleanupPeriod):
-			err := tj.processTxnRecords(ctx)
-			if err != nil {
-				log.Warningf("Failed to processTxnRecords: %s", err)
-			}
+			tj.processTxnRecords(ctx)
 		}
 	}
 }
 
-func (tc *Coordinator) processTxnRecords(ctx context.Context) error {
+func (tc *Coordinator) processTxnRecords(ctx context.Context) {
 	if !tc.store.HasReplicaAndIsLeader(constants.MetaRangeID) {
-		return nil
+		return
 	}
 	txnRecords, err := tc.FetchTxnRecords(ctx)
-	if err != nil {
-		return status.InternalErrorf("failed to fetch txn records: %s", err)
-	}
+	log.Warningf("Failed to fetch txn records: %s", err)
 
-	log.Infof("fetched %d TxnRecords to process", len(txnRecords))
+	errCount := 0
 	for _, txnRecord := range txnRecords {
 		txnID := txnRecord.GetTxnRequest().GetTransactionId()
 		if err := tc.ProcessTxnRecord(ctx, txnRecord); err != nil {
-			return status.InternalErrorf("failed to process txn record %q: %s", txnID, err)
+			log.Warningf("Failed to processTxnRecords: %s", err)
+			errCount++
 		}
 		log.Debugf("Successfully processed txn record %q", txnID)
 	}
-	return nil
+	successCount := len(txnRecords) - errCount
+
+	if successCount > 0 {
+		metrics.RaftTxnRecordProcessCount.WithLabelValues("success").Add(float64(successCount))
+	}
+
+	if errCount > 0 {
+		metrics.RaftTxnRecordProcessCount.WithLabelValues("failure").Add(float64(errCount))
+	}
 }
 
 func (tc *Coordinator) FetchTxnRecords(ctx context.Context) ([]*rfpb.TxnRecord, error) {
