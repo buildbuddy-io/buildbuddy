@@ -2,6 +2,7 @@ package gcs
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -83,7 +84,7 @@ func (g *GCSBlobStore) bucketExists(ctx context.Context, bucketName string) (boo
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := g.gcsClient.Bucket(bucketName).Attrs(ctx)
 	spn.End()
-	if err == storage.ErrBucketNotExist {
+	if errors.Is(err, storage.ErrBucketNotExist) {
 		return false, nil
 	}
 	return err == nil, err
@@ -108,7 +109,7 @@ func (g *GCSBlobStore) createBucketIfNotExists(ctx context.Context, bucketName s
 func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
 	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
 	if err != nil {
-		if err == storage.ErrObjectNotExist {
+		if errors.Is(err, storage.ErrObjectNotExist) {
 			return nil, status.NotFoundError(err.Error())
 		}
 		return nil, err
@@ -183,7 +184,7 @@ func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	err := g.bucketHandle.Object(blobName).Delete(ctx)
 	spn.End()
 	util.RecordDeleteMetrics(gcsLabel, start, err)
-	if err == storage.ErrObjectNotExist {
+	if errors.Is(err, storage.ErrObjectNotExist) {
 		return nil
 	}
 	return err
@@ -193,13 +194,10 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := g.bucketHandle.Object(blobName).Attrs(ctx)
 	spn.End()
-	if err == storage.ErrObjectNotExist {
+	if errors.Is(err, storage.ErrObjectNotExist) {
 		return false, nil
-	} else if err == nil {
-		return true, nil
-	} else {
-		return false, err
 	}
+	return err == nil, err
 }
 
 // ConditionalWriter is a custom writer for storing expiring artifacts that
@@ -326,7 +324,7 @@ func (g *GCSBlobStore) Reader(ctx context.Context, blobName string, offset, limi
 	}
 	reader, err := g.bucketHandle.Object(blobName).NewRangeReader(ctx, offset, limit)
 	if err != nil {
-		if err == storage.ErrObjectNotExist {
+		if errors.Is(err, storage.ErrObjectNotExist) {
 			return nil, status.NotFoundError(err.Error())
 		}
 		return nil, err
