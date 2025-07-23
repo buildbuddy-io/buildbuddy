@@ -5,11 +5,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -87,18 +89,19 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, status.UnavailableError("No cache configured.")
 	}
 
-	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), req.GetInstanceName(), req.GetOs(), req.GetArch())
+	in := instanceName(req)
+	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), in, req.GetOs(), req.GetArch())
 	if err != nil {
 		return nil, status.WrapError(err, "upload input root")
 	}
 
 	var patchURIs []string
 	for _, patch := range req.GetRepoState().GetPatch() {
-		patchDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, patch)
+		patchDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), in, repb.DigestFunction_BLAKE3, patch)
 		if err != nil {
 			return nil, status.WrapError(err, "upload patch")
 		}
-		rn := digest.NewCASResourceName(patchDigest, req.GetInstanceName(), repb.DigestFunction_BLAKE3)
+		rn := digest.NewCASResourceName(patchDigest, in, repb.DigestFunction_BLAKE3)
 		patchURIs = append(patchURIs, rn.DownloadString())
 	}
 
@@ -155,12 +158,10 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--target_branch=" + req.GetRepoState().GetBranch(),
 		"--serialized_action=" + serializedAction,
 		"--timeout=" + timeout.String(),
+		"--remote_instance_name=" + in,
 	}
 	if !req.GetRunRemotely() {
 		args = append(args, "--record_run_metadata")
-	}
-	if req.GetInstanceName() != "" {
-		args = append(args, "--remote_instance_name="+req.GetInstanceName())
 	}
 	for _, patchURI := range patchURIs {
 		args = append(args, "--patch_uri="+patchURI)
@@ -267,7 +268,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	// Normalize to adhere to the REAPI spec.
 	rexec.NormalizeCommand(cmd)
 
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, cmd)
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, in, repb.DigestFunction_BLAKE3, cmd)
 	if err != nil {
 		return nil, status.WrapError(err, "upload command")
 	}
@@ -283,7 +284,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		Timeout:         durationpb.New(actionTimeout),
 	}
 
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, action)
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, in, repb.DigestFunction_BLAKE3, action)
 	if err != nil {
 		return nil, status.WrapError(err, "upload action")
 	}
@@ -446,7 +447,7 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return nil, status.UnimplementedError("Missing remote execution client.")
 	}
 	opStream, err := executionClient.Execute(execCtx, &repb.ExecuteRequest{
-		InstanceName:    req.GetInstanceName(),
+		InstanceName:    instanceName(req),
 		SkipCacheLookup: true,
 		ActionDigest:    actionDigest,
 		DigestFunction:  repb.DigestFunction_BLAKE3,
@@ -547,4 +548,8 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			}
 		}
 	}
+}
+
+func instanceName(req *rnpb.RunRequest) string {
+	return filepath.Join(snaputil.SnapshotPartitionPrefix, req.GetInstanceName())
 }

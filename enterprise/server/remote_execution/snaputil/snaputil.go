@@ -33,6 +33,12 @@ var (
 )
 
 const (
+	// SnapshotPartitionPrefix is added to the beginning of instance names
+	// for remote runs that create snapshots. In certain clusters,
+	// snapshots should be cached in a separate partition. This prefix will route
+	// snapshot data to that partition.
+	SnapshotPartitionPrefix = "bb-snapshot"
+
 	// MemoryFileName is the fixed file name of the memory snapshot file.
 	// We rely on this name to locate the memory file in snapshots. Do not
 	// change!

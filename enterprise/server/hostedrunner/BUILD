@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/util/ci_runner_util",
         "//enterprise/server/workflow/config",
         "//proto:remote_execution_go_proto",
