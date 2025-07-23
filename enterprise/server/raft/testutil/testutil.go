@@ -7,9 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
@@ -17,11 +19,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
@@ -30,6 +34,7 @@ import (
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	dbcl "github.com/lni/dragonboat/v4/client"
 	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
@@ -346,4 +351,74 @@ func (tr *TestingReplica) DB() pebble.IPebbleDB {
 		db.Close()
 	})
 	return db
+}
+
+func MetadataKey(t *testing.T, fs filestore.Store, fr *sgpb.FileRecord) []byte {
+	pebbleKey, err := fs.PebbleKey(fr)
+	require.NoError(t, err)
+	keyBytes, err := pebbleKey.Bytes(filestore.Version5)
+	require.NoError(t, err)
+	return keyBytes
+}
+
+func (ts *TestingStore) writeRecord(ctx context.Context, t *testing.T, groupID string, sizeBytes int64) *sgpb.FileRecord {
+	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
+	fr := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
+			CacheType:   r.GetCacheType(),
+			PartitionId: groupID,
+		},
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
+	}
+
+	fs := filestore.New()
+	fileMetadataKey := MetadataKey(t, fs, fr)
+
+	_, err := ts.APIClient().Get(ctx, ts.GRPCAddress)
+	require.NoError(t, err)
+
+	writeCloserMetadata := fs.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
+	bytesWritten, err := writeCloserMetadata.Write(buf)
+	require.NoError(t, err)
+
+	now := time.Now()
+	md := &sgpb.FileMetadata{
+		FileRecord:      fr,
+		StorageMetadata: writeCloserMetadata.Metadata(),
+		StoredSizeBytes: int64(bytesWritten),
+		LastModifyUsec:  now.UnixMicro(),
+		LastAccessUsec:  now.UnixMicro(),
+	}
+	protoBytes, err := proto.Marshal(md)
+	require.NoError(t, err)
+
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   fileMetadataKey,
+			Value: protoBytes,
+		},
+	}).ToProto()
+	require.NoError(t, err)
+	writeRsp, err := ts.Sender().SyncPropose(ctx, fileMetadataKey, writeReq)
+	require.NoError(t, err)
+	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
+	require.NoError(t, err)
+
+	return fr
+}
+
+func (ts *TestingStore) WriteNRecords(t *testing.T, ctx context.Context, n int) []*sgpb.FileRecord {
+	return ts.WriteNRecordsAndFlush(t, ctx, n, 0)
+}
+
+func (ts *TestingStore) WriteNRecordsAndFlush(t *testing.T, ctx context.Context, n int, flushFreq int) []*sgpb.FileRecord {
+	out := make([]*sgpb.FileRecord, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, ts.writeRecord(ctx, t, "default", 1000))
+		if flushFreq != 0 && (i+1)%flushFreq == 0 {
+			ts.DB().Flush()
+		}
+	}
+	return out
 }

@@ -309,7 +309,7 @@ func TestAutomaticSplitting(t *testing.T) {
 
 	testutil.WaitForRangeLease(t, ctx, stores, 1)
 	testutil.WaitForRangeLease(t, ctx, stores, 2)
-	writeNRecordsAndFlush(ctx, t, s1, 20, 1) // each write is 1000 bytes
+	s1.WriteNRecordsAndFlush(t, ctx, 20, 1) // each write is 1000 bytes
 
 	// Advance the clock to trigger scan the queue.
 	clock.Advance(61 * time.Second)
@@ -1235,7 +1235,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, g
 	}
 
 	fs := filestore.New()
-	fileMetadataKey := metadataKey(t, fr)
+	fileMetadataKey := testutil.MetadataKey(t, fs, fr)
 
 	_, err := ts.APIClient().Get(ctx, ts.GRPCAddress)
 	require.NoError(t, err)
@@ -1268,15 +1268,6 @@ func writeRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, g
 	require.NoError(t, err)
 
 	return fr
-}
-
-func metadataKey(t *testing.T, fr *sgpb.FileRecord) []byte {
-	fs := filestore.New()
-	pebbleKey, err := fs.PebbleKey(fr)
-	require.NoError(t, err)
-	keyBytes, err := pebbleKey.Bytes(filestore.Version5)
-	require.NoError(t, err)
-	return keyBytes
 }
 
 func fetchRangeDescriptorsFromMetaRange(ctx context.Context, t *testing.T, ts *testutil.TestingStore, metaRangeDescriptor *rfpb.RangeDescriptor) []*rfpb.RangeDescriptor {
@@ -1315,7 +1306,7 @@ func fetchRangeDescriptorsFromMetaRange(ctx context.Context, t *testing.T, ts *t
 
 func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *sgpb.FileRecord) {
 	fs := filestore.New()
-	fk := metadataKey(t, fr)
+	fk := testutil.MetadataKey(t, fs, fr)
 
 	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.GetRequest{
 		Key: fk,
@@ -1338,20 +1329,6 @@ func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr
 	require.True(t, proto.Equal(d, fr.GetDigest()))
 }
 
-func writeNRecords(ctx context.Context, t *testing.T, store *testutil.TestingStore, n int) []*sgpb.FileRecord {
-	return writeNRecordsAndFlush(ctx, t, store, n, 0)
-}
-func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.TestingStore, n int, flushFreq int) []*sgpb.FileRecord {
-	out := make([]*sgpb.FileRecord, 0, n)
-	for i := 0; i < n; i++ {
-		out = append(out, writeRecord(ctx, t, store, "default", 1000))
-		if flushFreq != 0 && (i+1)%flushFreq == 0 {
-			store.DB().Flush()
-		}
-	}
-	return out
-}
-
 func TestSplitMetaRange(t *testing.T) {
 	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
@@ -1364,7 +1341,7 @@ func TestSplitMetaRange(t *testing.T) {
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
-	writeNRecords(ctx, t, s1, 10)
+	s1.WriteNRecords(t, ctx, 10)
 
 	// Attempting to Split the metarange should fail.
 	_, err := s1.SplitRange(ctx, &rfpb.SplitRangeRequest{
@@ -1439,7 +1416,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
-	written := writeNRecords(ctx, t, s, 50)
+	written := s.WriteNRecords(t, ctx, 50)
 	_, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: hd,
 		Range:  rd,
@@ -1470,7 +1447,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	}
 
 	// Write some more records to the new end range.
-	written = append(written, writeNRecords(ctx, t, s1, 50)...)
+	written = append(written, s1.WriteNRecords(t, ctx, 50)...)
 	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: hd,
 		Range:  rd,
@@ -1507,7 +1484,7 @@ func TestPostFactoSplit(t *testing.T) {
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
-	written := writeNRecords(ctx, t, s1, 50)
+	written := s1.WriteNRecords(t, ctx, 50)
 
 	splitResponse, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: hd,
@@ -1554,8 +1531,9 @@ func TestPostFactoSplit(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now verify that all keys that should be on the new node are present.
+	fs := filestore.New()
 	for _, fr := range written {
-		fmk := metadataKey(t, fr)
+		fmk := testutil.MetadataKey(t, fs, fr)
 		if bytes.Compare(fmk, splitResponse.GetLeft().GetEnd()) >= 0 {
 			continue
 		}
@@ -1575,7 +1553,7 @@ func TestManySplits(t *testing.T) {
 
 	var written []*sgpb.FileRecord
 	for i := 0; i < 4; i++ {
-		written = append(written, writeNRecords(ctx, t, stores[0], 100)...)
+		written = append(written, stores[0].WriteNRecords(t, ctx, 100)...)
 
 		var clusters []uint64
 		var seen = make(map[uint64]struct{})
@@ -1663,7 +1641,7 @@ func TestCleanupExpiredSessions(t *testing.T) {
 	sf.StartShard(t, ctx, stores...)
 
 	// write some records
-	writeNRecords(ctx, t, s1, 10)
+	s1.WriteNRecords(t, ctx, 10)
 
 	sessionIDsShard1S1 := readSessionIDs(t, ctx, 1, s1)
 	sessionIDsShard1S2 := readSessionIDs(t, ctx, 1, s2)
@@ -1775,7 +1753,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
-	written := writeNRecords(ctx, t, s1, 50)
+	written := s1.WriteNRecords(t, ctx, 50)
 	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: hd,
 		Range:  rd,
@@ -1790,7 +1768,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 	require.Equal(t, 1, len(replicas))
 
 	// Write some more records to the new end range.
-	written = append(written, writeNRecords(ctx, t, s1, 50)...)
+	written = append(written, s1.WriteNRecords(t, ctx, 50)...)
 
 	// Check that all files are found.
 	for _, fr := range written {
@@ -1830,7 +1808,7 @@ func TestUpReplicate(t *testing.T) {
 
 	{ // Verify that there are 2 replicas for range 2, and also write 10 records
 		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-		writeNRecords(ctx, t, s, 10)
+		s.WriteNRecords(t, ctx, 10)
 		replicas := getMembership(t, s, ctx, 2)
 		require.Equal(t, 2, len(replicas))
 		rd := s.GetRange(2)
@@ -1921,7 +1899,7 @@ func TestDownReplicate(t *testing.T) {
 	stores = append(stores, s4)
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-	writeNRecords(ctx, t, s, 10)
+	s.WriteNRecords(t, ctx, 10)
 	db := s.DB()
 	db.Flush()
 	iter1, err := db.NewIter(&pebble.IterOptions{
@@ -2041,7 +2019,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 
 	{ // Verify that there are 3 replicas for range 2, and also write 10 records
 		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-		writeNRecords(ctx, t, s, 10)
+		s.WriteNRecords(t, ctx, 10)
 		replicas := getMembership(t, s, ctx, 2)
 		require.Equal(t, 3, len(replicas))
 		rd := s.GetRange(2)
@@ -2284,7 +2262,7 @@ func TestBringupSetRanges(t *testing.T) {
 	testutil.WaitForRangeLease(t, ctx, stores, 4) // 2nd split -> 3rd split
 	testutil.WaitForRangeLease(t, ctx, stores, 5) // 3rd split -> end
 
-	writeNRecordsAndFlush(ctx, t, s1, 20, 1) // each write is 1000 bytes
+	s1.WriteNRecordsAndFlush(t, ctx, 20, 1) // each write is 1000 bytes
 
 	mrd := s1.GetRange(1)
 	ranges := fetchRangeDescriptorsFromMetaRange(ctx, t, s1, mrd)
