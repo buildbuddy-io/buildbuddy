@@ -194,10 +194,14 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := g.bucketHandle.Object(blobName).Attrs(ctx)
 	spn.End()
-	if errors.Is(err, storage.ErrObjectNotExist) {
-		return false, nil
+	if err != nil {
+		if errors.Is(err, storage.ErrObjectNotExist) {
+			return false, nil
+		}
+		log.CtxWarningf(ctx, "Unexpected error checking if blob exists: %s", err)
+		return false, err
 	}
-	return err == nil, err
+	return true, nil
 }
 
 // ConditionalWriter is a custom writer for storing expiring artifacts that
