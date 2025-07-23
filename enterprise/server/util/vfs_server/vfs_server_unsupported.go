@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -24,7 +25,7 @@ func New(env environment.Env, workspacePath string) (*Server, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout) error {
+func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout, treeFetcher *dirtools.TreeFetcher) error {
 	return fmt.Errorf("Prepare not implemented")
 }
 
