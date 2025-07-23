@@ -1451,6 +1451,8 @@ func (p *PebbleCache) userGroupID(ctx context.Context) string {
 func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string) {
 	groupID := p.userGroupID(ctx)
 	for _, pm := range p.partitionMappings {
+		// If the partition mapping doesn't have a group ID set, any group can
+		// write to it as long as the prefix matches.
 		if (pm.GroupID == "" || pm.GroupID == groupID) && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
 			return groupID, pm.PartitionID
 		}
