@@ -59,8 +59,7 @@ container_push(
     tags = ["manual"],
 )
 
-# Ubuntu 20.04 webtest image.
-# This includes several packages needed by chromium.
+# Ubuntu 22.04 action execution image.
 container_push(
     name = "rbe-ubuntu22-04",
     format = "Docker",
@@ -72,6 +71,20 @@ container_push(
     tags = ["manual"],
 )
 
+# Ubuntu 24.04 action execution image.
+container_push(
+    name = "rbe-ubuntu24-04",
+    format = "Docker",
+    image = "@rbe-ubuntu24-04_image//image:dockerfile_image.tar",
+    registry = "gcr.io",
+    repository = "flame-public/rbe-ubuntu24-04",
+    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+    tag_file = "//deployment:image_tag_file",
+    tags = ["manual"],
+)
+
+# Ubuntu 20.04 webtest image.
+# This includes several packages needed by chromium.
 container_push(
     name = "rbe-ubuntu20-04-webtest",
     format = "Docker",
