@@ -533,6 +533,11 @@ dockerfile_image(
 )
 
 dockerfile_image(
+    name = "rbe-ubuntu24-04_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu24-04:Dockerfile",
+)
+
+dockerfile_image(
     name = "ci_runner_image",
     dockerfile = "//enterprise/dockerfiles/ci_runner_image:Dockerfile",
     visibility = ["//visibility:public"],
