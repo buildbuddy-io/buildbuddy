@@ -255,16 +255,19 @@ func (tc *Coordinator) processTxnRecords(ctx context.Context) {
 		return
 	}
 	txnRecords, err := tc.FetchTxnRecords(ctx)
-	log.Warningf("Failed to fetch txn records: %s", err)
+	if err != nil {
+		log.Warningf("Failed to fetch txn records: %s", err)
+	}
 
 	errCount := 0
 	for _, txnRecord := range txnRecords {
 		txnID := txnRecord.GetTxnRequest().GetTransactionId()
 		if err := tc.ProcessTxnRecord(ctx, txnRecord); err != nil {
-			log.Warningf("Failed to processTxnRecords: %s", err)
+			log.Warningf("Failed to processTxnRecords: %s, statements: %+v", err, txnRecord.GetTxnRequest().GetStatements())
 			errCount++
+		} else {
+			log.Debugf("Successfully processed txn record %q", txnID)
 		}
-		log.Debugf("Successfully processed txn record %q", txnID)
 	}
 	successCount := len(txnRecords) - errCount
 
@@ -333,7 +336,7 @@ func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 			err := tc.finalizeTxn(ctx, txnID, rfpb.FinalizeOperation_ROLLBACK, statement)
 			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is not prepared, we will get NotFound Error when we rollback and this is fine.
-				return err
+				return status.WrapErrorf(err, "failed to rollback pending statement on range %d", statement.GetRange().GetRangeId())
 			}
 		}
 	} else if txnRecord.GetTxnState() == rfpb.TxnRecord_PREPARED {
@@ -347,7 +350,7 @@ func (tc *Coordinator) ProcessTxnRecord(ctx context.Context, txnRecord *rfpb.Txn
 			err := tc.finalizeTxn(ctx, txnID, txnRecord.GetOp(), stmt)
 			if err != nil && !isTxnNotFoundError(err) {
 				// if the statement is already finalized, we will get NotFound Error when we finalize and this is fine.
-				return err
+				return status.WrapErrorf(err, "failed to finalize prepared statement on range %d", stmt.GetRange().GetRangeId())
 			}
 		}
 	}
