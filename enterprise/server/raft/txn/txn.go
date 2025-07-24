@@ -86,7 +86,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 
 	var prepareError error
 	for _, statement := range txnProto.GetStatements() {
-		err := tc.prepareStatement(ctx, txnID, statement)
+		err := tc.PrepareStatement(ctx, txnID, statement)
 		if err != nil {
 			prepareError = err
 			log.Errorf("failed to prepare txn for %d: %s", statement.GetRange().GetRangeId(), err)
@@ -126,12 +126,11 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	return nil
 }
 
-func (tc *Coordinator) prepareStatement(ctx context.Context, txnID []byte, statement *rfpb.TxnRequest_Statement) error {
+func (tc *Coordinator) PrepareStatement(ctx context.Context, txnID []byte, statement *rfpb.TxnRequest_Statement) error {
 	batch := statement.GetRawBatch()
 	batch.TransactionId = txnID
 	for _, hook := range statement.GetHooks() {
 		if hook.GetPhase() == rfpb.TransactionHook_PREPARE {
-			log.Infof("add post commit hook")
 			batch.PostCommitHooks = append(batch.PostCommitHooks, hook.GetHook())
 		}
 	}
