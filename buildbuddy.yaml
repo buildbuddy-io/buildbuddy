@@ -1,5 +1,6 @@
 actions:
   - name: Test
+    pool: "workflows-sjc"
     container_image: ubuntu-22.04
     triggers:
       push:
@@ -12,6 +13,7 @@ actions:
     steps:
       - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare"
   - name: Test with BzlMod
+    pool: "workflows-sjc"
     container_image: ubuntu-22.04
     resource_requests:
       disk: 27GB
@@ -25,6 +27,7 @@ actions:
     steps:
       - run: "bazel test //... --enable_bzlmod --noenable_workspace --config=linux-workflows --config=bzlmod-target-linux-x86 --config=race --test_tag_filters=-performance,-docker,-bare"
   - name: Check style
+    pool: "workflows-sjc"
     container_image: ubuntu-22.04
     triggers:
       push:
@@ -86,6 +89,7 @@ actions:
           -//enterprise/server/remote_execution/runner:all
           -//enterprise/server/test/integration/...
   - name: Benchmark
+    pool: "workflows-sjc"
     container_image: ubuntu-22.04
     triggers:
       push:
@@ -94,6 +98,7 @@ actions:
     steps:
       - run: "bazel test //... --config=linux-workflows --config=performance --test_tag_filters=+performance"
   - name: Baremetal tests
+    pool: "workflows-sjc"
     container_image: ubuntu-22.04
     triggers:
       push:
