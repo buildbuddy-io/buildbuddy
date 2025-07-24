@@ -667,10 +667,6 @@ func (s *Store) Start() error {
 		s.acquireNodeLiveness(s.egCtx)
 		return nil
 	})
-	s.eg.Go(func() error {
-		s.replicaJanitor.Start(s.egCtx)
-		return nil
-	})
 
 	if maxRangeSizeBytes := raftConfig.MaxRangeSizeBytes(); maxRangeSizeBytes != 0 {
 		s.eg.Go(func() error {
@@ -703,6 +699,14 @@ func (s *Store) Start() error {
 		return nil
 	})
 	return nil
+}
+
+// StartReplicaJanitor starts the replica janitor.
+func (s *Store) StartReplicaJanitor() {
+	s.eg.Go(func() error {
+		s.replicaJanitor.Start(s.egCtx)
+		return nil
+	})
 }
 
 func (s *Store) Stop(ctx context.Context) error {

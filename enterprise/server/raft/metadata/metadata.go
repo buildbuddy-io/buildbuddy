@@ -225,6 +225,7 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 		for !rc.clusterStarter.Done() {
 			time.Sleep(100 * time.Millisecond)
 		}
+		rc.store.StartReplicaJanitor()
 	}()
 
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {

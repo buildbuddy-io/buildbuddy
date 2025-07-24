@@ -122,6 +122,7 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
+	store.StartReplicaJanitor()
 	ts.Store = store
 
 	t.Cleanup(func() {
