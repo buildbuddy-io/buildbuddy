@@ -139,6 +139,7 @@ type Opts struct {
 	MinRetryBackoff time.Duration
 	MaxRetryBackoff time.Duration
 
+	PoolFIFO        bool
 	PoolSize        int
 	PoolTimeout     time.Duration
 	ConnMaxIdleTime time.Duration
@@ -158,6 +159,7 @@ func (o *Opts) toSimpleOpts() (*redis.Options, error) {
 		MaxRetries:      o.MaxRetries,
 		MinRetryBackoff: o.MinRetryBackoff,
 		MaxRetryBackoff: o.MaxRetryBackoff,
+		PoolFIFO:        o.PoolFIFO,
 		PoolSize:        o.PoolSize,
 		PoolTimeout:     o.PoolTimeout,
 		ConnMaxIdleTime: o.ConnMaxIdleTime,
@@ -178,6 +180,7 @@ func (o *Opts) toRingOpts() (*redis.RingOptions, error) {
 		MaxRetries:      o.MaxRetries,
 		MinRetryBackoff: o.MinRetryBackoff,
 		MaxRetryBackoff: o.MaxRetryBackoff,
+		PoolFIFO:        o.PoolFIFO,
 		PoolSize:        o.PoolSize,
 		PoolTimeout:     o.PoolTimeout,
 		ConnMaxIdleTime: o.ConnMaxIdleTime,
