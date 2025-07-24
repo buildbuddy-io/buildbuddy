@@ -32,66 +32,75 @@ container_push(
     tags = ["manual"],
 )
 
-# Ubuntu 20.04 action execution image.
-container_push(
-    name = "rbe-ubuntu20-04",
-    format = "Docker",
-    image = "@rbe-ubuntu20-04_image//image:dockerfile_image.tar",
-    registry = "gcr.io",
-    repository = "flame-public/rbe-ubuntu20-04",
-    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
-    tag_file = "//deployment:image_tag_file",
-    tags = ["manual"],
-)
+# Do not use these targets as they cannot produce multi-arch images; instead,
+# login to gcp and then run these commands:
+#
+# ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu20-04 --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu20-04/Dockerfile --platform=amd64 --platform=arm64 --user=_token
+# ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu20-04-workflows --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu20-04-workflows/Dockerfile --platform=amd64 --platform=arm64 --user=_token
+# ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu20-04-webtest --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu20-04-webtest/Dockerfile --platform=amd64 --platform=arm64 --user=_token
+# ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu22-04 --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu22-04/Dockerfile --platform=amd64 --platform=arm64 --user=_token
+# ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu22-04 --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu24-04/Dockerfile --platform=amd64 --platform=arm64 --user=_token
 
-# Ubuntu 20.04 workflows image.
-# TODO: move 'buildbuddy' user provisioning into the rbe-ubuntu20-04 image,
-# and remove this image - it's no longer needed since the ci_runner provisions
-# bazelisk itself.
-container_push(
-    name = "rbe-ubuntu20-04-workflows",
-    format = "Docker",
-    image = "@rbe-ubuntu20-04-workflows_image//image:dockerfile_image.tar",
-    registry = "gcr.io",
-    repository = "flame-public/rbe-ubuntu20-04-workflows",
-    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
-    tag_file = "//deployment:image_tag_file",
-    tags = ["manual"],
-)
-
-# Ubuntu 22.04 action execution image.
-container_push(
-    name = "rbe-ubuntu22-04",
-    format = "Docker",
-    image = "@rbe-ubuntu22-04_image//image:dockerfile_image.tar",
-    registry = "gcr.io",
-    repository = "flame-public/rbe-ubuntu22-04",
-    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
-    tag_file = "//deployment:image_tag_file",
-    tags = ["manual"],
-)
-
-# Ubuntu 24.04 action execution image.
-container_push(
-    name = "rbe-ubuntu24-04",
-    format = "Docker",
-    image = "@rbe-ubuntu24-04_image//image:dockerfile_image.tar",
-    registry = "gcr.io",
-    repository = "flame-public/rbe-ubuntu24-04",
-    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
-    tag_file = "//deployment:image_tag_file",
-    tags = ["manual"],
-)
-
-# Ubuntu 20.04 webtest image.
-# This includes several packages needed by chromium.
-container_push(
-    name = "rbe-ubuntu20-04-webtest",
-    format = "Docker",
-    image = "@rbe-ubuntu20-04-webtest_image//image:dockerfile_image.tar",
-    registry = "gcr.io",
-    repository = "flame-public/rbe-ubuntu20-04-webtest",
-    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
-    tag_file = "//deployment:image_tag_file",
-    tags = ["manual"],
-)
+# # Ubuntu 20.04 action execution image.
+# container_push(
+#     name = "rbe-ubuntu20-04",
+#     format = "Docker",
+#     image = "@rbe-ubuntu20-04_image//image:dockerfile_image.tar",
+#     registry = "gcr.io",
+#     repository = "flame-public/rbe-ubuntu20-04",
+#     # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+#     tag_file = "//deployment:image_tag_file",
+#     tags = ["manual"],
+# )
+#
+# # Ubuntu 20.04 workflows image.
+# # TODO: move 'buildbuddy' user provisioning into the rbe-ubuntu20-04 image,
+# # and remove this image - it's no longer needed since the ci_runner provisions
+# # bazelisk itself.
+# container_push(
+#     name = "rbe-ubuntu20-04-workflows",
+#     format = "Docker",
+#     image = "@rbe-ubuntu20-04-workflows_image//image:dockerfile_image.tar",
+#     registry = "gcr.io",
+#     repository = "flame-public/rbe-ubuntu20-04-workflows",
+#     # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+#     tag_file = "//deployment:image_tag_file",
+#     tags = ["manual"],
+# )
+#
+# # Ubuntu 22.04 action execution image.
+# container_push(
+#     name = "rbe-ubuntu22-04",
+#     format = "Docker",
+#     image = "@rbe-ubuntu22-04_image//image:dockerfile_image.tar",
+#     registry = "gcr.io",
+#     repository = "flame-public/rbe-ubuntu22-04",
+#     # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+#     tag_file = "//deployment:image_tag_file",
+#     tags = ["manual"],
+# )
+#
+# # Ubuntu 24.04 action execution image.
+# container_push(
+#     name = "rbe-ubuntu24-04",
+#     format = "Docker",
+#     image = "@rbe-ubuntu24-04_image//image:dockerfile_image.tar",
+#     registry = "gcr.io",
+#     repository = "flame-public/rbe-ubuntu24-04",
+#     # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+#     tag_file = "//deployment:image_tag_file",
+#     tags = ["manual"],
+# )
+#
+# # Ubuntu 20.04 webtest image.
+# # This includes several packages needed by chromium.
+# container_push(
+#     name = "rbe-ubuntu20-04-webtest",
+#     format = "Docker",
+#     image = "@rbe-ubuntu20-04-webtest_image//image:dockerfile_image.tar",
+#     registry = "gcr.io",
+#     repository = "flame-public/rbe-ubuntu20-04-webtest",
+#     # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+#     tag_file = "//deployment:image_tag_file",
+#     tags = ["manual"],
+# )
