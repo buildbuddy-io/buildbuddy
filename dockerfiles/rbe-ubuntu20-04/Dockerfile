@@ -43,6 +43,7 @@ RUN apt-get update && \
       git \
       less \
       openssh-client \
+			parallel \
       unzip \
       netcat-traditional \
       wget \
