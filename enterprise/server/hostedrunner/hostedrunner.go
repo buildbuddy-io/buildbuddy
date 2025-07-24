@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
@@ -210,7 +211,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	pool := r.env.GetWorkflowService().WorkflowsPoolName()
 	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
-		poolOverride := efp.String(ctx, "remote-runner-pool", "")
+		poolOverride := efp.String(ctx, "remote-runner-pool", "",
+			experiments.WithContext("workflow-name", "remote-bazel"))
 		if poolOverride != "" {
 			pool = poolOverride
 		}
