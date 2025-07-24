@@ -563,7 +563,7 @@ func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConf
 		return nil, "", err
 	}
 
-	instrumentGORM(gdb)
+	// instrumentGORM(gdb)
 
 	return gdb, ds.DriverName(), nil
 }

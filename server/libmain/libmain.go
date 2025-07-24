@@ -74,6 +74,7 @@ import (
 
 var (
 	listen           = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	httpListen       = flag.String("http_listen", "0.0.0.0", "The interface to listen HTTP on (default: 0.0.0.0)")
 	port             = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	sslPort          = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
 	internalHTTPPort = flag.Int("internal_http_port", 0, "The port to listen for internal HTTP traffic")
@@ -345,7 +346,7 @@ func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 
 func StartMonitoringHandler(env *real_environment.RealEnv) {
 	env.SetListenAddr(*listen)
-	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *httpListen, *monitoringPort))
 }
 
 func StartAndRunServices(env *real_environment.RealEnv) {
@@ -492,7 +493,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	mux.Handle(csp.ReportingEndpoint, csp.ReportingHandler)
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
+		Addr:    fmt.Sprintf("%s:%d", *httpListen, *port),
 		Handler: env.GetMux(),
 	}
 
@@ -526,7 +527,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if env.GetSSLService().IsEnabled() {
 		tlsConfig, sslHandler := env.GetSSLService().ConfigureTLS(server.Handler)
 		sslServer := &http.Server{
-			Addr:      fmt.Sprintf("%s:%d", *listen, *sslPort),
+			Addr:      fmt.Sprintf("%s:%d", *httpListen, *sslPort),
 			Handler:   server.Handler,
 			TLSConfig: tlsConfig,
 		}
@@ -534,7 +535,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 			sslServer.ListenAndServeTLS("", "")
 		}()
 		go func() {
-			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
+			http.ListenAndServe(fmt.Sprintf("%s:%d", *httpListen, *port), interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
 		}()
 	} else {
 		// If no SSL is enabled, we'll just serve things as-is.
