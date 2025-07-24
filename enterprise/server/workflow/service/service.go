@@ -1133,7 +1133,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		Arguments:            args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: ws.poolForAction(workflowAction)},
+				{Name: "Pool", Value: ws.poolForAction(ctx, workflowAction)},
 				{Name: "OSFamily", Value: os},
 				{Name: "Arch", Value: workflowAction.Arch},
 				{Name: platform.DockerUserPropertyName, Value: workflowUser},
@@ -1211,9 +1211,15 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	return actionDigest, err
 }
 
-func (ws *workflowService) poolForAction(action *config.Action) string {
+func (ws *workflowService) poolForAction(ctx context.Context, action *config.Action) string {
 	if action.SelfHosted && action.Pool != "" {
 		return action.Pool
+	}
+	if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
+		poolOverride := efp.String(ctx, "remote-runner-pool", "")
+		if poolOverride != "" {
+			return poolOverride
+		}
 	}
 	return ws.WorkflowsPoolName()
 }

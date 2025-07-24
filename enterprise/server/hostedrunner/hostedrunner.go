@@ -208,6 +208,14 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	retry := !req.GetDisableRetry()
 
+	pool := r.env.GetWorkflowService().WorkflowsPoolName()
+	if efp := r.env.GetExperimentFlagProvider(); efp != nil {
+		poolOverride := efp.String(ctx, "remote-runner-pool", "")
+		if poolOverride != "" {
+			pool = poolOverride
+		}
+	}
+
 	// Hosted Bazel shares the same pool with workflows.
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -219,7 +227,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		Arguments: args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: r.env.GetWorkflowService().WorkflowsPoolName()},
+				{Name: "Pool", Value: pool},
 				{Name: platform.HostedBazelAffinityKeyPropertyName, Value: affinityKey},
 				{Name: "container-image", Value: image},
 				{Name: "recycle-runner", Value: "true"},
