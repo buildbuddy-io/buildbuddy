@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/go-containerregistry/pkg/crane"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1489,11 +1490,20 @@ func TestPathSanitization(t *testing.T) {
 			require.NoError(t, err)
 			// Start a test registry and push the mutated busybox image to it
 			reg := testregistry.Run(t, testregistry.Opts{})
-			image := reg.Push(t, img, "test-file-ownership:latest")
+			imageName := reg.Push(t, img, "test-file-ownership:latest")
+			ref, err := name.ParseReference(imageName)
+			require.NoError(t, err)
+			hash, err := containerregistry.NewHash(ref.Identifier())
+			require.NoError(t, err)
+
+			id := oci.ImageIdentifier{
+				Repository: ref.Context(),
+				Digest:     hash,
+			}
 
 			// Make sure we get an error when pulling this image.
 			ctx := context.Background()
-			_, err = imageStore.Pull(ctx, image, oci.Credentials{})
+			_, err = imageStore.Pull(ctx, id, oci.Credentials{})
 			require.Error(t, err)
 			assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %T", err)
 			assert.Contains(t, err.Error(), test.ExpectedError)
@@ -1762,8 +1772,12 @@ func TestPullImage(t *testing.T) {
 			imgStore, err := ociruntime.NewImageStore(resolver, layerDir)
 			require.NoError(t, err)
 
+			id, err := resolver.AuthenticateWithRegistry(context.TODO(), tc.image, oci.RuntimePlatform(), oci.Credentials{})
+			require.NoError(t, err)
+			require.NotNil(t, id)
+
 			ctx := context.Background()
-			img, err := imgStore.Pull(ctx, tc.image, oci.Credentials{})
+			img, err := imgStore.Pull(ctx, *id, oci.Credentials{})
 			require.NoError(t, err)
 			require.NotNil(t, img)
 		})

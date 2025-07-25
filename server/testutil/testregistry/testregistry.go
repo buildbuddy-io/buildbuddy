@@ -96,12 +96,15 @@ func (r *Registry) ImageAddress(imageName string) string {
 }
 
 func (r *Registry) Push(t *testing.T, image gcr.Image, imageName string) string {
+	hash, err := image.Digest()
+	require.NoError(t, err)
 	fullImageName := r.ImageAddress(imageName)
 	ref, err := name.ParseReference(fullImageName)
 	require.NoError(t, err)
-	err = remote.Write(ref, image)
+	digest := ref.Context().Digest(hash.String())
+	err = remote.Write(digest, image)
 	require.NoError(t, err)
-	return fullImageName
+	return digest.String()
 }
 
 func (r *Registry) PushIndex(t *testing.T, idx gcr.ImageIndex, imageName string) string {

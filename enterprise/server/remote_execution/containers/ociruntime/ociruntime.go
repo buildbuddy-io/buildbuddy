@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"html"
 	"io"
-	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -58,6 +57,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	"github.com/google/go-containerregistry/pkg/name"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -411,10 +411,11 @@ type ociContainer struct {
 	lxcfsMount             string
 	releaseCPUs            func()
 
-	imageRef       string
-	networkEnabled bool
-	user           string
-	forceRoot      bool
+	imageRef        string
+	imageIdentifier *oci.ImageIdentifier
+	networkEnabled  bool
+	user            string
+	forceRoot       bool
 
 	milliCPU    int64 // milliCPU allocation from task size
 	memoryBytes int64 // memory allocation from task size in bytes
@@ -530,9 +531,15 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	}
 
 	// Create config.json from the image config and command
-	image, ok := c.imageStore.CachedImage(c.imageRef)
-	if !ok {
-		return fmt.Errorf("image must be cached before creating OCI bundle")
+	var image *Image
+	if c.imageIdentifier == nil {
+		image = &Image{}
+	} else {
+		cachedImage, ok := c.imageStore.CachedImage(*c.imageIdentifier)
+		if !ok {
+			return fmt.Errorf("image must be cached before creating OCI bundle")
+		}
+		image = cachedImage
 	}
 	cmd, err := withImageConfig(cmd, image)
 	if err != nil {
@@ -558,7 +565,10 @@ func (c *ociContainer) IsolationType() string {
 }
 
 func (c *ociContainer) IsImageCached(ctx context.Context) (bool, error) {
-	_, ok := c.imageStore.CachedImage(c.imageRef)
+	if c.imageIdentifier == nil {
+		return false, nil
+	}
+	_, ok := c.imageStore.CachedImage(*c.imageIdentifier)
 	return ok, nil
 }
 
@@ -566,7 +576,15 @@ func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) err
 	if c.imageRef == TestBusyboxImageRef {
 		return nil
 	}
-	if _, err := c.imageStore.Pull(ctx, c.imageRef, creds); err != nil {
+	if c.imageIdentifier == nil {
+		id, err := c.imageStore.resolver.AuthenticateWithRegistry(ctx, c.imageRef, oci.RuntimePlatform(), creds)
+		if err != nil {
+			return status.WrapError(err, "pull OCI image")
+		}
+		c.imageIdentifier = id
+	}
+
+	if _, err := c.imageStore.Pull(ctx, *c.imageIdentifier, creds); err != nil {
 		return status.WrapError(err, "pull OCI image")
 	}
 	return nil
@@ -660,7 +678,10 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	for _, e := range baseEnv {
 		args = append(args, "--env="+e)
 	}
-	image, ok := c.imageStore.CachedImage(c.imageRef)
+	if c.imageIdentifier == nil {
+		return commandutil.ErrorResult(status.UnavailableError("exec called before pulling image"))
+	}
+	image, ok := c.imageStore.CachedImage(*c.imageIdentifier)
 	if !ok {
 		return commandutil.ErrorResult(status.UnavailableError("exec called before pulling image"))
 	}
@@ -918,7 +939,10 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	}
 
 	// Create an overlayfs with the pulled image layers.
-	image, ok := c.imageStore.CachedImage(c.imageRef)
+	if c.imageIdentifier == nil {
+		return fmt.Errorf("bad state: attempted to create rootfs before pulling image")
+	}
+	image, ok := c.imageStore.CachedImage(*c.imageIdentifier)
 	if !ok {
 		return fmt.Errorf("bad state: attempted to create rootfs before pulling image")
 	}
@@ -1047,7 +1071,12 @@ func installBusybox(ctx context.Context, path string) error {
 
 func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*specs.Spec, error) {
 	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
-	image, _ := c.imageStore.CachedImage(c.imageRef)
+	var image *Image
+	if c.imageIdentifier == nil {
+		image = &Image{}
+	} else {
+		image, _ = c.imageStore.CachedImage(*c.imageIdentifier)
+	}
 	user, err := getUser(ctx, image, c.rootfsPath(), c.user, c.forceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("get container user: %w", err)
@@ -1484,7 +1513,7 @@ type ImageStore struct {
 	layerPullGroup singleflight.Group[string, any]
 
 	mu           sync.RWMutex
-	cachedImages map[string]*Image
+	cachedImages map[oci.ImageIdentifier]*Image
 }
 
 // Image represents a cached image, including all layer digests and image
@@ -1508,7 +1537,7 @@ func NewImageStore(resolver *oci.Resolver, layersDir string) (*ImageStore, error
 	return &ImageStore{
 		resolver:     resolver,
 		layersDir:    layersDir,
-		cachedImages: map[string]*Image{},
+		cachedImages: map[oci.ImageIdentifier]*Image{},
 	}, nil
 }
 
@@ -1518,16 +1547,16 @@ func NewImageStore(resolver *oci.Resolver, layersDir string) (*ImageStore, error
 // Pull always re-authenticates the credentials with the image registry.
 // Each layer is extracted to a subdirectory given by {algorithm}/{hash}, e.g.
 // "sha256/abc123".
-func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
-	key := hash.Strings(imageName, creds.Username, creds.Password)
+func (s *ImageStore) Pull(ctx context.Context, id oci.ImageIdentifier, creds oci.Credentials) (*Image, error) {
+	key := hash.Strings(id.String(), creds.Username, creds.Password)
 	image, _, err := s.imagePullGroup.Do(ctx, key, func(ctx context.Context) (*Image, error) {
-		image, err := s.pull(ctx, imageName, creds)
+		image, err := s.pull(ctx, id, creds)
 		if err != nil {
 			return nil, err
 		}
 
 		s.mu.Lock()
-		s.cachedImages[imageName] = image
+		s.cachedImages[id] = image
 		s.mu.Unlock()
 
 		return image, nil
@@ -1538,22 +1567,22 @@ func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Crede
 // CachedLayers returns references to the cached image layers if the image
 // has been pulled. The second return value indicates whether the image has
 // been pulled - if false, the returned slice of layers will be nil.
-func (s *ImageStore) CachedImage(imageName string) (image *Image, ok bool) {
+func (s *ImageStore) CachedImage(id oci.ImageIdentifier) (image *Image, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// TODO: make ImageStore a param of NewProvider and move this logic to a
-	// test image store
-	if imageName == TestBusyboxImageRef {
-		return &Image{}, true
-	}
+	// // TODO: make ImageStore a param of NewProvider and move this logic to a
+	// // test image store
+	// if imageName == TestBusyboxImageRef {
+	// 	return &Image{}, true
+	// }
 
-	image, ok = s.cachedImages[imageName]
+	image, ok = s.cachedImages[id]
 	return image, ok
 }
 
-func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
-	img, err := s.resolver.Resolve(ctx, imageName, oci.RuntimePlatform(), creds)
+func (s *ImageStore) pull(ctx context.Context, id oci.ImageIdentifier, creds oci.Credentials) (*Image, error) {
+	img, err := s.resolver.Resolve(ctx, id.String(), oci.RuntimePlatform(), creds)
 	if err != nil {
 		return nil, status.WrapError(err, "resolve image")
 	}
@@ -1758,7 +1787,10 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 func (s *ImageStore) Statusz(ctx context.Context) string {
 	var h strings.Builder
 	h.WriteString(`<ul>`)
-	names := slices.Collect(maps.Keys(s.cachedImages))
+	names := make([]string, 0, len(s.cachedImages))
+	for id, _ := range s.cachedImages {
+		names = append(names, id.String())
+	}
 	slices.Sort(names)
 	for _, name := range names {
 		downloadURL := fmt.Sprintf(
@@ -1790,9 +1822,23 @@ func sanitizeFilename(name string) string {
 
 // downloads a tarball image that can be loaded with 'docker load'.
 func (s *ImageStore) download(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("name")
+	nameParam := r.URL.Query().Get("name")
+	ref, err := name.ParseReference(nameParam)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	hash, err := ctr.NewHash(ref.Identifier())
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	id := oci.ImageIdentifier{
+		Repository: ref.Context(),
+		Digest:     hash,
+	}
 	s.mu.RLock()
-	image, ok := s.cachedImages[name]
+	image, ok := s.cachedImages[id]
 	s.mu.RUnlock()
 	if !ok {
 		http.NotFound(w, r)
@@ -1807,13 +1853,13 @@ func (s *ImageStore) download(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(downloadTmpDir)
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.tar", sanitizeFilename(name)))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.tar", sanitizeFilename(nameParam)))
 	w.Header().Set("Content-Type", "application/x-tar")
 	w.WriteHeader(http.StatusOK)
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
-	if err := s.writeDockerImageTarball(ctx, w, image, name, downloadTmpDir); err != nil {
+	if err := s.writeDockerImageTarball(ctx, w, image, nameParam, downloadTmpDir); err != nil {
 		if ctx.Err() != nil {
 			// Request was cancelled
 			return
