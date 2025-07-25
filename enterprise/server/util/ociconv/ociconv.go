@@ -57,16 +57,16 @@ func hashFile(filename string) (string, error) {
 // getDiskImagesPath returns the parent directory where disk images are stored
 // for a given image ref. There may be multiple images associated with the
 // same ref if the ref does not include a content digest (e.g. ":latest" tag).
-func getDiskImagesPath(cacheRoot, containerImage string) string {
-	hashedContainerName := hash.String(containerImage)
+func getDiskImagesPath(cacheRoot string, id oci.ImageIdentifier) string {
+	hashedContainerName := hash.String(id.String())
 	return filepath.Join(cacheRoot, "images", "ext4", hashedContainerName)
 }
 
 // cachedDiskImagePath looks for an existing cached disk image and returns the
 // path to it, if it exists. It returns "" (with no error) if the disk image
 // does not exist and no other errors occurred while looking for the image.
-func cachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) (string, error) {
-	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
+func cachedDiskImagePath(ctx context.Context, cacheRoot string, id oci.ImageIdentifier) (string, error) {
+	diskImagesPath := getDiskImagesPath(cacheRoot, id)
 	files, err := os.ReadDir(diskImagesPath)
 	if os.IsNotExist(err) {
 		return "", nil
@@ -96,7 +96,7 @@ func cachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 	if !exists {
 		return "", nil
 	}
-	log.Debugf("Found existing %q disk image at path %q", containerImage, diskImagePath)
+	log.Debugf("Found existing %q disk image at path %q", id.String(), diskImagePath)
 	return diskImagePath, nil
 }
 
@@ -111,56 +111,56 @@ func cachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	existingPath, err := cachedDiskImagePath(ctx, cacheRoot, containerImage)
+	id, err := authenticateWithRegistry(ctx, resolver, containerImage, creds)
+	if err != nil {
+		return "", err
+	}
+	existingPath, err := cachedDiskImagePath(ctx, cacheRoot, *id)
 	if err != nil {
 		return "", err
 	}
 	if existingPath != "" {
-		// Image is cached. Authenticate with the remote registry to be sure
-		// the credentials are valid.
-		if err := authenticateWithRegistry(ctx, resolver, containerImage, creds); err != nil {
-			return "", err
-		}
 		return existingPath, nil
 	}
 
-	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
+	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", id.String())
 	start := time.Now()
 	defer func() {
-		log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
+		log.CtxInfof(ctx, "Converted %s to ext4 format in %s", id.String(), time.Since(start))
 	}()
 
 	// Dedupe image conversion operations since they are disk IO-heavy.
 	conversionOpKey := hash.Strings(
-		cacheRoot, containerImage, creds.Username, creds.Password,
+		cacheRoot, id.String(), creds.Username, creds.Password,
 	)
 	imageDir, _, err := conversionGroup.Do(ctx, conversionOpKey, func(ctx context.Context) (string, error) {
 		ctx, cancel := context.WithTimeout(ctx, imageConversionTimeout)
 		defer cancel()
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKey above (if applicable).
-		return createExt4Image(ctx, resolver, cacheRoot, containerImage, creds)
+		return createExt4Image(ctx, resolver, cacheRoot, *id, creds)
 	})
 	return imageDir, err
 }
 
-func authenticateWithRegistry(ctx context.Context, resolver *oci.Resolver, containerImage string, creds oci.Credentials) error {
+func authenticateWithRegistry(ctx context.Context, resolver *oci.Resolver, containerImage string, creds oci.Credentials) (*oci.ImageIdentifier, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	// Authenticate with the remote registry using these credentials to ensure they are valid.
-	if err := resolver.AuthenticateWithRegistry(ctx, containerImage, oci.RuntimePlatform(), creds); err != nil {
-		return status.WrapError(err, "authentice with registry")
+	id, err := resolver.AuthenticateWithRegistry(ctx, containerImage, oci.RuntimePlatform(), creds)
+	if err != nil {
+		return nil, status.WrapError(err, "authenticate with registry")
 	}
-	return nil
+	return id, nil
 }
 
-func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot string, id oci.ImageIdentifier, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
+	diskImagesPath := getDiskImagesPath(cacheRoot, id)
 	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds)
+	tmpImagePath, err := convertContainerToExt4FS(ctx, resolver, cacheRoot, id, creds)
 	if err != nil {
 		return "", err
 	}
@@ -182,8 +182,8 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot, con
 
 // convertContainerToExt4FS generates an ext4 filesystem image from an OCI
 // container image reference.
-func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds)
+func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir string, id oci.ImageIdentifier, creds oci.Credentials) (string, error) {
+	img, err := resolver.Resolve(ctx, id.String(), oci.RuntimePlatform(), creds)
 	if err != nil {
 		return "", err
 	}
@@ -215,7 +215,7 @@ func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, works
 	if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, imageFile); err != nil {
 		return "", err
 	}
-	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)
+	log.Debugf("Wrote container %q to image file: %q", id.String(), imageFile)
 	return imageFile, nil
 }
 

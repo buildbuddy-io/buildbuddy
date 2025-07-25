@@ -235,26 +235,38 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
 }
 
+type ImageIdentifier struct {
+	gcrname.Repository
+	Digest gcr.Hash
+}
+
+func (i *ImageIdentifier) String() string {
+	return i.Repository.Digest(i.Digest.String()).String()
+}
+
 // AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
 // Any errors encountered are returned.
 // Otherwise, the function returns nil and it is safe to assume the input credentials grant access
 // to the image.
-func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) error {
+func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (*ImageIdentifier, error) {
 	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
-		return status.InvalidArgumentErrorf("invalid image %q", imageName)
+		return nil, status.InvalidArgumentErrorf("invalid image name %q", imageName)
 	}
 	log.CtxInfof(ctx, "Authenticating with registry %q", imageRef.Context().RegistryStr())
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	_, err = remote.Head(imageRef, remoteOpts...)
+	desc, err := remote.Head(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+			return nil, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
-		return status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+		return nil, status.UnavailableErrorf("could not authorize to remote registry: %s", err)
 	}
-	return nil
+	return &ImageIdentifier{
+		Repository: imageRef.Context(),
+		Digest:     desc.Digest,
+	}, nil
 }
 
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
