@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"golang.org/x/sys/unix"
 )
@@ -55,18 +56,18 @@ func hashFile(filename string) (string, error) {
 }
 
 // getDiskImagesPath returns the parent directory where disk images are stored
-// for a given image ref. There may be multiple images associated with the
-// same ref if the ref does not include a content digest (e.g. ":latest" tag).
-func getDiskImagesPath(cacheRoot, containerImage string) string {
-	hashedContainerName := hash.String(containerImage)
+// for a given image reference. To avoid returning a stale image from disk,
+// we always refer to images by their digest.
+func getDiskImagesPath(cacheRoot string, digest name.Digest) string {
+	hashedContainerName := hash.String(digest.String())
 	return filepath.Join(cacheRoot, "images", "ext4", hashedContainerName)
 }
 
 // CachedDiskImagePath looks for an existing cached disk image and returns the
 // path to it, if it exists. It returns "" (with no error) if the disk image
 // does not exist and no other errors occurred while looking for the image.
-func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) (string, error) {
-	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
+func CachedDiskImagePath(ctx context.Context, cacheRoot string, digest name.Digest) (string, error) {
+	diskImagesPath := getDiskImagesPath(cacheRoot, digest)
 	files, err := os.ReadDir(diskImagesPath)
 	if os.IsNotExist(err) {
 		return "", nil
@@ -96,7 +97,7 @@ func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 	if !exists {
 		return "", nil
 	}
-	log.Debugf("Found existing %q disk image at path %q", containerImage, diskImagePath)
+	log.Debugf("Found existing %q disk image at path %q", digest, diskImagePath)
 	return diskImagePath, nil
 }
 
@@ -111,56 +112,61 @@ func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	existingPath, err := CachedDiskImagePath(ctx, cacheRoot, containerImage)
+
+	// We need to know the image digest to look it up on disk.
+	// If it is on disk, we need to know whether this user is authorized to
+	// access the image.
+	// authenticateWithRegistry() does both!
+	digest, err := authenticateWithRegistry(ctx, resolver, containerImage, creds)
+	if err != nil {
+		return "", err
+	}
+	existingPath, err := CachedDiskImagePath(ctx, cacheRoot, digest)
 	if err != nil {
 		return "", err
 	}
 	if existingPath != "" {
-		// Image is cached. Authenticate with the remote registry to be sure
-		// the credentials are valid.
-		if err := authenticateWithRegistry(ctx, resolver, containerImage, creds); err != nil {
-			return "", err
-		}
 		return existingPath, nil
 	}
 
-	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
+	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", digest)
 	start := time.Now()
 	defer func() {
-		log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
+		log.CtxInfof(ctx, "Converted %s to ext4 format in %s", digest, time.Since(start))
 	}()
 
 	// Dedupe image conversion operations since they are disk IO-heavy.
 	conversionOpKey := hash.Strings(
-		cacheRoot, containerImage, creds.Username, creds.Password,
+		cacheRoot, digest.String(), creds.Username, creds.Password,
 	)
 	imageDir, _, err := conversionGroup.Do(ctx, conversionOpKey, func(ctx context.Context) (string, error) {
 		ctx, cancel := context.WithTimeout(ctx, imageConversionTimeout)
 		defer cancel()
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKey above (if applicable).
-		return createExt4Image(ctx, resolver, cacheRoot, containerImage, creds)
+		return createExt4Image(ctx, resolver, cacheRoot, digest, creds)
 	})
 	return imageDir, err
 }
 
-func authenticateWithRegistry(ctx context.Context, resolver *oci.Resolver, containerImage string, creds oci.Credentials) error {
+func authenticateWithRegistry(ctx context.Context, resolver *oci.Resolver, containerImage string, creds oci.Credentials) (name.Digest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	// Authenticate with the remote registry using these credentials to ensure they are valid.
-	if err := resolver.AuthenticateWithRegistry(ctx, containerImage, oci.RuntimePlatform(), creds); err != nil {
-		return status.WrapError(err, "authentice with registry")
+	digest, err := resolver.AuthenticateWithRegistry(ctx, containerImage, oci.RuntimePlatform(), creds)
+	if err != nil {
+		return name.Digest{}, status.WrapError(err, "authenticate with registry")
 	}
-	return nil
+	return digest, nil
 }
 
-func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot string, digest name.Digest, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
+	diskImagesPath := getDiskImagesPath(cacheRoot, digest)
 	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds)
+	tmpImagePath, err := convertContainerToExt4FS(ctx, resolver, cacheRoot, digest, creds)
 	if err != nil {
 		return "", err
 	}
@@ -182,8 +188,8 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, cacheRoot, con
 
 // convertContainerToExt4FS generates an ext4 filesystem image from an OCI
 // container image reference.
-func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds)
+func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir string, digest name.Digest, creds oci.Credentials) (string, error) {
+	img, err := resolver.Resolve(ctx, digest.String(), oci.RuntimePlatform(), creds)
 	if err != nil {
 		return "", err
 	}
@@ -215,7 +221,7 @@ func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, works
 	if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, imageFile); err != nil {
 		return "", err
 	}
-	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)
+	log.Debugf("Wrote container %q to image file: %q", digest, imageFile)
 	return imageFile, nil
 }
 

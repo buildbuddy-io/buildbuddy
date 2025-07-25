@@ -239,22 +239,23 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 // Any errors encountered are returned.
 // Otherwise, the function returns nil and it is safe to assume the input credentials grant access
 // to the image.
-func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) error {
+func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcrname.Digest, error) {
 	imageRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
-		return status.InvalidArgumentErrorf("invalid image %q", imageName)
+		return gcrname.Digest{}, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
 	log.CtxInfof(ctx, "Authenticating with registry %q", imageRef.Context().RegistryStr())
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	_, err = remote.Head(imageRef, remoteOpts...)
+	desc, err := remote.Head(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+			return gcrname.Digest{}, status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
-		return status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+		return gcrname.Digest{}, status.UnavailableErrorf("could not authorize to remote registry: %s", err)
 	}
-	return nil
+	digest := imageRef.Context().Digest(desc.Digest.String())
+	return digest, nil
 }
 
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
