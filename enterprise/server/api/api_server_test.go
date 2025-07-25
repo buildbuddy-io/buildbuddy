@@ -441,7 +441,7 @@ func TestDeleteFile_InvalidURI(t *testing.T) {
 
 func TestGetActionWithRealData(t *testing.T) {
 	env, ctx := getEnvAndCtx(t, "user1")
-	iid := streamBuildFromTestData(t, env, "bes.json")
+	iid := streamBuildFromTestData(t, env, ctx, "bes.json")
 
 	s := NewAPIServer(env)
 	actionResp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: iid}})
@@ -450,6 +450,31 @@ func TestGetActionWithRealData(t *testing.T) {
 	require.Equal(t, 1, len(actionResp.GetAction()))
 	require.Equal(t, 1, len(actionResp.GetAction()[0].GetFile()))
 	require.Equal(t, "stderr", actionResp.GetAction()[0].GetFile()[0].GetName())
+}
+
+func TestGetInvocationIncludeChildren(t *testing.T) {
+	env, ctx := getEnvAndCtx(t, "user1")
+	child1InvocationId := streamBuildFromTestData(t, env, ctx, "child1-workflow-bes.json")
+	child2InvocationId := streamBuildFromTestData(t, env, ctx, "child2-workflow-bes.json")
+	parentInvocationId := streamBuildFromTestData(t, env, ctx, "parent-workflow-bes.json")
+
+	log.Printf("child1InvocationId: %s", child1InvocationId)
+	log.Printf("child2InvocationId: %s", child2InvocationId)
+	log.Printf("ParenteInvocationId: %s", parentInvocationId)
+
+	s := NewAPIServer(env)
+	rsp, err := s.GetInvocation(ctx, &apipb.GetInvocationRequest{
+		Selector: &apipb.InvocationSelector{InvocationId: parentInvocationId},
+		IncludeChildInvocations: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, rsp)
+	require.Equal(t, 1, len(rsp.GetInvocation()))
+
+	invocationRsp := rsp.GetInvocation()[0]
+	require.Equal(t, 2, len(invocationRsp.GetChildInvocations()))
+	require.Equal(t, child1InvocationId, invocationRsp.GetChildInvocations()[0].GetInvocationId())
+	require.Equal(t, child2InvocationId, invocationRsp.GetChildInvocations()[1].GetInvocationId())
 }
 
 func TestGetTargetWithLowFilterThreshold(t *testing.T) {
@@ -638,7 +663,7 @@ func getEnvAndCtx(t testing.TB, user string) (*testenv.TestEnv, context.Context)
 	return te, ctx
 }
 
-func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, testDataFile string) string {
+func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, ctx context.Context, testDataFile string) string {
 	handler := build_event_handler.NewBuildEventHandler(te)
 
 	f, err := os.Open(path.Join("testdata", testDataFile))
@@ -667,7 +692,7 @@ func streamBuildFromTestData(t testing.TB, te *testenv.TestEnv, testDataFile str
 			iid = event.GetStarted().GetUuid()
 			require.NotEmpty(t, iid, event.String())
 
-			channel, err = handler.OpenChannel(context.Background(), iid)
+			channel, err = handler.OpenChannel(ctx, iid)
 			require.NoError(t, err)
 			defer channel.Close()
 		}

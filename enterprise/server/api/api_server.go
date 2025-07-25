@@ -95,6 +95,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 
 	q := query_builder.NewQuery(`SELECT * FROM "Invocations"`)
 	q = q.AddWhereClause(`group_id = ?`, user.GetGroupID())
+
 	if req.GetSelector().GetInvocationId() != "" {
 		q = q.AddWhereClause(`invocation_id = ?`, req.GetSelector().GetInvocationId())
 	}
@@ -138,7 +139,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 		return nil, err
 	}
 
-	if req.IncludeMetadata || req.IncludeArtifacts {
+	if req.IncludeMetadata || req.IncludeArtifacts || req.IncludeChildInvocations {
 		for _, i := range invocations {
 			_, err := build_event_handler.LookupInvocationWithCallback(ctx, s.env, i.Id.InvocationId, func(event *inpb.InvocationEvent) error {
 				switch p := event.GetBuildEvent().GetPayload().(type) {
@@ -149,6 +150,22 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 								Key:   k,
 								Value: v,
 							})
+						}
+					}
+					if req.IncludeChildInvocations {
+						for k, v := range p.BuildMetadata.GetMetadata() {
+							if k == "RUN_ID" {
+								childrenInvocationIDs, err := s.env.GetInvocationDB().LookupChildInvocations(ctx, v)
+								if err != nil {
+									return err
+								}
+								for _, iid := range childrenInvocationIDs {
+									i.ChildInvocations = append(i.ChildInvocations, &apipb.Invocation_Id{
+										InvocationId: iid,
+									})
+								}
+								break
+							}
 						}
 					}
 				case *bespb.BuildEvent_WorkspaceStatus:
