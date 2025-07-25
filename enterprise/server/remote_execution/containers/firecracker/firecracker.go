@@ -584,7 +584,7 @@ type FirecrackerContainer struct {
 	vmConfig         *fcpb.VMConfiguration
 	containerImage   string // the OCI container image. ex "alpine:latest"
 	actionWorkingDir string // the action directory with inputs / outputs
-	pulled           bool   // whether the container ext4 image has been pulled
+	diskImagePath    string // the path for the on-disk container ext4 image
 	user             string // user to execute all commands as
 
 	rmOnce *sync.Once
@@ -1958,14 +1958,11 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	scratchFSPath := filepath.Join(c.getChroot(), scratchFSName)
 	workspacePlaceholderPath := filepath.Join(c.getChroot(), emptyFileName)
 
+	if c.diskImagePath == "" {
+		return status.UnavailableErrorf("container image is unavailable")
+	}
 	// Hardlink the ext4 image to the chroot at containerFSPath.
-	imageExt4Path, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
-	if err != nil {
-		return status.UnavailableErrorf("container image is unavailable: %s", err)
-	}
-	if imageExt4Path == "" {
-		return status.UnavailableErrorf("container image not found: %s", c.containerImage)
-	}
+	imageExt4Path := c.diskImagePath
 	if err := os.Link(imageExt4Path, containerFSPath); err != nil {
 		return err
 	}
@@ -2462,21 +2459,16 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	diskImagePath, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
-	if err != nil {
-		return false, err
-	}
-	return diskImagePath != "", nil
+	return c.diskImagePath != "", nil
 }
 
 // PullImage pulls the container image from the remote. It always
 // re-authenticates the request, but may serve the image from a local cache
 // in order to avoid re-downloading the image.
 func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
-	if c.pulled {
+	if c.diskImagePath != "" {
 		return nil
 	}
-	c.pulled = true
 
 	// If we're creating from a snapshot, we don't need to pull the base image
 	// since the rootfs image contains our full desired disk contents.
@@ -2493,10 +2485,11 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot, c.containerImage, creds)
+	diskImagePath, err := ociconv.CreateDiskImage(ctx, c.resolver, c.executorConfig.CacheRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}
+	c.diskImagePath = diskImagePath
 
 	return nil
 }

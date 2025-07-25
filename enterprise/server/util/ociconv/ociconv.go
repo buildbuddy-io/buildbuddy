@@ -62,10 +62,10 @@ func getDiskImagesPath(cacheRoot, containerImage string) string {
 	return filepath.Join(cacheRoot, "images", "ext4", hashedContainerName)
 }
 
-// CachedDiskImagePath looks for an existing cached disk image and returns the
+// cachedDiskImagePath looks for an existing cached disk image and returns the
 // path to it, if it exists. It returns "" (with no error) if the disk image
 // does not exist and no other errors occurred while looking for the image.
-func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) (string, error) {
+func cachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) (string, error) {
 	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
 	files, err := os.ReadDir(diskImagesPath)
 	if os.IsNotExist(err) {
@@ -111,7 +111,7 @@ func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	existingPath, err := CachedDiskImagePath(ctx, cacheRoot, containerImage)
+	existingPath, err := cachedDiskImagePath(ctx, cacheRoot, containerImage)
 	if err != nil {
 		return "", err
 	}
