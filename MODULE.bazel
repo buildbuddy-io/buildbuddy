@@ -117,7 +117,7 @@ bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
 
 ## Included extensions
 
-go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps", dev_dependency = True)
 go_deps.config(check_direct_dependencies = "error")
 go_deps.from_file(go_mod = "//:go.mod")
 
