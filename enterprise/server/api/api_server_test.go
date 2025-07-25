@@ -458,10 +458,6 @@ func TestGetInvocationIncludeChildren(t *testing.T) {
 	child2InvocationId := streamBuildFromTestData(t, env, ctx, "child2-workflow-bes.json")
 	parentInvocationId := streamBuildFromTestData(t, env, ctx, "parent-workflow-bes.json")
 
-	log.Printf("child1InvocationId: %s", child1InvocationId)
-	log.Printf("child2InvocationId: %s", child2InvocationId)
-	log.Printf("ParenteInvocationId: %s", parentInvocationId)
-
 	s := NewAPIServer(env)
 	rsp, err := s.GetInvocation(ctx, &apipb.GetInvocationRequest{
 		Selector: &apipb.InvocationSelector{InvocationId: parentInvocationId},
