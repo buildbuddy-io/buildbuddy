@@ -24,7 +24,7 @@ import (
 const (
 	// txnLivenessThreshold defines the maximum allowable time duration since
 	// the transaction was created. If a transaction exceeds this threshold, it
-	// is considered expired and subject to cleanup processes."
+	// is considered expired and subject to cleanup processes.
 	txnLivessnessThreshold = 10 * time.Second
 	// How often do we scan transaction records and clean them up.
 	txnCleanupPeriod = 15 * time.Second
@@ -253,7 +253,7 @@ func (tc *Coordinator) processTxnRecords(ctx context.Context) {
 	if !tc.store.HasReplicaAndIsLeader(constants.MetaRangeID) {
 		return
 	}
-	txnRecords, err := tc.FetchTxnRecords(ctx)
+	txnRecords, err := tc.FetchTxnRecords(ctx, false /*=includeLive*/)
 	if err != nil {
 		log.Warningf("Failed to fetch txn records: %s", err)
 	}
@@ -279,7 +279,7 @@ func (tc *Coordinator) processTxnRecords(ctx context.Context) {
 	}
 }
 
-func (tc *Coordinator) FetchTxnRecords(ctx context.Context) ([]*rfpb.TxnRecord, error) {
+func (tc *Coordinator) FetchTxnRecords(ctx context.Context, includeLive bool) ([]*rfpb.TxnRecord, error) {
 	start, end := keys.Range(constants.TxnRecordPrefix)
 
 	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
@@ -314,7 +314,7 @@ func (tc *Coordinator) FetchTxnRecords(ctx context.Context) ([]*rfpb.TxnRecord, 
 			continue
 		}
 		createdAt := time.UnixMicro(txnRecord.GetCreatedAtUsec())
-		if tc.clock.Since(createdAt) < txnLivessnessThreshold {
+		if !includeLive && tc.clock.Since(createdAt) < txnLivessnessThreshold {
 			// This txn record is created very recently; skip processing
 			continue
 		}

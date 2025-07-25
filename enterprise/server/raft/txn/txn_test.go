@@ -378,7 +378,7 @@ func TestRecoverSplitTxn(t *testing.T) {
 	require.True(t, proto.Equal(splitRangeTxn.NewRightRange, rd))
 }
 
-func TestFetchTxnRecordsSkipRecent(t *testing.T) {
+func TestFetchTxnRecords(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	clock := clockwork.NewFakeClock()
 	store := sf.NewStore(t)
@@ -408,13 +408,24 @@ func TestFetchTxnRecordsSkipRecent(t *testing.T) {
 	require.NoError(t, err)
 
 	clock.Advance(6 * time.Second)
-	txnRecords, err := tc.FetchTxnRecords(ctx)
-	gotTxnIDs := make([][]byte, 0, 3)
-	for _, txnRecord := range txnRecords {
-		gotTxnIDs = append(gotTxnIDs, txnRecord.GetTxnRequest().GetTransactionId())
+	{
+		txnRecords, err := tc.FetchTxnRecords(ctx, false /*includeLive*/)
+		gotTxnIDs := make([][]byte, 0, 3)
+		for _, txnRecord := range txnRecords {
+			gotTxnIDs = append(gotTxnIDs, txnRecord.GetTxnRequest().GetTransactionId())
+		}
+		require.ElementsMatch(t, gotTxnIDs, [][]byte{[]byte("a"), []byte("b"), []byte("c")})
+		require.NoError(t, err)
 	}
-	require.ElementsMatch(t, gotTxnIDs, [][]byte{[]byte("a"), []byte("b"), []byte("c")})
-	require.NoError(t, err)
+	{
+		txnRecords, err := tc.FetchTxnRecords(ctx, true /*includeLive*/)
+		gotTxnIDs := make([][]byte, 0, 3)
+		for _, txnRecord := range txnRecords {
+			gotTxnIDs = append(gotTxnIDs, txnRecord.GetTxnRequest().GetTransactionId())
+		}
+		require.ElementsMatch(t, gotTxnIDs, [][]byte{[]byte("a"), []byte("b"), []byte("c"), []byte("d")})
+		require.NoError(t, err)
+	}
 }
 
 func TestRunTxn(t *testing.T) {
