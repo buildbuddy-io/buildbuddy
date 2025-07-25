@@ -2456,7 +2456,7 @@ func (c *FirecrackerContainer) Signal(ctx context.Context, sig syscall.Signal) e
 }
 
 func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
-	ctx, span := tracing.StartSpan(ctx)
+	_, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	return c.diskImagePath != "", nil
