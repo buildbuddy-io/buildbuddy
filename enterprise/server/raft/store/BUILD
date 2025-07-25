@@ -36,6 +36,7 @@ go_library(
         "//server/util/canary",
         "//server/util/disk",
         "//server/util/grpc_server",
+        "//server/util/lib/set",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/rangemap",

@@ -44,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -68,8 +69,7 @@ import (
 )
 
 var (
-	zombieNodeScanInterval = flag.Duration("cache.raft.zombie_node_scan_interval", 10*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
-	zombieMinDuration      = flag.Duration("cache.raft.zombie_min_duration", 1*time.Minute, "The minimum duration a replica must remain in a zombie state to be considered a zombie.")
+	zombieNodeScanInterval = flag.Duration("cache.raft.zombie_node_scan_interval", 30*time.Second, "Check if one replica is a zombie every this often. 0 to disable.")
 	replicaScanInterval    = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
 	clientSessionTTL       = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
 	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
@@ -307,7 +307,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, apiClient, clock)
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s, *clientSessionTTL)
-	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval, *zombieMinDuration)
+	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval)
 
 	if err != nil {
 		return nil, err
@@ -1636,10 +1636,7 @@ type zombieCleanupTask struct {
 }
 
 type replicaJanitor struct {
-	scanInterval      time.Duration
-	zombieMinDuration time.Duration
-
-	lastDetectedAt map[uint64]time.Time // from rangeID to last_detected_at
+	scanInterval time.Duration
 
 	rateLimiter *rate.Limiter
 	clock       clockwork.Clock
@@ -1654,16 +1651,14 @@ type replicaJanitor struct {
 	eg       errgroup.Group
 }
 
-func newReplicaJanitor(clock clockwork.Clock, store *Store, scanInterval time.Duration, zombieMinDuration time.Duration) *replicaJanitor {
+func newReplicaJanitor(clock clockwork.Clock, store *Store, scanInterval time.Duration) *replicaJanitor {
 	return &replicaJanitor{
-		scanInterval:      scanInterval,
-		zombieMinDuration: zombieMinDuration,
-		rateLimiter:       rate.NewLimiter(rate.Limit(removeZombieRateLimit), 1),
-		clock:             clock,
-		tasks:             make(chan zombieCleanupTask, 500),
-		rangeIDsInQueue:   make(map[uint64]bool),
-		lastDetectedAt:    make(map[uint64]time.Time),
-		store:             store,
+		scanInterval:    scanInterval,
+		rateLimiter:     rate.NewLimiter(rate.Limit(removeZombieRateLimit), 1),
+		clock:           clock,
+		tasks:           make(chan zombieCleanupTask, 500),
+		rangeIDsInQueue: make(map[uint64]bool),
+		store:           store,
 	}
 }
 
@@ -1792,6 +1787,17 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 		}
 	}
 
+	txnRecords, err := j.store.txnCoordinator.FetchTxnRecords(ctx, true /*=includeLive*/)
+	if err != nil {
+		j.store.log.Warningf("failed to fetch txnRecords: %s", err)
+		return
+	}
+	rangeIDsToSkip := make(set.Set[uint64])
+	for _, tr := range txnRecords {
+		for _, stmt := range tr.GetTxnRequest().GetStatements() {
+			rangeIDsToSkip.Add(stmt.GetRange().GetRangeId())
+		}
+	}
 	// Fetch the range descritpors from meta range
 	ranges, err := j.store.sender.LookupRangeDescriptorsByIDs(ctx, rangeIDs)
 	if err != nil {
@@ -1804,16 +1810,11 @@ func (j *replicaJanitor) scanForZombies(ctx context.Context) {
 	}
 
 	for rangeID, ss := range shardStateMap {
+		if rangeIDsToSkip.Contains(rangeID) {
+			continue
+		}
 		newSS := setZombieAction(&ss, rangeMap)
 		if newSS.action == zombieCleanupNoAction {
-			continue
-		}
-		detectedAt, ok := j.lastDetectedAt[rangeID]
-		if !ok {
-			j.lastDetectedAt[rangeID] = j.clock.Now()
-			continue
-		}
-		if j.clock.Since(detectedAt) < j.zombieMinDuration {
 			continue
 		}
 		// this is a zombie.
