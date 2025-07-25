@@ -460,7 +460,7 @@ func TestGetInvocationIncludeChildren(t *testing.T) {
 
 	s := NewAPIServer(env)
 	rsp, err := s.GetInvocation(ctx, &apipb.GetInvocationRequest{
-		Selector: &apipb.InvocationSelector{InvocationId: parentInvocationId},
+		Selector:                &apipb.InvocationSelector{InvocationId: parentInvocationId},
 		IncludeChildInvocations: true,
 	})
 	require.NoError(t, err)
