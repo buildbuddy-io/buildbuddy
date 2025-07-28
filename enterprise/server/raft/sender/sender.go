@@ -503,7 +503,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 
 		for _, rk := range keysByRange {
 			var rangeRsp interface{}
-			_, err = s.tryReplicas(ctx, rk.rd, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
+			i, err := s.tryReplicas(ctx, rk.rd, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 				rsp, err := fn(c, h, rk.keys)
 				if err != nil {
 					return err
@@ -520,6 +520,10 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 				// on the next attempt.
 				remainingKeys = append(remainingKeys, rk.keys...)
 			} else {
+				if i != 0 {
+					replica := rk.rd.GetReplicas()[i]
+					s.rangeCache.SetPreferredReplica(ctx, replica, rk.rd)
+				}
 				rsps = append(rsps, rangeRsp)
 			}
 			lastError = err
