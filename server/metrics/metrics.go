@@ -1748,6 +1748,26 @@ var (
 		BlobstoreTypeLabel,
 	})
 
+	BlobstoreExistsCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "exists_count",
+		Help:      "Number of existance checks in the blobstore.",
+	}, []string{
+		StatusLabel,
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreExistsDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "exists_duration_usec",
+		Buckets:   coarseMicrosecondToHour,
+		Help:      "CheckExists duration, in **microseconds**.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
 	// # SQL metrics
 	//
 	// The following metrics are for monitoring the SQL database configured

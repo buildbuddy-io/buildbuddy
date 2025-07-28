@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"flag"
-	"fmt"
 	"io"
 	"path/filepath"
 	"time"
@@ -117,7 +116,7 @@ func (p *prefixBlobstore) Writer(ctx context.Context, blobName string) (interfac
 func RecordWriteMetrics(typeLabel string, startTime time.Time, size int, err error) {
 	duration := time.Since(startTime)
 	metrics.BlobstoreWriteCount.With(prometheus.Labels{
-		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.StatusLabel:        gstatus.Code(err).String(),
 		metrics.BlobstoreTypeLabel: typeLabel,
 	}).Inc()
 	// Don't track duration or size if there's an error, but do track
@@ -136,7 +135,7 @@ func RecordWriteMetrics(typeLabel string, startTime time.Time, size int, err err
 func RecordReadMetrics(typeLabel string, startTime time.Time, size int, err error) {
 	duration := time.Since(startTime)
 	metrics.BlobstoreReadCount.With(prometheus.Labels{
-		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.StatusLabel:        gstatus.Code(err).String(),
 		metrics.BlobstoreTypeLabel: typeLabel,
 	}).Inc()
 	// Don't track duration or size if there's an error, but do track
@@ -155,7 +154,7 @@ func RecordReadMetrics(typeLabel string, startTime time.Time, size int, err erro
 func RecordDeleteMetrics(typeLabel string, startTime time.Time, err error) {
 	duration := time.Since(startTime)
 	metrics.BlobstoreDeleteCount.With(prometheus.Labels{
-		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.StatusLabel:        gstatus.Code(err).String(),
 		metrics.BlobstoreTypeLabel: typeLabel,
 	})
 	// Don't track duration if there's an error, but do track
@@ -164,6 +163,22 @@ func RecordDeleteMetrics(typeLabel string, startTime time.Time, err error) {
 		return
 	}
 	metrics.BlobstoreDeleteDurationUsec.With(prometheus.Labels{
+		metrics.BlobstoreTypeLabel: typeLabel,
+	}).Observe(float64(duration.Microseconds()))
+}
+
+func RecordExistsMetrics(typeLabel string, startTime time.Time, err error) {
+	duration := time.Since(startTime)
+	metrics.BlobstoreExistsCount.With(prometheus.Labels{
+		metrics.StatusLabel:        gstatus.Code(err).String(),
+		metrics.BlobstoreTypeLabel: typeLabel,
+	})
+	// Don't track duration if there's an error, but do track
+	// count (above) so we can measure failure rates.
+	if err != nil {
+		return
+	}
+	metrics.BlobstoreExistsDurationUsec.With(prometheus.Labels{
 		metrics.BlobstoreTypeLabel: typeLabel,
 	}).Observe(float64(duration.Microseconds()))
 }

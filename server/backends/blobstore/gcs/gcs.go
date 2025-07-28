@@ -34,17 +34,13 @@ var (
 	grpcPoolSize       = flag.Int("storage.gcs.grpc_pool_size", 15, "The number of gRPC connections to open to GCS. Only used when `use_grpc=true`", flag.Internal)
 )
 
-const (
-	// Prometheus BlobstoreTypeLabel values
-	gcsLabel = "gcs"
-)
-
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.
 type GCSBlobStore struct {
 	gcsClient    *storage.Client
 	bucketHandle *storage.BucketHandle
 	projectID    string
 	compress     bool
+	metricLabel  string
 }
 
 func UseGCSBlobStore() bool {
@@ -80,9 +76,10 @@ func NewGCSBlobStore(ctx context.Context, bucket, credsFile, creds, projectID st
 		return nil, err
 	}
 	g := &GCSBlobStore{
-		gcsClient: gcsClient,
-		projectID: projectID,
-		compress:  enableCompression,
+		gcsClient:   gcsClient,
+		projectID:   projectID,
+		compress:    enableCompression,
+		metricLabel: "gcs/" + bucket,
 	}
 	err = g.createBucketIfNotExists(ctx, bucket)
 	if err != nil {
@@ -133,7 +130,7 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	if err := reader.Close(); err != nil {
 		log.Errorf("Error closing blobreader: %s", err)
 	}
-	util.RecordReadMetrics(gcsLabel, start, len(b), err)
+	util.RecordReadMetrics(g.metricLabel, start, len(b), err)
 	if g.compress {
 		return util.Decompress(b, err)
 	} else {
@@ -169,7 +166,7 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 		if closeErr := writer.Close(); err == nil && closeErr != nil {
 			err = closeErr
 		}
-		util.RecordWriteMetrics(gcsLabel, start, n, err)
+		util.RecordWriteMetrics(g.metricLabel, start, n, err)
 		return n, err
 	}
 
@@ -195,7 +192,7 @@ func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	ctx, spn := tracing.StartSpan(ctx)
 	err := g.bucketHandle.Object(blobName).Delete(ctx)
 	spn.End()
-	util.RecordDeleteMetrics(gcsLabel, start, err)
+	util.RecordDeleteMetrics(g.metricLabel, start, err)
 	if errors.Is(err, storage.ErrObjectNotExist) {
 		return nil
 	}
@@ -203,9 +200,11 @@ func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 }
 
 func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
+	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := g.bucketHandle.Object(blobName).Attrs(ctx)
 	spn.End()
+	util.RecordExistsMetrics(g.metricLabel, start, err)
 	if err != nil {
 		if errors.Is(err, storage.ErrObjectNotExist) {
 			return false, nil
@@ -270,7 +269,7 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 				err = status.ResourceExhaustedError("too many concurrent writes")
 			}
 		}
-		util.RecordWriteMetrics(gcsLabel, start, int(n), err)
+		util.RecordWriteMetrics(g.metricLabel, start, int(n), err)
 		return err
 	}
 	cwc.CloseFn = func() error {
@@ -282,6 +281,7 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 
 func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
+	start := time.Now()
 	ow := g.bucketHandle.Object(blobName).NewWriter(ctx)
 
 	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer
@@ -295,13 +295,16 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 		zw = ow
 	}
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
-	cwc.CommitFn = func(int64) error {
-		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
+	cwc.CommitFn = func(n int64) error {
+		err := zw.Close()
+		if err != nil {
 			cancel() // Don't try to finish the commit op if Close() failed.
 			// Canceling the context closes the Writer, so don't call ow.Close().
-			return compresserCloseErr
+		} else {
+			err = ow.Close()
 		}
-		return ow.Close()
+		util.RecordWriteMetrics(g.metricLabel, start, int(n), err)
+		return err
 	}
 	cwc.CloseFn = func() error {
 		cancel()
@@ -326,7 +329,42 @@ func (d *decompressingCloser) Close() error {
 	return firstError
 }
 
+// metricReader is a wrapper around storage.Reader that records read metrics
+// when it's closed.
+type metricReader struct {
+	r           *storage.Reader
+	start       time.Time
+	metricLabel string
+
+	lastErr error
+	read    int
+}
+
+func (m *metricReader) Read(p []byte) (int, error) {
+	n, err := m.r.Read(p)
+	m.read += n
+	m.lastErr = err
+	return n, err
+}
+
+func (m *metricReader) WriteTo(w io.Writer) (int64, error) {
+	n, err := m.r.WriteTo(w)
+	m.read += int(n)
+	m.lastErr = err
+	return n, err
+}
+
+func (m *metricReader) Close() error {
+	err := m.r.Close()
+	if err != nil {
+		m.lastErr = err
+	}
+	util.RecordReadMetrics(m.metricLabel, m.start, m.read, m.lastErr)
+	return err
+}
+
 func (g *GCSBlobStore) Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error) {
+	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if offset < 0 {
@@ -338,16 +376,23 @@ func (g *GCSBlobStore) Reader(ctx context.Context, blobName string, offset, limi
 		// We use 0 to request the whole object, but GCS uses -1.
 		limit = -1
 	}
-	reader, err := g.bucketHandle.Object(blobName).NewRangeReader(ctx, offset, limit)
+	gcsReader, err := g.bucketHandle.Object(blobName).NewRangeReader(ctx, offset, limit)
 	if err != nil {
 		if errors.Is(err, storage.ErrObjectNotExist) {
-			return nil, status.NotFoundError(err.Error())
+			err = status.NotFoundError(err.Error())
 		}
+		util.RecordReadMetrics(g.metricLabel, start, 0, err)
 		return nil, err
+	}
+	reader := &metricReader{
+		r:           gcsReader,
+		start:       start,
+		metricLabel: g.metricLabel,
 	}
 	if g.compress {
 		rc, err := util.NewCompressReader(reader)
 		if err != nil {
+			util.RecordReadMetrics(g.metricLabel, start, 0, err)
 			return nil, err
 		}
 		return &decompressingCloser{
