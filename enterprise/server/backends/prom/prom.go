@@ -17,10 +17,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 
 	mpb "github.com/buildbuddy-io/buildbuddy/proto/metrics"

@@ -21,9 +21,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
-	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/redis/go-redis/v9"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 )

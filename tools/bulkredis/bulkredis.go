@@ -14,7 +14,7 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
 
 var (
