@@ -560,6 +560,8 @@ type pool struct {
 	isShuttingDown bool
 	// runners holds all runners managed by the pool.
 	runners []*taskRunner
+
+	resolver oci.Resolver
 }
 
 func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, error) {
@@ -571,6 +573,10 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
 	}
+	resolver, err := oci.NewResolver(env)
+	if err != nil {
+		return nil, status.InternalErrorf("Could not create OCI resolver: %s", err)
+	}
 	p := &pool{
 		env:          env,
 		podID:        podID,
@@ -578,6 +584,7 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		cacheRoot:    cacheRoot,
 		cgroupParent: opts.CgroupParent,
 		runners:      []*taskRunner{},
+		resolver:     *resolver,
 	}
 	if err := os.MkdirAll(p.buildRoot, fs.FileMode(0755)); err != nil {
 		return nil, status.InternalErrorf("Failed to create build root directory %q: %s", p.buildRoot, err)
@@ -929,11 +936,7 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 	if err != nil {
 		return nil, err
 	}
-	resolver, err := oci.NewResolver(p.env)
-	if err != nil {
-		return nil, err
-	}
-	digest, err := resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
+	digest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return nil, err
 	}
