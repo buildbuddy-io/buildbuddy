@@ -530,7 +530,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		InitDockerd:       args.Props.InitDockerd,
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 		HostCpuid:         getCPUID(),
-		EnableVfs:         platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), platform.EnableVFSPropertyName)),
+		EnableVfs:         args.Props.EnableVFS,
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
