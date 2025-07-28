@@ -235,6 +235,27 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
 }
 
+func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
+	if digest, err := gcrname.NewDigest(imageName); err == nil {
+		return digest.String(), nil
+	}
+	digestOrTagRef, err := gcrname.ParseReference(imageName)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
+	}
+
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	desc, err := remote.Head(digestOrTagRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+	}
+	return digestOrTagRef.Context().Digest(desc.Digest.String()).String(), nil
+
+}
+
 // AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
 // Any errors encountered are returned.
 // Otherwise, the function returns nil and it is safe to assume the input credentials grant access
