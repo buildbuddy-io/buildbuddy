@@ -963,7 +963,7 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 // executor is shut down.
 func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runner, error) {
 	task := st.ExecutionTask
-	props, err := p.effectivePlatform(task)
+	props, err := p.effectivePlatform(ctx, task)
 	if err != nil {
 		return nil, err
 	}
