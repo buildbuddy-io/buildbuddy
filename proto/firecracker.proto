@@ -34,6 +34,8 @@ message VMConfiguration {
   // fields, we do not share snapshots across the hosts.
   CPUID host_cpuid = 14;
 
+  bool enable_vfs = 16;
+
   // TODO: add container_image here?
 }
 
