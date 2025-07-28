@@ -98,7 +98,7 @@ const (
 	WorkloadIsolationPropertyName           = "workload-isolation-type"
 	initDockerdPropertyName                 = "init-dockerd"
 	enableDockerdTCPPropertyName            = "enable-dockerd-tcp"
-	EnableVFSPropertyName                   = "enable-vfs"
+	enableVFSPropertyName                   = "enable-vfs"
 	HostedBazelAffinityKeyPropertyName      = "hosted-bazel-affinity-key"
 	useSelfHostedExecutorsPropertyName      = "use-self-hosted-executors"
 	disableMeasuredTaskSizePropertyName     = "debug-disable-measured-task-size"
@@ -338,7 +338,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	// Only Enable VFS if it is also enabled via flags.
-	vfsEnabled := boolProp(m, EnableVFSPropertyName, false) && *enableVFS
+	vfsEnabled := boolProp(m, enableVFSPropertyName, false) && *enableVFS
 	// Runner recycling is not yet supported in combination with VFS workspaces.
 	// Firecracker VFS performance is not good enough yet to be enabled.
 	if recycleRunner || ContainerType(isolationType) == FirecrackerContainerType {
