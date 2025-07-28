@@ -104,8 +104,6 @@ var (
 var GuestAPIHash string
 
 const (
-	//TODO(MAGGIE): Bump this when we enable the balloon in prod
-
 	// goinitVersion determines the version of the go init binary that this
 	// executor supports. This version needs to be bumped when making
 	// incompatible changes to the goinit binary. This includes but is not
