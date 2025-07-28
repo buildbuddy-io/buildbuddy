@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -236,6 +237,8 @@ type Properties struct {
 	PersistentWorkerProtocol string
 	WorkflowID               string
 	HostedBazelAffinityKey   string
+	RemoteSnapshotSavePolicy string
+	SnapshotReadPolicy       string
 
 	// DisableMeasuredTaskSize disables measurement-based task sizing, even if
 	// it is enabled via flag, and instead uses the default / platform based
@@ -407,6 +410,20 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		return nil, err
 	}
 
+	snapshotSavePolicy := stringProp(m, RemoteSnapshotSavePolicyPropertyName, "")
+	switch snapshotSavePolicy {
+	case snaputil.AlwaysSaveRemoteSnapshot, snaputil.OnlySaveFirstNonDefaultRemoteSnapshot, snaputil.OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable, "":
+	default:
+		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the `remote-snapshot-save-policy` platform property", snapshotSavePolicy)
+	}
+
+	snapshotReadPolicy := stringProp(m, SnapshotReadPolicyPropertyName, "")
+	switch snapshotReadPolicy {
+	case snaputil.AlwaysReadNewestSnapshot, snaputil.ReadLocalSnapshotFirst, snaputil.ReadLocalSnapshotOnly, "":
+	default:
+		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the `snapshot-read-policy` platform property", snapshotReadPolicy)
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
@@ -448,6 +465,8 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		OverrideSnapshotKey:       overrideSnapshotKey,
 		Retry:                     boolProp(m, RetryPropertyName, true),
 		PersistentVolumes:         persistentVolumes,
+		SnapshotReadPolicy:        snapshotReadPolicy,
+		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
 	}, nil
 }
 
