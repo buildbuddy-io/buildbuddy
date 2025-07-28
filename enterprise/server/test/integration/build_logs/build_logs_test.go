@@ -218,8 +218,6 @@ func TestBuildLogs_CompletedInvocation(t *testing.T) {
 	require.NoError(t, err)
 
 	logContents := getLogs(t, ctx, log)
-	// TODO(tempoz): avoid needing to strip the trailing newline for the assertion
-	// to pass
 	require.Equal(t, expected.String(), logContents)
 }
 
