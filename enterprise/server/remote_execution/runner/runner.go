@@ -932,17 +932,19 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 		return nil, err
 	}
 
-	if props.ContainerImage != "" {
-		creds, err := oci.CredentialsFromProperties(props)
-		if err != nil {
-			return nil, err
-		}
-		digest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
-		if err != nil {
-			return nil, err
-		}
-		props.ContainerImage = digest
+	if props.ContainerImage == "" {
+		return props, nil
 	}
+
+	creds, err := oci.CredentialsFromProperties(props)
+	if err != nil {
+		return nil, err
+	}
+	digest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
+	if err != nil {
+		return nil, err
+	}
+	props.ContainerImage = digest
 	return props, nil
 }
 
