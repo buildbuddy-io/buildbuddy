@@ -2,10 +2,16 @@
 
 package fastcopy
 
-import (
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-)
+import "os"
 
-func reflink(source, destination string) error {
-	return status.UnimplementedError("reflink not supported")
+func Clone(source, destination string) error {
+	return FastCopy(source, destination)
+}
+
+func FastCopy(source, destination string) error {
+	err := os.Link(source, destination)
+	if !os.IsExist(err) {
+		return err
+	}
+	return nil
 }

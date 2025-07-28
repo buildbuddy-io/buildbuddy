@@ -65,10 +65,12 @@ jobs:
                    --windows_enable_symlinks `
                    test `
                    --config=untrusted-ci-windows `
+                   --test_tag_filters=-performance `
                    @authArgs `
                    -- `
                    //enterprise/server/remote_execution/workspace:workspace_test `
-                   //enterprise/server/util/procstats:procstats_test
+                   //enterprise/server/util/procstats:procstats_test `
+                   //server/util/fastcopy:fastcopy_test
 
       - name: Save caches
         uses: ./.github/actions/cache-save

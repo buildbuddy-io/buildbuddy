@@ -8,6 +8,21 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func Clone(source, destination string) error {
+	if *enableFastcopyReflinking {
+		return reflink(source, destination)
+	}
+	return FastCopy(source, destination)
+}
+
+func FastCopy(source, destination string) error {
+	err := os.Link(source, destination)
+	if !os.IsExist(err) {
+		return err
+	}
+	return nil
+}
+
 func reflink(source, destination string) error {
 	sourceFile, err := os.Open(source)
 	if err != nil {
