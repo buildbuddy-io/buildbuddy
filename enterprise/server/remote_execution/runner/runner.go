@@ -926,7 +926,7 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 	return out
 }
 
-func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties, error) {
+func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) (*platform.Properties, error) {
 	props, err := platform.ParseProperties(task)
 	if err != nil {
 		return nil, err
@@ -935,6 +935,20 @@ func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties
 	if err := platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
 		return nil, err
 	}
+
+	creds, err := oci.CredentialsFromProperties(props)
+	if err != nil {
+		return nil, err
+	}
+	resolver, err := oci.NewResolver(p.env)
+	if err != nil {
+		return nil, err
+	}
+	digest, err := resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
+	if err != nil {
+		return nil, err
+	}
+	props.ContainerImage = digest
 	return props, nil
 }
 
