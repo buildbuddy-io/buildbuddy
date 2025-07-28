@@ -224,6 +224,14 @@ type Resolver struct {
 }
 
 func NewResolver(env environment.Env) (*Resolver, error) {
+	allowedPrivateIPNets, err := parseAllowedPrivateIPs()
+	if err != nil {
+		return nil, err
+	}
+	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
+}
+
+func parseAllowedPrivateIPs() ([]*net.IPNet, error) {
 	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
 	for _, r := range *allowedPrivateIPs {
 		_, ipNet, err := net.ParseCIDR(r)
@@ -232,7 +240,31 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
-	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
+	return allowedPrivateIPNets, nil
+}
+
+func ResolveImageDigest(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
+	ref, err := gcrname.ParseReference(imageName)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
+	}
+	if _, err = gcr.NewHash(ref.Identifier()); err == nil {
+		// Parsed reference already uses a digest instead of a tag.
+		return ref.String(), nil
+	}
+	allowedPrivateIPNets, err := parseAllowedPrivateIPs()
+	if err != nil {
+		return "", err
+	}
+	remoteOpts := getRemoteOpts(ctx, platform, credentials, allowedPrivateIPNets)
+	desc, err := remote.Head(ref, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+	}
+	return ref.Context().Digest(desc.Digest.String()).String(), nil
 }
 
 // AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
@@ -246,7 +278,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	}
 	log.CtxInfof(ctx, "Authenticating with registry %q", imageRef.Context().RegistryStr())
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	remoteOpts := getRemoteOpts(ctx, platform, credentials, r.allowedPrivateIPs)
 	_, err = remote.Head(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -267,7 +299,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 	log.CtxInfof(ctx, "Resolving image in registry %q", imageRef.Context().RegistryStr())
 
-	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	remoteOpts := getRemoteOpts(ctx, platform, credentials, r.allowedPrivateIPs)
 	puller, err := remote.NewPuller(remoteOpts...)
 	if err != nil {
 		return nil, status.InternalErrorf("error creating puller: %s", err)
@@ -437,7 +469,7 @@ func imageFromDescriptorAndManifest(ctx context.Context, repo gcrname.Repository
 	), nil
 }
 
-func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, credentials Credentials) []remote.Option {
+func getRemoteOpts(ctx context.Context, platform *rgpb.Platform, credentials Credentials, allowedPrivateIPs []*net.IPNet) []remote.Option {
 	remoteOpts := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithPlatform(
@@ -455,7 +487,7 @@ func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, c
 		}))
 	}
 
-	tr := httpclient.NewWithAllowedPrivateIPs(r.allowedPrivateIPs).Transport
+	tr := httpclient.NewWithAllowedPrivateIPs(allowedPrivateIPs).Transport
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
 	} else {
