@@ -530,6 +530,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		InitDockerd:       args.Props.InitDockerd,
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 		HostCpuid:         getCPUID(),
+		EnableVfs:         args.Props.EnableVFS,
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
@@ -1514,7 +1515,7 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		initArgs = append(initArgs, "-enable_rootfs")
 	}
-	if platform.VFSEnabled() {
+	if vmConfig.EnableVfs {
 		initArgs = append(initArgs, "-enable_vfs")
 	}
 	return strings.Join(append(initArgs, kernelArgs...), " ")
