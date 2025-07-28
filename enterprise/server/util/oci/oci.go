@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
@@ -28,12 +29,18 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/hashicorp/golang-lru/v2/expirable"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+)
+
+const (
+	tagLRUMaxEntries = 1000
+	tagLRUExpiration = time.Minute * 15
 )
 
 var (
@@ -218,7 +225,8 @@ func (c Credentials) Equals(o Credentials) bool {
 }
 
 type Resolver struct {
-	env environment.Env
+	env    environment.Env
+	tagLRU *expirable.LRU[string, string]
 
 	allowedPrivateIPs []*net.IPNet
 }
@@ -232,27 +240,39 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
-	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
+	tagLRU := expirable.NewLRU[string, string](tagLRUMaxEntries, nil, tagLRUExpiration)
+	return &Resolver{
+		env:    env,
+		tagLRU: tagLRU,
+
+		allowedPrivateIPs: allowedPrivateIPNets,
+	}, nil
 }
 
 func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
 	if digest, err := gcrname.NewDigest(imageName); err == nil {
 		return digest.String(), nil
 	}
-	digestOrTagRef, err := gcrname.ParseReference(imageName)
+	tagRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
 		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
 	}
 
+	if digest, ok := r.tagLRU.Get(tagRef.String()); ok {
+		return digest, nil
+	}
+
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	desc, err := remote.Head(digestOrTagRef, remoteOpts...)
+	desc, err := remote.Head(tagRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
 			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
 		}
 		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
 	}
-	return digestOrTagRef.Context().Digest(desc.Digest.String()).String(), nil
+	resolved := tagRef.Context().Digest(desc.Digest.String()).String()
+	r.tagLRU.Add(tagRef.String(), resolved)
+	return resolved, nil
 
 }
 
