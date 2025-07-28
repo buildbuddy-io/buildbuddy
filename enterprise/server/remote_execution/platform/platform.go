@@ -176,10 +176,6 @@ func CoerceContainerType(t string) string {
 	return "unknown"
 }
 
-func VFSEnabled() bool {
-	return *enableVFS
-}
-
 // Properties represents the platform properties parsed from a command.
 type Properties struct {
 	OS                        string
