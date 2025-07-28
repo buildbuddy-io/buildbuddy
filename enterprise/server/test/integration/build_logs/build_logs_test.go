@@ -265,7 +265,5 @@ func TestBuildLogs_InProgressInvocation(t *testing.T) {
 	// Wait for the invocation to be created, otherwise the EventLog lookup may
 	// fail with a "record not found" error when it looks up the invocation.
 	waitForInvocation(t, ctx, bbClient, iid)
-	// TODO(tempoz): avoid needing to strip the trailing newline for the assertion
-	// to pass
 	waitForLogsToEqual(t, ctx, log, expected.String())
 }
