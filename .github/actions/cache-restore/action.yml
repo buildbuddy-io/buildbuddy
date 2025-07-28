@@ -34,14 +34,14 @@ runs:
         echo "go-mod-cache-dir=/Users/runner/go-mod-cache" >> $GITHUB_OUTPUT
         echo "yarn-cache-dir=/Users/runner/.cache/yarn/v6" >> $GITHUB_OUTPUT
 
-    # Step to determine paths for Windows using D:\
+    # Step to determine paths for Windows using C:\
     - name: Determine Cache Paths (Windows)
       id: determine-paths-windows
       if: runner.os == 'Windows'
       shell: pwsh # PowerShell is default on Windows runners
       run: |
-        Add-Content -Path $env:GITHUB_OUTPUT -Value "repo-cache-dir=D:/bazel/repo-cache"
-        Add-Content -Path $env:GITHUB_OUTPUT -Value "go-mod-cache-dir=D:/go-mod-cache"
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "repo-cache-dir=C:/bazel/repo-cache"
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "go-mod-cache-dir=C:/go-mod-cache"
         Add-Content -Path $env:GITHUB_OUTPUT -Value "yarn-cache-dir=~/AppData/Local/Yarn/Cache/v6"
 
     # Restore steps now use combined outputs from the determine steps
