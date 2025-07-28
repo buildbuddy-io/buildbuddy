@@ -331,6 +331,8 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 				log.CtxDebugf(ctx, "failed to TryReplicas: %s. Detailed logs: %s", returnedErr, strings.Join(logs, "\n"))
 			}
 		}
+		replicaIdxAttr := attribute.Int64("replica_idx", int64(replicaIdx))
+		spn.SetAttributes(replicaIdxAttr)
 	}()
 
 	for i, replica := range rd.GetReplicas() {
@@ -421,7 +423,7 @@ func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 		if err == nil {
 			if i != 0 {
 				replica := rangeDescriptor.GetReplicas()[i]
-				s.rangeCache.SetPreferredReplica(replica, rangeDescriptor)
+				s.rangeCache.SetPreferredReplica(ctx, replica, rangeDescriptor)
 			}
 			return nil
 		}
