@@ -329,6 +329,8 @@ func (d *decompressingCloser) Close() error {
 	return firstError
 }
 
+// metricReader is a wrapper around storage.Reader that records read metrics
+// when it's closed.
 type metricReader struct {
 	r           *storage.Reader
 	start       time.Time

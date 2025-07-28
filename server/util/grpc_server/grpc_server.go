@@ -21,9 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
-	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/reflection"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
@@ -205,13 +203,15 @@ var Metrics = sync.OnceValue(func() *grpc_prometheus.ServerMetrics {
 })
 
 func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerConfig) []grpc.ServerOption {
+	grpc.EnableTracing = true // Enable gRPC tracing.
 	return []grpc.ServerOption{
 		grpc.StatsHandler(otelgrpc.NewServerHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()))),
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
 		interceptors.GetStreamInterceptor(env, config.ExtraChainedStreamInterceptors...),
 		grpc.StreamInterceptor(Metrics().StreamServerInterceptor()),
 		grpc.UnaryInterceptor(Metrics().UnaryServerInterceptor()),
-		experimental.BufferPool(mem.DefaultBufferPool()),
+		// experimental.BufferPool(mem.DefaultBufferPool()),
+		grpc.MaxConcurrentStreams(1000), // Default is 100, increase to allow
 		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
 		KeepaliveEnforcementPolicy(),
 	}
