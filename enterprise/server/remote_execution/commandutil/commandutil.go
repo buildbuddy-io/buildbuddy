@@ -38,7 +38,7 @@ var (
 	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
 
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
-	StdErrOutMaxSize          = flag.Int64("executor.stderrout_max_size_bytes", 0, "The maximum size of stdout/stderr for each action, in bytes. If the size of stdout/stderr exceeds this limit, the command will fail with a RESOURCE_EXHAUSTED error. If set to 0, no limit is enforced.")
+	StdOutErrMaxSize          = flag.Int64("executor.stdouterr_max_size_bytes", 0, "The maximum size of stdout/stderr for each action, in bytes. If the size of stdout/stderr exceeds this limit, the command will fail with a RESOURCE_EXHAUSTED error. If set to 0, no limit is enforced.")
 )
 
 var (
@@ -47,10 +47,10 @@ var (
 )
 
 func LimitStdErrOutWriter(w io.Writer) io.Writer {
-	if *StdErrOutMaxSize == 0 {
+	if *StdOutErrMaxSize == 0 {
 		return w
 	}
-	return &limitWriter{w, *StdErrOutMaxSize}
+	return &limitWriter{w, *StdOutErrMaxSize}
 }
 
 // limitWriter limits the number of bytes written to it.
@@ -61,8 +61,8 @@ type limitWriter struct {
 
 func (lw *limitWriter) Write(p []byte) (int, error) {
 	if lw.n <= 0 || int64(len(p)) > lw.n {
-		totalRequested := (*StdErrOutMaxSize - lw.n) + int64(len(p))
-		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, *StdErrOutMaxSize)
+		totalRequested := (*StdOutErrMaxSize - lw.n) + int64(len(p))
+		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, *StdOutErrMaxSize)
 	}
 	n, err := lw.w.Write(p)
 	lw.n -= int64(n)
@@ -373,6 +373,9 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	// - https://github.com/golang/go/blob/fcb9d6b5d0ba6f5606c2b5dfc09f75e2dc5fc1e5/src/os/exec/lp_unix.go#L35
 	if notFoundErr, ok := err.(*exec.Error); ok {
 		return NoExitCode, status.NotFoundError(notFoundErr.Error())
+	}
+	if status.IsResourceExhaustedError(err) {
+		return NoExitCode, err
 	}
 
 	// If we fail to get the exit code of the process for any other reason, it might

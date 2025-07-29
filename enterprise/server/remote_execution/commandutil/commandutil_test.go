@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -97,7 +98,7 @@ func TestLimitStdErrOutWriter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			flags.Set(t, "executor.stderrout_max_size_bytes", tt.limit)
+			flags.Set(t, "executor.stdouterr_max_size_bytes", tt.limit)
 			var buf bytes.Buffer
 			w := commandutil.LimitStdErrOutWriter(&buf)
 
@@ -106,6 +107,7 @@ func TestLimitStdErrOutWriter(t *testing.T) {
 				assert.Equal(t, tt.wantN[i], n)
 				if tt.wantErr[i] {
 					require.Error(t, err)
+					assert.True(t, status.IsResourceExhaustedError(err), "expected resource exhausted error, got: %v", err)
 					assert.Contains(t, err.Error(), "stdout/stderr output size limit exceeded")
 				} else {
 					require.NoError(t, err)
@@ -117,7 +119,7 @@ func TestLimitStdErrOutWriter(t *testing.T) {
 }
 
 func TestCommandWithOutputLimit(t *testing.T) {
-	flags.Set(t, "executor.stderrout_max_size_bytes", 10)
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
 	ctx := context.Background()
 
 	// Command succeeds when within limit
@@ -129,5 +131,6 @@ func TestCommandWithOutputLimit(t *testing.T) {
 	result = commandutil.Run(ctx, &repb.Command{Arguments: []string{"echo", "this is too long"}}, ".", nil, &interfaces.Stdio{})
 	assert.Equal(t, commandutil.NoExitCode, result.ExitCode)
 	assert.Error(t, result.Error)
+	assert.True(t, status.IsResourceExhaustedError(result.Error), "expected resource exhausted error, got: %v", result.Error)
 	assert.Contains(t, result.Error.Error(), "stdout/stderr output size limit exceeded")
 }
