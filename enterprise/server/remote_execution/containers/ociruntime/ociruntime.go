@@ -1320,6 +1320,8 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 			cmd.Stderr = stdio.Stderr
 		}
 	}
+	cmd.Stdout = commandutil.LimitStdErrOutWriter(cmd.Stdout)
+	cmd.Stderr = commandutil.LimitStdErrOutWriter(cmd.Stderr)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// In the "run" case, start the runtime in its own pid namespace so that
 	// when it is killed, the container process gets killed automatically

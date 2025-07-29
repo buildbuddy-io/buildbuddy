@@ -38,12 +38,39 @@ var (
 	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
 
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
+	StdErrOutMaxSize          = flag.Int64("executor.stderrout_max_size_bytes", 0, "The maximum size of stdout/stderr for each action, in bytes. If the size of stdout/stderr exceeds this limit, the command will fail with a RESOURCE_EXHAUSTED error. If set to 0, no limit is enforced.")
 )
 
 var (
 	// Regexp matching a string consisting solely of digits (0-9).
 	allDigits = regexp.MustCompile(`^\d+$`)
 )
+
+func LimitStdErrOutWriter(w io.Writer) io.Writer {
+	if *StdErrOutMaxSize == 0 {
+		return w
+	}
+	return &limitWriter{w, *StdErrOutMaxSize}
+}
+
+// limitWriter limits the number of bytes written to it.
+type limitWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (lw *limitWriter) Write(p []byte) (int, error) {
+	if lw.n <= 0 || int64(len(p)) > lw.n {
+		totalRequested := (*StdErrOutMaxSize - lw.n) + int64(len(p))
+		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, *StdErrOutMaxSize)
+	}
+	n, err := lw.w.Write(p)
+	lw.n -= int64(n)
+	if err != nil {
+		return n, err
+	}
+	return n, nil
+}
 
 func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	if stdio == nil {
@@ -86,6 +113,8 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 		cmd.Stdout = io.MultiWriter(cmd.Stdout, logWriter)
 		cmd.Stderr = io.MultiWriter(cmd.Stderr, logWriter)
 	}
+	cmd.Stdout = LimitStdErrOutWriter(cmd.Stdout)
+	cmd.Stderr = LimitStdErrOutWriter(cmd.Stderr)
 	cmd.SysProcAttr = getDefaultSysProcAttr()
 	for _, envVar := range command.GetEnvironmentVariables() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
