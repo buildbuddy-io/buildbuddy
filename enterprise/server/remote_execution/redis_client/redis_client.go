@@ -16,7 +16,7 @@ import (
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 )
 
-var redisPubSubPoolSize = flag.Int("remote_execution.redis_pubsub_pool_size", 10_000, "Maximum number of connections used for waiting for execution updates.")
+var redisPubSubPoolSize = flag.Int("remote_execution.redis_pubsub_pool_size", 5_000, "Maximum number of connections used for waiting for execution updates.")
 
 func RegisterRemoteExecutionClient(env *real_environment.RealEnv) error {
 	if !remote_execution_config.RemoteExecutionEnabled() {
