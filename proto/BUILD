@@ -300,7 +300,6 @@ proto_library(
     ],
     deps = [
         ":storage_proto",
-        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
     ],
 )
 
@@ -410,7 +409,6 @@ proto_library(
     deps = [
         ":context_proto",
         ":firecracker_proto",
-        ":git_proto",
         ":invocation_status_proto",
         ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
@@ -1368,7 +1366,6 @@ go_proto_library(
     deps = [
         ":context_go_proto",
         ":firecracker_go_proto",
-        ":git_go_proto",
         ":invocation_status_go_proto",
         ":remote_execution_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
@@ -1427,7 +1424,6 @@ go_proto_library(
     proto = ":metadata_proto",
     deps = [
         ":storage_go_proto",
-        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
     ],
 )
 
@@ -2315,7 +2311,6 @@ ts_proto_library(
         ":context_ts_proto",
         ":duration_ts_proto",
         ":firecracker_ts_proto",
-        ":git_ts_proto",
         ":grpc_status_ts_proto",
         ":invocation_status_ts_proto",
         ":remote_execution_ts_proto",

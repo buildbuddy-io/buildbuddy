@@ -1,7 +1,6 @@
 syntax = "proto3";
 
 import "proto/storage.proto";
-import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package metadata;
 
