@@ -26,7 +26,7 @@ var (
 
 // User can set executor.enable_fastcopy_reflinking=true to force
 // using block cloning on Windows.
-// Otherwise, fallback to using CopyFileW which will use block block-cloning
+// Otherwise, fallback to using CopyFileW which will use block-cloning
 // automatically based on the underlying file system and Windows version.
 func Clone(source, destination string) error {
 	if *enableFastcopyReflinking {
@@ -76,7 +76,7 @@ type duplicateExtentsData struct {
 	ByteCount        int64
 }
 
-// Implementation is havily inspired by Git LFS
+// Implementation is heavily inspired by Git LFS
 // References:
 //
 //   - https://github.com/microsoft/CopyOnWrite/
