@@ -39,7 +39,9 @@ import (
 )
 
 const (
+	// resolveImageDigestLRUMaxEntries limits the number of entries in the image-tag-to-digest cache.
 	resolveImageDigestLRUMaxEntries = 1000
+	// resolveImageDigestLRUExpiration limits how long the image-tag-to-digest cache will keep entries.
 	resolveImageDigestLRUExpiration = time.Minute * 15
 )
 
@@ -225,10 +227,10 @@ func (c Credentials) Equals(o Credentials) bool {
 }
 
 type Resolver struct {
-	env    environment.Env
-	tagLRU *expirable.LRU[string, string]
+	env environment.Env
 
-	allowedPrivateIPs []*net.IPNet
+	imageTagToDigestLRU *expirable.LRU[string, string]
+	allowedPrivateIPs   []*net.IPNet
 }
 
 func NewResolver(env environment.Env) (*Resolver, error) {
@@ -240,26 +242,32 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
-	tagLRU := expirable.NewLRU[string, string](tagLRUMaxEntries, nil, tagLRUExpiration)
+	imageTagToDigestLRU := expirable.NewLRU[string, string](resolveImageDigestLRUMaxEntries, nil, resolveImageDigestLRUExpiration)
 	return &Resolver{
-		env:    env,
-		tagLRU: tagLRU,
+		env: env,
 
-		allowedPrivateIPs: allowedPrivateIPNets,
+		imageTagToDigestLRU: imageTagToDigestLRU,
+		allowedPrivateIPs:   allowedPrivateIPNets,
 	}, nil
 }
 
+// ResolveImageDigest takes an image name and returns an image name with a digest.
+// If the input image name includes a digest, a canonicalized version of the name is returned.
+// If the input image name refers to a tag (either explictly or implicity), ResolveImageDigest
+// will make a HEAD request to the remote registry.
+// ResolveImageDigest keeps an LRU cache that maps between canonical image names with tags
+// to image names with digests, to reduce the number of HEAD requests.
 func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
-	if digest, err := gcrname.NewDigest(imageName); err == nil {
-		return digest.String(), nil
+	if imageRefWithDigest, err := gcrname.NewDigest(imageName); err == nil {
+		return imageRefWithDigest.String(), nil
 	}
 	tagRef, err := gcrname.ParseReference(imageName)
 	if err != nil {
 		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
 	}
 
-	if digest, ok := r.tagLRU.Get(tagRef.String()); ok {
-		return digest, nil
+	if imageNameWithDigest, ok := r.imageTagToDigestLRU.Get(tagRef.String()); ok {
+		return imageNameWithDigest, nil
 	}
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
@@ -270,9 +278,9 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		}
 		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
 	}
-	resolved := tagRef.Context().Digest(desc.Digest.String()).String()
-	r.tagLRU.Add(tagRef.String(), resolved)
-	return resolved, nil
+	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
+	r.imageTagToDigestLRU.Add(tagRef.String(), imageNameWithDigest)
+	return imageNameWithDigest, nil
 
 }
 
