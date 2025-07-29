@@ -996,6 +996,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	}
 
 	vmd := c.getVMMetadata().CloneVT()
+	vmd.ModifiedCount++
 	vmd.LastExecutedTask = c.getVMTask()
 
 	// NOTE: Even if a remote snapshot is not saved, we'll still save a local snapshot and workloads
