@@ -23,7 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/throttled/throttled/v2"
-	"github.com/throttled/throttled/v2/store/goredisstore.v9"
+	"github.com/throttled/throttled/v2/store/goredisstore.v8"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"

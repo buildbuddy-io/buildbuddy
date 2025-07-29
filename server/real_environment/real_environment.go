@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
-	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 
 	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"

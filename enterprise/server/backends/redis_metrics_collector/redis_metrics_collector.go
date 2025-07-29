@@ -7,7 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/redis/go-redis/v9"
+	"github.com/go-redis/redis/v8"
 
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
