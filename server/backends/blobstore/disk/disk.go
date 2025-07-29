@@ -75,12 +75,12 @@ func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []b
 }
 
 func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
+	start := time.Now()
+	ctx, spn := tracing.StartSpan(ctx)
 	fullPath, err := d.blobPath(blobName)
 	if err != nil {
 		return nil, err
 	}
-	start := time.Now()
-	ctx, spn := tracing.StartSpan(ctx)
 	b, err := disk.ReadFile(ctx, fullPath)
 	spn.End()
 	util.RecordReadMetrics(diskLabel, start, len(b), err)
@@ -120,7 +120,9 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 }
 
 func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
+	start := time.Now()
 	fullPath, err := d.blobPath(blobName)
+	util.RecordExistsMetrics(diskLabel, start, err)
 	if err != nil {
 		return false, err
 	}

@@ -116,20 +116,21 @@ func (g *GCSBlobStore) createBucketIfNotExists(ctx context.Context, bucketName s
 }
 
 func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
+	start := time.Now()
+	ctx, spn := tracing.StartSpan(ctx)
 	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
 	if err != nil {
 		if errors.Is(err, storage.ErrObjectNotExist) {
-			return nil, status.NotFoundError(err.Error())
+			err = status.NotFoundError(err.Error())
 		}
+		util.RecordReadMetrics(g.metricLabel, start, 0, err)
 		return nil, err
 	}
-	start := time.Now()
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	b, err := io.ReadAll(reader)
-	spn.End()
 	if err := reader.Close(); err != nil {
 		log.Errorf("Error closing blobreader: %s", err)
 	}
+	spn.End()
 	util.RecordReadMetrics(g.metricLabel, start, len(b), err)
 	if g.compress {
 		return util.Decompress(b, err)
