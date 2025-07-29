@@ -208,10 +208,10 @@ message VMMetadata {
   // The time at which the VM was created.
   google.protobuf.Timestamp created_timestamp = 5;
 
-  // The number of times the VM has been updated by resuming, running an
+  // The number of times the VM has been saved by resuming, running an
   // action, pausing, and saving a new version. It starts at 1 when the VM is
   // first saved.
-  int64 modified_count = 6;
+  int64 saved_snapshot_version_number = 6;
 }
 
 // SnapshotVersionMetadata contains the version ID to be used for snapshots.
