@@ -16,8 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/redis/go-redis/extra/redisotel/v9"
-	"github.com/redis/go-redis/v9"
+	"github.com/go-redis/redis/extra/redisotel/v8"
+	"github.com/go-redis/redis/v8"
 )
 
 var (
@@ -139,10 +139,10 @@ type Opts struct {
 	MinRetryBackoff time.Duration
 	MaxRetryBackoff time.Duration
 
-	PoolFIFO        bool
-	PoolSize        int
-	PoolTimeout     time.Duration
-	ConnMaxIdleTime time.Duration
+	PoolSize           int
+	PoolTimeout        time.Duration
+	IdleTimeout        time.Duration
+	IdleCheckFrequency time.Duration
 
 	TLSConfig *tls.Config
 }
@@ -152,18 +152,18 @@ func (o *Opts) toSimpleOpts() (*redis.Options, error) {
 		return nil, status.FailedPreconditionErrorf("simple Redis client only supports a single address")
 	}
 	opts := &redis.Options{
-		Network:         o.Network,
-		Username:        o.Username,
-		Password:        o.Password,
-		DB:              o.DB,
-		MaxRetries:      o.MaxRetries,
-		MinRetryBackoff: o.MinRetryBackoff,
-		MaxRetryBackoff: o.MaxRetryBackoff,
-		PoolFIFO:        o.PoolFIFO,
-		PoolSize:        o.PoolSize,
-		PoolTimeout:     o.PoolTimeout,
-		ConnMaxIdleTime: o.ConnMaxIdleTime,
-		TLSConfig:       o.TLSConfig,
+		Network:            o.Network,
+		Username:           o.Username,
+		Password:           o.Password,
+		DB:                 o.DB,
+		MaxRetries:         o.MaxRetries,
+		MinRetryBackoff:    o.MinRetryBackoff,
+		MaxRetryBackoff:    o.MaxRetryBackoff,
+		PoolSize:           o.PoolSize,
+		PoolTimeout:        o.PoolTimeout,
+		IdleTimeout:        o.IdleTimeout,
+		IdleCheckFrequency: o.IdleCheckFrequency,
+		TLSConfig:          o.TLSConfig,
 	}
 	if len(o.Addrs) > 0 {
 		opts.Addr = o.Addrs[0]
@@ -173,18 +173,18 @@ func (o *Opts) toSimpleOpts() (*redis.Options, error) {
 
 func (o *Opts) toRingOpts() (*redis.RingOptions, error) {
 	opts := &redis.RingOptions{
-		Addrs:           map[string]string{},
-		Username:        o.Username,
-		Password:        o.Password,
-		DB:              o.DB,
-		MaxRetries:      o.MaxRetries,
-		MinRetryBackoff: o.MinRetryBackoff,
-		MaxRetryBackoff: o.MaxRetryBackoff,
-		PoolFIFO:        o.PoolFIFO,
-		PoolSize:        o.PoolSize,
-		PoolTimeout:     o.PoolTimeout,
-		ConnMaxIdleTime: o.ConnMaxIdleTime,
-		TLSConfig:       o.TLSConfig,
+		Addrs:              map[string]string{},
+		Username:           o.Username,
+		Password:           o.Password,
+		DB:                 o.DB,
+		MaxRetries:         o.MaxRetries,
+		MinRetryBackoff:    o.MinRetryBackoff,
+		MaxRetryBackoff:    o.MaxRetryBackoff,
+		PoolSize:           o.PoolSize,
+		PoolTimeout:        o.PoolTimeout,
+		IdleTimeout:        o.IdleTimeout,
+		IdleCheckFrequency: o.IdleCheckFrequency,
+		TLSConfig:          o.TLSConfig,
 	}
 	for i, addr := range o.Addrs {
 		if !isRedisURI(addr) {
@@ -215,18 +215,14 @@ func NewClientWithOpts(opts *Opts, checker interfaces.HealthChecker, healthCheck
 		}
 		redisClient = redis.NewRing(ringOpts)
 	}
-	if err := redisotel.InstrumentTracing(redisClient); err != nil {
-		log.Warningf("Failed to instrument Redis client for tracing: %s", err)
-	}
+	redisClient.AddHook(redisotel.NewTracingHook())
 	checker.AddHealthCheck(healthCheckName, &HealthChecker{Rdb: redisClient})
 	return redisClient, nil
 }
 
 func NewSimpleClient(redisTarget string, checker interfaces.HealthChecker, healthCheckName string) *redis.Client {
 	redisClient := redis.NewClient(TargetToOptions(redisTarget))
-	if err := redisotel.InstrumentTracing(redisClient); err != nil {
-		log.Warningf("Failed to instrument Redis client for tracing: %s", err)
-	}
+	redisClient.AddHook(redisotel.NewTracingHook())
 	checker.AddHealthCheck(healthCheckName, &HealthChecker{Rdb: redisClient})
 	return redisClient
 }

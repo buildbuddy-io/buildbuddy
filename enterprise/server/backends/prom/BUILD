@@ -13,12 +13,12 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
+        "@com_github_go_redis_redis_v8//:redis",
         "@com_github_prometheus_client_golang//api",
         "@com_github_prometheus_client_golang//api/prometheus/v1:prometheus",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_model//io/prometheus/client:go",
         "@com_github_prometheus_common//model",
-        "@com_github_redis_go_redis_v9//:go-redis",
         "@org_golang_x_sync//errgroup",
     ],
 )

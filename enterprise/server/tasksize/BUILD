@@ -23,8 +23,8 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
+        "@com_github_go_redis_redis_v8//:redis",
         "@com_github_prometheus_client_golang//prometheus",
-        "@com_github_redis_go_redis_v9//:go-redis",
     ],
 )
 
