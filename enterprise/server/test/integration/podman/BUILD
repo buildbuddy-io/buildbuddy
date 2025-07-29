@@ -31,6 +31,7 @@ go_test(
         "no-sandbox",
     ],
     target_compatible_with = ["@platforms//os:linux"],
+    shard_count = 4,
     x_defs = {
         "crunRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/ociruntime:crun)",
         "podmanArchiveRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/podman:podman-static.tar.gz)",
