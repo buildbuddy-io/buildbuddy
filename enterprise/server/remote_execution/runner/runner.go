@@ -940,7 +940,7 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 	if err != nil {
 		return nil, err
 	}
-	digest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
+	imageWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return nil, err
 	}
