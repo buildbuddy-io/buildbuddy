@@ -38,12 +38,39 @@ var (
 	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
 
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
+	StdOutErrMaxSize          = flag.Uint64("executor.stdouterr_max_size_bytes", 0, "The maximum size of stdout/stderr for each action, in bytes. If the size of stdout/stderr exceeds this limit, the command will fail with a RESOURCE_EXHAUSTED error. If set to 0, no limit is enforced.")
 )
 
 var (
 	// Regexp matching a string consisting solely of digits (0-9).
 	allDigits = regexp.MustCompile(`^\d+$`)
 )
+
+func LimitStdOutErrWriter(w io.Writer) io.Writer {
+	if *StdOutErrMaxSize == 0 {
+		return w
+	}
+	return &limitWriter{w: w}
+}
+
+// limitWriter limits the number of bytes written to it.
+type limitWriter struct {
+	w io.Writer
+	n uint64
+}
+
+func (lw *limitWriter) Write(p []byte) (int, error) {
+	totalRequested := lw.n + uint64(len(p))
+	if totalRequested > *StdOutErrMaxSize {
+		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, *StdOutErrMaxSize)
+	}
+	n, err := lw.w.Write(p)
+	lw.n += uint64(n)
+	if err != nil {
+		return n, err
+	}
+	return n, nil
+}
 
 func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	if stdio == nil {
@@ -86,6 +113,8 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 		cmd.Stdout = io.MultiWriter(cmd.Stdout, logWriter)
 		cmd.Stderr = io.MultiWriter(cmd.Stderr, logWriter)
 	}
+	cmd.Stdout = LimitStdOutErrWriter(cmd.Stdout)
+	cmd.Stderr = LimitStdOutErrWriter(cmd.Stderr)
 	cmd.SysProcAttr = getDefaultSysProcAttr()
 	for _, envVar := range command.GetEnvironmentVariables() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
@@ -344,6 +373,9 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	// - https://github.com/golang/go/blob/fcb9d6b5d0ba6f5606c2b5dfc09f75e2dc5fc1e5/src/os/exec/lp_unix.go#L35
 	if notFoundErr, ok := err.(*exec.Error); ok {
 		return NoExitCode, status.NotFoundError(notFoundErr.Error())
+	}
+	if status.IsResourceExhaustedError(err) {
+		return NoExitCode, err
 	}
 
 	// If we fail to get the exit code of the process for any other reason, it might
