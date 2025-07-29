@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -16,11 +16,23 @@ go_library(
         "//proto:worker_go_proto",
         "//server/interfaces",
         "//server/util/background",
+        "//server/util/ioutil",
         "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//encoding/protowire",
+    ],
+)
+
+go_test(
+    name = "persistentworker_test",
+    srcs = ["persistentworker_test.go"],
+    embed = [":persistentworker"],
+    deps = [
+        "//proto:worker_go_proto",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
     ],
 )

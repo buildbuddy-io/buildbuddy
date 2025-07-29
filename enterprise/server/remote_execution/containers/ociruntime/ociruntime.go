@@ -2,7 +2,6 @@ package ociruntime
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/rand"
@@ -45,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -1262,32 +1262,41 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 
 	cmd := exec.CommandContext(ctx, runtimeArgs[0], runtimeArgs[1:]...)
 	cmd.Dir = wd
-	var stdout *bytes.Buffer
-	var stderr *bytes.Buffer
-	// If stdio is nil, the output will be discarded.
-	if stdio != nil {
-		cmd.Stdin = stdio.Stdin
-		if stdio.Stdout == nil {
-			stdout = &bytes.Buffer{}
-			cmd.Stdout = stdout
-			if *commandutil.DebugStreamCommandOutputs {
-				cmd.Stdout = io.MultiWriter(stdout, log.Writer("[crun] "))
-			}
-		} else {
-			stdout = nil
-			cmd.Stdout = stdio.Stdout
+	if stdio == nil {
+		stdio = &interfaces.Stdio{}
+	}
+	cmd.Stdin = stdio.Stdin
+	maxSize := *commandutil.StdOutErrMaxSize
+	if stdio.DisableOutputLimits {
+		maxSize = 0
+	}
+	stdoutBuf := ioutil.NewLimitBuffer(maxSize, "stdout/stderr output size")
+	stderrBuf := ioutil.NewLimitBuffer(maxSize, "stdout/stderr output size")
+	limitEnabled := maxSize > 0
+	collectStdout := stdio.Stdout == nil
+	collectStderr := stdio.Stderr == nil
+	build := func(primary io.Writer, buf *ioutil.LimitBuffer, collect bool) io.Writer {
+		writers := make([]io.Writer, 0, 3)
+		if limitEnabled || collect {
+			writers = append(writers, buf)
 		}
-		if stdio.Stderr == nil {
-			stderr = &bytes.Buffer{}
-			cmd.Stderr = stderr
-			if *commandutil.DebugStreamCommandOutputs {
-				cmd.Stderr = io.MultiWriter(stderr, log.Writer("[crun] "))
-			}
-		} else {
-			stderr = nil
-			cmd.Stderr = stdio.Stderr
+		if primary != nil {
+			writers = append(writers, primary)
+		}
+		if *commandutil.DebugStreamCommandOutputs {
+			writers = append(writers, log.Writer("[crun] "))
+		}
+		switch len(writers) {
+		case 0:
+			return io.Discard
+		case 1:
+			return writers[0]
+		default:
+			return io.MultiWriter(writers...)
 		}
 	}
+	cmd.Stdout = build(stdio.Stdout, stdoutBuf, collectStdout)
+	cmd.Stderr = build(stdio.Stderr, stderrBuf, collectStderr)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// In the "run" case, start the runtime in its own pid namespace so that
 	// when it is killed, the container process gets killed automatically
@@ -1319,11 +1328,11 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		ExitCode: code,
 		Error:    err,
 	}
-	if stdout != nil {
-		result.Stdout = stdout.Bytes()
+	if collectStdout {
+		result.Stdout = stdoutBuf.Bytes()
 	}
-	if stderr != nil {
-		result.Stderr = stderr.Bytes()
+	if collectStderr {
+		result.Stderr = stderrBuf.Bytes()
 	}
 	return result
 }

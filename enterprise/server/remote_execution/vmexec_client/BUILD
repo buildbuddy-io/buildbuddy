@@ -12,6 +12,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
         "//server/interfaces",
+        "//server/util/ioutil",
         "//server/util/background",
         "//server/util/log",
         "//server/util/rpcutil",

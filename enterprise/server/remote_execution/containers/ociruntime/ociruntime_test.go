@@ -162,6 +162,100 @@ func TestRun(t *testing.T) {
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
+// TestLimitedStd tests that the executor enforces a limit on the size of
+// stdout/stderr output from a command, and returns an error if the limit is
+// exceeded.
+func TestLimitedStd(t *testing.T) {
+	// OCI Setup
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+
+	// Run
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `echo 'hello world'`},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.Error(t, res.Error)
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted error, got %s", res.Error)
+	assert.Contains(t, res.Error.Error(), "stdout/stderr output size limit exceeded")
+	assert.Contains(t, res.Error.Error(), "12 bytes requested")
+	assert.Contains(t, res.Error.Error(), "limit: 10 bytes")
+}
+
+// TestDisableOutputLimits_Exec verifies that when DisableOutputLimits is set
+// on stdio, large outputs do not trigger a ResourceExhausted error for OCI exec.
+func TestDisableOutputLimits_Exec(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = c.Remove(ctx)
+	})
+
+	// Small limit globally, but disabled at stdio level
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+
+	// Pull and create before exec
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+
+	// Produce >10B of stdout
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `echo 'hello world'`}}
+	stdio := &interfaces.Stdio{DisableOutputLimits: true}
+	res := c.Exec(ctx, cmd, stdio)
+
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "hello world\n", string(res.Stdout))
+}
+
 func TestCgroupSettings(t *testing.T) {
 	setupNetworking(t)
 
@@ -1608,7 +1702,10 @@ func TestPersistentWorker_WorkerCrashes(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	defer worker.Stop()
+	t.Cleanup(func() {
+		err := worker.Stop()
+		require.NoError(t, err)
+	})
 
 	// Send work request.
 	// The command doesn't matter - the test worker always just returns a fixed
@@ -1617,6 +1714,171 @@ func TestPersistentWorker_WorkerCrashes(t *testing.T) {
 
 	require.Error(t, res.Error)
 	require.Contains(t, res.Error.Error(), "test-stderr-message")
+}
+
+// TestPersistentWorkerOOMPrevention validates that persistent workers implement OOM prevention
+// mechanisms for stderr buffering and response size validation.
+func TestPersistentWorkerOOMPrevention(t *testing.T) {
+	setupNetworking(t)
+
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	// Create workspace with testworker binary
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
+	require.NoError(t, err)
+	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
+	require.NoError(t, err)
+	testfs.CopyFile(t, testworkerPath, ws.Path(), "testworker")
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+
+	// Pull image before creating the container, matching other tests that use Create().
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+
+	// Create container
+	err = c.Create(ctx, ws.Path())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("StderrSizeLimit", func(t *testing.T) {
+		flags.Set(t, "executor.stdouterr_max_size_bytes", 100)
+
+		resp := &wkpb.WorkResponse{
+			Output:   "test-output",
+			ExitCode: 0,
+		}
+		b, err := proto.Marshal(resp)
+		require.NoError(t, err)
+		size := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(size, uint64(len(b)))
+		responseBase64 := base64.StdEncoding.EncodeToString(append(size[:n], b...))
+
+		largeStderrMessage := strings.Repeat("X", 200)
+
+		worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+			Arguments: []string{"./testworker", "--response_base64", responseBase64, "--write_stderr", largeStderrMessage},
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			err := worker.Stop()
+			assert.NoError(t, err)
+		})
+
+		res := worker.Exec(ctx, &repb.Command{})
+
+		assert.Error(t, res.Error)
+		assert.Equal(t, -2, res.ExitCode)
+		assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhaustedError, got %+#v", res.Error)
+	})
+
+	t.Run("ResponseSizeLimit", func(t *testing.T) {
+		flags.Set(t, "executor.stdouterr_max_size_bytes", 100)
+
+		resp := &wkpb.WorkResponse{
+			Output:   strings.Repeat("X", 200),
+			ExitCode: 0,
+		}
+		b, err := proto.Marshal(resp)
+		require.NoError(t, err)
+		size := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(size, uint64(len(b)))
+		responseBase64 := base64.StdEncoding.EncodeToString(append(size[:n], b...))
+
+		worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+			Arguments: []string{"./testworker", "--response_base64", responseBase64},
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			err := worker.Stop()
+			assert.NoError(t, err)
+		})
+
+		res := worker.Exec(ctx, &repb.Command{})
+		assert.Error(t, res.Error)
+		assert.Equal(t, -2, res.ExitCode)
+		assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhaustedError, got %+#v", res.Error)
+	})
+
+	t.Run("PersistentWorkerReuseWithinLimits", func(t *testing.T) {
+		flags.Set(t, "executor.stdouterr_max_size_bytes", 500)
+
+		resp := &wkpb.WorkResponse{
+			Output:   "test-output-" + strings.Repeat("X", 50),
+			ExitCode: 0,
+		}
+		b, err := proto.Marshal(resp)
+		require.NoError(t, err)
+		size := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(size, uint64(len(b)))
+		responseBase64 := base64.StdEncoding.EncodeToString(append(size[:n], b...))
+
+		stderrMessage := "stderr-" + strings.Repeat("Y", 70)
+
+		worker, err := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
+			Arguments: []string{"./testworker", "--response_base64", responseBase64, "--write_stderr", stderrMessage},
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			err := worker.Stop()
+			assert.NoError(t, err)
+		})
+
+		for i := 0; i < 10; i++ {
+			res := worker.Exec(ctx, &repb.Command{})
+
+			assert.NoError(t, res.Error, "request %d should succeed", i+1)
+			assert.Equal(t, 0, res.ExitCode, "request %d should have exit code 0", i+1)
+
+			assert.Greater(t, len(res.Stderr), 0, "stderr should contain data for request %d", i+1)
+			assert.LessOrEqual(t, len(res.Stderr), 500, "stderr should not exceed limit for request %d", i+1)
+
+			expectedOutput := "test-output-" + strings.Repeat("X", 50)
+			assert.Equal(t, expectedOutput, string(res.Stderr), "output should match expected for request %d", i+1)
+		}
+	})
+
+	t.Run("JSONProtocolResponseSizeLimit", func(t *testing.T) {
+		flags.Set(t, "executor.stdouterr_max_size_bytes", 100)
+
+		largeOutput := strings.Repeat("X", 200)
+		jsonResponse := fmt.Sprintf(`{"output":"%s","exitCode":0}`, largeOutput)
+		responseBase64 := base64.StdEncoding.EncodeToString([]byte(jsonResponse))
+
+		worker, err := persistentworker.Start(ctx, ws, c, "json" /*=protocol*/, &repb.Command{
+			Arguments: []string{"./testworker", "--protocol", "json", "--response_base64", responseBase64},
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			err := worker.Stop()
+			assert.NoError(t, err)
+		})
+
+		res := worker.Exec(ctx, &repb.Command{})
+
+		assert.Error(t, res.Error)
+		assert.Equal(t, -2, res.ExitCode)
+		assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhaustedError for JSON protocol, got %+#v", res.Error)
+		assert.Contains(t, res.Error.Error(), "response size exceeds limit")
+	})
 }
 
 func TestCancelRun(t *testing.T) {

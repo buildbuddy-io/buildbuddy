@@ -373,6 +373,44 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	assertCommandResult(t, expectedResult, res)
 }
 
+// TestLimitedStd tests that the executor enforces a limit on the size of
+// stdout/stderr output from a command, and returns an error if the limit is
+// exceeded.
+func TestLimitedStd(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `echo 'hello world'`},
+	}
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.Error(t, res.Error)
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted error, got %s", res.Error)
+	assert.Contains(t, res.Error.Error(), "stdout/stderr output size limit exceeded")
+	assert.Contains(t, res.Error.Error(), "12 bytes requested")
+	assert.Contains(t, res.Error.Error(), "limit: 10 bytes")
+}
+
 func TestFirecrackerLifecycle(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
