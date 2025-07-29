@@ -936,15 +936,19 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 		return props, nil
 	}
 
+	// To keep container implementations simple and correct,
+	// we resolve image names that include a tag (explicitly or implicity)
+	// to image names with a digest.
 	creds, err := oci.CredentialsFromProperties(props)
 	if err != nil {
 		return nil, err
 	}
-	imageWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
+	imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return nil, err
 	}
-	props.ContainerImage = digest
+	props.ContainerImage = imageNameWithDigest
+
 	return props, nil
 }
 
