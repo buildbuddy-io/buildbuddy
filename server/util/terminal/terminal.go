@@ -15,7 +15,8 @@ const (
 	// means we are actually allocating space for slices of this length.
 	// TODO: patch the library to make the cap for slices and the max columns two
 	// different numbers, ideally as a PR.
-	columns = 256
+	Columns = 256
+	Lines   = 100
 )
 
 type ScreenWriter struct {
@@ -30,19 +31,18 @@ type ScreenWriter struct {
 // process are recorded in ScrollOutWriteErr.
 // A windowHeight of less than 1 indicates a window of unlimited size.
 func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
-	s, err := bkterminal.NewScreen(bkterminal.WithMaxSize(0, windowHeight), bkterminal.WithANSIRenderer())
+	s, err := bkterminal.NewScreen(bkterminal.WithMaxSize(0, windowHeight), bkterminal.WithANSIRenderer(), bkterminal.WithRealWindow())
 	if err != nil {
 		return nil, err
 	}
 	w := &ScreenWriter{Screen: s}
 	if windowHeight > 0 {
 		s.ScrollOutFunc = func(line string) { _, w.WriteErr = w.OutputAccumulator.WriteString(line) }
-		if err := s.SetSize(columns, windowHeight); err != nil {
+		if err := s.SetSize(Columns, windowHeight); err != nil {
 			return nil, err
 		}
 	} else {
-		// 100 is the default number of lines.
-		if err := s.SetSize(columns, 100); err != nil {
+		if err := s.SetSize(Columns, Lines); err != nil {
 			return nil, err
 		}
 	}
