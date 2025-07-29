@@ -55,7 +55,7 @@ type Worker struct {
 	protocol  string // "json" or "proto"
 
 	stdinWriter *io.PipeWriter
-	stderr      lockingbuffer.LockingBuffer
+	stderr      *lockingbuffer.LockingBuffer
 
 	stdoutReader *bufio.Reader
 	jsonDecoder  *json.Decoder
@@ -79,8 +79,19 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 		stdinWriter:  stdinWriter,
 		stdoutReader: bufio.NewReader(stdoutReader),
 	}
+
+	// Use the same size limit as regular actions to prevent OOM from persistent worker stderr
+	if *commandutil.StdOutErrMaxSize > 0 {
+		w.stderr = lockingbuffer.NewWithMaxSize(*commandutil.StdOutErrMaxSize)
+	} else {
+		w.stderr = lockingbuffer.New()
+	}
 	if protocol == jsonProtocol {
-		w.jsonDecoder = json.NewDecoder(stdoutReader)
+		if *commandutil.StdOutErrMaxSize > 0 {
+			w.jsonDecoder = json.NewDecoder(commandutil.LimitReader(w.stdoutReader, *commandutil.StdOutErrMaxSize))
+		} else {
+			w.jsonDecoder = json.NewDecoder(w.stdoutReader)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -114,9 +125,10 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 		defer stdoutWriter.Close()
 
 		stdio := &interfaces.Stdio{
-			Stdin:  stdinReader,
-			Stdout: stdoutWriter,
-			Stderr: &w.stderr,
+			Stdin:               stdinReader,
+			Stdout:              stdoutWriter,
+			Stderr:              w.stderr,
+			DisableOutputLimits: true,
 		}
 		res := w.container.Exec(ctx, command, stdio)
 		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, args.FlagFiles, args.WorkerArgs)
@@ -159,9 +171,13 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 			err, w.stderrDebugString()))
 	}
 
+	log.CtxDebugf(ctx, "Waiting for persistent worker response")
 	// Decode the response from stdout.
 	rsp := &wkpb.WorkResponse{}
 	if err := w.unmarshalWorkResponse(rsp); err != nil {
+		if status.IsResourceExhaustedError(err) {
+			return commandutil.ErrorResult(err)
+		}
 		return commandutil.ErrorResult(status.UnavailableErrorf(
 			"failed to read persistent work response: %s\npersistent worker stderr:\n%s",
 			err, w.stderrDebugString()))
@@ -215,6 +231,9 @@ func (w *Worker) unmarshalWorkResponse(responseProto *wkpb.WorkResponse) error {
 	if w.protocol == jsonProtocol {
 		raw := json.RawMessage{}
 		if err := w.jsonDecoder.Decode(&raw); err != nil {
+			if *commandutil.StdOutErrMaxSize > 0 && status.IsResourceExhaustedError(err) {
+				return status.ResourceExhaustedErrorf("persistent worker response size exceeds limit %d", *commandutil.StdOutErrMaxSize)
+			}
 			return err
 		}
 		return protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(raw, responseProto)
@@ -228,6 +247,12 @@ func (w *Worker) unmarshalWorkResponse(responseProto *wkpb.WorkResponse) error {
 	if err != nil {
 		return err
 	}
+
+	// Validate response size to prevent OOM attacks (only if limit is configured)
+	if *commandutil.StdOutErrMaxSize > 0 && size > *commandutil.StdOutErrMaxSize {
+		return status.ResourceExhaustedErrorf("persistent worker response size %d exceeds limit %d", size, *commandutil.StdOutErrMaxSize)
+	}
+
 	data := make([]byte, size)
 	// Read the response proto from stdout.
 	if _, err := io.ReadFull(w.stdoutReader, data); err != nil {
