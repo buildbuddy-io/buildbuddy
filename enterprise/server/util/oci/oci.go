@@ -39,8 +39,8 @@ import (
 )
 
 const (
-	tagLRUMaxEntries = 1000
-	tagLRUExpiration = time.Minute * 15
+	resolveImageDigestLRUMaxEntries = 1000
+	resolveImageDigestLRUExpiration = time.Minute * 15
 )
 
 var (
