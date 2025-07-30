@@ -50,17 +50,16 @@ go_test(
         ":commandutil",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "//server/testutil/testfs",
-            "//server/util/status",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//server/testutil/testfs",
-            "//server/util/status",
         ],
         "@io_bazel_rules_go//go/platform:windows": [
             "//server/testutil/testfs",
