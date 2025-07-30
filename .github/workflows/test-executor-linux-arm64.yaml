@@ -20,6 +20,7 @@ jobs:
       - name: Remove podman (needed to run podman tests)
         run: |
           sudo apt-get remove -y podman
+          rm -f /dev/shm/libpod*
 
       - name: Restore caches
         id: cache-restore
