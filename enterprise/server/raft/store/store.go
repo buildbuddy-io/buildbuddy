@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"math/rand"
 	"net"
 	"path/filepath"
 	"sort"
@@ -668,9 +669,9 @@ func (s *Store) Start() error {
 		return nil
 	})
 
-	if maxRangeSizeBytes := raftConfig.MaxRangeSizeBytes(); maxRangeSizeBytes != 0 {
+	if targetRangeSizeBytes := raftConfig.TargetRangeSizeBytes(); targetRangeSizeBytes != 0 {
 		s.eg.Go(func() error {
-			s.checkIfReplicasNeedSplitting(s.egCtx, maxRangeSizeBytes)
+			s.checkIfReplicasNeedSplitting(s.egCtx, targetRangeSizeBytes, raftConfig.RangeSizeJitterFactor())
 			return nil
 		})
 	}
@@ -1923,7 +1924,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 	return zombieCleanupNoAction, nil
 }
 
-func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, maxRangeSizeBytes int64) {
+func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, targetRangeSizeBytes int64, jitterFactor float64) {
 	eventsCh := s.AddEventListener("splitRanges")
 	for {
 		select {
@@ -1944,7 +1945,10 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, maxRangeSizeBy
 				if !s.leaseKeeper.HaveLease(ctx, rangeID) {
 					continue
 				}
-				if estimatedDiskBytes < maxRangeSizeBytes {
+
+				jitter := (rand.Float64()*2 - 1) * jitterFactor * float64(targetRangeSizeBytes)
+				threshold := float64(targetRangeSizeBytes) + jitter
+				if float64(estimatedDiskBytes) < threshold {
 					continue
 				}
 				repl, err := s.GetReplica(rangeID)

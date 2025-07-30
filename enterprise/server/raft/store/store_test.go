@@ -294,7 +294,7 @@ func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 
 func TestAutomaticSplitting(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
-	flags.Set(t, "cache.raft.max_range_size_bytes", 8000)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 8000)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
@@ -1353,7 +1353,7 @@ func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.Te
 }
 
 func TestSplitMetaRange(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	ctx := context.Background()
@@ -1407,7 +1407,7 @@ func getReplica(t testing.TB, s *testutil.TestingStore, rangeID uint64) *replica
 }
 
 func TestSplitNonMetaRange(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// store_test is sensitive to cpu pressure stall on remote executor. Increase
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
@@ -1564,7 +1564,7 @@ func TestPostFactoSplit(t *testing.T) {
 }
 
 func TestManySplits(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	ctx := context.Background()
@@ -1708,7 +1708,7 @@ func TestCleanupExpiredSessions(t *testing.T) {
 }
 
 func TestSplitAcrossClusters(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -1799,7 +1799,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 }
 
 func TestUpReplicate(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup.
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
@@ -1878,7 +1878,7 @@ func TestUpReplicate(t *testing.T) {
 }
 
 func TestDownReplicate(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
@@ -2020,7 +2020,7 @@ func TestDownReplicate(t *testing.T) {
 }
 
 func TestReplaceDeadReplica(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
@@ -2091,7 +2091,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 }
 
 func TestRemoveDeadReplica(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
@@ -2166,7 +2166,7 @@ func TestRemoveDeadReplica(t *testing.T) {
 }
 
 func TestRebalance(t *testing.T) {
-	flags.Set(t, "cache.raft.max_range_size_bytes", 0) // disable auto splitting
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
 	// disable txn cleanup and zombie scan, because advance the fake clock can
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
@@ -2258,7 +2258,7 @@ func TestRebalance(t *testing.T) {
 
 func TestBringupSetRanges(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
-	flags.Set(t, "cache.raft.max_range_size_bytes", 8000)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 8000)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
