@@ -17,6 +17,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # podman_test installs its own version of podman under / in order to test
+      # the same version that we use in the executor while not having to
+      # configure various podman directory paths. For now just uninstall the
+      # podman installation that already comes with the GH actions runner.
+      - name: Uninstall podman
+        run: |
+          sudo apt-get remove -y podman
+          # Hack to work around https://github.com/containers/podman/issues/9164
+          find /dev/shm -name 'libpod*' | xargs -r sudo rm -rf
+
       - name: Restore caches
         id: cache-restore
         uses: ./.github/actions/cache-restore
