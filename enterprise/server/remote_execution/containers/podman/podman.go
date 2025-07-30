@@ -305,7 +305,6 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 		workDir,
 		"--name",
 		c.name,
-		"--rm",
 		"--cidfile",
 		c.cidFilePath(),
 		"--volume",
@@ -612,7 +611,7 @@ func (c *podmanCommandContainer) getCID(ctx context.Context) (string, error) {
 	cidPath := c.cidFilePath()
 	waitOpts := disk.WaitOpts{Timeout: pollCIDTimeout}
 	if err := disk.WaitUntilExists(ctx, cidPath, waitOpts); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get CID: %w", err)
 	}
 	var cid string
 	// Retry in case the cidfile is empty, to avoid relying on podman to
@@ -687,7 +686,7 @@ func (c *podmanCommandContainer) Remove(ctx context.Context) error {
 	c.removed = true
 	c.mu.Unlock()
 	os.RemoveAll(c.cidFilePath()) // intentionally ignoring error.
-	res := c.runPodman(ctx, "kill", &interfaces.Stdio{}, "--signal=KILL", c.name)
+	res := c.runPodman(ctx, "rm", &interfaces.Stdio{}, "-f", c.name)
 	if res.Error != nil {
 		return res.Error
 	}
