@@ -218,9 +218,7 @@ func TestBuildLogs_CompletedInvocation(t *testing.T) {
 	require.NoError(t, err)
 
 	logContents := getLogs(t, ctx, log)
-	// TODO(tempoz): avoid needing to strip the trailing newline for the assertion
-	// to pass
-	require.Equal(t, strings.TrimSuffix(expected.String(), "\n"), logContents)
+	require.Equal(t, expected.String(), logContents)
 }
 
 func TestBuildLogs_InProgressInvocation(t *testing.T) {
@@ -267,7 +265,5 @@ func TestBuildLogs_InProgressInvocation(t *testing.T) {
 	// Wait for the invocation to be created, otherwise the EventLog lookup may
 	// fail with a "record not found" error when it looks up the invocation.
 	waitForInvocation(t, ctx, bbClient, iid)
-	// TODO(tempoz): avoid needing to strip the trailing newline for the assertion
-	// to pass
-	waitForLogsToEqual(t, ctx, log, strings.TrimSuffix(expected.String(), "\n"))
+	waitForLogsToEqual(t, ctx, log, expected.String())
 }

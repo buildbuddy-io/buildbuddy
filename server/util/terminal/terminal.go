@@ -15,13 +15,16 @@ const (
 	// means we are actually allocating space for slices of this length.
 	// TODO: patch the library to make the cap for slices and the max columns two
 	// different numbers, ideally as a PR.
-	columns = 256
+	Columns = 256
+	Lines   = 100
 )
 
 type ScreenWriter struct {
 	*bkterminal.Screen
 	OutputAccumulator strings.Builder
 	WriteErr          error
+	windowHeight      int
+	renderer          *bkterminal.ANSIRenderer
 }
 
 // NewScreenWriter returns a ScreenWriter backed by an ANSI state machine with a
@@ -30,19 +33,19 @@ type ScreenWriter struct {
 // process are recorded in ScrollOutWriteErr.
 // A windowHeight of less than 1 indicates a window of unlimited size.
 func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
-	s, err := bkterminal.NewScreen(bkterminal.WithMaxSize(0, windowHeight), bkterminal.WithANSIRenderer())
+	w := &ScreenWriter{windowHeight: windowHeight, renderer: &bkterminal.ANSIRenderer{}}
+	s, err := bkterminal.NewScreen(bkterminal.WithMaxSize(0, w.windowHeight), bkterminal.WithRenderer(w.renderer), bkterminal.WithRealWindow())
 	if err != nil {
 		return nil, err
 	}
-	w := &ScreenWriter{Screen: s}
-	if windowHeight > 0 {
+	w.Screen = s
+	if w.windowHeight > 0 {
 		s.ScrollOutFunc = func(line string) { _, w.WriteErr = w.OutputAccumulator.WriteString(line) }
-		if err := s.SetSize(columns, windowHeight); err != nil {
+		if err := s.SetSize(Columns, windowHeight); err != nil {
 			return nil, err
 		}
 	} else {
-		// 100 is the default number of lines.
-		if err := s.SetSize(columns, 100); err != nil {
+		if err := s.SetSize(Columns, Lines); err != nil {
 			return nil, err
 		}
 	}
@@ -50,14 +53,15 @@ func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
 }
 
 func (w *ScreenWriter) Render() string {
-	s, _ := w.Screen.AsANSI()
+	s, _ := w.Screen.AsANSI(w.renderer.Style())
 	return s
 }
 
-func (w *ScreenWriter) Reset(windowHeight int) error {
+func (w *ScreenWriter) Reset() error {
 	w.OutputAccumulator.Reset()
+	w.renderer = &bkterminal.ANSIRenderer{}
 	var err error
-	w.Screen, err = bkterminal.NewScreen(bkterminal.WithMaxSize(0, windowHeight), bkterminal.WithANSIRenderer())
+	w.Screen, err = bkterminal.NewScreen(bkterminal.WithMaxSize(0, w.windowHeight), bkterminal.WithRenderer(w.renderer))
 	return err
 }
 

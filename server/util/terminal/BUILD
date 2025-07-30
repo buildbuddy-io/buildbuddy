@@ -14,6 +14,7 @@ go_test(
     deps = [
         ":terminal",
         "//server/util/random",
+        "//server/util/terminal/testdata",
         "@com_github_stretchr_testify//require",
     ],
 )
