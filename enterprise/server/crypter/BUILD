@@ -9,6 +9,8 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:storage_go_proto",
+        "//server/interfaces",
+        "//server/metrics",
         "//server/remote_cache/digest",
         "@org_golang_x_crypto//chacha20poly1305",
     ],

@@ -427,91 +427,6 @@ func New(env environment.Env, clock clockwork.Clock) (*Crypter, error) {
 	return c, nil
 }
 
-type Encryptor struct {
-	md           *sgpb.EncryptionMetadata
-	ciph         cipher.AEAD
-	digest       *repb.Digest
-	groupID      string
-	w            interfaces.CommittedWriteCloser
-	wroteHeader  bool
-	chunkCounter uint32
-	nonceBuf     []byte
-
-	// buf collects the plaintext until there's enough for a full chunk or the
-	// is no more data left to encrypt.
-	buf []byte
-	// bufIdx is the index into the buffer where new data should be written.
-	bufIdx int
-	// bufCap is the maximum amount of plaintext the buffer can hold. The raw
-	// buffer is larger to allow encryption to be done in place.
-	bufCap int
-}
-
-func (e *Encryptor) flushBlock(lastChunk bool) error {
-	if _, err := rand.Read(e.nonceBuf); err != nil {
-		return err
-	}
-	if _, err := e.w.Write(e.nonceBuf); err != nil {
-		return err
-	}
-
-	chunkAuth := crypter.MakeChunkAuthHeader(e.chunkCounter, e.digest, e.groupID, lastChunk)
-	e.chunkCounter++
-	ct := e.ciph.Seal(e.buf[:0], e.nonceBuf, e.buf[:e.bufIdx], chunkAuth)
-	if _, err := e.w.Write(ct); err != nil {
-		return err
-	}
-	e.bufIdx = 0
-	metrics.EncryptionEncryptedBlockCount.Inc()
-	return nil
-}
-
-func (e *Encryptor) Metadata() *sgpb.EncryptionMetadata {
-	return e.md
-}
-
-func (e *Encryptor) Write(p []byte) (n int, err error) {
-	if !e.wroteHeader {
-		if _, err := e.w.Write([]byte(crypter.EncryptedDataHeaderSignature)); err != nil {
-			return 0, err
-		}
-		if _, err := e.w.Write([]byte{crypter.EncryptedDataHeaderVersion}); err != nil {
-			return 0, err
-		}
-		e.wroteHeader = true
-	}
-
-	readIdx := 0
-	for readIdx < len(p) {
-		readLen := e.bufCap - e.bufIdx
-		if readLen > len(p)-readIdx {
-			readLen = len(p) - readIdx
-		}
-		copy(e.buf[e.bufIdx:], p[readIdx:readIdx+readLen])
-		e.bufIdx += readLen
-		readIdx += readLen
-		if e.bufIdx == e.bufCap {
-			if err := e.flushBlock(false /*=lastChunk*/); err != nil {
-				return 0, err
-			}
-		}
-	}
-
-	return len(p), nil
-}
-
-func (e *Encryptor) Commit() error {
-	if err := e.flushBlock(true /*=lastChunk*/); err != nil {
-		return err
-	}
-	metrics.EncryptionEncryptedBlobCount.Inc()
-	return e.w.Commit()
-}
-
-func (e *Encryptor) Close() error {
-	return e.w.Close()
-}
-
 type Decryptor struct {
 	ciph               cipher.AEAD
 	digest             *repb.Digest
@@ -597,27 +512,12 @@ func (d *Decryptor) Close() error {
 	return d.r.Close()
 }
 
-func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*Encryptor, error) {
+func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*crypter.Encryptor, error) {
 	loadedKey, err := c.cache.encryptionKey(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ciph, err := crypter.GetCipher(loadedKey.Key)
-	if err != nil {
-		return nil, err
-	}
-	return &Encryptor{
-		md:       loadedKey.Metadata,
-		ciph:     ciph,
-		digest:   digest,
-		groupID:  groupID,
-		w:        w,
-		nonceBuf: make([]byte, crypter.NonceSize),
-		// We allocate enough space to store an encrypted chunk so that we can
-		// do the encryption in place.
-		buf:    make([]byte, chunkSize+crypter.EncryptedChunkOverhead),
-		bufCap: chunkSize,
-	}, nil
+	return crypter.NewEncryptor(ctx, loadedKey, digest, w, groupID, chunkSize)
 }
 
 func (c *Crypter) ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
