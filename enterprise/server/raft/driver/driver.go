@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"math"
+	"math/rand"
 	"slices"
 	"strconv"
 	"sync"
@@ -497,14 +498,18 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 	allReady := rq.storeMap.AllAvailableStoresReady()
 	isClusterHealthy := len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0 && allReady
 	if isClusterHealthy {
-		if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
+		if targetRangeSizeBytes := config.TargetRangeSizeBytes(); targetRangeSizeBytes > 0 {
 			usage, err := repl.Usage()
 			if err != nil {
 				rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.RangeID(), repl.ReplicaID())
 			} else {
-				if sizeUsed := usage.GetEstimatedDiskBytesUsed(); sizeUsed >= maxRangeSizeBytes {
+				jitterFactor := config.RangeSizeJitterFactor()
+				lowerBound := (1 - jitterFactor) * float64(targetRangeSizeBytes)
+				jitter := (rand.Float64()*2 - 1) * jitterFactor * float64(targetRangeSizeBytes)
+				threshold := float64(targetRangeSizeBytes) + jitter
+				if sizeUsed := usage.GetEstimatedDiskBytesUsed(); float64(sizeUsed) >= threshold {
 					action = DriverSplitRange
-					adjustedPriority := action.Priority() + float64(sizeUsed-maxRangeSizeBytes)/float64(sizeUsed)*100.0
+					adjustedPriority := action.Priority() + (float64(sizeUsed)-lowerBound)/float64(sizeUsed)*100.0
 					return action, adjustedPriority
 				}
 			}
