@@ -305,8 +305,6 @@ func TestComplexScreenWriting(t *testing.T) {
 // ansiDebugString replaces ANSI escape sequences with a string representation
 // that can be displayed as a diff without messing up the terminal.
 func ansiDebugString(s string) string {
-	// \x1b[0m is interpreted the same as \x1b[m. Normalize these to make
-	// assertions easier.
 	// Quote the string, so escape sequences like \x1b[32m show up as text
 	// instead of actual colors.
 	content := fmt.Sprintf("%q", s)
