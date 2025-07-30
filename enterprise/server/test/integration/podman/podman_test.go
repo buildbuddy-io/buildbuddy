@@ -136,6 +136,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestRunHelloWorld(t *testing.T) {
+	t.Log("cache burst 1231231")
 	ctx := context.Background()
 	buildRoot := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, buildRoot, "work")
