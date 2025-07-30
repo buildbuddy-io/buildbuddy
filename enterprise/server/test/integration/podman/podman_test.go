@@ -269,6 +269,45 @@ func TestExecStdio(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestSlowRun tests that a simple command runs successfully and completes within a reasonable time.
+// This is used to check for any potential performance regressions in the container execution environment.
+func TestSlowRun(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	ctx := context.Background()
+	env := getTestEnv(t)
+
+	provider, err := podman.NewProvider(env, rootDir)
+	require.NoError(t, err)
+	props := &platform.Properties{
+		ContainerImage: busyboxImage,
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &container.Init{Props: props})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, c.Remove(ctx))
+	})
+
+	// Ensure the image is cached
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage)
+	require.NoError(t, err)
+
+	cmd := &repb.Command{Arguments: []string{
+		"sh", "-c", `echo 'Hello World'`,
+	}}
+
+	before := time.Now()
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	duration := time.Since(before)
+	require.NoError(t, res.Error, "Run should not return an error")
+	assert.Equal(t, 0, res.ExitCode, "Run should exit with success")
+	assert.Equal(t, "Hello World\n", string(res.Stdout), "Run should return expected stdout")
+	assert.Empty(t, string(res.Stderr), "Run should not return any stderr")
+
+	assert.LessOrEqual(t, duration, 5*time.Second, "Run should complete within 5 seconds")
+}
+
 func TestRun_Timeout(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
