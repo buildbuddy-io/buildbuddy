@@ -149,7 +149,7 @@ func TestRunHelloWorld(t *testing.T) {
 	}
 	// Need to give enough time to download the Docker image.
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
+	t.Cleanup(cancel)
 
 	env := getTestEnv(t)
 
@@ -162,7 +162,7 @@ func TestRunHelloWorld(t *testing.T) {
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		c.Remove(context.Background())
+		require.NoError(t, c.Remove(ctx))
 	})
 	result := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
@@ -293,17 +293,17 @@ func TestRun_Timeout(t *testing.T) {
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		c.Remove(context.Background())
+		require.NoError(t, c.Remove(ctx))
 	})
 
 	// Ensure the image is cached
 	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	t.Cleanup(cancel)
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(runCtx, cmd, workDir, oci.Credentials{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -347,17 +347,17 @@ func TestExec_Timeout(t *testing.T) {
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		c.Remove(context.Background())
+		require.NoError(t, c.Remove(ctx))
 	})
 
 	// Ensure the image is cached
 	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	t.Cleanup(cancel)
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(runCtx, cmd, workDir, oci.Credentials{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -475,7 +475,7 @@ func TestForceRoot(t *testing.T) {
 			c, err := provider.New(ctx, &container.Init{Props: props})
 			require.NoError(t, err)
 			t.Cleanup(func() {
-				c.Remove(context.Background())
+				require.NoError(t, c.Remove(ctx))
 			})
 			result := c.Run(ctx, cmd, workDir, oci.Credentials{})
 			require.NoError(t, result.Error)
@@ -526,7 +526,7 @@ func TestUser(t *testing.T) {
 			c, err := provider.New(ctx, &container.Init{Props: props})
 			require.NoError(t, err)
 			t.Cleanup(func() {
-				c.Remove(context.Background())
+				require.NoError(t, c.Remove(ctx))
 			})
 			result := c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-u", "-n"},
@@ -579,7 +579,7 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		c.Remove(context.Background())
+		require.NoError(t, c.Remove(ctx))
 	})
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
@@ -608,7 +608,7 @@ func TestPodmanRun_CommandNotExecuted_RecordsStats(t *testing.T) {
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		c.Remove(context.Background())
+		require.NoError(t, c.Remove(ctx))
 	})
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
@@ -654,7 +654,7 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		c.Remove(context.Background())
+		require.NoError(t, c.Remove(ctx))
 	})
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
@@ -683,7 +683,7 @@ func TestSignal(t *testing.T) {
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		c.Remove(context.Background())
+		require.NoError(t, c.Remove(ctx))
 	})
 
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
