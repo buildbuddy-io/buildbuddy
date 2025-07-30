@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"math"
-	"math/rand"
 	"net"
 	"path/filepath"
 	"sort"
@@ -1946,9 +1945,8 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, targetRangeSiz
 					continue
 				}
 
-				jitter := (rand.Float64()*2 - 1) * jitterFactor * float64(targetRangeSizeBytes)
-				threshold := float64(targetRangeSizeBytes) + jitter
-				if float64(estimatedDiskBytes) < threshold {
+				lowerBound := (1 - jitterFactor) * float64(targetRangeSizeBytes)
+				if float64(estimatedDiskBytes) < lowerBound {
 					continue
 				}
 				repl, err := s.GetReplica(rangeID)
