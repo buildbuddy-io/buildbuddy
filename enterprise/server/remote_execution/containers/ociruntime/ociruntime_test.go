@@ -180,6 +180,51 @@ func TestRun(t *testing.T) {
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
+func TestLimitedStd(t *testing.T) {
+	// OCI Setup
+	setupNetworking(t)
+
+	image := manuallyProvisionedBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+
+	// Run
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			echo 'hello world'
+		`},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.Error(t, res.Error)
+	assert.True(t, status.IsResourceExhaustedError(res.Error))
+	assert.Contains(t, res.Error.Error(), "stdout/stderr output size limit exceeded")
+	assert.Contains(t, res.Error.Error(), "12 bytes requested")
+	assert.Contains(t, res.Error.Error(), "limit: 10 bytes")
+}
+
 func TestCgroupSettings(t *testing.T) {
 	setupNetworking(t)
 
