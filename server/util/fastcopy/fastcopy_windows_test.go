@@ -3,7 +3,6 @@
 package fastcopy_test
 
 import (
-	"errors"
 	"os"
 	"path"
 	"path/filepath"
@@ -86,7 +85,7 @@ func TestCloneWindows(t *testing.T) {
 	// Ensure target doesn't exist
 	_, err = os.Stat(target)
 	require.Error(t, err)
-	require.True(t, errors.Is(err, os.ErrNotExist))
+	require.ErrorIs(t, err, os.ErrNotExist)
 
 	// Perform the clone operation
 	err = fastcopy.Clone(source, target)
@@ -138,7 +137,7 @@ func TestCloneWindowsCopyFileW(t *testing.T) {
 	// Ensure target doesn't exist
 	_, err := os.Stat(target)
 	require.Error(t, err)
-	require.True(t, errors.Is(err, os.ErrNotExist))
+	require.ErrorIs(t, err, os.ErrNotExist)
 
 	// Perform the clone operation - should use CopyFileW
 	err = fastcopy.Clone(source, target)
