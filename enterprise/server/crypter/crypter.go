@@ -5,11 +5,13 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/crypto/chacha20poly1305"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -17,11 +19,11 @@ import (
 )
 
 const (
-	EncryptedDataHeaderSignature = "BB"
-	EncryptedDataHeaderVersion   = 1
-	PlainTextChunkSize           = 1024 * 1024 // 1 MiB
-	NonceSize                    = chacha20poly1305.NonceSizeX
-	EncryptedChunkOverhead       = NonceSize + chacha20poly1305.Overhead
+	EncryptedDataHeaderVersion = 1
+
+	encryptedDataHeaderSignature = "BB"
+	nonceSize                    = chacha20poly1305.NonceSizeX
+	encryptedChunkOverhead       = nonceSize + chacha20poly1305.Overhead
 )
 
 type Key struct {
@@ -76,10 +78,10 @@ func NewEncryptor(ctx context.Context, key *Key, digest *repb.Digest, w interfac
 		digest:   digest,
 		groupID:  groupID,
 		w:        w,
-		nonceBuf: make([]byte, NonceSize),
+		nonceBuf: make([]byte, nonceSize),
 		// We allocate enough space to store an encrypted chunk so that we can
 		// do the encryption in place.
-		buf:    make([]byte, chunkSize+EncryptedChunkOverhead),
+		buf:    make([]byte, chunkSize+encryptedChunkOverhead),
 		bufCap: chunkSize,
 	}, nil
 }
@@ -109,7 +111,7 @@ func (e *Encryptor) Metadata() *sgpb.EncryptionMetadata {
 
 func (e *Encryptor) Write(p []byte) (n int, err error) {
 	if !e.wroteHeader {
-		if _, err := e.w.Write([]byte(EncryptedDataHeaderSignature)); err != nil {
+		if _, err := e.w.Write([]byte(encryptedDataHeaderSignature)); err != nil {
 			return 0, err
 		}
 		if _, err := e.w.Write([]byte{EncryptedDataHeaderVersion}); err != nil {
@@ -147,4 +149,103 @@ func (e *Encryptor) Commit() error {
 
 func (e *Encryptor) Close() error {
 	return e.w.Close()
+}
+
+type Decryptor struct {
+	ciph               cipher.AEAD
+	digest             *repb.Digest
+	groupID            string
+	r                  io.ReadCloser
+	headerValidated    bool
+	lastChunkValidated bool
+	chunkCounter       uint32
+
+	// buf contains the decrypted plaintext ready to be read.
+	buf []byte
+	// bufIdx is the index at which the plaintext can be read.
+	bufIdx int
+	// bufLen is the amount of plaintext in the buf ready to be read.
+	bufLen int
+}
+
+func NewDecryptor(ctx context.Context, key *Key, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*Decryptor, error) {
+	ciph, err := GetCipher(key.Key)
+	if err != nil {
+		return nil, err
+	}
+	return &Decryptor{
+		ciph:    ciph,
+		digest:  digest,
+		groupID: groupID,
+		r:       r,
+		buf:     make([]byte, chunkSize+encryptedChunkOverhead),
+	}, nil
+}
+
+func (d *Decryptor) Read(p []byte) (n int, err error) {
+	if !d.headerValidated {
+		fileHeader := make([]byte, 3)
+		if _, err := d.r.Read(fileHeader); err != nil {
+			return 0, err
+		}
+		if string(fileHeader[0:2]) != encryptedDataHeaderSignature {
+			return 0, status.InternalErrorf("invalid file signature %d %d", fileHeader[0], fileHeader[1])
+		}
+		if fileHeader[2] != EncryptedDataHeaderVersion {
+			return 0, status.InternalErrorf("invalid file version %d", fileHeader[2])
+		}
+		d.headerValidated = true
+	}
+
+	// No plaintext available, need to decrypt another chunk.
+	if d.bufIdx >= d.bufLen {
+		n, err := io.ReadFull(d.r, d.buf)
+		// ErrUnexpectedEOF indicates that the underlying reader returned EOF
+		// before the buffer could be filled, which is expected on the last
+		// chunk.
+		lastChunk := err == io.ErrUnexpectedEOF
+		if err != nil && err != io.ErrUnexpectedEOF {
+			if err == io.EOF && !d.lastChunkValidated {
+				return 0, status.DataLossError("did not find last chunk, file possibly truncated")
+			}
+			if err == io.EOF {
+				metrics.EncryptionDecryptedBlobCount.Inc()
+			}
+			return 0, err
+		}
+
+		if n < nonceSize {
+			return 0, status.InternalError("could not read nonce for chunk")
+		}
+
+		chunkAuth := MakeChunkAuthHeader(d.chunkCounter, d.digest, d.groupID, lastChunk)
+		d.chunkCounter++
+		nonce := d.buf[:nonceSize]
+		ciphertext := d.buf[nonceSize:n]
+
+		pt, err := d.ciph.Open(ciphertext[:0], nonce, ciphertext, chunkAuth)
+		if err != nil {
+			metrics.EncryptionDecryptionErrorCount.Inc()
+			return 0, err
+		}
+
+		metrics.EncryptionDecryptedBlockCount.Inc()
+
+		// We decrypted in place so the plaintext will start where the
+		// ciphertext was, past the nonce.
+		d.bufIdx = nonceSize
+		d.bufLen = len(pt) + nonceSize
+
+		if lastChunk {
+			d.lastChunkValidated = true
+		}
+	}
+
+	n = copy(p, d.buf[d.bufIdx:d.bufLen])
+	d.bufIdx += n
+	return n, nil
+}
+
+func (d *Decryptor) Close() error {
+	return d.r.Close()
 }
