@@ -10,7 +10,7 @@ go_library(
         "//enterprise/server/util/redisutil",
         "//server/cache/config",
         "//server/real_environment",
-        "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_redis_go_redis_v9//:go-redis",
     ],
 )
 
@@ -22,7 +22,7 @@ go_test(
         ":redis_metrics_collector",
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
-        "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_redis_go_redis_v9//:go-redis",
         "@com_github_stretchr_testify//require",
     ],
 )
