@@ -9,7 +9,7 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
-        "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_redis_go_redis_v9//:go-redis",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//status",
     ],

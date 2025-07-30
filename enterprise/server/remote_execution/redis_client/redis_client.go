@@ -16,7 +16,7 @@ import (
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 )
 
-var redisPubSubPoolSize = flag.Int("remote_execution.redis_pubsub_pool_size", 10_000, "Maximum number of connections used for waiting for execution updates.")
+var redisPubSubPoolSize = flag.Int("remote_execution.redis_pubsub_pool_size", 5_000, "Maximum number of connections used for waiting for execution updates.")
 
 func RegisterRemoteExecutionClient(env *real_environment.RealEnv) error {
 	if !remote_execution_config.RemoteExecutionEnabled() {
@@ -48,9 +48,9 @@ func RegisterRemoteExecutionRedisPubSubClient(env *real_environment.RealEnv) err
 	// We ideally would not want to  have an upper bound on the # of connections but the redis client library
 	// does not  provide such an option so we  set the pool size to a high value to prevent this redis client
 	// from being the bottleneck.
+	opts.PoolFIFO = true
 	opts.PoolSize = *redisPubSubPoolSize
-	opts.IdleTimeout = 1 * time.Minute
-	opts.IdleCheckFrequency = 1 * time.Minute
+	opts.ConnMaxIdleTime = 1 * time.Minute
 	opts.PoolTimeout = 5 * time.Second
 
 	// The retry settings are tuned to play along with the Bazel execution retry settings. If there's an issue
