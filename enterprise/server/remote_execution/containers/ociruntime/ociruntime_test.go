@@ -180,6 +180,9 @@ func TestRun(t *testing.T) {
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
+// TestLimitedStd tests that the executor enforces a limit on the size of
+// stdout/stderr output from a command, and returns an error if the limit is
+// exceeded.
 func TestLimitedStd(t *testing.T) {
 	// OCI Setup
 	setupNetworking(t)
@@ -213,13 +216,11 @@ func TestLimitedStd(t *testing.T) {
 
 	// Run
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `
-			echo 'hello world'
-		`},
+		Arguments: []string{"sh", "-c", `echo 'hello world'`},
 	}
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.Error(t, res.Error)
-	assert.True(t, status.IsResourceExhaustedError(res.Error))
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted error, got %s", res.Error)
 	assert.Contains(t, res.Error.Error(), "stdout/stderr output size limit exceeded")
 	assert.Contains(t, res.Error.Error(), "12 bytes requested")
 	assert.Contains(t, res.Error.Error(), "limit: 10 bytes")

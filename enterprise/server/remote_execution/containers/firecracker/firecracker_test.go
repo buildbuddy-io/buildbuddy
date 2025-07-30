@@ -373,6 +373,9 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	assertCommandResult(t, expectedResult, res)
 }
 
+// TestLimitedStd tests that the executor enforces a limit on the size of
+// stdout/stderr output from a command, and returns an error if the limit is
+// exceeded.
 func TestLimitedStd(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
@@ -400,10 +403,9 @@ func TestLimitedStd(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `echo 'hello world'`},
 	}
-	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
 	require.Error(t, res.Error)
-	assert.True(t, status.IsUnavailableError(res.Error), "expected UnavailableError, got %s", res.Error)
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted error, got %s", res.Error)
 	assert.Contains(t, res.Error.Error(), "stdout/stderr output size limit exceeded")
 	assert.Contains(t, res.Error.Error(), "12 bytes requested")
 	assert.Contains(t, res.Error.Error(), "limit: 10 bytes")
