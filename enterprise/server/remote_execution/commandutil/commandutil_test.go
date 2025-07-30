@@ -100,7 +100,7 @@ func TestLimitStdErrOutWriter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			flags.Set(t, "executor.stdouterr_max_size_bytes", tt.limit)
 			var buf bytes.Buffer
-			w := commandutil.LimitStdErrOutWriter(&buf)
+			w := commandutil.LimitStdOutErrWriter(&buf)
 
 			for i, write := range tt.writes {
 				n, err := w.Write([]byte(write))

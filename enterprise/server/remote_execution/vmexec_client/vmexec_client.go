@@ -57,8 +57,8 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 		stdoutw = io.MultiWriter(os.Stdout, stdoutw)
 		stderrw = io.MultiWriter(os.Stderr, stderrw)
 	}
-	stdoutw = commandutil.LimitStdErrOutWriter(stdoutw)
-	stderrw = commandutil.LimitStdErrOutWriter(stderrw)
+	stdoutw = commandutil.LimitStdOutErrWriter(stdoutw)
+	stderrw = commandutil.LimitStdOutErrWriter(stderrw)
 	req := &vmxpb.ExecRequest{
 		WorkingDirectory: workDir,
 		User:             user,

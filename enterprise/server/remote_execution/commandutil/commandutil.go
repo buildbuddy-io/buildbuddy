@@ -46,7 +46,7 @@ var (
 	allDigits = regexp.MustCompile(`^\d+$`)
 )
 
-func LimitStdErrOutWriter(w io.Writer) io.Writer {
+func LimitStdOutErrWriter(w io.Writer) io.Writer {
 	if *StdOutErrMaxSize == 0 {
 		return w
 	}
@@ -113,8 +113,8 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 		cmd.Stdout = io.MultiWriter(cmd.Stdout, logWriter)
 		cmd.Stderr = io.MultiWriter(cmd.Stderr, logWriter)
 	}
-	cmd.Stdout = LimitStdErrOutWriter(cmd.Stdout)
-	cmd.Stderr = LimitStdErrOutWriter(cmd.Stderr)
+	cmd.Stdout = LimitStdOutErrWriter(cmd.Stdout)
+	cmd.Stderr = LimitStdOutErrWriter(cmd.Stderr)
 	cmd.SysProcAttr = getDefaultSysProcAttr()
 	for _, envVar := range command.GetEnvironmentVariables() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
