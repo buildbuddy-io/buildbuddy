@@ -23,6 +23,8 @@ type ScreenWriter struct {
 	*bkterminal.Screen
 	OutputAccumulator strings.Builder
 	WriteErr          error
+	windowHeight      int
+	renderer          *bkterminal.ANSIRenderer
 }
 
 // NewScreenWriter returns a ScreenWriter backed by an ANSI state machine with a
@@ -31,12 +33,13 @@ type ScreenWriter struct {
 // process are recorded in ScrollOutWriteErr.
 // A windowHeight of less than 1 indicates a window of unlimited size.
 func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
-	s, err := bkterminal.NewScreen(bkterminal.WithMaxSize(0, windowHeight), bkterminal.WithANSIRenderer(), bkterminal.WithRealWindow())
+	w := &ScreenWriter{windowHeight: windowHeight, renderer: &bkterminal.ANSIRenderer{}}
+	s, err := bkterminal.NewScreen(bkterminal.WithMaxSize(0, w.windowHeight), bkterminal.WithRenderer(w.renderer), bkterminal.WithRealWindow())
 	if err != nil {
 		return nil, err
 	}
-	w := &ScreenWriter{Screen: s}
-	if windowHeight > 0 {
+	w.Screen = s
+	if w.windowHeight > 0 {
 		s.ScrollOutFunc = func(line string) { _, w.WriteErr = w.OutputAccumulator.WriteString(line) }
 		if err := s.SetSize(Columns, windowHeight); err != nil {
 			return nil, err
@@ -50,14 +53,15 @@ func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
 }
 
 func (w *ScreenWriter) Render() string {
-	s, _ := w.Screen.AsANSI()
+	s, _ := w.Screen.AsANSI(w.renderer.Style())
 	return s
 }
 
-func (w *ScreenWriter) Reset(windowHeight int) error {
+func (w *ScreenWriter) Reset() error {
 	w.OutputAccumulator.Reset()
+	w.renderer = &bkterminal.ANSIRenderer{}
 	var err error
-	w.Screen, err = bkterminal.NewScreen(bkterminal.WithMaxSize(0, windowHeight), bkterminal.WithANSIRenderer())
+	w.Screen, err = bkterminal.NewScreen(bkterminal.WithMaxSize(0, w.windowHeight), bkterminal.WithRenderer(w.renderer))
 	return err
 }
 

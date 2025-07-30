@@ -447,7 +447,7 @@ func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, erro
 		if err != nil {
 			return 0, err
 		}
-		w.terminal.Reset(0)
+		w.terminal.Reset()
 		return n, err
 	}
 	if w.terminal.WriteErr != nil {
