@@ -17,6 +17,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Remove podman (needed to run podman tests)
+        run: |
+          sudo apt-get remove -y podman
+
       - name: Restore caches
         id: cache-restore
         uses: ./.github/actions/cache-restore
