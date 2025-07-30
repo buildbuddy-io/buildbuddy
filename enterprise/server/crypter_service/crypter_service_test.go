@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	mrand "math/rand"
-
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -21,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdata"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -160,20 +159,6 @@ func generateKMSKey(t *testing.T, f *fakeKMS, id string) string {
 	return id
 }
 
-func writeInRandomChunks(t *testing.T, w interfaces.Encryptor, data []byte) {
-	for len(data) > 0 {
-		n := mrand.Intn(2048)
-		if n > len(data) {
-			n = len(data)
-		}
-		_, err := w.Write(data[:n])
-		require.NoError(t, err)
-		data = data[n:]
-	}
-	err := w.Commit()
-	require.NoError(t, err)
-}
-
 func createKey(t *testing.T, env environment.Env, clock clockwork.Clock, keyID, groupID, groupKeyURI string) *tables.EncryptionKeyVersion {
 	kmsClient := env.GetKMS()
 
@@ -255,7 +240,7 @@ func TestEncryptDecrypt(t *testing.T) {
 
 			// Write the test data in random chunk sizes. The input chunk sizes should
 			// not affect the final result.
-			writeInRandomChunks(t, e, testData)
+			testdata.WriteInRandomChunks(t, e, testData)
 
 			d, err := crypter.newDecryptorWithChunkSize(ctx, dummyDigest, io.NopCloser(out), e.Metadata(), groupID, 1024)
 			require.NoError(t, err)
@@ -296,7 +281,7 @@ func TestDecryptWrongGroup(t *testing.T) {
 	_, err = rand.Read(testData)
 	require.NoError(t, err)
 
-	writeInRandomChunks(t, e, testData)
+	testdata.WriteInRandomChunks(t, e, testData)
 
 	// Reading with the correct groupID should be OK.
 	d, err := crypter.newDecryptorWithChunkSize(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata(), groupID, 1024)
@@ -339,7 +324,7 @@ func TestDecryptWrongDigest(t *testing.T) {
 	_, err = rand.Read(testData)
 	require.NoError(t, err)
 
-	writeInRandomChunks(t, e, testData)
+	testdata.WriteInRandomChunks(t, e, testData)
 
 	d, err := crypter.newDecryptorWithChunkSize(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), e.Metadata(), groupID, 1024)
 	require.NoError(t, err)
@@ -399,7 +384,7 @@ func TestKeyLookup(t *testing.T) {
 		require.EqualValues(t, c.Metadata().GetVersion(), 1)
 
 		input := []byte("hello world")
-		writeInRandomChunks(t, c, input)
+		testdata.WriteInRandomChunks(t, c, input)
 		d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), c.Metadata())
 		require.NoError(t, err)
 		decrypted := make([]byte, len(input))
@@ -419,7 +404,7 @@ func TestKeyLookup(t *testing.T) {
 		require.EqualValues(t, c.Metadata().GetVersion(), 1)
 
 		input := []byte("hello universe")
-		writeInRandomChunks(t, c, input)
+		testdata.WriteInRandomChunks(t, c, input)
 		d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), c.Metadata())
 		require.NoError(t, err)
 		decrypted := make([]byte, len(input))
@@ -466,7 +451,7 @@ func testEncrypt(ctx context.Context, t *testing.T, auther *testauth.TestAuthent
 	require.Equal(t, c.Metadata().GetEncryptionKeyId(), expectedKeyID)
 	require.EqualValues(t, c.Metadata().GetVersion(), 1)
 
-	writeInRandomChunks(t, c, input)
+	testdata.WriteInRandomChunks(t, c, input)
 	return out.Bytes(), c.Metadata()
 }
 

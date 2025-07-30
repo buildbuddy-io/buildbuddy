@@ -20,5 +20,11 @@ go_library(
 go_test(
     name = "crypter_test",
     srcs = ["crypter_test.go"],
-    deps = ["@com_github_stretchr_testify//require"],
+    deps = [
+        ":crypter",
+        "//proto:remote_execution_go_proto",
+        "//server/testutil/testdata",
+        "//server/util/ioutil",
+        "@com_github_stretchr_testify//require",
+    ],
 )
