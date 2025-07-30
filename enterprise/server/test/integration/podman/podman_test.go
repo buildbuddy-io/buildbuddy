@@ -161,6 +161,9 @@ func TestRunHelloWorld(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		c.Remove(context.Background())
+	})
 	result := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	require.NoError(t, result.Error)
@@ -289,6 +292,9 @@ func TestRun_Timeout(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		c.Remove(context.Background())
+	})
 
 	// Ensure the image is cached
 	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
@@ -340,6 +346,9 @@ func TestExec_Timeout(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		c.Remove(context.Background())
+	})
 
 	// Ensure the image is cached
 	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
@@ -465,6 +474,9 @@ func TestForceRoot(t *testing.T) {
 			}
 			c, err := provider.New(ctx, &container.Init{Props: props})
 			require.NoError(t, err)
+			t.Cleanup(func() {
+				c.Remove(context.Background())
+			})
 			result := c.Run(ctx, cmd, workDir, oci.Credentials{})
 			require.NoError(t, result.Error)
 			assert.Equal(t, tc.wantUID, strings.TrimSpace(string(result.Stdout)))
@@ -513,6 +525,9 @@ func TestUser(t *testing.T) {
 			}
 			c, err := provider.New(ctx, &container.Init{Props: props})
 			require.NoError(t, err)
+			t.Cleanup(func() {
+				c.Remove(context.Background())
+			})
 			result := c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-u", "-n"},
 			}, workDir, oci.Credentials{})
@@ -563,6 +578,9 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		c.Remove(context.Background())
+	})
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
@@ -589,6 +607,9 @@ func TestPodmanRun_CommandNotExecuted_RecordsStats(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		c.Remove(context.Background())
+	})
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
@@ -632,6 +653,9 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		c.Remove(context.Background())
+	})
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 	require.NoError(t, res.Error)
@@ -658,6 +682,9 @@ func TestSignal(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		c.Remove(context.Background())
+	})
 
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
 		trap 'echo "Got SIGTERM" && exit 1' TERM
