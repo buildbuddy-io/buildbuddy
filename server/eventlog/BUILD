@@ -31,6 +31,7 @@ go_test(
         "//server/testutil/mockstore",
         "//server/testutil/testenv",
         "//server/util/terminal",
+        "//server/util/terminal/testdata",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
