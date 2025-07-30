@@ -19,6 +19,8 @@ import (
 )
 
 const (
+	// This must be exposed because it is used as an input to the
+	// key-derivation function in crypter_service.
 	EncryptedDataHeaderVersion = 1
 
 	encryptedDataHeaderSignature = "BB"
