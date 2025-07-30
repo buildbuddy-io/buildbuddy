@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -27,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/jonboulle/clockwork"
 	"go.uber.org/atomic"
-	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/time/rate"
 	"gorm.io/gorm"
@@ -45,12 +43,6 @@ var (
 )
 
 const (
-	encryptedDataHeaderSignature = "BB"
-	encryptedDataHeaderVersion   = 1
-	plainTextChunkSize           = 1024 * 1024 // 1 MiB
-	nonceSize                    = chacha20poly1305.NonceSizeX
-	encryptedChunkOverhead       = nonceSize + chacha20poly1305.Overhead
-
 	// How often to check for keys that need to be refreshed.
 	keyRefreshScanFrequency = 10 * time.Second
 	// How long to wait after a failed refresh attempt before trying again.
@@ -233,7 +225,7 @@ func (c *keyCache) derivedKey(groupID string, key *tables.EncryptionKeyVersion) 
 	ckSrc = append(ckSrc, masterKeyPortion...)
 	ckSrc = append(ckSrc, groupKeyPortion...)
 
-	info := append([]byte{encryptedDataHeaderVersion}, []byte(groupID)...)
+	info := append([]byte{crypter.EncryptedDataHeaderVersion}, []byte(groupID)...)
 	derivedKey := make([]byte, 32)
 	r := hkdf.Expand(sha256.New, ckSrc, info)
 	n, err := r.Read(derivedKey)
@@ -455,14 +447,6 @@ type Encryptor struct {
 	bufCap int
 }
 
-func makeChunkAuthHeader(chunkIndex uint32, d *repb.Digest, groupID string, lastChunk bool) []byte {
-	chunk := fmt.Sprint(chunkIndex)
-	if lastChunk {
-		chunk = "last"
-	}
-	return []byte(strings.Join([]string{fmt.Sprint(encryptedDataHeaderVersion), chunk, digest.String(d), groupID}, ","))
-}
-
 func (e *Encryptor) flushBlock(lastChunk bool) error {
 	if _, err := rand.Read(e.nonceBuf); err != nil {
 		return err
@@ -471,7 +455,7 @@ func (e *Encryptor) flushBlock(lastChunk bool) error {
 		return err
 	}
 
-	chunkAuth := makeChunkAuthHeader(e.chunkCounter, e.digest, e.groupID, lastChunk)
+	chunkAuth := crypter.MakeChunkAuthHeader(e.chunkCounter, e.digest, e.groupID, lastChunk)
 	e.chunkCounter++
 	ct := e.ciph.Seal(e.buf[:0], e.nonceBuf, e.buf[:e.bufIdx], chunkAuth)
 	if _, err := e.w.Write(ct); err != nil {
@@ -488,10 +472,10 @@ func (e *Encryptor) Metadata() *sgpb.EncryptionMetadata {
 
 func (e *Encryptor) Write(p []byte) (n int, err error) {
 	if !e.wroteHeader {
-		if _, err := e.w.Write([]byte(encryptedDataHeaderSignature)); err != nil {
+		if _, err := e.w.Write([]byte(crypter.EncryptedDataHeaderSignature)); err != nil {
 			return 0, err
 		}
-		if _, err := e.w.Write([]byte{encryptedDataHeaderVersion}); err != nil {
+		if _, err := e.w.Write([]byte{crypter.EncryptedDataHeaderVersion}); err != nil {
 			return 0, err
 		}
 		e.wroteHeader = true
@@ -551,10 +535,10 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 		if _, err := d.r.Read(fileHeader); err != nil {
 			return 0, err
 		}
-		if string(fileHeader[0:2]) != encryptedDataHeaderSignature {
+		if string(fileHeader[0:2]) != crypter.EncryptedDataHeaderSignature {
 			return 0, status.InternalErrorf("invalid file signature %d %d", fileHeader[0], fileHeader[1])
 		}
-		if fileHeader[2] != encryptedDataHeaderVersion {
+		if fileHeader[2] != crypter.EncryptedDataHeaderVersion {
 			return 0, status.InternalErrorf("invalid file version %d", fileHeader[2])
 		}
 		d.headerValidated = true
@@ -577,14 +561,14 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 			return 0, err
 		}
 
-		if n < nonceSize {
+		if n < crypter.NonceSize {
 			return 0, status.InternalError("could not read nonce for chunk")
 		}
 
-		chunkAuth := makeChunkAuthHeader(d.chunkCounter, d.digest, d.groupID, lastChunk)
+		chunkAuth := crypter.MakeChunkAuthHeader(d.chunkCounter, d.digest, d.groupID, lastChunk)
 		d.chunkCounter++
-		nonce := d.buf[:nonceSize]
-		ciphertext := d.buf[nonceSize:n]
+		nonce := d.buf[:crypter.NonceSize]
+		ciphertext := d.buf[crypter.NonceSize:n]
 
 		pt, err := d.ciph.Open(ciphertext[:0], nonce, ciphertext, chunkAuth)
 		if err != nil {
@@ -596,8 +580,8 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 
 		// We decrypted in place so the plaintext will start where the
 		// ciphertext was, past the nonce.
-		d.bufIdx = nonceSize
-		d.bufLen = len(pt) + nonceSize
+		d.bufIdx = crypter.NonceSize
+		d.bufLen = len(pt) + crypter.NonceSize
 
 		if lastChunk {
 			d.lastChunkValidated = true
@@ -628,10 +612,10 @@ func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Di
 		digest:   digest,
 		groupID:  groupID,
 		w:        w,
-		nonceBuf: make([]byte, nonceSize),
+		nonceBuf: make([]byte, crypter.NonceSize),
 		// We allocate enough space to store an encrypted chunk so that we can
 		// do the encryption in place.
-		buf:    make([]byte, chunkSize+encryptedChunkOverhead),
+		buf:    make([]byte, chunkSize+crypter.EncryptedChunkOverhead),
 		bufCap: chunkSize,
 	}, nil
 }
@@ -649,7 +633,7 @@ func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w inter
 	if err != nil {
 		return nil, err
 	}
-	return c.newEncryptorWithChunkSize(ctx, digest, w, u.GetGroupID(), plainTextChunkSize)
+	return c.newEncryptorWithChunkSize(ctx, digest, w, u.GetGroupID(), crypter.PlainTextChunkSize)
 }
 
 func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*Decryptor, error) {
@@ -666,7 +650,7 @@ func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Di
 		digest:  digest,
 		groupID: groupID,
 		r:       r,
-		buf:     make([]byte, chunkSize+encryptedChunkOverhead),
+		buf:     make([]byte, chunkSize+crypter.EncryptedChunkOverhead),
 	}, nil
 }
 
@@ -675,7 +659,7 @@ func (c *Crypter) NewDecryptor(ctx context.Context, digest *repb.Digest, r io.Re
 	if err != nil {
 		return nil, err
 	}
-	return c.newDecryptorWithChunkSize(ctx, digest, r, em, u.GetGroupID(), plainTextChunkSize)
+	return c.newDecryptorWithChunkSize(ctx, digest, r, em, u.GetGroupID(), crypter.PlainTextChunkSize)
 }
 
 type encryptionKeyVersionWithGroupID struct {

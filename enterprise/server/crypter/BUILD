@@ -7,7 +7,9 @@ go_library(
     srcs = ["crypter.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter",
     deps = [
+        "//proto:remote_execution_go_proto",
         "//proto:storage_go_proto",
+        "//server/remote_cache/digest",
         "@org_golang_x_crypto//chacha20poly1305",
     ],
 )
