@@ -33,7 +33,7 @@ type Key struct {
 	Metadata *sgpb.EncryptionMetadata
 }
 
-func GetCipher(compositeKey []byte) (cipher.AEAD, error) {
+func getCipher(compositeKey []byte) (cipher.AEAD, error) {
 	e, err := chacha20poly1305.NewX(compositeKey)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func GetCipher(compositeKey []byte) (cipher.AEAD, error) {
 	return e, nil
 }
 
-func MakeChunkAuthHeader(chunkIndex uint32, d *repb.Digest, groupID string, lastChunk bool) []byte {
+func makeChunkAuthHeader(chunkIndex uint32, d *repb.Digest, groupID string, lastChunk bool) []byte {
 	chunk := fmt.Sprint(chunkIndex)
 	if lastChunk {
 		chunk = "last"
@@ -70,7 +70,7 @@ type Encryptor struct {
 }
 
 func NewEncryptor(ctx context.Context, key *Key, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*Encryptor, error) {
-	ciph, err := GetCipher(key.Key)
+	ciph, err := getCipher(key.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (e *Encryptor) flushBlock(lastChunk bool) error {
 		return err
 	}
 
-	chunkAuth := MakeChunkAuthHeader(e.chunkCounter, e.digest, e.groupID, lastChunk)
+	chunkAuth := makeChunkAuthHeader(e.chunkCounter, e.digest, e.groupID, lastChunk)
 	e.chunkCounter++
 	ct := e.ciph.Seal(e.buf[:0], e.nonceBuf, e.buf[:e.bufIdx], chunkAuth)
 	if _, err := e.w.Write(ct); err != nil {
@@ -171,7 +171,7 @@ type Decryptor struct {
 }
 
 func NewDecryptor(ctx context.Context, key *Key, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*Decryptor, error) {
-	ciph, err := GetCipher(key.Key)
+	ciph, err := getCipher(key.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +220,7 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 			return 0, status.InternalError("could not read nonce for chunk")
 		}
 
-		chunkAuth := MakeChunkAuthHeader(d.chunkCounter, d.digest, d.groupID, lastChunk)
+		chunkAuth := makeChunkAuthHeader(d.chunkCounter, d.digest, d.groupID, lastChunk)
 		d.chunkCounter++
 		nonce := d.buf[:nonceSize]
 		ciphertext := d.buf[nonceSize:n]
