@@ -5,6 +5,7 @@ go_library(
     srcs = ["crypter_service.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service",
     deps = [
+        "//enterprise/server/crypter",
         "//proto:encryption_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:storage_go_proto",

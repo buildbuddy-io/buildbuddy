@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -99,7 +100,7 @@ type keyCache struct {
 	dbh   interfaces.DBHandle
 	kms   interfaces.KMS
 	clock clockwork.Clock
-	sf    singleflight.Group[string, *loadedKey]
+	sf    singleflight.Group[string, *crypter.Key]
 
 	data sync.Map
 
@@ -158,8 +159,8 @@ func (c *keyCache) checkCacheEntry(ck cacheKey, ce *cacheEntry) {
 		loadedKey, err := c.refreshKey(ctx, ck, false /*=cacheErr*/)
 		if err == nil {
 			ce.mu.Lock()
-			ce.derivedKey = loadedKey.derivedKey
-			ce.keyMetadata = loadedKey.metadata
+			ce.derivedKey = loadedKey.Key
+			ce.keyMetadata = loadedKey.Metadata
 			ce.expiresAfter = c.clock.Now().Add(*keyTTL)
 			ce.mu.Unlock()
 		} else {
@@ -305,12 +306,7 @@ func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]
 	return key, md, nil
 }
 
-type loadedKey struct {
-	derivedKey []byte
-	metadata   *sgpb.EncryptionMetadata
-}
-
-func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cacheError bool) (*loadedKey, error) {
+func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cacheError bool) (*crypter.Key, error) {
 	var lastErr error
 	opts := retry.DefaultOptions()
 	opts.Clock = c.clock
@@ -319,7 +315,7 @@ func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cache
 		key, md, err := c.refreshKeySingleAttempt(ctx, ck)
 		// TODO(vadim): figure out if there are other KMS errors we can treat as immediate failures
 		if err == nil || status.IsNotFoundError(err) {
-			return &loadedKey{key, md}, err
+			return &crypter.Key{Key: key, Metadata: md}, err
 		}
 		lastErr = err
 	}
@@ -332,8 +328,8 @@ func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cache
 	return nil, status.UnavailableErrorf("exhausted attempts to refresh key, last error: %s", lastErr)
 }
 
-func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool) (*loadedKey, error) {
-	v, _, err := c.sf.Do(ctx, ck.String(), func(ctx context.Context) (*loadedKey, error) {
+func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool) (*crypter.Key, error) {
+	v, _, err := c.sf.Do(ctx, ck.String(), func(ctx context.Context) (*crypter.Key, error) {
 		metrics.EncryptionKeyRefreshCount.Inc()
 		k, err := c.refreshKeyWithRetries(ctx, ck, cacheError)
 		if err != nil {
@@ -344,7 +340,7 @@ func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool)
 	return v, err
 }
 
-func (c *keyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*loadedKey, error) {
+func (c *keyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*crypter.Key, error) {
 	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -369,7 +365,7 @@ func (c *keyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*l
 		if e.err != nil {
 			return nil, e.err
 		}
-		return &loadedKey{e.derivedKey, e.keyMetadata}, nil
+		return &crypter.Key{Key: e.derivedKey, Metadata: e.keyMetadata}, nil
 	}
 
 	// If obtaining the key fails, cache the error.
@@ -381,11 +377,11 @@ func (c *keyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*l
 	return loadedKey, nil
 }
 
-func (c *keyCache) encryptionKey(ctx context.Context) (*loadedKey, error) {
+func (c *keyCache) encryptionKey(ctx context.Context) (*crypter.Key, error) {
 	return c.loadKey(ctx, nil)
 }
 
-func (c *keyCache) decryptionKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*loadedKey, error) {
+func (c *keyCache) decryptionKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*crypter.Key, error) {
 	if em == nil {
 		return nil, status.FailedPreconditionError("encryption metadata cannot be nil")
 	}
@@ -617,25 +613,17 @@ func (d *Decryptor) Close() error {
 	return d.r.Close()
 }
 
-func (c *Crypter) getCipher(compositeKey []byte) (cipher.AEAD, error) {
-	e, err := chacha20poly1305.NewX(compositeKey)
-	if err != nil {
-		return nil, err
-	}
-	return e, nil
-}
-
 func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*Encryptor, error) {
 	loadedKey, err := c.cache.encryptionKey(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ciph, err := c.getCipher(loadedKey.derivedKey)
+	ciph, err := crypter.GetCipher(loadedKey.Key)
 	if err != nil {
 		return nil, err
 	}
 	return &Encryptor{
-		md:       loadedKey.metadata,
+		md:       loadedKey.Metadata,
 		ciph:     ciph,
 		digest:   digest,
 		groupID:  groupID,
@@ -653,7 +641,7 @@ func (c *Crypter) ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, erro
 	if err != nil {
 		return nil, err
 	}
-	return loadedKey.metadata, nil
+	return loadedKey.Metadata, nil
 }
 
 func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser) (interfaces.Encryptor, error) {
@@ -669,7 +657,7 @@ func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Di
 	if err != nil {
 		return nil, err
 	}
-	ciph, err := c.getCipher(loadedKey.derivedKey)
+	ciph, err := crypter.GetCipher(loadedKey.Key)
 	if err != nil {
 		return nil, err
 	}
