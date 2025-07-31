@@ -39,12 +39,12 @@ type CPULeaser struct {
 	cpus               []CPUInfo
 	leases             []lease
 	load               map[int]int
-	physicalProcessors int
+	numaNodes int
 }
 
 type CPUInfo struct {
 	Processor  int // cpuset id
-	PhysicalID int // numa node
+	NumaNode int // numa node
 }
 
 type lease struct {
@@ -53,12 +53,12 @@ type lease struct {
 	location string // only set if *warnAboutLeaks is enabled
 }
 
-func toCPUInfos(processors []int, physicalID int) []CPUInfo {
+func toCPUInfos(processors []int, numaNode int) []CPUInfo {
 	infos := make([]CPUInfo, len(processors))
 	for i, p := range processors {
 		infos[i] = CPUInfo{
 			Processor:  p,
-			PhysicalID: physicalID,
+			NumaNode: numaNode,
 		}
 	}
 	return infos
@@ -92,13 +92,13 @@ func parseCPUs(s string) ([]CPUInfo, error) {
 	var cpus []CPUInfo
 	nodeRanges := strings.Split(s, ",")
 	for _, r := range nodeRanges {
-		physicalID := -1
+		numaNode := -1
 		if numaStr, rangeStr, ok := strings.Cut(r, ":"); ok {
 			numaID, err := strconv.Atoi(numaStr)
 			if err != nil {
 				return nil, fmt.Errorf("invalid NUMA node %q", numaStr)
 			}
-			physicalID = numaID
+			numaNode = numaID
 			r = rangeStr
 		}
 		startStr, endStr, isRange := strings.Cut(r, "-")
@@ -123,7 +123,7 @@ func parseCPUs(s string) ([]CPUInfo, error) {
 		for processor := start; processor <= end; processor++ {
 			cpus = append(cpus, CPUInfo{
 				Processor:  processor,
-				PhysicalID: physicalID,
+				NumaNode: numaNode,
 			})
 		}
 	}
@@ -159,17 +159,17 @@ func NewLeaser(opts LeaserOpts) (*CPULeaser, error) {
 		}
 		// Validate "NODE:" prefixes against system CPU information, or populate
 		// them if they were omitted.
-		physicalIDs := make(map[int]int, len(systemCPUs))
+		numaNodes := make(map[int]int, len(systemCPUs))
 		for _, cpu := range systemCPUs {
-			physicalIDs[cpu.Processor] = cpu.PhysicalID
+			numaNodes[cpu.Processor] = cpu.NumaNode
 		}
 		for i := range c {
 			cpu := &c[i]
-			if cpu.PhysicalID == -1 {
-				cpu.PhysicalID = physicalIDs[cpu.Processor]
+			if cpu.NumaNode == -1 {
+				cpu.NumaNode = numaNodes[cpu.Processor]
 			} else {
-				if physicalIDs[cpu.Processor] != cpu.PhysicalID {
-					return nil, fmt.Errorf("invalid node ID %d for CPU %d: does not match OS-reported ID %d", cpu.PhysicalID, cpu.Processor, physicalIDs[cpu.Processor])
+				if numaNodes[cpu.Processor] != cpu.NumaNode {
+					return nil, fmt.Errorf("invalid node: %d for CPU %d: does not match OS-reported node: %d", cpu.NumaNode, cpu.Processor, numaNodes[cpu.Processor])
 				}
 			}
 		}
@@ -182,10 +182,10 @@ func NewLeaser(opts LeaserOpts) (*CPULeaser, error) {
 	for i, cpu := range leaseableCPUs {
 		cl.cpus[i] = cpu
 		cl.load[cpu.Processor] = 0
-		processors[cpu.PhysicalID] = struct{}{}
+		processors[cpu.NumaNode] = struct{}{}
 	}
-	cl.physicalProcessors = len(processors)
-	log.Debugf("NewLeaser with %d processors and %d cores", cl.physicalProcessors, len(cl.cpus))
+	cl.numaNodes = len(processors)
+	log.Debugf("NewLeaser with %d processors and %d cores", cl.numaNodes, len(cl.cpus))
 	return cl, nil
 }
 
@@ -247,10 +247,10 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 
 	// Find the numa node with the largest number of cores in the first
 	// numCPUs CPUs.
-	numaCount := make(map[int]int, l.physicalProcessors)
+	numaCount := make(map[int]int, l.numaNodes)
 	for i := 0; i < numCPUs; i++ {
 		c := leastLoaded[i]
-		numaCount[c.PhysicalID]++
+		numaCount[c.NumaNode]++
 	}
 	selectedNode := -1
 	numCores := 0
@@ -264,7 +264,7 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 	// Now filter the set of CPUs to just the selected numaNode.
 	leaseSet := make([]int, 0, numCPUs)
 	for _, c := range leastLoaded {
-		if c.PhysicalID != selectedNode {
+		if c.NumaNode != selectedNode {
 			continue
 		}
 		leaseSet = append(leaseSet, c.Processor)
