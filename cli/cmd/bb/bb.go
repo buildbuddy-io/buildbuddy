@@ -118,6 +118,13 @@ func run() (exitCode int, err error) {
 		log.Printf("Failed to bump open file limits: %s", err)
 	}
 
+	// special case if the only argument is `--version`: this is not a proper
+	// startup option, but rather a special case in bazel that skips starting a
+	// bazel server while still allowing access to version information.
+	if len(os.Args[1:]) == 1 && os.Args[1] == "--version" {
+		return bazelisk.Run(os.Args[1:], &bazelisk.RunOpts{Stdout: os.Stdout, Stderr: os.Stderr})
+	}
+
 	// Register all known cli commands so that we can query or iterate them later.
 	register_cli_commands.Register()
 
