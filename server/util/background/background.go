@@ -81,3 +81,32 @@ func ExtendContextForFinalization(parent context.Context, timeout time.Duration)
 	}()
 	return ctx, func() { ctx.cancel(context.Canceled) }
 }
+
+func ExtendContextWithExistingTimeout(parent context.Context) (context.Context, context.CancelFunc) {
+	deadline, ok := parent.Deadline()
+	if !ok {
+		// XXX ????
+		return ExtendContextForFinalization(parent, 30 * time.Second)
+	}
+
+	ctx := newDisconnectedContext(parent)
+	go func() {
+		// Wait for the parent context to be canceled, then after the grace
+		// period, cancel the extended context.
+		select {
+		case <-ctx.Done():
+			return // cancelled manually
+		case <-parent.Done():
+		}
+		// Might be negative, doesn't matter.
+		t := time.NewTimer(deadline.Sub(time.Now()))
+		defer t.Stop()
+		select {
+		case <-ctx.Done():
+			return // cancelled manually
+		case <-t.C:
+		}
+		ctx.cancel(context.DeadlineExceeded)
+	}()
+	return ctx, func() { ctx.cancel(context.Canceled) }
+}

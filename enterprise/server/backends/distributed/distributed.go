@@ -929,23 +929,25 @@ func dedupeBackfills(backfills []*backfillOrder) []*backfillOrder {
 	return deduped
 }
 
-func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (err error) {
+func (c *Cache) backfillPeersInBackground(ctx context.Context, backfills []*backfillOrder) {
 	if len(backfills) == 0 {
-		return nil
+		return
 	}
 	start := time.Now()
-	defer func() {
-		c.log.CtxDebugf(ctx, "backfill took %s err %v", time.Since(start), err)
-	}()
+	bgCtx, cancel := background.ExtendContextWithExistingTimeout(ctx)
 	backfills = dedupeBackfills(backfills)
-	eg, gCtx := errgroup.WithContext(ctx)
+	eg, gCtx := errgroup.WithContext(bgCtx)
 	for _, bf := range backfills {
 		bf := bf
 		eg.Go(func() error {
 			return c.copyFile(gCtx, bf.r, bf.source, bf.dest)
 		})
 	}
-	return eg.Wait()
+	go func() {
+		err := eg.Wait()
+		c.log.CtxDebugf(bgCtx, "backfill took %s err %v", time.Since(start), err)
+		cancel()
+	}()
 }
 
 func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*backfillOrder {
@@ -979,18 +981,13 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error
 		return true, nil
 	}
 	ps := c.readPeers(r.GetDigest())
-	backfill := func() {
-		if err := c.backfillPeers(ctx, c.getBackfillOrders(r, ps)); err != nil {
-			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-		}
-	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		exists, err := c.remoteContains(ctx, peer, r)
 		if err == nil {
 			if exists {
 				c.log.CtxDebugf(ctx, "Contains(%q) found on peer %q", r.GetDigest(), peer)
-				backfill()
+				c.backfillPeersInBackground(ctx, c.getBackfillOrders(r, ps))
 				return exists, err
 			}
 			c.log.CtxDebugf(ctx, "Contains(%q) not found on peer %q (err: %+v)", r.GetDigest(), peer, err)
@@ -1134,9 +1131,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		ps := peerMap[h]
 		backfills = append(backfills, c.getBackfillOrders(r, ps)...)
 	}
-	if err := c.backfillPeers(ctx, backfills); err != nil {
-		c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-	}
+	c.backfillPeersInBackground(ctx, backfills)
 
 	var missing []*repb.Digest
 	for _, r := range resources {
@@ -1179,18 +1174,13 @@ func getIsolation(resources []*rspb.ResourceName) *dcpb.Isolation {
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64, metricsLabel string) (io.ReadCloser, error) {
 	ps := c.readPeers(rn.GetDigest())
-	backfill := func() {
-		if err := c.backfillPeers(ctx, c.getBackfillOrders(rn, ps)); err != nil {
-			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-		}
-	}
 
 	lookups := 0
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		lookups++
 		r, err := c.remoteReader(ctx, peer, rn, offset, limit)
 		if err == nil {
-			backfill()
+			c.backfillPeersInBackground(ctx, c.getBackfillOrders(rn, ps))
 			metrics.DistributedCachePeerLookups.WithLabelValues(
 				metricsLabel,
 				metrics.HitStatusLabel,
@@ -1336,9 +1326,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			backfills = append(backfills, c.getBackfillOrders(r, ps)...)
 		}
 	}
-	if err := c.backfillPeers(ctx, backfills); err != nil {
-		c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-	}
+	c.backfillPeersInBackground(ctx, backfills)
 
 	rsp := make(map[*repb.Digest][]byte, len(resources))
 	for _, r := range resources {
