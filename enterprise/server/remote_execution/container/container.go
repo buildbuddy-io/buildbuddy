@@ -366,11 +366,9 @@ func (s *UsageStats) TrackExecution(ctx context.Context, lifetimeStatsFn func(ct
 				ctx, cancel := background.ExtendContextForFinalization(originalCtx, statsFinalMeasurementDeadlineExtension)
 				defer cancel()
 				stats, err := lifetimeStatsFn(ctx)
-				if err == nil {
-					// TODO: an error will be returned for podman here because
-					// we run containers with --rm, which deletes the container
-					// cgroup. We should do the removal in Remove() instead, so
-					// that we can reliably perform the final stats collection.
+				if err != nil {
+					log.CtxWarningf(ctx, "failed to read final container stats: %s", err)
+				} else {
 					s.Update(stats)
 				}
 				return
