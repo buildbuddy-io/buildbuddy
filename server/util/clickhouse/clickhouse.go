@@ -39,10 +39,11 @@ const (
 )
 
 var (
-	dataSource      = flag.String("olap_database.data_source", "", "The clickhouse database to connect to, specified a a connection string", flag.Secret)
-	maxOpenConns    = flag.Int("olap_database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
-	maxIdleConns    = flag.Int("olap_database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
-	connMaxLifetime = flag.Duration("olap_database.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
+	dataSource         = flag.String("olap_database.data_source", "", "The clickhouse database to connect to, specified a a connection string", flag.Secret)
+	maxOpenConns       = flag.Int("olap_database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
+	maxIdleConns       = flag.Int("olap_database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
+	connMaxLifetime    = flag.Duration("olap_database.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
+	slowQueryThreshold = flag.Duration("olap_database.slow_query_threshold", 1*time.Second, "OLAP queries longer than this duration will be logged with a 'Slow SQL' warning.")
 
 	autoMigrateDB             = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 	printSchemaChangesAndExit = flag.Bool("olap_database.print_schema_changes_and_exit", false, "If set, print schema changes from auto-migration, then exit the program.")
@@ -375,6 +376,10 @@ func Register(env *real_environment.RealEnv) error {
 	}))
 	if err != nil {
 		return status.InternalErrorf("failed to open gorm clickhouse db: %s", err)
+	}
+	db.Logger = &gormutil.Logger{
+		SlowThreshold: *slowQueryThreshold,
+		LogLevel:      logger.Warn,
 	}
 	gormutil.InstrumentMetrics(db, gormRecordOpStartTimeCallbackKey, recordMetricsBeforeFn, gormRecordMetricsCallbackKey, recordMetricsAfterFn)
 	if *autoMigrateDB || *printSchemaChangesAndExit {
