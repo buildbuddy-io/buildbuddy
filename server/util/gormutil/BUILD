@@ -5,5 +5,10 @@ go_library(
     srcs = ["gormutil.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/gormutil",
     visibility = ["//visibility:public"],
-    deps = ["@io_gorm_gorm//:gorm"],
+    deps = [
+        "//server/util/log",
+        "@io_gorm_gorm//:gorm",
+        "@io_gorm_gorm//logger",
+        "@io_gorm_gorm//utils",
+    ],
 )

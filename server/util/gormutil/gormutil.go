@@ -1,10 +1,17 @@
 package gormutil
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
+	gormutils "gorm.io/gorm/utils"
 )
 
 // InstrumentMetrics registers callback functions before and after other
@@ -56,4 +63,59 @@ func PrintMigrationSchemaChanges(sqlStrings []string) {
 			fmt.Println(sqlStr)
 		}
 	}
+}
+
+// Logger implements GORM's logger.Interface using zerolog.
+type Logger struct {
+	SlowThreshold time.Duration
+	LogLevel      logger.LogLevel
+}
+
+func (l *Logger) Info(ctx context.Context, format string, args ...any) {
+	log.CtxInfof(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+}
+func (l *Logger) Warn(ctx context.Context, format string, args ...any) {
+	log.CtxWarningf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+}
+func (l *Logger) Error(ctx context.Context, format string, args ...any) {
+	log.CtxErrorf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
+}
+
+// Trace is called after every SQL query. If `database.log_queries` is true then
+// it will always log the query. Otherwise it will only log slow or failed
+// queries. NotFound errors are ignored.
+func (l *Logger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	if l.LogLevel <= logger.Silent {
+		return
+	}
+	duration := time.Since(begin)
+	getInfo := func() string {
+		sql, rows := fc()
+		rowsVal := any(rows)
+		if rows <= 0 {
+			// rows < 0 means the query does not have an associated row count.
+			rowsVal = "-"
+		}
+		return fmt.Sprintf("(duration: %s) (rows: %v) %s", duration, rowsVal, sql)
+	}
+	switch {
+	case err != nil && l.LogLevel >= logger.Error && !errors.Is(err, gorm.ErrRecordNotFound):
+		log.CtxErrorf(ctx, "SQL: error (%s): %s %s", gormutils.FileWithLineNum(), err, getInfo())
+	case duration > l.SlowThreshold && l.SlowThreshold != 0 && l.LogLevel >= logger.Warn:
+		log.CtxWarningf(ctx, "SQL: slow query (over %s) (%s): %s", l.SlowThreshold, gormutils.FileWithLineNum(), getInfo())
+	case l.LogLevel == logger.Info:
+		log.CtxInfof(ctx, "SQL: OK (%s) %s", gormutils.FileWithLineNum(), getInfo())
+	}
+}
+
+func (l *Logger) LogMode(level logger.LogLevel) logger.Interface {
+	clone := *l
+	clone.LogLevel = level
+	return &clone
+}
+
+// ParamsFilter implements gorm's ParamsFilter interface, ensuring that queries
+// are logged without parameter values showing up in the logs.
+func (l *Logger) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
+	return sql, nil
 }
