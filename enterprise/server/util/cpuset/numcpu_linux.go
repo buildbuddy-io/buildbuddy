@@ -20,7 +20,7 @@ func GetCPUs() ([]CPUInfo, error) {
 			for _, thread := range coreInfo.Threads {
 				c := CPUInfo{
 					Processor: int(thread),
-					NumaNode: int(nodeInfo.Id),
+					NumaNode:  int(nodeInfo.Id),
 				}
 				nodes = append(nodes, c)
 			}

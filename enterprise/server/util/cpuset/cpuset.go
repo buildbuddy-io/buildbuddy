@@ -35,16 +35,16 @@ const (
 var _ interfaces.CPULeaser = (*CPULeaser)(nil)
 
 type CPULeaser struct {
-	mu                 sync.Mutex
-	cpus               []CPUInfo
-	leases             []lease
-	load               map[int]int
+	mu        sync.Mutex
+	cpus      []CPUInfo
+	leases    []lease
+	load      map[int]int
 	numaNodes int
 }
 
 type CPUInfo struct {
-	Processor  int // cpuset id
-	NumaNode int // numa node
+	Processor int // cpuset id
+	NumaNode  int // numa node
 }
 
 type lease struct {
@@ -57,8 +57,8 @@ func toCPUInfos(processors []int, numaNode int) []CPUInfo {
 	infos := make([]CPUInfo, len(processors))
 	for i, p := range processors {
 		infos[i] = CPUInfo{
-			Processor:  p,
-			NumaNode: numaNode,
+			Processor: p,
+			NumaNode:  numaNode,
 		}
 	}
 	return infos
@@ -122,8 +122,8 @@ func parseCPUs(s string) ([]CPUInfo, error) {
 		}
 		for processor := start; processor <= end; processor++ {
 			cpus = append(cpus, CPUInfo{
-				Processor:  processor,
-				NumaNode: numaNode,
+				Processor: processor,
+				NumaNode:  numaNode,
 			})
 		}
 	}
