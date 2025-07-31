@@ -39,6 +39,7 @@ import { ExecuteOperation, executionStatusLabel, waitExecution } from "./executi
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
 import InvocationModel from "./invocation_model";
 
+type IDigest = build.bazel.remote.execution.v2.IDigest;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
 
 interface Props {
@@ -225,14 +226,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
    * locate the ExecuteResponse that was returned for this particular
    * invocation.
    */
-  fetchActionResult() {
-    let digestParam = this.props.search.get("actionDigest");
-    const digest = parseActionDigest(digestParam ?? "");
-    if (!digest) {
-      alert_service.error("Missing action digest in URL");
-      return;
-    }
-    const actionResultUrl = this.props.model.getActionCacheURL(digest);
+  fetchActionResult(actionDigest: IDigest) {
+    const actionResultUrl = this.props.model.getActionCacheURL(actionDigest);
     this.actionResultRPC = rpcService
       .fetchBytestreamFile(actionResultUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
@@ -241,7 +236,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.fetchStdout(actionResult);
         this.fetchStderr(actionResult);
       })
-      .catch((e) => console.error("Failed to fetch action result:", e));
+      .catch((e) => {
+        const error = BuildBuddyError.parse(e);
+        if (error.code !== "NotFound") {
+          console.error("Error during AC fallback:", e);
+          // Optionally handle other non-NotFound errors from AC fetch.
+        } else {
+          console.debug("Action result not found in AC.");
+        }
+      });
   }
 
   private executeResponseRPC?: CancelablePromise<build.bazel.remote.execution.v2.ExecuteResponse | null>;
@@ -284,14 +287,25 @@ export default class InvocationActionCardComponent extends React.Component<Props
         alert_service.error("Invalid execute response digest in URL");
         return;
       }
-      this.executeResponseRPC = this.fetchExecuteResponseByDigest(executeResponseDigest);
+      this.fetchExecuteResponseByDigest(executeResponseDigest);
     } else {
       const actionDigest = parseActionDigest(actionDigestParam);
       if (!actionDigest) {
         alert_service.error("Missing action digest in URL");
         return;
       }
-      this.executeResponseRPC = this.fetchExecuteResponseByActionDigest(actionDigest);
+      // If we have an execution ID, it means that this was certainly an RBE action
+      // and we can fetch the ExecuteResponse directly by action digest.
+      //
+      // If we don't have an execution ID, we can fall back to fetching the
+      // ActionResult from the action cache.
+      this.getExecutionId()
+        ? this.fetchExecuteResponseByActionDigest(actionDigest)
+        : this.fetchActionResult(actionDigest);
+    }
+
+    if (!this.executeResponseRPC) {
+      return;
     }
 
     let executionFound = false;
@@ -300,6 +314,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
         if (!executeResponse) {
           return;
         }
+        // If we found an execution, we can cancel the direct AC fetch.
+        this.actionResultRPC?.cancel();
         executionFound = true;
         this.setState({ executeResponse });
         if (executeResponse.result) {
@@ -322,7 +338,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
         errorService.handleError(e);
       })
       .finally(() => {
-        if (!executionFound && streamFallback) {
+        if (executionFound) return;
+
+        if (streamFallback) {
           console.debug("Falling back to WaitExecution");
           this.streamExecution();
         }
@@ -330,7 +348,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchExecuteResponseByDigest(executeResponseDigest: build.bazel.remote.execution.v2.Digest) {
-    return rpcService
+    this.executeResponseRPC = rpcService
       .fetchBytestreamFile(
         this.props.model.getActionCacheURL(executeResponseDigest),
         this.props.model.getInvocationId(),
@@ -348,7 +366,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   fetchExecuteResponseByActionDigest(actionDigest: build.bazel.remote.execution.v2.Digest) {
     const service = rpcService.getRegionalServiceOrDefault(this.props.model.stringCommandLineOption("remote_executor"));
-    return service
+    this.executeResponseRPC = service
       .getExecution({
         executionLookup: new execution_stats.ExecutionLookup({
           invocationId: this.props.model.getInvocationId(),
@@ -445,7 +463,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .finally(() => this.setState({ profileLoading: false }));
   }
 
-  getExecutionId() {
+  getExecutionId(): string | undefined {
     // If we got here from the executions page then we'll have the execution ID
     // in the URL; otherwise the execution ID gets fetched from the executions
     // linked to the invocation matching the actionDigest in the URL.

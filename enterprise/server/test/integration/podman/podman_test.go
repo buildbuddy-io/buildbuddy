@@ -149,7 +149,7 @@ func TestRunHelloWorld(t *testing.T) {
 	}
 	// Need to give enough time to download the Docker image.
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
+	t.Cleanup(cancel)
 
 	env := getTestEnv(t)
 
@@ -161,6 +161,9 @@ func TestRunHelloWorld(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, c.Remove(ctx))
+	})
 	result := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	require.NoError(t, result.Error)
@@ -266,6 +269,45 @@ func TestExecStdio(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestSlowRun tests that a simple command runs successfully and completes within a reasonable time.
+// This is used to check for any potential performance regressions in the container execution environment.
+func TestSlowRun(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	ctx := context.Background()
+	env := getTestEnv(t)
+
+	provider, err := podman.NewProvider(env, rootDir)
+	require.NoError(t, err)
+	props := &platform.Properties{
+		ContainerImage: busyboxImage,
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &container.Init{Props: props})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, c.Remove(ctx))
+	})
+
+	// Ensure the image is cached
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, busyboxImage)
+	require.NoError(t, err)
+
+	cmd := &repb.Command{Arguments: []string{
+		"sh", "-c", `echo 'Hello World'`,
+	}}
+
+	before := time.Now()
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	duration := time.Since(before)
+	require.NoError(t, res.Error, "Run should not return an error")
+	assert.Equal(t, 0, res.ExitCode, "Run should exit with success")
+	assert.Equal(t, "Hello World\n", string(res.Stdout), "Run should return expected stdout")
+	assert.Empty(t, string(res.Stderr), "Run should not return any stderr")
+
+	assert.LessOrEqual(t, duration, 5*time.Second, "Run should complete within 5 seconds")
+}
+
 func TestRun_Timeout(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
@@ -289,15 +331,18 @@ func TestRun_Timeout(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, c.Remove(ctx))
+	})
 
 	// Ensure the image is cached
 	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	t.Cleanup(cancel)
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(runCtx, cmd, workDir, oci.Credentials{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -340,15 +385,18 @@ func TestExec_Timeout(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, c.Remove(ctx))
+	})
 
 	// Ensure the image is cached
 	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	t.Cleanup(cancel)
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(runCtx, cmd, workDir, oci.Credentials{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -465,6 +513,9 @@ func TestForceRoot(t *testing.T) {
 			}
 			c, err := provider.New(ctx, &container.Init{Props: props})
 			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, c.Remove(ctx))
+			})
 			result := c.Run(ctx, cmd, workDir, oci.Credentials{})
 			require.NoError(t, result.Error)
 			assert.Equal(t, tc.wantUID, strings.TrimSpace(string(result.Stdout)))
@@ -478,7 +529,7 @@ func TestUser(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	env := getTestEnv(t)
 	image := busyboxImage
@@ -513,6 +564,9 @@ func TestUser(t *testing.T) {
 			}
 			c, err := provider.New(ctx, &container.Init{Props: props})
 			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, c.Remove(ctx))
+			})
 			result := c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-u", "-n"},
 			}, workDir, oci.Credentials{})
@@ -563,6 +617,9 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, c.Remove(ctx))
+	})
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
@@ -589,6 +646,9 @@ func TestPodmanRun_CommandNotExecuted_RecordsStats(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, c.Remove(ctx))
+	})
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
@@ -632,6 +692,9 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, c.Remove(ctx))
+	})
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 	require.NoError(t, res.Error)
@@ -658,6 +721,9 @@ func TestSignal(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, c.Remove(ctx))
+	})
 
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
 		trap 'echo "Got SIGTERM" && exit 1' TERM

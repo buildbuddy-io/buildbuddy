@@ -49,7 +49,6 @@ import (
 	gomysql "github.com/go-sql-driver/mysql"
 	gopostgreserr "github.com/jackc/pgerrcode"
 	gopostgresconn "github.com/jackc/pgx/v5/pgconn"
-	gormutils "gorm.io/gorm/utils"
 )
 
 const (
@@ -550,7 +549,7 @@ func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConf
 		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
 
-	l := &sqlLogger{
+	l := &gormutil.Logger{
 		SlowThreshold: *slowQueryThreshold,
 		LogLevel:      logger.Warn,
 	}
@@ -708,61 +707,6 @@ func ParseDatasource(ctx context.Context, datasource string, advancedConfig *Adv
 	}
 
 	return nil, status.FailedPreconditionError("no database configured -- please specify at least one in the config")
-}
-
-// sqlLogger implements GORM's logger.Interface using zerolog.
-type sqlLogger struct {
-	SlowThreshold time.Duration
-	LogLevel      logger.LogLevel
-}
-
-func (l *sqlLogger) Info(ctx context.Context, format string, args ...any) {
-	log.CtxInfof(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
-}
-func (l *sqlLogger) Warn(ctx context.Context, format string, args ...any) {
-	log.CtxWarningf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
-}
-func (l *sqlLogger) Error(ctx context.Context, format string, args ...any) {
-	log.CtxErrorf(ctx, "%s: "+format, append([]any{gormutils.FileWithLineNum()}, args...))
-}
-
-// Trace is called after every SQL query. If `database.log_queries` is true then
-// it will always log the query. Otherwise it will only log slow or failed
-// queries. NotFound errors are ignored.
-func (l *sqlLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
-	if l.LogLevel <= logger.Silent {
-		return
-	}
-	duration := time.Since(begin)
-	getInfo := func() string {
-		sql, rows := fc()
-		rowsVal := any(rows)
-		if rows <= 0 {
-			// rows < 0 means the query does not have an associated row count.
-			rowsVal = "-"
-		}
-		return fmt.Sprintf("(duration: %s) (rows: %v) %s", duration, rowsVal, sql)
-	}
-	switch {
-	case err != nil && l.LogLevel >= logger.Error && !IsRecordNotFound(err):
-		log.CtxErrorf(ctx, "SQL: error (%s): %s %s", gormutils.FileWithLineNum(), err, getInfo())
-	case duration > l.SlowThreshold && l.SlowThreshold != 0 && l.LogLevel >= logger.Warn:
-		log.CtxWarningf(ctx, "SQL: slow query (over %s) (%s): %s", l.SlowThreshold, gormutils.FileWithLineNum(), getInfo())
-	case l.LogLevel == logger.Info:
-		log.CtxInfof(ctx, "SQL: OK (%s) %s", gormutils.FileWithLineNum(), getInfo())
-	}
-}
-
-func (l *sqlLogger) LogMode(level logger.LogLevel) logger.Interface {
-	clone := *l
-	clone.LogLevel = level
-	return &clone
-}
-
-// ParamsFilter implements gorm's ParamsFilter interface, ensuring that queries
-// are logged without parameter values showing up in the logs.
-func (l *sqlLogger) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
-	return sql, nil
 }
 
 func setDBOptions(driver string, gdb *gorm.DB) error {
