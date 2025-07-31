@@ -9,22 +9,22 @@ import (
 
 func GetCPUs() ([]CPUInfo, error) {
 	sys := sysfs.NewRealSysFs()
-	cpuInfos, _, err := sysinfo.GetNodesInfo(sys)
+	nodeInfos, _, err := sysinfo.GetNodesInfo(sys)
 	if err != nil {
 		return nil, err
 	}
 
-	nodes := make([]CPUInfo, 0)
-	for _, nodeInfo := range cpuInfos {
+	cpus := make([]CPUInfo, 0)
+	for _, nodeInfo := range nodeInfos {
 		for _, coreInfo := range nodeInfo.Cores {
 			for _, thread := range coreInfo.Threads {
 				c := CPUInfo{
 					Processor: int(thread),
 					NumaNode:  int(nodeInfo.Id),
 				}
-				nodes = append(nodes, c)
+				cpus = append(cpus, c)
 			}
 		}
 	}
-	return nodes, nil
+	return cpus, nil
 }
