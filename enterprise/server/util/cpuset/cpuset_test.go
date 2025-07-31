@@ -336,8 +336,8 @@ func getTestCPUs() []cpuset.CPUInfo {
 	var out []cpuset.CPUInfo
 	for i := 0; i < 512; i++ {
 		out = append(out, cpuset.CPUInfo{
-			Processor:  i,
-			NumaNode: (i / 128) % 2,
+			Processor: i,
+			NumaNode:  (i / 128) % 2,
 		})
 	}
 	return out
