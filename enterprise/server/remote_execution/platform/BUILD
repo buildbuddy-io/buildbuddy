@@ -7,6 +7,7 @@ go_library(
     srcs = ["platform.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform",
     deps = [
+        "//enterprise/server/remote_execution/snaputil",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
