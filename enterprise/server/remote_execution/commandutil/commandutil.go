@@ -50,7 +50,7 @@ func LimitStdOutErrWriter(w io.Writer) io.Writer {
 	if *StdOutErrMaxSize == 0 {
 		return w
 	}
-	return &limitWriter{w, *StdOutErrMaxSize}
+	return &limitWriter{w: w}
 }
 
 // limitWriter limits the number of bytes written to it.
@@ -60,12 +60,12 @@ type limitWriter struct {
 }
 
 func (lw *limitWriter) Write(p []byte) (int, error) {
-	if lw.n <= 0 || int64(len(p)) > lw.n {
-		totalRequested := (*StdOutErrMaxSize - lw.n) + int64(len(p))
+	totalRequested := lw.n + int64(len(p))
+	if totalRequested > *StdOutErrMaxSize {
 		return 0, status.ResourceExhaustedErrorf("stdout/stderr output size limit exceeded: %d bytes requested (limit: %d bytes)", totalRequested, *StdOutErrMaxSize)
 	}
 	n, err := lw.w.Write(p)
-	lw.n -= int64(n)
+	lw.n += int64(n)
 	if err != nil {
 		return n, err
 	}
