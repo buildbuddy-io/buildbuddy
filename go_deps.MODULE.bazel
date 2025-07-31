@@ -262,7 +262,6 @@ use_repo(
     "com_github_prometheus_client_golang",
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
-    "com_github_prometheus_procfs",
     "com_github_rantav_go_grpc_channelz",
     "com_github_redis_go_redis_extra_redisotel_v9",
     "com_github_redis_go_redis_v9",
