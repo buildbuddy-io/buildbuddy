@@ -75,7 +75,7 @@ func TestParseCPUs(t *testing.T) {
 		{
 			name:          "invalid node",
 			input:         "1:0",
-			expectedError: `invalid node ID 1 for CPU 0: does not match OS-reported ID 0`,
+			expectedError: `invalid node: 1 for CPU 0: does not match OS-reported node: 0`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -337,7 +337,7 @@ func getTestCPUs() []cpuset.CPUInfo {
 	for i := 0; i < 512; i++ {
 		out = append(out, cpuset.CPUInfo{
 			Processor:  i,
-			PhysicalID: (i / 128) % 2,
+			NumaNode: (i / 128) % 2,
 		})
 	}
 	return out
