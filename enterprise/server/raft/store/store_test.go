@@ -111,6 +111,30 @@ func TestAddGetRemoveRange(t *testing.T) {
 	require.Nil(t, gotRd)
 }
 
+func TestUpdateRangeDescriptor(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_driver", false)
+
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShard(t, ctx, stores...)
+
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	mrd := s.GetRange(1)
+	newRD := mrd.CloneVT()
+	newRD.Generation++
+
+	err := s.UpdateRangeDescriptor(ctx, mrd, newRD)
+	require.NoError(t, err)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	mrd = s.GetRange(1)
+
+	require.Equal(t, newRD.GetGeneration(), mrd.GetGeneration())
+}
+
 func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.enable_driver", false)
@@ -460,7 +484,7 @@ func TestAddReplica_ExistingStaging(t *testing.T) {
 		Nhid:      proto.String(s3.NHID()),
 	})
 	newRD.Generation++
-	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
@@ -527,7 +551,7 @@ func TestAddReplica_NonVoterNotStarted(t *testing.T) {
 		Nhid:      proto.String(s3.NHID()),
 	})
 	newRD.Generation++
-	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 2)
@@ -595,7 +619,7 @@ func TestAddReplica_NonVoterStarted(t *testing.T) {
 		Nhid:      proto.String(s3.NHID()),
 	})
 	newRD.Generation++
-	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
 
 	_, err = s3.StartShard(ctx, &rfpb.StartShardRequest{
@@ -668,7 +692,7 @@ func TestAddReplica_Voter(t *testing.T) {
 		Nhid:      proto.String(s3.NHID()),
 	})
 	newRD.Generation++
-	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
 
 	addNode(t, s, ctx, 2, 3, s3.NHID())
@@ -807,7 +831,7 @@ func TestRemoveReplicaRemoveData(t *testing.T) {
 	newRD := rd.CloneVT()
 	newRD.Removed = append(newRD.Removed, replicaToRemove)
 	newRD.Generation++
-	err = s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
+	err = s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, remaining, 2)
@@ -881,7 +905,7 @@ func TestRemoveReplicaRemoveData_StagingReplicaStarted(t *testing.T) {
 	newRD.Generation++
 
 	log.Infof("new rd: %+v", newRD)
-	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
+	err := s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
 
 	for {
@@ -983,7 +1007,7 @@ func testRemoveReplicaRemoveData_StagingReplicaNotStarted(t *testing.T, addFunc 
 		Nhid:      proto.String(s3.NHID()),
 	})
 	newRD.Generation++
-	err = s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
+	err = s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
 
 	// add c2n3 on s3.
@@ -1070,7 +1094,7 @@ func TestRemoveReplicaRemoveData_StagingReplicaNotAdded(t *testing.T) {
 	newRD.Generation++
 
 	log.Infof("new rd: %+v", newRD)
-	err = s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
+	err = s.UpdateRangeDescriptor(ctx, rd, newRD)
 	require.NoError(t, err)
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 

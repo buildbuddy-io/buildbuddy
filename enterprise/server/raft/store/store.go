@@ -2376,17 +2376,27 @@ func (s *Store) BuildTxnForRangeSplit(leftRange *rfpb.RangeDescriptor, newRangeI
 	newRightRange.RangeId = newRangeID
 	newRightRange.Generation += 1
 	newRightRange.Replicas = replicas
+
+	updatedLeftRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
+	updatedLeftRange.End = splitKey
+	updatedLeftRange.Generation += 1
+
+	newLeftRangeBuf, err := proto.Marshal(updatedLeftRange)
+	if err != nil {
+		return res, err
+	}
+	oldLeftRangeBuf, err := proto.Marshal(leftRange)
+	if err != nil {
+		return res, err
+	}
 	newRightRangeBuf, err := proto.Marshal(newRightRange)
 	if err != nil {
 		return res, err
 	}
 
-	updatedLeftRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
-	updatedLeftRange.End = splitKey
-	updatedLeftRange.Generation += 1
 	leftBatch := rbuilder.NewBatchBuilder()
 
-	if err := addLocalRangeEdits(leftRange, updatedLeftRange, leftBatch); err != nil {
+	if err := addLocalRangeEdits(oldLeftRangeBuf, newLeftRangeBuf, leftBatch); err != nil {
 		return res, err
 	}
 	// lock the left range when we prepare the transaction. Before we finalize
@@ -2400,9 +2410,26 @@ func (s *Store) BuildTxnForRangeSplit(leftRange *rfpb.RangeDescriptor, newRangeI
 		},
 	})
 	metaBatch := rbuilder.NewBatchBuilder()
-	if err := addMetaRangeEdits(leftRange, updatedLeftRange, newRightRange, metaBatch); err != nil {
-		return res, err
-	}
+	// Send a single request that:
+	//  - CAS sets the newLeftRange value to newNewStartBuf
+	//  - inserts the new newRightRangeBuf
+	//
+	// if the CAS fails, check the existing value
+	//  if it's generation is past ours, ignore the error, we're out of date
+	//  if the existing value already matches what we were trying to set, we're done.
+	//  else return an error
+	metaBatch.Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(newRightRange.GetEnd()),
+			Value: newRightRangeBuf,
+		},
+		ExpectedValue: oldLeftRangeBuf,
+	}).Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(updatedLeftRange.GetEnd()),
+			Value: newLeftRangeBuf,
+		},
+	})
 	mrd := s.sender.GetMetaRangeDescriptor()
 
 	tb := rbuilder.NewTxn()
@@ -2979,67 +3006,27 @@ func (s *Store) reserveRangeID(ctx context.Context) (uint64, error) {
 	return rangeIDIncrRsp.GetValue(), nil
 }
 
-func casRangeEdit(key []byte, old, new *rfpb.RangeDescriptor) (*rfpb.CASRequest, error) {
-	newBuf, err := proto.Marshal(new)
-	if err != nil {
-		return nil, err
-	}
-	oldBuf, err := proto.Marshal(old)
-	if err != nil {
-		return nil, err
-	}
-	return &rfpb.CASRequest{
+func addLocalRangeEdits(oldBuf, newBuf []byte, b *rbuilder.BatchBuilder) error {
+	cas := &rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   key,
+			Key:   constants.LocalRangeKey,
 			Value: newBuf,
 		},
 		ExpectedValue: oldBuf,
-	}, nil
-}
-
-func addLocalRangeEdits(oldRange, newRange *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
-	cas, err := casRangeEdit(constants.LocalRangeKey, oldRange, newRange)
-	if err != nil {
-		return err
 	}
 	b.Add(cas)
 	return nil
 }
 
-func addMetaRangeEdits(oldLeftRange, newLeftRange, newRightRange *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
-	newLeftRangeBuf, err := proto.Marshal(newLeftRange)
-	if err != nil {
-		return err
-	}
-	oldLeftRangeBuf, err := proto.Marshal(oldLeftRange)
-	if err != nil {
-		return err
-	}
-	newRightRangeBuf, err := proto.Marshal(newRightRange)
-	if err != nil {
-		return err
-	}
-
-	// Send a single request that:
-	//  - CAS sets the newLeftRange value to newNewStartBuf
-	//  - inserts the new newRightRangeBuf
-	//
-	// if the CAS fails, check the existing value
-	//  if it's generation is past ours, ignore the error, we're out of date
-	//  if the existing value already matches what we were trying to set, we're done.
-	//  else return an error
-	b.Add(&rfpb.CASRequest{
+func addMetaRangeEdits(key, oldBuf, newBuf []byte, b *rbuilder.BatchBuilder) error {
+	req := &rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newRightRange.GetEnd()),
-			Value: newRightRangeBuf,
+			Key:   key,
+			Value: newBuf,
 		},
-		ExpectedValue: oldLeftRangeBuf,
-	}).Add(&rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newLeftRange.GetEnd()),
-			Value: newLeftRangeBuf,
-		},
-	})
+		ExpectedValue: oldBuf,
+	}
+	b.Add(req)
 	return nil
 }
 
@@ -3054,65 +3041,81 @@ func (s *Store) GetTxnForRangeDescriptorUpdate(ctx context.Context, rangeID uint
 	}
 
 	localBatch := rbuilder.NewBatchBuilder()
-	if err := addLocalRangeEdits(old, new, localBatch); err != nil {
+	if err := addLocalRangeEdits(oldBuf, newBuf, localBatch); err != nil {
 		return nil, err
 	}
 	metaRangeDescriptorKey := keys.RangeMetaKey(new.GetEnd())
-	metaRangeCasReq := &rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   metaRangeDescriptorKey,
-			Value: newBuf,
-		},
-		ExpectedValue: oldBuf,
-	}
-
-	metaRangeBatch := rbuilder.NewBatchBuilder()
-	metaRangeBatch.Add(metaRangeCasReq)
 
 	mrd := s.sender.GetMetaRangeDescriptor()
-	newReplica := new.GetReplicas()[0]
-	metaReplica := mrd.GetReplicas()[0]
 
 	txn := rbuilder.NewTxn()
-	if newReplica.GetRangeId() == metaReplica.GetRangeId() {
-		localBatch.Add(metaRangeCasReq)
-		stmt := txn.AddStatement()
-		stmt.SetRangeDescriptor(mrd).SetBatch(localBatch)
-		// Range Validation is required on the existing range to make sure that the
-		// existing leader/range lease holder has the update-to-date range descriptor.
-		// Normally, we don't want range validation for meta range, but since we
-		// are changing meta range discriptor, validation is required.
-		// See go/raft-range-validation-in-txn.
-		stmt.SetRangeValidationRequired(true)
-	} else {
-		metaRangeBatch := rbuilder.NewBatchBuilder()
-		metaRangeBatch.Add(metaRangeCasReq)
+	metaRangeBatch := rbuilder.NewBatchBuilder()
+	addMetaRangeEdits(metaRangeDescriptorKey, oldBuf, newBuf, metaRangeBatch)
 
-		stmt := txn.AddStatement()
-		stmt.SetRangeDescriptor(old).SetBatch(localBatch)
-		// Range Validation is required on the existing range to make sure that the
-		// existing leader/range lease holder has the update-to-date range descriptor.
-		// See go/raft-range-validation-in-txn.
-		stmt.SetRangeValidationRequired(true)
+	stmt := txn.AddStatement()
+	stmt.SetRangeDescriptor(old).SetBatch(localBatch)
+	// Range Validation is required on the existing range to make sure that the
+	// existing leader/range lease holder has the update-to-date range descriptor.
+	// See go/raft-range-validation-in-txn.
+	stmt.SetRangeValidationRequired(true)
 
-		stmt = txn.AddStatement()
-		stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)
-		// No range validation for meta range. See
-		// go/raft-range-validation-in-txn for more details.
-		stmt.SetRangeValidationRequired(false)
-	}
+	stmt = txn.AddStatement()
+	stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)
+	// No range validation for meta range. See
+	// go/raft-range-validation-in-txn for more details.
+	stmt.SetRangeValidationRequired(false)
 	return txn, nil
 }
 
-func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, new *rfpb.RangeDescriptor) error {
-	s.log.Infof("start to update range descriptor for rangeID %d to gen %d", rangeID, new.GetGeneration())
-	txn, err := s.GetTxnForRangeDescriptorUpdate(ctx, rangeID, old, new)
+func (s *Store) updateMetaRangeDescriptor(ctx context.Context, old, new *rfpb.RangeDescriptor) error {
+	oldBuf, err := proto.Marshal(old)
 	if err != nil {
 		return err
 	}
-	err = s.txnCoordinator.RunTxn(ctx, txn)
+	newBuf, err := proto.Marshal(new)
 	if err != nil {
-		return status.InternalErrorf("failed to update range descriptor for rangeID=%d, err: %s", rangeID, err)
+		return err
+	}
+
+	localBatch := rbuilder.NewBatchBuilder()
+	if err := addLocalRangeEdits(oldBuf, newBuf, localBatch); err != nil {
+		return err
+	}
+	metaRangeDescriptorKey := keys.RangeMetaKey(new.GetEnd())
+
+	addMetaRangeEdits(metaRangeDescriptorKey, oldBuf, newBuf, localBatch)
+
+	batchProto, err := localBatch.ToProto()
+	if err != nil {
+		return err
+	}
+	rsp, err := s.sender.SyncPropose(ctx, constants.MetaRangePrefix, batchProto)
+	if err != nil {
+		return nil
+	}
+
+	return rbuilder.NewBatchResponseFromProto(rsp).AnyError()
+}
+
+func (s *Store) UpdateRangeDescriptor(ctx context.Context, old, new *rfpb.RangeDescriptor) error {
+	if old.GetRangeId() != new.GetRangeId() {
+		return status.InvalidArgumentErrorf("range IDs do not match: old=%d, new=%d", old.GetRangeId(), new.GetRangeId())
+	}
+	rangeID := new.GetRangeId()
+	s.log.Infof("start to update range descriptor for rangeID %d to gen %d", rangeID, new.GetGeneration())
+	if rangeID == constants.MetaRangeID {
+		if err := s.updateMetaRangeDescriptor(ctx, old, new); err != nil {
+			return status.InternalErrorf("failed to update range descriptor for rangeID=%d, err: %s", rangeID, err)
+		}
+	} else {
+		txn, err := s.GetTxnForRangeDescriptorUpdate(ctx, rangeID, old, new)
+		if err != nil {
+			return err
+		}
+		err = s.txnCoordinator.RunTxn(ctx, txn)
+		if err != nil {
+			return status.InternalErrorf("failed to update range descriptor for rangeID=%d, err: %s", rangeID, err)
+		}
 	}
 	s.log.Infof("range descriptor for rangeID %d updated to gen %d", rangeID, new.GetGeneration())
 
@@ -3141,7 +3144,7 @@ func (s *Store) addStagingReplicaToRangeDescriptor(ctx context.Context, rangeID,
 		Nhid:      proto.String(nhid),
 	})
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
-	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
 	return newDescriptor, nil
@@ -3160,7 +3163,7 @@ func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replic
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
 	newDescriptor.LastAddedReplicaId = proto.Uint64(replicaID)
 	newDescriptor.LastReplicaAddedAtUsec = proto.Int64(time.Now().UnixMicro())
-	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
 
@@ -3188,7 +3191,7 @@ func (s *Store) markReplicaForRemovalFromRangeDescriptor(ctx context.Context, ra
 		newDescriptor.LastAddedReplicaId = nil
 		newDescriptor.LastReplicaAddedAtUsec = nil
 	}
-	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
 	return newDescriptor, nil
@@ -3204,7 +3207,7 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, r
 		}
 	}
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
-	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+	if err := s.UpdateRangeDescriptor(ctx, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
 	return newDescriptor, nil
