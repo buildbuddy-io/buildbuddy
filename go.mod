@@ -56,7 +56,7 @@ require (
 	github.com/creack/pty v1.1.18
 	github.com/crewjam/saml v0.4.14
 	github.com/distribution/reference v0.6.0
-	github.com/docker/docker v28.2.2+incompatible
+	github.com/docker/docker v28.3.3+incompatible
 	github.com/docker/go-units v0.5.0
 	github.com/dop251/goja v0.0.0-20230626124041-ba8a63e79201
 	github.com/elastic/gosigar v0.14.2
