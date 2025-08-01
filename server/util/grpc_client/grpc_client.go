@@ -252,7 +252,9 @@ func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool
 func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
 	target = normalizeTarget(target)
 
-	dialOptions := CommonGRPCClientOptions()
+	// Add tracing interceptors first so they capture the whole interceptor chain.
+	dialOptions := []grpc.DialOption{interceptors.TracedStreamClientInterceptor("FirstInterceptor"), interceptors.TracedUnaryClientInterceptor("FirstInterceptor")}
+	dialOptions = append(dialOptions, CommonGRPCClientOptions()...)
 	dialOptions = append(dialOptions, extraOptions...)
 	u, err := url.Parse(target)
 	if err == nil {
@@ -274,6 +276,8 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 		}
 	}
 
+	// Add these last to denote where interceptors are completed.
+	dialOptions = append(dialOptions, interceptors.TracedStreamClientInterceptor("LastInterceptor"), interceptors.TracedUnaryClientInterceptor("LastInterceptor"))
 	// Connect to host/port and create a new client
 	return grpc.Dial(target, dialOptions...)
 }
