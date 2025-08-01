@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
@@ -942,6 +943,8 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (
 	if len(backfills) == 0 {
 		return nil
 	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	start := time.Now()
 	defer func() {
 		c.log.CtxDebugf(ctx, "backfill took %s err: %v", time.Since(start), err)
