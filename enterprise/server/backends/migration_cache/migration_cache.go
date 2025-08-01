@@ -911,6 +911,8 @@ func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte
 }
 
 func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.ResourceName, onlyCopyMissing bool, conf *config) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	if onlyCopyMissing {
 		alreadyCopied, err := conf.dest.Contains(ctx, r)
 		if err != nil {
