@@ -496,9 +496,7 @@ func (s *Store) queryForMetarange(ctx context.Context) {
 		case p := <-stream.ResponseCh():
 			s.setMetaRangeBuf(p.Payload)
 			stream.Close()
-			if len(p.Payload) != 0 {
-				s.log.Infof("Discovered metarange in %s", time.Since(start))
-			}
+			s.log.Infof("Discovered metarange in %s", time.Since(start))
 			return
 		case <-ctx.Done():
 			stream.Close()
@@ -891,10 +889,7 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 			return
 		}
 		go s.setMetaRangeBuf(buf)
-		go func() {
-			s.gossipManager.SendUserEvent(constants.MetaRangeTag, buf /*coalesce=*/, false)
-			s.log.Info("sent meta range tag event")
-		}()
+		go s.gossipManager.SendUserEvent(constants.MetaRangeTag, buf /*coalesce=*/, false)
 	}
 
 	s.leaseKeeper.AddRange(rd, r)
@@ -1492,7 +1487,6 @@ func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 	case serf.EventUser:
 		userEvent, _ := event.(serf.UserEvent)
 		if userEvent.Name == constants.MetaRangeTag {
-			s.log.Info("received meta range tag event")
 			s.setMetaRangeBuf(userEvent.Payload)
 		}
 	default:
