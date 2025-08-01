@@ -1559,6 +1559,7 @@ func (f *TreeFetcher) Start() error {
 	go func() {
 		// Download any files into the directory structure.
 		f.done <- f.ff.FetchFiles(f.opts)
+		close(f.done)
 	}()
 
 	return nil

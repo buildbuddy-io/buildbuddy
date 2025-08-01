@@ -89,8 +89,9 @@ type Workspace struct {
 	// to make sure this map accurately reflects the filesystem.
 	Inputs map[fspath.Key]*repb.FileNode
 
-	mu       sync.Mutex // protects(removing)
-	removing bool
+	mu          sync.Mutex // protects(removing, treeFetcher)
+	removing    bool
+	treeFetcher *dirtools.TreeFetcher
 }
 
 type Opts struct {
@@ -246,7 +247,7 @@ func (ws *Workspace) CreateOutputDirs() error {
 
 func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
 	if ws.vfsServer != nil {
-		if err := ws.vfsServer.Prepare(ctx, layout); err != nil {
+		if err := ws.vfsServer.Prepare(ctx, layout, ws.treeFetcher); err != nil {
 			return err
 		}
 	}
@@ -260,39 +261,50 @@ func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSyste
 }
 
 // DownloadInputs downloads any missing inputs for the current action.
-func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileSystemLayout) (*dirtools.TransferInfo, error) {
+func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileSystemLayout) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
-		return nil, WorkspaceMarkedForRemovalError
+		return WorkspaceMarkedForRemovalError
 	}
 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// Don't download inputs if the workspace is backed by FUSE, but we still
-	// need to inform it about the CAS artifacts that should appear in the
-	// filesystem.
-	if ws.vfs != nil {
-		if err := ws.prepareVFS(ctx, layout); err != nil {
-			return nil, err
-		}
-		return &dirtools.TransferInfo{}, nil
-	}
-
-	opts := &dirtools.DownloadTreeOpts{
-		RootDir:         ws.inputRoot(),
-		CaseInsensitive: ws.Opts.CaseInsensitive,
+	opts := &dirtools.DownloadTreeOpts{CaseInsensitive: ws.Opts.CaseInsensitive}
+	if ws.vfs == nil {
+		opts.RootDir = ws.inputRoot()
 	}
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
 	execReq := ws.task.GetExecuteRequest()
-	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
+	tf, err := dirtools.NewTreeFetcher(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
+	if err != nil {
+		return status.WrapErrorf(err, "could not create tree fetcher")
+	}
+	ws.treeFetcher = tf
+
+	// Start fetching inputs.
+	if err := tf.Start(); err != nil {
+		return status.WrapErrorf(err, "could not start tree fetcher")
+	}
+
+	// Inform VFS about the layout of the input tree and give it access to the
+	// running tree fetcher.
+	if ws.vfs != nil {
+		if err := ws.prepareVFS(ctx, layout); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// If we're not using FUSE, wait for the input tree to be fully downloaded.
+	txInfo, err := ws.treeFetcher.Wait()
 	if err == nil {
 		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
-			return txInfo, err
+			return err
 		}
 
 		for path, node := range txInfo.Transfers {
@@ -303,7 +315,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
 		log.CtxInfof(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
-	return txInfo, err
+	return err
 }
 
 // AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
@@ -524,6 +536,23 @@ func (ws *Workspace) ComputeVFSStats() *repb.VfsStats {
 		return nil
 	}
 	return ws.vfsServer.ComputeStats()
+}
+
+// TaskFinished informs the workspace that task execution is done.
+// Returns the transfer stats.
+func (ws *Workspace) TaskFinished() (*dirtools.TransferInfo, error) {
+	ws.mu.Lock()
+	tf := ws.treeFetcher
+	ws.mu.Unlock()
+	if tf == nil {
+		return nil, status.FailedPreconditionError("tree fetcher not set")
+	}
+	// TODO(vadim): cancel unfinished transfers instead of waiting for them
+	txInfo, err := tf.Wait()
+	ws.mu.Lock()
+	ws.treeFetcher = nil
+	ws.mu.Unlock()
+	return txInfo, err
 }
 
 // Clean removes files and directories in the workspace which are not preserved
