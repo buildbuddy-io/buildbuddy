@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/redis/go-redis/v9"
+	"github.com/go-redis/redis/v8"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )

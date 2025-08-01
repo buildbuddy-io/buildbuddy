@@ -33,9 +33,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -855,7 +855,7 @@ func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 	defer span.End()
 
 	key := np.key.redisUnclaimedTasksKey()
-	m := redis.Z{
+	m := &redis.Z{
 		Member: taskID,
 		Score:  float64(time.Now().Unix()),
 	}

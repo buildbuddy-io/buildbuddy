@@ -21,7 +21,7 @@ go_library(
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_throttled_throttled_v2//:throttled",
-        "@com_github_throttled_throttled_v2//store/goredisstore.v9:goredisstore_v9",
+        "@com_github_throttled_throttled_v2//store/goredisstore.v8:goredisstore_v8",
         "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )
