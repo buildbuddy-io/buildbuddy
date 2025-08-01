@@ -486,9 +486,40 @@ func propagateRequestMetadataIDsToSpanStreamServerInterceptor() grpc.StreamServe
 	}
 }
 
+// TracedUnaryServerInterceptor returns a unary server interceptor that adds a
+// trace span around the nested interceptor (and all the interceptors it calls).
+func TracedUnaryServerInterceptor(spanName string, interceptor grpc.UnaryServerInterceptor) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (rsp any, err error) {
+		ctx, span := tracing.StartSpan(ctx)
+		span.SetName(spanName)
+		defer span.End()
+		return interceptor(ctx, req, info, handler)
+	}
+}
+
+type contextReplacingStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *contextReplacingStream) Context() context.Context { return s.ctx }
+
+// TracedStreamServerInterceptor is like TracedUnaryServerInterceptor but for
+// server stream interceptors.
+func TracedStreamServerInterceptor(spanName string, interceptor grpc.StreamServerInterceptor) grpc.StreamServerInterceptor {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx, span := tracing.StartSpan(ss.Context())
+		span.SetName(spanName)
+		defer span.End()
+		return interceptor(srv, &contextReplacingStream{ServerStream: ss, ctx: ctx}, info, handler)
+	}
+}
+
 func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnaryServerInterceptor) grpc.ServerOption {
 	interceptors := []grpc.UnaryServerInterceptor{
-		unaryRecoveryInterceptor(),
+		// Trace the first interceptor so that we can tell when all the
+		// interceptors start and finish.
+		TracedUnaryServerInterceptor("interceptors.UnaryServerInterceptors", unaryRecoveryInterceptor()),
 		copyHeadersUnaryServerInterceptor(),
 		propagateRequestMetadataIDsToSpanUnaryServerInterceptor(),
 		ClientIPUnaryServerInterceptor(),
@@ -514,6 +545,9 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 
 func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamServerInterceptor) grpc.ServerOption {
 	interceptors := []grpc.StreamServerInterceptor{
+		// Trace the first interceptor so that we can tell when all the
+		// interceptors start and finish.
+		TracedStreamServerInterceptor("interceptors.StreamServerInterceptors", streamRecoveryInterceptor()),
 		streamRecoveryInterceptor(),
 		copyHeadersStreamServerInterceptor(),
 		propagateRequestMetadataIDsToSpanStreamServerInterceptor(),
@@ -549,6 +583,35 @@ var Metrics = sync.OnceValue(func() *grpc_prometheus.ClientMetrics {
 	prometheus.MustRegister(ms)
 	return ms
 })
+
+// TracedUnaryClientInterceptor returns a dial option which adds an interceptor
+// which just traces all nested interceptors. spanNameSuffix is used as a suffix
+// for span name. The prefix will be the full method name.
+func TracedUnaryClientInterceptor(spanNameSuffix string) grpc.DialOption {
+	return grpc.WithChainUnaryInterceptor(
+		func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			ctx, span := tracing.StartSpan(ctx)
+			if span.IsRecording() {
+				span.SetName(method + " " + spanNameSuffix)
+			}
+			defer span.End()
+			return invoker(ctx, method, req, reply, cc, opts...)
+		})
+}
+
+// TracedStreamClientInterceptor is like TracedUnaryClientInterceptor, but for
+// streaming calls.
+func TracedStreamClientInterceptor(spanName string) grpc.DialOption {
+	return grpc.WithChainStreamInterceptor(
+		func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+			ctx, span := tracing.StartSpan(ctx)
+			if span.IsRecording() {
+				span.SetName(method + " " + spanName)
+			}
+			defer span.End()
+			return streamer(ctx, desc, cc, method, opts...)
+		})
+}
 
 func GetUnaryClientInterceptor() grpc.DialOption {
 	return grpc.WithChainUnaryInterceptor(
