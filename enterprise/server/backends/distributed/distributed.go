@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -38,6 +39,7 @@ import (
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -929,20 +931,30 @@ func dedupeBackfills(backfills []*backfillOrder) []*backfillOrder {
 	return deduped
 }
 
+func groupID(ctx context.Context) string {
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		return c.GroupID
+	}
+	return interfaces.AuthAnonymousUser
+}
+
 func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (err error) {
 	if len(backfills) == 0 {
 		return nil
 	}
 	start := time.Now()
 	defer func() {
-		c.log.CtxDebugf(ctx, "backfill took %s err %v", time.Since(start), err)
+		c.log.CtxDebugf(ctx, "backfill took %s err: %v", time.Since(start), err)
 	}()
 	backfills = dedupeBackfills(backfills)
+	groupID := groupID(ctx)
 	eg, gCtx := errgroup.WithContext(ctx)
 	for _, bf := range backfills {
 		bf := bf
 		eg.Go(func() error {
-			return c.copyFile(gCtx, bf.r, bf.source, bf.dest)
+			err := c.copyFile(gCtx, bf.r, bf.source, bf.dest)
+			metrics.DistributedCacheBackfills.WithLabelValues(groupID, gstatus.Code(err).String()).Inc()
+			return err
 		})
 	}
 	return eg.Wait()

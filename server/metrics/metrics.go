@@ -803,6 +803,16 @@ var (
 		CacheHitMissStatus,
 	})
 
+	DistributedCacheBackfills = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_backfills",
+		Help:      "Number of backfilled digests. ",
+	}, []string{
+		GroupID,
+		StatusLabel,
+	})
+
 	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
