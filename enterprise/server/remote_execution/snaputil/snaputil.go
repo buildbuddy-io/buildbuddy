@@ -78,6 +78,22 @@ const (
 	OnlySaveNonDefaultRemoteSnapshotIfNoneAvailable = "none-available"
 )
 
+// Values for platform.SnapshotReadPolicyPropertyName:
+const (
+	// Every run will use the newest snapshot available.
+	// For snapshots that are only cached locally (i.e. depending on the remote
+	// snapshot save policy), a local manifest will be used.
+	// For snapshots that are cached remotely, a remote manifest will be used,
+	// to guarantee that newer snapshots from other executors are considered.
+	AlwaysReadNewestSnapshot = "newest"
+	// If a local manifest exists, the local snapshot should be used, even if
+	// there is a newer manifest for the snapshot key available in the
+	// remote cache.
+	ReadLocalSnapshotFirst = "local-first"
+	// Only local snapshots should be used.
+	ReadLocalSnapshotOnly = "local-only"
+)
+
 func (s ChunkSource) String() string {
 	switch s {
 	case ChunkSourceUnmapped:

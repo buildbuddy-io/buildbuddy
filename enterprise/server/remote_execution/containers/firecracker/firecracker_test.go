@@ -993,6 +993,157 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 	}
 }
 
+func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
+	tests := []struct {
+		name                      string
+		snapshotReadPolicy        string
+		expectedOutputAfterResume string
+	}{
+		{
+			name:               "Always read newest",
+			snapshotReadPolicy: snaputil.AlwaysReadNewestSnapshot,
+			// Even though a local snapshot exists on executor 1, expect to
+			// start from the remote snapshot written from executor 2 because
+			// it is newer.
+			expectedOutputAfterResume: "Executor1\nExecutor2\nResume\n",
+		},
+		{
+			name:               "Local first",
+			snapshotReadPolicy: snaputil.ReadLocalSnapshotFirst,
+			// Even though a newer remote snapshot was written by executor 2, expect to
+			// start from the local snapshot written by executor 1.
+			expectedOutputAfterResume: "Executor1\nResume\n",
+		},
+		{
+			name:               "Local only",
+			snapshotReadPolicy: snaputil.ReadLocalSnapshotOnly,
+			// Even though a newer remote snapshot was written by executor 2, expect to
+			// start from the local snapshot written by executor 1.
+			expectedOutputAfterResume: "Executor1\nResume\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			cfg := getExecutorConfig(t)
+			rootDir1 := testfs.MakeTempDir(t)
+			rootDir2 := testfs.MakeTempDir(t)
+
+			// Both "executors" should use the same remote cache, but have different
+			// local filecaches.
+			env := getTestEnv(ctx, t, envOpts{})
+			env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+
+			filecacheRoot1 := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(filecacheRoot1, fileCacheSize/2, false)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			filecacheRoot2 := testfs.MakeTempDir(t)
+			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize/2, false)
+			require.NoError(t, err)
+			fc2.WaitForDirectoryScanToComplete()
+
+			getEnvWithFC := func(fc interfaces.FileCache) *testenv.TestEnv {
+				env.SetFileCache(fc)
+				return env
+			}
+
+			var containersToCleanup []*firecracker.FirecrackerContainer
+			t.Cleanup(func() {
+				for _, vm := range containersToCleanup {
+					err := vm.Remove(ctx)
+					assert.NoError(t, err)
+				}
+			})
+
+			instanceName := "test-instance-name"
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					// Note: platform must match in order to share snapshots
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+						{Name: platform.RemoteSnapshotSavePolicyPropertyName, Value: snaputil.AlwaysSaveRemoteSnapshot},
+						{Name: platform.SnapshotReadPolicyPropertyName, Value: tc.snapshotReadPolicy},
+					}},
+					Arguments: []string{"./buildbuddy_ci_runner"},
+					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+						{Name: "GIT_BRANCH", Value: "pr-branch"},
+					},
+				},
+				ExecuteRequest: &repb.ExecuteRequest{
+					InstanceName: instanceName,
+				},
+			}
+			opts := firecracker.ContainerOpts{
+				ContainerImage: busyboxImage,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+					EnableNetworking:  false,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: cfg,
+			}
+
+			runAndSnapshotVM := func(env *testenv.TestEnv, workDir string, stringToLog string) {
+				opts.ActionWorkingDirectory = workDir
+				vm, err := firecracker.NewContainer(ctx, env, task, opts)
+				require.NoError(t, err)
+				containersToCleanup = append(containersToCleanup, vm)
+				require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage))
+				err = vm.Create(ctx, workDir)
+				require.NoError(t, err)
+				cmd := appendToLog(stringToLog)
+				res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				err = vm.Pause(ctx)
+				require.NoError(t, err)
+			}
+
+			resumeFromSnapshot := func(env *testenv.TestEnv, workDir string, stringToLog string, expectedOutput string) {
+				opts.ActionWorkingDirectory = workDir
+				vm, err := firecracker.NewContainer(ctx, env, task, opts)
+				require.NoError(t, err)
+				containersToCleanup = append(containersToCleanup, vm)
+				err = vm.Unpause(ctx)
+				require.NoError(t, err)
+				cmd := appendToLog(stringToLog)
+				res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				require.Equal(t, expectedOutput, string(res.Stdout))
+			}
+
+			if tc.snapshotReadPolicy == snaputil.ReadLocalSnapshotOnly {
+				// Save a snapshot from executor 2.
+				workDir2 := testfs.MakeDirAll(t, rootDir2, "executor-2")
+				runAndSnapshotVM(getEnvWithFC(fc2), workDir2, "Executor2")
+
+				// Ensure that executor 1 cannot resume from a snapshot, even though
+				// a remote snapshot exists for the same key.
+				workDir := testfs.MakeDirAll(t, rootDir1, "executor-1")
+				opts.ActionWorkingDirectory = workDir
+				vm, err := firecracker.NewContainer(ctx, getEnvWithFC(fc), task, opts)
+				require.NoError(t, err)
+				containersToCleanup = append(containersToCleanup, vm)
+				err = vm.Unpause(ctx)
+				require.Error(t, err)
+			}
+
+			// Save a snapshot from executor 1.
+			workDir1 := testfs.MakeDirAll(t, rootDir1, "executor-1")
+			runAndSnapshotVM(getEnvWithFC(fc), workDir1, "Executor1")
+
+			// Save a snapshot from executor 2.
+			workDir2 := testfs.MakeDirAll(t, rootDir2, "executor-2")
+			runAndSnapshotVM(getEnvWithFC(fc2), workDir2, "Executor2")
+
+			// Resume from snapshot on executor 1.
+			resumeFromSnapshot(getEnvWithFC(fc), workDir1, "Resume", tc.expectedOutputAfterResume)
+		})
+	}
+}
+
 func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
