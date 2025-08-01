@@ -496,7 +496,9 @@ func (s *Store) queryForMetarange(ctx context.Context) {
 		case p := <-stream.ResponseCh():
 			s.setMetaRangeBuf(p.Payload)
 			stream.Close()
-			s.log.Infof("Discovered metarange in %s", time.Since(start))
+			if len(p.Payload) != 0 {
+				s.log.Infof("Discovered metarange in %s", time.Since(start))
+			}
 			return
 		case <-ctx.Done():
 			stream.Close()
@@ -889,7 +891,10 @@ func (s *Store) UpdateRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 			return
 		}
 		go s.setMetaRangeBuf(buf)
-		go s.gossipManager.SendUserEvent(constants.MetaRangeTag, buf /*coalesce=*/, false)
+		go func() {
+			s.gossipManager.SendUserEvent(constants.MetaRangeTag, buf /*coalesce=*/, false)
+			s.log.Info("sent meta range tag event")
+		}()
 	}
 
 	s.leaseKeeper.AddRange(rd, r)
@@ -1031,6 +1036,10 @@ func (s *Store) ReplicaFactoryFn(rangeID, replicaID uint64) dbsm.IOnDiskStateMac
 
 func (s *Store) Sender() *sender.Sender {
 	return s.sender
+}
+
+func (s *Store) TxnCoordinator() *txn.Coordinator {
+	return s.txnCoordinator
 }
 
 func (s *Store) APIClient() *client.APIClient {
@@ -1483,6 +1492,7 @@ func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 	case serf.EventUser:
 		userEvent, _ := event.(serf.UserEvent)
 		if userEvent.Name == constants.MetaRangeTag {
+			s.log.Info("received meta range tag event")
 			s.setMetaRangeBuf(userEvent.Payload)
 		}
 	default:
@@ -2492,7 +2502,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	rangeID := leftRange.GetRangeId()
 
 	// Reserve new IDs for this cluster.
-	newRangeID, err := s.reserveRangeID(ctx)
+	newRangeID, err := s.sender.ReserveRangeID(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("could not reserve RangeID for new range %d: %s", rangeID, err)
 	}
@@ -2985,25 +2995,6 @@ func (s *Store) reserveReplicaIDs(ctx context.Context, rangeID uint64, n int) ([
 		ids = append(ids, newVal-uint64(i))
 	}
 	return ids, nil
-}
-
-func (s *Store) reserveRangeID(ctx context.Context) (uint64, error) {
-	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
-		Key:   constants.LastRangeIDKey,
-		Delta: uint64(1),
-	}).ToProto()
-	if err != nil {
-		return 0, err
-	}
-	metaRangeRsp, err := s.sender.SyncPropose(ctx, constants.MetaRangePrefix, metaRangeBatch)
-	if err != nil {
-		return 0, err
-	}
-	rangeIDIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(0)
-	if err != nil {
-		return 0, err
-	}
-	return rangeIDIncrRsp.GetValue(), nil
 }
 
 func addLocalRangeEdits(oldBuf, newBuf []byte, b *rbuilder.BatchBuilder) error {
