@@ -147,7 +147,7 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 		return nil
 	}
 	for retrier.Next() {
-		metaRangeDescriptor := s.rangeCache.Get(constants.MetaRangePrefix)
+		metaRangeDescriptor := s.GetMetaRangeDescriptor()
 		if metaRangeDescriptor == nil {
 			log.CtxWarningf(ctx, "RangeCache did not have meta range yet (key %q)", key)
 			continue
@@ -210,7 +210,7 @@ func (s *Sender) LookupRangeDescriptorsByIDs(ctx context.Context, rangeIDs []uin
 		return nil
 	}
 	for retrier.Next() {
-		metaRangeDescriptor := s.rangeCache.Get(constants.MetaRangePrefix)
+		metaRangeDescriptor := s.GetMetaRangeDescriptor()
 		if metaRangeDescriptor == nil {
 			log.CtxWarning(ctx, "RangeCache did not have meta range yet")
 			continue
@@ -242,7 +242,7 @@ func (s *Sender) LookupActiveReplicas(ctx context.Context, candidates []*rfpb.Re
 		return nil
 	}
 	for retrier.Next() {
-		metaRangeDescriptor := s.rangeCache.Get(constants.MetaRangePrefix)
+		metaRangeDescriptor := s.GetMetaRangeDescriptor()
 		if metaRangeDescriptor == nil {
 			log.CtxWarning(ctx, "RangeCache did not have meta range yet")
 			continue
@@ -649,4 +649,23 @@ func (s *Sender) DirectRead(ctx context.Context, key []byte) ([]byte, error) {
 		return nil, err
 	}
 	return readResponse.GetKv().GetValue(), nil
+}
+
+func (s *Sender) ReserveRangeID(ctx context.Context) (uint64, error) {
+	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+		Key:   constants.LastRangeIDKey,
+		Delta: uint64(1),
+	}).ToProto()
+	if err != nil {
+		return 0, err
+	}
+	metaRangeRsp, err := s.SyncPropose(ctx, constants.MetaRangePrefix, metaRangeBatch)
+	if err != nil {
+		return 0, err
+	}
+	rangeIDIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(0)
+	if err != nil {
+		return 0, err
+	}
+	return rangeIDIncrRsp.GetValue(), nil
 }

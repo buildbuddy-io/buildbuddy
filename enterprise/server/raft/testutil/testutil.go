@@ -27,6 +27,7 @@ import (
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -205,6 +206,13 @@ func (sf *StoreFactory) StartShard(t *testing.T, ctx context.Context, stores ...
 func (sf *StoreFactory) StartShardWithRanges(t *testing.T, ctx context.Context, startingRanges []*rfpb.RangeDescriptor, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
 	err := bringup.SendStartShardRequestsWithRanges(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), startingRanges)
+	require.NoError(t, err)
+}
+
+func (sf *StoreFactory) InitalizeShard(t *testing.T, ctx context.Context, bootstrapInfo *bringup.ClusterBootstrapInfo, rd *rfpb.RangeDescriptor, stores ...*TestingStore) {
+	require.Greater(t, len(stores), 0)
+	eg := &errgroup.Group{}
+	err := bringup.InitializeShard(ctx, client.NewSessionWithClock(sf.clock), stores[0], eg, bootstrapInfo, rd)
 	require.NoError(t, err)
 }
 

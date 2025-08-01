@@ -1761,39 +1761,18 @@ func TestSplitAcrossClusters(t *testing.T) {
 			{RangeId: 2, ReplicaId: 1, Nhid: proto.String(s2.NHID())},
 		},
 	}
-	protoBytes, err := proto.Marshal(initialRD)
-	require.NoError(t, err)
-	initalRDBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: protoBytes,
-		},
-	})
 
 	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, poolB)
-	err = bringup.StartShard(ctx, s2, bootstrapInfo, initalRDBatch)
+	err := bringup.StartShard(ctx, s2, bootstrapInfo)
 	require.NoError(t, err)
+	sf.InitalizeShard(t, ctx, bootstrapInfo, initialRD, s2)
 
-	metaRDBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(initialRD.GetEnd()),
-			Value: protoBytes,
-		},
-	}).Add(&rfpb.IncrementRequest{
-		Key:   constants.LastRangeIDKey,
-		Delta: uint64(1),
-	}).Add(&rfpb.IncrementRequest{
-		Key:   keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte("2")),
-		Delta: uint64(1),
-	}).ToProto()
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	newRangeID, err := s.Sender().ReserveRangeID(ctx)
 	require.NoError(t, err)
+	require.Equal(t, uint64(2), newRangeID)
 
-	writeRsp, err := s1.Sender().SyncPropose(ctx, constants.MetaRangePrefix, metaRDBatch)
-	require.NoError(t, err)
-	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
-	require.NoError(t, err)
-
-	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
 	hd := header.MakeLinearizableWithRangeValidation(rd, rd.GetReplicas()[0])
 

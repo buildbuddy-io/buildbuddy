@@ -33,6 +33,7 @@ go_library(
         "@com_github_lni_dragonboat_v4//statemachine",
         "@com_github_lni_goutils//random",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

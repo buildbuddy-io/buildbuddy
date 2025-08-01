@@ -1033,6 +1033,10 @@ func (s *Store) Sender() *sender.Sender {
 	return s.sender
 }
 
+func (s *Store) TxnCoordinator() *txn.Coordinator {
+	return s.txnCoordinator
+}
+
 func (s *Store) APIClient() *client.APIClient {
 	return s.apiClient
 }
@@ -2492,7 +2496,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	rangeID := leftRange.GetRangeId()
 
 	// Reserve new IDs for this cluster.
-	newRangeID, err := s.reserveRangeID(ctx)
+	newRangeID, err := s.sender.ReserveRangeID(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("could not reserve RangeID for new range %d: %s", rangeID, err)
 	}
@@ -2985,25 +2989,6 @@ func (s *Store) reserveReplicaIDs(ctx context.Context, rangeID uint64, n int) ([
 		ids = append(ids, newVal-uint64(i))
 	}
 	return ids, nil
-}
-
-func (s *Store) reserveRangeID(ctx context.Context) (uint64, error) {
-	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
-		Key:   constants.LastRangeIDKey,
-		Delta: uint64(1),
-	}).ToProto()
-	if err != nil {
-		return 0, err
-	}
-	metaRangeRsp, err := s.sender.SyncPropose(ctx, constants.MetaRangePrefix, metaRangeBatch)
-	if err != nil {
-		return 0, err
-	}
-	rangeIDIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(0)
-	if err != nil {
-		return 0, err
-	}
-	return rangeIDIncrRsp.GetValue(), nil
 }
 
 func addLocalRangeEdits(oldBuf, newBuf []byte, b *rbuilder.BatchBuilder) error {

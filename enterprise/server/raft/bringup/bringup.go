@@ -15,14 +15,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v4"
@@ -44,6 +45,7 @@ type IStore interface {
 	APIClient() *client.APIClient
 	NodeHost() *dragonboat.NodeHost
 	Sender() *sender.Sender
+	TxnCoordinator() *txn.Coordinator
 }
 
 type ClusterStarter struct {
@@ -347,7 +349,7 @@ func MakeBootstrapInfo(rangeID, firstReplicaID uint64, nodeGrpcAddrs map[string]
 	return bi
 }
 
-func StartShard(ctx context.Context, store IStore, bootstrapInfo *ClusterBootstrapInfo, batch *rbuilder.BatchBuilder) error {
+func StartShard(ctx context.Context, store IStore, bootstrapInfo *ClusterBootstrapInfo) error {
 	log.Debugf("StartShard called with bootstrapInfo: %+v", bootstrapInfo)
 
 	eg, egCtx := errgroup.WithContext(ctx)
@@ -374,37 +376,7 @@ func StartShard(ctx context.Context, store IStore, bootstrapInfo *ClusterBootstr
 		})
 	}
 
-	err := eg.Wait()
-	if err != nil {
-		return err
-	}
-	rangeSetupTime := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeSetupTimeKey,
-			Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
-		},
-	})
-	batch = batch.Merge(rangeSetupTime)
-	batchProto, err := batch.ToProto()
-	if err != nil {
-		return err
-	}
-	// This range descriptor is only used in sender and is not being stored.
-	// The generation is intentionally not set, so we won't accidentally
-	// overwrite the stored range descriptor.
-	rd := &rfpb.RangeDescriptor{
-		RangeId:  bootstrapInfo.rangeID,
-		Replicas: bootstrapInfo.Replicas,
-	}
-	syncRsp, err := store.Sender().SyncProposeWithRangeDescriptor(ctx, rd, batchProto, header.MakeLinearizableWithoutRangeValidation)
-	if err != nil {
-		return err
-	}
-	rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
-	if err := rsp.AnyError(); err != nil {
-		return err
-	}
-	return nil
+	return eg.Wait()
 }
 
 var maxHashAsBigInt = big.NewInt(0).SetBytes([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
@@ -484,6 +456,105 @@ func evenlyDividePartitionIntoRanges(splitConfig SplitConfig) ([]*rfpb.RangeDesc
 	return ranges, nil
 }
 
+func InitializeShard(ctx context.Context, session *client.Session, store IStore, eg *errgroup.Group, bootstrapInfo *ClusterBootstrapInfo, rd *rfpb.RangeDescriptor) error {
+	rangeID := rd.GetRangeId()
+	eg.Go(func() error {
+		if err := StartShard(ctx, store, bootstrapInfo); err != nil {
+			return err
+		}
+		log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
+		return nil
+	})
+	rdBuf, err := proto.Marshal(rd)
+	if err != nil {
+		return err
+	}
+	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: rdBuf,
+		},
+	})
+	batch = batch.Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.ClusterSetupTimeKey,
+			Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
+		},
+	})
+
+	if rd.GetRangeId() == uint64(constants.MetaRangeID) {
+		batch = batch.Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   keys.RangeMetaKey(rd.GetEnd()),
+				Value: rdBuf,
+			},
+		})
+		batch = batch.Add(&rfpb.IncrementRequest{
+			Key:   keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID))),
+			Delta: uint64(len(bootstrapInfo.Replicas)),
+		})
+	}
+
+	log.Debugf("Attempting to start cluster %d on: %+v", rangeID, bootstrapInfo)
+
+	// Always wait for the metarange to startup first.
+	if rd.GetRangeId() == constants.MetaRangeID {
+		if err := eg.Wait(); err != nil {
+			return err
+		}
+		batchProto, err := batch.ToProto()
+		if err != nil {
+			return err
+		}
+		rsp, err := session.SyncProposeLocal(ctx, store.NodeHost(), constants.MetaRangeID, batchProto)
+		if err != nil {
+			return err
+		}
+		err = rbuilder.NewBatchResponseFromProto(rsp).AnyError()
+		if err != nil {
+			return err
+		}
+	} else {
+		retrier := retry.DefaultWithContext(ctx)
+		var mrd *rfpb.RangeDescriptor
+		for retrier.Next() {
+			mrd = store.Sender().GetMetaRangeDescriptor()
+			if mrd != nil {
+				break
+			}
+			log.CtxWarning(ctx, "RangeCache did not have meta range yet")
+		}
+		tx := rbuilder.NewTxn()
+		stmt := tx.AddStatement()
+		stmt.SetRangeDescriptor(rd).SetBatch(batch)
+		// The range descriptor is a new one.
+		stmt.SetRangeValidationRequired(false)
+
+		metaRangeBatch := rbuilder.NewBatchBuilder()
+		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
+			Key:   keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID))),
+			Delta: uint64(len(bootstrapInfo.Replicas)),
+		})
+		metaRangeBatch = metaRangeBatch.Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   keys.RangeMetaKey(rd.GetEnd()),
+				Value: rdBuf,
+			},
+		})
+
+		stmt = tx.AddStatement()
+		stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)
+		log.Infof("mrd: %+v", mrd)
+		stmt.SetRangeValidationRequired(true)
+
+		err = store.TxnCoordinator().RunTxn(ctx, tx)
+		if err != nil {
+			return status.InternalErrorf("failed to run txn to start shard for rangeID=%d, err: %s", rd.GetRangeId(), err)
+		}
+	}
+	return nil
+}
+
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bring up initial cluster(s).
 func SendStartShardRequests(ctx context.Context, session *client.Session, store IStore, nodeGrpcAddrs map[string]string) error {
@@ -498,88 +569,21 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 	replicaID := uint64(constants.InitialReplicaID)
 	rangeID := uint64(constants.InitialRangeID)
 
-	eg := errgroup.Group{}
+	eg := &errgroup.Group{}
 	for _, rangeDescriptor := range startingRanges {
 		bootstrapInfo := MakeBootstrapInfo(rangeID, replicaID, nodeGrpcAddrs)
 		rangeDescriptor.Replicas = bootstrapInfo.Replicas
 		rangeDescriptor.RangeId = rangeID
-		rdBuf, err := proto.Marshal(rangeDescriptor)
-		if err != nil {
+
+		if err := InitializeShard(ctx, session, store, eg, bootstrapInfo, rangeDescriptor); err != nil {
 			return err
 		}
 
-		batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-			Kv: &rfpb.KV{
-				Key:   constants.LocalRangeKey,
-				Value: rdBuf,
-			},
-		})
-		batch = batch.Add(&rfpb.DirectWriteRequest{
-			Kv: &rfpb.KV{
-				Key:   constants.ClusterSetupTimeKey,
-				Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
-			},
-		})
-
-		if rangeID == uint64(constants.InitialRangeID) {
-			batch = batch.Add(&rfpb.DirectWriteRequest{
-				Kv: &rfpb.KV{
-					Key:   keys.RangeMetaKey(rangeDescriptor.GetEnd()),
-					Value: rdBuf,
-				},
-			})
-		}
-		log.Debugf("Attempting to start cluster %d on: %+v", rangeID, bootstrapInfo)
-
-		// copy range ID because it's going to change next loop
-		rangeIDCopy := rangeID
-		eg.Go(func() error {
-			if err := StartShard(ctx, store, bootstrapInfo, batch); err != nil {
-				return err
-			}
-			log.Debugf("Cluster %d started on: %+v", rangeIDCopy, bootstrapInfo)
-			return nil
-		})
-
-		// Always wait for the metarange to startup first.
-		if rangeID == constants.MetaRangeID {
-			if err := eg.Wait(); err != nil {
-				return err
-			}
-		}
-
-		// Record the used IDs.
-		metaRangeBatch := rbuilder.NewBatchBuilder()
-		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
-			Key:   constants.LastRangeIDKey,
-			Delta: 1,
-		})
-		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
-			Key:   keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID))),
-			Delta: uint64(len(bootstrapInfo.Replicas)),
-		})
-		metaRangeBatch = metaRangeBatch.Add(&rfpb.DirectWriteRequest{
-			Kv: &rfpb.KV{
-				Key:   keys.RangeMetaKey(rangeDescriptor.GetEnd()),
-				Value: rdBuf,
-			},
-		})
-
-		batchProto, err := metaRangeBatch.ToProto()
+		newRangeID, err := store.Sender().ReserveRangeID(ctx)
 		if err != nil {
-			return err
+			return status.InternalErrorf("could not reserve RangeID for new range %d: %s", rangeID, err)
 		}
-		batchRsp, err := session.SyncProposeLocal(ctx, store.NodeHost(), constants.InitialRangeID, batchProto)
-		if err != nil {
-			return err
-		}
-		rsp := rbuilder.NewBatchResponseFromProto(batchRsp)
-
-		rangeIncrResponse, err := rsp.IncrementResponse(0)
-		if err != nil {
-			return err
-		}
-		rangeID = rangeIncrResponse.GetValue() + 1
+		rangeID = newRangeID + 1
 		log.Infof("new rangeID: %d", rangeID)
 	}
 
