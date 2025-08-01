@@ -23,6 +23,7 @@ go_library(
         "//server/resources",
         "//server/util/authutil",
         "//server/util/background",
+        "//server/util/claims",
         "//server/util/consistent_hash",
         "//server/util/flag",
         "//server/util/ioutil",
@@ -30,8 +31,10 @@ go_library(
         "//server/util/lru",
         "//server/util/peerset",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
     ],
 )
