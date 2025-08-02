@@ -64,6 +64,7 @@ import (
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
@@ -195,6 +196,22 @@ func getLogDbConfig(t LogDBConfigType) dbConfig.LogDBConfig {
 		alert.UnexpectedEvent("unknown-raft-log-db-config-type", "unknown type: %d", t)
 	}
 	return dbConfig.GetDefaultLogDBConfig()
+}
+
+func ensureDefaultPartitionExists(partitions []disk.Partition) []disk.Partition {
+	foundDefaultPartition := false
+	for _, part := range partitions {
+		if part.ID == disk.DefaultPartitionID {
+			foundDefaultPartition = true
+		}
+	}
+	if foundDefaultPartition {
+		return partitions
+	}
+	return append(partitions, disk.Partition{
+		ID:           disk.DefaultPartitionID,
+		MaxSizeBytes: cache_config.MaxSizeBytes(),
+	})
 }
 
 func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr string, partitions []disk.Partition, logDBConfigType LogDBConfigType) (*Store, error) {

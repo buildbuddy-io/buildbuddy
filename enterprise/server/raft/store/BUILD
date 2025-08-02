@@ -28,6 +28,7 @@ go_library(
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
+        "//server/cache/config",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",

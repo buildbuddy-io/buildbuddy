@@ -140,7 +140,6 @@ const (
 
 	megabyte = 1e6
 
-	DefaultPartitionID           = "default"
 	partitionMetadataFlushPeriod = 5 * time.Second
 	metricsRefreshPeriod         = 30 * time.Second
 
@@ -472,7 +471,7 @@ func SetOptionDefaults(opts *Options) {
 func ensureDefaultPartitionExists(opts *Options) {
 	foundDefaultPartition := false
 	for _, part := range opts.Partitions {
-		if part.ID == DefaultPartitionID {
+		if part.ID == disk.DefaultPartitionID {
 			foundDefaultPartition = true
 		}
 	}
@@ -480,7 +479,7 @@ func ensureDefaultPartitionExists(opts *Options) {
 		return
 	}
 	opts.Partitions = append(opts.Partitions, disk.Partition{
-		ID:           DefaultPartitionID,
+		ID:           disk.DefaultPartitionID,
 		MaxSizeBytes: opts.MaxSizeBytes,
 	})
 }
@@ -1457,7 +1456,7 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 			return groupID, pm.PartitionID
 		}
 	}
-	return groupID, DefaultPartitionID
+	return groupID, disk.DefaultPartitionID
 }
 
 func (p *PebbleCache) encryptionEnabled(ctx context.Context) (bool, error) {
