@@ -30,6 +30,8 @@ const (
 
 	// default poll interval for WaitUntilExists.
 	defaultWaitPollInterval = 1 * time.Millisecond
+
+	DefaultPartitionID = "default"
 )
 
 var (
