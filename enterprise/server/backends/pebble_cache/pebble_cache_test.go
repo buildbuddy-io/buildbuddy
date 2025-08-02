@@ -478,7 +478,7 @@ func TestIsolateByGroupIds(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(buf, rbuf))
 		hash := r.GetDigest().GetHash()
-		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, pebble_cache.DefaultPartitionID, hash[:4], hash)
+		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, disk.DefaultPartitionID, hash[:4], hash)
 		_, err = os.Stat(expectedFilename)
 		require.NoError(t, err)
 	}
@@ -548,7 +548,7 @@ func TestIsolateAnonUsers(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(buf, rbuf))
 		hash := r.GetDigest().GetHash()
-		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, pebble_cache.DefaultPartitionID, hash[:4], hash)
+		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, disk.DefaultPartitionID, hash[:4], hash)
 		_, err = os.Stat(expectedFilename)
 		require.NoError(t, err)
 	}
@@ -2310,7 +2310,7 @@ func TestEncryption(t *testing.T) {
 				opts := &pebble_cache.Options{
 					RootDirectory: rootDir,
 					Partitions: []disk.Partition{{
-						ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
+						ID: disk.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
 					}},
 				}
 				pc, err := pebble_cache.NewPebbleCache(te, opts)
@@ -2362,7 +2362,7 @@ func TestReadEncryptedWrongDigestSize(t *testing.T) {
 	opts := &pebble_cache.Options{
 		RootDirectory: rootDir,
 		Partitions: []disk.Partition{{
-			ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
+			ID: disk.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
 		}},
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
@@ -2439,7 +2439,7 @@ func TestEncryptedUnencryptedSameDigest(t *testing.T) {
 			opts := &pebble_cache.Options{
 				RootDirectory: rootDir,
 				Partitions: []disk.Partition{{
-					ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
+					ID: disk.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
 				}},
 				MaxInlineFileSizeBytes: tc.maxInlineFileSizeBytes,
 				AverageChunkSizeBytes:  tc.averageChunkSizeBytes,
@@ -2572,7 +2572,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 		opts := &pebble_cache.Options{
 			RootDirectory: rootDir,
 			Partitions: []disk.Partition{{
-				ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
+				ID: disk.DefaultPartitionID, MaxSizeBytes: maxSizeBytes,
 			}},
 		}
 		pc, err := pebble_cache.NewPebbleCache(te, opts)
@@ -2909,7 +2909,7 @@ func TestSampling(t *testing.T) {
 			opts := &pebble_cache.Options{
 				RootDirectory: testfs.MakeTempDir(t),
 				Partitions: []disk.Partition{{
-					ID: pebble_cache.DefaultPartitionID,
+					ID: disk.DefaultPartitionID,
 					// Force all entries to be evicted as soon as they pass the minimum
 					// eviction age.
 					MaxSizeBytes: 2,
