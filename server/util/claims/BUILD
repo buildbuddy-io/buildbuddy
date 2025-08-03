@@ -28,8 +28,11 @@ go_test(
     srcs = ["claims_test.go"],
     deps = [
         ":claims",
+        "//proto:capability_go_proto",
         "//proto:context_go_proto",
+        "//proto:group_go_proto",
         "//server/interfaces",
+        "//server/tables",
         "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/request_context",
