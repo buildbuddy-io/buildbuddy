@@ -128,7 +128,8 @@ func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, exec
 	}
 
 	pipe := rdb.TxPipeline()
-	pipe.HSet(ctx, forwardKey, executionIDKey, executionID, ttl)
+	pipe.HSet(ctx, forwardKey, executionIDKey, executionID)
+	pipe.Expire(ctx, forwardKey, ttl)
 	pipe.Set(ctx, reverseKey, forwardKey, ttl)
 	_, err = pipe.Exec(ctx)
 	return err
