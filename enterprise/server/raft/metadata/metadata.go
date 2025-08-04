@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
@@ -48,6 +49,7 @@ var (
 	clearPrevCacheOnStartup = flag.Bool("cache.raft.clear_prev_cache_on_startup", false, "If set, remove all raft + cache data from previous run on start")
 	partitions              = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
 	partitionMappings       = flag.Slice("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
+	partitionSplits         = flag.Slice("raft.bringup.partition_splits", []bringup.SplitConfig{}, "")
 	atimeUpdateThreshold    = flag.Duration("cache.raft.atime_update_threshold", 3*time.Hour, "Don't update atime if it was updated more recently than this")
 	atimeBufferSize         = flag.Int("cache.raft.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	atimeWriteBatchSize     = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
@@ -144,17 +146,34 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 
 	ps := *partitions
 	haveDefault := false
+	partitionSet := make(set.Set[string])
+
 	for _, p := range ps {
+		partitionSet.Add(p.ID)
 		if p.ID == DefaultPartitionID {
 			haveDefault = true
 			break
 		}
 	}
 	if !haveDefault {
+		partitionSet.Add(DefaultPartitionID)
 		ps = append(ps, disk.Partition{
 			ID:           DefaultPartitionID,
 			MaxSizeBytes: cache_config.MaxSizeBytes(),
 		})
+	}
+
+	// Verify Partition Mappings.
+	for _, pm := range *partitionMappings {
+		if !partitionSet.Contains(pm.PartitionID) {
+			return nil, status.NotFoundErrorf("Mapping to unknown partition %q", pm.PartitionID)
+		}
+	}
+
+	for _, sc := range *partitionSplits {
+		if !partitionSet.Contains(sc.PartitionID) {
+			return nil, status.NotFoundErrorf("split config contains unknown partition %q", sc.PartitionID)
+		}
 	}
 
 	if *clearCacheOnStartup {

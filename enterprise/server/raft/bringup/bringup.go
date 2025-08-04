@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
@@ -32,12 +31,9 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
-var partitionSplits = flag.Slice("raft.bringup.partition_splits", []SplitConfig{}, "")
-
 type SplitConfig struct {
-	Start  []byte `yaml:"start" json:"start" usage:"The first key in the partition."`
-	End    []byte `yaml:"end" json:"end" usage:"The last key in the partition."`
-	Splits int    `yaml:"splits" json:"splits" usage:"The number of splits to pre-create."`
+	PartitionID string `yaml:"partition_id" json:"partition_id" usage:"The ID of the partition that splits applied to`
+	Splits      int    `yaml:"splits" json:"splits" usage:"The number of splits to pre-create."`
 }
 
 type IStore interface {

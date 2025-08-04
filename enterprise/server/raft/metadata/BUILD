@@ -26,6 +26,7 @@ go_library(
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/flagutil/types",
+        "//server/util/lib/set",
         "//server/util/log",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
