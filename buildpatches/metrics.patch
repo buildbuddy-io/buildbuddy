@@ -1,3 +1,26 @@
+diff --git a/jailer.go b/jailer.go
+index 208de67..c4603ea 100644
+--- a/jailer.go
++++ b/jailer.go
+@@ -14,6 +14,7 @@
+ package firecracker
+ 
+ import (
++	"errors"
+ 	"context"
+ 	"fmt"
+ 	"io"
+@@ -440,8 +441,8 @@ func LinkFilesHandler(kernelImageFileName string) Handler {
+ 				if err := os.Link(
+ 					*fifoPath,
+ 					filepath.Join(rootfs, fileName),
+-				); err != nil {
+-					return err
++				); err == nil {
++					return errors.New(fmt.Sprintf("Linking %s to %s", *fifoPath, filepath.Join(rootfs, fileName)))
+ 				}
+ 
+ 				if err := os.Chown(filepath.Join(rootfs, fileName), *m.Cfg.JailerCfg.UID, *m.Cfg.JailerCfg.GID); err != nil {
 diff --git a/machine.go b/machine.go
 index a812b98..d7c0d73 100644
 --- a/machine.go

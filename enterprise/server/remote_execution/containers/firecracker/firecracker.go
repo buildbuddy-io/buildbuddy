@@ -1163,7 +1163,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 			ResumeVM:            true,
 		},
 		ForwardSignals: make([]os.Signal, 0),
-		MetricsFifo:    metricsFifo,
+		MetricsFifo:    "fc-metrics.fifo",
 	}
 
 	if err := c.setupVFSServer(ctx); err != nil {
