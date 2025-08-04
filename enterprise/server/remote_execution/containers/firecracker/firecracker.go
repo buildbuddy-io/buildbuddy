@@ -1143,6 +1143,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "get jailer config")
 	}
+	metricsPath := "/tmp/fc-metrics.fifo"
+	if err := syscall.Mkfifo(metricsPath, 0600); err != nil && !os.IsExist(err) {
+		return status.WrapError(err, "make metrics output file")
+	}
 	cfg := fcclient.Config{
 		SocketPath:        firecrackerSocketPath,
 		NetNS:             netnsPath,
@@ -1154,6 +1158,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 			ResumeVM:            true,
 		},
 		ForwardSignals: make([]os.Signal, 0),
+		MetricsFifo:    metricsPath,
 	}
 
 	if err := c.setupVFSServer(ctx); err != nil {
