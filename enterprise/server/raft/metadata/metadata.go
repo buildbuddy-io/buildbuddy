@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -65,8 +66,7 @@ const (
 	// atimeFlushPeriod is the time interval that we will wait before
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
-	atimeFlushPeriod   = 10 * time.Second
-	DefaultPartitionID = "default"
+	atimeFlushPeriod = 10 * time.Second
 )
 
 type Config struct {
@@ -82,6 +82,7 @@ type Config struct {
 
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
+	SplitConfig       []bringup.SplitConfig
 
 	LogDBConfigType store.LogDBConfigType
 }
@@ -145,20 +146,20 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 	}
 
 	ps := *partitions
-	haveDefault := false
 	partitionSet := make(set.Set[string])
 
+	haveDefault := false
 	for _, p := range ps {
 		partitionSet.Add(p.ID)
-		if p.ID == DefaultPartitionID {
+		if p.ID == constants.DefaultPartitionID {
 			haveDefault = true
 			break
 		}
 	}
 	if !haveDefault {
-		partitionSet.Add(DefaultPartitionID)
+		partitionSet.Add(constants.DefaultPartitionID)
 		ps = append(ps, disk.Partition{
-			ID:           DefaultPartitionID,
+			ID:           constants.DefaultPartitionID,
 			MaxSizeBytes: cache_config.MaxSizeBytes(),
 		})
 	}
@@ -170,10 +171,22 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		}
 	}
 
-	for _, sc := range *partitionSplits {
+	haveDefault = false
+	splitConfigs := *partitionSplits
+	for _, sc := range splitConfigs {
 		if !partitionSet.Contains(sc.PartitionID) {
 			return nil, status.NotFoundErrorf("split config contains unknown partition %q", sc.PartitionID)
 		}
+		if sc.PartitionID == constants.DefaultPartitionID {
+			haveDefault = true
+		}
+	}
+
+	if !haveDefault {
+		splitConfigs = append(splitConfigs, bringup.SplitConfig{
+			PartitionID: constants.DefaultPartitionID,
+			NumRanges:   1,
+		})
 	}
 
 	if *clearCacheOnStartup {
@@ -195,6 +208,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		GRPCPort:          *gRPCPort,
 		Partitions:        ps,
 		PartitionMappings: *partitionMappings,
+		SplitConfig:       *partitionSplits,
 		LogDBConfigType:   store.LargeMemLogDBConfigType,
 	}
 	return New(env, rcConfig)
@@ -235,7 +249,7 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	rc.clusterStarter = bringup.New(rc.grpcAddr, rc.gossipManager, rc.store)
+	rc.clusterStarter = bringup.New(rc.grpcAddr, rc.gossipManager, rc.store, rc.conf.SplitConfig)
 	if err := rc.clusterStarter.InitializeClusters(); err != nil {
 		return nil, err
 	}

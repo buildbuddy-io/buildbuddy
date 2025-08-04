@@ -18,6 +18,8 @@ const (
 	PlacementDriverQueryEvent = "placement_driver_query_event"
 
 	CacheName = "raft"
+
+	DefaultPartitionID = "default"
 )
 
 // Key range contants

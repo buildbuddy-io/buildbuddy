@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
@@ -199,7 +200,17 @@ func (ts *TestingStore) Stop() {
 
 func (sf *StoreFactory) StartShard(t *testing.T, ctx context.Context, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
-	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...))
+	splitConfig := bringup.SplitConfig{
+		PartitionID: constants.DefaultPartitionID,
+		NumRanges:   1,
+	}
+	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), splitConfig)
+	require.NoError(t, err)
+}
+
+func (sf *StoreFactory) StartShardWithSplitConifg(t *testing.T, ctx context.Context, splitConfig bringup.SplitConfig, stores ...*TestingStore) {
+	require.Greater(t, len(stores), 0)
+	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), splitConfig)
 	require.NoError(t, err)
 }
 

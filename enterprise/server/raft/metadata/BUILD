@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",
+        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/logger",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/registry",

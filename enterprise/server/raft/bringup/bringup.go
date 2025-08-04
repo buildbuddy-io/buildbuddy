@@ -32,8 +32,8 @@ import (
 )
 
 type SplitConfig struct {
-	PartitionID string `yaml:"partition_id" json:"partition_id" usage:"The ID of the partition that splits applied to`
-	Splits      int    `yaml:"splits" json:"splits" usage:"The number of splits to pre-create."`
+	PartitionID string `yaml:"partition_id" json:"partition_id" usage:"The ID of the partition that splits applied to"`
+	NumRanges   int    `yaml:"num_ranges" json:"num_ranges" usage:"The number of ranges to pre-create."`
 }
 
 type IStore interface {
@@ -64,10 +64,11 @@ type ClusterStarter struct {
 
 	log log.Logger
 
+	splitConfig    []SplitConfig
 	rangesToCreate []*rfpb.RangeDescriptor
 }
 
-func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore) *ClusterStarter {
+func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore, splitConfig []SplitConfig) *ClusterStarter {
 	joinList := gossipMan.JoinList()
 	cs := &ClusterStarter{
 		store:         store,
@@ -80,6 +81,7 @@ func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore) *Clu
 		doneOnce:      sync.Once{},
 		doneSetup:     make(chan struct{}),
 		log:           log.NamedSubLogger(store.NodeHost().ID()),
+		splitConfig:   splitConfig,
 	}
 	sort.Strings(cs.join)
 
@@ -162,8 +164,7 @@ func (cs *ClusterStarter) matchesListenAddress(hostAndPort string) (bool, error)
 	return false, nil
 }
 
-// computeStartingRanges will never return an error if partitionSplits is unset.
-func computeStartingRanges() ([]*rfpb.RangeDescriptor, error) {
+func computeStartingRanges(splitConfig SplitConfig) ([]*rfpb.RangeDescriptor, error) {
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
 			Start:      constants.MetaRangePrefix,
@@ -171,28 +172,26 @@ func computeStartingRanges() ([]*rfpb.RangeDescriptor, error) {
 			Generation: 1,
 		},
 	}
-	// If no additional ranges were configured, then append a single range that
-	// runs from constants.UnsplittableMaxByte to keys.MaxByte.
-	if len(*partitionSplits) == 0 {
-		startingRanges = append(startingRanges, &rfpb.RangeDescriptor{
-			Start:      keys.Key{constants.UnsplittableMaxByte},
-			End:        keys.MaxByte,
-			Generation: 1,
-		})
-		return startingRanges, nil
+	splitRanges, err := evenlyDividePartitionIntoRanges(splitConfig)
+	if err != nil {
+		return nil, err
 	}
-	for _, splitConfig := range *partitionSplits {
-		splitRanges, err := evenlyDividePartitionIntoRanges(splitConfig)
-		if err != nil {
-			return nil, err
-		}
-		startingRanges = append(startingRanges, splitRanges...)
-	}
+	startingRanges = append(startingRanges, splitRanges...)
 	return startingRanges, nil
 }
 
 func (cs *ClusterStarter) InitializeClusters() error {
-	startingRanges, err := computeStartingRanges()
+	var defaultSplitConfig SplitConfig
+	for _, splitConfig := range cs.splitConfig {
+		if splitConfig.PartitionID == constants.DefaultPartitionID {
+			defaultSplitConfig = splitConfig
+			break
+		}
+	}
+	if defaultSplitConfig.PartitionID != constants.DefaultPartitionID {
+		return status.FailedPreconditionError("no default split config is found")
+	}
+	startingRanges, err := computeStartingRanges(defaultSplitConfig)
 	if err != nil {
 		return err
 	} else {
@@ -377,76 +376,41 @@ func StartShard(ctx context.Context, store IStore, bootstrapInfo *ClusterBootstr
 
 var maxHashAsBigInt = big.NewInt(0).SetBytes([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 
-func keyToBigInt(key filestore.PebbleKey) (*big.Int, error) {
-	hash, err := hex.DecodeString(key.Hash())
-	if err != nil {
-		return nil, status.InternalErrorf("could not parse key %q hash: %s", key, err)
-	}
+var minHashAsBigInt = big.NewInt(0).SetBytes([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
 
-	for len(hash) < 32 {
-		hash = append(hash, 0)
-	}
-	if len(hash) > 32 {
-		hash = hash[:32]
-	}
-	return big.NewInt(0).SetBytes(hash), nil
-}
-
-// evenlyDividePartitionIntoRanges takes a splitConfig (a start byte, end byte,
-// and number of splits) and returns a slice of splitConfig.Splits+1 range
-// descriptors that completely cover that range from [start byte, end byte).
+// evenlyDividePartitionIntoRanges takes a splitConfig (partition ID and number
+// of ranges) and returns a slice of range descriptors that completely cover that
+// partition:
+// [PT<partition_name>/00000000000000000000000000000000,
+// PT<partition_name>/ffffffffffffffffffffffffffffffff)
 func evenlyDividePartitionIntoRanges(splitConfig SplitConfig) ([]*rfpb.RangeDescriptor, error) {
-	if splitConfig.Splits < 1 {
-		return nil, status.FailedPreconditionError("Split config does not specify >1 splits")
-	}
-	var startKey, endKey filestore.PebbleKey
-	startVersion, err := startKey.FromBytes(splitConfig.Start)
-	if err != nil {
-		return nil, status.FailedPreconditionErrorf("Error parsing split start %q: %s", splitConfig.Start, err)
-	}
-	endVersion, err := endKey.FromBytes(splitConfig.End)
-	if err != nil {
-		return nil, status.FailedPreconditionErrorf("Error parsing split start %q: %s", splitConfig.Start, err)
-	}
-	if startVersion < filestore.Version5 || startVersion != endVersion {
-		return nil, status.FailedPreconditionError("Start and end key must be of the same version (v5 or later)")
-	}
-	if startKey.Partition() != endKey.Partition() {
-		return nil, status.FailedPreconditionErrorf("Split start and end key must have same partition: %v", splitConfig)
+	if splitConfig.NumRanges < 1 {
+		return nil, status.FailedPreconditionError("Split config does not positive number of ranges")
 	}
 
-	log.Infof("startKey: %q, endKey: %q", startKey, endKey)
-	leftInt, err := keyToBigInt(startKey)
-	if err != nil {
-		return nil, status.FailedPreconditionErrorf("Error converting startKey %q to int: %s", startKey, err)
-	}
-	rightInt, err := keyToBigInt(endKey)
-	if err != nil {
-		return nil, status.FailedPreconditionErrorf("Error converting endKey %q to int: %s", endKey, err)
-	}
-	delta := new(big.Int).Sub(rightInt, leftInt)
-	interval := new(big.Int).Div(delta, big.NewInt(int64(splitConfig.Splits+1)))
+	delta := new(big.Int).Sub(maxHashAsBigInt, minHashAsBigInt)
+	interval := new(big.Int).Div(delta, big.NewInt(int64(splitConfig.NumRanges)))
 	if interval.Sign() != 1 {
-		return nil, status.FailedPreconditionErrorf("delta (%s) < count (%d)", delta, splitConfig.Splits)
+		return nil, status.FailedPreconditionErrorf("delta (%s) < count (%d)", delta, splitConfig.NumRanges)
 	}
 	ranges := make([]*rfpb.RangeDescriptor, 0)
 
-	l := leftInt
+	l := minHashAsBigInt
 	// Append all ranges from start --> first split, first split -
 	// -> 2nd split... nth split.
-	for i := 0; i < splitConfig.Splits; i++ {
+	for i := 0; i < splitConfig.NumRanges-1; i++ {
 		r := new(big.Int).Add(l, interval)
 		ranges = append(ranges, &rfpb.RangeDescriptor{
-			Start:      []byte(startKey.Partition() + "/" + hex.EncodeToString(l.Bytes())),
-			End:        []byte(startKey.Partition() + "/" + hex.EncodeToString(r.Bytes())),
+			Start:      []byte(filestore.PartitionDirectoryPrefix + splitConfig.PartitionID + "/" + hex.EncodeToString(l.Bytes())),
+			End:        []byte(filestore.PartitionDirectoryPrefix + splitConfig.PartitionID + "/" + hex.EncodeToString(r.Bytes())),
 			Generation: 1,
 		})
 		l = r
 	}
 	// Append a final range from nth split --> end.
 	ranges = append(ranges, &rfpb.RangeDescriptor{
-		Start:      []byte(startKey.Partition() + "/" + hex.EncodeToString(l.Bytes())),
-		End:        []byte(startKey.Partition() + "/" + hex.EncodeToString(rightInt.Bytes())),
+		Start:      []byte(filestore.PartitionDirectoryPrefix + splitConfig.PartitionID + "/" + hex.EncodeToString(l.Bytes())),
+		End:        []byte(filestore.PartitionDirectoryPrefix + splitConfig.PartitionID + "/" + hex.EncodeToString(maxHashAsBigInt.Bytes())),
 		Generation: 1,
 	})
 	return ranges, nil
@@ -555,8 +519,8 @@ func InitializeShard(ctx context.Context, session *client.Session, store IStore,
 
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bring up initial cluster(s).
-func SendStartShardRequests(ctx context.Context, session *client.Session, store IStore, nodeGrpcAddrs map[string]string) error {
-	startingRanges, err := computeStartingRanges()
+func SendStartShardRequests(ctx context.Context, session *client.Session, store IStore, nodeGrpcAddrs map[string]string, splitConfig SplitConfig) error {
+	startingRanges, err := computeStartingRanges(splitConfig)
 	if err != nil {
 		return err
 	}
