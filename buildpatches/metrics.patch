@@ -1,0 +1,13 @@
+diff --git a/machine.go b/machine.go
+index a812b98..d7c0d73 100644
+--- a/machine.go
++++ b/machine.go
+@@ -674,7 +674,7 @@ func (m *Machine) stopVMM() error {
+ // createFifo sets up a FIFOs
+ func createFifo(path string) error {
+ 	log.Debugf("Creating FIFO %s", path)
+-	if err := syscall.Mkfifo(path, 0700); err != nil {
++	if err := syscall.Mkfifo(path, 0700); err != nil && !os.IsExist(err) {
+ 		return fmt.Errorf("Failed to create log fifo: %v", err)
+ 	}
+ 	return nil

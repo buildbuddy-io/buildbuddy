@@ -1143,8 +1143,15 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "get jailer config")
 	}
-	metricsFifo := filepath.Join(jailerCfg.ChrootBaseDir, "fc-metrics.fifo")
+	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
+		return status.UnavailableErrorf("make chroot dir: %s", err)
+	}
+
+	metricsFifo := filepath.Join(c.getChroot(), "fc-metrics.fifo")
 	log.Warningf("Metrics should be at %s", metricsFifo)
+	if err := syscall.Mkfifo(metricsFifo, 0600); err != nil && !os.IsExist(err) {
+		log.Fatalf("Failed to create FIFO: %v", err)
+	}
 	cfg := fcclient.Config{
 		SocketPath:        firecrackerSocketPath,
 		NetNS:             netnsPath,
@@ -1203,10 +1210,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	snap.GetVMMetadata().SnapshotId = c.snapshotID
 	c.snapshot = snap
-
-	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
-		return status.UnavailableErrorf("make chroot dir: %s", err)
-	}
 
 	// Write the workspace drive placeholder file. Firecracker will expect this
 	// file to exist since we stubbed out the workspace drive with this
@@ -1572,6 +1575,8 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			Smt:             fcclient.Bool(false),
 			TrackDirtyPages: fcclient.Bool(true),
 		},
+		// The SDK creates this at something like `/tmp/remote_build/firecracker/71d071d6-f44d-430b-a04d-a2085efb88ed/root/metrics.fifo`
+		MetricsFifo: "./fc-metrics.fifo",
 	}
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		cfg.Drives = append(cfg.Drives, fcmodels.Drive{
