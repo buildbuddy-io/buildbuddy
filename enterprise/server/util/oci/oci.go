@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
@@ -28,12 +29,20 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/hashicorp/golang-lru/v2/expirable"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+)
+
+const (
+	// resolveImageDigestLRUMaxEntries limits the number of entries in the image-tag-to-digest cache.
+	resolveImageDigestLRUMaxEntries = 1000
+	// resolveImageDigestLRUExpiration limits how long the image-tag-to-digest cache will keep entries.
+	resolveImageDigestLRUExpiration = time.Minute * 15
 )
 
 var (
@@ -220,7 +229,8 @@ func (c Credentials) Equals(o Credentials) bool {
 type Resolver struct {
 	env environment.Env
 
-	allowedPrivateIPs []*net.IPNet
+	imageTagToDigestLRU *expirable.LRU[string, string]
+	allowedPrivateIPs   []*net.IPNet
 }
 
 func NewResolver(env environment.Env) (*Resolver, error) {
@@ -232,7 +242,46 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
-	return &Resolver{env: env, allowedPrivateIPs: allowedPrivateIPNets}, nil
+	imageTagToDigestLRU := expirable.NewLRU[string, string](resolveImageDigestLRUMaxEntries, nil, resolveImageDigestLRUExpiration)
+	return &Resolver{
+		env: env,
+
+		imageTagToDigestLRU: imageTagToDigestLRU,
+		allowedPrivateIPs:   allowedPrivateIPNets,
+	}, nil
+}
+
+// ResolveImageDigest takes an image name and returns an image name with a digest.
+// If the input image name includes a digest, a canonicalized version of the name is returned.
+// If the input image name refers to a tag (either explictly or implicity), ResolveImageDigest
+// will make a HEAD request to the remote registry.
+// ResolveImageDigest keeps an LRU cache that maps between canonical image names with tags
+// to image names with digests, to reduce the number of HEAD requests.
+func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
+	if imageRefWithDigest, err := gcrname.NewDigest(imageName); err == nil {
+		return imageRefWithDigest.String(), nil
+	}
+	tagRef, err := gcrname.ParseReference(imageName)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
+	}
+
+	if imageNameWithDigest, ok := r.imageTagToDigestLRU.Get(tagRef.String()); ok {
+		return imageNameWithDigest, nil
+	}
+
+	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
+	desc, err := remote.Head(tagRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
+		}
+		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
+	}
+	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
+	r.imageTagToDigestLRU.Add(tagRef.String(), imageNameWithDigest)
+	return imageNameWithDigest, nil
+
 }
 
 // AuthenticateWithRegistry makes a HEAD request to a remote registry with the input credentials.
