@@ -456,6 +456,8 @@ func evenlyDividePartitionIntoRanges(splitConfig SplitConfig) ([]*rfpb.RangeDesc
 	return ranges, nil
 }
 
+// InitializeShard initializes a single shard on raft and also writes the range
+// descriptor to both meta range and the locally on the shard.
 func InitializeShard(ctx context.Context, session *client.Session, store IStore, eg *errgroup.Group, bootstrapInfo *ClusterBootstrapInfo, rd *rfpb.RangeDescriptor) error {
 	rangeID := rd.GetRangeId()
 	eg.Go(func() error {
