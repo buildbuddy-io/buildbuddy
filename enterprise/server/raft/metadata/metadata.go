@@ -208,7 +208,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		GRPCPort:          *gRPCPort,
 		Partitions:        ps,
 		PartitionMappings: *partitionMappings,
-		SplitConfig:       *partitionSplits,
+		SplitConfig:       splitConfigs,
 		LogDBConfigType:   store.LargeMemLogDBConfigType,
 	}
 	return New(env, rcConfig)
