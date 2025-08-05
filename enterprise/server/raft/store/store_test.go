@@ -334,6 +334,9 @@ func TestAutomaticSplitting(t *testing.T) {
 
 	testutil.WaitForRangeLease(t, ctx, stores, 1)
 	testutil.WaitForRangeLease(t, ctx, stores, 2)
+
+	initialRD := s1.GetRange(2).CloneVT()
+
 	writeNRecordsAndFlush(ctx, t, s1, 20, 1) // each write is 1000 bytes
 
 	// Advance the clock to trigger scan the queue.
@@ -344,7 +347,7 @@ func TestAutomaticSplitting(t *testing.T) {
 		if len(ranges) == 2 && s1.HaveLease(ctx, 3) {
 			rd2 := s1.GetRange(2)
 			rd3 := s1.GetRange(3)
-			if !bytes.Equal(rd2.GetEnd(), keys.MaxByte) && bytes.Equal(rd3.GetEnd(), keys.MaxByte) {
+			if !bytes.Equal(rd2.GetEnd(), initialRD.GetEnd()) && bytes.Equal(rd3.GetEnd(), initialRD.GetEnd()) {
 				break
 			}
 		}
