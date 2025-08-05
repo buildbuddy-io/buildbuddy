@@ -95,6 +95,7 @@ var (
 	// TODO(Maggie): If skipping automatic checkout, remove requirements that clients
 	// pass github-related fields.
 	skipAutomaticCheckout = RemoteFlagset.Bool("skip_auto_checkout", false, "Whether to skip the automatic GitHub checkout steps on the remote runner.")
+	invocationIDFile      = RemoteFlagset.String("invocation_id_file", "", "If set, write the remote invocation ID to the file specified here.")
 )
 
 func consoleCursorMoveUp(y int) {
@@ -957,6 +958,13 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 		log.Warnf("Remote run failed due to transient error. Retrying: %s", latestErr)
 		retryCount++
+	}
+	if *invocationIDFile != "" && len(inRsp.GetInvocation()) > 0 && inRsp.GetInvocation()[0].GetInvocationId() != "" {
+		if err := os.WriteFile(*invocationIDFile, []byte(inRsp.GetInvocation()[0].GetInvocationId()), 0644); err != nil {
+			log.Warnf("Failed to write invocation_id_file: %s", err)
+		} else {
+			log.Debugf("Wrote invocation ID to %q", *invocationIDFile)
+		}
 	}
 
 	if latestErr != nil {
