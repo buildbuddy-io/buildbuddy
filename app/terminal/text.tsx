@@ -155,7 +155,7 @@ export function getContent(text: string, search: string, lineLengthLimit: number
         plaintext: plaintext,
         matchStartIndex: matchRanges.length ? matchStartIndex : null,
         wrapOffset: i,
-        tags: tags || [{ length: plaintext.length }],
+        tags: tags,
       });
     }
     matchStartIndex += matchRanges.length;

@@ -19,10 +19,7 @@ export type AnsiStyle = {
 
 const colors = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
 
-function applyCode(style: AnsiStyle | undefined, code: number) {
-  if (style === undefined) {
-    return;
-  }
+function applyCode(style: AnsiStyle, code: number) {
   if (code === 0) {
     // Reset style
     delete style.foreground;
@@ -112,7 +109,7 @@ const cursorEscapeCharacters = [
 // parseAnsi parses text into plaintext and offset tags that describe the ANSI
 // and link properties of the plaintext. If the passed style is null or
 // undefined, the tags array will be undefined.
-export default function parseAnsi(text: string, style?: AnsiStyle): [string, AnsiOffsetTag[]?] {
+export default function parseAnsi(text: string, style: AnsiStyle): [string, AnsiOffsetTag[]] {
   let plaintext: string = "";
   const tags: AnsiOffsetTag[] = [];
   let code = "";
@@ -170,7 +167,7 @@ export default function parseAnsi(text: string, style?: AnsiStyle): [string, Ans
       // sequence "\x1b[" as a logical unit.
       i++;
       // Begin a new tag only if the current one already has text.
-      if (style !== undefined && tag.length != 0) {
+      if (tag.length != 0) {
         tag.style = { ...style };
         tags.push(...parseLinks(plaintext.substring(plaintext.length - tag.length, plaintext.length), tag));
         tag = { length: 0 };
@@ -181,9 +178,6 @@ export default function parseAnsi(text: string, style?: AnsiStyle): [string, Ans
     // Accumulate text into the current tag.
     tag.length++;
     plaintext += char;
-  }
-  if (style === undefined) {
-    return [plaintext, undefined];
   }
   if (tag.length != 0) {
     tag.style = { ...style };
