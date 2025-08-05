@@ -560,8 +560,6 @@ type pool struct {
 	isShuttingDown bool
 	// runners holds all runners managed by the pool.
 	runners []*taskRunner
-
-	resolver oci.Resolver
 }
 
 func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, error) {
@@ -573,10 +571,6 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
 	}
-	resolver, err := oci.NewResolver(env)
-	if err != nil {
-		return nil, status.InternalErrorf("Could not create OCI resolver: %s", err)
-	}
 	p := &pool{
 		env:          env,
 		podID:        podID,
@@ -584,7 +578,6 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		cacheRoot:    cacheRoot,
 		cgroupParent: opts.CgroupParent,
 		runners:      []*taskRunner{},
-		resolver:     *resolver,
 	}
 	if err := os.MkdirAll(p.buildRoot, fs.FileMode(0755)); err != nil {
 		return nil, status.InternalErrorf("Failed to create build root directory %q: %s", p.buildRoot, err)
@@ -922,7 +915,7 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 	return out
 }
 
-func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) (*platform.Properties, error) {
+func (p *pool) effectivePlatform(task *repb.ExecutionTask) (*platform.Properties, error) {
 	props, err := platform.ParseProperties(task)
 	if err != nil {
 		return nil, err
@@ -931,24 +924,6 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 	if err := platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), props, task.GetCommand()); err != nil {
 		return nil, err
 	}
-
-	if props.ContainerImage == "" {
-		return props, nil
-	}
-
-	// To keep container implementations simple and correct,
-	// we resolve image names that include a tag (explicitly or implicity)
-	// to image names with a digest.
-	creds, err := oci.CredentialsFromProperties(props)
-	if err != nil {
-		return nil, err
-	}
-	imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
-	if err != nil {
-		return nil, err
-	}
-	props.ContainerImage = imageNameWithDigest
-
 	return props, nil
 }
 
@@ -963,7 +938,7 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 // executor is shut down.
 func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runner, error) {
 	task := st.ExecutionTask
-	props, err := p.effectivePlatform(ctx, task)
+	props, err := p.effectivePlatform(task)
 	if err != nil {
 		return nil, err
 	}
