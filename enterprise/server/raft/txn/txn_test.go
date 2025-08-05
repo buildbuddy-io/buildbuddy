@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
@@ -465,7 +464,6 @@ func TestRunTxn(t *testing.T) {
 	tb.AddStatement().SetRangeDescriptor(rd1).SetBatch(metaBatch)
 	clock := clockwork.NewFakeClock()
 	tc := txn.NewCoordinator(s1, s1.APIClient(), clock)
-	log.Info("===run txn")
 	err := tc.RunTxn(ctx, tb)
 	require.NoError(t, err)
 }
