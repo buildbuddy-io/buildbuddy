@@ -80,8 +80,9 @@ func getCacheConfig(t *testing.T) *metadata.Config {
 		LogDBConfigType: store.SmallMemLogDBConfigType,
 		Partitions: []disk.Partition{
 			{
-				ID:        constants.DefaultPartitionID,
-				NumRanges: 1,
+				ID:           constants.DefaultPartitionID,
+				MaxSizeBytes: 10_000_000_000, /* 10 GB */
+				NumRanges:    1,
 			}},
 	}
 }
@@ -448,6 +449,7 @@ func TestLRU(t *testing.T) {
 			{
 				ID:           "default",
 				MaxSizeBytes: maxSizeBytes,
+				NumRanges:    1,
 			},
 		}
 	}
