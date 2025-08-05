@@ -45,6 +45,8 @@ go_test(
     deps = [
         ":metadata",
         "//enterprise/server/filestore",
+        "//enterprise/server/raft/bringup",
+        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/store",
         "//enterprise/server/raft/usagetracker",
         "//proto:metadata_go_proto",

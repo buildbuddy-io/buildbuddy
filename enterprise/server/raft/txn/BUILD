@@ -39,6 +39,7 @@ go_test(
         "//enterprise/server/raft/sender",
         "//enterprise/server/raft/testutil",
         "//proto:raft_go_proto",
+        "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",

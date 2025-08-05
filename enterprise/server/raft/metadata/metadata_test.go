@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
@@ -77,6 +79,11 @@ func getCacheConfig(t *testing.T) *metadata.Config {
 		HTTPPort:        testport.FindFree(t),
 		GRPCPort:        testport.FindFree(t),
 		LogDBConfigType: store.SmallMemLogDBConfigType,
+		SplitConfig: []bringup.SplitConfig{
+			{
+				PartitionID: constants.DefaultPartitionID,
+				NumRanges:   1,
+			}},
 	}
 }
 

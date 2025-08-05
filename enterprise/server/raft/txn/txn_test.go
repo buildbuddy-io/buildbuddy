@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
@@ -27,7 +28,7 @@ func TestRollbackPendingTxn(t *testing.T) {
 	sf.StartShard(t, ctx, store)
 
 	{ // Do a DirectWrite.
-		key := []byte("foo")
+		key := []byte("PTdefault/f11")
 		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   key,
@@ -43,7 +44,7 @@ func TestRollbackPendingTxn(t *testing.T) {
 
 	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
-			Key:   []byte("foo"),
+			Key:   []byte("PTdefault/f11"),
 			Value: []byte("zoo"),
 		},
 	})
@@ -97,7 +98,7 @@ func TestRollbackPendingTxn(t *testing.T) {
 	}
 
 	{ // Do a DirectRead and verify the value is rolled back.
-		key := []byte("foo")
+		key := []byte("PTdefault/f11")
 		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
 			Key: key,
 		}).ToProto()
@@ -112,7 +113,7 @@ func TestRollbackPendingTxn(t *testing.T) {
 	}
 
 	{ // Do a DirectWrite, and it should succeed since the txn is rolledback.
-		key := []byte("foo")
+		key := []byte("PTdefault/f11")
 		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   key,
@@ -134,7 +135,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 	sf.StartShard(t, ctx, store)
 
 	{ // Do a DirectWrite.
-		key := []byte("foo")
+		key := []byte("PTdefault/f11")
 		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   key,
@@ -150,7 +151,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 
 	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
-			Key:   []byte("foo"),
+			Key:   []byte("PTdefault/f11"),
 			Value: []byte("zoo"),
 		},
 	})
@@ -205,7 +206,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 	}
 
 	{ // Do a DirectRead and verify the value is updated.
-		key := []byte("foo")
+		key := []byte("PTdefault/f11")
 		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
 			Key: key,
 		}).ToProto()
@@ -220,7 +221,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 	}
 
 	{ // Do a DirectWrite, and it should succeed since the txn is committed.
-		key := []byte("foo")
+		key := []byte("PTdefault/f11")
 		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
 				Key:   key,
@@ -439,12 +440,12 @@ func TestRunTxn(t *testing.T) {
 
 	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
-			Key:   []byte("foo"),
+			Key:   []byte("PTdefault/f11"),
 			Value: []byte("zoo"),
 		},
 	}).Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
-			Key:   []byte("bar"),
+			Key:   []byte("PTdefault/bar"),
 			Value: []byte("foo"),
 		},
 	})
@@ -464,6 +465,7 @@ func TestRunTxn(t *testing.T) {
 	tb.AddStatement().SetRangeDescriptor(rd1).SetBatch(metaBatch)
 	clock := clockwork.NewFakeClock()
 	tc := txn.NewCoordinator(s1, s1.APIClient(), clock)
+	log.Info("===run txn")
 	err := tc.RunTxn(ctx, tb)
 	require.NoError(t, err)
 }
