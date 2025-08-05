@@ -200,17 +200,17 @@ func (ts *TestingStore) Stop() {
 
 func (sf *StoreFactory) StartShard(t *testing.T, ctx context.Context, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
-	splitConfig := bringup.SplitConfig{
-		PartitionID: constants.DefaultPartitionID,
-		NumRanges:   1,
+	partition := disk.Partition{
+		ID:        constants.DefaultPartitionID,
+		NumRanges: 1,
 	}
-	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), splitConfig)
+	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
 	require.NoError(t, err)
 }
 
-func (sf *StoreFactory) StartShardWithSplitConifg(t *testing.T, ctx context.Context, splitConfig bringup.SplitConfig, stores ...*TestingStore) {
+func (sf *StoreFactory) StartShardWithSplitConifg(t *testing.T, ctx context.Context, partition disk.Partition, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
-	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), splitConfig)
+	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
 	require.NoError(t, err)
 }
 

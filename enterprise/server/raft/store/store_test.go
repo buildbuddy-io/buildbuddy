@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -2271,9 +2272,9 @@ func TestBringupSetRanges(t *testing.T) {
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 
-	splitConfig := bringup.SplitConfig{
-		PartitionID: "default",
-		NumRanges:   4,
+	partition := disk.Partition{
+		ID:        "default",
+		NumRanges: 4,
 	}
 
 	clock := clockwork.NewFakeClock()
@@ -2282,7 +2283,7 @@ func TestBringupSetRanges(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1}
-	sf.StartShardWithSplitConifg(t, ctx, splitConfig, stores...)
+	sf.StartShardWithSplitConifg(t, ctx, partition, stores...)
 
 	testutil.WaitForRangeLease(t, ctx, stores, 1) // metarange
 	testutil.WaitForRangeLease(t, ctx, stores, 2) // start -> 1st split

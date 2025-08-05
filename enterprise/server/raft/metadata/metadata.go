@@ -50,7 +50,6 @@ var (
 	clearPrevCacheOnStartup = flag.Bool("cache.raft.clear_prev_cache_on_startup", false, "If set, remove all raft + cache data from previous run on start")
 	partitions              = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
 	partitionMappings       = flag.Slice("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
-	partitionSplits         = flag.Slice("raft.bringup.partition_splits", []bringup.SplitConfig{}, "")
 	atimeUpdateThreshold    = flag.Duration("cache.raft.atime_update_threshold", 3*time.Hour, "Don't update atime if it was updated more recently than this")
 	atimeBufferSize         = flag.Int("cache.raft.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	atimeWriteBatchSize     = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
@@ -82,7 +81,6 @@ type Config struct {
 
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
-	SplitConfig       []bringup.SplitConfig
 
 	LogDBConfigType store.LogDBConfigType
 }
@@ -171,24 +169,6 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		}
 	}
 
-	haveDefault = false
-	splitConfigs := *partitionSplits
-	for _, sc := range splitConfigs {
-		if !partitionSet.Contains(sc.PartitionID) {
-			return nil, status.NotFoundErrorf("split config contains unknown partition %q", sc.PartitionID)
-		}
-		if sc.PartitionID == constants.DefaultPartitionID {
-			haveDefault = true
-		}
-	}
-
-	if !haveDefault {
-		splitConfigs = append(splitConfigs, bringup.SplitConfig{
-			PartitionID: constants.DefaultPartitionID,
-			NumRanges:   1,
-		})
-	}
-
 	if *clearCacheOnStartup {
 		log.Warningf("Clearing cache dir %q on startup!", *rootDirectory)
 		if err := os.RemoveAll(*rootDirectory); err != nil {
@@ -208,7 +188,6 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		GRPCPort:          *gRPCPort,
 		Partitions:        ps,
 		PartitionMappings: *partitionMappings,
-		SplitConfig:       splitConfigs,
 		LogDBConfigType:   store.LargeMemLogDBConfigType,
 	}
 	return New(env, rcConfig)
@@ -249,7 +228,7 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	rc.clusterStarter = bringup.New(rc.grpcAddr, rc.gossipManager, rc.store, rc.conf.SplitConfig)
+	rc.clusterStarter = bringup.New(rc.grpcAddr, rc.gossipManager, rc.store, rc.conf.Partitions)
 	if err := rc.clusterStarter.InitializeClusters(); err != nil {
 		return nil, err
 	}
