@@ -382,7 +382,7 @@ var minHashAsBigInt = big.NewInt(0).SetBytes([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 func evenlyDividePartitionIntoRanges(partition disk.Partition) ([]*rfpb.RangeDescriptor, error) {
 	numRanges := partition.NumRanges
 	if numRanges <= 0 {
-		numRanges = 1 // Treat 0 or negative as 1
+		return nil, status.InvalidArgumentErrorf("NumRanges must be positive, got %d", numRanges)
 	}
 
 	delta := new(big.Int).Sub(maxHashAsBigInt, minHashAsBigInt)

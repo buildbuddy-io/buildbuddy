@@ -147,7 +147,10 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 	partitionSet := make(set.Set[string])
 
 	haveDefault := false
-	for _, p := range ps {
+	for i, p := range ps {
+		if p.NumRanges == 0 {
+			ps[i].NumRanges = 1
+		}
 		partitionSet.Add(p.ID)
 		if p.ID == constants.DefaultPartitionID {
 			haveDefault = true
@@ -159,6 +162,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		ps = append(ps, disk.Partition{
 			ID:           constants.DefaultPartitionID,
 			MaxSizeBytes: cache_config.MaxSizeBytes(),
+			NumRanges:    1,
 		})
 	}
 
