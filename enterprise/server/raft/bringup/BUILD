@@ -16,7 +16,7 @@ go_library(
         "//enterprise/server/raft/txn",
         "//proto:raft_go_proto",
         "//server/interfaces",
-        "//server/util/flag",
+        "//server/util/disk",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/retry",

@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -320,6 +321,7 @@ func TestAutomaticSplitting(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 8000)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 1)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 
@@ -333,6 +335,9 @@ func TestAutomaticSplitting(t *testing.T) {
 
 	testutil.WaitForRangeLease(t, ctx, stores, 1)
 	testutil.WaitForRangeLease(t, ctx, stores, 2)
+
+	initialRD := s1.GetRange(2).CloneVT()
+
 	writeNRecordsAndFlush(ctx, t, s1, 20, 1) // each write is 1000 bytes
 
 	// Advance the clock to trigger scan the queue.
@@ -343,7 +348,7 @@ func TestAutomaticSplitting(t *testing.T) {
 		if len(ranges) == 2 && s1.HaveLease(ctx, 3) {
 			rd2 := s1.GetRange(2)
 			rd3 := s1.GetRange(3)
-			if !bytes.Equal(rd2.GetEnd(), keys.MaxByte) && bytes.Equal(rd3.GetEnd(), keys.MaxByte) {
+			if !bytes.Equal(rd2.GetEnd(), initialRD.GetEnd()) && bytes.Equal(rd3.GetEnd(), initialRD.GetEnd()) {
 				break
 			}
 		}
@@ -2263,15 +2268,14 @@ func TestBringupSetRanges(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.target_range_size_bytes", 8000)
 	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 1)
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
-	flags.Set(t, "raft.bringup.partition_splits", []bringup.SplitConfig{
-		{
-			Start:  []byte("PTdefault/0000000000000000000000000000000000000000000000000000000000000000/9/cas/v5"),
-			End:    []byte("PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/9/cas/v5"),
-			Splits: 3,
-		},
-	})
+
+	partition := disk.Partition{
+		ID:        "default",
+		NumRanges: 4,
+	}
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -2279,7 +2283,7 @@ func TestBringupSetRanges(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1}
-	sf.StartShard(t, ctx, stores...)
+	sf.StartShardWithSplitConifg(t, ctx, partition, stores...)
 
 	testutil.WaitForRangeLease(t, ctx, stores, 1) // metarange
 	testutil.WaitForRangeLease(t, ctx, stores, 2) // start -> 1st split

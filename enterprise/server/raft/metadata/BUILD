@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",
+        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/logger",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/registry",
@@ -26,6 +27,7 @@ go_library(
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/flagutil/types",
+        "//server/util/lib/set",
         "//server/util/log",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
@@ -43,6 +45,7 @@ go_test(
     deps = [
         ":metadata",
         "//enterprise/server/filestore",
+        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/store",
         "//enterprise/server/raft/usagetracker",
         "//proto:metadata_go_proto",

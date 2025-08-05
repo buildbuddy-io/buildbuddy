@@ -81,6 +81,7 @@ go_test(
         "//proto:raft_go_proto",
         "//proto:storage_go_proto",
         "//server/testutil/testdigest",
+        "//server/util/disk",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",

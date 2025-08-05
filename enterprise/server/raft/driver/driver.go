@@ -449,7 +449,7 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 	if numLiveReplicas < quorum {
 		// The cluster is unavailable since we don't have enough live nodes.
 		// There is no point of doing anything right now.
-		log.Debugf("noop because num live replicas = %d less than quorum =%d", numLiveReplicas, quorum)
+		log.Debugf("noop because num live replicas of range %d = %d less than quorum =%d", rd.GetRangeId(), numLiveReplicas, quorum)
 		action = DriverNoop
 		return action, action.Priority()
 	}

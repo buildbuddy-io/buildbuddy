@@ -41,6 +41,7 @@ var (
 type Partition struct {
 	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
 	MaxSizeBytes int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
+	NumRanges    int    `yaml:"num_ranges" json:"num_ranges" usage:"The number of raft ranges to pre-create for this partition. This is only useful for raft."`
 }
 
 type PartitionMapping struct {
