@@ -120,9 +120,11 @@ const cursorEscapeCharacters = [
   "u", // restore cursor position
 ];
 
-// parseAnsi parses text into plaintext and offset tags that describe the ANSI
-// and link properties of the plaintext. If the passed style is null or
-// undefined, the tags array will be undefined.
+/**
+ * parseAnsi parses text into plaintext and offset tags that describe the ANSI
+ * and link properties of the plaintext. If the passed style is null or
+ * undefined, the tags array will be undefined.
+ */
 export default function parseAnsi(text: string, style: AnsiStyle): [string, FormatTag[]] {
   let plaintext: string = "";
   const tags: FormatTag[] = [];
