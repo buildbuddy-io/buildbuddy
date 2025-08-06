@@ -803,11 +803,12 @@ var (
 		CacheHitMissStatus,
 	})
 
-	DistributedCacheBackfills = promauto.NewCounterVec(prometheus.CounterOpts{
+	DistributedCacheBackfillLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
-		Name:      "distributed_cache_backfills",
-		Help:      "Number of backfilled digests. ",
+		Name:      "distributed_cache_backfill_latency_usec",
+		Help:      "Latency of backfilling a single digest.",
+		Buckets:   durationUsecBuckets(10*time.Millisecond, 22*time.Second, 3),
 	}, []string{
 		GroupID,
 		StatusLabel,

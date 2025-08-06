@@ -955,8 +955,12 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (
 	for _, bf := range backfills {
 		bf := bf
 		eg.Go(func() error {
+			start := time.Now()
 			err := c.copyFile(gCtx, bf.r, bf.source, bf.dest)
-			metrics.DistributedCacheBackfills.WithLabelValues(groupID, gstatus.Code(err).String()).Inc()
+			metrics.DistributedCacheBackfillLatencyUsec.WithLabelValues(
+				groupID,
+				gstatus.Code(err).String(),
+			).Observe(float64(time.Since(start).Microseconds()))
 			return err
 		})
 	}
