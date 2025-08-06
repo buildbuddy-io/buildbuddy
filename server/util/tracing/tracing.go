@@ -303,6 +303,12 @@ func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Cont
 	return ctx, span
 }
 
+// StartNamedSpan is like StartSpan, expect the caller specifies the name
+// instead of using the call stack.
+func StartNamedSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	return otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, name, opts...)
+}
+
 func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
 	span := trace.SpanFromContext(ctx)
 	if !span.IsRecording() {
