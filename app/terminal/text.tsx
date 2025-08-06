@@ -15,7 +15,7 @@
  */
 
 import memoizeOne from "memoize-one";
-import parseAnsi, { AnsiOffsetTag, AnsiStyle, stripAnsiCodes } from "./ansi";
+import parseAnsi, { FormatTag, AnsiStyle, stripAnsiCodes } from "./ansi";
 
 /**
  * Rounding errors start messing with row positioning when there are this many
@@ -77,7 +77,7 @@ export interface RowData {
    * The ANSI data for this text. ANSI spans refer to the next N characters of
    * the line, tagging them with the appropriate style and/or link.
    */
-  tags: AnsiOffsetTag[];
+  tags: FormatTag[];
 }
 
 export interface SpanData {
@@ -284,7 +284,7 @@ function computeRowsImpl(
   lengthLimit: number,
   search: string,
   matchStartIndex: number | null,
-  ansiTags: AnsiOffsetTag[]
+  tags: FormatTag[]
 ): SpanData[][] {
   if (!plaintext) return BLANK_LINE_DATA;
 
@@ -294,7 +294,7 @@ function computeRowsImpl(
   // Build up the list of indexes at which we'll split up the ANSI parts.
   let tagOffset = 0;
   const splitIndexSet = new Set<number>();
-  for (const tag of ansiTags) {
+  for (const tag of tags) {
     splitIndexSet.add(tagOffset);
     tagOffset += tag.length;
   }
@@ -326,7 +326,7 @@ function computeRowsImpl(
   const rows: SpanData[][] = [];
   let row: SpanData[] | null = null;
   let spanTextOffset = 0;
-  let tag: AnsiOffsetTag | null = null;
+  let tag: FormatTag | null = null;
   let tagIndex = -1;
   let match: Range | null = null;
   let matchIndex = -1;
@@ -341,7 +341,7 @@ function computeRowsImpl(
     // current tag.
     if (!tag || spanTextOffset === tag.length) {
       tagIndex++;
-      tag = ansiTags[tagIndex];
+      tag = tags[tagIndex];
       spanTextOffset = 0;
     }
     // Update the match initially or if we're past the current match.

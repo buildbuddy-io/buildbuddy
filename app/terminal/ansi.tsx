@@ -1,6 +1,12 @@
 const ANSI_CODES_REGEX = /\x1b\[[\d;]*?m/g;
 
-export type AnsiOffsetTag = {
+/**
+ * FormatTag describes the format that should be applied to the related text
+ * for the next n characters, where n is the tag's length. It is to be used in a
+ * list of tags, with each tag applying its formatting in sequence to an
+ * associated body of plaintext until all of the text has been formatted.
+ */
+export type FormatTag = {
   /** Length of the plaintext in this tag. */
   length: number;
   /** Parsed ANSI style. */
@@ -9,6 +15,11 @@ export type AnsiOffsetTag = {
   link?: string;
 };
 
+/**
+ * AnsiStyle describes ANSI SGR formatting state that may be set by ANSI codes.
+ * If more fields are added to this type, be sure to also reset them in the
+ * resetStyle function.
+ */
 export type AnsiStyle = {
   foreground?: string;
   background?: string;
@@ -17,16 +28,19 @@ export type AnsiStyle = {
   underline?: boolean;
 };
 
+function resetStyle(style: AnsiStyle) {
+	delete style.foreground;
+	delete style.background;
+	delete style.bold;
+	delete style.italic;
+	delete style.underline;
+}
+
 const colors = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
 
 function applyCode(style: AnsiStyle, code: number) {
   if (code === 0) {
-    // Reset style
-    delete style.foreground;
-    delete style.background;
-    delete style.bold;
-    delete style.italic;
-    delete style.underline;
+    resetStyle(style)
     return;
   }
   if (code >= 30 && code <= 37) {
@@ -109,11 +123,11 @@ const cursorEscapeCharacters = [
 // parseAnsi parses text into plaintext and offset tags that describe the ANSI
 // and link properties of the plaintext. If the passed style is null or
 // undefined, the tags array will be undefined.
-export default function parseAnsi(text: string, style: AnsiStyle): [string, AnsiOffsetTag[]] {
+export default function parseAnsi(text: string, style: AnsiStyle): [string, FormatTag[]] {
   let plaintext: string = "";
-  const tags: AnsiOffsetTag[] = [];
+  const tags: FormatTag[] = [];
   let code = "";
-  let tag: AnsiOffsetTag = { length: 0 };
+  let tag: FormatTag = { length: 0 };
 
   // rules_go produces test logs containing 0x16 ("synchronous idle") bytes at
   // the start of the line for some reason. Just ignore these for now -
@@ -189,12 +203,12 @@ export default function parseAnsi(text: string, style: AnsiStyle): [string, Ansi
 const LINK_REGEX =
   /(http(s)?:\/\/)(www\.)?([-a-zA-Z0-9@:%._\+~#=]{2,256})(\.[a-z]{2,6}|:[0-9]+)\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)/g;
 
-function parseLinks(text: string, tag: AnsiOffsetTag): AnsiOffsetTag[] {
+function parseLinks(text: string, tag: FormatTag): FormatTag[] {
   let matches = [...text.matchAll(LINK_REGEX)];
   if (matches.length == 0) {
     return [tag];
   }
-  let tags: AnsiOffsetTag[] = [];
+  let tags: FormatTag[] = [];
   for (let match of matches) {
     // If there's any text before the link, create a tag for that.
     if (match.index && match.index > 0) {
