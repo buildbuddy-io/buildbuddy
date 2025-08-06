@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -3288,10 +3289,5 @@ func workspacePathsToExtract(task *repb.ExecutionTask) []string {
 }
 
 func (c *FirecrackerContainer) shouldUpgradeGuestKernel() bool {
-	for _, exp := range c.task.Experiments {
-		if exp == "upgrade-fc-guest-kernel" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.task.Experiments, "upgrade-fc-guest-kernel")
 }
