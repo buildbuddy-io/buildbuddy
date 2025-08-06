@@ -34,6 +34,10 @@ func TestLookupRangeDescriptor(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, proto.Equal(rd, gotRD))
 
+	gotRD, err = sender.LookupRangeDescriptor(ctx, []byte("PTdefault/aaaa"), true)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(rd, gotRD))
+
 	gotRD, err = sender.LookupRangeDescriptor(ctx, []byte("PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/cas/v5"), true)
 	require.NoError(t, err)
 	require.True(t, proto.Equal(rd, gotRD))
