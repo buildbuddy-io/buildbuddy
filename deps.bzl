@@ -937,8 +937,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_cncf_xds_go",
         build_file_generation = "clean",
         importpath = "github.com/cncf/xds/go",
-        sum = "h1:Om6kYQYDUk5wWbT0t0q6pvyM49i9XZAv9dDrkDA7gjk=",
-        version = "v0.0.0-20250121191232-2f005788dc42",
+        sum = "h1:aQ3y1lwWyqYPiWZThqv1aFbZMiM9vblcSArJRf2Irls=",
+        version = "v0.0.0-20250501225837-2ac532fd4443",
     )
     go_repository(
         name = "com_github_cockroachdb_datadriven",
@@ -2142,8 +2142,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_golang_glog",
         importpath = "github.com/golang/glog",
-        sum = "h1:CNNw5U8lSiiBk7druxtSHHTsRWcxKoac6kZKm2peBBc=",
-        version = "v1.2.4",
+        sum = "h1:DrW6hGnjIhtvhOIiAKT6Psh/Kd/ldepEa81DKeiRJ5I=",
+        version = "v1.2.5",
     )
     go_repository(
         name = "com_github_golang_groupcache",
@@ -5915,8 +5915,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         ],
         build_file_generation = "clean",
         importpath = "cel.dev/expr",
-        sum = "h1:OunBvVCfvpWlt4dN7zg3FM6TDkzOePe1+foGJ9AXeeI=",
-        version = "v0.20.0",
+        sum = "h1:56OvJKSH3hDGL0ml5uSxZmz3/3Pq4tJ+fb1unVLAFcY=",
+        version = "v0.24.0",
     )
     go_repository(
         name = "dev_gocloud",
@@ -6505,8 +6505,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_genproto_googleapis_api",
         importpath = "google.golang.org/genproto/googleapis/api",
-        sum = "h1:WvBuA5rjZx9SNIzgcU53OohgZy6lKSus++uY4xLaWKc=",
-        version = "v0.0.0-20250512202823-5a2f75b736a9",
+        sum = "h1:SGktgSolFCo75dnHJF2yMvnns6jCmHFJ0vE4Vn2JKvQ=",
+        version = "v0.0.0-20250528174236-200df99c418a",
     )
     go_repository(
         name = "org_golang_google_genproto_googleapis_bytestream",
@@ -6537,8 +6537,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
             # ongoing requests to finish.
             "@{}//buildpatches:org_golang_google_grpc_remove_drain_panic.patch".format(workspace_name),
         ],
-        sum = "h1:TdbGzwb82ty4OusHWepvFWGLgIbNo1/SUynEN0ssqv8=",
-        version = "v1.72.2",
+        sum = "h1:WoosgB65DlWVC9FqI82dGsZhWFNBSLjQ84bjROOpMu4=",
+        version = "v1.74.2",
     )
     go_repository(
         name = "org_golang_google_grpc_cmd_protoc_gen_go_grpc",
