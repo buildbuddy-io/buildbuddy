@@ -13,7 +13,13 @@ export function Row({ data, index, style }: ListChildComponentProps<ListData>) {
   const rowData = data.rows[index];
   // Use the memoized version of getRows(), since we'll call it several times in
   // quick succession when rendering each row of a wrapped line.
-  const rowsForLine = computeRows(rowData.line, data.rowLength, data.search, rowData.matchStartIndex);
+  const rowsForLine = computeRows(
+    rowData.plaintext,
+    data.rowLength,
+    data.search,
+    rowData.matchStartIndex,
+    rowData.tags
+  );
   const row = rowsForLine[rowData.wrapOffset];
   if (!row) {
     console.error("Row mismatch:", { rowData, rowsForLine });
