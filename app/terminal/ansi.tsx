@@ -18,7 +18,7 @@ export type FormatTag = {
 /**
  * AnsiStyle describes ANSI SGR formatting state that may be set by ANSI codes.
  * If more fields are added to this type, be sure to also reset them in the
- * resetStyle function.
+ * clearStyle function.
  */
 export type AnsiStyle = {
   foreground?: string;
@@ -28,7 +28,7 @@ export type AnsiStyle = {
   underline?: boolean;
 };
 
-function resetStyle(style: AnsiStyle) {
+function clearStyle(style: AnsiStyle) {
 	delete style.foreground;
 	delete style.background;
 	delete style.bold;
@@ -40,7 +40,7 @@ const colors = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "w
 
 function applyCode(style: AnsiStyle, code: number) {
   if (code === 0) {
-    resetStyle(style)
+    clearStyle(style)
     return;
   }
   if (code >= 30 && code <= 37) {
