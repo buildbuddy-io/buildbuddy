@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -23,5 +23,21 @@ go_library(
         "//server/util/tracing",
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "sender_test",
+    srcs = ["sender_test.go"],
+    exec_properties = {
+        "test.EstimatedComputeUnits": "8",
+        "test.workload-isolation-type": "firecracker",
+    },
+    tags = ["block-network"],
+    deps = [
+        "//enterprise/server/raft/testutil",
+        "//server/util/proto",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
     ],
 )
