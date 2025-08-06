@@ -4,12 +4,14 @@ import (
 	"context"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -43,13 +45,8 @@ func New(rangeCache *rangecache.RangeCache, apiClient *client.APIClient) *Sender
 	}
 }
 
-func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, key []byte) (*rfpb.RangeDescriptor, error) {
-	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Start:    keys.RangeMetaKey(key),
-		End:      constants.SystemPrefix,
-		ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
-		Limit:    1,
-	}).ToProto()
+func scanRangeDescriptors(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, scanReq *rfpb.ScanRequest) ([]*rfpb.RangeDescriptor, error) {
+	batchReq, err := rbuilder.NewBatchBuilder().Add(scanReq).ToProto()
 	if err != nil {
 		return nil, err
 	}
@@ -66,19 +63,32 @@ func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Heade
 		return nil, err
 	}
 
-	if len(scanRsp.GetKvs()) == 0 {
-		log.CtxErrorf(ctx, "scan response had 0 kvs")
-		return nil, status.FailedPreconditionError("scan response had 0 kvs")
-	}
+	res := make([]*rfpb.RangeDescriptor, 0, len(scanRsp.GetKvs()))
 	for _, kv := range scanRsp.GetKvs() {
 		rd := &rfpb.RangeDescriptor{}
 		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
-			log.CtxErrorf(ctx, "scan returned unparsable kv: %s", err)
-			continue
+			return nil, status.InternalErrorf("scan returned unparsable kv (key=%q): %s", kv.GetKey(), err)
 		}
-		return rd, nil
+		res = append(res, rd)
 	}
-	return nil, status.UnavailableErrorf("Error finding range descriptor for %q", key)
+	return res, nil
+}
+
+func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, key []byte) (*rfpb.RangeDescriptor, error) {
+	req := &rfpb.ScanRequest{
+		Start:    keys.RangeMetaKey(key),
+		End:      constants.SystemPrefix,
+		ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
+		Limit:    1,
+	}
+	res, err := scanRangeDescriptors(ctx, c, h, req)
+	if err != nil {
+		return nil, err
+	}
+	if len(res) == 0 {
+		return nil, status.NotFoundErrorf("range descriptor not found for key %q", key)
+	}
+	return res[0], nil
 }
 
 func fetchRanges(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, rangeIDs []uint64) (*rfpb.FetchRangesResponse, error) {
@@ -103,8 +113,6 @@ func (s *Sender) GetMetaRangeDescriptor() *rfpb.RangeDescriptor {
 }
 
 func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []byte) (*rfpb.RangeDescriptor, error) {
-	retrier := retry.DefaultWithContext(ctx)
-
 	var rangeDescriptor *rfpb.RangeDescriptor
 	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		rd, err := lookupRangeDescriptor(ctx, c, h, key)
@@ -114,21 +122,33 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 		rangeDescriptor = rd
 		return nil
 	}
-	for retrier.Next() {
-		metaRangeDescriptor := s.GetMetaRangeDescriptor()
-		if metaRangeDescriptor == nil {
-			log.CtxWarningf(ctx, "RangeCache did not have meta range yet (key %q)", key)
-			continue
-		}
-		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn, rfpb.Header_LINEARIZABLE)
-		if err == nil {
-			return rangeDescriptor, nil
-		}
-		if !status.IsOutOfRangeError(err) {
-			return nil, err
-		}
+	if err := s.runOnMetaRange(ctx, fn); err != nil {
+		return nil, err
 	}
-	return nil, status.UnavailableErrorf("Error finding range descriptor for %q", key)
+	return rangeDescriptor, nil
+}
+
+func (s *Sender) LookupRangeDescriptorsForPartition(ctx context.Context, partition disk.Partition) ([]*rfpb.RangeDescriptor, error) {
+	res := make([]*rfpb.RangeDescriptor, 0, partition.NumRanges)
+	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
+		partitionPrefix := []byte(filestore.PartitionDirectoryPrefix + partition.ID + "/")
+		req := &rfpb.ScanRequest{
+			Start:    keys.RangeMetaKey(partitionPrefix),
+			End:      keys.RangeMetaKey(keys.MakeKey(partitionPrefix, keys.MaxByte)),
+			ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
+			Limit:    int64(partition.NumRanges),
+		}
+		ranges, err := scanRangeDescriptors(ctx, c, h, req)
+		if err != nil {
+			return err
+		}
+		res = ranges
+		return nil
+	}
+	if err := s.runOnMetaRange(ctx, fn); err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCache bool) (returnedRD *rfpb.RangeDescriptor, returnedErr error) {
@@ -163,11 +183,31 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 	return rangeDescriptor, nil
 }
 
+func (s *Sender) runOnMetaRange(ctx context.Context, fn runFunc) error {
+	retrier := retry.DefaultWithContext(ctx)
+	var lastError error
+	for retrier.Next() {
+		metaRangeDescriptor := s.GetMetaRangeDescriptor()
+		if metaRangeDescriptor == nil {
+			log.CtxWarning(ctx, "RangeCache did not have meta range yet")
+			continue
+		}
+		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn, rfpb.Header_LINEARIZABLE)
+		if err == nil {
+			return nil
+		}
+		if !status.IsOutOfRangeError(err) {
+			return err
+		}
+		lastError = err
+	}
+	return status.UnavailableErrorf("sender.runOnMetaRange exceeded retry, lastError: %s", lastError)
+}
+
 func (s *Sender) LookupRangeDescriptorsByIDs(ctx context.Context, rangeIDs []uint64) ([]*rfpb.RangeDescriptor, error) {
 	if len(rangeIDs) == 0 {
 		return nil, nil
 	}
-	retrier := retry.DefaultWithContext(ctx)
 	var ranges []*rfpb.RangeDescriptor
 	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		rsp, err := fetchRanges(ctx, c, h, rangeIDs)
@@ -177,21 +217,10 @@ func (s *Sender) LookupRangeDescriptorsByIDs(ctx context.Context, rangeIDs []uin
 		ranges = rsp.GetRanges()
 		return nil
 	}
-	for retrier.Next() {
-		metaRangeDescriptor := s.GetMetaRangeDescriptor()
-		if metaRangeDescriptor == nil {
-			log.CtxWarning(ctx, "RangeCache did not have meta range yet")
-			continue
-		}
-		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn, rfpb.Header_LINEARIZABLE)
-		if err == nil {
-			return ranges, nil
-		}
-		if !status.IsOutOfRangeError(err) {
-			return nil, err
-		}
+	if err := s.runOnMetaRange(ctx, fn); err != nil {
+		return nil, err
 	}
-	return nil, status.UnavailableError("Error fetch ranges")
+	return ranges, nil
 }
 
 func (s *Sender) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
