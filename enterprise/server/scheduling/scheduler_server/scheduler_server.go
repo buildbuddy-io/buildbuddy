@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -1904,6 +1905,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	expOptions := []any{
 		experiments.WithContext("executor_hostname", executorHostname),
 		experiments.WithContext("self_hosted", selfHosted),
+		experiments.WithContext("workflow_name", getWorkflowName(taskProto)),
 	}
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
@@ -1944,12 +1946,34 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		taskProto.Experiments = append(taskProto.Experiments, "remote_execution.persistent_volumes:"+details.Variant())
 	}
 
+	if shouldUpgrade := fp.Boolean(ctx, "upgrade-fc-guest-kernel", false, expOptions...); shouldUpgrade {
+		taskProto.Experiments = append(taskProto.Experiments, "upgrade-fc-guest-kernel")
+	}
+
 	if newTask, err := proto.Marshal(taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to marshal ExecutionTask: %s", err)
 		return task
 	} else {
 		return newTask
 	}
+}
+
+func getWorkflowName(task *repb.ExecutionTask) string {
+	args := task.GetCommand().GetArguments()
+	if len(args) < 2 || args[0] != "./"+ci_runner_util.ExecutableName {
+		return ""
+	}
+	for _, arg := range task.GetCommand().GetArguments() {
+		if strings.HasPrefix(arg, "--action_name=") {
+			sections := strings.Split(arg, "--action_name=")
+			if len(sections) != 2 {
+				log.Warningf("unexpected action_name argument %s", arg)
+				continue
+			}
+			return sections[1]
+		}
+	}
+	return ""
 }
 
 type enqueueTaskReservationOpts struct {
