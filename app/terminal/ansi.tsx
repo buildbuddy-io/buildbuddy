@@ -29,18 +29,18 @@ export type AnsiStyle = {
 };
 
 function clearStyle(style: AnsiStyle) {
-	delete style.foreground;
-	delete style.background;
-	delete style.bold;
-	delete style.italic;
-	delete style.underline;
+  delete style.foreground;
+  delete style.background;
+  delete style.bold;
+  delete style.italic;
+  delete style.underline;
 }
 
 const colors = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
 
 function applyCode(style: AnsiStyle, code: number) {
   if (code === 0) {
-    clearStyle(style)
+    clearStyle(style);
     return;
   }
   if (code >= 30 && code <= 37) {

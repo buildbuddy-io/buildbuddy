@@ -15,7 +15,7 @@
  */
 
 import memoizeOne from "memoize-one";
-import parseAnsi, { FormatTag, AnsiStyle, stripAnsiCodes } from "./ansi";
+import parseAnsi, { AnsiStyle, FormatTag, stripAnsiCodes } from "./ansi";
 
 /**
  * Rounding errors start messing with row positioning when there are this many
