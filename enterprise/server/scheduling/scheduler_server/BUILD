@@ -14,6 +14,7 @@ go_library(
         "//enterprise/server/remote_execution/action_merger",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize",
+        "//enterprise/server/util/ci_runner_util",
         "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
