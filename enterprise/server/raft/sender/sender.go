@@ -2,7 +2,6 @@ package sender
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
@@ -99,37 +98,6 @@ func fetchRanges(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, rangeID
 	return rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).FetchRangesResponse(0)
 }
 
-func lookupActiveReplicas(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, replicas []*rfpb.ReplicaDescriptor) ([]*rfpb.ReplicaDescriptor, error) {
-	replicaKey := func(r *rfpb.ReplicaDescriptor) string {
-		return fmt.Sprintf("%d-%d", r.GetRangeId(), r.GetReplicaId())
-	}
-	candidateReplicas := make(map[string]*rfpb.ReplicaDescriptor, len(replicas))
-	rangeIDs := make([]uint64, 0, len(replicas))
-	for _, r := range replicas {
-		candidateReplicas[replicaKey(r)] = r
-		rangeIDs = append(rangeIDs, r.GetRangeId())
-	}
-
-	fetchRsp, err := fetchRanges(ctx, c, h, rangeIDs)
-	if err != nil {
-		log.CtxErrorf(ctx, "failed to fetch ranges: %s", err)
-		return nil, err
-	}
-
-	matchedReplicas := make([]*rfpb.ReplicaDescriptor, 0, len(replicas))
-	for _, rd := range fetchRsp.GetRanges() {
-		for _, r2 := range rd.GetReplicas() {
-			if r, present := candidateReplicas[replicaKey(r2)]; present {
-				matchedReplicas = append(matchedReplicas, r)
-				// delete this candidate so it cannot possibly
-				// show up more than once in matchedReplicas.
-				delete(candidateReplicas, replicaKey(r2))
-			}
-		}
-	}
-	return matchedReplicas, nil
-}
-
 func (s *Sender) GetMetaRangeDescriptor() *rfpb.RangeDescriptor {
 	return s.rangeCache.Get(constants.MetaRangePrefix)
 }
@@ -224,38 +192,6 @@ func (s *Sender) LookupRangeDescriptorsByIDs(ctx context.Context, rangeIDs []uin
 		}
 	}
 	return nil, status.UnavailableError("Error fetch ranges")
-}
-
-func (s *Sender) LookupActiveReplicas(ctx context.Context, candidates []*rfpb.ReplicaDescriptor) ([]*rfpb.ReplicaDescriptor, error) {
-	if len(candidates) == 0 {
-		return nil, nil
-	}
-	retrier := retry.DefaultWithContext(ctx)
-
-	var activeReplicas []*rfpb.ReplicaDescriptor
-	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
-		replicas, err := lookupActiveReplicas(ctx, c, h, candidates)
-		if err != nil {
-			return err
-		}
-		activeReplicas = replicas
-		return nil
-	}
-	for retrier.Next() {
-		metaRangeDescriptor := s.GetMetaRangeDescriptor()
-		if metaRangeDescriptor == nil {
-			log.CtxWarning(ctx, "RangeCache did not have meta range yet")
-			continue
-		}
-		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn, rfpb.Header_LINEARIZABLE)
-		if err == nil {
-			return activeReplicas, nil
-		}
-		if !status.IsOutOfRangeError(err) {
-			return nil, err
-		}
-	}
-	return nil, status.UnavailableError("Error finding active replicas")
 }
 
 func (s *Sender) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
