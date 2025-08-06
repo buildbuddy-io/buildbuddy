@@ -377,8 +377,8 @@ var minHashAsBigInt = big.NewInt(0).SetBytes([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 // evenlyDividePartitionIntoRanges takes a splitConfig (partition ID and number
 // of ranges) and returns a slice of range descriptors that completely cover that
 // partition:
-// [PT<partition_name>/00000000000000000000000000000000,
-// PT<partition_name>/ffffffffffffffffffffffffffffffff)
+// [PT<partition_name>/,
+// PT<partition_name>/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff)
 func evenlyDividePartitionIntoRanges(partition disk.Partition) ([]*rfpb.RangeDescriptor, error) {
 	numRanges := partition.NumRanges
 	if numRanges <= 0 {
@@ -407,7 +407,7 @@ func evenlyDividePartitionIntoRanges(partition disk.Partition) ([]*rfpb.RangeDes
 	// Append a final range from nth split --> end.
 	ranges = append(ranges, &rfpb.RangeDescriptor{
 		Start:      []byte(filestore.PartitionDirectoryPrefix + partition.ID + "/" + hex.EncodeToString(l.Bytes())),
-		End:        []byte(filestore.PartitionDirectoryPrefix + partition.ID + "/" + hex.EncodeToString(maxHashAsBigInt.Bytes())),
+		End:        keys.MakeKey([]byte(filestore.PartitionDirectoryPrefix+partition.ID+"/"+hex.EncodeToString(maxHashAsBigInt.Bytes())), keys.MaxByte),
 		Generation: 1,
 	})
 	return ranges, nil
