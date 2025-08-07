@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -130,13 +131,10 @@ func TestLabelPropagation(t *testing.T) {
 			ctx, err := bazel_request.WithRequestMetadata(ctx, bazelMD)
 			ctx = usageutil.WithLocalServerLabels(ctx)
 			require.NoError(t, err)
-			outgoingMD, ok := metadata.FromOutgoingContext(ctx)
-			require.True(t, ok)
 
 			// Simulate an RPC by creating a new context with the incoming
 			// metadata set to the previously applied outgoing metadata.
-			ctx = context.Background()
-			ctx = metadata.NewIncomingContext(ctx, outgoingMD)
+			ctx = testgrpc.OutgoingToIncomingContext(t, ctx)
 
 			// Simulate that we've arrived at the receiving server by
 			// changing the server name on the fly.

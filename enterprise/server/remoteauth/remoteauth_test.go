@@ -11,6 +11,7 @@ import (
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -91,12 +92,7 @@ func contextWithJwt(t *testing.T, jwt string) context.Context {
 
 func contextWith(t *testing.T, key string, value string) context.Context {
 	ctx := metadata.AppendToOutgoingContext(context.Background(), key, value)
-	outgoingMD, ok := metadata.FromOutgoingContext(ctx)
-	require.True(t, ok)
-	// Simulate an RPC by creating a new context with the incoming
-	// metadata set to the previously applied outgoing metadata.
-	ctx = context.Background()
-	return metadata.NewIncomingContext(ctx, outgoingMD)
+	return testgrpc.OutgoingToIncomingContext(t, ctx)
 }
 
 func validJwt(t *testing.T, uid string) string {
