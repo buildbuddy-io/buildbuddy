@@ -15,13 +15,13 @@ import (
 )
 
 func contextWithApiKey(t *testing.T, key string) context.Context {
-	ctx := metadata.AppendToOutgoingContext(context.Background(), authutil.APIKeyHeader, key)
+	ctx := metadata.AppendToOutgoingContext(t.Context(), authutil.APIKeyHeader, key)
 	return testgrpc.OutgoingToIncomingContext(t, ctx)
 }
 
 func TestAuthenticateNoCreds(t *testing.T) {
 	service := AuthService{authenticator: testauth.NewTestAuthenticator(testauth.TestUsers("foo", "bar"))}
-	_, err := service.Authenticate(context.Background(), &authpb.AuthenticateRequest{})
+	_, err := service.Authenticate(t.Context(), &authpb.AuthenticateRequest{})
 	assert.True(t, status.IsUnauthenticatedError(err))
 }
 

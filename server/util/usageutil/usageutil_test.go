@@ -1,7 +1,6 @@
 package usageutil_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -75,7 +74,7 @@ func TestLabels(t *testing.T) {
 			if test.ClientHeader != "" {
 				md[usageutil.ClientHeaderName] = []string{test.ClientHeader}
 			}
-			ctx := metadata.NewIncomingContext(context.Background(), md)
+			ctx := metadata.NewIncomingContext(t.Context(), md)
 
 			labels, err := usageutil.LabelsForUsageRecording(ctx, "")
 
@@ -124,7 +123,7 @@ func TestLabelPropagation(t *testing.T) {
 			flags.Set(t, "grpc_client_origin_header", test.Origin)
 			usageutil.SetServerName(test.Client)
 
-			ctx := context.Background()
+			ctx := t.Context()
 			// Set some pre-existing bazel request metadata on the incoming
 			// context; our propagated labels should always take precedence.
 			bazelMD := &repb.RequestMetadata{ToolDetails: &repb.ToolDetails{ToolName: "bazel"}}
