@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -60,6 +61,14 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		}
 		hostname = resHostname
 	}
+	
+	// Get supported isolation types from platform configuration
+	executorProps := platform.GetExecutorProperties()
+	supportedTypes := make([]string, 0, len(executorProps.SupportedIsolationTypes))
+	for _, t := range executorProps.SupportedIsolationTypes {
+		supportedTypes = append(supportedTypes, string(t))
+	}
+	
 	return &scpb.ExecutionNode{
 		Host: hostname,
 		// TODO: stop setting port once the scheduler no longer requires it.
@@ -73,6 +82,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		Version:                   version.Tag(),
 		ExecutorId:                executorID,
 		ExecutorHostId:            executorHostID,
+		SupportedIsolationTypes:   supportedTypes,
 	}, nil
 }
 

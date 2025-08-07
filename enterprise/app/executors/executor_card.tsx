@@ -38,6 +38,12 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               <div className="executor-section-title">Assignable Milli CPU:</div>
               <div>{this.props.node.assignableMilliCpu}</div>
             </div>
+            {this.props.node.supportedIsolationTypes && this.props.node.supportedIsolationTypes.length > 0 && (
+              <div className="executor-section">
+                <div className="executor-section-title">Isolation Types:</div>
+                <div>{this.props.node.supportedIsolationTypes.join(", ")}</div>
+              </div>
+            )}
             {this.props.node.assignableCustomResources.map((r) => {
               return (
                 <div className="executor-section">

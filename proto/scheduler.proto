@@ -533,6 +533,10 @@ message ExecutionNode {
   //
   // Ex. "8BiY6U0F"
   string executor_host_id = 10;
+
+  // Supported isolation types for this executor.
+  // Ex. ["docker", "firecracker", "none"]
+  repeated string supported_isolation_types = 12;
 }
 
 message GetExecutionNodesRequest {
