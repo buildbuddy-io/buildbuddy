@@ -189,7 +189,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
 
     for (const event of resultEvents) {
       const durationMillis = event.testResult?.testAttemptDurationMillis;
-      if (durationMillis && durationMillis > 0) {
+      if (durationMillis) {
         const duration = Number(durationMillis);
         totalDurationMillis += duration;
         minDurationMillis = Math.min(minDurationMillis, duration);
