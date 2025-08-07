@@ -2,6 +2,7 @@ package action_merger
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -170,15 +172,15 @@ func recordSubmitTimeOffsetMetric(hash map[string]string, groupIdForMetrics stri
 type DispatchAction int
 
 const (
-	// NEW signals that this is the first attempt at execution for the given
+	// New signals that this is the first attempt at execution for the given
 	// action digest.
-	NEW DispatchAction = iota
-	// MERGE signals that this is not the first execution for the given action
+	New DispatchAction = iota
+	// Merge signals that this is not the first execution for the given action
 	// digest and the existing execution should be reused.
-	MERGE DispatchAction = iota
-	// HEDGE signals that this is not the first execution for the given action
+	Merge DispatchAction = iota
+	// Hedge signals that this is not the first execution for the given action
 	// digest, but an additional execution should be run in the background.
-	HEDGE DispatchAction = iota
+	Hedge DispatchAction = iota
 )
 
 // GetOrCreateExecutionID implements action merging by atomically checking if
@@ -189,9 +191,9 @@ const (
 // execution. Errors are logged, but not returned to the caller as action
 // merging is best-effort.
 //
-// The second return value indicates whether that execution ID is new (NEW), an
-// existing execution that this execution request should be merged into (MERGE),
-// or an existing execution that should be hedged with a new one (HEDGE).
+// The second return value indicates whether that execution ID is new (New), an
+// existing execution that this execution request should be merged into (Merge),
+// or an existing execution that should be hedged with a new one (Hedge).
 //
 // Action merging is an optimization that detects when an execution is
 // requested for an action that is in-flight, but not yet in the action cache.
@@ -208,12 +210,12 @@ const (
 func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.CASResourceName, doNotCache bool) (string, DispatchAction) {
 	newExecutionID := adResource.NewUploadString()
 	if !*enableActionMerging || doNotCache {
-		return newExecutionID, NEW
+		return newExecutionID, New
 	}
 	forwardKey, err := redisKeyForPendingExecutionID(ctx, adResource)
 	if err != nil {
 		log.CtxDebugf(ctx, "Failed to compute redis key for execution %v: %v", adResource, err)
-		return newExecutionID, NEW
+		return newExecutionID, New
 	}
 	var executionID string
 	err = rdb.Watch(ctx, func(tx *redis.Tx) error {
@@ -222,7 +224,7 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 			// This key already exists and points to an existing execution.
 			return nil
 		}
-		if err != redis.Nil {
+		if !errors.Is(redis.Nil, err) {
 			// An unexpected error occurred.
 			return err
 		}
@@ -244,28 +246,28 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 		executionID = newExecutionID
 		return err
 	}, forwardKey)
-	if err != nil && err != redis.TxFailedErr {
+	if err != nil && !errors.Is(err, redis.TxFailedErr) {
 		// Unexpected redis error.
 		log.CtxWarningf(ctx, "Unexpected redis error while registering execution for %s: %v", forwardKey, err)
-		return newExecutionID, NEW
+		return newExecutionID, New
 	}
-	if err == redis.TxFailedErr {
+	if errors.Is(err, redis.TxFailedErr) {
 		// The pipeline may have failed because another execution was created
 		// between the initial WATCH and the pipeline execution.
 		executionID, err = rdb.HGet(ctx, forwardKey, executionIDKey).Result()
 		if err != nil {
 			log.CtxWarningf(ctx, "Transaction to register execution for %s failed with %v, but reading the key again failed with %v", forwardKey, redis.TxFailedErr, err)
-			return newExecutionID, NEW
+			return newExecutionID, New
 		}
 	}
 
 	if executionID == "" {
 		log.CtxWarningf(ctx, "Failed to register or read execution ID for %s", forwardKey)
-		return newExecutionID, NEW
+		return newExecutionID, New
 	}
 	if executionID == newExecutionID {
 		// We won the race and created the first execution record.
-		return newExecutionID, NEW
+		return newExecutionID, New
 	}
 
 	// At this point, there is an existing execution in some state. We need to
@@ -273,46 +275,50 @@ func GetOrCreateExecutionID(ctx context.Context, rdb redis.UniversalClient, sche
 	hash, err := rdb.HGetAll(ctx, forwardKey).Result()
 	if err != nil {
 		log.CtxDebugf(ctx, "Error reading action-merging state from Redis: %s", err)
-		return newExecutionID, NEW
+		return newExecutionID, New
 	}
 
 	// Validate that the reverse mapping exists as well. The reverse mapping is
 	// used to delete the pending task information when the task is done.
 	// Bail out if it doesn't exist.
 	err = rdb.Get(ctx, redisKeyForPendingExecutionDigest(executionID)).Err()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		log.CtxWarningf(ctx, "Pending execution %q does not exist in the scheduler", newExecutionID)
-		return newExecutionID, NEW
+		return newExecutionID, New
 	}
 	if err != nil {
 		log.CtxWarningf(ctx, "Unexpected redis error while reading reverse key for existing execution ID %q", newExecutionID)
-		return newExecutionID, NEW
+		return newExecutionID, New
 	}
 
-	maxWaitTime := 3 * time.Second
-	startTime := time.Now()
-	for {
+	// The action merging state is recorded prior to scheduling the task. Verify
+	// that the task is created in the scheduler before merging to avoid a
+	// scenario where we reuse an execution ID that fails to schedule.
+	err = retry.DoVoid(ctx, &retry.Options{
+		InitialBackoff: 5 * time.Millisecond,
+		MaxBackoff:     3 * time.Second,
+		Multiplier:     2,
+		Name:           "Checking scheduler for pending execution",
+	}, func(ctx context.Context) error {
 		existsInScheduler, err := schedulerService.ExistsTask(ctx, executionID)
 		if err != nil {
 			log.CtxWarningf(ctx, "Error checking if pending execution %q exists in the scheduler: %s", newExecutionID, err)
-			return newExecutionID, NEW
+			return retry.NonRetryableError(err)
 		}
-		if existsInScheduler {
-			break
+		if !existsInScheduler {
+			return fmt.Errorf("pending execution %q does not exist in the scheduler yet", newExecutionID)
 		}
-		if time.Since(startTime) > maxWaitTime {
-			log.CtxWarningf(ctx, "Pending execution %q does not exist in the scheduler after %s", newExecutionID, maxWaitTime)
-			return newExecutionID, NEW
-		}
-		time.Sleep(50 * time.Millisecond)
+		return nil
+	})
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to check if pending execution %q exists in the scheduler: %s", newExecutionID, err)
+		return newExecutionID, New
 	}
 
-	// Finally, confirm this execution exists in the scheduler and hasn't been
-	// lost somehow.
 	if shouldHedge(hash) {
-		return executionID, HEDGE
+		return executionID, Hedge
 	} else {
-		return executionID, MERGE
+		return executionID, Merge
 	}
 }
 
