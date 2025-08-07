@@ -822,6 +822,21 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		return err
 	}
 	platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), platProps, task.GetCommand())
+
+	// Resolve the image tag to a digest so that subsequent pulls are
+	// guaranteed to use the exact same image contents.
+	if platProps.ContainerImage != "" {
+		creds, err := oci.CredentialsFromProperties(platProps)
+		if err != nil {
+			return err
+		}
+		imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, platProps.ContainerImage, oci.RuntimePlatform(), creds)
+		if err != nil {
+			return err
+		}
+		platProps.ContainerImage = imageNameWithDigest
+	}
+
 	st := &repb.ScheduledTask{
 		SchedulingMetadata: &scpb.SchedulingMetadata{
 			// Note: this will use the default task size estimates and not
