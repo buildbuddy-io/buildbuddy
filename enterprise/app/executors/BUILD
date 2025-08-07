@@ -41,5 +41,6 @@ ts_library(
         "//enterprise/app/trends:common",
         "//proto:scheduler_ts_proto",
         "//proto:stat_filter_ts_proto",
+        "//proto:timestamp_ts_proto",
     ],
 )

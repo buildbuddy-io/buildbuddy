@@ -343,10 +343,10 @@ export function formatDateRange(startDate: Date, endDate?: Date, { now = new Dat
   return `${start} ${DATE_RANGE_SEPARATOR} ${end}`;
 }
 
-export function relativeTimeSeconds(timestamp: { seconds: number | Long; nanos: number | Long }): string {
+export function relativeTimeSeconds(timestamp: { seconds?: number | Long; nanos?: number | Long }): string {
   if (!timestamp) return "Never";
 
-  const timestampMs = +timestamp.seconds * 1000 + (+timestamp.nanos || 0) / 1000000;
+  const timestampMs = +(timestamp.seconds || 0) * 1000 + +(timestamp.nanos || 0) / 1000000;
   const now = Date.now();
   const diffMs = now - timestampMs;
 

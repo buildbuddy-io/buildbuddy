@@ -4,12 +4,13 @@ import Link from "../../../app/components/link/link";
 import format from "../../../app/format/format";
 import { scheduler } from "../../../proto/scheduler_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
+import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
 import { encodeMetricUrlParam, encodeWorkerUrlParam } from "../trends/common";
 
 interface Props {
   node: scheduler.ExecutionNode;
   isDefault: boolean;
-  lastCheckInTime?: { seconds: number | Long; nanos: number | Long };
+  lastCheckInTime?: google_timestamp.protobuf.Timestamp | null;
 }
 
 export default class ExecutorCardComponent extends React.Component<Props> {
