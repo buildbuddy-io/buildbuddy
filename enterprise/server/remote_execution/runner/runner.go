@@ -825,16 +825,8 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 
 	// Resolve the image tag to a digest so that subsequent pulls are
 	// guaranteed to use the exact same image contents.
-	if platProps.ContainerImage != "" {
-		creds, err := oci.CredentialsFromProperties(platProps)
-		if err != nil {
-			return err
-		}
-		imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, platProps.ContainerImage, oci.RuntimePlatform(), creds)
-		if err != nil {
-			return err
-		}
-		platProps.ContainerImage = imageNameWithDigest
+	if err := p.resolveImageDigest(ctx, platProps); err != nil {
+		return err
 	}
 
 	st := &repb.ScheduledTask{
@@ -948,6 +940,22 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 	return out
 }
 
+func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Properties) error {
+	if props.ContainerImage == "" {
+		return nil
+	}
+	creds, err := oci.CredentialsFromProperties(props)
+	if err != nil {
+		return err
+	}
+	imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
+	if err != nil {
+		return err
+	}
+	props.ContainerImage = imageNameWithDigest
+	return nil
+}
+
 func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) (*platform.Properties, error) {
 	props, err := platform.ParseProperties(task)
 	if err != nil {
@@ -958,23 +966,11 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 		return nil, err
 	}
 
-	if props.ContainerImage == "" {
-		return props, nil
-	}
-
-	// To keep container implementations simple and correct,
-	// we resolve image names that include a tag (explicitly or implicity)
-	// to image names with a digest.
-	creds, err := oci.CredentialsFromProperties(props)
-	if err != nil {
+	// Resolve the image tag to a content digest so that container
+	// implementations always receive a fully qualified image reference.
+	if err := p.resolveImageDigest(ctx, props); err != nil {
 		return nil, err
 	}
-	imageNameWithDigest, err := p.resolver.ResolveImageDigest(ctx, props.ContainerImage, oci.RuntimePlatform(), creds)
-	if err != nil {
-		return nil, err
-	}
-	props.ContainerImage = imageNameWithDigest
-
 	return props, nil
 }
 
