@@ -449,8 +449,10 @@ func copyOutputs(reader io.Reader, result *interfaces.CommandResult, stdio *inte
 	if *commandutil.DebugStreamCommandOutputs {
 		stdout, stderr = io.MultiWriter(stdout, os.Stdout), io.MultiWriter(stderr, os.Stderr)
 	}
-	stdout = commandutil.LimitStdOutErrWriter(stdout)
-	stderr = commandutil.LimitStdOutErrWriter(stderr)
+	if !stdio.DisableOutputLimits {
+		stdout = commandutil.LimitStdOutErrWriter(stdout)
+		stderr = commandutil.LimitStdOutErrWriter(stderr)
+	}
 
 	_, err := stdcopy.StdCopy(stdout, stderr, reader)
 	result.Stdout = stdoutBuf.Bytes()
