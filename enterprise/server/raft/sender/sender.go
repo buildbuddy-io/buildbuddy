@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -128,15 +127,17 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 	return rangeDescriptor, nil
 }
 
-func (s *Sender) LookupRangeDescriptorsForPartition(ctx context.Context, partition disk.Partition) ([]*rfpb.RangeDescriptor, error) {
-	res := make([]*rfpb.RangeDescriptor, 0, partition.NumRanges)
+// LookupRangeDescriptorsForPartition looks up range descriptors associated with
+// a partition and the number of results is capped by the given limit.
+func (s *Sender) LookupRangeDescriptorsForPartition(ctx context.Context, partitionID string, limit int64) ([]*rfpb.RangeDescriptor, error) {
+	res := make([]*rfpb.RangeDescriptor, 0, limit)
 	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
-		partitionPrefix := []byte(filestore.PartitionDirectoryPrefix + partition.ID + "/")
+		partitionPrefix := []byte(filestore.PartitionDirectoryPrefix + partitionID + "/")
 		req := &rfpb.ScanRequest{
 			Start:    keys.RangeMetaKey(partitionPrefix),
 			End:      keys.RangeMetaKey(keys.MakeKey(partitionPrefix, keys.MaxByte)),
 			ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
-			Limit:    int64(partition.NumRanges),
+			Limit:    limit,
 		}
 		ranges, err := scanRangeDescriptors(ctx, c, h, req)
 		if err != nil {

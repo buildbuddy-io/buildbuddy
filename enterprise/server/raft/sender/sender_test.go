@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -98,28 +97,19 @@ func TestLookupRangeDescriptorsForPartition(t *testing.T) {
 
 	sender := s1.Sender()
 
-	res, err := sender.LookupRangeDescriptorsForPartition(ctx, disk.Partition{
-		ID:        "default",
-		NumRanges: 2,
-	})
+	res, err := sender.LookupRangeDescriptorsForPartition(ctx, "default", 2)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(res))
 	require.True(t, proto.Equal(startingRanges[1], res[0]))
 	require.True(t, proto.Equal(startingRanges[2], res[1]))
 
-	res, err = sender.LookupRangeDescriptorsForPartition(ctx, disk.Partition{
-		ID:        "foo",
-		NumRanges: 3,
-	})
+	res, err = sender.LookupRangeDescriptorsForPartition(ctx, "foo", 3)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(res))
 	require.True(t, proto.Equal(startingRanges[4], res[0]))
 	require.True(t, proto.Equal(startingRanges[5], res[1]))
 
-	res, err = sender.LookupRangeDescriptorsForPartition(ctx, disk.Partition{
-		ID:        "bar",
-		NumRanges: 1,
-	})
+	res, err = sender.LookupRangeDescriptorsForPartition(ctx, "bar", 1)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(res))
 }
