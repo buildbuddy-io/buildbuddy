@@ -572,7 +572,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             activeTab == "spawns" ||
             activeTab == "files") && (
             <InvocationFilterComponent
-              tab={this.props.tab}
+              tab={`#${activeTab}`}
               search={this.props.search}
               placeholder={activeTab === "execution" ? "Filter by target, action mnemonic, command, or digest..." : ""}
               // When serving a paginated invocation, debounce since searching
