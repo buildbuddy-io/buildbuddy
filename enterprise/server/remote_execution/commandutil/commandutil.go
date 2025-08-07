@@ -113,8 +113,10 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 		cmd.Stdout = io.MultiWriter(cmd.Stdout, logWriter)
 		cmd.Stderr = io.MultiWriter(cmd.Stderr, logWriter)
 	}
-	cmd.Stdout = LimitStdOutErrWriter(cmd.Stdout)
-	cmd.Stderr = LimitStdOutErrWriter(cmd.Stderr)
+	if !stdio.DisableOutputLimits {
+		cmd.Stdout = LimitStdOutErrWriter(cmd.Stdout)
+		cmd.Stderr = LimitStdOutErrWriter(cmd.Stderr)
+	}
 	cmd.SysProcAttr = getDefaultSysProcAttr()
 	for _, envVar := range command.GetEnvironmentVariables() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))

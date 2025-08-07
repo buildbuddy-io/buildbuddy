@@ -133,4 +133,9 @@ func TestCommandWithOutputLimit(t *testing.T) {
 	assert.Error(t, result.Error)
 	assert.True(t, status.IsResourceExhaustedError(result.Error), "expected resource exhausted error, got: %v", result.Error)
 	assert.Contains(t, result.Error.Error(), "stdout/stderr output size limit exceeded")
+
+	// Command succeeds when exceeding limit if DisableOutputLimits is set
+	result = commandutil.Run(ctx, &repb.Command{Arguments: []string{"echo", "this is too long"}}, ".", nil, &interfaces.Stdio{DisableOutputLimits: true})
+	assert.Equal(t, 0, result.ExitCode)
+	assert.NoError(t, result.Error)
 }
