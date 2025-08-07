@@ -208,7 +208,7 @@ func (sf *StoreFactory) StartShard(t *testing.T, ctx context.Context, stores ...
 	require.NoError(t, err)
 }
 
-func (sf *StoreFactory) StartShardWithSplitConifg(t *testing.T, ctx context.Context, partition disk.Partition, stores ...*TestingStore) {
+func (sf *StoreFactory) StartShardWithPartition(t *testing.T, ctx context.Context, partition disk.Partition, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
 	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
 	require.NoError(t, err)

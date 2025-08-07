@@ -2283,7 +2283,7 @@ func TestBringupSetRanges(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1}
-	sf.StartShardWithSplitConifg(t, ctx, partition, stores...)
+	sf.StartShardWithPartition(t, ctx, partition, stores...)
 
 	testutil.WaitForRangeLease(t, ctx, stores, 1) // metarange
 	testutil.WaitForRangeLease(t, ctx, stores, 2) // start -> 1st split
