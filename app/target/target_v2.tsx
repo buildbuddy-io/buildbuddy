@@ -1,4 +1,4 @@
-import { Box, CheckCircle, Clock, Copy, Hash, HelpCircle, History, SkipForward, Target, XCircle } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, Box, CheckCircle, Clock, Copy, Hash, HelpCircle, History, SkipForward, Target, XCircle } from "lucide-react";
 import React from "react";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
@@ -165,6 +165,34 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     return adjective + " test";
   }
 
+  getTestDurationStats(): { avg: number; min: number; max: number } | null {
+    const resultEvents = this.state.target?.testResultEvents;
+    if (!resultEvents || resultEvents.length === 0) return null;
+
+    let totalDurationMillis = 0;
+    let minDurationMillis = Number.MAX_VALUE;
+    let maxDurationMillis = 0;
+    let validDurationCount = 0;
+
+    for (const event of resultEvents) {
+      const durationMillis = event.testResult?.testAttemptDurationMillis;
+      if (durationMillis && durationMillis > 0) {
+        const duration = Number(durationMillis);
+        totalDurationMillis += duration;
+        minDurationMillis = Math.min(minDurationMillis, duration);
+        maxDurationMillis = Math.max(maxDurationMillis, duration);
+        validDurationCount++;
+      }
+    }
+
+    if (validDurationCount === 0) return null;
+    return {
+      avg: totalDurationMillis / validDurationCount,
+      min: minDurationMillis,
+      max: maxDurationMillis
+    };
+  }
+
   resultSort(a: build_event_stream.BuildEvent, b: build_event_stream.BuildEvent) {
     let statusDiff = (b?.testResult?.status ?? 0) - (b?.testResult?.status ?? 0);
     if (statusDiff != 0) {
@@ -328,6 +356,28 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                   {target.testSummary.totalRunCount ?? 0} total runs
                 </div>
               )}
+              {target?.testSummary && (() => {
+                const durationStats = this.getTestDurationStats();
+                if (durationStats !== null) {
+                  return (
+                    <>
+                      <div className="detail">
+                        <Clock className="icon" />
+                        {format.durationMillis(durationStats.avg)} avg duration
+                      </div>
+                      <div className="detail">
+                        <ArrowDownToLine className="icon" />
+                        {format.durationMillis(durationStats.min)} min duration
+                      </div>
+                      <div className="detail">
+                        <ArrowUpToLine className="icon" />
+                        {format.durationMillis(durationStats.max)} max duration
+                      </div>
+                    </>
+                  );
+                }
+                return null;
+              })()}
               {Boolean(target?.metadata?.ruleType || target?.actionEvents.length) && (
                 <div className="detail">
                   <Target className="icon" />
