@@ -52,7 +52,7 @@ type Options struct {
 	APIKeyOverride string
 }
 
-func makeExecutionNode(pool, executorID, executorHostID string, options *Options) (*scpb.ExecutionNode, error) {
+func makeExecutionNode(pool, executorID, executorHostID string, options *Options, taskScheduler *priority_task_scheduler.PriorityTaskScheduler) (*scpb.ExecutionNode, error) {
 	hostname := options.HostnameOverride
 	if hostname == "" {
 		resHostname, err := resources.GetMyHostname()
@@ -69,6 +69,12 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		supportedTypes = append(supportedTypes, string(t))
 	}
 
+	// Get current queue length
+	queueLength := int32(0)
+	if taskScheduler != nil {
+		queueLength = int32(taskScheduler.QueueLength())
+	}
+
 	return &scpb.ExecutionNode{
 		Host: hostname,
 		// TODO: stop setting port once the scheduler no longer requires it.
@@ -83,6 +89,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		ExecutorId:                executorID,
 		ExecutorHostId:            executorHostID,
 		SupportedIsolationTypes:   supportedTypes,
+		CurrentQueueLength:        queueLength,
 	}, nil
 }
 
@@ -180,6 +187,8 @@ func (r *Registration) ServeStatusz(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse, schedulerErr chan error, registrationTicker, requestMoreWorkTicker *time.Ticker) (bool, error) {
+	// Update queue length before creating registration message
+	r.node.CurrentQueueLength = int32(r.taskScheduler.QueueLength())
 	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
 		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
 	}
@@ -227,6 +236,8 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 	case err := <-schedulerErr:
 		return false, status.WrapError(err, "failed to receive message from scheduler")
 	case <-registrationTicker.C:
+		// Update the queue length before sending
+		r.node.CurrentQueueLength = int32(r.taskScheduler.QueueLength())
 		if err := stream.Send(registrationMsg); err != nil {
 			return false, status.UnavailableErrorf("could not send registration message: %s", err)
 		}
@@ -268,6 +279,8 @@ func (r *Registration) monitorExcessCapacity(ctx context.Context) {
 // maintainRegistrationAndStreamWork maintains registration with a scheduler server using the newer
 // RegisterAndStreamWork API which supports both registration and task reservations.
 func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
+	// Update queue length before creating registration message
+	r.node.CurrentQueueLength = int32(r.taskScheduler.QueueLength())
 	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
 		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
 	}
@@ -384,7 +397,7 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 	} else if resources.GetPoolName() != "" {
 		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
 	}
-	node, err := makeExecutionNode(poolName, executorID, executorHostID, options)
+	node, err := makeExecutionNode(poolName, executorID, executorHostID, options, taskScheduler)
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
 	}

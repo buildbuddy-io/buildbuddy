@@ -537,6 +537,9 @@ message ExecutionNode {
   // Supported isolation types for this executor.
   // Ex. ["docker", "firecracker", "none"]
   repeated string supported_isolation_types = 12;
+
+  // Current number of tasks in the executor's queue.
+  int32 current_queue_length = 13;
 }
 
 message GetExecutionNodesRequest {
@@ -553,6 +556,9 @@ message GetExecutionNodesResponse {
 
     // Whether tasks will be routed to this node by default.
     bool is_default = 2;
+
+    // Last time this executor checked in with the scheduler.
+    google.protobuf.Timestamp last_check_in_time = 3;
   }
 
   bool user_owned_executors_supported = 3;

@@ -9,6 +9,7 @@ import { encodeMetricUrlParam, encodeWorkerUrlParam } from "../trends/common";
 interface Props {
   node: scheduler.ExecutionNode;
   isDefault: boolean;
+  lastCheckInTime?: { seconds: number | Long; nanos: number | Long };
 }
 
 export default class ExecutorCardComponent extends React.Component<Props> {
@@ -60,6 +61,20 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               <div className="executor-section-title">Default:</div>
               <div>{this.props.isDefault ? "True" : "False"}</div>
             </div>
+
+            {this.props.lastCheckInTime && (
+              <>
+                <div className="executor-section">
+                  <div className="executor-section-title">Last Check-in:</div>
+                  <div>{format.relativeTimeSeconds(this.props.lastCheckInTime)}</div>
+                </div>
+                <div className="executor-section">
+                  <div className="executor-section-title">Queue Length:</div>
+                  <div>{this.props.node.currentQueueLength || 0}</div>
+                </div>
+              </>
+            )}
+
             <div className="executor-section">
               <Link
                 className="executor-history-button history-button"

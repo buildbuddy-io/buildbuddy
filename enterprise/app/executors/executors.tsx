@@ -196,7 +196,11 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
                   {executors.map(
                     (node) =>
                       node.executor.node && (
-                        <ExecutorCardComponent node={node.executor.node} isDefault={node.executor.isDefault} />
+                        <ExecutorCardComponent
+                          node={node.executor.node}
+                          isDefault={node.executor.isDefault}
+                          lastCheckInTime={node.executor.lastCheckInTime}
+                        />
                       )
                   )}
                 </>

@@ -2346,7 +2346,7 @@ func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueue
 	return &scpb.ReEnqueueTaskResponse{}, nil
 }
 
-func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupID string) ([]*scpb.ExecutionNode, error) {
+func (s *SchedulerServer) getRegisteredExecutionNodesFromRedis(ctx context.Context, groupID string) ([]*scpb.RegisteredExecutionNode, error) {
 	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -2356,7 +2356,7 @@ func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupI
 	if err != nil {
 		return nil, err
 	}
-	var executionNodes []*scpb.ExecutionNode
+	var registeredNodes []*scpb.RegisteredExecutionNode
 	for _, k := range poolKeys {
 		executors, err := s.rdb.HGetAll(ctx, k).Result()
 		if err != nil {
@@ -2372,10 +2372,10 @@ func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupI
 			if err != nil {
 				continue
 			}
-			executionNodes = append(executionNodes, registeredNode.GetRegistration())
+			registeredNodes = append(registeredNodes, registeredNode)
 		}
 	}
-	return executionNodes, nil
+	return registeredNodes, nil
 }
 
 func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
@@ -2389,7 +2389,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		groupID = ""
 	}
 
-	executionNodes, err := s.getExecutionNodesFromRedis(ctx, groupID)
+	registeredNodes, err := s.getRegisteredExecutionNodesFromRedis(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -2409,8 +2409,9 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		return nil, err
 	}
 
-	executors := make([]*scpb.GetExecutionNodesResponse_Executor, len(executionNodes))
-	for i, node := range executionNodes {
+	executors := make([]*scpb.GetExecutionNodesResponse_Executor, len(registeredNodes))
+	for i, regNode := range registeredNodes {
+		node := regNode.GetRegistration()
 		isDarwinExecutor := strings.EqualFold(node.Os, platform.DarwinOperatingSystemName)
 		isWindowsExecutor := strings.EqualFold(node.Os, platform.WindowsOperatingSystemName)
 		executors[i] = &scpb.GetExecutionNodesResponse_Executor{
@@ -2421,6 +2422,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 					(g.UseGroupOwnedExecutors ||
 						(s.forceUserOwnedDarwinExecutors && isDarwinExecutor) ||
 						(s.forceUserOwnedWindowsExecutors && isWindowsExecutor))),
+			LastCheckInTime: regNode.GetLastPingTime(),
 		}
 	}
 	slices.SortFunc(executors, func(a, b *scpb.GetExecutionNodesResponse_Executor) int {
