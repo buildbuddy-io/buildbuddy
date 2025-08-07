@@ -832,11 +832,13 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 		log.CtxWarning(ctx, status.Message(err))
 	}
 
-	networkStats, err := c.network.Stats(ctx)
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to get network stats: %s", err)
-	} else {
-		res.UsageStats.NetworkStats = networkStats
+	if c.network != nil {
+		networkStats, err := c.network.Stats(ctx)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to get network stats: %s", err)
+		} else {
+			res.UsageStats.NetworkStats = networkStats
+		}
 	}
 
 	return res

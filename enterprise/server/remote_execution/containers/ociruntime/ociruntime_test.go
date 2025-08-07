@@ -1556,7 +1556,7 @@ func TestPersistentWorker(t *testing.T) {
 
 	// Start worker (Exec)
 	worker := persistentworker.Start(ctx, ws, c, "proto" /*=protocol*/, &repb.Command{
-		Arguments: []string{"./testworker", "--persistent_worker", "--response_base64", responseBase64},
+		Arguments: []string{"./testworker", "--response_base64", responseBase64},
 	})
 
 	// Send work request.
