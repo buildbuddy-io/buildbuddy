@@ -956,7 +956,7 @@ func (s *Store) validatedRangeAgainstMetaRange(ctx context.Context, rd *rfpb.Ran
 	// Fetch the range descriptor from meta range to make sure it's the most-up-to-date.
 	remoteRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to look up range descriptor")
+		return nil, status.InternalErrorf("failed to look up range descriptor: %s", err)
 	}
 
 	if remoteRD.GetRangeId() != rd.GetRangeId() {

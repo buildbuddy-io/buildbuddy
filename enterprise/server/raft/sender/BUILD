@@ -7,6 +7,7 @@ go_library(
     srcs = ["sender.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender",
     deps = [
+        "//enterprise/server/filestore",
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/header",
@@ -35,7 +36,10 @@ go_test(
     },
     tags = ["block-network"],
     deps = [
+        "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/keys",
         "//enterprise/server/raft/testutil",
+        "//proto:raft_go_proto",
         "//server/util/proto",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
