@@ -211,12 +211,6 @@ func stripNonAllowedEnvVars(tokens []string) {
 	}
 }
 
-func redactNonAllowedEnvVars(txt string) string {
-	// Create a regex that matches env vars but stops at whitespace or common delimiters
-	envVarTextRegex := regexp.MustCompile(`(--(?:` + strings.Join(envVarOptionNames, "|") + `)=\w+=)[^\s#]*`)
-	return envVarTextRegex.ReplaceAllString(txt, "${1}<REDACTED>")
-}
-
 func redactCmdLine(tokens []string) {
 	stripURLSecretsFromCmdLine(tokens)
 	stripRemoteHeadersFromCmdLine(tokens)
@@ -228,7 +222,6 @@ func RedactText(txt string) string {
 	txt = stripURLSecrets(txt)
 	txt = redactRemoteHeaders(txt)
 	txt = redactBuildBuddyAPIKeys(txt)
-	txt = redactNonAllowedEnvVars(txt)
 	return txt
 }
 
