@@ -48,7 +48,7 @@ const (
 
 var (
 	envVarOptionNames      = []string{"action_env", "client_env", "host_action_env", "repo_env", "test_env"}
-	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(envVarOptionNames, "|") + `)=\w+=)[^\s]*`)
+	envVarOptionNamesRegex *regexp.Regexp
 
 	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
@@ -101,6 +101,16 @@ var (
 		"bes_header",
 	}
 )
+
+func init() {
+	// Build the envVarOptionNamesRegex with quoted option names to avoid any
+	// regex meta-character surprises.
+	escaped := make([]string, len(envVarOptionNames))
+	for i, n := range envVarOptionNames {
+		escaped[i] = regexp.QuoteMeta(n)
+	}
+	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(escaped, "|") + `)=\w+=)[^\s]*`)
+}
 
 func stripURLSecrets(input string) string {
 	return urlSecretRegex.ReplaceAllString(input, "${1}<REDACTED>${2}")
