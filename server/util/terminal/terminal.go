@@ -15,7 +15,8 @@ const (
 	// means we are actually allocating space for slices of this length.
 	// TODO: patch the library to make the cap for slices and the max columns two
 	// different numbers, ideally as a PR.
-	Columns = 256
+	Columns = 2000
+	DefaultColumnCapacity = 160
 	Lines   = 100
 )
 
@@ -34,7 +35,12 @@ type ScreenWriter struct {
 // A windowHeight of less than 1 indicates a window of unlimited size.
 func NewScreenWriter(windowHeight int) (*ScreenWriter, error) {
 	w := &ScreenWriter{windowHeight: windowHeight, renderer: &bkterminal.ANSIRenderer{}}
-	s, err := bkterminal.NewScreen(bkterminal.WithMaxSize(0, w.windowHeight), bkterminal.WithRenderer(w.renderer), bkterminal.WithRealWindow())
+	s, err := bkterminal.NewScreen(
+		bkterminal.WithMaxSize(0, w.windowHeight),
+		bkterminal.WithRenderer(w.renderer),
+		bkterminal.WithRealWindow(),
+		bkterminal.WithDefaultColumnCapacity(DefaultColumnCapacity),
+	)
 	if err != nil {
 		return nil, err
 	}
