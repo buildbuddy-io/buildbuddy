@@ -384,11 +384,11 @@ export function formatRole(role: string): string | null {
   return null;
 }
 
-export function formatWithCommas(num: number | Long | Number | undefined) {
+export function formatWithCommas(num: number | Long | Number | undefined, options?: Intl.NumberFormatOptions) {
   if (num === undefined || num === null) {
     return "";
   }
-  return (+num).toLocaleString("en-US");
+  return (+num).toLocaleString("en-US", options);
 }
 
 export function differenceInCalendarDays(start: Date, end: Date) {

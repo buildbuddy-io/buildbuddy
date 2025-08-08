@@ -66,6 +66,7 @@ export enum ChartColor {
   ORANGE = "#FF6F00",
   BLUE = "#03A9F4",
   GREY = "#AAAAAA",
+  BASICALLY_BLACK = "#212121",
 }
 
 function chartColorToCssClass(c: ChartColor): string {
