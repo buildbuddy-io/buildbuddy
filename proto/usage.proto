@@ -61,20 +61,20 @@ message Usage {
 
   // The number of bytes downloaded from within BuildBuddy-owned servers,
   // excluding workflows.
-	int64 total_internal_download_size_bytes = 10;
+  int64 total_internal_download_size_bytes = 10;
 
   // The number of bytes downloaded from BuildBuddy-owned workflow servers.
-	int64 total_workflow_download_size_bytes = 11;
+  int64 total_workflow_download_size_bytes = 11;
 
   // The number of bytes uploaded from outside of BuildBuddy-owned servers.
-	int64 total_external_upload_size_bytes = 12;
+  int64 total_external_upload_size_bytes = 12;
 
   // The number of bytes uploaded from within BuildBuddy-owned servers,
   // excluding workflows.
-	int64 total_internal_upload_size_bytes = 13;
+  int64 total_internal_upload_size_bytes = 13;
 
   // The number of bytes uploaded from BuildBuddy-owned workflow servers.
-	int64 total_workflow_upload_size_bytes = 14;
+  int64 total_workflow_upload_size_bytes = 14;
 
   // Total raw cpu time (2 cpus for 1 minutes = 2 minutes) used on
   // BuildBuddy-owned executors and workflow runners.  Idle time is uncounted.
@@ -82,17 +82,17 @@ message Usage {
 
   // Total raw cpu time (2 cpus for 1 minutes = 2 minutes) used on
   // BuildBuddy-owned executors.  Idle time is uncounted.
-	int64 cloud_rbe_cpu_nanos = 16;
+  int64 cloud_rbe_cpu_nanos = 16;
 
   // Total raw cpu time (2 cpus for 1 minutes = 2 minutes) used on
   // BuildBuddy-owned workflow runners.  Idle time is uncounted.
-	int64 cloud_workflow_cpu_nanos = 17;
+  int64 cloud_workflow_cpu_nanos = 17;
 
   // Total wall time of tasks run on BuildBuddy-owned executors, ignoring cpu
   // utilization.  Idle time is counted.
-	int64 cloud_rbe_linux_execution_duration_usec = 18;
+  int64 cloud_rbe_linux_execution_duration_usec = 18;
 
   // Total wall time of tasks run on BuildBuddy-owned workflow runners,
   // ignoring cpu utilization.  Idle time is counted.
-	int64 cloud_workflow_linux_execution_duration_usec = 19;
+  int64 cloud_workflow_linux_execution_duration_usec = 19;
 }
