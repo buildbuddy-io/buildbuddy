@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"hash"
 	"io"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -107,6 +108,20 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	if err != nil {
 		return err
 	}
+
+	readDone := make(chan struct{})
+	defer close(readDone)
+	go func() {
+		t := time.NewTimer(5 * time.Minute)
+		defer t.Stop()
+		select {
+		case <-readDone:
+			return
+		case <-t.C:
+			log.CtxWarningf(ctx, "BSS read possibly stuck: %s", r.ToProto().String())
+			return
+		}
+	}()
 
 	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	if r.IsEmpty() {
