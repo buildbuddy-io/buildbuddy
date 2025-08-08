@@ -72,9 +72,12 @@ func TestCloneWindows(t *testing.T) {
 		t.Skipf("No DevDrive found, skipping test for block cloning support")
 	}
 
+	// Note: Bazel Windows has no sandboxing, so we can use the DevDrive directly.
 	t.Logf("DevDrive found at %s - testing with block cloning support", DevDrivePath)
 	testDir, err := os.MkdirTemp(DevDrivePath, "test-clone-windows-*")
 	require.NoError(t, err, "Failed to create temporary directory for test")
+	t.Cleanup(func() { os.RemoveAll(testDir) })
+
 	source := testfs.MakeTempFile(t, testDir, "test-source-*.txt")
 	target := filepath.Join(testDir, "test_target.txt")
 
