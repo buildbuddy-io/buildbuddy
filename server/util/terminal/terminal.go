@@ -15,9 +15,9 @@ const (
 	// means we are actually allocating space for slices of this length.
 	// TODO: patch the library to make the cap for slices and the max columns two
 	// different numbers, ideally as a PR.
-	Columns = 2000
+	Columns               = 2000
 	DefaultColumnCapacity = 160
-	Lines   = 100
+	Lines                 = 100
 )
 
 type ScreenWriter struct {
