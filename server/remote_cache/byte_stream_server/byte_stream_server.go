@@ -112,6 +112,8 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 
 	cancel := canary.StartWithLateFn(5*time.Minute, func() {
 		log.CtxWarningf(ctx, "BSS read possibly stuck: %s", r.ToProto())
+	}, func(d time.Duration) {
+		log.CtxWarningf(ctx, "Slow BSS read completed after %s: %s", d, r.ToProto())
 	})
 	defer cancel()
 
@@ -195,6 +197,8 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 func send(ctx context.Context, stream bspb.ByteStream_ReadServer, rn *digest.CASResourceName, rsp *bspb.ReadResponse) error {
 	cancel := canary.StartWithLateFn(30*time.Second, func() {
 		log.CtxWarningf(ctx, "BSS send read response possibly stuck: %s", rn.ToProto())
+	}, func(d time.Duration) {
+		log.CtxWarningf(ctx, "Slow BSS send read response completed after %s: %s", d, rn.ToProto())
 	})
 	defer cancel()
 	return stream.Send(rsp)

@@ -18,7 +18,7 @@ type CanaryFunc func(timeTaken time.Duration)
 
 // StartWithLateFn starts a canary that will call lateFn once, when the expectedDuration
 // period passes (if not canceled).
-func StartWithLateFn(expectedDuration time.Duration, lateFn func()) CancelFunc {
+func StartWithLateFn(expectedDuration time.Duration, lateFn func(), doneFn CanaryFunc) CancelFunc {
 	if !*enableCanaries {
 		return func() {}
 	}
@@ -32,10 +32,14 @@ func StartWithLateFn(expectedDuration time.Duration, lateFn func()) CancelFunc {
 		}
 	}
 
+	start := time.Now()
 	go func() {
 		for {
 			select {
 			case <-done:
+				if time.Since(start) > expectedDuration {
+					doneFn(time.Since(start))
+				}
 			case <-time.After(expectedDuration):
 				lateFn()
 			}
