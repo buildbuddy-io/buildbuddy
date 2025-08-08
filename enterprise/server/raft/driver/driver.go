@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -610,6 +611,9 @@ func (bq *baseQueue) maybeAddRangeTask(ctx context.Context, repl IReplica, ar at
 	}
 }
 
+func (rq *Queue) MaybeAddPartitionTask(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor) {
+
+}
 func (rq *Queue) MaybeAddRangeTask(ctx context.Context, replica IReplica) {
 	rq.maybeAddRangeTask(ctx, replica, attemptRecord{})
 }

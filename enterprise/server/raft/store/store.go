@@ -3317,6 +3317,9 @@ func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
 }
 
 func (s *Store) setupPartitions(ctx context.Context) {
+	if s.driverQueue == nil {
+		return
+	}
 	ticker := s.clock.NewTicker(30 * time.Second) // Check every 30 seconds
 	for {
 		if s.partitionsAllInitialized {
@@ -3326,16 +3329,16 @@ func (s *Store) setupPartitions(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.Chan():
-			// Check if this store is the leader of the meta range
-			if !s.HasReplicaAndIsLeader(constants.MetaRangeID) {
-				continue
-			}
 			s.processPartitions(ctx)
 		}
 	}
 }
 
 func (s *Store) processPartitions(ctx context.Context) {
+	// Check if this store is the leader of the meta range
+	if !s.HasReplicaAndIsLeader(constants.MetaRangeID) {
+		return
+	}
 	partitionsFromMetaRange, err := s.sender.FetchPartitionsFromMetaRange(ctx)
 	if err != nil {
 		s.log.Warningf("Failed to fetch partitions from meta range: %s", err)
@@ -3345,20 +3348,29 @@ func (s *Store) processPartitions(ctx context.Context) {
 	s.log.Debugf("Found %d partitions in meta range", len(partitionsFromMetaRange))
 
 	// Check if each store partition exists in the meta range partitions
+	partitionsNeedsSetup := false
 	for _, p := range s.partitions {
-		var remotePartition *rfpb.PartitionDescriptor
+		var pd *rfpb.PartitionDescriptor
 		for _, pFromMD := range partitionsFromMetaRange {
 			if p.ID == pFromMD.GetId() {
-				remotePartition = pFromMD
+				pd = pFromMD
 				break
 			}
 		}
 
-		if remotePartition != nil && remotePartition.GetState() == rfpb.PartitionDescriptor_INITIALIZED {
+		if pd != nil && pd.GetState() == rfpb.PartitionDescriptor_INITIALIZED {
 			continue
 		}
 
 		// set up the partition
+		s.driverQueue.MaybeAddPartitionTask(ctx, p, pd)
+		partitionsNeedsSetup = true
+	}
+
+	// TODO: loop over partitionsFromMetaRange to see if there are ranges need
+	// to be deleted.
+	if !partitionsNeedsSetup {
+		s.partitionsAllInitialized = true
 	}
 }
 
