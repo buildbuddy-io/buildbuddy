@@ -58,3 +58,28 @@ message GetEncryptionConfigResponse {
 
   repeated KMS supported_kms = 3;
 }
+
+// Auth info (client, group) is passed via headers.
+message GetEncryptionKeyRequest {}
+
+message EncryptionKey {
+  // Encryption keys and data are versioned to support key rotation. This
+  // version is passed to the key derivation function and encoded in the
+  // encrypted data.
+  //
+  // More about customer-managed encryption can be found in
+  // http://go/customer-managed-encryption
+  int32 version = 1;
+
+  // The encryption key.
+  bytes key = 2;
+}
+
+message GetEncryptionKeyResponse {
+  EncryptionKey key = 1;
+}
+
+service EncryptionService {
+  rpc GetEncryptionKey(GetEncryptionKeyRequest)
+      returns (GetEncryptionKeyResponse);
+}
