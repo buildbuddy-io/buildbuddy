@@ -458,6 +458,22 @@ message Header {
   bool skip_generation_check = 6;
 }
 
+message PartitionDescriptor {
+  string id = 1;
+  int64 initial_num_ranges = 2;
+  uint64 first_range_id = 3;
+
+  enum State {
+    UNKNOWN_STATE = 0;
+    // Partition is in the process of being set up
+    INITIALIZING = 1;
+    // Partition is fully set up and ready to serve requests
+    INITIALIZED = 2;
+    // Partition has been soft-deleted and should not serve new requests
+    SOFT_DELETED = 3;
+  }
+  State state = 4;
+}
 message RangeSet {
   repeated RangeDescriptor ranges = 1;
 }
