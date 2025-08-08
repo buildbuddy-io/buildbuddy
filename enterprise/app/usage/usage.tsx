@@ -506,7 +506,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                             title={formatWithCommas(selection.totalInternalDownloadSizeBytes)}>
                             {formatBytes(selection.totalInternalDownloadSizeBytes, selection.totalDownloadSizeBytes)}
                           </div>
-                          {selection.totalWorkflowDownloadSizeBytes && (
+                          {Boolean(selection.totalWorkflowDownloadSizeBytes) && (
                             <>
                               <div className="usage-resource-subcategory">Workflow downloads</div>
                               <div
@@ -539,7 +539,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                             title={formatWithCommas(selection.totalInternalUploadSizeBytes)}>
                             {formatBytes(selection.totalInternalUploadSizeBytes, selection.totalUploadSizeBytes)}
                           </div>
-                          {selection.totalWorkflowUploadSizeBytes && (
+                          {Boolean(selection.totalWorkflowUploadSizeBytes) && (
                             <>
                               <div className="usage-resource-subcategory">Workflow uploads</div>
                               <div
@@ -555,7 +555,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                       <div className="usage-value">{formatMinutes(Number(selection.linuxExecutionDurationUsec))}</div>
                       {detailed && (
                         <>
-                          {selection.cloudRbeLinuxExecutionDurationUsec && (
+                          {Boolean(selection.cloudRbeLinuxExecutionDurationUsec) && (
                             <>
                               <div className="usage-resource-subcategory">Cloud RBE</div>
                               <div className="usage-value-subcategory">
@@ -563,7 +563,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                               </div>
                             </>
                           )}
-                          {selection.cloudWorkflowLinuxExecutionDurationUsec && (
+                          {Boolean(selection.cloudWorkflowLinuxExecutionDurationUsec) && (
                             <>
                               <div className="usage-resource-subcategory">Workflows</div>
                               <div className="usage-value-subcategory">
@@ -577,7 +577,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                       <div className="usage-value">{formatMinutes(+selection.cloudCpuNanos / 1000)}</div>
                       {detailed && (
                         <>
-                          {selection.cloudRbeCpuNanos && (
+                          {Boolean(selection.cloudRbeCpuNanos) && (
                             <>
                               <div className="usage-resource-subcategory">Cloud RBE</div>
                               <div className="usage-value-subcategory">
@@ -585,7 +585,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                               </div>
                             </>
                           )}
-                          {selection.cloudWorkflowCpuNanos && (
+                          {Boolean(selection.cloudWorkflowCpuNanos) && (
                             <>
                               <div className="usage-resource-subcategory">Workflows</div>
                               <div className="usage-value-subcategory">
