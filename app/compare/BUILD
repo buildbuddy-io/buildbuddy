@@ -8,9 +8,7 @@ ts_library(
     name = "compare_invocations",
     srcs = ["compare_invocations.tsx"],
     deps = [
-        "//:node_modules/@types/diff-match-patch",
         "//:node_modules/@types/react",
-        "//:node_modules/diff-match-patch",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
@@ -19,6 +17,7 @@ ts_library(
         "//app/components/button:checkbox_button",
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
+        "//app/util:diff",
         "//app/util:errors",
         "//proto:invocation_ts_proto",
     ],
