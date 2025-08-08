@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	// 1 GiB = 1024 MiB = 1024 * 1024 KiB = 1024 * 1024 * 1024 B
-	GiB = 1 << 30
+	// 1 giB
+	giB = 1024 * 1024 * 1024
 )
 
 var (
@@ -21,7 +21,7 @@ var (
 	procCopyFileW = modkernel32.NewProc("CopyFileW")
 
 	// ReFS only supports 64KiB and 4KiB cluster.
-	ReFSClusterSize = []int64{64 * 1024, 4 * 1024}
+	reFSClusterSizes = []int64{64 * 1024, 4 * 1024}
 )
 
 // User can set executor.enable_fastcopy_reflinking=true to force
@@ -68,14 +68,6 @@ func FastCopy(source, destination string) error {
 	return fmt.Errorf("failed CopyFileW Win32 call from '%s' to '%s': %s", source, destination, err)
 }
 
-// https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ns-winioctl-duplicate_extents_data
-type duplicateExtentsData struct {
-	FileHandle       windows.Handle
-	SourceFileOffset int64
-	TargetFileOffset int64
-	ByteCount        int64
-}
-
 // Implementation is heavily inspired by Git LFS
 // References:
 //
@@ -106,8 +98,8 @@ func reflink(source, destination string) error {
 
 	fileSize := srcStat.Size()
 
-	err = dst.Truncate(fileSize) // set file size. There is a requirement "The destination region must not extend past the end of file."
-	if err != nil {
+	// set file size. There is a requirement "The destination region must not extend past the end of file."
+	if err := dst.Truncate(fileSize); err != nil {
 		return err
 	}
 
@@ -118,25 +110,26 @@ func reflink(source, destination string) error {
 	// * cloneRegionSize less than 4GiB.
 	// see https://docs.microsoft.com/windows/win32/fileio/block-cloning
 	// Clone first xGiB region.
-	for ; offset+GiB < fileSize; offset += GiB {
-		if err := callDuplicateExtentsToFile(dst, src, offset, GiB); err != nil {
+	for ; offset+giB < fileSize; offset += giB {
+		if err := callDuplicateExtentsToFile(dst, src, offset, giB); err != nil {
 			return err
 		}
 	}
 
-	// Clone tail. First try with 64KiB round up, then fallback to 4KiB.
-	for _, cloneRegionSize := range ReFSClusterSize {
-		err = callDuplicateExtentsToFile(dst, src, offset, roundUp(fileSize-offset, cloneRegionSize))
-		if err == nil {
+	// Clone remaining contents less than 1GiB.
+	// First try with 64KiB round up, then fallback to 4KiB.
+	var tailErr error
+	for _, cloneRegionSize := range reFSClusterSizes {
+		tailErr := callDuplicateExtentsToFile(dst, src, offset, roundUp(fileSize-offset, cloneRegionSize))
+		if tailErr == nil {
 			return nil
 		}
 	}
-
-	return err
+	return tailErr
 }
 
 func callDuplicateExtentsToFile(dst, src *os.File, offset int64, cloneRegionSize int64) (err error) {
-	if cloneRegionSize >= 4*GiB {
+	if cloneRegionSize >= 4*giB {
 		return fmt.Errorf("cloneRegionSize must be less than 4GiB, got %d", cloneRegionSize)
 	}
 
@@ -146,6 +139,13 @@ func callDuplicateExtentsToFile(dst, src *os.File, offset int64, cloneRegionSize
 		overlapped    windows.Overlapped
 	)
 
+	// https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ns-winioctl-duplicate_extents_data
+	type duplicateExtentsData struct {
+		FileHandle       windows.Handle
+		SourceFileOffset int64
+		TargetFileOffset int64
+		ByteCount        int64
+	}
 	request := duplicateExtentsData{
 		FileHandle:       windows.Handle(src.Fd()),
 		SourceFileOffset: offset,

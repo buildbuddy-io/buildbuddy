@@ -6,7 +6,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -65,9 +64,6 @@ func isBlockCloningSupported(t *testing.T) bool {
 }
 
 func TestCloneWindows(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skipf("test runs on windows only")
-	}
 	flags.Set(t, "executor.enable_fastcopy_reflinking", true)
 
 	// Try to find a DevDrive for optimal CoW testing
@@ -125,9 +121,6 @@ func TestCloneWindows(t *testing.T) {
 }
 
 func TestCloneWindowsCopyFileW(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skipf("test runs on windows only")
-	}
 	flags.Set(t, "executor.enable_fastcopy_reflinking", false)
 
 	ws := testfs.MakeTempDir(t)
