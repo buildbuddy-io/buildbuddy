@@ -67,6 +67,8 @@ const (
 	DriverReplaceDeadReplica
 	DriverRebalanceReplica
 	DriverRebalanceLease
+	// Partition-level actions
+	DriverInitializePartition
 )
 
 type RequeueType int
@@ -204,21 +206,35 @@ type attemptRecord struct {
 	nextAttemptTime time.Time
 }
 
+type TaskType int
+
+const (
+	_ TaskType = iota
+	RangeTask
+	PartitionTask
+)
+
+type taskKey struct {
+	taskType    TaskType
+	rangeID     uint64 // used for range tasks
+	partitionID string // used for partition tasks
+}
+
 type driverTask struct {
-	rangeID   uint64
-	replicaID uint64
+	key  taskKey
+	repl IReplica // only used for range tasks
 
 	processing bool
 	requeue    bool
 
 	attemptRecord attemptRecord
 
-	item *priority_queue.Item[uint64]
+	item *priority_queue.Item[taskKey]
 }
 
 type queueImpl interface {
-	processReplica(ctx context.Context, repl IReplica, action DriverAction) RequeueType
-	computeAction(ctx context.Context, repl IReplica) (DriverAction, float64)
+	processTask(ctx context.Context, task *driverTask, action DriverAction) RequeueType
+	computeAction(ctx context.Context, task *driverTask) (DriverAction, float64)
 	getReplica(rangeID uint64) (IReplica, error)
 }
 
@@ -229,8 +245,8 @@ type baseQueue struct {
 	stop    chan struct{}
 
 	mu      sync.Mutex //protects pq, taskMap
-	pq      *priority_queue.PriorityQueue[uint64]
-	taskMap map[uint64]*driverTask
+	pq      *priority_queue.PriorityQueue[taskKey]
+	taskMap map[taskKey]*driverTask
 
 	clock clockwork.Clock
 
@@ -248,8 +264,8 @@ func newBaseQueue(nhlog log.Logger, clock clockwork.Clock, impl queueImpl) *base
 		clock:    clock,
 		log:      nhlog,
 		maxSize:  1000,
-		pq:       &priority_queue.PriorityQueue[uint64]{},
-		taskMap:  make(map[uint64]*driverTask),
+		pq:       &priority_queue.PriorityQueue[taskKey]{},
+		taskMap:  make(map[taskKey]*driverTask),
 		eg:       eg,
 		egCtx:    gctx,
 		egCancel: cancelFunc,
@@ -257,31 +273,25 @@ func newBaseQueue(nhlog log.Logger, clock clockwork.Clock, impl queueImpl) *base
 	}
 }
 
-func (bq *baseQueue) pop() IReplica {
+func (bq *baseQueue) pop() *driverTask {
 	bq.mu.Lock()
 	defer bq.mu.Unlock()
-	item := heap.Pop(bq.pq).(*priority_queue.Item[uint64])
-	rangeID := item.Value()
-	task, ok := bq.taskMap[rangeID]
+	item := heap.Pop(bq.pq).(*priority_queue.Item[taskKey])
+	key := item.Value()
+	task, ok := bq.taskMap[key]
 	if !ok {
-		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for range %d", rangeID)
+		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for key %+v", key)
 		return nil
 	}
 	task.processing = true
-	repl, err := bq.impl.getReplica(rangeID)
-	if err != nil || repl.ReplicaID() != task.replicaID {
-		log.Errorf("unable to get replica for c%dn%d: %s", task.rangeID, task.replicaID, err)
-		delete(bq.taskMap, rangeID)
-		return nil
-	}
-	return repl
+	return task
 }
 
 func (bq *baseQueue) pushLocked(task *driverTask, priority float64) {
-	item := priority_queue.NewItem(task.rangeID, priority)
+	item := priority_queue.NewItem(task.key, priority)
 	heap.Push(bq.pq, item)
 	task.item = item
-	bq.taskMap[task.rangeID] = task
+	bq.taskMap[task.key] = task
 }
 
 func (bq *baseQueue) removeItemWithMinPriority() {
@@ -289,10 +299,10 @@ func (bq *baseQueue) removeItemWithMinPriority() {
 	if item == nil {
 		return
 	}
-	rangeID := item.Value()
-	task, ok := bq.taskMap[rangeID]
+	key := item.Value()
+	task, ok := bq.taskMap[key]
 	if !ok {
-		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for range %d", rangeID)
+		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for key %+v", key)
 		return
 	}
 
@@ -300,7 +310,7 @@ func (bq *baseQueue) removeItemWithMinPriority() {
 		task.requeue = false
 		return
 	}
-	delete(bq.taskMap, rangeID)
+	delete(bq.taskMap, key)
 }
 
 func (bq *baseQueue) Len() int {
@@ -309,15 +319,7 @@ func (bq *baseQueue) Len() int {
 	return bq.pq.Len()
 }
 
-func (bq *baseQueue) postProcess(ctx context.Context, repl IReplica, requeueType RequeueType) {
-	rangeID := repl.RangeID()
-	bq.mu.Lock()
-	task, ok := bq.taskMap[rangeID]
-	if !ok {
-		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for range %d", rangeID)
-		bq.mu.Unlock()
-		return
-	}
+func (bq *baseQueue) postProcess(ctx context.Context, task *driverTask, requeueType RequeueType) {
 	ar := attemptRecord{}
 	if requeueType == RequeueRetry {
 		ar = task.attemptRecord
@@ -326,14 +328,19 @@ func (bq *baseQueue) postProcess(ctx context.Context, repl IReplica, requeueType
 	} else if requeueType == RequeueWait {
 		ar = task.attemptRecord
 	}
-	delete(bq.taskMap, rangeID)
+	bq.mu.Lock()
+	delete(bq.taskMap, task.key)
 	bq.mu.Unlock()
 
 	if ar.attempts >= maxRetry {
-		alert.UnexpectedEvent("driver_action_retries_exceeded", "c%dn%d action: %s retries exceeded", rangeID, repl.ReplicaID(), ar.action)
+		if task.key.taskType == RangeTask {
+			alert.UnexpectedEvent("driver_action_retries_exceeded", "c%dn%d action: %s retries exceeded", task.key.rangeID, task.repl.ReplicaID(), ar.action)
+		}
 		// do not add it to the queue
 	} else if requeueType != RequeueNoop || task.requeue {
-		bq.maybeAdd(ctx, repl, ar)
+		if task.key.taskType == RangeTask {
+			bq.maybeAddRangeTask(ctx, task.repl, ar)
+		}
 	}
 }
 
@@ -342,19 +349,22 @@ func (bq *baseQueue) nextAttemptTime(attemptNumber int) time.Time {
 	return bq.clock.Now().Add(time.Duration(backoff))
 }
 
-func (bq *baseQueue) process(ctx context.Context, repl IReplica) RequeueType {
-	action, _ := bq.impl.computeAction(ctx, repl)
-	rangeID := repl.RangeID()
-	bq.log.Debugf("start to process c%dn%d", rangeID, repl.ReplicaID())
-	bq.mu.Lock()
-	task, ok := bq.taskMap[rangeID]
-	if !ok {
-		alert.UnexpectedEvent("unexpected_task_not_found", "task not found for range %d", rangeID)
-		bq.mu.Unlock()
-		return RequeueNoop
+func (bq *baseQueue) process(ctx context.Context, task *driverTask) RequeueType {
+	action, _ := bq.impl.computeAction(ctx, task)
+
+	if task.key.taskType == RangeTask {
+		rangeID := task.key.rangeID
+		if task.repl == nil {
+			bq.log.Errorf("task.repl is nil for range %d", rangeID)
+			return RequeueNoop
+		}
+		replicaID := task.repl.ReplicaID()
+		bq.log.Debugf("start to process c%dn%d", rangeID, replicaID)
+	} else if task.key.taskType == PartitionTask {
+		bq.log.Debugf("start to process partition %s", task.key.partitionID)
 	}
+
 	ar := task.attemptRecord
-	bq.mu.Unlock()
 	if action == ar.action && !ar.nextAttemptTime.IsZero() {
 		if bq.clock.Now().Before(ar.nextAttemptTime) {
 			// Do nothing until nextAttemptTime becomes current
@@ -362,7 +372,7 @@ func (bq *baseQueue) process(ctx context.Context, repl IReplica) RequeueType {
 		}
 	}
 
-	return bq.impl.processReplica(ctx, repl, action)
+	return bq.impl.processTask(ctx, task, action)
 }
 
 // The Queue is responsible for up-replicate, down-replicate and reblance ranges
@@ -392,8 +402,16 @@ func (rq *Queue) getReplica(rangeID uint64) (IReplica, error) {
 }
 
 // computeAction computes the action needed and its priority.
-func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction, float64) {
-	rd := rq.store.GetRange(repl.RangeID())
+func (rq *Queue) computeAction(ctx context.Context, task *driverTask) (DriverAction, float64) {
+	if task.key.taskType == PartitionTask {
+		// TODO: Handle partition action computation
+		return DriverNoop, DriverNoop.Priority()
+	}
+
+	// Handle range tasks
+	rangeID := task.key.rangeID
+	repl := task.repl
+	rd := rq.store.GetRange(rangeID)
 	action := DriverNoop
 	if rd == nil || !rq.store.HaveLease(ctx, rd.GetRangeId()) {
 		return action, action.Priority()
@@ -419,7 +437,6 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 	if curReplicas == 0 {
 		return action, action.Priority()
 	}
-	rangeID := replicas[0].GetRangeId()
 	minReplicas := *minReplicasPerRange
 	if rangeID == constants.MetaRangeID {
 		minReplicas = *minMetaRangeReplicas
@@ -542,17 +559,25 @@ func (rq *Queue) computeAction(ctx context.Context, repl IReplica) (DriverAction
 	return action, action.Priority()
 }
 
-func (bq *baseQueue) maybeAdd(ctx context.Context, repl IReplica, ar attemptRecord) {
+func (bq *baseQueue) maybeAddRangeTask(ctx context.Context, repl IReplica, ar attemptRecord) {
 	bq.mu.Lock()
 	defer bq.mu.Unlock()
 
-	action, priority := bq.impl.computeAction(ctx, repl)
+	rangeID := repl.RangeID()
+	key := taskKey{taskType: RangeTask, rangeID: rangeID}
+	task, ok := bq.taskMap[key]
+	if !ok {
+		task = &driverTask{
+			key:  key,
+			repl: repl,
+		}
+	}
+
+	action, priority := bq.impl.computeAction(ctx, task)
 	if action == DriverNoop {
 		return
 	}
 
-	rangeID := repl.RangeID()
-	task, ok := bq.taskMap[rangeID]
 	if ok {
 		// The item is processing. Mark to be requeued.
 		if task.processing {
@@ -567,10 +592,6 @@ func (bq *baseQueue) maybeAdd(ctx context.Context, repl IReplica, ar attemptReco
 		}
 		bq.pq.Update(task.item, priority)
 		return
-	}
-	task = &driverTask{
-		rangeID:   rangeID,
-		replicaID: repl.ReplicaID(),
 	}
 
 	if action == ar.action {
@@ -589,8 +610,8 @@ func (bq *baseQueue) maybeAdd(ctx context.Context, repl IReplica, ar attemptReco
 	}
 }
 
-func (rq *Queue) MaybeAdd(ctx context.Context, replica IReplica) {
-	rq.maybeAdd(ctx, replica, attemptRecord{})
+func (rq *Queue) MaybeAddRangeTask(ctx context.Context, replica IReplica) {
+	rq.maybeAddRangeTask(ctx, replica, attemptRecord{})
 }
 
 func (bq *baseQueue) Start() {
@@ -623,13 +644,12 @@ func (bq *baseQueue) processQueue() {
 	if bq.Len() == 0 {
 		return
 	}
-	repl := bq.pop()
-	if repl == nil {
+	task := bq.pop()
+	if task == nil {
 		return
 	}
-
-	requeueType := bq.process(bq.egCtx, repl)
-	bq.postProcess(bq.egCtx, repl, requeueType)
+	requeueType := bq.process(bq.egCtx, task)
+	bq.postProcess(bq.egCtx, task, requeueType)
 }
 
 // findDeadReplica finds a dead replica to be removed.
@@ -1280,9 +1300,17 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	return nil
 }
 
-func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action DriverAction) (requeueType RequeueType) {
+func (rq *Queue) processTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
 	var change *change
-	rangeID := repl.RangeID()
+
+	if task.key.taskType == PartitionTask {
+		// TODO: Handle partition task processing
+		return RequeueNoop
+	}
+
+	// Handle range tasks
+	rangeID := task.key.rangeID
+	repl := task.repl
 	rd := rq.store.GetRange(rangeID)
 	if rd == nil {
 		// We might be calling GetRange in the small window between RemoveRange and AddRange
@@ -1307,6 +1335,9 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica, action Drive
 		change = rq.rebalanceReplica(rd, repl)
 	case DriverRebalanceLease:
 		change = rq.rebalanceLease(ctx, rd, repl)
+	case DriverInitializePartition:
+		// This should not be called for range tasks
+		alert.UnexpectedEvent("unexpected-action-for-range-task", "driver action %s for range_id: %q", action, rangeID)
 	}
 
 	rq.log.Debugf("driver action: %s, range_id: %d, hasChange=%t", action, rangeID, change != nil)

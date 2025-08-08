@@ -1963,7 +1963,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, targetRangeSiz
 					s.log.Errorf("failed to get replica with rangeID=%d: %s", rangeID, err)
 					continue
 				}
-				s.driverQueue.MaybeAdd(ctx, repl)
+				s.driverQueue.MaybeAddRangeTask(ctx, repl)
 			default:
 				break
 			}
@@ -3231,7 +3231,7 @@ func (store *Store) scanReplicas(ctx context.Context, scanInterval time.Duration
 		replicas := store.getLeasedReplicas(ctx)
 		for _, repl := range replicas {
 			if store.driverQueue != nil {
-				store.driverQueue.MaybeAdd(ctx, repl)
+				store.driverQueue.MaybeAddRangeTask(ctx, repl)
 			}
 			store.deleteSessionWorker.Enqueue(repl)
 		}
