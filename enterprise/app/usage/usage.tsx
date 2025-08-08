@@ -497,15 +497,13 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                           <div className="usage-resource-subcategory">External downloads</div>
                           <div
                             className="usage-value-subcategory"
-                            title={formatWithCommas(selection.totalExternalDownloadSizeBytes)}
-                          >
+                            title={formatWithCommas(selection.totalExternalDownloadSizeBytes)}>
                             {formatBytes(selection.totalExternalDownloadSizeBytes, selection.totalDownloadSizeBytes)}
                           </div>
                           <div className="usage-resource-subcategory">Internal downloads</div>
                           <div
                             className="usage-value-subcategory"
-                            title={formatWithCommas(selection.totalInternalDownloadSizeBytes)}
-                          >
+                            title={formatWithCommas(selection.totalInternalDownloadSizeBytes)}>
                             {formatBytes(selection.totalInternalDownloadSizeBytes, selection.totalDownloadSizeBytes)}
                           </div>
                           {Boolean(selection.totalWorkflowDownloadSizeBytes) && (
@@ -513,8 +511,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                               <div className="usage-resource-subcategory">Workflow downloads</div>
                               <div
                                 className="usage-value-subcategory"
-                                title={formatWithCommas(selection.totalWorkflowDownloadSizeBytes)}
-                              >
+                                title={formatWithCommas(selection.totalWorkflowDownloadSizeBytes)}>
                                 {formatBytes(
                                   selection.totalWorkflowDownloadSizeBytes,
                                   selection.totalDownloadSizeBytes
@@ -533,15 +530,13 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                           <div className="usage-resource-subcategory">External uploads</div>
                           <div
                             className="usage-value-subcategory"
-                            title={formatWithCommas(selection.totalExternalUploadSizeBytes)}
-                          >
+                            title={formatWithCommas(selection.totalExternalUploadSizeBytes)}>
                             {formatBytes(selection.totalExternalUploadSizeBytes, selection.totalUploadSizeBytes)}
                           </div>
                           <div className="usage-resource-subcategory">Internal uploads</div>
                           <div
                             className="usage-value-subcategory"
-                            title={formatWithCommas(selection.totalInternalUploadSizeBytes)}
-                          >
+                            title={formatWithCommas(selection.totalInternalUploadSizeBytes)}>
                             {formatBytes(selection.totalInternalUploadSizeBytes, selection.totalUploadSizeBytes)}
                           </div>
                           {Boolean(selection.totalWorkflowUploadSizeBytes) && (
@@ -549,8 +544,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                               <div className="usage-resource-subcategory">Workflow uploads</div>
                               <div
                                 className="usage-value-subcategory"
-                                title={formatWithCommas(selection.totalWorkflowUploadSizeBytes)}
-                              >
+                                title={formatWithCommas(selection.totalWorkflowUploadSizeBytes)}>
                                 {formatBytes(selection.totalWorkflowUploadSizeBytes, selection.totalUploadSizeBytes)}
                               </div>
                             </>
