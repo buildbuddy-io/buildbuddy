@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_deprecation"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -109,19 +110,10 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		return err
 	}
 
-	readDone := make(chan struct{})
-	defer close(readDone)
-	go func() {
-		t := time.NewTimer(5 * time.Minute)
-		defer t.Stop()
-		select {
-		case <-readDone:
-			return
-		case <-t.C:
-			log.CtxWarningf(ctx, "BSS read possibly stuck: %s", r.ToProto().String())
-			return
-		}
-	}()
+	cancel := canary.StartWithLateFn(5*time.Minute, func(_ time.Duration) {
+		log.CtxWarningf(ctx, "BSS read possibly stuck: %s", r.ToProto())
+	}, func(_ time.Duration) {})
+	defer cancel()
 
 	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	if r.IsEmpty() {
@@ -183,7 +175,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		if err != nil {
 			return err
 		}
-		if err := stream.Send(&bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
+		if err := send(ctx, stream, r, &bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
 			return err
 		}
 	}
@@ -198,6 +190,14 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		log.Debugf("ByteStream Read: downloadTracker.CloseWithBytesTransferred error: %s", err)
 	}
 	return err
+}
+
+func send(ctx context.Context, stream bspb.ByteStream_ReadServer, rn *digest.CASResourceName, rsp *bspb.ReadResponse) error {
+	cancel := canary.StartWithLateFn(30*time.Second, func(_ time.Duration) {
+		log.CtxWarningf(ctx, "BSS send read response possibly stuck: %s", rn.ToProto())
+	}, func(_ time.Duration) {})
+	defer cancel()
+	return stream.Send(rsp)
 }
 
 // writeHandler enapsulates an on-going ByteStream write to a cache,
