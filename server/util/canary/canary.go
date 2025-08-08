@@ -34,15 +34,13 @@ func StartWithLateFn(expectedDuration time.Duration, lateFn func(), doneFn Canar
 
 	start := time.Now()
 	go func() {
-		for {
-			select {
-			case <-done:
-				if time.Since(start) > expectedDuration {
-					doneFn(time.Since(start))
-				}
-			case <-time.After(expectedDuration):
-				lateFn()
+		select {
+		case <-done:
+			if time.Since(start) > expectedDuration {
+				doneFn(time.Since(start))
 			}
+		case <-time.After(expectedDuration):
+			lateFn()
 		}
 	}()
 	return cancel
