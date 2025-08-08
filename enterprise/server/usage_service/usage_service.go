@@ -127,7 +127,17 @@ func (s *usageService) scanUsages(ctx context.Context, groupID string, start, en
 		SUM(total_download_size_bytes) AS total_download_size_bytes,
 		SUM(linux_execution_duration_usec) AS linux_execution_duration_usec,
 		SUM(total_upload_size_bytes) AS total_upload_size_bytes,
-		SUM(total_cached_action_exec_usec) AS total_cached_action_exec_usec
+		SUM(total_cached_action_exec_usec) AS total_cached_action_exec_usec,
+		SUM(CASE WHEN origin <> 'internal' THEN total_download_size_bytes ELSE 0 END) AS total_external_download_size_bytes,
+		SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN total_download_size_bytes ELSE 0 END) AS total_internal_download_size_bytes,
+		SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN total_download_size_bytes ELSE 0 END) AS total_workflow_download_size_bytes,
+		SUM(CASE WHEN origin <> 'internal' THEN total_upload_size_bytes ELSE 0 END) AS total_external_upload_size_bytes,
+		SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN total_upload_size_bytes ELSE 0 END) AS total_internal_upload_size_bytes,
+		SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN total_upload_size_bytes ELSE 0 END) AS total_workflow_upload_size_bytes,
+		SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN cpu_nanos ELSE 0 END) AS cloud_rbe_cpu_nanos,
+		SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN cpu_nanos ELSE 0 END) AS cloud_workflow_cpu_nanos,
+		SUM(CASE WHEN (origin = 'internal' AND NOT (client = 'executor-workflows' OR client = 'bazel')) THEN linux_execution_duration_usec ELSE 0 END) AS cloud_rbe_linux_execution_duration_usec,
+		SUM(CASE WHEN (origin = 'internal' AND (client = 'executor-workflows' OR client = 'bazel')) THEN linux_execution_duration_usec ELSE 0 END) AS cloud_workflow_linux_execution_duration_usec,
 		FROM "Usages"
 		WHERE period_start_usec >= ? AND period_start_usec < ?
 		AND group_id = ?
