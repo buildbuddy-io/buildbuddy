@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 
-	// usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
+	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 )
 
