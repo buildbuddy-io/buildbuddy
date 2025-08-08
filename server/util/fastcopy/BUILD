@@ -17,13 +17,19 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "@org_golang_x_sys//unix",
         ],
+        "@io_bazel_rules_go//go/platform:windows": [
+            "@org_golang_x_sys//windows",
+        ],
         "//conditions:default": [],
     }),
 )
 
 go_test(
     name = "fastcopy_test",
-    srcs = ["fastcopy_test.go"],
+    srcs = [
+        "fastcopy_test.go",
+        "fastcopy_windows_test.go",
+    ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
         "test.recycle-runner": "true",
@@ -40,5 +46,12 @@ go_test(
         "//server/testutil/testshell",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:windows": [
+            "//proto:remote_execution_go_proto",
+            "//server/remote_cache/digest",
+            "@org_golang_x_sys//windows",
+        ],
+        "//conditions:default": [],
+    }),
 )
