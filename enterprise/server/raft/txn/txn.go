@@ -310,7 +310,7 @@ func (tc *Coordinator) FetchTxnRecords(ctx context.Context, includeLive bool) ([
 	for _, kv := range scanRsp.GetKvs() {
 		txnRecord := &rfpb.TxnRecord{}
 		if err := proto.Unmarshal(kv.GetValue(), txnRecord); err != nil {
-			log.Errorf("scan returned unparsable kv (key: %q) : %s", kv.GetKey(), err)
+			log.Errorf("scan returned unparsable kv (key: %q): %s", kv.GetKey(), err)
 			continue
 		}
 		createdAt := time.UnixMicro(txnRecord.GetCreatedAtUsec())
