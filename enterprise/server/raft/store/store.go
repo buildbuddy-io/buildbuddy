@@ -97,10 +97,11 @@ const (
 )
 
 type Store struct {
-	env        environment.Env
-	rootDir    string
-	grpcAddr   string
-	partitions []disk.Partition
+	env                      environment.Env
+	rootDir                  string
+	grpcAddr                 string
+	partitions               []disk.Partition
+	partitionsAllInitialized bool
 
 	nodeHost      *dragonboat.NodeHost
 	gossipManager interfaces.GossipService
@@ -696,6 +697,10 @@ func (s *Store) Start() error {
 	}
 	s.eg.Go(func() error {
 		s.deleteSessionWorker.Start(s.egCtx)
+		return nil
+	})
+	s.eg.Go(func() error {
+		s.setupPartitions(s.egCtx)
 		return nil
 	})
 	return nil
@@ -3309,6 +3314,52 @@ func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
 	fsu := gosigar.FileSystemUsage{}
 	err := fsu.Get(s.rootDir)
 	return fsu, err
+}
+
+func (s *Store) setupPartitions(ctx context.Context) {
+	ticker := s.clock.NewTicker(30 * time.Second) // Check every 30 seconds
+	for {
+		if s.partitionsAllInitialized {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.Chan():
+			// Check if this store is the leader of the meta range
+			if !s.HasReplicaAndIsLeader(constants.MetaRangeID) {
+				continue
+			}
+			s.processPartitions(ctx)
+		}
+	}
+}
+
+func (s *Store) processPartitions(ctx context.Context) {
+	partitionsFromMetaRange, err := s.sender.FetchPartitionsFromMetaRange(ctx)
+	if err != nil {
+		s.log.Warningf("Failed to fetch partitions from meta range: %s", err)
+		return
+	}
+
+	s.log.Debugf("Found %d partitions in meta range", len(partitionsFromMetaRange))
+
+	// Check if each store partition exists in the meta range partitions
+	for _, p := range s.partitions {
+		var remotePartition *rfpb.PartitionDescriptor
+		for _, pFromMD := range partitionsFromMetaRange {
+			if p.ID == pFromMD.GetId() {
+				remotePartition = pFromMD
+				break
+			}
+		}
+
+		if remotePartition != nil && remotePartition.GetState() == rfpb.PartitionDescriptor_INITIALIZED {
+			continue
+		}
+
+		// set up the partition
+	}
 }
 
 func (s *Store) updatePebbleMetrics() error {
