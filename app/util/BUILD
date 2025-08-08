@@ -189,3 +189,13 @@ ts_library(
     name = "github",
     srcs = ["github.tsx"],
 )
+
+ts_library(
+    name = "diff",
+    srcs = ["diff.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/diff-match-patch",
+        "//:node_modules/react",
+    ],
+)

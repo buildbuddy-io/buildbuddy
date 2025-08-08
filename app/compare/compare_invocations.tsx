@@ -1,4 +1,3 @@
-import DiffMatchPatch from "diff-match-patch";
 import { XCircle } from "lucide-react";
 import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
@@ -6,6 +5,7 @@ import { User } from "../auth/auth_service";
 import CheckboxButton from "../components/button/checkbox_button";
 import InvocationModel from "../invocation/invocation_model";
 import rpcService from "../service/rpc_service";
+import { renderComparisonFacets } from "../util/diff";
 import { BuildBuddyError } from "../util/errors";
 import CompareExecutionLogFilesComponent from "./compare_execution_log_files";
 
@@ -221,64 +221,9 @@ export default class CompareInvocationsComponent extends React.Component<Compare
           </div>
         </div>
         <div className="compare-table">
-          {FACETS.map((f) => {
-            let facetA = f.facet(this.state.modelA);
-            let facetB = f.facet(this.state.modelB);
-
-            let different = facetA != facetB;
-
-            if (!different && this.state.showChangesOnly) {
-              return <></>;
-            }
-
-            if (!facetA && !facetB) {
-              return <></>;
-            }
-
-            if (this.props.tab && "#" + f.type != this.props.tab) {
-              return <></>;
-            }
-
-            let diffs: DiffMatchPatch.Diff[] = [];
-            if (different) {
-              diffs = computeDiffs(`${facetA}`, `${facetB}`);
-            }
-
-            return (
-              <div className={`compare-row ${different && "different"}`}>
-                <div>{f.name}</div>
-                <div className={`${f.link && "link"}`}>
-                  <a target="_blank" href={f.link && f.link(this.state.modelA)}>
-                    {different
-                      ? diffs.map((d) => {
-                          if (d[0] == -1) {
-                            return <span className="difference-left">{d[1]}</span>;
-                          }
-                          if (d[0] == 0) {
-                            return <>{d[1]}</>;
-                          }
-                          return <></>;
-                        })
-                      : facetA}
-                  </a>
-                </div>
-                <div className={`${f.link && "link"}`}>
-                  <a target="_blank" href={f.link && f.link(this.state.modelB)}>
-                    {different
-                      ? diffs.map((d) => {
-                          if (d[0] == 1) {
-                            return <span className="difference-right">{d[1]}</span>;
-                          }
-                          if (d[0] == 0) {
-                            return <>{d[1]}</>;
-                          }
-                          return <></>;
-                        })
-                      : facetB}
-                  </a>
-                </div>
-              </div>
-            );
+          {renderComparisonFacets(FACETS, this.state.modelA, this.state.modelB, {
+            showChangesOnly: this.state.showChangesOnly,
+            filterType: this.props.tab?.substring(1),
           })}
         </div>
         {this.props.tab == "#file" && (
@@ -302,12 +247,4 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       </div>
     );
   }
-}
-
-const dmp = new DiffMatchPatch.diff_match_patch();
-
-function computeDiffs(text1: string, text2: string) {
-  let diffs = dmp.diff_main(text1, text2);
-  dmp.diff_cleanupSemantic(diffs);
-  return diffs;
 }
