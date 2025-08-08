@@ -343,6 +343,19 @@ export function formatDateRange(startDate: Date, endDate?: Date, { now = new Dat
   return `${start} ${DATE_RANGE_SEPARATOR} ${end}`;
 }
 
+export function relativeTimeSeconds(timestamp: { seconds?: number | Long; nanos?: number | Long }): string {
+  if (!timestamp) return "Never";
+
+  const timestampMs = +(timestamp.seconds || 0) * 1000 + +(timestamp.nanos || 0) / 1000000;
+  const now = Date.now();
+  const diffMs = now - timestampMs;
+
+  if (diffMs < 0) return "Just now";
+
+  const seconds = Math.floor(diffMs / 1000);
+  return `${seconds} second${seconds === 1 ? "" : "s"} ago`;
+}
+
 export function formatGitUrl(url: string) {
   return url
     ?.replace("https://", "")
@@ -422,4 +435,5 @@ export default {
   colorHash,
   enumLabel,
   formatDateFromUsec,
+  relativeTimeSeconds,
 };

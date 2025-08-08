@@ -913,6 +913,13 @@ func (q *PriorityTaskScheduler) GetQueuedTaskReservations() []*scpb.EnqueueTaskR
 	return q.q.GetAll()
 }
 
+// QueueLength returns the current number of tasks in the queue.
+func (q *PriorityTaskScheduler) QueueLength() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.q.Len()
+}
+
 // HasExcessCapacity returns a boolean indicating if this executor has excess
 // capacity for work. The scheduler-client may use this to request more work
 // from the scheduler, or reset a timeout if there is no excess capacity.

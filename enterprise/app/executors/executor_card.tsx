@@ -4,11 +4,13 @@ import Link from "../../../app/components/link/link";
 import format from "../../../app/format/format";
 import { scheduler } from "../../../proto/scheduler_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
+import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
 import { encodeMetricUrlParam, encodeWorkerUrlParam } from "../trends/common";
 
 interface Props {
   node: scheduler.ExecutionNode;
   isDefault: boolean;
+  lastCheckInTime?: google_timestamp.protobuf.Timestamp | null;
 }
 
 export default class ExecutorCardComponent extends React.Component<Props> {
@@ -60,6 +62,20 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               <div className="executor-section-title">Default:</div>
               <div>{this.props.isDefault ? "True" : "False"}</div>
             </div>
+
+            {this.props.lastCheckInTime && (
+              <>
+                <div className="executor-section">
+                  <div className="executor-section-title">Last Check-in:</div>
+                  <div>{format.relativeTimeSeconds(this.props.lastCheckInTime)}</div>
+                </div>
+                <div className="executor-section">
+                  <div className="executor-section-title">Queue Length:</div>
+                  <div>{this.props.node.currentQueueLength || 0}</div>
+                </div>
+              </>
+            )}
+
             <div className="executor-section">
               <Link
                 className="executor-history-button history-button"
