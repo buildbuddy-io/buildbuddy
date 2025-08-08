@@ -133,7 +133,7 @@ func (p *ClientConnPool) Invoke(ctx context.Context, method string, args any, re
 }
 
 func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-	cancel := canary.StartWithLateFn(
+	cancel := canary.StartWithRepeatedLateFn(
 		stuckStreamWarningPeriod,
 		func(timeTaken time.Duration) {
 			log.CtxWarningf(ctx, "Streaming RPC %q has not been established after %q.", method, timeTaken)

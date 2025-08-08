@@ -110,9 +110,9 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		return err
 	}
 
-	cancel := canary.StartWithLateFn(5*time.Minute, func(_ time.Duration) {
+	cancel := canary.StartWithLateFn(5*time.Minute, func() {
 		log.CtxWarningf(ctx, "BSS read possibly stuck: %s", r.ToProto())
-	}, func(_ time.Duration) {})
+	})
 	defer cancel()
 
 	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
@@ -193,9 +193,9 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 }
 
 func send(ctx context.Context, stream bspb.ByteStream_ReadServer, rn *digest.CASResourceName, rsp *bspb.ReadResponse) error {
-	cancel := canary.StartWithLateFn(30*time.Second, func(_ time.Duration) {
+	cancel := canary.StartWithLateFn(30*time.Second, func() {
 		log.CtxWarningf(ctx, "BSS send read response possibly stuck: %s", rn.ToProto())
-	}, func(_ time.Duration) {})
+	})
 	defer cancel()
 	return stream.Send(rsp)
 }
