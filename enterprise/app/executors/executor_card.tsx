@@ -73,6 +73,10 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                   <div className="executor-section-title">Queue Length:</div>
                   <div>{this.props.node.currentQueueLength || 0}</div>
                 </div>
+                <div className="executor-section">
+                  <div className="executor-section-title">Active Action Count:</div>
+                  <div>{this.props.node.activeActionCount || 0}</div>
+                </div>
               </>
             )}
 

@@ -335,6 +335,7 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 func (r *Registration) nodeWithStats() *scpb.ExecutionNode {
 	n := proto.Clone(r.node).(*scpb.ExecutionNode)
 	n.CurrentQueueLength = int32(r.taskScheduler.QueueLength())
+	n.ActiveActionCount = int32(r.taskScheduler.ActiveTaskCount())
 	return n
 }
 

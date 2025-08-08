@@ -540,6 +540,9 @@ message ExecutionNode {
 
   // Current number of tasks in the executor's queue.
   int32 current_queue_length = 13;
+
+  // The number of in-flight actions the executor is currently executing.
+  int32 active_action_count = 14;
 }
 
 message GetExecutionNodesRequest {
