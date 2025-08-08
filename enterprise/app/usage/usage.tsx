@@ -199,7 +199,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   {
                     name: "internal",
                     extractValue: (ts) => +(this.getUsage(ts).totalInternalDownloadSizeBytes ?? 0),
-                    formatHoverValue: (value) => bytes(value || 0) + " intern downloaded",
+                    formatHoverValue: (value) => bytes(value || 0) + " internal downloads",
                     onClick: this.onBarClicked.bind(this, "cas"),
                     stackId: "dl",
                     color: ChartColor.GREY,
@@ -207,7 +207,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   {
                     name: "workflows",
                     extractValue: (ts) => +(this.getUsage(ts).totalWorkflowDownloadSizeBytes ?? 0),
-                    formatHoverValue: (value) => bytes(value || 0) + " wf downloaded",
+                    formatHoverValue: (value) => bytes(value || 0) + " workflows downloads",
                     onClick: this.onBarClicked.bind(this, "cas"),
                     stackId: "dl",
                     color: ChartColor.BASICALLY_BLACK,
@@ -215,7 +215,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   {
                     name: "external",
                     extractValue: (ts) => +(this.getUsage(ts).totalExternalDownloadSizeBytes ?? 0),
-                    formatHoverValue: (value) => bytes(value || 0) + " extern downloaded",
+                    formatHoverValue: (value) => bytes(value || 0) + " external downloads",
                     onClick: this.onBarClicked.bind(this, "cas"),
                     stackId: "dl",
                     color: ChartColor.BLUE,
@@ -266,7 +266,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   {
                     name: "internal",
                     extractValue: (ts) => +(this.getUsage(ts).totalInternalUploadSizeBytes ?? 0),
-                    formatHoverValue: (value) => bytes(value || 0) + " intern uploaded",
+                    formatHoverValue: (value) => bytes(value || 0) + " internal uploads",
                     onClick: this.onBarClicked.bind(this, "cas"),
                     stackId: "ul",
                     color: ChartColor.GREY,
@@ -274,7 +274,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   {
                     name: "workflows",
                     extractValue: (ts) => +(this.getUsage(ts).totalWorkflowUploadSizeBytes ?? 0),
-                    formatHoverValue: (value) => bytes(value || 0) + " wf uploaded",
+                    formatHoverValue: (value) => bytes(value || 0) + " workflows uploads",
                     onClick: this.onBarClicked.bind(this, "cas"),
                     stackId: "ul",
                     color: ChartColor.BASICALLY_BLACK,
@@ -282,7 +282,7 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   {
                     name: "external",
                     extractValue: (ts) => +(this.getUsage(ts).totalExternalUploadSizeBytes ?? 0),
-                    formatHoverValue: (value) => bytes(value || 0) + " extern uploaded",
+                    formatHoverValue: (value) => bytes(value || 0) + " external uploads",
                     onClick: this.onBarClicked.bind(this, "cas"),
                     stackId: "ul",
                     color: ChartColor.BLUE,
