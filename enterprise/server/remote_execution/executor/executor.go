@@ -207,7 +207,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}()
 
 	if *slowTaskThreshold > 0 {
-		stop := canary.StartWithLateFn(*slowTaskThreshold, func(duration time.Duration) {
+		stop := canary.StartWithRepeatedLateFn(*slowTaskThreshold, func(duration time.Duration) {
 			log.CtxInfof(ctx, "Task still running after %s", duration)
 		}, func(time.Duration) {})
 		defer stop()

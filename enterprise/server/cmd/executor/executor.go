@@ -400,7 +400,7 @@ func main() {
 
 func deleteBuildRoot(ctx context.Context, rootDir string) {
 	log.Infof("Cleaning build root dir at %q", rootDir)
-	stop := canary.StartWithLateFn(1*time.Minute, func(timeTaken time.Duration) {
+	stop := canary.StartWithRepeatedLateFn(1*time.Minute, func(timeTaken time.Duration) {
 		log.Infof("Still cleaning build root dir (%s elapsed)", timeTaken)
 	}, func(timeTaken time.Duration) {})
 	defer stop()

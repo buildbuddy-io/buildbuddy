@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"hash"
 	"io"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_deprecation"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -108,6 +110,13 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		return err
 	}
 
+	cancel := canary.StartWithLateFn(5*time.Minute, func() {
+		log.CtxWarningf(ctx, "BSS read possibly stuck: %s", r.ToProto())
+	}, func(d time.Duration) {
+		log.CtxWarningf(ctx, "Slow BSS read completed after %s: %s", d, r.ToProto())
+	})
+	defer cancel()
+
 	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	if r.IsEmpty() {
 		dt := ht.TrackDownload(r.GetDigest())
@@ -168,7 +177,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		if err != nil {
 			return err
 		}
-		if err := stream.Send(&bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
+		if err := send(ctx, stream, r, &bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
 			return err
 		}
 	}
@@ -183,6 +192,16 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		log.Debugf("ByteStream Read: downloadTracker.CloseWithBytesTransferred error: %s", err)
 	}
 	return err
+}
+
+func send(ctx context.Context, stream bspb.ByteStream_ReadServer, rn *digest.CASResourceName, rsp *bspb.ReadResponse) error {
+	cancel := canary.StartWithLateFn(30*time.Second, func() {
+		log.CtxWarningf(ctx, "BSS send read response possibly stuck: %s", rn.ToProto())
+	}, func(d time.Duration) {
+		log.CtxWarningf(ctx, "Slow BSS send read response completed after %s: %s", d, rn.ToProto())
+	})
+	defer cancel()
+	return stream.Send(rsp)
 }
 
 // writeHandler enapsulates an on-going ByteStream write to a cache,
