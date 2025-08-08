@@ -194,6 +194,7 @@ ts_library(
     name = "diff",
     srcs = ["diff.tsx"],
     deps = [
+        "//:node_modules/@types/diff-match-patch",
         "//:node_modules/@types/react",
         "//:node_modules/diff-match-patch",
         "//:node_modules/react",

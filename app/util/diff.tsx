@@ -4,7 +4,7 @@ import React from "react";
 const dmp = new DiffMatchPatch.diff_match_patch();
 
 export interface Diff {
-  type: -1 | 0 | 1; // -1 = removed, 0 = equal, 1 = added
+  type: number; // -1 = removed, 0 = equal, 1 = added
   text: string;
 }
 
@@ -14,7 +14,7 @@ export interface Diff {
 export function computeDiffs(text1: string, text2: string): Diff[] {
   const diffs = dmp.diff_main(text1, text2);
   dmp.diff_cleanupSemantic(diffs);
-  return diffs.map(([type, text]) => ({ type, text }));
+  return diffs.map(([type, text]: [number, string]) => ({ type, text }));
 }
 
 /**
@@ -69,7 +69,7 @@ export function renderComparisonRow(
   }
 ): React.ReactNode | null {
   const different = valueA !== valueB;
-  
+
   if (!different && options?.showChangesOnly) {
     return null;
   }
@@ -91,8 +91,10 @@ export function renderComparisonRow(
     "compare-row",
     different ? "different" : "",
     options?.multiline ? "multiline" : "",
-    options?.className || ""
-  ].filter(Boolean).join(" ");
+    options?.className || "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div className={classNames}>
@@ -105,7 +107,7 @@ export function renderComparisonRow(
 
 interface ComparisonFacet<T> {
   name: string;
-  facet: (item?: T) => string | undefined;
+  facet: (item?: T) => any;
   type?: string;
   link?: (item?: T) => string | undefined;
 }
@@ -154,10 +156,18 @@ export function renderComparisonFacets<T>(
       const linkA = f.link(itemA);
       const linkB = f.link(itemB);
       if (linkA) {
-        diffsA = <a target="_blank" href={linkA}>{diffsA}</a>;
+        diffsA = (
+          <a target="_blank" href={linkA}>
+            {diffsA}
+          </a>
+        );
       }
       if (linkB) {
-        diffsB = <a target="_blank" href={linkB}>{diffsB}</a>;
+        diffsB = (
+          <a target="_blank" href={linkB}>
+            {diffsB}
+          </a>
+        );
       }
     }
 
