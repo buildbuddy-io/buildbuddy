@@ -86,6 +86,9 @@ var (
 	// A prefix to prepend to session keys
 	SessionPrefix = keys.MakeKey(SystemPrefix, []byte("session-"))
 
+	// A prefix to prepend to partition descriptors.
+	PartitionPrefix = keys.MakeKey(SystemPrefix, []byte("partition-"))
+
 	// Local Keys:
 	// When the cluster was created.
 	ClusterSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("cluster_setup_time"))
