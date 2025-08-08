@@ -53,7 +53,7 @@ type Options struct {
 	APIKeyOverride string
 }
 
-func makeExecutionNode(pool, executorID, executorHostID string, options *Options, taskScheduler *priority_task_scheduler.PriorityTaskScheduler) (*scpb.ExecutionNode, error) {
+func makeExecutionNode(pool, executorID, executorHostID string, options *Options) (*scpb.ExecutionNode, error) {
 	hostname := options.HostnameOverride
 	if hostname == "" {
 		resHostname, err := resources.GetMyHostname()
@@ -388,7 +388,7 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 	} else if resources.GetPoolName() != "" {
 		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
 	}
-	node, err := makeExecutionNode(poolName, executorID, executorHostID, options, taskScheduler)
+	node, err := makeExecutionNode(poolName, executorID, executorHostID, options)
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
 	}
