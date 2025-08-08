@@ -856,7 +856,7 @@ type SplashPrinter interface {
 }
 
 type RemoteExecutionService interface {
-	Dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action) (string, error)
+	Dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string) error
 	Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error
 	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
 	PublishOperation(stream repb.Execution_PublishOperationServer) error
