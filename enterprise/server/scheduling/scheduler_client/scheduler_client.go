@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
@@ -69,12 +70,6 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		supportedTypes = append(supportedTypes, string(t))
 	}
 
-	// Get current queue length
-	queueLength := int32(0)
-	if taskScheduler != nil {
-		queueLength = int32(taskScheduler.QueueLength())
-	}
-
 	return &scpb.ExecutionNode{
 		Host: hostname,
 		// TODO: stop setting port once the scheduler no longer requires it.
@@ -89,7 +84,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		ExecutorId:                executorID,
 		ExecutorHostId:            executorHostID,
 		SupportedIsolationTypes:   supportedTypes,
-		CurrentQueueLength:        queueLength,
+		CurrentQueueLength:        0,
 	}, nil
 }
 
@@ -187,12 +182,6 @@ func (r *Registration) ServeStatusz(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse, schedulerErr chan error, registrationTicker, requestMoreWorkTicker *time.Ticker) (bool, error) {
-	// Update queue length before creating registration message
-	r.node.CurrentQueueLength = int32(r.taskScheduler.QueueLength())
-	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
-		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
-	}
-
 	select {
 	case <-ctx.Done():
 		log.Debugf("Context cancelled, cancelling node registration.")
@@ -236,9 +225,9 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 	case err := <-schedulerErr:
 		return false, status.WrapError(err, "failed to receive message from scheduler")
 	case <-registrationTicker.C:
-		// Update the queue length before sending
-		r.node.CurrentQueueLength = int32(r.taskScheduler.QueueLength())
-		if err := stream.Send(registrationMsg); err != nil {
+		if err := stream.Send(&scpb.RegisterAndStreamWorkRequest{
+			RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.nodeWithStats()},
+		}); err != nil {
 			return false, status.UnavailableErrorf("could not send registration message: %s", err)
 		}
 	case <-requestMoreWorkTicker.C:
@@ -279,12 +268,6 @@ func (r *Registration) monitorExcessCapacity(ctx context.Context) {
 // maintainRegistrationAndStreamWork maintains registration with a scheduler server using the newer
 // RegisterAndStreamWork API which supports both registration and task reservations.
 func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
-	// Update queue length before creating registration message
-	r.node.CurrentQueueLength = int32(r.taskScheduler.QueueLength())
-	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
-		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
-	}
-
 	defer r.setConnected(false)
 
 	registrationTicker := time.NewTicker(schedulerCheckInInterval)
@@ -302,7 +285,9 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 			}
 			continue
 		}
-		if err := stream.Send(registrationMsg); err != nil {
+		if err := stream.Send(&scpb.RegisterAndStreamWorkRequest{
+			RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.nodeWithStats()},
+		}); err != nil {
 			log.Errorf("error registering node with scheduler: %s, will retry...", err)
 			continue
 		}
@@ -345,6 +330,12 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (r *Registration) nodeWithStats() *scpb.ExecutionNode {
+	n := proto.Clone(r.node).(*scpb.ExecutionNode)
+	n.CurrentQueueLength = int32(r.taskScheduler.QueueLength())
+	return n
 }
 
 // Start registers the executor with the scheduler and maintains that registration until the context is cancelled.
