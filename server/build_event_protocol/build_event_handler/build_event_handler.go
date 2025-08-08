@@ -104,6 +104,9 @@ const (
 	// finalized data to Clickhouse, expire it after this TTL so that even if Clickhouse
 	// has replication lag, clients will still be able to read the data from Redis.
 	expireRedisExecutionsTTL = 5 * time.Minute
+
+	// The maximum number of lines to retain for the ANSI cursor in the event log
+	maxLinesToRetain = 32
 )
 
 var (
@@ -1112,7 +1115,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			chunkFileSizeBytes,
 		)
 		if *enableChunkedEventLogs {
-			numLinesToRetain := getNumActionsFromOptions(&bazelBuildEvent)
+			numLinesToRetain := min(getNumActionsFromOptions(&bazelBuildEvent), maxLinesToRetain)
 			if numLinesToRetain != 0 {
 				// the number of lines curses can overwrite is 3 + the ui_actions shown:
 				// 1 for the progress tracker, 1 for each action, and 2 blank lines.
