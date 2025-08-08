@@ -48,6 +48,8 @@ go_test(
         "@com_github_stretchr_testify//require",
     ] + select({
         "@io_bazel_rules_go//go/platform:windows": [
+            "//proto:remote_execution_go_proto",
+            "//server/remote_cache/digest",
             "@org_golang_x_sys//windows",
         ],
         "//conditions:default": [],

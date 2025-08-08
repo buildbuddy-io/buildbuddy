@@ -8,11 +8,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -76,7 +79,7 @@ func TestCloneWindows(t *testing.T) {
 	t.Logf("DevDrive found at %s - testing with block cloning support", DevDrivePath)
 	testDir, err := os.MkdirTemp(DevDrivePath, "test-clone-windows-*")
 	require.NoError(t, err, "Failed to create temporary directory for test")
-	t.Cleanup(func() { os.RemoveAll(testDir) })
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(testDir)) })
 
 	source := testfs.MakeTempFile(t, testDir, "test-source-*.txt")
 	target := filepath.Join(testDir, "test_target.txt")
@@ -154,4 +157,75 @@ func TestCloneWindowsCopyFileW(t *testing.T) {
 	// Test os.IsExist handling - try to copy to existing file
 	err = fastcopy.Clone(source, target)
 	require.NoError(t, err, "Clone should succeed when target exists (os.IsExist handling)")
+}
+
+func TestCloneWindowsLargeFile(t *testing.T) {
+	flags.Set(t, "executor.enable_fastcopy_reflinking", true)
+
+	// Try to find a DevDrive for optimal CoW testing
+	hasBlockCloning := isBlockCloningSupported(t)
+	if !hasBlockCloning {
+		t.Skipf("No DevDrive found, skipping test for block cloning support")
+	}
+
+	t.Logf("DevDrive found at %s - testing large file (>1GiB) to exercise extent loop", DevDrivePath)
+	testDir, err := os.MkdirTemp(DevDrivePath, "test-clone-large-*")
+	require.NoError(t, err, "Failed to create temporary directory for large file test")
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(testDir)) })
+
+	// Create a source file slightly larger than 1GiB to exercise the for-loop
+	// in reflink() that processes 1GiB chunks
+	const testFileSize = int64(1.5 * 1024 * 1024 * 1024) // 1.5 GiB
+	source := filepath.Join(testDir, "large_source.bin")
+	target := filepath.Join(testDir, "large_target.bin")
+
+	// Create large test file with a pattern we can verify
+	{
+		f, err := os.Create(source)
+		require.NoError(t, err, "Failed to create large source file")
+		defer f.Close()
+
+		// Write a recognizable pattern: repeat "TESTDATA" throughout the file
+		pattern := []byte("TESTDATA")
+		written := int64(0)
+		for written < testFileSize {
+			n, err := f.Write(pattern)
+			require.NoError(t, err, "Failed to write test pattern")
+			written += int64(n)
+		}
+
+		// Truncate to exact size
+		err = f.Truncate(testFileSize)
+		require.NoError(t, err, "Failed to truncate file to exact size")
+	}
+
+	// Verify source file size
+	srcStat, err := os.Stat(source)
+	require.NoError(t, err, "Failed to stat source file")
+	require.Equal(t, testFileSize, srcStat.Size(), "Source file should be exactly 1.5 GiB")
+
+	// Ensure target doesn't exist
+	_, err = os.Stat(target)
+	require.Error(t, err)
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	// Perform the clone operation - this should exercise the 1GiB chunk loop
+	err = fastcopy.Clone(source, target)
+	require.NoError(t, err, "Clone should succeed for large file on ReFS")
+	t.Cleanup(func() { os.Remove(target) })
+
+	// Verify target file exists and has correct size
+	targetStat, err := os.Stat(target)
+	require.NoError(t, err, "target file should exist after clone")
+	require.Equal(t, testFileSize, targetStat.Size(), "Target file should be same size as source")
+
+	// Verify entire file contents match using BLAKE3 hash
+	sourceDigest, err := digest.ComputeForFile(source, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err, "Failed to compute source file digest")
+
+	targetDigest, err := digest.ComputeForFile(target, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err, "Failed to compute target file digest")
+
+	require.Equal(t, sourceDigest.Hash, targetDigest.Hash, "Source and target files should have identical BLAKE3 hashes")
+	require.Equal(t, sourceDigest.SizeBytes, targetDigest.SizeBytes, "Source and target files should have identical sizes")
 }
