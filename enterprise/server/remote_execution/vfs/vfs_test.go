@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -64,11 +65,14 @@ func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (
 	err = os.MkdirAll(back, 0755)
 	require.NoError(t, err)
 
+	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
+	require.NoError(t, err)
+	err = tf.Start()
+	require.NoError(t, err)
+
 	server, err := vfs_server.New(env, back)
 	require.NoError(t, err)
-	err = server.Prepare(context.Background(), &container.FileSystemLayout{
-		Inputs: tree,
-	})
+	err = server.Prepare(context.Background(), &container.FileSystemLayout{Inputs: tree}, tf)
 	require.NoError(t, err)
 
 	client := vfs_server.NewDirectClient(server)
@@ -833,29 +837,24 @@ func TestComputeStats(t *testing.T) {
 			{Name: "test3", Digest: rn3.GetDigest()},
 		},
 	}})
-	stats := server.ComputeStats()
+	vfsStats := server.ComputeStats()
+	require.NoError(t, err)
 
 	// Check stats before we do anything. Only CAS input size/count should be
 	// populated.
-	require.EqualValues(t, 3, stats.CasFilesCount)
-	require.EqualValues(t, 0, stats.CasFilesAccessedCount)
-	require.EqualValues(t, 650, stats.CasFilesSizeBytes)
-	require.EqualValues(t, 0, stats.CasFilesAccessedBytes)
-	require.EqualValues(t, 0, stats.FileDownloadCount)
-	require.EqualValues(t, 0, stats.FileDownloadSizeBytes)
-	require.EqualValues(t, 0, stats.FileDownloadDurationUsec)
+	require.EqualValues(t, 3, vfsStats.CasFilesCount)
+	require.EqualValues(t, 0, vfsStats.CasFilesAccessedCount)
+	require.EqualValues(t, 650, vfsStats.CasFilesSizeBytes)
+	require.EqualValues(t, 0, vfsStats.CasFilesAccessedBytes)
 
 	_, err = os.ReadFile(filepath.Join(fsPath, "test1"))
 	require.NoError(t, err)
 
-	stats = server.ComputeStats()
-	require.EqualValues(t, 3, stats.CasFilesCount)
-	require.EqualValues(t, 1, stats.CasFilesAccessedCount)
-	require.EqualValues(t, 650, stats.CasFilesSizeBytes)
-	require.EqualValues(t, 100, stats.CasFilesAccessedBytes)
-	require.EqualValues(t, 1, stats.FileDownloadCount)
-	require.EqualValues(t, 100, stats.FileDownloadSizeBytes)
-	require.Greater(t, stats.FileDownloadDurationUsec, int64(0))
+	vfsStats = server.ComputeStats()
+	require.EqualValues(t, 3, vfsStats.CasFilesCount)
+	require.EqualValues(t, 1, vfsStats.CasFilesAccessedCount)
+	require.EqualValues(t, 650, vfsStats.CasFilesSizeBytes)
+	require.EqualValues(t, 100, vfsStats.CasFilesAccessedBytes)
 }
 
 func TestRenameWhiteout(t *testing.T) {

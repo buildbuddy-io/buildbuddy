@@ -2253,27 +2253,7 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 }
 
 func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
-
-	if err := c.vfsServer.Prepare(ctx, c.fsLayout); err != nil {
-		return nil, err
-	}
-
-	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
-	defer cancel()
-
-	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMVFSPort)
-	if err != nil {
-		return nil, err
-	}
-	client := vmfspb.NewFileSystemClient(conn)
-	rsp, err := client.Prepare(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	return rsp, err
+	return nil, status.UnimplementedErrorf("VFS support not available for firecracker")
 }
 
 // monitorVMContext returns a context that is cancelled if the VM exits. The
