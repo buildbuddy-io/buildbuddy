@@ -225,6 +225,10 @@ type driverTask struct {
 	key  taskKey
 	repl IReplica // only used for range tasks
 
+	// only used for partition tasks
+	partitionConfig disk.Partition
+	curPD           *rfpb.PartitionDescriptor
+
 	processing bool
 	requeue    bool
 
@@ -336,11 +340,15 @@ func (bq *baseQueue) postProcess(ctx context.Context, task *driverTask, requeueT
 	if ar.attempts >= maxRetry {
 		if task.key.taskType == RangeTask {
 			alert.UnexpectedEvent("driver_action_retries_exceeded", "c%dn%d action: %s retries exceeded", task.key.rangeID, task.repl.ReplicaID(), ar.action)
+		} else if task.key.taskType == PartitionTask {
+			alert.UnexpectedEvent("driver_action_retries_exceeded", "partition %s action: %s retries exceeded", task.key.partitionID, ar.action)
 		}
 		// do not add it to the queue
 	} else if requeueType != RequeueNoop || task.requeue {
 		if task.key.taskType == RangeTask {
 			bq.maybeAddRangeTask(ctx, task.repl, ar)
+		} else if task.key.taskType == PartitionTask {
+			bq.maybeAddPartitionTask(ctx, task.partitionConfig, task.curPD, ar)
 		}
 	}
 }
@@ -560,18 +568,13 @@ func (rq *Queue) computeAction(ctx context.Context, task *driverTask) (DriverAct
 	return action, action.Priority()
 }
 
-func (bq *baseQueue) maybeAddRangeTask(ctx context.Context, repl IReplica, ar attemptRecord) {
+func (bq *baseQueue) maybeAddTask(ctx context.Context, newTask *driverTask, ar attemptRecord) {
 	bq.mu.Lock()
 	defer bq.mu.Unlock()
 
-	rangeID := repl.RangeID()
-	key := taskKey{taskType: RangeTask, rangeID: rangeID}
-	task, ok := bq.taskMap[key]
+	task, ok := bq.taskMap[newTask.key]
 	if !ok {
-		task = &driverTask{
-			key:  key,
-			repl: repl,
-		}
+		task = newTask
 	}
 
 	action, priority := bq.impl.computeAction(ctx, task)
@@ -611,8 +614,28 @@ func (bq *baseQueue) maybeAddRangeTask(ctx context.Context, repl IReplica, ar at
 	}
 }
 
-func (rq *Queue) MaybeAddPartitionTask(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor) {
+func (bq *baseQueue) maybeAddRangeTask(ctx context.Context, repl IReplica, ar attemptRecord) {
+	rangeID := repl.RangeID()
+	key := taskKey{taskType: RangeTask, rangeID: rangeID}
+	newTask := &driverTask{
+		key:  key,
+		repl: repl,
+	}
+	bq.maybeAddTask(ctx, newTask, ar)
+}
 
+func (bq *baseQueue) maybeAddPartitionTask(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor, ar attemptRecord) {
+	key := taskKey{taskType: PartitionTask, partitionID: pd.GetId()}
+	newTask := &driverTask{
+		key:             key,
+		partitionConfig: p,
+		curPD:           pd,
+	}
+	bq.maybeAddTask(ctx, newTask, ar)
+}
+
+func (rq *Queue) MaybeAddPartitionTask(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor) {
+	rq.maybeAddPartitionTask(ctx, p, pd, attemptRecord{})
 }
 func (rq *Queue) MaybeAddRangeTask(ctx context.Context, replica IReplica) {
 	rq.maybeAddRangeTask(ctx, replica, attemptRecord{})

@@ -1173,7 +1173,7 @@ func TestBaseQueueRetry(t *testing.T) {
 	require.NotNil(t, task)
 	requeueType := tq.process(ctx, task)
 	require.Equal(t, RequeueWait, requeueType)
-	tq.postProcess(ctx, task.repl, requeueType)
+	tq.postProcess(ctx, task, requeueType)
 
 	// after two seconds, we can retry the task
 	clock.Advance(1 * time.Second)
@@ -1181,7 +1181,7 @@ func TestBaseQueueRetry(t *testing.T) {
 	require.NotNil(t, task)
 	requeueType = tq.process(ctx, task)
 	require.Equal(t, RequeueRetry, requeueType)
-	tq.postProcess(ctx, task.repl, requeueType)
+	tq.postProcess(ctx, task, requeueType)
 
 	for i := 2; i < 10; i++ {
 		require.Equal(t, 1, tq.Len())
