@@ -197,20 +197,20 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                 data={dates}
                 dataSeries={[
                   {
-                    name: "workflows",
-                    extractValue: (ts) => +(this.getUsage(ts).totalWorkflowDownloadSizeBytes ?? 0),
-                    formatHoverValue: (value) => bytes(value || 0) + " wf downloaded",
-                    onClick: this.onBarClicked.bind(this, "cas"),
-                    stackId: "dl",
-                    color: ChartColor.BASICALLY_BLACK,
-                  },
-                  {
                     name: "internal",
                     extractValue: (ts) => +(this.getUsage(ts).totalInternalDownloadSizeBytes ?? 0),
                     formatHoverValue: (value) => bytes(value || 0) + " intern downloaded",
                     onClick: this.onBarClicked.bind(this, "cas"),
                     stackId: "dl",
                     color: ChartColor.GREY,
+                  },
+                  {
+                    name: "workflows",
+                    extractValue: (ts) => +(this.getUsage(ts).totalWorkflowDownloadSizeBytes ?? 0),
+                    formatHoverValue: (value) => bytes(value || 0) + " wf downloaded",
+                    onClick: this.onBarClicked.bind(this, "cas"),
+                    stackId: "dl",
+                    color: ChartColor.BASICALLY_BLACK,
                   },
                   {
                     name: "external",
@@ -264,20 +264,20 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                 data={dates}
                 dataSeries={[
                   {
-                    name: "workflows",
-                    extractValue: (ts) => +(this.getUsage(ts).totalWorkflowUploadSizeBytes ?? 0),
-                    formatHoverValue: (value) => bytes(value || 0) + " wf uploaded",
-                    onClick: this.onBarClicked.bind(this, "cas"),
-                    stackId: "ul",
-                    color: ChartColor.BASICALLY_BLACK,
-                  },
-                  {
                     name: "internal",
                     extractValue: (ts) => +(this.getUsage(ts).totalInternalUploadSizeBytes ?? 0),
                     formatHoverValue: (value) => bytes(value || 0) + " intern uploaded",
                     onClick: this.onBarClicked.bind(this, "cas"),
                     stackId: "ul",
                     color: ChartColor.GREY,
+                  },
+                  {
+                    name: "workflows",
+                    extractValue: (ts) => +(this.getUsage(ts).totalWorkflowUploadSizeBytes ?? 0),
+                    formatHoverValue: (value) => bytes(value || 0) + " wf uploaded",
+                    onClick: this.onBarClicked.bind(this, "cas"),
+                    stackId: "ul",
+                    color: ChartColor.BASICALLY_BLACK,
                   },
                   {
                     name: "external",
