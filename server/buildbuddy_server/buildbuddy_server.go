@@ -1347,7 +1347,7 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 	ctx := stream.Context()
 
 	var bytesSent atomic.Int64
-	stop := canary.StartWithRepeatedLateFn(5*time.Minute, func(d time.Duration) {
+	stop := canary.StartWithLateFn(5*time.Minute, func(d time.Duration) {
 		log.CtxInfof(ctx, "Long-running GetEventLog stream: invocation_id=%s, duration=%s, bytes_sent=%d", req.GetInvocationId(), d, bytesSent.Load())
 	}, func(time.Duration) {})
 	defer stop()
