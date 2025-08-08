@@ -77,18 +77,22 @@ message Usage {
 	int64 total_workflow_upload_size_bytes = 14;
 
   // Total raw cpu time (2 cpus for 1 minutes = 2 minutes) used on
+  // BuildBuddy-owned executors and workflow runners.  Idle time is uncounted.
+  int64 cloud_cpu_nanos = 15;
+
+  // Total raw cpu time (2 cpus for 1 minutes = 2 minutes) used on
   // BuildBuddy-owned executors.  Idle time is uncounted.
-	int64 cloud_rbe_cpu_nanos = 15;
+	int64 cloud_rbe_cpu_nanos = 16;
 
   // Total raw cpu time (2 cpus for 1 minutes = 2 minutes) used on
   // BuildBuddy-owned workflow runners.  Idle time is uncounted.
-	int64 cloud_workflow_cpu_nanos = 16;
+	int64 cloud_workflow_cpu_nanos = 17;
 
   // Total wall time of tasks run on BuildBuddy-owned executors, ignoring cpu
   // utilization.  Idle time is counted.
-	int64 cloud_rbe_linux_execution_duration_usec = 17;
+	int64 cloud_rbe_linux_execution_duration_usec = 18;
 
   // Total wall time of tasks run on BuildBuddy-owned workflow runners,
   // ignoring cpu utilization.  Idle time is counted.
-	int64 cloud_workflow_linux_execution_duration_usec = 18;
+	int64 cloud_workflow_linux_execution_duration_usec = 19;
 }
