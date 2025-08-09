@@ -405,14 +405,23 @@ type CommandContainer interface {
 	//
 	// It is approximately the same as calling PullImageIfNecessary, Create,
 	// Exec, then Remove.
+	//
+	// Implementations can assume that the image name given at container
+	// construction includes a digest, not a tag.
 	Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult
 
 	// IsImageCached returns whether the configured image is cached locally.
+	//
+	// Implementations can assume that the image name given at container
+	// construction includes a digest, not a tag.
 	IsImageCached(ctx context.Context) (bool, error)
 
-	// PullImage pulls the container image from the remote. It always
-	// re-authenticates the request, but may serve the image from a local cache
-	// if needed.
+	// PullImage pulls the container image from the remote. Implementations
+	// are responsible for re-authenticating with the remote registry,
+	// but may serve the image from a local cache if needed.
+	//
+	// Implementations can assume that the image name given at container
+	// construction includes a digest, not a tag.
 	PullImage(ctx context.Context, creds oci.Credentials) error
 
 	// Create creates a new container and starts a top-level process inside it
