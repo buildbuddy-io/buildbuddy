@@ -77,6 +77,10 @@
   fill: #ff8f00;
 }
 
+.trends-clickable-bar.black:hover {
+  fill: #424242;
+}
+
 .trends-clickable-bar.grey:hover {
   fill: #ccc;
 }

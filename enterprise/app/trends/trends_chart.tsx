@@ -81,6 +81,8 @@ function chartColorToCssClass(c: ChartColor): string {
       return "orange";
     case ChartColor.GREEN:
       return "green";
+    case ChartColor.BASICALLY_BLACK:
+      return "black";
   }
   return "";
 }
