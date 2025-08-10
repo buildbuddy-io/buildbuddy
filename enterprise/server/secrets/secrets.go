@@ -223,7 +223,7 @@ func (s *SecretService) DeleteSecret(ctx context.Context, req *skpb.DeleteSecret
 }
 
 func (s *SecretService) GetSecretEnvVars(ctx context.Context, groupID string) ([]*repb.Command_EnvironmentVariable, error) {
-	if err := authutil.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
+	if err := authutil.AuthorizeTargetGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
 
