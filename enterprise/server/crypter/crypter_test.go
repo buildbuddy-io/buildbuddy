@@ -22,9 +22,9 @@ func TestEncryptDecrypt(t *testing.T) {
 
 	// Generate a few random keys to encrypt/decrypt with.
 	numKeys := 10
-	keys := make([]*crypter.Key, numKeys)
+	keys := make([]*crypter.DerivedKey, numKeys)
 	for i := 0; i < numKeys; i++ {
-		keys[i] = &crypter.Key{Key: make([]byte, 32)}
+		keys[i] = &crypter.DerivedKey{Key: make([]byte, 32)}
 		_, err := rand.Read(keys[i].Key)
 		require.NoError(t, err)
 	}
@@ -61,7 +61,7 @@ func TestEncryptDecrypt(t *testing.T) {
 func TestDecryptWrongKey(t *testing.T) {
 	groupID := "GR123"
 	digest := &repb.Digest{Hash: "foo", SizeBytes: 123}
-	firstKey := &crypter.Key{Key: []byte(strings.Repeat("a", 32))}
+	firstKey := &crypter.DerivedKey{Key: []byte(strings.Repeat("a", 32))}
 
 	out := bytes.NewBuffer(nil)
 	e, err := crypter.NewEncryptor(t.Context(), firstKey, digest, ioutil.NewCustomCommitWriteCloser(out), groupID, 1024)
@@ -76,7 +76,7 @@ func TestDecryptWrongKey(t *testing.T) {
 	testdata.WriteInRandomChunks(t, e, testData)
 
 	// Decrypting using a different key should not work.
-	secondKey := &crypter.Key{Key: []byte(strings.Repeat("f", 32))}
+	secondKey := &crypter.DerivedKey{Key: []byte(strings.Repeat("f", 32))}
 	d, err := crypter.NewDecryptor(t.Context(), secondKey, digest, io.NopCloser(out), e.Metadata(), groupID, 1024)
 	require.NoError(t, err)
 	_, err = io.ReadAll(d)
@@ -87,7 +87,7 @@ func TestDecryptWrongKey(t *testing.T) {
 func TestDecryptWrongDigest(t *testing.T) {
 	groupID := "GR123"
 	digest := &repb.Digest{Hash: "foo", SizeBytes: 123}
-	key := &crypter.Key{Key: []byte(strings.Repeat("a", 32))}
+	key := &crypter.DerivedKey{Key: []byte(strings.Repeat("a", 32))}
 
 	out := bytes.NewBuffer(nil)
 	e, err := crypter.NewEncryptor(t.Context(), key, digest, ioutil.NewCustomCommitWriteCloser(out), groupID, 1024)

@@ -93,7 +93,7 @@ type keyCache struct {
 	dbh   interfaces.DBHandle
 	kms   interfaces.KMS
 	clock clockwork.Clock
-	sf    singleflight.Group[string, *crypter.Key]
+	sf    singleflight.Group[string, *crypter.DerivedKey]
 
 	data sync.Map
 
@@ -299,7 +299,7 @@ func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]
 	return key, md, nil
 }
 
-func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cacheError bool) (*crypter.Key, error) {
+func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cacheError bool) (*crypter.DerivedKey, error) {
 	var lastErr error
 	opts := retry.DefaultOptions()
 	opts.Clock = c.clock
@@ -308,7 +308,7 @@ func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cache
 		key, md, err := c.refreshKeySingleAttempt(ctx, ck)
 		// TODO(vadim): figure out if there are other KMS errors we can treat as immediate failures
 		if err == nil || status.IsNotFoundError(err) {
-			return &crypter.Key{Key: key, Metadata: md}, err
+			return &crypter.DerivedKey{Key: key, Metadata: md}, err
 		}
 		lastErr = err
 	}
@@ -321,8 +321,8 @@ func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cache
 	return nil, status.UnavailableErrorf("exhausted attempts to refresh key, last error: %s", lastErr)
 }
 
-func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool) (*crypter.Key, error) {
-	v, _, err := c.sf.Do(ctx, ck.String(), func(ctx context.Context) (*crypter.Key, error) {
+func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool) (*crypter.DerivedKey, error) {
+	v, _, err := c.sf.Do(ctx, ck.String(), func(ctx context.Context) (*crypter.DerivedKey, error) {
 		metrics.EncryptionKeyRefreshCount.Inc()
 		k, err := c.refreshKeyWithRetries(ctx, ck, cacheError)
 		if err != nil {
@@ -333,7 +333,7 @@ func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool)
 	return v, err
 }
 
-func (c *keyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*crypter.Key, error) {
+func (c *keyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*crypter.DerivedKey, error) {
 	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -358,7 +358,7 @@ func (c *keyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*c
 		if e.err != nil {
 			return nil, e.err
 		}
-		return &crypter.Key{Key: e.derivedKey, Metadata: e.keyMetadata}, nil
+		return &crypter.DerivedKey{Key: e.derivedKey, Metadata: e.keyMetadata}, nil
 	}
 
 	// If obtaining the key fails, cache the error.
@@ -370,11 +370,11 @@ func (c *keyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*c
 	return loadedKey, nil
 }
 
-func (c *keyCache) encryptionKey(ctx context.Context) (*crypter.Key, error) {
+func (c *keyCache) encryptionKey(ctx context.Context) (*crypter.DerivedKey, error) {
 	return c.loadKey(ctx, nil)
 }
 
-func (c *keyCache) decryptionKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*crypter.Key, error) {
+func (c *keyCache) decryptionKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*crypter.DerivedKey, error) {
 	if em == nil {
 		return nil, status.FailedPreconditionError("encryption metadata cannot be nil")
 	}

@@ -30,7 +30,7 @@ const (
 
 // An encryption key. Note that this is the "derived" key as described in
 // http://go/customer-managed-encryption.
-type Key struct {
+type DerivedKey struct {
 	Key      []byte
 	Metadata *sgpb.EncryptionMetadata
 }
@@ -71,7 +71,7 @@ type Encryptor struct {
 	bufCap int
 }
 
-func NewEncryptor(ctx context.Context, key *Key, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*Encryptor, error) {
+func NewEncryptor(ctx context.Context, key *DerivedKey, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*Encryptor, error) {
 	ciph, err := getCipher(key.Key)
 	if err != nil {
 		return nil, err
@@ -172,7 +172,7 @@ type Decryptor struct {
 	bufLen int
 }
 
-func NewDecryptor(ctx context.Context, key *Key, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*Decryptor, error) {
+func NewDecryptor(ctx context.Context, key *DerivedKey, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*Decryptor, error) {
 	ciph, err := getCipher(key.Key)
 	if err != nil {
 		return nil, err
