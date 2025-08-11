@@ -2496,7 +2496,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	rangeID := leftRange.GetRangeId()
 
 	// Reserve new IDs for this cluster.
-	newRangeID, err := s.sender.ReserveRangeID(ctx)
+	newRangeID, err := s.ReserveRangeID(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("could not reserve RangeID for new range %d: %s", rangeID, err)
 	}
@@ -2978,8 +2978,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	return rsp, nil
 }
 
-func (s *Store) reserveReplicaIDs(ctx context.Context, rangeID uint64, n int) ([]uint64, error) {
-	key := keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID)))
+func (s *Store) reserveIDs(ctx context.Context, key []byte, n int) ([]uint64, error) {
 	newVal, err := s.sender.Increment(ctx, key, uint64(n))
 	if err != nil {
 		return nil, err
@@ -2989,6 +2988,23 @@ func (s *Store) reserveReplicaIDs(ctx context.Context, rangeID uint64, n int) ([
 		ids = append(ids, newVal-uint64(i))
 	}
 	return ids, nil
+}
+
+func (s *Store) reserveReplicaIDs(ctx context.Context, rangeID uint64, n int) ([]uint64, error) {
+	key := keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID)))
+	return s.reserveIDs(ctx, key, n)
+}
+
+func (s *Store) ReserveRangeID(ctx context.Context) (uint64, error) {
+	ids, err := s.ReserveRangeIDs(ctx, 1)
+	if err != nil {
+		return 0, err
+	}
+	return ids[0], nil
+}
+
+func (s *Store) ReserveRangeIDs(ctx context.Context, n int) ([]uint64, error) {
+	return s.reserveIDs(ctx, constants.LastRangeIDKey, n)
 }
 
 func addLocalRangeEdits(oldBuf, newBuf []byte, b *rbuilder.BatchBuilder) error {
