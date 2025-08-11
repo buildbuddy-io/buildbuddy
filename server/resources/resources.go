@@ -217,7 +217,7 @@ func GetArch() string {
 	return runtime.GOARCH
 }
 
-func GetOS() string {
+func GetOSFamily() string {
 	return runtime.GOOS
 }
 
