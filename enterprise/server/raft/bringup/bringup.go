@@ -38,6 +38,7 @@ type IStore interface {
 	NodeHost() *dragonboat.NodeHost
 	Sender() *sender.Sender
 	TxnCoordinator() *txn.Coordinator
+	ReserveRangeID(ctx context.Context) (uint64, error)
 }
 
 type ClusterStarter struct {
@@ -538,7 +539,7 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 			return err
 		}
 
-		newRangeID, err := store.Sender().ReserveRangeID(ctx)
+		newRangeID, err := store.ReserveRangeID(ctx)
 		if err != nil {
 			return status.InternalErrorf("could not reserve RangeID for new range %d: %s", rangeID, err)
 		}

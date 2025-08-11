@@ -1773,7 +1773,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 	sf.InitalizeShard(t, ctx, bootstrapInfo, initialRD, s2)
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
-	newRangeID, err := s.Sender().ReserveRangeID(ctx)
+	newRangeID, err := s.ReserveRangeID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), newRangeID)
 

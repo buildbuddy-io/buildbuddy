@@ -616,22 +616,3 @@ func (s *Sender) DirectRead(ctx context.Context, key []byte) ([]byte, error) {
 	}
 	return readResponse.GetKv().GetValue(), nil
 }
-
-func (s *Sender) ReserveRangeID(ctx context.Context) (uint64, error) {
-	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
-		Key:   constants.LastRangeIDKey,
-		Delta: uint64(1),
-	}).ToProto()
-	if err != nil {
-		return 0, err
-	}
-	metaRangeRsp, err := s.SyncPropose(ctx, constants.MetaRangePrefix, metaRangeBatch)
-	if err != nil {
-		return 0, err
-	}
-	rangeIDIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(0)
-	if err != nil {
-		return 0, err
-	}
-	return rangeIDIncrRsp.GetValue(), nil
-}
