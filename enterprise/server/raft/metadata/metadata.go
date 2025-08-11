@@ -232,7 +232,11 @@ func New(env environment.Env, conf *Config) (*Server, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	rc.clusterStarter = bringup.New(rc.grpcAddr, rc.gossipManager, rc.store, rc.conf.Partitions)
+	clusterStarter, err := bringup.New(rc.grpcAddr, rc.gossipManager, rc.store, rc.conf.Partitions)
+	if err != nil {
+		return nil, err
+	}
+	rc.clusterStarter = clusterStarter
 	if err := rc.clusterStarter.InitializeClusters(); err != nil {
 		return nil, err
 	}

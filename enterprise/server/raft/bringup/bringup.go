@@ -38,7 +38,7 @@ type IStore interface {
 	NodeHost() *dragonboat.NodeHost
 	Sender() *sender.Sender
 	TxnCoordinator() *txn.Coordinator
-	ReserveRangeID(ctx context.Context) (uint64, error)
+	ReserveRangeIDs(ctx context.Context, n int) ([]uint64, error)
 }
 
 type ClusterStarter struct {
@@ -61,24 +61,34 @@ type ClusterStarter struct {
 
 	log log.Logger
 
-	partitions     []disk.Partition
-	rangesToCreate []*rfpb.RangeDescriptor
+	defaultPartition disk.Partition
+	rangesToCreate   []*rfpb.RangeDescriptor
 }
 
-func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore, partitions []disk.Partition) *ClusterStarter {
+func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore, partitions []disk.Partition) (*ClusterStarter, error) {
 	joinList := gossipMan.JoinList()
+	var defaultPartition disk.Partition
+	for _, partition := range partitions {
+		if partition.ID == constants.DefaultPartitionID {
+			defaultPartition = partition
+			break
+		}
+	}
+	if len(defaultPartition.ID) == 0 {
+		return nil, status.InvalidArgumentError("default partition is not present.")
+	}
 	cs := &ClusterStarter{
-		store:         store,
-		session:       client.NewSession(),
-		grpcAddr:      grpcAddr,
-		listenAddr:    gossipMan.ListenAddr(),
-		join:          joinList,
-		gossipManager: gossipMan,
-		bootstrapped:  false,
-		doneOnce:      sync.Once{},
-		doneSetup:     make(chan struct{}),
-		log:           log.NamedSubLogger(store.NodeHost().ID()),
-		partitions:    partitions,
+		store:            store,
+		session:          client.NewSession(),
+		grpcAddr:         grpcAddr,
+		listenAddr:       gossipMan.ListenAddr(),
+		join:             joinList,
+		gossipManager:    gossipMan,
+		bootstrapped:     false,
+		doneOnce:         sync.Once{},
+		doneSetup:        make(chan struct{}),
+		log:              log.NamedSubLogger(store.NodeHost().ID()),
+		defaultPartition: defaultPartition,
 	}
 	sort.Strings(cs.join)
 
@@ -91,7 +101,7 @@ func New(grpcAddr string, gossipMan interfaces.GossipService, store IStore, part
 		}
 	}
 
-	return cs
+	return cs, nil
 }
 
 func (cs *ClusterStarter) markBringupComplete() {
@@ -161,45 +171,7 @@ func (cs *ClusterStarter) matchesListenAddress(hostAndPort string) (bool, error)
 	return false, nil
 }
 
-func computeStartingRanges(partition disk.Partition) ([]*rfpb.RangeDescriptor, error) {
-	startingRanges := []*rfpb.RangeDescriptor{
-		&rfpb.RangeDescriptor{
-			Start:      constants.MetaRangePrefix,
-			End:        keys.Key{constants.UnsplittableMaxByte},
-			Generation: 1,
-		},
-	}
-	splitRanges, err := evenlyDividePartitionIntoRanges(partition)
-	if err != nil {
-		return nil, err
-	}
-	startingRanges = append(startingRanges, splitRanges...)
-	return startingRanges, nil
-}
-
 func (cs *ClusterStarter) InitializeClusters() error {
-	var defaultPartition disk.Partition
-	for _, partition := range cs.partitions {
-		if partition.ID == constants.DefaultPartitionID {
-			defaultPartition = partition
-			break
-		}
-	}
-	if defaultPartition.ID != constants.DefaultPartitionID {
-		return status.FailedPreconditionError("no default partition is found")
-	}
-	startingRanges, err := computeStartingRanges(defaultPartition)
-	if err != nil {
-		return err
-	} else {
-		cs.rangesToCreate = startingRanges
-	}
-
-	log.Info("The following partitions will be configured:")
-	for i, rd := range cs.rangesToCreate {
-		log.Infof("%d [%q, %q)", i, rd.GetStart(), rd.GetEnd())
-	}
-
 	// Set a flag indicating if initial cluster bringup still needs to
 	// happen. If so, bringup will be triggered when all of the nodes
 	// in the Join list have announced themselves to us.
@@ -266,7 +238,11 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 		bootstrapInfo[br.GetNhid()] = br.GetGrpcAddress()
 		if len(bootstrapInfo) == len(cs.join) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			err = SendStartShardRequestsWithRanges(ctx, cs.session, cs.store, bootstrapInfo, cs.rangesToCreate)
+			if err := InitializeShardsForMetaRange(ctx, cs.session, cs.store, bootstrapInfo); err != nil {
+				cancel()
+				return err
+			}
+			err = InitializeShardsForPartition(ctx, cs.session, cs.store, bootstrapInfo, cs.defaultPartition)
 			cancel()
 			return err
 		}
@@ -414,18 +390,24 @@ func evenlyDividePartitionIntoRanges(partition disk.Partition) ([]*rfpb.RangeDes
 	return ranges, nil
 }
 
-// InitializeShard initializes a single shard on raft and also writes the range
-// descriptor to both meta range and the locally on the shard.
-func InitializeShard(ctx context.Context, session *client.Session, store IStore, eg *errgroup.Group, bootstrapInfo *ClusterBootstrapInfo, rd *rfpb.RangeDescriptor) error {
-	rangeID := rd.GetRangeId()
-	eg.Go(func() error {
-		if err := StartShard(ctx, store, bootstrapInfo); err != nil {
-			return err
-		}
-		log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
-		return nil
-	})
-	rdBuf, err := proto.Marshal(rd)
+// InitializeShardsForMetaRange starts the shards for meta range and also writes
+// the meta range descriptor into the range.
+func InitializeShardsForMetaRange(ctx context.Context, session *client.Session, store IStore, nodeGrpcAddrs map[string]string) error {
+	rangeID := uint64(constants.MetaRangeID)
+	bootstrapInfo := MakeBootstrapInfo(rangeID, constants.InitialReplicaID, nodeGrpcAddrs)
+	mrd := &rfpb.RangeDescriptor{
+		RangeId:    rangeID,
+		Start:      constants.MetaRangePrefix,
+		End:        keys.Key{constants.UnsplittableMaxByte},
+		Generation: 1,
+		Replicas:   bootstrapInfo.Replicas,
+	}
+
+	if err := StartShard(ctx, store, bootstrapInfo); err != nil {
+		return err
+	}
+	log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
+	rdBuf, err := proto.Marshal(mrd)
 	if err != nil {
 		return err
 	}
@@ -434,63 +416,105 @@ func InitializeShard(ctx context.Context, session *client.Session, store IStore,
 			Key:   constants.LocalRangeKey,
 			Value: rdBuf,
 		},
-	})
-	batch = batch.Add(&rfpb.DirectWriteRequest{
+	}).Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   constants.ClusterSetupTimeKey,
 			Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
 		},
+	}).Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(mrd.GetEnd()),
+			Value: rdBuf,
+		},
+	}).Add(&rfpb.IncrementRequest{
+		Key:   constants.LastRangeIDKey,
+		Delta: 1,
+	}).Add(&rfpb.IncrementRequest{
+		Key:   keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID))),
+		Delta: uint64(len(bootstrapInfo.Replicas)),
 	})
+	batchProto, err := batch.ToProto()
+	if err != nil {
+		return err
+	}
+	rsp, err := session.SyncProposeLocal(ctx, store.NodeHost(), constants.MetaRangeID, batchProto)
+	if err != nil {
+		return err
+	}
+	err = rbuilder.NewBatchResponseFromProto(rsp).AnyError()
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
-	if rd.GetRangeId() == uint64(constants.MetaRangeID) {
-		batch = batch.Add(&rfpb.DirectWriteRequest{
+// InitializeShardsForPartition starts the shards for a partition and also writes
+// the range descriptor into both local range and meta range.
+// Note: since we are writing the range descriptors in a transaction, it might
+// have performance issues when we try to initialize tons of range descriptors at
+// once.
+func InitializeShardsForPartition(ctx context.Context, session *client.Session, store IStore, nodeGrpcAddrs map[string]string, partition disk.Partition) error {
+	ranges, err := evenlyDividePartitionIntoRanges(partition)
+	if err != nil {
+		return err
+	}
+
+	log.Info("The following partitions will be configured:")
+	for i, rd := range ranges {
+		log.Infof("%d [%q, %q)", i, rd.GetStart(), rd.GetEnd())
+	}
+	retrier := retry.DefaultWithContext(ctx)
+	var mrd *rfpb.RangeDescriptor
+	for retrier.Next() {
+		mrd = store.Sender().GetMetaRangeDescriptor()
+		if mrd != nil {
+			break
+		}
+		log.CtxWarning(ctx, "RangeCache did not have meta range yet")
+	}
+
+	rangeIDs, err := store.ReserveRangeIDs(ctx, len(ranges))
+	if err != nil {
+		return err
+	}
+
+	eg := &errgroup.Group{}
+	tx := rbuilder.NewTxn()
+	metaRangeBatch := rbuilder.NewBatchBuilder()
+	for i, rd := range ranges {
+		rangeID := rangeIDs[i]
+		bootstrapInfo := MakeBootstrapInfo(rangeID, uint64(constants.InitialReplicaID), nodeGrpcAddrs)
+		rd.Replicas = bootstrapInfo.Replicas
+		rd.RangeId = rangeID
+
+		eg.Go(func() error {
+			if err := StartShard(ctx, store, bootstrapInfo); err != nil {
+				return err
+			}
+			log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
+			return nil
+		})
+		rdBuf, err := proto.Marshal(rd)
+		if err != nil {
+			return err
+		}
+		batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
-				Key:   keys.RangeMetaKey(rd.GetEnd()),
+				Key:   constants.LocalRangeKey,
 				Value: rdBuf,
 			},
 		})
-		batch = batch.Add(&rfpb.IncrementRequest{
-			Key:   keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID))),
-			Delta: uint64(len(bootstrapInfo.Replicas)),
+		batch = batch.Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   constants.ClusterSetupTimeKey,
+				Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
+			},
 		})
-	}
-
-	log.Debugf("Attempting to start cluster %d on: %+v", rangeID, bootstrapInfo)
-
-	// Always wait for the metarange to startup first.
-	if rd.GetRangeId() == constants.MetaRangeID {
-		if err := eg.Wait(); err != nil {
-			return err
-		}
-		batchProto, err := batch.ToProto()
-		if err != nil {
-			return err
-		}
-		rsp, err := session.SyncProposeLocal(ctx, store.NodeHost(), constants.MetaRangeID, batchProto)
-		if err != nil {
-			return err
-		}
-		err = rbuilder.NewBatchResponseFromProto(rsp).AnyError()
-		if err != nil {
-			return err
-		}
-	} else {
-		retrier := retry.DefaultWithContext(ctx)
-		var mrd *rfpb.RangeDescriptor
-		for retrier.Next() {
-			mrd = store.Sender().GetMetaRangeDescriptor()
-			if mrd != nil {
-				break
-			}
-			log.CtxWarning(ctx, "RangeCache did not have meta range yet")
-		}
-		tx := rbuilder.NewTxn()
 		stmt := tx.AddStatement()
 		stmt.SetRangeDescriptor(rd).SetBatch(batch)
 		// The range descriptor is a new one.
 		stmt.SetRangeValidationRequired(false)
 
-		metaRangeBatch := rbuilder.NewBatchBuilder()
 		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
 			Key:   keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID))),
 			Delta: uint64(len(bootstrapInfo.Replicas)),
@@ -501,51 +525,20 @@ func InitializeShard(ctx context.Context, session *client.Session, store IStore,
 				Value: rdBuf,
 			},
 		})
-
-		stmt = tx.AddStatement()
-		stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)
-		log.Infof("mrd: %+v", mrd)
-		stmt.SetRangeValidationRequired(true)
-
-		err = store.TxnCoordinator().RunTxn(ctx, tx)
-		if err != nil {
-			return status.InternalErrorf("failed to run txn to start shard for rangeID=%d, err: %s", rd.GetRangeId(), err)
-		}
 	}
-	return nil
-}
-
-// This function is called to send RPCs to the other nodes listed in the Join
-// list requesting that they bring up initial cluster(s).
-func SendStartShardRequests(ctx context.Context, session *client.Session, store IStore, nodeGrpcAddrs map[string]string, partition disk.Partition) error {
-	startingRanges, err := computeStartingRanges(partition)
-	if err != nil {
+	if err := eg.Wait(); err != nil {
 		return err
 	}
-	return SendStartShardRequestsWithRanges(ctx, session, store, nodeGrpcAddrs, startingRanges)
-}
 
-func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Session, store IStore, nodeGrpcAddrs map[string]string, startingRanges []*rfpb.RangeDescriptor) error {
-	replicaID := uint64(constants.InitialReplicaID)
-	rangeID := uint64(constants.InitialRangeID)
+	log.Debugf("Attempting to start %d cluster with starting range_id=%d on: %+v", len(ranges), rangeIDs[0], nodeGrpcAddrs)
 
-	eg := &errgroup.Group{}
-	for _, rangeDescriptor := range startingRanges {
-		bootstrapInfo := MakeBootstrapInfo(rangeID, replicaID, nodeGrpcAddrs)
-		rangeDescriptor.Replicas = bootstrapInfo.Replicas
-		rangeDescriptor.RangeId = rangeID
+	stmt := tx.AddStatement()
+	stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)
+	stmt.SetRangeValidationRequired(true)
 
-		if err := InitializeShard(ctx, session, store, eg, bootstrapInfo, rangeDescriptor); err != nil {
-			return err
-		}
-
-		newRangeID, err := store.ReserveRangeID(ctx)
-		if err != nil {
-			return status.InternalErrorf("could not reserve RangeID for new range %d: %s", rangeID, err)
-		}
-		rangeID = newRangeID + 1
-		log.Infof("new rangeID: %d", rangeID)
+	err = store.TxnCoordinator().RunTxn(ctx, tx)
+	if err != nil {
+		return status.InternalErrorf("failed to run txn to start %d shards with starting range_id=%d, err: %s", len(ranges), rangeIDs[0], err)
 	}
-
-	return eg.Wait()
+	return nil
 }

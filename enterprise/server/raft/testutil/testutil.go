@@ -28,7 +28,6 @@ import (
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -46,6 +45,7 @@ type StoreFactory struct {
 	rootDir     string
 	gossipAddrs []string
 	clock       clockwork.Clock
+	session     *client.Session
 }
 
 func NewStoreFactory(t *testing.T) *StoreFactory {
@@ -60,6 +60,7 @@ func NewStoreFactoryWithClock(t *testing.T, clock clockwork.Clock) *StoreFactory
 	return &StoreFactory{
 		rootDir: rootDir,
 		clock:   clock,
+		session: client.NewSessionWithClock(clock),
 	}
 }
 
@@ -200,30 +201,25 @@ func (ts *TestingStore) Stop() {
 
 func (sf *StoreFactory) StartShard(t *testing.T, ctx context.Context, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
+	err := bringup.InitializeShardsForMetaRange(ctx, sf.session, stores[0], MakeNodeGRPCAddressesMap(stores...))
+	require.NoError(t, err)
 	partition := disk.Partition{
 		ID:        constants.DefaultPartitionID,
 		NumRanges: 1,
 	}
-	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
+	err = bringup.InitializeShardsForPartition(ctx, sf.session, stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
 	require.NoError(t, err)
 }
 
-func (sf *StoreFactory) StartShardWithPartition(t *testing.T, ctx context.Context, partition disk.Partition, stores ...*TestingStore) {
+func (sf *StoreFactory) InitializeShardsForMetaRange(t *testing.T, ctx context.Context, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
-	err := bringup.SendStartShardRequests(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
+	err := bringup.InitializeShardsForMetaRange(ctx, sf.session, stores[0], MakeNodeGRPCAddressesMap(stores...))
 	require.NoError(t, err)
 }
 
-func (sf *StoreFactory) StartShardWithRanges(t *testing.T, ctx context.Context, startingRanges []*rfpb.RangeDescriptor, stores ...*TestingStore) {
+func (sf *StoreFactory) InitializeShardsForPartition(t *testing.T, ctx context.Context, partition disk.Partition, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
-	err := bringup.SendStartShardRequestsWithRanges(ctx, client.NewSessionWithClock(sf.clock), stores[0], MakeNodeGRPCAddressesMap(stores...), startingRanges)
-	require.NoError(t, err)
-}
-
-func (sf *StoreFactory) InitalizeShard(t *testing.T, ctx context.Context, bootstrapInfo *bringup.ClusterBootstrapInfo, rd *rfpb.RangeDescriptor, stores ...*TestingStore) {
-	require.Greater(t, len(stores), 0)
-	eg := &errgroup.Group{}
-	err := bringup.InitializeShard(ctx, client.NewSessionWithClock(sf.clock), stores[0], eg, bootstrapInfo, rd)
+	err := bringup.InitializeShardsForPartition(ctx, sf.session, stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
 	require.NoError(t, err)
 }
 
