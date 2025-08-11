@@ -47,7 +47,7 @@ const INITIAL_STATE: State = {
 };
 
 const FACETS = [
-  // Aciton Details
+  // Action Details
   {
     name: "Invocation ID",
     facet: (a?: ActionDetails) => a?.invocationId,
