@@ -1,7 +1,7 @@
 // Keep in sync with server/util/shlex/shlex.go
 
-const ALL_SAFE_CHARS_REGEXP = /^[A-Za-z0-9_:\-,\.%@\/=]+$/;
-const FLAG_ASSIGNMENT_REGEXP = /^--[A-Za-z0-9_:\-,\.%@\/]+=/;
+const ALL_SAFE_CHARS_REGEXP = /^[A-Za-z0-9_:\-,.%@\/=]+$/;
+const FLAG_ASSIGNMENT_REGEXP = /^--[A-Za-z0-9_:\-,.%@\/]+=/;
 
 /**
  * Quote accepts a program argument and returns a string that can be passed as a
