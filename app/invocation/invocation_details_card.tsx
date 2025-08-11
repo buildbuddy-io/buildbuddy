@@ -277,23 +277,14 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                     effective command line{" "}
                     <Copy
                       className="copy-icon"
-                      onClick={this.handleCopyClicked.bind(
-                        this,
-                        `${this.props.model.bazelCommandAndPatternWithOptions(
-                          this.props.model.optionsParsed?.cmdLine ?? []
-                        )}`
-                      )}
+                      onClick={this.handleCopyClicked.bind(this, this.props.model.effectiveCommandLine())}
                     />
                   </div>
                   {this.props.model.invocation.patternsTruncated && !this.props.model.hasPatternFile() && (
                     <Banner type="warning">Patterns have been truncated due to size limitations.</Banner>
                   )}
                   <div className="invocation-section">
-                    <code className="wrap">
-                      {this.props.model.bazelCommandAndPatternWithOptions(
-                        this.props.model.optionsParsed?.cmdLine ?? []
-                      )}
-                    </code>
+                    <code className="wrap">{this.props.model.effectiveCommandLine()}</code>
                   </div>
                 </div>
               </>

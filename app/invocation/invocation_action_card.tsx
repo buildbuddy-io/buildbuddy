@@ -1,6 +1,5 @@
 import { ArrowRight, Copy, Download, File, FileQuestion, FileSymlink, Folder, Info, MoreVertical } from "lucide-react";
 import React, { ReactElement } from "react";
-import shlex from "shlex";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
@@ -35,6 +34,7 @@ import { copyToClipboard } from "../util/clipboard";
 import { BuildBuddyError, HTTPStatusError } from "../util/errors";
 import { MessageClass, timestampToDate } from "../util/proto";
 import { getErrorReason } from "../util/rpc";
+import { quote } from "../util/shlex";
 import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
 import InvocationModel from "./invocation_model";
@@ -536,12 +536,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const { action, command } = this.state;
     if (!action || !command) return "";
 
-    const parts: string[] = ["bb execute"];
-    parts.push(`--remote_header=x-buildbuddy-api-key=$BB_API_KEY`);
+    const unquotedIndexes = new Set();
+
+    const parts: string[] = ["bb", "execute"];
+    parts.push("--remote_header=x-buildbuddy-api-key=${BB_API_KEY?}");
+    // Don't quote this arg, since we want ${BB_API_KEY?} to be evaluated by
+    // the shell.
+    unquotedIndexes.add(parts.length - 1);
 
     // Remote executor / instance (derived from invocation options if present)
     const remoteExec = this.props.model.stringCommandLineOption("remote_executor");
-    if (remoteExec) parts.push(`--remote_executor=${shlex.quote(remoteExec)}`);
+    if (remoteExec) parts.push(`--remote_executor=${remoteExec}`);
 
     const digestFn =
       build.bazel.remote.execution.v2.DigestFunction.Value[this.props.model.getDigestFunction()].toLowerCase();
@@ -551,7 +556,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (invocationId) parts.push(`--invocation_id=${invocationId}`);
 
     const remoteInstance = this.props.model.optionsMap.get("remote_instance_name");
-    if (remoteInstance) parts.push(`--remote_instance_name=${shlex.quote(remoteInstance)}`);
+    if (remoteInstance) parts.push(`--remote_instance_name=${remoteInstance}`);
 
     // Timeout
     if (action.timeout?.seconds) parts.push(`--remote_timeout=${action.timeout.seconds}s`);
@@ -560,26 +565,27 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     // Env vars
     for (const env of command.environmentVariables) {
-      parts.push(`--action_env=${shlex.quote(`${env.name}=${env.value}`)}`);
+      parts.push(`--action_env=${env.name}=${env.value}`);
     }
 
     // Platform props
     for (const prop of command.platform?.properties ?? []) {
-      parts.push(`--exec_properties=${shlex.quote(`${prop.name}=${prop.value}`)}`);
+      parts.push(`--exec_properties=${prop.name}=${prop.value}`);
     }
 
     // Expected outputs
-    const addOutPath = (p: string) => parts.push(`--output_path=${shlex.quote(p)}`);
-    if (command.outputPaths.length) command.outputPaths.forEach(addOutPath);
-    else {
+    const addOutPath = (p: string) => parts.push(`--output_path=${p}`);
+    if (command.outputPaths.length) {
+      command.outputPaths.forEach(addOutPath);
+    } else {
       command.outputFiles.forEach(addOutPath);
       command.outputDirectories.forEach(addOutPath);
     }
 
     // Separator and original argv
-    parts.push("--", ...command.arguments.map((a) => shlex.quote(a)));
+    parts.push("--", ...command.arguments);
 
-    return parts.join(" \\\n\t");
+    return parts.map((arg, i) => (unquotedIndexes.has(i) ? arg : quote(arg))).join(" \\\n\t");
   }
 
   /** Copy the command to clipboard and toast the user. */

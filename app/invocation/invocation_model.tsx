@@ -2,7 +2,6 @@ import { CheckCircle, Circle, HelpCircle, PlayCircle, XCircle } from "lucide-rea
 import moment from "moment";
 import React from "react";
 import { Subject } from "rxjs";
-import shlex from "shlex";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
@@ -21,6 +20,7 @@ import rpcService from "../service/rpc_service";
 import { resourceNameToString } from "../util/cache";
 import { exitCode } from "../util/exit_codes";
 import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
+import { quote } from "../util/shlex";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
@@ -855,6 +855,9 @@ export default class InvocationModel {
       });
   }
 
+  /**
+   * Returns the original command line as it was entered by the user.
+   */
   explicitCommandLine() {
     // We allow overriding EXPLICIT_COMMAND_LINE to enable tools that wrap bazel
     // to append bazel args but still preserve the appearance of the original
@@ -863,47 +866,68 @@ export default class InvocationModel {
     const overrideJSON = this.buildMetadataMap.get("EXPLICIT_COMMAND_LINE");
     if (overrideJSON) {
       try {
-        return this.quote(JSON.parse(overrideJSON));
+        return JSON.parse(overrideJSON).map(quote).join(" ");
       } catch (_) {
         // Invalid JSON; fall back to showing BES event.
       }
     }
 
-    return this.bazelCommandAndPatternWithOptions(this.optionsParsed?.explicitCmdLine ?? []);
+    return this.commandLineOptionsToShellCommand(this.optionsParsed?.explicitCmdLine ?? []);
   }
 
-  bazelCommandAndPatternWithOptions(options: string[]) {
-    let patterns: string[] = [];
-    if (!this.hasPatternFile()) {
-      patterns = this.expanded?.id?.pattern?.pattern || [];
+  /**
+   * Returns an expanded version of the command line containing both explicit
+   * and implicit options. Implicit options may include options expanded from
+   * bazelrc configs as well as flag values which are overridden by certain
+   * subcommands (for example, the "cquery" subcommand overrides "--build" to
+   * false, from its default value of true).
+   */
+  effectiveCommandLine() {
+    return this.commandLineOptionsToShellCommand(this.optionsParsed?.cmdLine ?? []);
+  }
+
+  /**
+   * Returns the build tool executable name from the structured command line.
+   */
+  private getExecutableName(): string | null {
+    return (
+      this.structuredCommandLine
+        ?.find((cmdLine) => cmdLine.commandLineLabel === "original")
+        ?.sections?.find((section) => section.sectionLabel === "executable")?.chunkList?.chunk?.[0] ?? null
+    );
+  }
+
+  /**
+   * Returns any non-flag arguments to bazel, such as target patterns or query
+   * expressions.
+   *
+   * If there are residual arguments, it returns an argument separator "--" as
+   * the first list element. If there are no residual arguments, it returns an
+   * empty list.
+   */
+  private getResidualArgsWithSeparator(): string[] {
+    const residual = this.structuredCommandLine
+      ?.find((cmdLine) => cmdLine.commandLineLabel === "original")
+      ?.sections?.find((section) => section.sectionLabel === "residual")?.chunkList?.chunk;
+    if (!residual?.length) {
+      return [];
     }
-    return this.quote(["bazel", this.started?.command ?? "", ...patterns, ...(options || [])].filter((value) => value));
+    return ["--", ...residual];
+  }
+
+  private commandLineOptionsToShellCommand(options: string[]) {
+    return [
+      this.getExecutableName() ?? "bazel",
+      this.started?.command,
+      ...(options || []),
+      ...this.getResidualArgsWithSeparator(),
+    ]
+      .filter((x) => x !== null && x !== undefined)
+      .map(quote)
+      .join(" ");
   }
 
   hasPatternFile() {
     return Boolean(this.optionsMap.get("target_pattern_file"));
-  }
-
-  // Wraps arguments containing spaces in the provided command-line in
-  // quotation marks so they work when copied and pasted. The input
-  // command-line is passed in as an array with one entry per piece. For
-  // example, this command:
-  //   "bazel build --output_filter='argument with spaces' //..."
-  // is passed into this function as:
-  //   ["bazel", "build", "--output_filter=argument with spaces"," "//..."],
-  // and this will be returned:
-  //   ["bazel", "build", "--output_filter='argument with spaces'"," "//..."],
-  private quote(pieces: string[]) {
-    return pieces
-      .map((value) => {
-        if (value.includes("=")) {
-          // shlex.quote everything after the first '=' so that arguments like:
-          // --flag="  = = = '' \"" are properly quoted.
-          let parts: string[] = value.split("=");
-          return parts[0] + "=" + shlex.quote(parts.slice(1).join("="));
-        }
-        return value;
-      })
-      .join(" ");
   }
 }

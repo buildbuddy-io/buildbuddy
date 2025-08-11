@@ -151,9 +151,6 @@ importers:
       rxjs:
         specifier: ^6.6.7
         version: 6.6.7
-      shlex:
-        specifier: ^2.1.2
-        version: 2.1.2
       tslib:
         specifier: ^2.8.1
         version: 2.8.1
@@ -619,9 +616,6 @@ packages:
   shallow-equal@1.2.1:
     resolution: {integrity: sha512-S4vJDjHHMBaiZuT9NPb616CSmLf618jawtv3sufLl6ivK8WocjAo58cXwbRV1cgqxH0Qbv+iUt6m05eqEa2IRA==}
 
-  shlex@2.1.2:
-    resolution: {integrity: sha512-Nz6gtibMVgYeMEhUjp2KuwAgqaJA1K155dU/HuDaEJUGgnmYfVtVZah+uerVWdH8UGnyahhDCgABbYTbs254+w==}
-
   tiny-invariant@1.3.3:
     resolution: {integrity: sha512-+FbBPE1o9QAYvviau/qC5SE3caw21q3xkvWKBtja5vgqOWIHHJ3ioaq1VPfn/Szqctz2bU/oYeKd9/z5BL+PVg==}
 
@@ -1085,8 +1079,6 @@ snapshots:
       loose-envify: 1.4.0
 
   shallow-equal@1.2.1: {}
-
-  shlex@2.1.2: {}
 
   tiny-invariant@1.3.3: {}
 
