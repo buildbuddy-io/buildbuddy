@@ -597,7 +597,7 @@ func (a *OrderedArgs) ConsumeRCFileOptions(workspaceDir string) (rcFiles []strin
 
 	// Parse rc files in the order defined here:
 	// https://bazel.build/run/bazelrc#bazelrc-file-locations
-	for _, optName := range []string{"system_rc", "workspace_rc", " home_rc"} {
+	for _, optName := range []string{"system_rc", "workspace_rc", "home_rc"} {
 		if v, err := options.AccumulateValues[*IndexedOption](true, a.RemoveStartupOptions(optName)); err != nil {
 			return nil, fmt.Errorf("Failed to get value from '%s' option: %s", optName, err)
 		} else if !v {
