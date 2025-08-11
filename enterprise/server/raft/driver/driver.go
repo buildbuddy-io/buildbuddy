@@ -190,6 +190,7 @@ type IStore interface {
 	SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error)
 	TransferLeadership(ctx context.Context, req *rfpb.TransferLeadershipRequest) (*rfpb.TransferLeadershipResponse, error)
 	NHID() string
+	ReserveRangeIDs(ctx context.Context, n int) ([]uint64, error)
 }
 
 type IClient interface {
@@ -811,13 +812,12 @@ func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
 	}
 }
 
-func (rq *Queue) initializePartition(p disk.Partition, pd *rfpb.PartitionDescriptor) {
+func (rq *Queue) initializePartition(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor) {
 	if pd == nil {
 		pd = &rfpb.PartitionDescriptor{
 			Id:               p.ID,
 			InitialNumRanges: p.NumRanges,
 		}
-
 	}
 
 }
