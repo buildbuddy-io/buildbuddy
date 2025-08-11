@@ -812,6 +812,13 @@ func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
 }
 
 func (rq *Queue) initializePartition(p disk.Partition, pd *rfpb.PartitionDescriptor) {
+	if pd == nil {
+		pd = &rfpb.PartitionDescriptor{
+			Id:               p.ID,
+			InitialNumRanges: p.NumRanges,
+		}
+
+	}
 
 }
 
