@@ -21,6 +21,7 @@ go_test(
         ":usageutil",
         "//proto:remote_execution_go_proto",
         "//server/tables",
+        "//server/testutil/testgrpc",
         "//server/util/bazel_request",
         "//server/util/proto",
         "//server/util/testing/flags",

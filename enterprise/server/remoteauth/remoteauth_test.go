@@ -11,6 +11,7 @@ import (
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgrpc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -74,7 +75,7 @@ func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	authpb.RegisterAuthServiceServer(grpcServer, &fakeAuthService)
 	go runServer()
-	conn, err := testenv.LocalGRPCConn(context.Background(), lis)
+	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
 	require.NoError(t, err)
 	authenticator, err := newRemoteAuthenticator(conn)
 	require.NoError(t, err)
@@ -90,17 +91,12 @@ func contextWithJwt(t *testing.T, jwt string) context.Context {
 }
 
 func contextWith(t *testing.T, key string, value string) context.Context {
-	ctx := metadata.AppendToOutgoingContext(context.Background(), key, value)
-	outgoingMD, ok := metadata.FromOutgoingContext(ctx)
-	require.True(t, ok)
-	// Simulate an RPC by creating a new context with the incoming
-	// metadata set to the previously applied outgoing metadata.
-	ctx = context.Background()
-	return metadata.NewIncomingContext(ctx, outgoingMD)
+	ctx := metadata.AppendToOutgoingContext(t.Context(), key, value)
+	return testgrpc.OutgoingToIncomingContext(t, ctx)
 }
 
 func validJwt(t *testing.T, uid string) string {
-	authctx := claims.AuthContextWithJWT(context.Background(), &claims.Claims{UserID: uid}, nil)
+	authctx := claims.AuthContextWithJWT(t.Context(), &claims.Claims{UserID: uid}, nil)
 	jwt, ok := authctx.Value(authutil.ContextTokenStringKey).(string)
 	require.True(t, ok)
 	require.NotEqual(t, "", jwt)
@@ -119,17 +115,17 @@ func TestAuthenticatedGRPCContext(t *testing.T) {
 
 	// Fail if there are no auth headers.
 	fakeAuth.setNextJwt(t, "", validJwt(t, "nothing"))
-	ctx := authenticator.AuthenticatedGRPCContext(context.Background())
+	ctx := authenticator.AuthenticatedGRPCContext(t.Context())
 	require.Equal(t, nil, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Don't cache responses for missing auth headers.
 	fakeAuth.Reset().setNextJwt(t, "", validJwt(t, "nothing"))
-	ctx = authenticator.AuthenticatedGRPCContext(context.Background())
+	ctx = authenticator.AuthenticatedGRPCContext(t.Context())
 	require.Equal(t, nil, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Error case.
 	fakeAuth.Reset().setNextErr(t, "", status.InternalError("error"))
-	ctx = authenticator.AuthenticatedGRPCContext(context.Background())
+	ctx = authenticator.AuthenticatedGRPCContext(t.Context())
 	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
 
 	// Error case with API Key.

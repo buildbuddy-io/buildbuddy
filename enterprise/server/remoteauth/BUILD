@@ -32,6 +32,7 @@ go_test(
         "//proto:auth_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",
+        "//server/testutil/testgrpc",
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/status",
