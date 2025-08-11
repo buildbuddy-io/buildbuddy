@@ -120,7 +120,8 @@ func RandomDialer(targets []string) Director {
 }
 
 // Simulates an outgoing RPC by copying outgoing metadatam from the provided
-// context into new incoming metadata in the provided context.
+// context into new incoming metadata which is added to the provided context
+// and returned.
 func OutgoingToIncomingContext(t *testing.T, ctx context.Context) context.Context {
 	outgoingMD, ok := metadata.FromOutgoingContext(ctx)
 	require.True(t, ok)

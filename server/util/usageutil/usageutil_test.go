@@ -130,9 +130,6 @@ func TestLabelPropagation(t *testing.T) {
 			ctx, err := bazel_request.WithRequestMetadata(ctx, bazelMD)
 			ctx = usageutil.WithLocalServerLabels(ctx)
 			require.NoError(t, err)
-
-			// Simulate an RPC by creating a new context with the incoming
-			// metadata set to the previously applied outgoing metadata.
 			ctx = testgrpc.OutgoingToIncomingContext(t, ctx)
 
 			// Simulate that we've arrived at the receiving server by
