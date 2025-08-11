@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	allSafeCharsRegexp   = regexp.MustCompile(`^[A-Za-z0-9_:\-,\.%@/=]+$`)
-	flagAssignmentRegexp = regexp.MustCompile(`^--[A-Za-z0-9_:\-,\.%@/]+=`)
+	allSafeCharsRegexp   = regexp.MustCompile(`^[A-Za-z0-9_:\-,.%@/=]+$`)
+	flagAssignmentRegexp = regexp.MustCompile(`^--[A-Za-z0-9_:\-,.%@/]+=`)
 )
 
 // Split parses the given shell command and returns the canonical tokenized
