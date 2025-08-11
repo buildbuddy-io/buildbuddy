@@ -200,3 +200,14 @@ ts_library(
         "//:node_modules/react",
     ],
 )
+
+ts_library(
+    name = "shlex",
+    srcs = ["shlex.ts"],
+)
+
+ts_jasmine_node_test(
+    name = "shlex_test",
+    srcs = ["shlex_test.ts"],
+    deps = ["//app/util:shlex"],
+)
