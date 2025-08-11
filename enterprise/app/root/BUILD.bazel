@@ -16,6 +16,7 @@ ts_library(
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
+        "//app/compare:compare_actions",
         "//app/compare:compare_invocations",
         "//app/components/button",
         "//app/docs:setup",

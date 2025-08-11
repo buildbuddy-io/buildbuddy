@@ -35,6 +35,7 @@ import { BuildBuddyError, HTTPStatusError } from "../util/errors";
 import { MessageClass, timestampToDate } from "../util/proto";
 import { getErrorReason } from "../util/rpc";
 import { quote } from "../util/shlex";
+import ActionCompareButtonComponent from "./action_compare_button";
 import { ExecuteOperation, executionStatusLabel, waitExecution } from "./execution_status";
 import TreeNodeComponent, { TreeNode } from "./invocation_action_tree_node";
 import InvocationModel from "./invocation_model";
@@ -1071,7 +1072,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   </div>
                 </>
               )}
-              <div className="title">Action details</div>
+              <div className="action-header">
+                <div className="action-title">Action details</div>
+                {digest && (
+                  <ActionCompareButtonComponent
+                    invocationId={this.props.model.getInvocationId()}
+                    actionDigest={digestToString(digest)}
+                  />
+                )}
+              </div>
               {this.state.action ? (
                 <div className="details">
                   <div>

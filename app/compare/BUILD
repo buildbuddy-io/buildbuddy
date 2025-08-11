@@ -45,3 +45,23 @@ ts_library(
         "//proto:spawn_ts_proto",
     ],
 )
+
+ts_library(
+    name = "compare_actions",
+    srcs = ["compare_actions.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/auth:auth_service",
+        "//app/components/button:checkbox_button",
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//app/util:cache",
+        "//app/util:diff",
+        "//app/util:errors",
+        "//proto:invocation_ts_proto",
+        "//proto:remote_execution_ts_proto",
+    ],
+)
