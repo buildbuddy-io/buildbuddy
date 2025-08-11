@@ -398,15 +398,20 @@ type Queue struct {
 	sender   *sender.Sender
 
 	apiClient IClient
+
+	minReplicasPerRange  int
+	minMetaRangeReplicas int
 }
 
 func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
 	storeMap := storemap.New(gossipManager, clock, nhlog)
 	q := &Queue{
-		storeMap:  storeMap,
-		store:     store,
-		apiClient: apiClient,
-		sender:    sender,
+		storeMap:             storeMap,
+		store:                store,
+		apiClient:            apiClient,
+		sender:               sender,
+		minReplicasPerRange:  *minReplicasPerRange,
+		minMetaRangeReplicas: *minMetaRangeReplicas,
 	}
 	q.baseQueue = newBaseQueue(nhlog, clock, q)
 	return q
@@ -447,12 +452,12 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *driverTask
 	if curReplicas == 0 {
 		return action, action.Priority()
 	}
-	minReplicas := *minReplicasPerRange
+	minReplicas := rq.minReplicasPerRange
 	if rangeID == constants.MetaRangeID {
-		minReplicas = *minMetaRangeReplicas
+		minReplicas = rq.minMetaRangeReplicas
 	}
 
-	desiredQuorum := computeQuorum(minReplicas)
+	desiredQuorum := computeQuorum(rq.minReplicasPerRange)
 	quorum := computeQuorum(curReplicas)
 
 	if curReplicas < minReplicas || len(rd.GetStaging()) > 0 {
@@ -724,6 +729,38 @@ func storeHasReplica(node *rfpb.NodeDescriptor, existing []*rfpb.ReplicaDescript
 		}
 	}
 	return false
+}
+
+func (rq *Queue) findNodesForAllocation(storesWithStats *storemap.StoresWithStats) []*rfpb.NodeDescriptor {
+	var candidates []*candidate
+	for _, su := range storesWithStats.Usages {
+		if isDiskFull(su) {
+			rq.log.Debugf("skip node %+v because the disk is full", su)
+			continue
+		}
+		rq.log.Debugf("add node %+v to candidate list", su.GetNode())
+		candidates = append(candidates, &candidate{
+			nhid:                  su.GetNode().GetNhid(),
+			usage:                 su,
+			replicaCount:          su.GetReplicaCount(),
+			replicaCountMeanLevel: replicaCountMeanLevel(storesWithStats, su),
+		})
+	}
+
+	quorum := computeQuorum(rq.minReplicasPerRange)
+	if len(candidates) < quorum {
+		// We don't have enough nodes to bring up a new raft cluster.
+		return nil
+	}
+	slices.SortFunc(candidates, func(a, b *candidate) int {
+		// Best targets are up front.
+		return -compareByScoreAndID(a, b)
+	})
+	res := make([]*rfpb.NodeDescriptor, 0, rq.minReplicasPerRange)
+	for i := 0; i < min(rq.minReplicasPerRange, len(candidates)); i++ {
+		res = append(res, candidates[i].usage.GetNode())
+	}
+	return res
 }
 
 // findNodeForAllocation finds a target node for the range to up-replicate.
