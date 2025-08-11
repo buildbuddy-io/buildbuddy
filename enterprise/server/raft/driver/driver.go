@@ -857,6 +857,15 @@ func (rq *Queue) initializePartition(ctx context.Context, p disk.Partition, pd *
 		}
 	}
 
+	storesWithStats := rq.storeMap.GetStoresWithStats()
+	nodes := rq.findNodesForAllocation(storesWithStats)
+	if nodes == nil {
+		rq.log.Debugf("cannot find targets for :%+v", p.ID)
+	}
+	nodeGrpcAddrs := make(map[string]string, len(nodes))
+	for _, n := range nodes {
+		nodeGrpcAddrs[n.GetNhid()] = n.GetGrpcAddress()
+	}
 }
 
 func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor) *change {
