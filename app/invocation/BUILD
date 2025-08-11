@@ -144,6 +144,7 @@ ts_library(
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/format",
+        "//app/invocation:action_compare_button",
         "//app/invocation:execution_status",
         "//app/invocation:invocation_action_tree_node",
         "//app/invocation:invocation_model",
@@ -285,6 +286,31 @@ ts_library(
         "//app/components/popup",
         "//app/invocation:invocation_comparison_service",
         "//app/router",
+    ],
+)
+
+ts_library(
+    name = "action_compare_button",
+    srcs = ["action_compare_button.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
+        "//app/components/button",
+        "//app/components/menu",
+        "//app/components/popup",
+        "//app/invocation:action_comparison_service",
+        "//app/router",
+    ],
+)
+
+ts_library(
+    name = "action_comparison_service",
+    srcs = ["action_comparison_service.ts"],
+    deps = [
+        "//:node_modules/rxjs",
+        "//app/alert:alert_service",
     ],
 )
 

@@ -332,6 +332,43 @@ class Router {
     return { a, b };
   }
 
+  getActionDetailsForCompare(path: string) {
+    const idsComponent = this.getLastPathComponent(path, Path.compareActionsPath);
+    if (!idsComponent) {
+      return null;
+    }
+    // Format: invocationA:actionA...invocationB:actionB
+    // Action digests can contain slashes, so we need to be careful with splitting
+    const [left, right] = idsComponent.split("...");
+    if (!left || !right) {
+      return null;
+    }
+
+    // Find the first colon to separate invocation ID from action digest
+    const colonIndexA = left.indexOf(":");
+    const colonIndexB = right.indexOf(":");
+
+    if (colonIndexA === -1 || colonIndexB === -1) {
+      return null;
+    }
+
+    const invocationA = left.substring(0, colonIndexA);
+    const actionA = left.substring(colonIndexA + 1);
+    const invocationB = right.substring(0, colonIndexB);
+    const actionB = right.substring(colonIndexB + 1);
+
+    if (!invocationA || !actionA || !invocationB || !actionB) {
+      return null;
+    }
+
+    return {
+      invocationA,
+      actionA: decodeURIComponent(actionA),
+      invocationB,
+      actionB: decodeURIComponent(actionB),
+    };
+  }
+
   getHistoryUser(path: string) {
     return this.getLastPathComponent(path, Path.userHistoryPath);
   }
@@ -553,6 +590,7 @@ function getModifiedUrl({ query, path }: { query?: Record<string, string>; path?
 export class Path {
   static home = "/";
   static comparePath = "/compare/";
+  static compareActionsPath = "/action/compare/";
   static invocationPath = "/invocation/";
   static userHistoryPath = "/history/user/";
   static hostHistoryPath = "/history/host/";

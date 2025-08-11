@@ -3,6 +3,7 @@ import React, { Suspense } from "react";
 import AlertComponent from "../../../app/alert/alert";
 import authService, { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import CompareActionsComponent from "../../../app/compare/compare_actions";
 import CompareInvocationsComponent from "../../../app/compare/compare_invocations";
 import { OutlinedButton } from "../../../app/components/button/button";
 import SetupComponent from "../../../app/docs/setup";
@@ -204,6 +205,7 @@ export default class EnterpriseRootComponent extends React.Component {
   render() {
     let invocationId = router.getInvocationId(this.state.path);
     let compareInvocationIds = this.state.user && router.getInvocationIdsForCompare(this.state.path);
+    let compareActionDetails = this.state.user && router.getActionDetailsForCompare(this.state.path);
     let historyUser = this.state.user && router.getHistoryUser(this.state.path);
     let historyHost = this.state.user && router.getHistoryHost(this.state.path);
     let historyRepo = this.state.user && router.getHistoryRepo(this.state.path);
@@ -239,6 +241,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !tests &&
       !invocationId &&
       !compareInvocationIds &&
+      !compareActionDetails &&
       !historyHost &&
       !historyUser &&
       !historyRepo &&
@@ -256,6 +259,8 @@ export default class EnterpriseRootComponent extends React.Component {
     let home = fallback && !setup && !this.state.loading && this.state.user;
     let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code && !repo && !cliLogin;
     let menu = !sidebar && !repo && !code && !this.state.loading;
+
+    console.log("compareActionDetails", compareActionDetails);
 
     return (
       <>
@@ -303,6 +308,19 @@ export default class EnterpriseRootComponent extends React.Component {
                       <CompareInvocationsComponent
                         invocationAId={compareInvocationIds.a}
                         invocationBId={compareInvocationIds.b}
+                        search={this.state.search}
+                        tab={this.state.tab}
+                        user={this.state.user}
+                      />
+                    </Suspense>
+                  )}
+                  {compareActionDetails && (
+                    <Suspense fallback={<div className="loading" />}>
+                      <CompareActionsComponent
+                        invocationAId={compareActionDetails.invocationA}
+                        invocationBId={compareActionDetails.invocationB}
+                        actionADigest={compareActionDetails.actionA}
+                        actionBDigest={compareActionDetails.actionB}
                         search={this.state.search}
                         tab={this.state.tab}
                         user={this.state.user}
