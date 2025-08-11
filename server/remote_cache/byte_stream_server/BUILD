@@ -16,7 +16,6 @@ go_library(
         "//server/util/bazel_deprecation",
         "//server/util/bazel_request",
         "//server/util/bytebufferpool",
-        "//server/util/canary",
         "//server/util/capabilities",
         "//server/util/compression",
         "//server/util/flag",

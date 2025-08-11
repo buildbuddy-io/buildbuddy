@@ -16,39 +16,9 @@ var (
 type CancelFunc func()
 type CanaryFunc func(timeTaken time.Duration)
 
-// StartWithLateFn starts a canary that will call lateFn once, when the expectedDuration
-// period passes (if not canceled).
-func StartWithLateFn(expectedDuration time.Duration, lateFn func(), doneFn CanaryFunc) CancelFunc {
-	if !*enableCanaries {
-		return func() {}
-	}
-
-	done := make(chan struct{})
-	canceled := false
-	cancel := func() {
-		if !canceled {
-			close(done)
-			canceled = true
-		}
-	}
-
-	start := time.Now()
-	go func() {
-		select {
-		case <-done:
-			if time.Since(start) > expectedDuration {
-				doneFn(time.Since(start))
-			}
-		case <-time.After(expectedDuration):
-			lateFn()
-		}
-	}()
-	return cancel
-}
-
-// StartWithRepeatedLateFn starts a canary that will call lateFn every expectedDuration
+// StartWithLateFn starts a canary that will call lateFn every expectedDuration
 // period (if not canceled) and once when canceled.
-func StartWithRepeatedLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn CanaryFunc) CancelFunc {
+func StartWithLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn CanaryFunc) CancelFunc {
 	if !*enableCanaries {
 		return func() {}
 	}
@@ -104,5 +74,5 @@ func Start(tag string, expectedDuration time.Duration) CancelFunc {
 	doneFunc := func(taken time.Duration) {
 		log.Warningf("%s: %s finished. Took %s; should have finished in %s", tag, location, taken, expectedDuration)
 	}
-	return StartWithRepeatedLateFn(expectedDuration, lateFunc, doneFunc)
+	return StartWithLateFn(expectedDuration, lateFunc, doneFunc)
 }
