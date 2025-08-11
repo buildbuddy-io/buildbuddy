@@ -2433,12 +2433,11 @@ func getStructuredCommandLine() *clpb.CommandLine {
 		if !strings.HasPrefix(arg, "--") || !strings.Contains(arg, "=") {
 			continue
 		}
-		arg = strings.TrimPrefix(arg, "--")
-		parts := strings.SplitN(arg, "=", 2)
+		nameValue := strings.SplitN(strings.TrimPrefix(arg, "--"), "=", 2)
 		options = append(options, &clpb.Option{
 			CombinedForm: arg,
-			OptionName:   parts[0],
-			OptionValue:  parts[1],
+			OptionName:   nameValue[0],
+			OptionValue:  nameValue[1],
 		})
 	}
 	return &clpb.CommandLine{
