@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -126,6 +127,8 @@ const (
 
 func (a DriverAction) Priority() float64 {
 	switch a {
+	case DriverInitializePartition:
+		return 800
 	case DriverReplaceDeadReplica:
 		return 700
 	case DriverAddReplica:
@@ -391,16 +394,18 @@ type Queue struct {
 
 	storeMap storemap.IStoreMap
 	store    IStore
+	sender   *sender.Sender
 
 	apiClient IClient
 }
 
-func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
+func NewQueue(store IStore, sender *sender.Sender, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
 	storeMap := storemap.New(gossipManager, clock, nhlog)
 	q := &Queue{
 		storeMap:  storeMap,
 		store:     store,
 		apiClient: apiClient,
+		sender:    sender,
 	}
 	q.baseQueue = newBaseQueue(nhlog, clock, q)
 	return q
@@ -410,13 +415,8 @@ func (rq *Queue) getReplica(rangeID uint64) (IReplica, error) {
 	return rq.store.GetReplica(rangeID)
 }
 
-// computeAction computes the action needed and its priority.
-func (rq *Queue) computeAction(ctx context.Context, task *driverTask) (DriverAction, float64) {
-	if task.key.taskType == PartitionTask {
-		// TODO: Handle partition action computation
-		return DriverNoop, DriverNoop.Priority()
-	}
-
+// computeActionForRangeTask computes the drive action needed for range task and its priority.
+func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *driverTask) (DriverAction, float64) {
 	// Handle range tasks
 	rangeID := task.key.rangeID
 	repl := task.repl
@@ -566,6 +566,28 @@ func (rq *Queue) computeAction(ctx context.Context, task *driverTask) (DriverAct
 
 	action = DriverNoop
 	return action, action.Priority()
+}
+
+// computeActionForPartitionTask computes the action needed for a partition task and its priority.
+func (rq *Queue) computeActionForPartitionTask(ctx context.Context, task *driverTask) (DriverAction, float64) {
+	if task.curPD == nil || task.curPD.GetState() == rfpb.PartitionDescriptor_INITIALIZING {
+		a := DriverInitializePartition
+		return a, a.Priority()
+	}
+	return DriverNoop, DriverNoop.Priority()
+}
+
+// computeAction computes the action needed and its priority.
+func (rq *Queue) computeAction(ctx context.Context, task *driverTask) (DriverAction, float64) {
+	switch task.key.taskType {
+	case RangeTask:
+		return rq.computeActionForRangeTask(ctx, task)
+	case PartitionTask:
+		return rq.computeActionForPartitionTask(ctx, task)
+
+	}
+	return DriverNoop, DriverNoop.Priority()
+
 }
 
 func (bq *baseQueue) maybeAddTask(ctx context.Context, newTask *driverTask, ar attemptRecord) {
@@ -787,6 +809,10 @@ func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
 			Node:  target,
 		},
 	}
+}
+
+func (rq *Queue) initializePartition(p disk.Partition, pd *rfpb.PartitionDescriptor) {
+
 }
 
 func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor) *change {
@@ -1327,14 +1353,8 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	return nil
 }
 
-func (rq *Queue) processTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
+func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
 	var change *change
-
-	if task.key.taskType == PartitionTask {
-		// TODO: Handle partition task processing
-		return RequeueNoop
-	}
-
 	// Handle range tasks
 	rangeID := task.key.rangeID
 	repl := task.repl
@@ -1399,6 +1419,28 @@ func (rq *Queue) processTask(ctx context.Context, task *driverTask, action Drive
 	} else {
 		return RequeueCheckOtherActions
 	}
+}
+
+func (rq *Queue) processPartitionTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
+	switch action {
+	case DriverInitializePartition:
+		// TODO(lulu): initialize partition
+	case DriverAddReplica, DriverFinishReplicaRemoval, DriverNoop, DriverRebalanceLease, DriverRebalanceReplica, DriverRemoveDeadReplica, DriverRemoveReplica, DriverReplaceDeadReplica, DriverSplitRange:
+		// This should not be called for range tasks
+		alert.UnexpectedEvent("unexpected-action-for-parition-task", "driver action %s for parition %q", task.key.partitionID)
+
+	}
+	return RequeueNoop
+}
+
+func (rq *Queue) processTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
+	switch task.key.taskType {
+	case RangeTask:
+		return rq.processRangeTask(ctx, task, action)
+	case PartitionTask:
+		return rq.processPartitionTask(ctx, task, action)
+	}
+	return RequeueNoop
 }
 
 func isDiskFull(su *rfpb.StoreUsage) bool {

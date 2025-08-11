@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/header",
         "//enterprise/server/raft/replica",
+        "//enterprise/server/raft/sender",
         "//enterprise/server/raft/storemap",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
