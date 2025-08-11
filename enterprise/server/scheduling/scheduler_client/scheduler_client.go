@@ -77,7 +77,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		AssignableMemoryBytes:     resources.GetAllocatedRAMBytes(),
 		AssignableMilliCpu:        resources.GetAllocatedCPUMillis(),
 		AssignableCustomResources: resources.GetAllocatedCustomResources(),
-		Os:                        resources.GetOS(),
+		OsFamily:                  resources.GetOSFamily(),
 		Arch:                      resources.GetArch(),
 		Pool:                      strings.ToLower(pool),
 		Version:                   version.Tag(),
