@@ -1,5 +1,5 @@
 # Debian 13 (trixie) — multi-arch
-FROM mirror.gcr.io/debian:trixie-slim
+FROM mirror.gcr.io/debian@sha256:cc92da07b99dd5c078cb5583fdb4ba639c7c9c14eb78508a2be285ca67cc738a
 
 # Base utilities
 RUN apt-get update && \
