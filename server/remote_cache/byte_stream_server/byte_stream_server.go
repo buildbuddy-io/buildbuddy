@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"hash"
 	"io"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -108,6 +109,14 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		return err
 	}
 
+	start := time.Now()
+	defer func() {
+		d := time.Since(start)
+		if d > 5*time.Minute {
+			log.CtxWarningf(ctx, "Slow BSS read completed after %s: %s", d, r.ToProto())
+		}
+	}()
+
 	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	if r.IsEmpty() {
 		dt := ht.TrackDownload(r.GetDigest())
@@ -168,7 +177,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 		if err != nil {
 			return err
 		}
-		if err := stream.Send(&bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
+		if err := send(ctx, stream, r, &bspb.ReadResponse{Data: copyBuf[:n]}); err != nil {
 			return err
 		}
 	}
@@ -181,6 +190,16 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 
 	if err := downloadTracker.CloseWithBytesTransferred(bytesFromCache, int64(bytesTransferredToClient), r.GetCompressor(), "byte_stream_server"); err != nil {
 		log.Debugf("ByteStream Read: downloadTracker.CloseWithBytesTransferred error: %s", err)
+	}
+	return err
+}
+
+func send(ctx context.Context, stream bspb.ByteStream_ReadServer, rn *digest.CASResourceName, rsp *bspb.ReadResponse) error {
+	start := time.Now()
+	err := stream.Send(rsp)
+	d := time.Since(start)
+	if d > 30*time.Second {
+		log.CtxWarningf(ctx, "Slow BSS send read response for %s completed after %s: err(%v)", rn.ToProto(), d, err)
 	}
 	return err
 }
