@@ -70,10 +70,7 @@ ts_library(
 ts_library(
     name = "tree_utils",
     srcs = ["tree_utils.ts"],
-    deps = [
-        "//app/invocation:invocation_action_tree_node",
-        "//proto:remote_execution_ts_proto",
-    ],
+    deps = ["//app/invocation:invocation_action_tree_node"],
 )
 
 ts_library(
@@ -99,7 +96,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
-        "//:node_modules/tslib",
         "//app/compare:tree_utils",
         "//app/components/digest",
         "//app/format",
