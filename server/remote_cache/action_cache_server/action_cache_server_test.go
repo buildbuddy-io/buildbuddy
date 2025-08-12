@@ -70,6 +70,7 @@ func TestInlineSingleFile(t *testing.T) {
 			metrics.CacheTypeLabel:      "action_cache",
 			metrics.CacheEventTypeLabel: "hit",
 			metrics.GroupID:             interfaces.AuthAnonymousUser,
+			metrics.UsageTracked:        "true",
 		},
 	)))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
@@ -77,6 +78,7 @@ func TestInlineSingleFile(t *testing.T) {
 			metrics.CacheTypeLabel:      "cas",
 			metrics.CacheEventTypeLabel: "hit",
 			metrics.GroupID:             interfaces.AuthAnonymousUser,
+			metrics.UsageTracked:        "true",
 		},
 	)))
 }
@@ -116,6 +118,7 @@ func TestInlineSingleFileTooLarge(t *testing.T) {
 			metrics.CacheTypeLabel:      "action_cache",
 			metrics.CacheEventTypeLabel: "hit",
 			metrics.GroupID:             interfaces.AuthAnonymousUser,
+			metrics.UsageTracked:        "true",
 		},
 	)))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.CacheEvents.With(
@@ -123,6 +126,7 @@ func TestInlineSingleFileTooLarge(t *testing.T) {
 			metrics.CacheTypeLabel:      "cas",
 			metrics.CacheEventTypeLabel: "hit",
 			metrics.GroupID:             interfaces.AuthAnonymousUser,
+			metrics.UsageTracked:        "true",
 		},
 	)))
 }
@@ -178,6 +182,7 @@ func TestInlineMultipleFiles(t *testing.T) {
 			metrics.CacheTypeLabel:      "action_cache",
 			metrics.CacheEventTypeLabel: "hit",
 			metrics.GroupID:             interfaces.AuthAnonymousUser,
+			metrics.UsageTracked:        "true",
 		},
 	)))
 	assert.Equal(t, float64(2), testutil.ToFloat64(metrics.CacheEvents.With(
@@ -185,6 +190,7 @@ func TestInlineMultipleFiles(t *testing.T) {
 			metrics.CacheTypeLabel:      "cas",
 			metrics.CacheEventTypeLabel: "hit",
 			metrics.GroupID:             interfaces.AuthAnonymousUser,
+			metrics.UsageTracked:        "true",
 		},
 	)))
 }
@@ -229,6 +235,7 @@ func TestInlineWithClientSideCacheMatch(t *testing.T) {
 			metrics.CacheTypeLabel:      "action_cache",
 			metrics.CacheEventTypeLabel: "hit",
 			metrics.GroupID:             interfaces.AuthAnonymousUser,
+			metrics.UsageTracked:        "true",
 		},
 	)))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
@@ -236,6 +243,7 @@ func TestInlineWithClientSideCacheMatch(t *testing.T) {
 			metrics.CacheTypeLabel:      "cas",
 			metrics.CacheEventTypeLabel: "hit",
 			metrics.GroupID:             interfaces.AuthAnonymousUser,
+			metrics.UsageTracked:        "true",
 		},
 	)))
 }
@@ -281,6 +289,7 @@ func TestInlineWithClientSideCacheMismatch(t *testing.T) {
 			metrics.CacheTypeLabel:      "action_cache",
 			metrics.CacheEventTypeLabel: "hit",
 			metrics.GroupID:             interfaces.AuthAnonymousUser,
+			metrics.UsageTracked:        "true",
 		},
 	)))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
@@ -288,6 +297,7 @@ func TestInlineWithClientSideCacheMismatch(t *testing.T) {
 			metrics.CacheTypeLabel:      "cas",
 			metrics.CacheEventTypeLabel: "hit",
 			metrics.GroupID:             interfaces.AuthAnonymousUser,
+			metrics.UsageTracked:        "true",
 		},
 	)))
 }
