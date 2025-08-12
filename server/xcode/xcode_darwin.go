@@ -12,9 +12,11 @@ import "C"
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unsafe"
@@ -35,13 +37,17 @@ const defaultXcodeVersion = "default-xcode-version"
 var desiredXcodeVersions = flag.Slice("executor.desired_xcode_versions", []string{}, "List of Xcode versions desired on the host system. If any of the provided Xcode versions cannot be found on the host, the executor will log a warning message.")
 
 type xcodeLocator struct {
+	// Map from Xcode version string (e.g. "16.0") to an xcodeVersion, which
+	// contains information about that Xcode installation.
 	versions map[string]*xcodeVersion
 }
 
 type xcodeVersion struct {
 	version          string
 	developerDirPath string
-	sdks             map[string]string
+
+	// TODO(iain): put a comment explaining what these magical string values are
+	sdks map[string]string
 }
 
 // The interesting bits to pull from Xcode's version plist.
@@ -65,6 +71,14 @@ func (x *xcodeLocator) verify() {
 			alert.UnexpectedEvent("xcode version missing", "Failed to locate desired Xcode version %s", version)
 		}
 	}
+}
+
+func (x *xcodeLocator) Versions() []string {
+	return slices.Sorted(maps.Keys(x.versions))
+}
+
+func Simulators() []string {
+	return slices.Sorted(maps.Keys(x.sdks))
 }
 
 // Finds the Xcode that matches the given Xcode version.

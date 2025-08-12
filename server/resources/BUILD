@@ -14,6 +14,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_elastic_gosigar//:gosigar",
+        "@com_github_wille_osutil//:osutil",
         "@com_google_cloud_go_compute_metadata//:metadata",
     ],
 )
