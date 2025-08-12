@@ -30,6 +30,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/jonboulle/clockwork"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -235,9 +236,10 @@ type Resolver struct {
 
 	imageTagToDigestLRU *lru.LRU[tagToDigestEntry]
 	allowedPrivateIPs   []*net.IPNet
+	clock               clockwork.Clock
 }
 
-func NewResolver(env environment.Env) (*Resolver, error) {
+func NewResolverWithClock(env environment.Env, clk clockwork.Clock) (*Resolver, error) {
 	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
 	for _, r := range *allowedPrivateIPs {
 		_, ipNet, err := net.ParseCIDR(r)
@@ -254,11 +256,15 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		return nil, err
 	}
 	return &Resolver{
-		env: env,
-
+		env:                 env,
 		imageTagToDigestLRU: imageTagToDigestLRU,
 		allowedPrivateIPs:   allowedPrivateIPNets,
+		clock:               clk,
 	}, nil
+}
+
+func NewResolver(env environment.Env) (*Resolver, error) {
+	return NewResolverWithClock(env, clockwork.NewRealClock())
 }
 
 // ResolveImageDigest takes an image name and returns an image name with a digest.
@@ -277,7 +283,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	}
 
 	if entry, ok := r.imageTagToDigestLRU.Get(tagRef.String()); ok {
-		if entry.expiration.After(time.Now()) {
+		if entry.expiration.After(r.clock.Now()) {
 			return entry.nameWithDigest, nil
 		}
 		// Expired; evict and refresh via remote.Head below.
@@ -295,7 +301,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
 	entry := tagToDigestEntry{
 		nameWithDigest: imageNameWithDigest,
-		expiration:     time.Now().Add(resolveImageDigestLRUDuration),
+		expiration:     r.clock.Now().Add(resolveImageDigestLRUDuration),
 	}
 	r.imageTagToDigestLRU.Add(tagRef.String(), entry)
 	return imageNameWithDigest, nil
