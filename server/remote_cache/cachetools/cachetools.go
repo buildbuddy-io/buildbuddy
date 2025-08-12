@@ -919,7 +919,18 @@ func isExecutable(info os.FileInfo) bool {
 	return info.Mode()&0100 != 0
 }
 
-func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageClient, root *digest.CASResourceName, sendCachedSubtreeDigests bool) ([]*repb.Directory, []*digest.CASResourceName, error) {
+type tree struct {
+	dirs     []*repb.Directory
+	subtrees []*digest.CASResourceName
+}
+
+func streamTreeWithRetries(ctx context.Context, casClient repb.ContentAddressableStorageClient, root *digest.CASResourceName, sendCachedSubtreeDigests bool) (*tree, error) {
+	return retry.Do(ctx, retryOptions("StreamTree"), func(ctx context.Context) (*tree, error) {
+		return streamTree(ctx, casClient, root, sendCachedSubtreeDigests)
+	})
+}
+
+func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageClient, root *digest.CASResourceName, sendCachedSubtreeDigests bool) (*tree, error) {
 	var dirs []*repb.Directory
 	var subtrees []*digest.CASResourceName
 	nextPageToken := ""
@@ -932,7 +943,10 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 			SendCachedSubtreeDigests: sendCachedSubtreeDigests,
 		})
 		if err != nil {
-			return nil, nil, err
+			if status.IsNotFoundError(err) {
+				return nil, retry.NonRetryableError(err)
+			}
+			return nil, err
 		}
 		for {
 			rsp, err := stream.Recv()
@@ -940,7 +954,10 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 				break
 			}
 			if err != nil {
-				return nil, nil, err
+				if status.IsNotFoundError(err) {
+					return nil, retry.NonRetryableError(err)
+				}
+				return nil, err
 			}
 			nextPageToken = rsp.GetNextPageToken()
 			dirs = append(dirs, rsp.GetDirectories()...)
@@ -953,9 +970,9 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 		}
 	}
 	if !sendCachedSubtreeDigests && len(subtrees) > 0 {
-		return nil, nil, status.InternalError("Received subtrees even though they weren't requested!")
+		return nil, status.InternalError("Received subtrees even though they weren't requested!")
 	}
-	return dirs, subtrees, nil
+	return &tree{dirs: dirs, subtrees: subtrees}, nil
 }
 
 // Makes a salted pointer to the specified file in the filecache - we add in
@@ -1065,12 +1082,12 @@ func getSubtree(ctx context.Context, subtree *digest.CASResourceName, fc interfa
 }
 
 func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.CASResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) ([]*repb.Directory, error) {
-	dirs, subtrees, err := streamTree(ctx, casClient, r, true && fc != nil)
+	tree, err := streamTreeWithRetries(ctx, casClient, r, true && fc != nil)
 	if err != nil {
 		return nil, err
 	}
 
-	uncachedDirCount := len(dirs)
+	uncachedDirCount := len(tree.dirs)
 	metrics.GetTreeDirectoryLookupCount.With(prometheus.Labels{
 		metrics.GetTreeLookupLocation: "uncached",
 	}).Add(float64(uncachedDirCount))
@@ -1078,10 +1095,10 @@ func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.
 	allStDirs := make([]*repb.Directory, 0)
 
 	// Fetch each subtree digest.
-	if len(subtrees) > 0 {
+	if len(tree.subtrees) > 0 {
 		var stMutex sync.Mutex
 		subtreeEG, subtreeCtx := errgroup.WithContext(ctx)
-		for _, st := range subtrees {
+		for _, st := range tree.subtrees {
 			subtreeEG.Go(func() error {
 				stDirs, err := getSubtree(subtreeCtx, st, fc, bs)
 				if err != nil {
@@ -1101,11 +1118,11 @@ func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.
 		}
 	}
 
-	dirs = append(dirs, allStDirs...)
+	tree.dirs = append(tree.dirs, allStDirs...)
 
 	// TODO(jdhollen): if we want, we can dedupe the directories here using the
 	// DirectoryWithDigest protos above.  Doesn't seem critical for now, though.
-	return dirs, nil
+	return tree.dirs, nil
 }
 
 func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.CASResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) (*repb.Tree, error) {
@@ -1117,14 +1134,14 @@ func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient 
 		}
 		dirs = out
 	} else {
-		out, subTrees, err := streamTree(ctx, casClient, r, false)
+		tree, err := streamTreeWithRetries(ctx, casClient, r, false)
 		if err != nil {
 			return nil, err
 		}
-		if len(subTrees) > 0 {
+		if len(tree.subtrees) > 0 {
 			return nil, status.InternalError("GetTree received a tree with subtrees, but subtrees are disabled.")
 		}
-		dirs = out
+		dirs = tree.dirs
 	}
 
 	if len(dirs) == 0 {
