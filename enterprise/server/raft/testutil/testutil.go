@@ -207,7 +207,7 @@ func (sf *StoreFactory) StartShard(t *testing.T, ctx context.Context, stores ...
 		ID:        constants.DefaultPartitionID,
 		NumRanges: 1,
 	}
-	err = bringup.InitializeShardsForPartition(ctx, sf.session, stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
+	err = bringup.InitializeShardsForPartition(ctx, stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
 	require.NoError(t, err)
 }
 
@@ -219,7 +219,7 @@ func (sf *StoreFactory) InitializeShardsForMetaRange(t *testing.T, ctx context.C
 
 func (sf *StoreFactory) InitializeShardsForPartition(t *testing.T, ctx context.Context, partition disk.Partition, stores ...*TestingStore) {
 	require.Greater(t, len(stores), 0)
-	err := bringup.InitializeShardsForPartition(ctx, sf.session, stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
+	err := bringup.InitializeShardsForPartition(ctx, stores[0], MakeNodeGRPCAddressesMap(stores...), partition)
 	require.NoError(t, err)
 }
 

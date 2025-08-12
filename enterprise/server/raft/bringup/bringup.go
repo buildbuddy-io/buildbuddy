@@ -242,7 +242,7 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 				cancel()
 				return err
 			}
-			err = InitializeShardsForPartition(ctx, cs.session, cs.store, bootstrapInfo, cs.defaultPartition)
+			err = InitializeShardsForPartition(ctx, cs.store, bootstrapInfo, cs.defaultPartition)
 			cancel()
 			return err
 		}
@@ -453,7 +453,7 @@ func InitializeShardsForMetaRange(ctx context.Context, session *client.Session, 
 // Note: since we are writing the range descriptors in a transaction, it might
 // have performance issues when we try to initialize tons of range descriptors at
 // once.
-func InitializeShardsForPartition(ctx context.Context, session *client.Session, store IStore, nodeGrpcAddrs map[string]string, partition disk.Partition) error {
+func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAddrs map[string]string, partition disk.Partition) error {
 	ranges, err := evenlyDividePartitionIntoRanges(partition)
 	if err != nil {
 		return err
