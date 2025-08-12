@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/distribution/reference"
@@ -28,7 +29,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -240,7 +240,7 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
 	imageTagToDigestLRU, err := lru.NewLRU[string](&lru.Config[string]{
-		SizeFn: func(_ string) int64 { return 1 },
+		SizeFn:  func(_ string) int64 { return 1 },
 		MaxSize: int64(resolveImageDigestLRUMaxEntries),
 	})
 	if err != nil {

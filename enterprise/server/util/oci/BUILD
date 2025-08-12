@@ -17,6 +17,7 @@ go_library(
         "//server/util/claims",
         "//server/util/flag",
         "//server/util/log",
+        "//server/util/lru",
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_distribution_reference//:reference",
@@ -27,7 +28,6 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
         "@com_github_google_go_containerregistry//pkg/v1/types",
-        "@com_github_hashicorp_golang_lru_v2//expirable",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
