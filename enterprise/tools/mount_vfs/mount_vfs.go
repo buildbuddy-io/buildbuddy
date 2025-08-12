@@ -167,11 +167,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating tree fetcher: %s", err)
 	}
-	if err := tf.Start(); err != nil {
+	if _, err := tf.Start(); err != nil {
 		log.Fatalf("Error starting tree fetcher: %s", err)
 	}
 
-	if err := vfsServer.Prepare(ctx, layout, tf); err != nil {
+	if _, err := vfsServer.Prepare(ctx, layout, tf); err != nil {
 		log.Fatalf("Could not prepare VFS server: %s", err)
 	}
 	vfsClient := vfs_server.NewDirectClient(vfsServer)
@@ -182,7 +182,7 @@ func main() {
 		log.Fatalf("Could not mount filesystem at %q: %s", *dir, err)
 	}
 
-	err = fs.PrepareForTask(ctx, *actionDigest)
+	err = fs.PrepareForTask(ctx, *actionDigest, nil)
 	if err != nil {
 		log.Fatalf("Could not prepare layout: %s", err)
 	}
