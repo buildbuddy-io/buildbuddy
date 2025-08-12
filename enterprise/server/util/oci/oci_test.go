@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1010,4 +1011,43 @@ func (c *requestCounter) reset() {
 	c.mu.Lock()
 	c.counts = map[string]int{}
 	c.mu.Unlock()
+}
+
+func TestResolveImageDigest_TagExists(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	imageName, img := registry.PushRandomImage(t)
+	d, err := img.Digest()
+	require.NoError(t, err)
+
+	resolved, err := newResolver(t, te).ResolveImageDigest(
+		context.Background(),
+		imageName,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+
+	require.Truef(t, strings.HasSuffix(resolved, "@"+d.String()),
+		"resolved ref %q does not end with expected digest suffix %q", resolved, "@"+d.String())
+}
+
+func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	// Construct an image address for a repo/tag that hasn't been pushed.
+	nonexistent := registry.ImageAddress("does_not_exist")
+
+	_, err := newResolver(t, te).ResolveImageDigest(
+		context.Background(),
+		nonexistent,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.Error(t, err)
+	require.True(t, status.IsUnavailableError(err), "expected UnavailableError, got: %v", err)
 }
