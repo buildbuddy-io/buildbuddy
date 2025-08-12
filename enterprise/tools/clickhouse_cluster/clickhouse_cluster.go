@@ -9,7 +9,7 @@ package main
 
 import (
 	"context"
-	"flag"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,6 +18,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
@@ -26,6 +27,9 @@ var (
 
 	replicas       = flag.Int("replicas", 2, "Number of ClickHouse servers to run. Each server will store a copy of the DB.")
 	serverLogLevel = flag.String("server_log_level", "information", "ClickHouse server log level: trace, debug, information, warning, error")
+	configFiles    = flag.Slice("config_file", []string{}, "Additional ClickHouse XML config file paths on the host to merge into the default and generated config files.")
+	envFiles       = flag.Slice("env_file", []string{}, ".env files to make available to each server. Useful for populating env vars in XML config files.")
+	volumes        = flag.Slice("volume", []string{}, "Volume to mount into each clickhouse server container (can be specified multiple times).")
 )
 
 const (
@@ -61,6 +65,14 @@ func run() error {
 		}
 		fmt.Println(strings.Join(args, " "))
 		return nil
+	}
+
+	// Make sure config_file args exist; otherwise docker will try to create
+	// them as empty directories.
+	for _, configFile := range *configFiles {
+		if _, err := os.Stat(configFile); err != nil {
+			return fmt.Errorf("validate config_file: %w", err)
+		}
 	}
 
 	ctx := context.Background()
@@ -181,6 +193,12 @@ services:
 `
 	for r := 1; r <= *replicas; r++ {
 		configDir := filepath.Join(tmp, fmt.Sprintf("clickhouse%d", r))
+		var v []string
+		v = append(v, configDir+`/config.xml:/etc/clickhouse-server/config.d/config.xml:ro`)
+		for i, configFile := range *configFiles {
+			v = append(v, configFile+`:/etc/clickhouse-server/config.d/`+fmt.Sprintf("%d_%s", i, filepath.Base(configFile))+`:ro`)
+		}
+		v = append(v, *volumes...)
 		yml += `
   clickhouse` + fmt.Sprint(r) + `:
     image: "` + clickhouseServerImage + `"
@@ -189,8 +207,8 @@ services:
     user: "` + user + `"
     container_name: "clickhouse` + fmt.Sprint(r) + `"
     user: "` + user + `"
-    volumes:
-      - "` + configDir + `/config.xml:/etc/clickhouse-server/config.d/config.xml:ro"
+    volumes: ` + mustMarshalJSON(v) + `
+    env_file: ` + mustMarshalJSON(envFiles) + `
     depends_on:
       - zookeeper
     ports:
@@ -199,6 +217,14 @@ services:
 `
 	}
 	return yml
+}
+
+func mustMarshalJSON(value any) string {
+	b, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }
 
 func clickhouseHTTPPortNumber(r int) int {
