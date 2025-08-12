@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
@@ -39,7 +40,8 @@ import (
 
 const (
 	// resolveImageDigestLRUMaxEntries limits the number of entries in the image-tag-to-digest cache.
-	resolveImageDigestLRUMaxEntries = 1000
+	resolveImageDigestLRUMaxEntries = 10000
+	resolveImageDigestLRUDuration   = time.Minute * 15
 )
 
 var (
@@ -223,10 +225,15 @@ func (c Credentials) Equals(o Credentials) bool {
 	return c.Username == o.Username && c.Password == o.Password
 }
 
+type tagToDigestEntry struct {
+	nameWithDigest string
+	expiration     time.Time
+}
+
 type Resolver struct {
 	env environment.Env
 
-	imageTagToDigestLRU *lru.LRU[string]
+	imageTagToDigestLRU *lru.LRU[tagToDigestEntry]
 	allowedPrivateIPs   []*net.IPNet
 }
 
@@ -239,8 +246,8 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
-	imageTagToDigestLRU, err := lru.NewLRU[string](&lru.Config[string]{
-		SizeFn:  func(_ string) int64 { return 1 },
+	imageTagToDigestLRU, err := lru.NewLRU[tagToDigestEntry](&lru.Config[tagToDigestEntry]{
+		SizeFn:  func(_ tagToDigestEntry) int64 { return 1 },
 		MaxSize: int64(resolveImageDigestLRUMaxEntries),
 	})
 	if err != nil {
@@ -269,8 +276,11 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		return "", status.InvalidArgumentErrorf("invalid image name %q", imageName)
 	}
 
-	if imageNameWithDigest, ok := r.imageTagToDigestLRU.Get(tagRef.String()); ok {
-		return imageNameWithDigest, nil
+	if entry, ok := r.imageTagToDigestLRU.Get(tagRef.String()); ok {
+		if entry.expiration.Before(time.Now()) {
+			return entry.nameWithDigest, nil
+		}
+		r.imageTagToDigestLRU.Remove(tagRef.String())
 	}
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
@@ -282,7 +292,11 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 		return "", status.UnavailableErrorf("could not authorize to remote registry: %s", err)
 	}
 	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
-	r.imageTagToDigestLRU.Add(tagRef.String(), imageNameWithDigest)
+	entry := tagToDigestEntry{
+		nameWithDigest: imageNameWithDigest,
+		expiration:     time.Now().Add(resolveImageDigestLRUDuration),
+	}
+	r.imageTagToDigestLRU.Add(tagRef.String(), entry)
 	return imageNameWithDigest, nil
 
 }
