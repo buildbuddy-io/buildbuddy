@@ -179,6 +179,9 @@ func (h *HitTrackerFactory) shouldSkipTracking(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
+	if id == nil {
+		return false
+	}
 	if id.Client != interfaces.ClientIdentityCacheProxy {
 		if isTryingToDisableTracking(ctx) {
 			alert.CtxUnexpectedEvent(ctx, "unexpected_skip_tracking_attempt", "Only cache proxy can disable usage tracking. identity: %+v", id)
