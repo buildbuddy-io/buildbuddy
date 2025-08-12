@@ -126,7 +126,7 @@ func (r *Registry) PushRandomImage(t *testing.T) (string, gcr.Image) {
 	}
 	image, err := crane.Image(files)
 	require.NoError(t, err)
-	return r.Push(t, image, "test"), image
+	return r.Push(t, image, "test:latest"), image
 }
 
 func (r *Registry) PushNamedImage(t *testing.T, imageName string) (string, gcr.Image) {
