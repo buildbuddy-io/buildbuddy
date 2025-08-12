@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -32,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
@@ -1018,20 +1018,23 @@ func TestResolveImageDigest_TagExists(t *testing.T) {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	registry := testregistry.Run(t, testregistry.Opts{})
 
-	imageName, img := registry.PushRandomImage(t)
-	d, err := img.Digest()
+	imageName := "image_tag_exists"
+	_, img := registry.PushNamedImage(t, imageName)
+	pushedDigest, err := img.Digest()
 	require.NoError(t, err)
+	nameToResolve := registry.ImageAddress(imageName)
 
-	resolved, err := newResolver(t, te).ResolveImageDigest(
+	nameWithDigest, err := newResolver(t, te).ResolveImageDigest(
 		context.Background(),
-		imageName,
+		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
 	)
 	require.NoError(t, err)
 
-	require.Truef(t, strings.HasSuffix(resolved, "@"+d.String()),
-		"resolved ref %q does not end with expected digest suffix %q", resolved, "@"+d.String())
+	resolvedDigest, err := name.NewDigest(nameWithDigest)
+	require.NoError(t, err)
+	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 }
 
 func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
@@ -1063,37 +1066,48 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 		},
 	})
 
-	// Push a random image tagged as :latest.
-	imageName, img := registry.PushRandomImage(t)
-	d, err := img.Digest()
+	imageName := "cache_hit"
+	_, img := registry.PushNamedImage(t, imageName)
+	pushedDigest, err := img.Digest()
 	require.NoError(t, err)
+	nameToResolve := registry.ImageAddress(imageName)
 
 	resolver := newResolver(t, te)
 
-	// First resolve populates the cache and will make HTTP requests.
-	counter.reset()
-	got1, err := resolver.ResolveImageDigest(
-		context.Background(),
-		imageName,
-		oci.RuntimePlatform(),
-		oci.Credentials{},
-	)
-	require.NoError(t, err)
-	require.Truef(t, strings.HasSuffix(got1, "@"+d.String()),
-		"resolved ref %q does not end with expected digest suffix %q", got1, "@"+d.String())
+	{
+		counter.reset()
+		nameWithDigest, err := resolver.ResolveImageDigest(
+			context.Background(),
+			nameToResolve,
+			oci.RuntimePlatform(),
+			oci.Credentials{},
+		)
+		require.NoError(t, err)
+		resolvedDigest, err := name.NewDigest(nameWithDigest)
+		require.NoError(t, err)
+		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
-	// Ensure we actually hit the registry on the first resolve.
-	require.NotEmpty(t, counter.snapshot(), "expected first resolve to make HTTP requests")
+		expectedRequests := map[string]int{
+			http.MethodGet + " /v2/":                                    1,
+			http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
+		}
+		require.Empty(t, cmp.Diff(expectedRequests, counter.snapshot()))
+	}
 
-	// Second resolve should be served entirely from the cache; no HTTP requests expected.
-	counter.reset()
-	got2, err := resolver.ResolveImageDigest(
-		context.Background(),
-		imageName,
-		oci.RuntimePlatform(),
-		oci.Credentials{},
-	)
-	require.NoError(t, err)
-	require.Equal(t, got1, got2, "expected cache hit to return identical name@digest")
-	require.Empty(t, counter.snapshot(), "expected cache hit to avoid any HTTP requests")
+	{
+		counter.reset()
+		nameWithDigest, err := resolver.ResolveImageDigest(
+			context.Background(),
+			nameToResolve,
+			oci.RuntimePlatform(),
+			oci.Credentials{},
+		)
+		require.NoError(t, err)
+
+		resolvedDigest, err := name.NewDigest(nameWithDigest)
+		require.NoError(t, err)
+		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+
+		require.Empty(t, counter.snapshot())
+	}
 }
