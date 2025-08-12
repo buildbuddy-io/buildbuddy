@@ -257,9 +257,6 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		return nil, err
 	}
 	clk := env.GetClock()
-	if clk == nil {
-		clk = clockwork.NewRealClock()
-	}
 	return &Resolver{
 		env:                 env,
 		imageTagToDigestLRU: imageTagToDigestLRU,
