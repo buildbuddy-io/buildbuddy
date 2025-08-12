@@ -14,12 +14,15 @@ import (
 
 const (
 	// gRPC metadata header constants.
-	ClientHeaderName = "x-buildbuddy-client"
-	OriginHeaderName = "x-buildbuddy-origin"
+	ClientHeaderName            = "x-buildbuddy-client"
+	OriginHeaderName            = "x-buildbuddy-origin"
+	SkipUsageTrackingHeaderName = "x-buildbuddy-skip-tracking"
 
 	// Client label constants.
 	bazelClientLabel    = "bazel"
 	executorClientLabel = "executor"
+
+	SkipTrackingEnabledValue = "yes"
 )
 
 var (
