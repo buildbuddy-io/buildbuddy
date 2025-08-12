@@ -662,6 +662,7 @@ func (p *pool) checkAddPreconditions(r *taskRunner) *labeledError {
 	// Note: shutdown can change the state to removed, so we need the lock to be
 	// held for this check.
 	if r.state != ready {
+		alert.UnexpectedEvent("unexpected_runner_state", "Unexpected runner state %d during add()", r.state)
 		return &labeledError{
 			status.InternalErrorf("unexpected runner state %d; this should never happen", r.state),
 			"unexpected_runner_state",
@@ -1384,7 +1385,10 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 	if !cr.PlatformProperties.RecycleRunner {
 		return
 	}
-	if !finishedCleanly || cr.doNotReuse {
+	p.mu.Lock()
+	state := cr.state
+	p.mu.Unlock()
+	if !finishedCleanly || cr.doNotReuse || state != ready {
 		log.CtxWarningf(ctx, "Failed to recycle runner %s due to previous execution error", cr)
 		return
 	}
