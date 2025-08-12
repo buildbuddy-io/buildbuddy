@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/grpc/metadata"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -95,7 +96,21 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
-	return s.ReadCASResource(stream.Context(), rn, req.GetReadOffset(), req.GetReadLimit(), stream)
+
+	hdrs := metadata.ValueFromIncomingContext(stream.Context(), "x-buildbuddy-log-all-bss-requests")
+	debugLog := len(hdrs) > 0 && hdrs[0] == "true"
+	if debugLog {
+		log.CtxInfof(stream.Context(), "Top of BSS:Read for %s", rn.ToProto())
+	}
+	start := time.Now()
+
+	err = s.ReadCASResource(stream.Context(), rn, req.GetReadOffset(), req.GetReadLimit(), stream)
+
+	if debugLog {
+		log.CtxInfof(stream.Context(), "BSS read of %s completed after %s: err(%v)", rn.ToProto(), time.Since(start), err)
+	}
+
+	return err
 }
 
 // This version of Read accepts the parameters of a ReadRequest directly so it
