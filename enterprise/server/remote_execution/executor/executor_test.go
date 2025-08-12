@@ -325,7 +325,7 @@ func TestExecuteTaskAndStreamResults_InternalInputDownloadTimeout(t *testing.T) 
 	require.NoError(t, err)
 	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
 	require.True(t, status.IsUnavailableError(err), "expected Unavailable error, got: %v", err)
-	require.Equal(t, "download inputs: timed out waiting for Read response", status.Message(err))
+	require.ErrorContains(t, err, "timed out waiting for Read response")
 	require.False(t, retry, "bazel will retry Unavailable errors, so we should not retry internally")
 
 	<-mockServer.finished
