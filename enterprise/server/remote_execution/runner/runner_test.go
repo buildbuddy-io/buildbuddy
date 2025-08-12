@@ -967,7 +967,7 @@ func TestImagePullTimeout(t *testing.T) {
 	task := newTask()
 	plat := task.ExecutionTask.Command.Platform
 	plat.Properties = append(plat.Properties, []*repb.Platform_Property{
-		{Name: "container-image", Value: "docker://busybox"},
+		{Name: "container-image", Value: "docker://docker.io/library/busybox@sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"},
 		{Name: "workload-isolation-type", Value: "oci"},
 	}...)
 	r, err := pool.Get(ctx, task)
