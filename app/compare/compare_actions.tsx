@@ -9,6 +9,7 @@ import rpcService from "../service/rpc_service";
 import { parseActionDigest } from "../util/cache";
 import { renderComparisonFacets } from "../util/diff";
 import { BuildBuddyError } from "../util/errors";
+import TreeDifferComponent from "./tree_differ";
 
 export interface CompareActionsComponentProps {
   user?: User;
@@ -235,16 +236,28 @@ export default class CompareActionsComponent extends React.Component<CompareActi
               <a href="#" className={`tab ${!this.props.tab ? "selected" : ""}`}>
                 Details
               </a>
+              <a href="#input-files" className={`tab ${this.props.tab === "#input-files" ? "selected" : ""}`}>
+                Input Files
+              </a>
             </div>
           </div>
         </div>
+        {this.props.tab === "#input-files" && (
+          <TreeDifferComponent
+            actionA={this.state.actionA}
+            actionB={this.state.actionB}
+            showChangesOnly={this.state.showChangesOnly}
+          />
+        )}
 
-        <div className="compare-table">
-          {renderComparisonFacets(FACETS, this.state.actionA, this.state.actionB, {
-            showChangesOnly: this.state.showChangesOnly,
-            filterType: this.props.tab?.substring(1),
-          })}
-        </div>
+        {this.props.tab !== "#input-files" && (
+          <div className="compare-table">
+            {renderComparisonFacets(FACETS, this.state.actionA, this.state.actionB, {
+              showChangesOnly: this.state.showChangesOnly,
+              filterType: this.props.tab?.substring(1),
+            })}
+          </div>
+        )}
       </div>
     );
   }

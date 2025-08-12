@@ -55,6 +55,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/auth:auth_service",
+        "//app/compare:tree_differ",
         "//app/components/button:checkbox_button",
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
@@ -62,6 +63,48 @@ ts_library(
         "//app/util:diff",
         "//app/util:errors",
         "//proto:invocation_ts_proto",
+        "//proto:remote_execution_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "tree_utils",
+    srcs = ["tree_utils.ts"],
+    deps = [
+        "//app/invocation:invocation_action_tree_node",
+        "//proto:remote_execution_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "tree_differ",
+    srcs = ["tree_differ.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/compare:diff_tree_node",
+        "//app/compare:tree_utils",
+        "//app/invocation:invocation_action_tree_node",
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//proto:remote_execution_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "diff_tree_node",
+    srcs = ["diff_tree_node.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/compare:tree_utils",
+        "//app/components/digest",
+        "//app/format",
+        "//app/invocation:invocation_action_tree_node",
+        "//app/invocation:invocation_model",
         "//proto:remote_execution_ts_proto",
     ],
 )
