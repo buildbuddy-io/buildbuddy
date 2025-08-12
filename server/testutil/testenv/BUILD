@@ -30,6 +30,7 @@ go_library(
         "//server/util/log",
         "//server/util/testing/flags",
         "//server/util/vtprotocodec",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//test/bufconn",

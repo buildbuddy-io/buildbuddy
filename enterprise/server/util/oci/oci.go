@@ -239,7 +239,6 @@ type Resolver struct {
 	clock               clockwork.Clock
 }
 
-
 func NewResolver(env environment.Env) (*Resolver, error) {
 	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
 	for _, r := range *allowedPrivateIPs {
@@ -256,12 +255,11 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 	if err != nil {
 		return nil, err
 	}
-	clk := env.GetClock()
 	return &Resolver{
 		env:                 env,
 		imageTagToDigestLRU: imageTagToDigestLRU,
 		allowedPrivateIPs:   allowedPrivateIPNets,
-		clock:               clk,
+		clock:               env.GetClock(),
 	}, nil
 }
 
