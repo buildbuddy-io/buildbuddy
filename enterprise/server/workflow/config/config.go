@@ -373,11 +373,11 @@ func MatchesAnyTrigger(action *Action, event, branch string) bool {
 	}
 
 	if pushCfg := action.Triggers.Push; pushCfg != nil && event == webhook_data.EventName.Push {
-		return matchesAnyBranch(pushCfg.Branches, branch)
+		return matchesBranchPatterns(pushCfg.Branches, branch)
 	}
 
 	if prCfg := action.Triggers.PullRequest; prCfg != nil && event == webhook_data.EventName.PullRequest {
-		return matchesAnyBranch(prCfg.Branches, branch)
+		return matchesBranchPatterns(prCfg.Branches, branch)
 	}
 	return false
 }
@@ -397,24 +397,28 @@ func MatchesAnyActionName(action *Action, names []string) bool {
 // The pattern is allowed to contain a single wildcard character, "*", which
 // matches anything. If there is more than one wildcard, then all wildcards
 // after the first one are treated as literals.
-func matchesRestrictedGlob(pattern, text string) bool {
+func matchesRestrictedGlob(pattern, text string) (isMatched, isNegation bool) {
+	pattern, isNegation = strings.CutPrefix(pattern, "!")
+
 	idx := strings.Index(pattern, "*")
 	if idx == -1 {
 		// No wildcard; exact match.
-		return pattern == text
+		return pattern == text, isNegation
 	}
 	prefix := pattern[:idx]
 	suffix := pattern[idx+1:]
-	return strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix)
+	return strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix), isNegation
 }
 
-func matchesAnyBranch(branches []string, branch string) bool {
-	for _, branchPattern := range branches {
-		if matchesRestrictedGlob(branchPattern, branch) {
-			return true
+func matchesBranchPatterns(branchPatterns []string, branch string) bool {
+	matched := false
+	for _, branchPattern := range branchPatterns {
+		if m, isNegation := matchesRestrictedGlob(branchPattern, branch); m {
+			matched = !isNegation
+			// Keep going - last pattern wins.
 		}
 	}
-	return false
+	return matched
 }
 
 func yamlNumberToString(num interface{}) (str string, ok bool) {
