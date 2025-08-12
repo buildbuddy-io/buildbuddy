@@ -373,7 +373,7 @@ type Server struct {
 	nodes              map[uint64]*fsNode
 	internalTaskCtx    context.Context
 	root               *fsNode
-	casFetcher         *casFetcher
+	treeFetcher        *dirtools.TreeFetcher
 	remoteInstanceName string
 	fileHandles        map[uint64]*fileHandle
 
@@ -521,13 +521,11 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 	walkNode(p.root)
 	p.mu.Unlock()
 
-	p.casFetcher.UpdateIOStats(stats)
-
 	return stats
 }
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
-func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout) error {
+func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout, treeFetcher *dirtools.TreeFetcher) error {
 	p.mu.Lock()
 	p.casFileCount = 0
 	p.casFileSizeBytes = 0
@@ -542,7 +540,7 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.casFetcher = newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
+	p.treeFetcher = treeFetcher
 	p.internalTaskCtx = ctx
 	return nil
 }
@@ -998,9 +996,21 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 		}
 		openedFile = f
 	} else if node.fileNode != nil {
-		f, err := p.casFetcher.Open(p.taskCtx(), node)
+		p.mu.Lock()
+		tf := p.treeFetcher
+		p.mu.Unlock()
+		if tf == nil {
+			log.CtxWarningf(p.taskCtx(), "Open %d could not open file because tree fetcher is not set", request.GetId())
+			return nil, syscallErrStatus(syscall.EIO)
+		}
+		err = tf.Fetch(p.taskCtx(), node.fileNode)
 		if err != nil {
 			log.CtxWarningf(p.taskCtx(), "Open %q could not fetch file from cache: %s", node.Path(), err)
+			return nil, err
+		}
+		f, err := p.env.GetFileCache().Open(p.taskCtx(), node.fileNode)
+		if err != nil {
+			log.CtxWarningf(p.taskCtx(), "Open %q could not open file from file cache: %s", node.Path(), err)
 			return nil, err
 		}
 		openedFile = f

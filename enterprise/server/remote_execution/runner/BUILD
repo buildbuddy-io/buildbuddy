@@ -26,6 +26,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",
+        "//server/cache/dirtools",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
