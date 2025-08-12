@@ -386,3 +386,11 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 	}
 	return stream.Send(&resp)
 }
+
+func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently implemented")
+}
+
+func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently implemented")
+}

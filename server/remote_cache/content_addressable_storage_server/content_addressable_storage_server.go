@@ -1093,3 +1093,11 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 	}
 	return true
 }
+
+func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently implemented")
+}
+
+func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently implemented")
+}
