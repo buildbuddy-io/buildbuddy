@@ -1050,3 +1050,50 @@ func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, status.IsUnavailableError(err), "expected UnavailableError, got: %v", err)
 }
+
+func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	counter := newRequestCounter()
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
+
+	// Push a random image tagged as :latest.
+	imageName, img := registry.PushRandomImage(t)
+	d, err := img.Digest()
+	require.NoError(t, err)
+
+	resolver := newResolver(t, te)
+
+	// First resolve populates the cache and will make HTTP requests.
+	counter.reset()
+	got1, err := resolver.ResolveImageDigest(
+		context.Background(),
+		imageName,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+	require.Truef(t, strings.HasSuffix(got1, "@"+d.String()),
+		"resolved ref %q does not end with expected digest suffix %q", got1, "@"+d.String())
+
+	// Ensure we actually hit the registry on the first resolve.
+	require.NotEmpty(t, counter.snapshot(), "expected first resolve to make HTTP requests")
+
+	// Second resolve should be served entirely from the cache; no HTTP requests expected.
+	counter.reset()
+	got2, err := resolver.ResolveImageDigest(
+		context.Background(),
+		imageName,
+		oci.RuntimePlatform(),
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+	require.Equal(t, got1, got2, "expected cache hit to return identical name@digest")
+	require.Empty(t, counter.snapshot(), "expected cache hit to avoid any HTTP requests")
+}
