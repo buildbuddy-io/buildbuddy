@@ -1,11 +1,11 @@
 import { ArrowRight, Download, FileSymlink, FolderMinus, FolderPlus } from "lucide-react";
 import React from "react";
 import { build } from "../../proto/remote_execution_ts_proto";
-import { TreeNode } from "../invocation/invocation_action_tree_node";
 import DigestComponent from "../components/digest/digest";
 import format from "../format/format";
+import { TreeNode } from "../invocation/invocation_action_tree_node";
 import InvocationModel from "../invocation/invocation_model";
-import { findNodeByName, nodesEqual, hasChildDifferences } from "./tree_utils";
+import { findNodeByName, hasChildDifferences, nodesEqual } from "./tree_utils";
 
 interface TreeState {
   inputRoot?: build.bazel.remote.execution.v2.Directory;
@@ -35,7 +35,7 @@ interface ActionDetails {
 export default class DiffTreeNodeComponent extends React.Component<Props> {
   private getNodeStyle(status: string): React.CSSProperties {
     const style: React.CSSProperties = {};
-    
+
     switch (status) {
       case "added":
         style.backgroundColor = "rgba(34, 197, 94, 0.1)";
@@ -50,20 +50,19 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
         style.color = "#a16207";
         break;
     }
-    
+
     return style;
   }
 
-
-  private getNodeStatus(node: TreeNode, otherNode?: TreeNode): "added" | "removed" | "modified" | "unchanged" {    
+  private getNodeStatus(node: TreeNode, otherNode?: TreeNode): "added" | "removed" | "modified" | "unchanged" {
     if (!otherNode) {
       return this.props.side === "right" ? "added" : "removed";
     }
-    
+
     if (!nodesEqual(node, otherNode)) {
       return "modified";
     }
-    
+
     return "unchanged";
   }
 
@@ -79,7 +78,11 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
   private handleFileClick = (node: TreeNode, otherNode?: TreeNode) => {
     if (node.type === "file") {
       const fileNode = node.obj as build.bazel.remote.execution.v2.FileNode;
-      if (fileNode.digest && this.props.actionDetails?.invocationModel && this.props.otherActionDetails?.invocationModel) {
+      if (
+        fileNode.digest &&
+        this.props.actionDetails?.invocationModel &&
+        this.props.otherActionDetails?.invocationModel
+      ) {
         let params: Record<string, string> = {
           bytestream_url: this.props.actionDetails.invocationModel.getBytestreamURL(fileNode.digest),
           invocation_id: this.props.actionDetails.invocationModel.getInvocationId(),
@@ -87,11 +90,14 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
         };
         const otherFileNode = otherNode?.obj as build.bazel.remote.execution.v2.FileNode;
         if (otherFileNode && otherFileNode.digest) {
-          params.compare_bytestream_url = this.props.otherActionDetails.invocationModel.getBytestreamURL(otherFileNode.digest);
+          params.compare_bytestream_url = this.props.otherActionDetails.invocationModel.getBytestreamURL(
+            otherFileNode.digest
+          );
           params.compare_invocation_id = this.props.otherActionDetails.invocationModel.getInvocationId();
           params.compare_filename = otherFileNode.name;
         }
-        let url = `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}` + (otherNode ? "#diff" : "");
+        let url =
+          `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}` + (otherNode ? "#diff" : "");
         window.open(url, "_blank");
       }
     } else if (node.type === "dir" || node.type === "tree") {
@@ -101,7 +107,7 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
 
   private renderNode(node: TreeNode, otherNode?: TreeNode): React.ReactNode {
     const status = this.getNodeStatus(node, otherNode);
-        
+
     let className = "";
     switch (status) {
       case "added":
@@ -117,9 +123,9 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
 
     if (node.type === "symlink") {
       const symlink = node.obj as build.bazel.remote.execution.v2.SymlinkNode;
-      
+
       const symlinkStyle = this.getNodeStyle(status);
-      
+
       return (
         <div key={node.obj.name} className={className}>
           <div className="tree-node-symlink" style={symlinkStyle}>
@@ -137,7 +143,9 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
     }
 
     const isDir = node.type === "dir" || node.type === "tree";
-    const fileOrDirNode = node.obj as build.bazel.remote.execution.v2.FileNode | build.bazel.remote.execution.v2.DirectoryNode;
+    const fileOrDirNode = node.obj as
+      | build.bazel.remote.execution.v2.FileNode
+      | build.bazel.remote.execution.v2.DirectoryNode;
     const digestString = fileOrDirNode.digest?.hash || "";
     const expanded = isDir ? this.props.treeState.treeShaToExpanded.get(digestString) : false;
 
@@ -175,10 +183,10 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
     const dirNode = parentNode.obj as build.bazel.remote.execution.v2.DirectoryNode;
     const digestString = dirNode.digest?.hash || "";
     const children = this.props.treeState.treeShaToChildrenMap.get(digestString) || [];
-    
+
     const otherNode = findNodeByName(this.props.otherNodes, dirNode.name || "");
     let otherChildren: TreeNode[] = [];
-    
+
     if (otherNode && otherNode.type === "dir") {
       const otherDirNode = otherNode.obj as build.bazel.remote.execution.v2.DirectoryNode;
       const otherDigestString = otherDirNode.digest?.hash || "";
@@ -208,16 +216,16 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
 
   render() {
     const { nodes, otherNodes, showChangesOnly } = this.props;
-    
+
     // Get all unique names from both sides
     const allNames = new Set<string>();
-    nodes.forEach(node => allNames.add(node.obj.name || ""));
-    otherNodes.forEach(node => allNames.add(node.obj.name || ""));
+    nodes.forEach((node) => allNames.add(node.obj.name || ""));
+    otherNodes.forEach((node) => allNames.add(node.obj.name || ""));
     const sortedNames = Array.from(allNames).sort();
 
     const elements: React.ReactNode[] = [];
 
-    sortedNames.forEach(name => {
+    sortedNames.forEach((name) => {
       const node = findNodeByName(nodes, name);
       const otherNode = findNodeByName(otherNodes, name);
 
@@ -240,7 +248,7 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
             const digestString = dirNode.digest?.hash || "";
             const children = this.props.treeState.treeShaToChildrenMap.get(digestString) || [];
             const otherChildren = this.props.otherTreeState.treeShaToChildrenMap.get(digestString) || [];
-            
+
             // Check if any child differs
             if (!hasChildDifferences(children, otherChildren)) {
               return;

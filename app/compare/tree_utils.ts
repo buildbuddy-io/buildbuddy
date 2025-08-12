@@ -1,14 +1,14 @@
 import { TreeNode } from "../invocation/invocation_action_tree_node";
 
 export function findNodeByName(nodes: TreeNode[], name: string): TreeNode | undefined {
-  return nodes.find(n => n.obj.name === name);
+  return nodes.find((n) => n.obj.name === name);
 }
 
 export function nodesEqual(nodeA?: TreeNode, nodeB?: TreeNode): boolean {
   if (!nodeA && !nodeB) return true;
   if (!nodeA || !nodeB) return false;
   if (nodeA.type !== nodeB.type) return false;
-  
+
   if (nodeA.type === "file" && nodeB.type === "file") {
     return (
       nodeA.obj.digest?.hash === nodeB.obj.digest?.hash &&
@@ -16,15 +16,15 @@ export function nodesEqual(nodeA?: TreeNode, nodeB?: TreeNode): boolean {
       nodeA.obj.isExecutable === nodeB.obj.isExecutable
     );
   }
-  
+
   if (nodeA.type === "dir" && nodeB.type === "dir") {
     return nodeA.obj.digest?.hash === nodeB.obj.digest?.hash;
   }
-  
+
   if (nodeA.type === "symlink" && nodeB.type === "symlink") {
     return nodeA.obj.target === nodeB.obj.target;
   }
-  
+
   return false;
 }
 
@@ -33,7 +33,7 @@ export function hasChildDifferences(childrenA: TreeNode[], childrenB: TreeNode[]
   if (childrenA.length !== childrenB.length) {
     return true;
   }
-  
+
   // Check each child
   for (const childA of childrenA) {
     const childB = findNodeByName(childrenB, childA.obj.name || "");
@@ -41,7 +41,7 @@ export function hasChildDifferences(childrenA: TreeNode[], childrenB: TreeNode[]
       return true;
     }
   }
-  
+
   // Check for children that exist only in B
   for (const childB of childrenB) {
     const childA = findNodeByName(childrenA, childB.obj.name || "");
@@ -49,6 +49,6 @@ export function hasChildDifferences(childrenA: TreeNode[], childrenB: TreeNode[]
       return true;
     }
   }
-  
+
   return false;
 }
