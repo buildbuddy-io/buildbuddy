@@ -302,20 +302,22 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 
 	// If we're not using FUSE, wait for the input tree to be fully downloaded.
 	txInfo, err := ws.treeFetcher.Wait()
-	if err == nil {
-		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
-			return err
-		}
-
-		for path, node := range txInfo.Transfers {
-			ws.Inputs[fspath.NewKey(path, ws.Opts.CaseInsensitive)] = node
-		}
-		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
-		span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
-		span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
-		log.CtxInfof(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
+	if err != nil {
+		return status.WrapError(err, "could not fetch inputs")
 	}
-	return err
+
+	if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
+		return err
+	}
+
+	for path, node := range txInfo.Transfers {
+		ws.Inputs[fspath.NewKey(path, ws.Opts.CaseInsensitive)] = node
+	}
+	mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
+	span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
+	span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
+	log.CtxInfof(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
+	return nil
 }
 
 // AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't

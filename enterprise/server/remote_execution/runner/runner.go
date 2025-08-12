@@ -264,7 +264,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 	inputTree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(
 		ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest, r.env.GetFileCache(), r.env.GetByteStreamClient())
 	if err != nil {
-		return err
+		return status.WrapError(err, "could not get input tree")
 	}
 
 	layout := &container.FileSystemLayout{
