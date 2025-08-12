@@ -1135,7 +1135,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 	}
 }
 
-func TestResolveImageDigest_CacheExpiration_WithFakeClock(t *testing.T) {
+func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
@@ -1147,19 +1147,16 @@ func TestResolveImageDigest_CacheExpiration_WithFakeClock(t *testing.T) {
 		},
 	})
 
-	// Push an image tagged as :latest.
 	imageName := "cache_expiration"
 	_, img := registry.PushNamedImage(t, imageName)
 	pushedDigest, err := img.Digest()
 	require.NoError(t, err)
 	nameToResolve := registry.ImageAddress(imageName)
 
-	// Use the test env's fake clock to simulate TTL passing.
+	fakeClock := clockwork.NewFakeClock()
+	te.SetClock(fakeClock)
 	resolver := newResolver(t, te)
-	fake, ok := te.GetClock().(clockwork.FakeClock)
-	require.True(t, ok, "expected test env clock to be FakeClock")
 
-	// 1) First resolve populates the cache; expect GET /v2/ and HEAD manifest.
 	counter.reset()
 	nameWithDigest, err := resolver.ResolveImageDigest(
 		context.Background(),
@@ -1193,7 +1190,7 @@ func TestResolveImageDigest_CacheExpiration_WithFakeClock(t *testing.T) {
 	require.Empty(t, counter.snapshot())
 
 	// 3) Advance time to just before TTL expiry; still a cache hit.
-	fake.Advance(15*time.Minute - time.Second)
+	fakeClock.Advance(15*time.Minute - time.Second)
 	counter.reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
@@ -1208,7 +1205,7 @@ func TestResolveImageDigest_CacheExpiration_WithFakeClock(t *testing.T) {
 	require.Empty(t, counter.snapshot())
 
 	// 4) Advance past TTL; expect cache refresh (GET /v2/ and HEAD manifest).
-	fake.Advance(2 * time.Second)
+	fakeClock.Advance(2 * time.Second)
 	counter.reset()
 	nameWithDigest, err = resolver.ResolveImageDigest(
 		context.Background(),
