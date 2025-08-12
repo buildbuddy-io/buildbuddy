@@ -823,8 +823,6 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	}
 	platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), platProps, task.GetCommand())
 
-	// Resolve the image tag to a digest so that subsequent pulls are
-	// guaranteed to use the exact same image contents.
 	if err := p.resolveImageDigest(ctx, platProps); err != nil {
 		return err
 	}
@@ -940,6 +938,8 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 	return out
 }
 
+// resolveImageDigest replaces the ContainerImage property with an image name that includes a digest.
+// This makes the ContainerImage property safe to use as a cache key.
 func (p *pool) resolveImageDigest(ctx context.Context, props *platform.Properties) error {
 	if props.ContainerImage == "" {
 		return nil
@@ -966,8 +966,6 @@ func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) 
 		return nil, err
 	}
 
-	// Resolve the image tag to a content digest so that container
-	// implementations always receive a fully qualified image reference.
 	if err := p.resolveImageDigest(ctx, props); err != nil {
 		return nil, err
 	}

@@ -35,9 +35,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/jonboulle/clockwork"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
