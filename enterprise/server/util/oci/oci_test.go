@@ -1110,4 +1110,24 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 
 		require.Empty(t, counter.snapshot())
 	}
+
+	{
+		ref, err := name.ParseReference(nameToResolve)
+		require.NoError(t, err)
+		registryAndRepoNoTag := ref.Context().String()
+		counter.reset()
+		nameWithDigest, err := resolver.ResolveImageDigest(
+			context.Background(),
+			registryAndRepoNoTag,
+			oci.RuntimePlatform(),
+			oci.Credentials{},
+		)
+		require.NoError(t, err)
+
+		resolvedDigest, err := name.NewDigest(nameWithDigest)
+		require.NoError(t, err)
+		require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
+
+		require.Empty(t, counter.snapshot())
+	}
 }
