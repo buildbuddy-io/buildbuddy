@@ -2876,6 +2876,7 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 			return nil, status.InternalErrorf("AddReplica failed to add range(%d) to node %q: failed to reserve replica IDs: %s", rangeID, node.GetNhid(), err)
 		}
 		newReplicaID = replicaIDs[0]
+		log.Infof("=====newReplicaID: %d", newReplicaID)
 		rd, err = s.addStagingReplicaToRangeDescriptor(ctx, rangeID, newReplicaID, node.GetNhid(), rd)
 		if err != nil {
 			return nil, status.WrapErrorf(err, "AddReplica failed to add staging replica c%dn%d on %q: %s", rangeID, newReplicaID, node.GetNhid(), err)
@@ -2984,8 +2985,8 @@ func (s *Store) reserveIDs(ctx context.Context, key []byte, n int) ([]uint64, er
 		return nil, err
 	}
 	ids := make([]uint64, 0, n)
-	for i := 0; i < n; i++ {
-		ids = append(ids, newVal-uint64(i))
+	for i := 1; i <= n; i++ {
+		ids = append(ids, newVal-uint64(n-i))
 	}
 	return ids, nil
 }

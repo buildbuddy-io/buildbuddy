@@ -36,10 +36,8 @@ go_test(
     },
     tags = ["block-network"],
     deps = [
-        "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/keys",
         "//enterprise/server/raft/testutil",
-        "//proto:raft_go_proto",
+        "//server/util/disk",
         "//server/util/proto",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",

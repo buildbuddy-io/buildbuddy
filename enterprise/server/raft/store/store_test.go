@@ -212,14 +212,7 @@ func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
-	startingRanges := []*rfpb.RangeDescriptor{
-		&rfpb.RangeDescriptor{
-			Start:      constants.MetaRangePrefix,
-			End:        keys.Key{constants.UnsplittableMaxByte},
-			Generation: 1,
-		},
-	}
-	sf.StartShardWithRanges(t, ctx, startingRanges, stores...)
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
 	testutil.WaitForRangeLease(t, ctx, stores, 1)
 	poolB := testutil.MakeNodeGRPCAddressesMap(s1, s2, s3)
 
@@ -429,6 +422,7 @@ func TestAddReplica_MetaRange(t *testing.T) {
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, storesBefore, 1)
 	mrd := s.GetRange(1)
+	log.Infof("====mrd: %+v", mrd)
 	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: mrd,
 		Node: &rfpb.NodeDescriptor{
@@ -1744,47 +1738,24 @@ func TestSplitAcrossClusters(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1, s2}
-	poolB := testutil.MakeNodeGRPCAddressesMap(s2)
-
-	startingRanges := []*rfpb.RangeDescriptor{
-		&rfpb.RangeDescriptor{
-			Start:      constants.MetaRangePrefix,
-			End:        keys.Key{constants.UnsplittableMaxByte},
-			Generation: 1,
-		},
-	}
-	sf.StartShardWithRanges(t, ctx, startingRanges, s1)
+	sf.InitializeShardsForMetaRange(t, ctx, s1)
 	testutil.WaitForRangeLease(t, ctx, stores, 1)
 
-	// Bringup new peers.
-	initialRD := &rfpb.RangeDescriptor{
-		Start:      keys.Key{constants.UnsplittableMaxByte},
-		End:        keys.MaxByte,
-		RangeId:    2,
-		Generation: 1,
-		Replicas: []*rfpb.ReplicaDescriptor{
-			{RangeId: 2, ReplicaId: 1, Nhid: proto.String(s2.NHID())},
-		},
+	// Only start ranges from default partition on s2.
+	partition := disk.Partition{
+		ID:        "default",
+		NumRanges: 1,
 	}
+	sf.InitializeShardsForPartition(t, ctx, partition, s2)
 
-	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, poolB)
-	err := bringup.StartShard(ctx, s2, bootstrapInfo)
-	require.NoError(t, err)
-	sf.InitalizeShard(t, ctx, bootstrapInfo, initialRD, s2)
-
-	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
-	newRangeID, err := s.ReserveRangeID(ctx)
-	require.NoError(t, err)
-	require.Equal(t, uint64(2), newRangeID)
-
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
 	hd := header.MakeLinearizableWithRangeValidation(rd, rd.GetReplicas()[0])
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, s1, 50)
-	_, err = s.SplitRange(ctx, &rfpb.SplitRangeRequest{
+	_, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 		Header: hd,
 		Range:  rd,
 	})
@@ -2047,6 +2018,8 @@ func TestReplaceDeadReplica(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
+	log.Info("=====StartShard finished")
+
 	{ // Verify that there are 3 replicas for range 2, and also write 10 records
 		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 		writeNRecords(ctx, t, s, 10)
@@ -2056,6 +2029,8 @@ func TestReplaceDeadReplica(t *testing.T) {
 		require.Equal(t, 3, len(rd.GetReplicas()))
 	}
 
+	log.Info("=====3 replicas exist for range 2 and wrote 10 records")
+
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	r, err := s.GetReplica(2)
 	require.NoError(t, err)
@@ -2063,8 +2038,10 @@ func TestReplaceDeadReplica(t *testing.T) {
 	require.NoError(t, err)
 
 	s4 := sf.NewStore(t)
+	log.Info("=====s4 started")
 	// Stop store 3
 	s3.Stop()
+	log.Info("=====s3 stopped")
 
 	nhid3 := s3.NodeHost().ID()
 	nhid4 := s4.NodeHost().ID()
@@ -2094,6 +2071,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 		}
 	}
 
+	log.Infof("=====range 1 and 1 is added to s4(%q)", nhid4)
 	r2 := getReplica(t, s4, 2)
 	waitForReplicaToCatchUp(t, ctx, r2, desiredAppliedIndex)
 }
@@ -2185,39 +2163,6 @@ func TestRebalance(t *testing.T) {
 	// the single op timeout to make it less sensitive.
 	flags.Set(t, "cache.raft.op_timeout", 3*time.Second)
 
-	startingRanges := []*rfpb.RangeDescriptor{
-		&rfpb.RangeDescriptor{
-			Start:      constants.MetaRangePrefix,
-			End:        keys.Key{constants.UnsplittableMaxByte},
-			Generation: 1,
-		},
-		&rfpb.RangeDescriptor{
-			Start:      keys.Key{constants.UnsplittableMaxByte},
-			End:        keys.Key("a"),
-			Generation: 1,
-		},
-		&rfpb.RangeDescriptor{
-			Start:      keys.Key("a"),
-			End:        keys.Key("b"),
-			Generation: 1,
-		},
-		&rfpb.RangeDescriptor{
-			Start:      keys.Key("b"),
-			End:        keys.Key("c"),
-			Generation: 1,
-		},
-		&rfpb.RangeDescriptor{
-			Start:      keys.Key("c"),
-			End:        keys.Key("d"),
-			Generation: 1,
-		},
-		&rfpb.RangeDescriptor{
-			Start:      keys.Key("d"),
-			End:        keys.MaxByte,
-			Generation: 1,
-		},
-	}
-
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
 	s1 := sf.NewStore(t)
@@ -2226,10 +2171,15 @@ func TestRebalance(t *testing.T) {
 	s4 := sf.NewStore(t)
 	ctx := context.Background()
 
+	partition := disk.Partition{
+		ID:        "default",
+		NumRanges: 5,
+	}
 	// start shards for s1, s2, s3
 	log.Infof("==== start 3 shards====")
 	stores := []*testutil.TestingStore{s1, s2, s3}
-	sf.StartShardWithRanges(t, ctx, startingRanges, stores...)
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+	sf.InitializeShardsForPartition(t, ctx, partition, stores...)
 
 	{ // Verify that there are 3 replicas for range 2
 		log.Infof("==== verify range 2 has 3 replicas ====")
@@ -2240,6 +2190,7 @@ func TestRebalance(t *testing.T) {
 		require.Equal(t, 3, len(rd.GetReplicas()))
 	}
 
+	size := 1 + partition.NumRanges
 	for {
 		// advance the clock to trigger scan replicas
 		clock.Advance(61 * time.Second)
@@ -2256,7 +2207,6 @@ func TestRebalance(t *testing.T) {
 			continue
 		}
 
-		size := len(startingRanges)
 		if len(l1) < size || len(l2) < size || len(l3) < size {
 			break
 		}
@@ -2283,7 +2233,8 @@ func TestBringupSetRanges(t *testing.T) {
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1}
-	sf.StartShardWithPartition(t, ctx, partition, stores...)
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+	sf.InitializeShardsForPartition(t, ctx, partition, stores...)
 
 	testutil.WaitForRangeLease(t, ctx, stores, 1) // metarange
 	testutil.WaitForRangeLease(t, ctx, stores, 2) // start -> 1st split
