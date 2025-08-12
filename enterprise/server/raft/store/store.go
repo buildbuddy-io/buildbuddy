@@ -2985,8 +2985,8 @@ func (s *Store) reserveIDs(ctx context.Context, key []byte, n int) ([]uint64, er
 		return nil, err
 	}
 	ids := make([]uint64, 0, n)
-	for i := 0; i < n; i++ {
-		ids = append(ids, newVal-uint64(i))
+	for i := 1; i <= n; i++ {
+		ids = append(ids, newVal-uint64(n-i))
 	}
 	return ids, nil
 }
