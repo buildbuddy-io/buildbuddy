@@ -926,7 +926,11 @@ type tree struct {
 
 func streamTreeWithRetries(ctx context.Context, casClient repb.ContentAddressableStorageClient, root *digest.CASResourceName, sendCachedSubtreeDigests bool) (*tree, error) {
 	return retry.Do(ctx, retryOptions("StreamTree"), func(ctx context.Context) (*tree, error) {
-		return streamTree(ctx, casClient, root, sendCachedSubtreeDigests)
+		t, err := streamTree(ctx, casClient, root, sendCachedSubtreeDigests)
+		if status.IsNotFoundError(err) {
+			return nil, retry.NonRetryableError(err)
+		}
+		return t, err
 	})
 }
 
@@ -943,9 +947,6 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 			SendCachedSubtreeDigests: sendCachedSubtreeDigests,
 		})
 		if err != nil {
-			if status.IsNotFoundError(err) {
-				return nil, retry.NonRetryableError(err)
-			}
 			return nil, err
 		}
 		for {
@@ -954,9 +955,6 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 				break
 			}
 			if err != nil {
-				if status.IsNotFoundError(err) {
-					return nil, retry.NonRetryableError(err)
-				}
 				return nil, err
 			}
 			nextPageToken = rsp.GetNextPageToken()
