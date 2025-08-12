@@ -9,7 +9,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
@@ -48,18 +47,6 @@ type Janitor struct {
 	deleteFn func(c *JanitorConfig)
 }
 
-func deleteInvocation(c *JanitorConfig, invocation *tables.Invocation) {
-	ctx := c.env.GetServerContext()
-	if err := c.env.GetBlobstore().DeleteBlob(ctx, invocation.BlobID); err != nil {
-		log.Warningf("Error deleting blob (%s): %s", invocation.BlobID, err)
-	}
-
-	// Try to delete the row too, even if blob deletion failed.
-	if err := c.env.GetInvocationDB().DeleteInvocation(ctx, invocation.InvocationID); err != nil {
-		log.Warningf("Error deleting invocation (%s): %s", invocation.InvocationID, err)
-	}
-}
-
 func deleteExpiredInvocations(c *JanitorConfig) {
 	ctx := c.env.GetServerContext()
 	cutoff := time.Now().Add(-1 * c.ttl)
@@ -69,8 +56,21 @@ func deleteExpiredInvocations(c *JanitorConfig) {
 		return
 	}
 
+	if len(expired) == 0 {
+		return
+	}
+	invocationIDs := make([]string, 0, len(expired))
 	for _, exp := range expired {
-		deleteInvocation(c, exp)
+		if err := c.env.GetBlobstore().DeleteBlob(ctx, exp.BlobID); err != nil {
+			log.Warningf("Error deleting blob (%s): %s", exp.BlobID, err)
+		}
+		invocationIDs = append(invocationIDs, exp.InvocationID)
+	}
+
+	// Try to delete the rows too, even if blob deletion failed. Other janitors
+	// may select the same batch; deleting already-removed SQL rows is a no-op.
+	if err := c.env.GetInvocationDB().DeleteInvocations(ctx, invocationIDs); err != nil {
+		log.Warningf("Error deleting expired invocations: %s", err)
 	}
 }
 

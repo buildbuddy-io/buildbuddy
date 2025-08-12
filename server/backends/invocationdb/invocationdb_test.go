@@ -93,6 +93,71 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 	require.Equal(t, "invocation-2-execution", ie.ExecutionID)
 }
 
+func TestDeleteInvocations(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	dbh := env.GetDBHandle()
+	idb := invocationdb.NewInvocationDB(env, dbh)
+
+	for _, invocationID := range []string{"delete-1", "delete-2", "keep"} {
+		executionID := invocationID + "-execution"
+		require.NoError(t, dbh.NewQuery(ctx, "insert_invocation").Raw(
+			`INSERT INTO "Invocations" (invocation_id) VALUES (?)`, invocationID).Exec().Error)
+		require.NoError(t, dbh.NewQuery(ctx, "insert_execution").Raw(
+			`INSERT INTO "Executions" (execution_id, invocation_id) VALUES (?, ?)`, executionID, invocationID).Exec().Error)
+		require.NoError(t, dbh.NewQuery(ctx, "insert_invocation_execution").Raw(
+			`INSERT INTO "InvocationExecutions" (invocation_id, execution_id) VALUES (?, ?)`, invocationID, executionID).Exec().Error)
+	}
+
+	// Duplicate IDs must not affect the rows that are not selected for deletion.
+	require.NoError(t, idb.DeleteInvocations(ctx, []string{"delete-1", "delete-2", "delete-1"}))
+	for _, table := range []string{"Invocations", "Executions", "InvocationExecutions"} {
+		var count int
+		require.NoError(t, dbh.NewQuery(ctx, "count_remaining_rows").Raw(
+			fmt.Sprintf(`SELECT COUNT(*) FROM "%s" WHERE invocation_id = ?`, table), "keep").Take(&count))
+		require.Equal(t, 1, count, "table %s", table)
+		require.NoError(t, dbh.NewQuery(ctx, "count_deleted_rows").Raw(
+			fmt.Sprintf(`SELECT COUNT(*) FROM "%s" WHERE invocation_id IN (?, ?)`, table), "delete-1", "delete-2").Take(&count))
+		require.Zero(t, count, "table %s", table)
+	}
+
+	// An empty batch is deliberately a no-op.
+	require.NoError(t, idb.DeleteInvocations(ctx, nil))
+	var count int
+	require.NoError(t, dbh.NewQuery(ctx, "count_remaining_invocations").Raw(
+		`SELECT COUNT(*) FROM "Invocations" WHERE invocation_id = ?`, "keep").Take(&count))
+	require.Equal(t, 1, count)
+
+	// Overlapping cleanup batches may race across app pods. Already-deleted and
+	// missing IDs must be harmless and must not affect unrelated rows.
+	require.NoError(t, idb.DeleteInvocations(ctx, []string{"delete-1", "missing"}))
+	require.NoError(t, dbh.NewQuery(ctx, "count_remaining_after_overlapping_batch").Raw(
+		`SELECT COUNT(*) FROM "Invocations" WHERE invocation_id = ?`, "keep").Take(&count))
+	require.Equal(t, 1, count)
+}
+
+func TestDeleteInvocationsRollsBackOnFailure(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	dbh := env.GetDBHandle()
+	idb := invocationdb.NewInvocationDB(env, dbh)
+
+	require.NoError(t, dbh.NewQuery(ctx, "insert_invocation").Raw(
+		`INSERT INTO "Invocations" (invocation_id) VALUES (?)`, "rollback").Exec().Error)
+	require.NoError(t, dbh.NewQuery(ctx, "insert_execution").Raw(
+		`INSERT INTO "Executions" (execution_id, invocation_id) VALUES (?, ?)`, "rollback-execution", "rollback").Exec().Error)
+	require.NoError(t, dbh.NewQuery(ctx, "drop_invocation_executions").Raw(
+		`DROP TABLE "InvocationExecutions"`).Exec().Error)
+
+	require.Error(t, idb.DeleteInvocations(ctx, []string{"rollback"}))
+	for _, table := range []string{"Invocations", "Executions"} {
+		var count int
+		require.NoError(t, dbh.NewQuery(ctx, "count_rows_after_rollback").Raw(
+			fmt.Sprintf(`SELECT COUNT(*) FROM "%s" WHERE invocation_id = ?`, table), "rollback").Take(&count))
+		require.Equal(t, 1, count, "table %s", table)
+	}
+}
+
 func TestAttemptLogic(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)

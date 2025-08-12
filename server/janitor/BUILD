@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "janitor",
@@ -8,7 +8,19 @@ go_library(
     deps = [
         "//server/environment",
         "//server/interfaces",
-        "//server/tables",
         "//server/util/log",
+    ],
+)
+
+go_test(
+    name = "janitor_test",
+    size = "small",
+    srcs = ["janitor_test.go"],
+    embed = [":janitor"],
+    deps = [
+        "//server/interfaces",
+        "//server/tables",
+        "//server/testutil/testenv",
+        "@com_github_stretchr_testify//require",
     ],
 )

@@ -501,6 +501,9 @@ type InvocationDB interface {
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
 	LookupChildInvocations(ctx context.Context, parentRunID string) ([]string, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error
+	// DeleteInvocations deletes the invocations and their execution rows and links
+	// in a single transaction. Missing IDs are ignored.
+	DeleteInvocations(ctx context.Context, invocationIDs []string) error
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
 	SetNowFunc(now func() time.Time)
