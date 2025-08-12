@@ -1655,12 +1655,13 @@ func TestRedisRestart(t *testing.T) {
     "OSFamily": "%s",
     "Arch": "%s",
   },
+  tags = ["no-remote-cache"],
 )`, runtime.GOOS, runtime.GOARCH),
 	}
 
 	var redisShards []*testredis.Handle
 	for i := 0; i < 4; i++ {
-		redisShards = append(redisShards, testredis.StartTCP(t))
+		redisShards = append(redisShards, testredis.Start(t))
 	}
 
 	args := []string{
@@ -1698,7 +1699,7 @@ func TestRedisRestart(t *testing.T) {
 				victimShard = shard
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(1 * time.Millisecond)
 	}
 	require.NotNil(t, victimShard, "could not find victim shard")
 
@@ -1710,10 +1711,6 @@ func TestRedisRestart(t *testing.T) {
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
-	require.NotContains(
-		t, result.Stderr, "1 remote cache hit",
-		"sanity check: initial build shouldn't be cached",
-	)
 }
 
 type cancelInvocationTestCase struct {
