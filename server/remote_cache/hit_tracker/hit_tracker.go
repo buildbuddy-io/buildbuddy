@@ -175,6 +175,9 @@ func isTryingToDisableTracking(ctx context.Context) bool {
 }
 
 func (h *HitTrackerFactory) shouldSkipTracking(ctx context.Context) bool {
+	if h.env.GetClientIdentityService() == nil {
+		return false
+	}
 	id, err := h.env.GetClientIdentityService().IdentityFromContext(ctx)
 	if err != nil {
 		return false
