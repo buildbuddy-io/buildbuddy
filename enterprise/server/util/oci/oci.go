@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"runtime"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ocicache"
@@ -29,7 +28,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/hashicorp/golang-lru/v2/expirable"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -41,8 +40,6 @@ import (
 const (
 	// resolveImageDigestLRUMaxEntries limits the number of entries in the image-tag-to-digest cache.
 	resolveImageDigestLRUMaxEntries = 1000
-	// resolveImageDigestLRUExpiration limits how long the image-tag-to-digest cache will keep entries.
-	resolveImageDigestLRUExpiration = time.Minute * 15
 )
 
 var (
@@ -229,7 +226,7 @@ func (c Credentials) Equals(o Credentials) bool {
 type Resolver struct {
 	env environment.Env
 
-	imageTagToDigestLRU *expirable.LRU[string, string]
+	imageTagToDigestLRU *lru.LRU[string]
 	allowedPrivateIPs   []*net.IPNet
 }
 
@@ -242,7 +239,13 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 		}
 		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
 	}
-	imageTagToDigestLRU := expirable.NewLRU[string, string](resolveImageDigestLRUMaxEntries, nil, resolveImageDigestLRUExpiration)
+	imageTagToDigestLRU, err := lru.NewLRU[string](&lru.Config[string]{
+		SizeFn: func(_ string) int64 { return 1 },
+		MaxSize: int64(resolveImageDigestLRUMaxEntries),
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &Resolver{
 		env: env,
 
