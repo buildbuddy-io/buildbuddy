@@ -215,7 +215,7 @@ func (h HitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requestMe
 	return h.newHitTracker(ctx, requestMetadata, false, server)
 }
 
-type metricsOnlyHitTracker struct{
+type metricsOnlyHitTracker struct {
 	env         environment.Env
 	ctx         context.Context
 	groupID     string
@@ -248,24 +248,24 @@ func (h *metricsOnlyHitTracker) TrackMiss(d *repb.Digest) error {
 func (h *metricsOnlyHitTracker) TrackDownload(d *repb.Digest) interfaces.TransferTimer {
 	start := time.Now()
 	return &metricsOnlyTransferTimer{
-		h:                   h,
-		d:                   d,
-		start:               start,
-		actionCounter:       Hit,
-		sizeCounter:         DownloadSizeBytes,
-		timeCounter:         DownloadUsec,
+		h:             h,
+		d:             d,
+		start:         start,
+		actionCounter: Hit,
+		sizeCounter:   DownloadSizeBytes,
+		timeCounter:   DownloadUsec,
 	}
 }
 
 func (h *metricsOnlyHitTracker) TrackUpload(d *repb.Digest) interfaces.TransferTimer {
 	start := time.Now()
 	return &metricsOnlyTransferTimer{
-		h:                   h,
-		d:                   d,
-		start:               start,
-		actionCounter:       Upload,
-		sizeCounter:         UploadSizeBytes,
-		timeCounter:         UploadUsec,
+		h:             h,
+		d:             d,
+		start:         start,
+		actionCounter: Upload,
+		sizeCounter:   UploadSizeBytes,
+		timeCounter:   UploadUsec,
 	}
 }
 
@@ -303,7 +303,6 @@ func (t *metricsOnlyTransferTimer) emitMetrics(bytesTransferredCache, bytesTrans
 		metrics.UsageTracked:   "false",
 	}).Observe(float64(duration.Microseconds()))
 }
-
 
 func (t *metricsOnlyTransferTimer) Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error {
 	return nil
