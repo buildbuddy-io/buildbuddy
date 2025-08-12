@@ -1039,7 +1039,6 @@ func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	registry := testregistry.Run(t, testregistry.Opts{})
 
-	// Construct an image address for a repo/tag that hasn't been pushed.
 	nonexistent := registry.ImageAddress("does_not_exist")
 
 	_, err := newResolver(t, te).ResolveImageDigest(
