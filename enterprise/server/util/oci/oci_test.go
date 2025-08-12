@@ -1153,10 +1153,10 @@ func TestResolveImageDigest_CacheExpiration_WithFakeClock(t *testing.T) {
 	require.NoError(t, err)
 	nameToResolve := registry.ImageAddress(imageName)
 
-	// Use a fake clock to simulate TTL passing.
-	fake := clockwork.NewFakeClock()
-	resolver, err := oci.NewResolverWithClock(te, fake)
-	require.NoError(t, err)
+	// Use the test env's fake clock to simulate TTL passing.
+	resolver := newResolver(t, te)
+	fake, ok := te.GetClock().(*clockwork.FakeClock)
+	require.True(t, ok, "expected test env clock to be FakeClock")
 
 	// 1) First resolve populates the cache; expect GET /v2/ and HEAD manifest.
 	counter.reset()

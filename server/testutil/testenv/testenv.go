@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
@@ -169,6 +170,7 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	healthChecker := healthcheck.NewHealthChecker("test")
 	t.Cleanup(healthChecker.Shutdown)
 	te := real_environment.NewRealEnv(healthChecker)
+	te.SetClock(clockwork.NewFakeClock())
 	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
 	if err != nil {
 		t.Fatal(err)
