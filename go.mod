@@ -131,6 +131,7 @@ require (
 	github.com/tink-crypto/tink-go/v2 v2.3.0
 	github.com/tklauser/go-sysconf v0.3.12
 	github.com/vishvananda/netlink v1.2.1-beta.2
+	github.com/wille/osutil v0.0.0-20250518102314-20bc83f6799d
 	github.com/xiam/s-expr v0.0.0-20240311144413-9d7e25c9d7d1
 	github.com/zeebo/blake3 v0.2.3
 	gitlab.com/arm-research/smarter/smarter-device-manager v1.20.11

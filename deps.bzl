@@ -4957,6 +4957,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v2.0.0",
     )
     go_repository(
+        name = "com_github_wille_osutil",
+        importpath = "github.com/wille/osutil",
+        sum = "h1:xDVAH1DZN6dWCRrMWwY3T63GEFGzYjR4JTpnvRtdI2I=",
+        version = "v0.0.0-20250518102314-20bc83f6799d",
+    )
+    go_repository(
         name = "com_github_willf_bitset",
         importpath = "github.com/willf/bitset",
         sum = "h1:N7Z7E9UvjW+sGsEl7k/SJrvY2reP1A07MrGuCjIOjRE=",

@@ -280,6 +280,7 @@ use_repo(
     "com_github_tklauser_go_sysconf",
     "com_github_victoriametrics_metrics",
     "com_github_vishvananda_netlink",
+    "com_github_wille_osutil",
     "com_github_xiam_s_expr",
     "com_github_zeebo_blake3",
     "com_gitlab_arm_research_smarter_smarter_device_manager",

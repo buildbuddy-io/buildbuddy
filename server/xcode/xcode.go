@@ -10,6 +10,10 @@ func NewXcodeLocator() *xcodeLocator {
 	return &xcodeLocator{}
 }
 
+func Versions() []string {
+	return []string{}
+}
+
 func (x *xcodeLocator) DeveloperDirForVersion(version string) (string, error) {
 	return "", nil
 }
