@@ -277,9 +277,10 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	}
 
 	if entry, ok := r.imageTagToDigestLRU.Get(tagRef.String()); ok {
-		if entry.expiration.Before(time.Now()) {
+		if entry.expiration.After(time.Now()) {
 			return entry.nameWithDigest, nil
 		}
+		// Expired; evict and refresh via remote.Head below.
 		r.imageTagToDigestLRU.Remove(tagRef.String())
 	}
 
