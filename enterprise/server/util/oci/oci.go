@@ -239,7 +239,8 @@ type Resolver struct {
 	clock               clockwork.Clock
 }
 
-func NewResolverWithClock(env environment.Env, clk clockwork.Clock) (*Resolver, error) {
+
+func NewResolver(env environment.Env) (*Resolver, error) {
 	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
 	for _, r := range *allowedPrivateIPs {
 		_, ipNet, err := net.ParseCIDR(r)
@@ -255,16 +256,16 @@ func NewResolverWithClock(env environment.Env, clk clockwork.Clock) (*Resolver, 
 	if err != nil {
 		return nil, err
 	}
+	clk := env.GetClock()
+	if clk == nil {
+		clk = clockwork.NewRealClock()
+	}
 	return &Resolver{
 		env:                 env,
 		imageTagToDigestLRU: imageTagToDigestLRU,
 		allowedPrivateIPs:   allowedPrivateIPNets,
 		clock:               clk,
 	}, nil
-}
-
-func NewResolver(env environment.Env) (*Resolver, error) {
-	return NewResolverWithClock(env, clockwork.NewRealClock())
 }
 
 // ResolveImageDigest takes an image name and returns an image name with a digest.
