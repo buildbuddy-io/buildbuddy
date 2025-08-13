@@ -448,8 +448,7 @@ func InitializeShardsForMetaRange(ctx context.Context, session *client.Session, 
 	return nil
 }
 
-func writePartitionDescriptor(ctx context.Context, sender *sender.Sender, partitionID string, curValue, expectedValue []byte) error {
-	key := keys.MakeKey(constants.PartitionPrefix, []byte(partitionID))
+func writePartitionDescriptor(ctx context.Context, sender *sender.Sender, key []byte, curValue, expectedValue []byte) error {
 	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
 			Key:   key,
@@ -485,6 +484,8 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 	for i, rd := range ranges {
 		log.Infof("%d [%q, %q)", i, rd.GetStart(), rd.GetEnd())
 	}
+
+	// Make sure the meta range is set up.
 	retrier := retry.DefaultWithContext(ctx)
 	var mrd *rfpb.RangeDescriptor
 	for retrier.Next() {
@@ -494,17 +495,34 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 		}
 		log.CtxWarning(ctx, "RangeCache did not have meta range yet")
 	}
+	partitionKey := keys.MakeKey(constants.PartitionPrefix, []byte(partition.ID))
 
-	rangeIDs, err := store.ReserveRangeIDs(ctx, len(ranges))
-	if err != nil {
-		return err
-	}
-	pd := &rfpb.PartitionDescriptor{
-		Id:               partition.ID,
-		InitialNumRanges: int64(partition.NumRanges),
-		FirstRangeId:     rangeIDs[0],
-		State:            rfpb.PartitionDescriptor_INITIALIZING,
-		Generation:       1,
+	var pd *rfpb.PartitionDescriptor
+	partitionBuf, err := store.Sender().DirectRead(ctx, partitionKey)
+	shouldWritePD := false
+	if err == nil {
+		pd = &rfpb.PartitionDescriptor{}
+		if err := proto.Unmarshal(partitionBuf, pd); err != nil {
+			return status.WrapErrorf(err, "directRead returned unparsable PartitionDescriptor (key=%q)", partitionKey)
+		}
+		if pd.GetState() != rfpb.PartitionDescriptor_INITIALIZING {
+			return status.FailedPreconditionErrorf("partition descriptor is in state %s, expect it's in INITIALIZING", pd.GetState())
+		}
+	} else if !status.IsNotFoundError(err) {
+		return status.WrapErrorf(err, "failed to read partition %s from meta range", partition.ID)
+	} else {
+		rangeIDs, err := store.ReserveRangeIDs(ctx, len(ranges))
+		if err != nil {
+			return err
+		}
+		pd = &rfpb.PartitionDescriptor{
+			Id:               partition.ID,
+			InitialNumRanges: int64(partition.NumRanges),
+			FirstRangeId:     rangeIDs[0],
+			State:            rfpb.PartitionDescriptor_INITIALIZING,
+			Generation:       1,
+		}
+		shouldWritePD = true
 	}
 
 	pdBuf, err := proto.Marshal(pd)
@@ -512,9 +530,11 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 		return err
 	}
 
-	err = writePartitionDescriptor(ctx, store.Sender(), pd.GetId(), pdBuf, nil)
-	if err != nil {
-		return err
+	if shouldWritePD {
+		err = writePartitionDescriptor(ctx, store.Sender(), partitionKey, pdBuf, nil)
+		if err != nil {
+			return err
+		}
 	}
 
 	eg := &errgroup.Group{}
@@ -535,7 +555,7 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 		ExpectedValue: pdBuf,
 	})
 	for i, rd := range ranges {
-		rangeID := rangeIDs[i]
+		rangeID := pd.GetFirstRangeId() + uint64(i)
 		bootstrapInfo := MakeBootstrapInfo(rangeID, uint64(constants.InitialReplicaID), nodeGrpcAddrs)
 		rd.Replicas = bootstrapInfo.Replicas
 		rd.RangeId = rangeID
@@ -583,7 +603,7 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 		return err
 	}
 
-	log.Debugf("Attempting to start %d cluster with starting range_id=%d on: %+v", len(ranges), rangeIDs[0], nodeGrpcAddrs)
+	log.Debugf("Attempting to start %d cluster with starting range_id=%d on: %+v", len(ranges), pd.GetFirstRangeId(), nodeGrpcAddrs)
 
 	stmt := tx.AddStatement()
 	stmt.SetRangeDescriptor(mrd).SetBatch(metaRangeBatch)
@@ -591,7 +611,7 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 
 	err = store.TxnCoordinator().RunTxn(ctx, tx)
 	if err != nil {
-		return status.InternalErrorf("failed to run txn to start %d shards with starting range_id=%d, err: %s", len(ranges), rangeIDs[0], err)
+		return status.InternalErrorf("failed to run txn to start %d shards with starting range_id=%d, err: %s", len(ranges), pd.GetFirstRangeId(), err)
 	}
 	return nil
 }
