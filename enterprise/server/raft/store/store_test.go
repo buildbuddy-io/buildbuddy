@@ -1302,7 +1302,6 @@ func metadataKey(t *testing.T, fr *sgpb.FileRecord) []byte {
 	return keyBytes
 }
 
-
 func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *sgpb.FileRecord) {
 	fs := filestore.New()
 	fk := metadataKey(t, fr)
