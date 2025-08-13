@@ -62,6 +62,35 @@ describe("getContent", () => {
       },
     ]);
 
+    expect(getContent("\x1b[32mMulti-line\nColor\x1b[mReset", "", 0).rows).toEqual([
+      {
+        plaintext: "Multi-line",
+        matchStartIndex: null,
+        wrapOffset: 0,
+        tags: [
+          {
+            length: 10,
+            style: { foreground: "green" },
+          },
+        ],
+      },
+      {
+        plaintext: "ColorReset",
+        matchStartIndex: null,
+        wrapOffset: 0,
+        tags: [
+          {
+            length: 5,
+            style: { foreground: "green" },
+          },
+          {
+            length: 5,
+            style: {},
+          },
+        ],
+      },
+    ]);
+
     expect(getContent("\x1b[32mMulti-line\n\x1b[32mColor\x1b[m\nReset", "", 0).rows).toEqual([
       {
         plaintext: "Multi-line",
