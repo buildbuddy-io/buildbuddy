@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -15,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -141,9 +144,14 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 		incomingContextMetadata[usageutil.SkipUsageTrackingHeaderName] = append(incomingContextMetadata[usageutil.SkipUsageTrackingEnabledValue], test.skipUsageHeaderValues...)
 		ctx := metadata.NewIncomingContext(context.Background(), incomingContextMetadata)
 		iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
+		trackedString := "false"
+		if test.usageTrackingExpected {
+			trackedString = "true"
+		}
 
 		{
 			// Bazel CAS cache hit
+			metrics.CacheEvents.Reset()
 			rmd := &repb.RequestMetadata{
 				ToolInvocationId: iid,
 				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
@@ -160,6 +168,15 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 			dl := ht.TrackDownload(d)
 			dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
 
+			assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
+				prometheus.Labels{
+					metrics.CacheTypeLabel:      "cas",
+					metrics.CacheEventTypeLabel: "hit",
+					metrics.GroupID:             interfaces.AuthAnonymousUser,
+					metrics.UsageTracked:        trackedString,
+				},
+			)))
+
 			if test.usageTrackingExpected {
 				require.Len(t, ut.Increments, 1)
 				assert.Equal(t, []*tables.UsageCounts{{
@@ -173,6 +190,7 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 		}
 		{
 			// Executor CAS cache hit
+			metrics.CacheEvents.Reset()
 			rmd := &repb.RequestMetadata{
 				ToolInvocationId: iid,
 				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
@@ -190,6 +208,15 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 			dl := ht.TrackDownload(d)
 			dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
 
+			assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
+				prometheus.Labels{
+					metrics.CacheTypeLabel:      "cas",
+					metrics.CacheEventTypeLabel: "hit",
+					metrics.GroupID:             interfaces.AuthAnonymousUser,
+					metrics.UsageTracked:        trackedString,
+				},
+			)))
+
 			if test.usageTrackingExpected {
 				assert.Equal(t, []*tables.UsageCounts{{
 					CASCacheHits:           1,
@@ -202,6 +229,7 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 		}
 		{
 			// Bazel CAS empty cache hit
+			metrics.CacheEvents.Reset()
 			rmd := &repb.RequestMetadata{
 				ToolInvocationId: iid,
 				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
@@ -217,6 +245,15 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 			dl := ht.TrackDownload(d)
 			dl.CloseWithBytesTransferred(0, 0, repb.Compressor_ZSTD, "test")
 
+			assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
+				prometheus.Labels{
+					metrics.CacheTypeLabel:      "cas",
+					metrics.CacheEventTypeLabel: "hit",
+					metrics.GroupID:             interfaces.AuthAnonymousUser,
+					metrics.UsageTracked:        trackedString,
+				},
+			)))
+
 			if test.usageTrackingExpected {
 				assert.Equal(t, []*tables.UsageCounts{{CASCacheHits: 1}}, ut.Increments)
 			} else {
@@ -226,6 +263,7 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 		}
 		{
 			// Bazel AC hit
+			metrics.CacheEvents.Reset()
 			rmd := &repb.RequestMetadata{
 				ToolInvocationId: iid,
 				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
@@ -240,6 +278,15 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 
 			dl := ht.TrackDownload(d)
 			dl.CloseWithBytesTransferred(d.SizeBytes, d.SizeBytes, repb.Compressor_IDENTITY, "test")
+
+			assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
+				prometheus.Labels{
+					metrics.CacheTypeLabel:      "action_cache",
+					metrics.CacheEventTypeLabel: "hit",
+					metrics.GroupID:             interfaces.AuthAnonymousUser,
+					metrics.UsageTracked:        trackedString,
+				},
+			)))
 
 			if test.usageTrackingExpected {
 				assert.Equal(t, []*tables.UsageCounts{{
