@@ -3340,7 +3340,7 @@ func (s *Store) processPartitions(ctx context.Context) {
 	if !s.HasReplicaAndIsLeader(constants.MetaRangeID) {
 		return
 	}
-	partitionsFromMetaRange, err := s.sender.FetchPartitionsFromMetaRange(ctx)
+	partitionsFromMetaRange, err := s.sender.FetchPartitionDescriptors(ctx)
 	if err != nil {
 		s.log.Warningf("Failed to fetch partitions from meta range: %s", err)
 		return
