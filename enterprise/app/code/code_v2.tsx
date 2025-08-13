@@ -1106,9 +1106,9 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       return;
     }
 
-    let repoResponse = await rpcService.service.getGithubRepo(
-      new github.GetGithubRepoRequest({ owner: this.currentOwner(), repo: this.currentRepo() })
-    );
+    let repoResponse = await rpcService.service
+      .getGithubRepo(new github.GetGithubRepoRequest({ owner: this.currentOwner(), repo: this.currentRepo() }))
+      .catch((e) => error_service.handleError(e));
     console.log(repoResponse);
 
     let repo = this.getRepo();
@@ -1130,7 +1130,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           repoResponse: repoResponse,
           directoryResponse: response,
         });
-      });
+      })
+      .catch((e) => error_service.handleError(e));
   }
 
   isNewFile(node: workspace.Node) {
@@ -1218,7 +1219,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 record.data.map((r) => {
                   const parts = r.split(",");
                   const lineNum = parseInt(parts[0]);
-                  const hit = parts[1] == "1";
+                  const hit = parseInt(parts[1]) > 0;
                   return {
                     range: new monaco.Range(lineNum, 0, lineNum, 0),
                     options: {
@@ -2236,22 +2237,28 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 onClick={() => {
                   const bsUrl = this.props.search.get("bytestream_url");
                   const invocationId = this.props.search.get("invocation_id");
+                  const filename = this.props.search.get("filename") || "";
                   if (!bsUrl || !invocationId) {
                     return;
                   }
                   const zip = this.props.search.get("z");
                   if (zip) {
-                    rpcService.downloadBytestreamZipFile(
-                      this.props.search.get("filename") || "",
-                      bsUrl,
-                      zip,
-                      invocationId
-                    );
+                    rpcService.downloadBytestreamZipFile(filename, bsUrl, zip, invocationId);
                   } else {
-                    rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
+                    rpcService.downloadBytestreamFile(filename, bsUrl, invocationId);
+                    let compareUrl = this.props.search.get("compare_bytestream_url");
+                    let compareInvocationID = this.props.search.get("compare_invocation_id");
+                    let compareFilename = this.props.search.get("compare_filename") || "";
+                    if (compareUrl) {
+                      rpcService.downloadBytestreamFile(
+                        filename == compareFilename ? filename + ".modified" : compareFilename,
+                        compareUrl,
+                        compareInvocationID || invocationId
+                      );
+                    }
                   }
                 }}>
-                <Download /> Download File
+                <Download /> Download File{this.props.search.get("compare_filename") ? "s" : ""}
               </OutlinedButton>
             </div>
           )}
