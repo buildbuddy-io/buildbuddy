@@ -34,6 +34,17 @@ proto_library(
 )
 
 proto_library(
+    name = "channelz_proto",
+    srcs = ["channelz.proto"],
+    deps = [
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
+        "@com_google_protobuf//:wrappers_proto",
+    ],
+)
+
+proto_library(
     name = "action_cache_proto",
     srcs = ["action_cache.proto"],
 )
@@ -1830,6 +1841,19 @@ go_proto_library(
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+go_proto_library(
+    name = "channelz_go_proto",
+    compilers = [
+        "//proto:vtprotobuf_compiler",
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/channelz",
+    proto = ":channelz_proto",
+    deps = [
     ],
 )
 
