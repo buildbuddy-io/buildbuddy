@@ -196,20 +196,10 @@ func (h *HitTrackerFactory) shouldSkipTracking(ctx context.Context) bool {
 }
 
 func (h HitTrackerFactory) NewACHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	if h.shouldSkipTracking(ctx) {
-		return &metricsOnlyHitTracker{
-			// XXX
-		}
-	}
 	return h.newHitTracker(ctx, requestMetadata, true, usageutil.ServerName())
 }
 
 func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context, requestMetadata *repb.RequestMetadata) interfaces.HitTracker {
-	if h.shouldSkipTracking(ctx) {
-		return &metricsOnlyHitTracker{
-			// XXX
-		}
-	}
 	return h.newHitTracker(ctx, requestMetadata, false, usageutil.ServerName())
 }
 
@@ -222,8 +212,6 @@ func (h HitTrackerFactory) NewRemoteCASHitTracker(ctx context.Context, requestMe
 }
 
 type metricsOnlyHitTracker struct {
-	env         environment.Env
-	ctx         context.Context
 	groupID     string
 	actionCache bool
 	serverName  string
@@ -319,6 +307,14 @@ func (h HitTrackerFactory) newHitTracker(ctx context.Context, requestMetadata *r
 	if a := h.env.GetAuthenticator(); a != nil {
 		if u, err := a.AuthenticatedUser(ctx); err == nil {
 			groupID = u.GetGroupID()
+		}
+	}
+
+	if h.shouldSkipTracking(ctx) {
+		return &metricsOnlyHitTracker{
+			groupID: groupID,
+			actionCache: actionCache,
+			serverName: serverName,
 		}
 	}
 
