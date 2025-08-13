@@ -596,3 +596,13 @@
 .code-editor-search-bar-result pre {
   white-space: pre-wrap;
 }
+
+.code-editor-filename {
+  flex-grow: 1;
+}
+
+.code-editor-filename svg {
+  width: 12px;
+  height: 12px;
+  padding: 0 8px;
+}
