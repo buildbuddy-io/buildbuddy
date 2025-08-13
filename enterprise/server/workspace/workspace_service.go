@@ -336,7 +336,7 @@ func (s *workspaceService) nodesFromGitHub(ctx context.Context, githubRepo, ref 
 	if err != nil {
 		return nil, "", err
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, repo.Owner)
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, "", err
 	}
@@ -409,7 +409,7 @@ func (s *workspaceService) getGithubFileFromSha(ctx context.Context, githubRepo,
 		return nil, err
 	}
 
-	a, err := gh.GetGitHubAppForOwner(ctx, repo.Owner)
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -446,7 +446,7 @@ func (s *workspaceService) getGithubFileFromPath(ctx context.Context, githubRepo
 	if err != nil {
 		return nil, err
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, repo.Owner)
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
