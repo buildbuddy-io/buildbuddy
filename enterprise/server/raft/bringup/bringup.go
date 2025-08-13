@@ -454,11 +454,13 @@ func InitializeShardsForMetaRange(ctx context.Context, session *client.Session, 
 // have performance issues when we try to initialize tons of range descriptors at
 // once.
 func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAddrs map[string]string, partition disk.Partition) error {
+	if partition.NumRanges > 10 {
+		return status.FailedPreconditionErrorf("NumRanges is set to %d (>10) for partition %s", partition.NumRanges, partition.ID)
+	}
 	ranges, err := evenlyDividePartitionIntoRanges(partition)
 	if err != nil {
 		return err
 	}
-
 	log.Info("The following partitions will be configured:")
 	for i, rd := range ranges {
 		log.Infof("%d [%q, %q)", i, rd.GetStart(), rd.GetEnd())
