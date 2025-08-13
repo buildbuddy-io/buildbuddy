@@ -2156,7 +2156,7 @@ func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *repb.CreateR
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, request.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2192,7 +2192,7 @@ func (s *BuildBuddyServer) GetGithubRepo(ctx context.Context, req *ghpb.GetGithu
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2204,7 +2204,7 @@ func (s *BuildBuddyServer) GetGithubContent(ctx context.Context, req *ghpb.GetGi
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2216,7 +2216,7 @@ func (s *BuildBuddyServer) GetGithubTree(ctx context.Context, req *ghpb.GetGithu
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2228,7 +2228,7 @@ func (s *BuildBuddyServer) CreateGithubTree(ctx context.Context, req *ghpb.Creat
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2240,7 +2240,7 @@ func (s *BuildBuddyServer) GetGithubBlob(ctx context.Context, req *ghpb.GetGithu
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2252,7 +2252,7 @@ func (s *BuildBuddyServer) CreateGithubBlob(ctx context.Context, req *ghpb.Creat
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2264,7 +2264,7 @@ func (s *BuildBuddyServer) CreateGithubPull(ctx context.Context, req *ghpb.Creat
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2276,7 +2276,7 @@ func (s *BuildBuddyServer) MergeGithubPull(ctx context.Context, req *ghpb.MergeG
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2288,7 +2288,7 @@ func (s *BuildBuddyServer) GetGithubCompare(ctx context.Context, req *ghpb.GetGi
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2300,7 +2300,7 @@ func (s *BuildBuddyServer) GetGithubForks(ctx context.Context, req *ghpb.GetGith
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2312,7 +2312,7 @@ func (s *BuildBuddyServer) CreateGithubFork(ctx context.Context, req *ghpb.Creat
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2324,7 +2324,7 @@ func (s *BuildBuddyServer) GetGithubCommits(ctx context.Context, req *ghpb.GetGi
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2336,7 +2336,7 @@ func (s *BuildBuddyServer) CreateGithubCommit(ctx context.Context, req *ghpb.Cre
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2348,7 +2348,7 @@ func (s *BuildBuddyServer) UpdateGithubRef(ctx context.Context, req *ghpb.Update
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2360,7 +2360,7 @@ func (s *BuildBuddyServer) CreateGithubRef(ctx context.Context, req *ghpb.Create
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2384,7 +2384,7 @@ func (s *BuildBuddyServer) CreateGithubPullRequestComment(ctx context.Context, r
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2420,7 +2420,7 @@ func (s *BuildBuddyServer) GetGithubPullRequestDetails(ctx context.Context, req 
 	if gh == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	a, err := gh.GetGitHubAppForOwner(ctx, req.GetOwner())
+	a, err := gh.GetGitHubAppForAuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
