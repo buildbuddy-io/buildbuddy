@@ -479,7 +479,7 @@ type Leaser interface {
 type leaser struct {
 	db       IPebbleDB
 	waiters  sync.WaitGroup
-	closedMu sync.Mutex // PROTECTS(closed)
+	closedMu sync.RWMutex // PROTECTS(closed)
 	closed   bool
 }
 
@@ -496,7 +496,7 @@ func NewDBLeaser(db IPebbleDB) Leaser {
 	return &leaser{
 		db:       db,
 		waiters:  sync.WaitGroup{},
-		closedMu: sync.Mutex{},
+		closedMu: sync.RWMutex{},
 		closed:   false,
 	}
 }
@@ -514,8 +514,8 @@ func (l *leaser) Close() {
 }
 
 func (l *leaser) DB() (IPebbleDB, error) {
-	l.closedMu.Lock()
-	defer l.closedMu.Unlock()
+	l.closedMu.RLock()
+	defer l.closedMu.RUnlock()
 	if l.closed {
 		return nil, status.FailedPreconditionError("db is closed")
 	}
