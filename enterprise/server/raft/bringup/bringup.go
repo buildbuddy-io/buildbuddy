@@ -317,7 +317,7 @@ func MakeBootstrapInfo(rangeID, firstReplicaID uint64, nodeGrpcAddrs map[string]
 	return bi
 }
 
-func StartShard(ctx context.Context, store IStore, bootstrapInfo *ClusterBootstrapInfo) error {
+func startShard(ctx context.Context, store IStore, bootstrapInfo *ClusterBootstrapInfo) error {
 	log.Debugf("StartShard called with bootstrapInfo: %+v", bootstrapInfo)
 
 	eg, egCtx := errgroup.WithContext(ctx)
@@ -403,7 +403,7 @@ func InitializeShardsForMetaRange(ctx context.Context, session *client.Session, 
 		Replicas:   bootstrapInfo.Replicas,
 	}
 
-	if err := StartShard(ctx, store, bootstrapInfo); err != nil {
+	if err := startShard(ctx, store, bootstrapInfo); err != nil {
 		return err
 	}
 	log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
@@ -488,7 +488,7 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 		rd.RangeId = rangeID
 
 		eg.Go(func() error {
-			if err := StartShard(ctx, store, bootstrapInfo); err != nil {
+			if err := startShard(ctx, store, bootstrapInfo); err != nil {
 				return err
 			}
 			log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
