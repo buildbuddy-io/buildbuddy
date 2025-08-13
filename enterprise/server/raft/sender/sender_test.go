@@ -97,3 +97,54 @@ func TestLookupRangeDescriptorsForPartition(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(res))
 }
+
+func TestFetchPartitionDescriptors(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	ctx := context.Background()
+
+	// Start shard to set up meta range
+	stores := []*testutil.TestingStore{s1}
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+
+	// Set up two partitions
+	partitions := []disk.Partition{
+		{
+			ID:        "default",
+			NumRanges: 2,
+		},
+		{
+			ID:        "foo",
+			NumRanges: 1,
+		},
+	}
+
+	for _, p := range partitions {
+		sf.InitializeShardsForPartition(t, ctx, p, s1)
+	}
+
+	// Wait for range leases (meta range + 2 + 1 = 4 ranges total)
+	for i := 1; i <= 4; i++ {
+		testutil.WaitForRangeLease(t, ctx, stores, uint64(i))
+	}
+
+	sender := s1.Sender()
+	partitionDescriptors, err := sender.FetchPartitionDescriptors(ctx)
+	require.NoError(t, err)
+
+	require.Len(t, partitionDescriptors, 2)
+
+	pd1 := partitionDescriptors[0]
+	require.Equal(t, "default", pd1.GetId())
+	require.Equal(t, int64(2), pd1.GetInitialNumRanges())
+	require.Equal(t, uint64(2), pd1.GetFirstRangeId())
+
+	pd2 := partitionDescriptors[1]
+	require.Equal(t, "foo", pd2.GetId())
+	require.Equal(t, int64(1), pd2.GetInitialNumRanges())
+	require.Equal(t, uint64(4), pd2.GetFirstRangeId())
+}

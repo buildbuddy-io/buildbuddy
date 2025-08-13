@@ -483,6 +483,23 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 	eg := &errgroup.Group{}
 	tx := rbuilder.NewTxn()
 	metaRangeBatch := rbuilder.NewBatchBuilder()
+
+	pd := &rfpb.PartitionDescriptor{
+		Id:               partition.ID,
+		InitialNumRanges: int64(partition.NumRanges),
+		FirstRangeId:     rangeIDs[0],
+		State:            rfpb.PartitionDescriptor_INITIALIZED,
+	}
+	pdBuf, err := proto.Marshal(pd)
+	if err != nil {
+		return err
+	}
+	metaRangeBatch = metaRangeBatch.Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.MakeKey(constants.PartitionPrefix, []byte(partition.ID)),
+			Value: pdBuf,
+		},
+	})
 	for i, rd := range ranges {
 		rangeID := rangeIDs[i]
 		bootstrapInfo := MakeBootstrapInfo(rangeID, uint64(constants.InitialReplicaID), nodeGrpcAddrs)
