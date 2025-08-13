@@ -1380,7 +1380,7 @@ type multiWriteCloser struct {
 }
 
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
-	eg, _ := errgroup.WithContext(mc.ctx)
+	var eg errgroup.Group
 	for _, wc := range mc.peerClosers {
 		wc := wc
 		eg.Go(func() error {
@@ -1399,7 +1399,7 @@ func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 }
 
 func (mc *multiWriteCloser) Commit() error {
-	eg, _ := errgroup.WithContext(mc.ctx)
+	var eg errgroup.Group
 	for peer, wc := range mc.peerClosers {
 		wc := wc
 		peer := peer
@@ -1413,7 +1413,7 @@ func (mc *multiWriteCloser) Commit() error {
 	}
 	err := eg.Wait()
 	if err == nil {
-		peers := make([]string, len(mc.peerClosers))
+		peers := make([]string, 0, len(mc.peerClosers))
 		for peer := range mc.peerClosers {
 			peers = append(peers, peer)
 		}
@@ -1423,19 +1423,12 @@ func (mc *multiWriteCloser) Commit() error {
 }
 
 func (mc *multiWriteCloser) Close() error {
-	eg, _ := errgroup.WithContext(mc.ctx)
 	for peer, wc := range mc.peerClosers {
-		wc := wc
-		peer := peer
-		eg.Go(func() error {
-			if err := wc.Close(); err != nil {
-				mc.log.CtxErrorf(mc.ctx, "Error closing peer %q writer: %s", peer, err)
-			}
-			return nil
-		})
+		if err := wc.Close(); err != nil {
+			mc.log.CtxErrorf(mc.ctx, "Error closing peer %q writer: %s", peer, err)
+		}
 	}
-	err := eg.Wait()
-	return err
+	return nil
 }
 
 // Attempt to write digest to N peers (where N == replicationFactor).
