@@ -335,9 +335,9 @@ func TestAutomaticSplitting(t *testing.T) {
 
 	// Advance the clock to trigger scan the queue.
 	clock.Advance(61 * time.Second)
-	mrd := s1.GetRange(1)
 	for {
-		ranges := fetchRangeDescriptorsFromMetaRange(ctx, t, s1, mrd)
+		ranges, err := s1.Sender().LookupRangeDescriptorsByIDs(ctx, []uint64{2, 3})
+		require.NoError(t, err)
 		if len(ranges) == 2 && s1.HaveLease(ctx, 3) {
 			rd2 := s1.GetRange(2)
 			rd3 := s1.GetRange(3)
@@ -1302,39 +1302,6 @@ func metadataKey(t *testing.T, fr *sgpb.FileRecord) []byte {
 	return keyBytes
 }
 
-func fetchRangeDescriptorsFromMetaRange(ctx context.Context, t *testing.T, ts *testutil.TestingStore, metaRangeDescriptor *rfpb.RangeDescriptor) []*rfpb.RangeDescriptor {
-	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Start:    keys.RangeMetaKey([]byte{constants.UnsplittableMaxByte}),
-		End:      constants.SystemPrefix,
-		ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
-	}).ToProto()
-	require.NoError(t, err)
-	repl := metaRangeDescriptor.GetReplicas()[0]
-	c, err := ts.APIClient().GetForReplica(ctx, repl)
-	require.NoError(t, err)
-	for {
-		rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
-			Header: header.New(metaRangeDescriptor, repl, rfpb.Header_LINEARIZABLE),
-			Batch:  batchReq,
-		})
-		if status.IsOutOfRangeError(err) {
-			log.Debugf("fetchRangeDescriptorFromMetaRange error: %s", err)
-			continue
-		} else {
-			require.NoError(t, err)
-		}
-		scanRsp, err := rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).ScanResponse(0)
-		require.NoError(t, err)
-		res := []*rfpb.RangeDescriptor{}
-		for _, kv := range scanRsp.GetKvs() {
-			rd := &rfpb.RangeDescriptor{}
-			err = proto.Unmarshal(kv.GetValue(), rd)
-			require.NoError(t, err)
-			res = append(res, rd)
-		}
-		return res
-	}
-}
 
 func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *sgpb.FileRecord) {
 	fs := filestore.New()
@@ -2244,8 +2211,8 @@ func TestBringupSetRanges(t *testing.T) {
 
 	writeNRecordsAndFlush(ctx, t, s1, 20, 1) // each write is 1000 bytes
 
-	mrd := s1.GetRange(1)
-	ranges := fetchRangeDescriptorsFromMetaRange(ctx, t, s1, mrd)
+	ranges, err := s1.Sender().LookupRangeDescriptorsByIDs(ctx, []uint64{2, 3, 4, 5})
+	require.NoError(t, err)
 
 	require.Len(t, ranges, 4)
 	require.Equal(t, "PTdefault/", string(ranges[0].GetStart()))
