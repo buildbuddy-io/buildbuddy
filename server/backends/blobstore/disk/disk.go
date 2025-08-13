@@ -2,7 +2,6 @@ package disk
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -19,8 +19,10 @@ import (
 
 var (
 	// Disk flags
-	rootDirectory = flag.String("storage.disk.root_directory", "/tmp/buildbuddy", "The root directory to store all blobs in, if using disk based storage.")
+	rootDirectory = flag.String("storage.disk.root_directory", "/tmp/buildbuddy", "The root directory to store all blobs in, if using disk based storage.", &rootDirectoryMeta)
 	useV2Layout   = flag.Bool("storage.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
+
+	rootDirectoryMeta flag.Meta
 )
 
 const (
@@ -36,6 +38,10 @@ type DiskBlobStore struct {
 
 func UseDiskBlobStore() bool {
 	return *rootDirectory != ""
+}
+
+func IsExplicitlyConfigured() bool {
+	return rootDirectoryMeta.IsConfigured()
 }
 
 func NewDiskBlobStore() (*DiskBlobStore, error) {

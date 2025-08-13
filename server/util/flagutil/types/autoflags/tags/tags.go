@@ -389,3 +389,33 @@ func (_ *yamlIgnoreTag) Tag(flagset *flag.FlagSet, name string, f Tagged) flag.V
 }
 
 var YAMLIgnoreTag = &yamlIgnoreTag{}
+
+type MetaTag struct {
+	isSetInCommandLine    bool
+	isSetInYAML           bool
+	isSetProgrammatically bool
+}
+
+func (m *MetaTag) Tag(flagset *flag.FlagSet, name string, tagged Tagged) flag.Value {
+	tagged.DesignateSetFunc(func(value string) error {
+		m.isSetInCommandLine = true
+		return tagged.Value().Set(value)
+	})
+	tagged.DesignateYAMLSetValueHookFunc(func() {
+		m.isSetInYAML = true
+	})
+	tagged.DesignateSetValueForFlagNameHookFunc(func() {
+		m.isSetProgrammatically = true
+	})
+	return tagged
+}
+
+// IsConfigured returns true if the flag has been explicitly configured via the
+// flag API: either via the command line, via YAML, or via the
+// "SetValueForFlagName" API.
+//
+// Note: It does not return true if the flag was set via direct assignment (e.g.
+// *fooFlag = "bar").
+func (m *MetaTag) IsConfigured() bool {
+	return m.isSetInCommandLine || m.isSetInYAML || m.isSetProgrammatically
+}
