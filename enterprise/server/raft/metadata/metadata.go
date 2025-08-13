@@ -151,6 +151,9 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		if p.NumRanges == 0 {
 			ps[i].NumRanges = 1
 		}
+		if p.NumRanges > 10 {
+			return nil, status.FailedPreconditionErrorf("NumRanges is set to %d (>10) for partition %s", p.NumRanges, p.ID)
+		}
 		partitionSet.Add(p.ID)
 		if p.ID == constants.DefaultPartitionID {
 			haveDefault = true
