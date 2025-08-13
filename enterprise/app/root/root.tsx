@@ -260,8 +260,6 @@ export default class EnterpriseRootComponent extends React.Component {
     let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code && !repo && !cliLogin;
     let menu = !sidebar && !repo && !code && !this.state.loading;
 
-    console.log("compareActionDetails", compareActionDetails);
-
     return (
       <>
         {this.state.user?.isImpersonating && <ImpersonationComponent user={this.state.user} />}
