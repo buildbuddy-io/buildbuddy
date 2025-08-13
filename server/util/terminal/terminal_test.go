@@ -3,6 +3,7 @@ package terminal_test
 import (
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"testing"
 
@@ -21,7 +22,7 @@ func randomBytes(t *testing.T, n int) []byte {
 }
 
 func TestTruncation(t *testing.T) {
-	screenWriter, err := terminal.NewScreenWriter(0)
+	screenWriter, err := terminal.NewScreenWriter(math.MaxInt, 0)
 	require.NoError(t, err)
 
 	screenWriter.Write(randomBytes(t, 80))
@@ -61,13 +62,13 @@ func TestComplexScreenWriting(t *testing.T) {
 			// Disable timestamps in logs
 			log.SetFlags(0)
 			log.Printf("Running test case %q", tc.Name)
-			screen, err := terminal.NewScreenWriter(tc.ScreenRows)
+			screen, err := terminal.NewScreenWriter(math.MaxInt, tc.ScreenRows)
 			require.NoError(t, err)
 			if tc.ScreenCols > 0 {
 				if tc.ScreenRows > 0 {
 					screen.Screen.SetSize(tc.ScreenCols, tc.ScreenRows)
 				} else {
-					screen.Screen.SetSize(tc.ScreenCols, terminal.Lines)
+					screen.Screen.SetSize(tc.ScreenCols, terminal.MaxLineCapacity)
 				}
 			}
 			for _, s := range tc.Write {
