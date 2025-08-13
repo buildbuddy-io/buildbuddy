@@ -2278,25 +2278,23 @@ func TestSetupNewPartitions(t *testing.T) {
 
 		replicas := s1.ListOpenReplicasForTest()
 		if len(replicas) < 7 {
-			log.Infof("===num of replicas: %d", len(replicas))
-			time.Sleep(100 * time.Millisecond)
+			log.Infof("====num of replicas: %d", len(replicas))
+			time.Sleep(50 * time.Millisecond)
 			continue
 		}
-		testutil.WaitForRangeLease(t, ctx, stores, 3) // range 3: foo partition
-		testutil.WaitForRangeLease(t, ctx, stores, 4) // range 4: foo partition
-
-		testutil.WaitForRangeLease(t, ctx, stores, 5) // range 5: bar partition
-		testutil.WaitForRangeLease(t, ctx, stores, 6) // range 6: bar partition
-		testutil.WaitForRangeLease(t, ctx, stores, 7) // range 7: bar partition
+		log.Info("====7 shards all started")
 
 		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
-		mrd := s.GetRange(1)
 
 		// Verify partition descriptors
 		partitionDescriptors, err := s.Sender().FetchPartitionDescriptors(ctx)
 		require.NoError(t, err)
 
-		require.Len(t, partitionDescriptors, 3)
+		if len(partitionDescriptors) < 3 {
+			log.Infof("partitions are still initializing. len(partitionDescriptors)=%d", len(partitionDescriptors))
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
 
 		pd1 := partitionDescriptors[0]
 		require.Equal(t, "default", pd1.GetId())
@@ -2313,19 +2311,33 @@ func TestSetupNewPartitions(t *testing.T) {
 		require.Equal(t, int64(3), pd3.GetInitialNumRanges())
 		require.Equal(t, uint64(5), pd3.GetFirstRangeId())
 
-		ranges := fetchRangeDescriptorsFromMetaRange(ctx, t, s, mrd)
+		if pd2.GetState() == rfpb.PartitionDescriptor_INITIALIZING || pd3.GetState() == rfpb.PartitionDescriptor_INITIALIZING {
+			log.Infof("partitions are still initializing: %+v, %+v", pd2, pd3)
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+
+		log.Info("===partitions are initialized")
+		ranges, err := s.Sender().LookupRangeDescriptorsByIDs(ctx, []uint64{2, 3, 4, 5, 6, 7})
+		require.NoError(t, err)
 		require.Len(t, ranges, 6)
 		require.Equal(t, "PTdefault/", string(ranges[0].GetStart()))
-		require.Equal(t, "PTdefault/3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[0].GetEnd()))
+		require.Equal(t, "PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[0].GetEnd()))
 
-		require.Equal(t, "PTdefault/3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[1].GetStart()))
-		require.Equal(t, "PTdefault/7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe", string(ranges[1].GetEnd()))
+		require.Equal(t, "PTfoo/", string(ranges[1].GetStart()))
+		require.Equal(t, "PTfoo/7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[1].GetEnd()))
 
-		require.Equal(t, "PTdefault/7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe", string(ranges[2].GetStart()))
-		require.Equal(t, "PTdefault/bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd", string(ranges[2].GetEnd()))
+		require.Equal(t, "PTfoo/7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[2].GetStart()))
+		require.Equal(t, "PTfoo/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[2].GetEnd()))
 
-		require.Equal(t, "PTdefault/bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd", string(ranges[3].GetStart()))
-		require.Equal(t, "PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[3].GetEnd()))
+		require.Equal(t, "PTzoo/", string(ranges[3].GetStart()))
+		require.Equal(t, "PTzoo/5555555555555555555555555555555555555555555555555555555555555555", string(ranges[3].GetEnd()))
+
+		require.Equal(t, "PTzoo/5555555555555555555555555555555555555555555555555555555555555555", string(ranges[4].GetStart()))
+		require.Equal(t, "PTzoo/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", string(ranges[4].GetEnd()))
+
+		require.Equal(t, "PTzoo/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", string(ranges[5].GetStart()))
+		require.Equal(t, "PTzoo/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[5].GetEnd()))
+		break
 	}
-
 }
