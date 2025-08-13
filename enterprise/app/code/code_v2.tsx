@@ -1111,6 +1111,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       .catch((e) => error_service.handleError(e));
     console.log(repoResponse);
 
+    if (!repoResponse) {
+      return;
+    }
+
     let repo = this.getRepo();
     repo.branch = repo.branch || repoResponse.defaultBranch;
 
