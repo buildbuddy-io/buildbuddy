@@ -312,9 +312,9 @@ func (h HitTrackerFactory) newHitTracker(ctx context.Context, requestMetadata *r
 
 	if h.shouldSkipTracking(ctx) {
 		return &metricsOnlyHitTracker{
-			groupID: groupID,
+			groupID:     groupID,
 			actionCache: actionCache,
-			serverName: serverName,
+			serverName:  serverName,
 		}
 	}
 
