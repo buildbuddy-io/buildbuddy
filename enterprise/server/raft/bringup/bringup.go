@@ -448,18 +448,14 @@ func InitializeShardsForMetaRange(ctx context.Context, session *client.Session, 
 	return nil
 }
 
-func writePartitionDescriptor(ctx context.Context, sender *sender.Sender, pd *rfpb.PartitionDescriptor) error {
-	pdBuf, err := proto.Marshal(pd)
-	if err != nil {
-		return err
-	}
-
-	key := keys.MakeKey(constants.PartitionPrefix, []byte(pd.GetId()))
-	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+func writePartitionDescriptor(ctx context.Context, sender *sender.Sender, partitionID string, curValue, expectedValue []byte) error {
+	key := keys.MakeKey(constants.PartitionPrefix, []byte(partitionID))
+	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
 			Key:   key,
-			Value: pdBuf,
+			Value: curValue,
 		},
+		ExpectedValue: expectedValue,
 	}).ToProto()
 	if err != nil {
 		return err
@@ -508,24 +504,35 @@ func InitializeShardsForPartition(ctx context.Context, store IStore, nodeGrpcAdd
 		InitialNumRanges: int64(partition.NumRanges),
 		FirstRangeId:     rangeIDs[0],
 		State:            rfpb.PartitionDescriptor_INITIALIZING,
+		Generation:       1,
 	}
 
-	writePartitionDescriptor(ctx, store.Sender(), pd)
+	pdBuf, err := proto.Marshal(pd)
+	if err != nil {
+		return err
+	}
+
+	err = writePartitionDescriptor(ctx, store.Sender(), pd.GetId(), pdBuf, nil)
+	if err != nil {
+		return err
+	}
 
 	eg := &errgroup.Group{}
 	tx := rbuilder.NewTxn()
 	metaRangeBatch := rbuilder.NewBatchBuilder()
 
 	pd.State = rfpb.PartitionDescriptor_INITIALIZED
-	pdBuf, err := proto.Marshal(pd)
+	pd.Generation++
+	newPDBuf, err := proto.Marshal(pd)
 	if err != nil {
 		return err
 	}
-	metaRangeBatch = metaRangeBatch.Add(&rfpb.DirectWriteRequest{
+	metaRangeBatch = metaRangeBatch.Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
 			Key:   keys.MakeKey(constants.PartitionPrefix, []byte(partition.ID)),
-			Value: pdBuf,
+			Value: newPDBuf,
 		},
+		ExpectedValue: pdBuf,
 	})
 	for i, rd := range ranges {
 		rangeID := rangeIDs[i]

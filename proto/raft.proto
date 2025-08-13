@@ -473,6 +473,8 @@ message PartitionDescriptor {
     SOFT_DELETED = 3;
   }
   State state = 4;
+
+  uint64 generation = 5;
 }
 message RangeSet {
   repeated RangeDescriptor ranges = 1;
