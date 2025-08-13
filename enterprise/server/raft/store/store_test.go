@@ -2226,3 +2226,106 @@ func TestBringupSetRanges(t *testing.T) {
 	require.Equal(t, "PTdefault/bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd", string(ranges[3].GetStart()))
 	require.Equal(t, "PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[3].GetEnd()))
 }
+
+func TestSetupNewPartitions(t *testing.T) {
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0) // disable auto splitting
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+	flags.Set(t, "gossip.retransmit_mult", 10)
+
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	partitions := []disk.Partition{
+		{
+			ID:           "default",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    1,
+		},
+		{
+			ID:           "foo",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    2,
+		},
+		{
+			ID:           "zoo",
+			MaxSizeBytes: int64(1_000_000_000), // 1G
+			NumRanges:    3,
+		},
+	}
+	sf.SetPartitions(partitions)
+
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+	// start shards for s1, s2, s3
+	log.Infof("==== start 3 shards====")
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+	// Set up default partition
+	sf.InitializeShardsForPartition(t, ctx, partitions[0], stores...)
+
+	testutil.WaitForRangeLease(t, ctx, stores, 1) // metarange
+	testutil.WaitForRangeLease(t, ctx, stores, 2) // range 2: default partition
+
+	// advance the clock to trigger the process to set up partitions
+	clock.Advance(30 * time.Second)
+	for {
+		clock.Advance(2 * time.Second)
+
+		replicas := s1.ListOpenReplicasForTest()
+		if len(replicas) < 7 {
+			log.Infof("===num of replicas: %d", len(replicas))
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		testutil.WaitForRangeLease(t, ctx, stores, 3) // range 3: foo partition
+		testutil.WaitForRangeLease(t, ctx, stores, 4) // range 4: foo partition
+
+		testutil.WaitForRangeLease(t, ctx, stores, 5) // range 5: bar partition
+		testutil.WaitForRangeLease(t, ctx, stores, 6) // range 6: bar partition
+		testutil.WaitForRangeLease(t, ctx, stores, 7) // range 7: bar partition
+
+		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+		mrd := s.GetRange(1)
+
+		// Verify partition descriptors
+		partitionDescriptors, err := s.Sender().FetchPartitionDescriptors(ctx)
+		require.NoError(t, err)
+
+		require.Len(t, partitionDescriptors, 3)
+
+		pd1 := partitionDescriptors[0]
+		require.Equal(t, "default", pd1.GetId())
+		require.Equal(t, int64(1), pd1.GetInitialNumRanges())
+		require.Equal(t, uint64(2), pd1.GetFirstRangeId())
+
+		pd2 := partitionDescriptors[1]
+		require.Equal(t, "foo", pd2.GetId())
+		require.Equal(t, int64(2), pd2.GetInitialNumRanges())
+		require.Equal(t, uint64(3), pd2.GetFirstRangeId())
+
+		pd3 := partitionDescriptors[2]
+		require.Equal(t, "zoo", pd3.GetId())
+		require.Equal(t, int64(3), pd3.GetInitialNumRanges())
+		require.Equal(t, uint64(5), pd3.GetFirstRangeId())
+
+		ranges := fetchRangeDescriptorsFromMetaRange(ctx, t, s, mrd)
+		require.Len(t, ranges, 6)
+		require.Equal(t, "PTdefault/", string(ranges[0].GetStart()))
+		require.Equal(t, "PTdefault/3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[0].GetEnd()))
+
+		require.Equal(t, "PTdefault/3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[1].GetStart()))
+		require.Equal(t, "PTdefault/7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe", string(ranges[1].GetEnd()))
+
+		require.Equal(t, "PTdefault/7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe", string(ranges[2].GetStart()))
+		require.Equal(t, "PTdefault/bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd", string(ranges[2].GetEnd()))
+
+		require.Equal(t, "PTdefault/bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd", string(ranges[3].GetStart()))
+		require.Equal(t, "PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[3].GetEnd()))
+	}
+
+}

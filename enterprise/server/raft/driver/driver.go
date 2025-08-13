@@ -169,6 +169,8 @@ func (a DriverAction) String() string {
 		return "consider-rebalance-lease"
 	case DriverNoop:
 		return "no-op"
+	case DriverInitializePartition:
+		return "initialize-partition"
 	default:
 		return "unknown"
 	}
@@ -579,6 +581,7 @@ func (rq *Queue) computeActionForRangeTask(ctx context.Context, task *driverTask
 func (rq *Queue) computeActionForPartitionTask(ctx context.Context, task *driverTask) (DriverAction, float64) {
 	if task.curPD == nil || task.curPD.GetState() == rfpb.PartitionDescriptor_INITIALIZING {
 		a := DriverInitializePartition
+		rq.log.Infof("action: %s for partition: %q", a, task.key.partitionID)
 		return a, a.Priority()
 	}
 	return DriverNoop, DriverNoop.Priority()
@@ -654,7 +657,7 @@ func (bq *baseQueue) maybeAddRangeTask(ctx context.Context, repl IReplica, ar at
 }
 
 func (bq *baseQueue) maybeAddPartitionTask(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor, ar attemptRecord) {
-	key := taskKey{taskType: PartitionTask, partitionID: pd.GetId()}
+	key := taskKey{taskType: PartitionTask, partitionID: p.ID}
 	newTask := &driverTask{
 		key:             key,
 		partitionConfig: p,
@@ -664,6 +667,7 @@ func (bq *baseQueue) maybeAddPartitionTask(ctx context.Context, p disk.Partition
 }
 
 func (rq *Queue) MaybeAddPartitionTask(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor) {
+	rq.log.Infof("maybe add partition task for %q", p.ID)
 	rq.maybeAddPartitionTask(ctx, p, pd, attemptRecord{})
 }
 func (rq *Queue) MaybeAddRangeTask(ctx context.Context, replica IReplica) {
@@ -697,6 +701,7 @@ func (bq *baseQueue) Stop() {
 }
 
 func (bq *baseQueue) processQueue() {
+	bq.log.Info("processQueue")
 	if bq.Len() == 0 {
 		return
 	}
@@ -750,6 +755,7 @@ func (rq *Queue) findNodesForAllocation(storesWithStats *storemap.StoresWithStat
 
 	quorum := computeQuorum(rq.minReplicasPerRange)
 	if len(candidates) < quorum {
+		log.Info("we don't have enough nodes to bring up a new raft cluster")
 		// We don't have enough nodes to bring up a new raft cluster.
 		return nil
 	}
@@ -851,10 +857,11 @@ func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
 }
 
 func (rq *Queue) initializePartition(ctx context.Context, p disk.Partition) error {
+	rq.log.Infof("initialize partitions: %q", p.ID)
 	storesWithStats := rq.storeMap.GetStoresWithStats()
 	nodes := rq.findNodesForAllocation(storesWithStats)
 	if nodes == nil {
-		rq.log.Debugf("cannot find targets for :%+v", p.ID)
+		return status.InternalErrorf("cannot find nodes to initialize partition %q", p.ID)
 	}
 	nodeGrpcAddrs := make(map[string]string, len(nodes))
 	for _, n := range nodes {
