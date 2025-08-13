@@ -191,6 +191,7 @@ type IStore interface {
 	TransferLeadership(ctx context.Context, req *rfpb.TransferLeadershipRequest) (*rfpb.TransferLeadershipResponse, error)
 	NHID() string
 	ReserveRangeIDs(ctx context.Context, n int) ([]uint64, error)
+	InitializeShardsForPartition(ctx context.Context, nodeGrpcAddrs map[string]string, partition disk.Partition) error
 }
 
 type IClient interface {

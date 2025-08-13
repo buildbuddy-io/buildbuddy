@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
@@ -3372,6 +3373,11 @@ func (s *Store) processPartitions(ctx context.Context) {
 	if !partitionsNeedsSetup {
 		s.partitionsAllInitialized = true
 	}
+}
+
+// InitializeShardsForPartition is a wrapper so that the driver can call bringup.InitializeShardsForPartition.
+func (s *Store) InitializeShardsForPartition(ctx context.Context, nodeGrpcAddrs map[string]string, partition disk.Partition) error {
+	return bringup.InitializeShardsForPartition(ctx, s, nodeGrpcAddrs, partition)
 }
 
 func (s *Store) updatePebbleMetrics() error {
