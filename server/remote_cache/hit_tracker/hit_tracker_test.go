@@ -2,7 +2,9 @@ package hit_tracker_test
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -10,9 +12,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -66,110 +71,226 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	assert.Equal(t, int64(0), stats.GetTotalUploadTransferredSizeBytes())
 }
 
-func TestHitTracker_RecordsUsage(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	flags.Set(t, "cache.detailed_stats_enabled", true)
-	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
-	require.NoError(t, err)
-	env.SetMetricsCollector(mc)
-	ut := &fakeUsageTracker{}
-	env.SetUsageTracker(ut)
-	ctx := context.Background()
-	iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
-
-	{
-		// Bazel CAS cache hit
-		rmd := &repb.RequestMetadata{
-			ToolInvocationId: iid,
-			ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
-			ActionMnemonic:   "GoCompile",
-			TargetId:         "//foo:bar",
+func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
+	for _, test := range []struct {
+		name                  string
+		usageTrackingExpected bool
+		clientIdentity        string
+		skipUsageHeaderValues []string
+	}{
+		{
+			name:                  "EmptyTrackingHeaders",
+			usageTrackingExpected: true,
+			clientIdentity:        "",
+			skipUsageHeaderValues: []string{""},
+		},
+		{
+			name:                  "UsageDisabled_Basic",
+			usageTrackingExpected: false,
+			clientIdentity:        "cache-proxy",
+			skipUsageHeaderValues: []string{"yes"},
+		},
+		{
+			name:                  "UsageDisabled_DoubleEnabled",
+			usageTrackingExpected: false,
+			clientIdentity:        "cache-proxy",
+			skipUsageHeaderValues: []string{"yes", "yes"},
+		},
+		{
+			name:                  "UsageEnabled_NotCacheProxy",
+			usageTrackingExpected: true,
+			clientIdentity:        "app",
+			skipUsageHeaderValues: []string{"yes"},
+		},
+		{
+			name:                  "UsageEnabled_OneDisabledHeader",
+			usageTrackingExpected: true,
+			clientIdentity:        "cache-proxy",
+			skipUsageHeaderValues: []string{"yes", ""},
+		},
+		{
+			name:                  "UsageEnabled_EmptyHeader",
+			usageTrackingExpected: true,
+			clientIdentity:        "cache-proxy",
+			skipUsageHeaderValues: []string{""},
+		},
+		{
+			name:                  "UsageEnabled_WrongHeaderValue",
+			usageTrackingExpected: true,
+			clientIdentity:        "cache-proxy",
+			skipUsageHeaderValues: []string{"anything"},
+		},
+	} {
+		env := testenv.GetTestEnv(t)
+		flags.Set(t, "cache.detailed_stats_enabled", true)
+		mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+		require.NoError(t, err)
+		env.SetMetricsCollector(mc)
+		ut := &fakeUsageTracker{}
+		env.SetUsageTracker(ut)
+		env.SetClientIdentityService(&fakeIdentityService{})
+		incomingContextMetadata := make(map[string][]string)
+		if test.clientIdentity != "" {
+			hv, err := env.GetClientIdentityService().IdentityHeader(&interfaces.ClientIdentity{
+				Origin: "whocares",
+				Client: test.clientIdentity,
+			}, time.Minute)
+			assert.NoError(t, err)
+			incomingContextMetadata[fakeIdentityHeader] = []string{hv}
 		}
-		d := &repb.Digest{
-			Hash:      "c9c111006b30ffe6ce309fd64c44da651bffa068d530c7b1898698186b4afe2b",
-			SizeBytes: 1000,
+		incomingContextMetadata[usageutil.SkipUsageTrackingHeaderName] = append(incomingContextMetadata[usageutil.SkipUsageTrackingEnabledValue], test.skipUsageHeaderValues...)
+		ctx := metadata.NewIncomingContext(context.Background(), incomingContextMetadata)
+		iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
+
+		{
+			// Bazel CAS cache hit
+			rmd := &repb.RequestMetadata{
+				ToolInvocationId: iid,
+				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
+				ActionMnemonic:   "GoCompile",
+				TargetId:         "//foo:bar",
+			}
+			d := &repb.Digest{
+				Hash:      "c9c111006b30ffe6ce309fd64c44da651bffa068d530c7b1898698186b4afe2b",
+				SizeBytes: 1000,
+			}
+			compressedSize := int64(100)
+			ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, rmd)
+
+			dl := ht.TrackDownload(d)
+			dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
+
+			if test.usageTrackingExpected {
+				require.Len(t, ut.Increments, 1)
+				assert.Equal(t, []*tables.UsageCounts{{
+					CASCacheHits:           1,
+					TotalDownloadSizeBytes: 1000,
+				}}, ut.Increments)
+			} else {
+				require.Len(t, ut.Increments, 0)
+			}
+			ut.Increments = nil
 		}
-		compressedSize := int64(100)
-		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, rmd)
+		{
+			// Executor CAS cache hit
+			rmd := &repb.RequestMetadata{
+				ToolInvocationId: iid,
+				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
+				ActionMnemonic:   "GoCompile",
+				TargetId:         "//foo:bar",
+				ExecutorDetails:  &repb.ExecutorDetails{ExecutorHostId: "1234"},
+			}
+			d := &repb.Digest{
+				Hash:      "b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c",
+				SizeBytes: 2000,
+			}
+			compressedSize := int64(100)
+			ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, rmd)
 
-		dl := ht.TrackDownload(d)
-		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
+			dl := ht.TrackDownload(d)
+			dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
 
-		require.Len(t, ut.Increments, 1)
-		assert.Equal(t, []*tables.UsageCounts{{
-			CASCacheHits:           1,
-			TotalDownloadSizeBytes: 1000,
-		}}, ut.Increments)
-		ut.Increments = nil
+			if test.usageTrackingExpected {
+				assert.Equal(t, []*tables.UsageCounts{{
+					CASCacheHits:           1,
+					TotalDownloadSizeBytes: 2000,
+				}}, ut.Increments)
+			} else {
+				require.Len(t, ut.Increments, 0)
+			}
+			ut.Increments = nil
+		}
+		{
+			// Bazel CAS empty cache hit
+			rmd := &repb.RequestMetadata{
+				ToolInvocationId: iid,
+				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
+				ActionMnemonic:   "GoCompile",
+				TargetId:         "//foo:bar",
+			}
+			d := &repb.Digest{
+				Hash:      digest.EmptySha256,
+				SizeBytes: 0,
+			}
+			ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, rmd)
+
+			dl := ht.TrackDownload(d)
+			dl.CloseWithBytesTransferred(0, 0, repb.Compressor_ZSTD, "test")
+
+			if test.usageTrackingExpected {
+				assert.Equal(t, []*tables.UsageCounts{{CASCacheHits: 1}}, ut.Increments)
+			} else {
+				require.Len(t, ut.Increments, 0)
+			}
+			ut.Increments = nil
+		}
+		{
+			// Bazel AC hit
+			rmd := &repb.RequestMetadata{
+				ToolInvocationId: iid,
+				ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
+				ActionMnemonic:   "GoCompile",
+				TargetId:         "//foo:bar",
+			}
+			d := &repb.Digest{
+				Hash:      "7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
+				SizeBytes: 111,
+			}
+			ht := env.GetHitTrackerFactory().NewACHitTracker(ctx, rmd)
+
+			dl := ht.TrackDownload(d)
+			dl.CloseWithBytesTransferred(d.SizeBytes, d.SizeBytes, repb.Compressor_IDENTITY, "test")
+
+			if test.usageTrackingExpected {
+				assert.Equal(t, []*tables.UsageCounts{{
+					ActionCacheHits:        1,
+					TotalDownloadSizeBytes: 111,
+				}}, ut.Increments)
+			} else {
+				require.Len(t, ut.Increments, 0)
+			}
+			ut.Increments = nil
+		}
 	}
-	{
-		// Executor CAS cache hit
-		rmd := &repb.RequestMetadata{
-			ToolInvocationId: iid,
-			ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
-			ActionMnemonic:   "GoCompile",
-			TargetId:         "//foo:bar",
-			ExecutorDetails:  &repb.ExecutorDetails{ExecutorHostId: "1234"},
-		}
-		d := &repb.Digest{
-			Hash:      "b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c",
-			SizeBytes: 2000,
-		}
-		compressedSize := int64(100)
-		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, rmd)
+}
 
-		dl := ht.TrackDownload(d)
-		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
+const fakeIdentityHeader = "fake-identity"
 
-		assert.Equal(t, []*tables.UsageCounts{{
-			CASCacheHits:           1,
-			TotalDownloadSizeBytes: 2000,
-		}}, ut.Increments)
-		ut.Increments = nil
+type fakeIdentityService struct{}
+
+// AddIdentityToContext implements interfaces.ClientIdentityService.
+func (f *fakeIdentityService) AddIdentityToContext(ctx context.Context) (context.Context, error) {
+	panic("unimplemented")
+}
+
+// IdentityFromContext implements interfaces.ClientIdentityService.
+func (f *fakeIdentityService) IdentityFromContext(ctx context.Context) (*interfaces.ClientIdentity, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, status.NotFoundErrorf("fakeIdentityService: no incoming context found: %v", ctx)
 	}
-	{
-		// Bazel CAS empty cache hit
-		rmd := &repb.RequestMetadata{
-			ToolInvocationId: iid,
-			ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
-			ActionMnemonic:   "GoCompile",
-			TargetId:         "//foo:bar",
-		}
-		d := &repb.Digest{
-			Hash:      digest.EmptySha256,
-			SizeBytes: 0,
-		}
-		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, rmd)
-
-		dl := ht.TrackDownload(d)
-		dl.CloseWithBytesTransferred(0, 0, repb.Compressor_ZSTD, "test")
-
-		assert.Equal(t, []*tables.UsageCounts{{CASCacheHits: 1}}, ut.Increments)
-		ut.Increments = nil
+	ci, ok := md[fakeIdentityHeader]
+	if !ok {
+		return nil, status.NotFoundError("fakeIdentityService: no header present.")
 	}
-	{
-		// Bazel AC hit
-		rmd := &repb.RequestMetadata{
-			ToolInvocationId: iid,
-			ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
-			ActionMnemonic:   "GoCompile",
-			TargetId:         "//foo:bar",
-		}
-		d := &repb.Digest{
-			Hash:      "7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
-			SizeBytes: 111,
-		}
-		ht := env.GetHitTrackerFactory().NewACHitTracker(ctx, rmd)
-
-		dl := ht.TrackDownload(d)
-		dl.CloseWithBytesTransferred(d.SizeBytes, d.SizeBytes, repb.Compressor_IDENTITY, "test")
-
-		assert.Equal(t, []*tables.UsageCounts{{
-			ActionCacheHits:        1,
-			TotalDownloadSizeBytes: 111,
-		}}, ut.Increments)
-		ut.Increments = nil
+	ciParts := strings.Split(ci[0], "|")
+	if len(ciParts) != 2 {
+		return nil, status.NotFoundErrorf("fakeIdentityService: invalid header value %s", ci)
 	}
+	return &interfaces.ClientIdentity{
+		Client: ciParts[0],
+		Origin: ciParts[1],
+	}, nil
+}
+
+// IdentityHeader implements interfaces.ClientIdentityService.
+func (f *fakeIdentityService) IdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
+	return si.Client + "|" + si.Origin, nil
+}
+
+// ValidateIncomingIdentity implements interfaces.ClientIdentityService.
+func (f *fakeIdentityService) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {
+	return ctx, nil
 }
 
 type fakeUsageTracker struct {
