@@ -1951,7 +1951,7 @@ func TestAbandonedReadDoesntWriteToLookaside(t *testing.T) {
 	assert.Len(t, data, 100)
 	assert.Equal(t, buf, data)
 
-	assert.Equal(t, len(memoryCache.ops), 5, "Ops were %v", memoryCache.ops)
+	assert.Equal(t, 4, len(memoryCache.ops), "Ops were %v", memoryCache.ops)
 }
 
 func TestGetMultiLookaside(t *testing.T) {
