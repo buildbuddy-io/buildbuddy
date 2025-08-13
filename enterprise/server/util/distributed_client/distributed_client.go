@@ -352,13 +352,13 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			return err
 		}
 		rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
-		if rn.GetCacheType() == rspb.CacheType_CAS && req.GetCheckAlreadyExists() {
-			missing, err := c.cache.FindMissing(ctx, []*rspb.ResourceName{rn})
-			if err == nil && len(missing) == 0 {
-				return status.AlreadyExistsError("CAS digest already exists")
-			}
-		}
 		if writeCloser == nil {
+			if rn.GetCacheType() == rspb.CacheType_CAS && req.GetCheckAlreadyExists() {
+				missing, err := c.cache.FindMissing(ctx, []*rspb.ResourceName{rn})
+				if err == nil && len(missing) == 0 {
+					return status.AlreadyExistsError("CAS digest already exists")
+				}
+			}
 			wc, err := c.cache.Writer(ctx, rn)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
