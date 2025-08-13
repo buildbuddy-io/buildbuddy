@@ -850,14 +850,7 @@ func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
 	}
 }
 
-func (rq *Queue) initializePartition(ctx context.Context, p disk.Partition, pd *rfpb.PartitionDescriptor) {
-	if pd == nil {
-		pd = &rfpb.PartitionDescriptor{
-			Id:               p.ID,
-			InitialNumRanges: p.NumRanges,
-		}
-	}
-
+func (rq *Queue) initializePartition(ctx context.Context, p disk.Partition) error {
 	storesWithStats := rq.storeMap.GetStoresWithStats()
 	nodes := rq.findNodesForAllocation(storesWithStats)
 	if nodes == nil {
@@ -867,6 +860,7 @@ func (rq *Queue) initializePartition(ctx context.Context, p disk.Partition, pd *
 	for _, n := range nodes {
 		nodeGrpcAddrs[n.GetNhid()] = n.GetGrpcAddress()
 	}
+	return rq.store.InitializeShardsForPartition(ctx, nodeGrpcAddrs, p)
 }
 
 func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor) *change {
@@ -1476,13 +1470,17 @@ func (rq *Queue) processRangeTask(ctx context.Context, task *driverTask, action 
 }
 
 func (rq *Queue) processPartitionTask(ctx context.Context, task *driverTask, action DriverAction) (requeueType RequeueType) {
+	var err error
 	switch action {
 	case DriverInitializePartition:
-		// TODO(lulu): initialize partition
+		err = rq.initializePartition(ctx, task.partitionConfig)
 	case DriverAddReplica, DriverFinishReplicaRemoval, DriverNoop, DriverRebalanceLease, DriverRebalanceReplica, DriverRemoveDeadReplica, DriverRemoveReplica, DriverReplaceDeadReplica, DriverSplitRange:
 		// This should not be called for range tasks
 		alert.UnexpectedEvent("unexpected-action-for-parition-task", "driver action %s for parition %q", task.key.partitionID)
-
+	}
+	if err != nil {
+		rq.log.Errorf("failed to process partition task action %s (ID: %s): %s", action, task.key.partitionID, err)
+		return RequeueRetry
 	}
 	return RequeueNoop
 }
