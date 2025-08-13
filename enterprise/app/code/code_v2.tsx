@@ -1055,7 +1055,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     // If path or line number hasn't change, we don't need to do anything.
     if (prevProps.tab == this.props.tab && prevProps.path == this.props.path) {
       return;
-    }    
+    }
 
     const path = this.currentPath();
     this.getModel(path).then((model) => {
