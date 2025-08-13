@@ -167,7 +167,7 @@ func isTryingToDisableTracking(ctx context.Context) bool {
 		return false
 	}
 	for _, v := range vals {
-		if v != usageutil.SkipTrackingEnabledValue {
+		if v != usageutil.SkipUsageTrackingEnabledValue {
 			return false
 		}
 	}

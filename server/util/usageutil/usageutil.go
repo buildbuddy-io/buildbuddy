@@ -22,7 +22,7 @@ const (
 	bazelClientLabel    = "bazel"
 	executorClientLabel = "executor"
 
-	SkipTrackingEnabledValue = "yes"
+	SkipUsageTrackingEnabledValue = "yes"
 )
 
 var (

@@ -42,8 +42,11 @@ go_test(
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/testutil/testenv",
+        "//server/util/status",
         "//server/util/testing/flags",
+        "//server/util/usageutil",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//metadata",
     ],
 )
