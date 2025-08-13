@@ -221,11 +221,17 @@ func (p *ClientConnPoolSplitter) NewStream(ctx context.Context, desc *grpc.Strea
 // such as from cli tools and the like. When dialing from BuildBuddy servers
 // (app, executor) you should use DialInternal.
 func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
+	return DialSimpleWithPoolSize(target, *poolSize, extraOptions...)
+}
+
+// DialSimpleWithPoolSize is like DialSimple, but with a specified pool size
+// instead of the default.
+func DialSimpleWithPoolSize(target string, poolSize int, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
 	var mu sync.Mutex
 	var conns []*clientConn
 
 	eg, _ := errgroup.WithContext(context.Background())
-	for i := 0; i < *poolSize; i++ {
+	for range poolSize {
 		eg.Go(func() error {
 			conn, err := DialSimpleWithoutPooling(target, extraOptions...)
 			if err != nil {
@@ -283,9 +289,15 @@ func DialSimpleWithoutPooling(target string, extraOptions ...grpc.DialOption) (*
 //
 // Outside of BuildBuddy servers, DialSimple should be used instead.
 func DialInternal(env environment.Env, target string, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
+	return DialInternalWithPoolSize(env, target, *poolSize, extraOptions...)
+}
+
+// DialInternalWithPoolSize is similar to DialInternal, but with a specified
+// pool size instead of the default.
+func DialInternalWithPoolSize(env environment.Env, target string, poolSize int, extraOptions ...grpc.DialOption) (*ClientConnPool, error) {
 	opts := []grpc.DialOption{interceptors.GetUnaryClientIdentityInterceptor(env), interceptors.GetStreamClientIdentityInterceptor(env)}
 	opts = append(opts, extraOptions...)
-	return DialSimple(target, opts...)
+	return DialSimpleWithPoolSize(target, poolSize, opts...)
 }
 
 // DialInternalWithoutPooling is a variant of DialInternal that disables
