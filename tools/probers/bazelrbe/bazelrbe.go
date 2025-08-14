@@ -18,10 +18,10 @@ import (
 )
 
 var (
-	bazelBinary = flag.String("bazel_binary", "bazel", "Path to bazel binary")
-	bazelArgs   = flag.String("bazel_args", "", "Space separated list of args to pass to Bazel")
+	bazelBinary         = flag.String("bazel_binary", "bazel", "Path to bazel binary")
+	bazelArgs           = flag.String("bazel_args", "", "Space separated list of args to pass to Bazel")
 	bazelStartupOptions = flag.String("bazel_startup_options", "", "Space separated list of Bazel startup options to pass (appear before the command)")
-	proberName  = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
+	proberName          = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
 
 	numTargets         = flag.Int("num_targets", 10, "Number targets to generate")
 	numInputsPerTarget = flag.Int("num_inputs_per_target", 10, "Number of inputs each generated target will have")
