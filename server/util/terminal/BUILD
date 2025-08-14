@@ -5,7 +5,7 @@ go_library(
     srcs = ["terminal.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/terminal",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_buildkite_terminal_to_html_v3//:terminal-to-html"],
+    deps = ["@com_github_buildkite_terminal_to_html_v3//:go_default_library"],
 )
 
 go_test(

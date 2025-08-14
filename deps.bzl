@@ -736,13 +736,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20220908151343-929b41ab4dc6",
     )
     go_repository(
-        name = "com_github_buildkite_terminal_to_html_v3",
-        importpath = "github.com/buildkite/terminal-to-html/v3",
-        replace = "github.com/buildbuddy-io/terminal-to-html/v3",
-        sum = "h1:9AnmKaGBU8acoF9cFjwkWGantRwuPI8tLh+2G+3BFBA=",
-        version = "v3.16.8-16",
-    )
-    go_repository(
         name = "com_github_burntsushi_toml",
         importpath = "github.com/BurntSushi/toml",
         sum = "h1:pxW6RcqyfI9/kWtOwnv/G+AzdKuy2ZrqINhenH4HyNs=",
@@ -4855,12 +4848,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.22.15",
     )
     go_repository(
-        name = "com_github_urfave_cli_v2",
-        importpath = "github.com/urfave/cli/v2",
-        sum = "h1:VdRdS98FNhKZ8/Az8B7MTyGQmpIr36O1EHybx/LaZ4g=",
-        version = "v2.27.6",
-    )
-    go_repository(
         name = "com_github_urfave_negroni",
         importpath = "github.com/urfave/negroni",
         sum = "h1:kIimOitoypq34K7TG7DUaJ9kq/N4Ofuwi1sjz0KipXc=",
@@ -5033,12 +5020,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/xordataexchange/crypt",
         sum = "h1:ESFSdwYZvkeru3RtdrYueztKhOBCSAAzS4Gf+k0tEow=",
         version = "v0.0.3-0.20170626215501-b2862e3d0a77",
-    )
-    go_repository(
-        name = "com_github_xrash_smetrics",
-        importpath = "github.com/xrash/smetrics",
-        sum = "h1:gEOO8jv9F4OT7lGCjxCBTO/36wtF6j2nSip77qHd4x4=",
-        version = "v0.0.0-20240521201337-686a1a2994c1",
     )
     go_repository(
         name = "com_github_xyproto_randomstring",

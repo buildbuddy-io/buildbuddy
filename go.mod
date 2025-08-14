@@ -4,7 +4,7 @@ go 1.24.5
 
 replace (
 	github.com/awslabs/soci-snapshotter => github.com/buildbuddy-io/soci-snapshotter v0.9.0-buildbuddy // keep in sync with buildpatches/com_github_awslabs_soci_snapshotter.patch
-	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.16.8-16
+	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.16.8-17
 	github.com/jotfs/fastcdc-go v0.2.0 => github.com/buildbuddy-io/fastcdc-go v0.2.0-rc2
 	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.1
 	github.com/lni/vfs => github.com/buildbuddy-io/vfs v0.2.3
@@ -47,7 +47,6 @@ require (
 	github.com/bojand/ghz v0.120.0
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6
-	github.com/buildkite/terminal-to-html/v3 v3.0.0-00010101000000-000000000000
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cockroachdb/pebble v1.1.4

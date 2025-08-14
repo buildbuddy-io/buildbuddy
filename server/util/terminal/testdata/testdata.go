@@ -1,19 +1,26 @@
 package testdata
 
+import "math"
+
 const (
-	CUU  = "\x1b[A"  // Cursor Up
-	CHA  = "\x1b[G"  // Cursor Horizontal Absolute (go to column 1)
-	EL_2 = "\x1b[2K" // Erase in line; 2="Entire line"
-	ED_2 = "\x1b[2J" // Erase in display; 2="Entire display"
-	CUP  = "\x1b[H"  // Cursor Position (go to row 1, column 1)
+	CR   = "\x0d"     // Carriage Return
+	CSI  = "\x1b["    // Control Sequence Introducer
+	CUU  = CSI + "A"  // Cursor Up
+	CUF  = CSI + "C"  // Cursor Forward
+	CHA  = CSI + "G"  // Cursor Horizontal Absolute (go to column 1)
+	EL_1 = CSI + "1K" // Erase in line; 1="Cursor to beginning of line"
+	EL_2 = CSI + "2K" // Erase in line; 2="Entire line"
+	ED_2 = CSI + "2J" // Erase in display; 2="Entire display"
+	CUP  = CSI + "H"  // Cursor Position (go to row 1, column 1)
 )
 
 type TestCase struct {
-	Name       string
-	ScreenRows int
-	ScreenCols int
-	Write      []string
-	WantLog    string
+	Name              string
+	ScreenRows        int
+	ScreenCols        int
+	ScreenColCapacity int
+	Write             []string
+	WantLog           string
 }
 
 var (
@@ -118,6 +125,20 @@ var (
 			Write:      []string{"\x1b[32mINFO: ...\x1b[0m\n"},
 			WantLog:    "\x1b[32mINFO: ...\n",
 			ScreenRows: 1,
+		},
+		{
+			Name: "Test column capacity functionality",
+			Write: []string{
+				"1234567890\n",
+				// Go back up to the first line, clear the first two characters
+				CUU + CUF + CUF + EL_1,
+				// Return to the beginning of the line
+				CR,
+				"a",
+			},
+			WantLog:    "a  4567890\n",
+			ScreenRows: 2,
+			ScreenCols: math.MaxInt,
 		},
 	}
 )
