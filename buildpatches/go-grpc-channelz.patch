@@ -1,8 +1,8 @@
-diff --git a/servers-page.go b/servers-page.go
-index cf56ba9..18326ec 100644
---- a/servers-page.go
-+++ b/servers-page.go
-@@ -8,11 +8,24 @@ import (
+diff --git a/server-page.go b/server-page.go
+index 4948aa0..bb00052 100644
+--- a/server-page.go
++++ b/server-page.go
+@@ -9,6 +9,11 @@ import (
  	log "google.golang.org/grpc/grpclog"
  )
  
@@ -11,25 +11,28 @@ index cf56ba9..18326ec 100644
 +	Sockets *channelzgrpc.GetServerSocketsResponse
 +}
 +
- // writeServers writes HTML to w containing RPC servers stats.
+ func (h *grpcChannelzHandler) WriteServerPage(w io.Writer, server int64) {
+ 	writeHeader(w, fmt.Sprintf("ChannelZ server %d", server))
+ 	h.writeServer(w, server)
+@@ -18,8 +23,14 @@ func (h *grpcChannelzHandler) WriteServerPage(w io.Writer, server int64) {
+ // writeServer writes HTML to w containing RPC single server stats.
  //
  // It includes neither a header nor footer, so you can embed this data in other pages.
- func (h *grpcChannelzHandler) writeServers(w io.Writer) {
--	if err := serversTemplate.Execute(w, h.getServers()); err != nil {
-+	serversRsp := h.getServers()
-+	servers := make(map[int64]Server, len(serversRsp.Server))
-+	for _, s := range serversRsp.Server {
-+		servers[s.Ref.ServerId] = Server{
-+			Server:  s,
-+			Sockets: h.getServerSockets(s.Ref.ServerId),
-+		}
+-func (h *grpcChannelzHandler) writeServer(w io.Writer, server int64) {
+-	if err := serverTemplate.Execute(w, h.getServer(server)); err != nil {
++func (h *grpcChannelzHandler) writeServer(w io.Writer, serverID int64) {
++	serverRsp := h.getServer(serverID)
++	sockets := h.getServerSockets(serverID)
++	data := Server{
++		Server:  serverRsp.GetServer(),
++		Sockets: sockets,
 +	}
-+	if err := serversTemplate.Execute(w, servers); err != nil {
++	if err := serverTemplate.Execute(w, data); err != nil {
  		log.Errorf("channelz: executing template: %v", err)
  	}
  }
-@@ -32,6 +45,21 @@ func (h *grpcChannelzHandler) getServers() *channelzgrpc.GetServersResponse {
- 	return servers
+@@ -39,6 +50,21 @@ func (h *grpcChannelzHandler) getServer(serverID int64) *channelzgrpc.GetServerR
+ 	return server
  }
  
 +func (h *grpcChannelzHandler) getServerSockets(serverID int64) *channelzgrpc.GetServerSocketsResponse {
@@ -47,48 +50,30 @@ index cf56ba9..18326ec 100644
 +	return sockets
 +}
 +
- const serversTemplateHTML = `
- {{define "server-header"}}
-     <tr classs="header">
-@@ -47,19 +75,19 @@ const serversTemplateHTML = `
- 
- {{define "server-body"}}
+ const serverTemplateHTML = `
+ <table frame=box cellspacing=0 cellpadding=2 class="vertical">
      <tr>
--        <td><a href="{{link "server" .Ref.ServerId}}"><b>{{.Ref.ServerId}}</b> {{.Ref.Name}}</a></td>
--        <td>{{with .Data.Trace}} {{.CreationTimestamp | timestamp}} {{end}}</td>
--        <td>{{.Data.CallsStarted}}</td>
--        <td>{{.Data.CallsSucceeded}}</td>
--        <td>{{.Data.CallsFailed}}</td>
--        <td>{{.Data.LastCallStartedTimestamp | timestamp}}</td>
-+        <td><a href="{{link "server" .Server.Ref.ServerId}}"><b>{{.Server.Ref.ServerId}}</b> {{.Server.Ref.Name}}</a></td>
-+        <td>{{with .Server.Data.Trace}} {{.CreationTimestamp | timestamp}} {{end}}</td>
-+        <td>{{.Server.Data.CallsStarted}}</td>
-+        <td>{{.Server.Data.CallsSucceeded}}</td>
-+        <td>{{.Server.Data.CallsFailed}}</td>
-+        <td>{{.Server.Data.LastCallStartedTimestamp | timestamp}}</td>
- 		<td>
--			{{range .ListenSocket}}
-+			{{range .Sockets.SocketRef }}
- 				<a href="{{link "socket" .SocketId}}"><b>{{.SocketId}}</b> {{.Name}}</a> <br/>
- 			{{end}}
- 		</td>
+@@ -70,7 +96,7 @@ const serverTemplateHTML = `
+         <td>{{.Server.Data.LastCallStartedTimestamp | timestamp}}</td>
  	</tr>
--	{{with .Data.Trace}}
-+	{{with .Server.Data.Trace}}
- 		<tr classs="header">
- 			<th colspan=100>Events</th>
+ 	<tr>
+-		<th>Sockets</th>
++		<th>Listen Sockets</th>
+ 		<td>
+ 			{{range .Server.ListenSocket}}
+ 				<a href="{{link "socket" .SocketId}}"><b>{{.SocketId}}</b> {{.Name}}</a> <br/>
+@@ -90,4 +116,14 @@ const serverTemplateHTML = `
  		</tr>
-@@ -79,11 +107,11 @@ const serversTemplateHTML = `
- <p><table class="section-header" width=100%><tr align=center><td>Servers</td></tr></table></p>
- <table frame=box cellspacing=0 cellpadding=2>
-     <tr class="header">
--		<th colspan=100 style="text-align:left">Servers: {{.Server | len}}</th>
-+		<th colspan=100 style="text-align:left">Servers: {{. | len}}</th>
-     </tr>
- 
- 	{{template "server-header"}}
--	{{range .Server}}
-+	{{range . }}
- 		{{template "server-body" .}}
  	{{end}}
  </table>
++<table frame=box cellspacing=0 cellpadding=2 class="vertical">
++	<tr>
++		<th>Connection Sockets</th>
++		<td>
++			{{range .Sockets.SocketRef }}
++				<a href="{{link "socket" .SocketId}}"><b>{{.SocketId}}</b> {{.Name}}</a> <br/>
++			{{end}}
++		</td>
++    </tr>
++</table>
+ `
