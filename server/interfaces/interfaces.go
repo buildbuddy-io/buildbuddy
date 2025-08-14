@@ -610,6 +610,7 @@ type ApiService interface {
 	apipb.ApiServiceServer
 	GetFileHandler() http.Handler
 	GetMetricsHandler() http.Handler
+	GetMetricsFederationHandler() http.Handler
 	CacheEnabled() bool
 }
 
