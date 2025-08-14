@@ -156,7 +156,7 @@ func getLogs(t *testing.T, ctx context.Context, log *invocationLog) string {
 }
 
 func waitForLogsToEqual(t *testing.T, ctx context.Context, log *invocationLog, expected string) {
-	for delay := 1 * time.Microsecond; delay < 2*time.Second; delay *= 2 {
+	for delay := 1 * time.Microsecond; delay < time.Second; delay *= 2 {
 		logs := getLogs(t, ctx, log)
 		if logs == expected {
 			return

@@ -50,6 +50,7 @@ func NewScreenWriter(requestedWindowWidth int, requestedWindowHeight int) (*Scre
 		w.windowHeight = MaxLineCapacity
 	}
 	s, err := bkterminal.NewScreen(
+		bkterminal.WithMaxSize(MaxColumnCapacity, w.windowHeight),
 		bkterminal.WithSize(MaxColumnCapacity, w.windowHeight),
 		bkterminal.WithRenderer(w.renderer),
 		bkterminal.WithRealWindow(),
@@ -75,6 +76,7 @@ func (w *ScreenWriter) Reset() error {
 	w.renderer = &bkterminal.ANSIRenderer{}
 	var err error
 	w.Screen, err = bkterminal.NewScreen(
+		bkterminal.WithMaxSize(MaxColumnCapacity, w.windowHeight),
 		bkterminal.WithSize(MaxColumnCapacity, w.windowHeight),
 		bkterminal.WithRenderer(w.renderer),
 		bkterminal.WithRealWindow(),
