@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"maps"
 	"net/http"
@@ -24,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -56,7 +56,9 @@ var (
 )
 
 type APIServer struct {
-	env environment.Env
+	env                     environment.Env
+	metricsFederationURL    *url.URL
+	metricsFederationClient *http.Client
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -488,6 +490,8 @@ func (s *APIServer) GetMetricsHandler() http.Handler {
 }
 
 func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	if !*enableMetricsAPI {
 		http.Error(w, "API not enabled", http.StatusNotImplemented)
 		return
@@ -515,6 +519,41 @@ func (s *APIServer) handleGetMetricsRequest(w http.ResponseWriter, r *http.Reque
 	}
 	handler := promhttp.HandlerFor(reg, opts)
 	handler.ServeHTTP(w, r)
+
+	// If enabled, also fetch federated metrics matching the authenticated group
+	fp := s.env.GetExperimentFlagProvider()
+	if fp != nil && fp.Boolean(ctx, "api.metrics_federation.enabled", false) {
+		// Get configured match parameters for filtering federated metrics, e.g.
+		// {"__name__": "remote_execution_.*", "jobs": "(mac-executor|mac-node)"}
+		paramsObj := fp.Object(ctx, "api.metrics_federation.match_parameters", nil)
+		params := map[string]string{}
+		for k, v := range paramsObj {
+			s, ok := v.(string)
+			if !ok {
+				log.CtxWarningf(ctx, "Invalid match parameter %q (type %T)", k, v)
+				continue
+			}
+			params[k] = s
+		}
+		if err := s.fetchFederatedMetrics(ctx, w, userInfo.GetGroupID(), params); err != nil && ctx.Err() == nil {
+			log.CtxWarningf(ctx, "Fetching federated metrics failed: %s", err)
+		}
+	}
+}
+
+func (s *APIServer) fetchFederatedMetrics(ctx context.Context, w http.ResponseWriter, groupID string, matchParams map[string]string) error {
+	if _, ok := matchParams["job"]; !ok {
+		log.CtxErrorf(ctx, "Missing 'job' filter - refusing to fetch federated metrics.")
+		return nil
+	}
+	parts := make([]string, 0, 1+len(matchParams))
+	parts = append(parts, fmt.Sprintf("group_id=%q", groupID))
+	for k, v := range matchParams {
+		parts = append(parts, fmt.Sprintf("%s=~%q", k, v))
+	}
+	match := fmt.Sprintf("{%s}", strings.Join(parts, ","))
+	log.CtxDebugf(ctx, "Fetching federated metrics: %s", match)
+	return s.env.GetPromQuerier().FetchFederatedMetrics(ctx, w, match)
 }
 
 // Returns true if a selector doesn't specify a particular id or matches the target's ID

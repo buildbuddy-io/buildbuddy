@@ -1,14 +1,19 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -19,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -26,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
+	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -40,6 +47,8 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
+	dto "github.com/prometheus/client_model/go"
 )
 
 var userMap = testauth.TestUsers("user1", "group1")
@@ -645,6 +654,82 @@ func TestCreateUserApiKey(t *testing.T) {
 	require.Nil(t, rsp.GetApiKey().GetExpirationTimestamp())
 }
 
+func TestMetrics(t *testing.T) {
+	flags.Set(t, "api.enable_metrics_api", true)
+	const testFlags = `{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "api.metrics_federation.enabled": {
+      "state": "ENABLED",
+      "defaultVariant": "false",
+      "variants": {
+        "true": true,
+        "false": false
+      },
+      "targeting": {
+        "if": [
+			{"==": [ {"var": "group_id"}, "GR1" ]},
+			"true",
+			"false"
+		]
+      }
+    },
+	"api.metrics_federation.match_parameters": {
+      "state": "ENABLED",
+      "defaultVariant": "mac_metrics",
+      "variants": {
+        "mac_metrics": {
+			"job": "(mac-executor|mac-node)"
+		}
+      }
+    }
+  }
+}
+`
+	env := enterprise_testenv.New(t)
+	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	tmp := testfs.MakeTempDir(t)
+	offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", testFlags)
+	provider := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+	fakeProm := &fakePromQuerier{}
+	env.SetPromQuerier(fakeProm)
+	s := NewAPIServer(env)
+
+	for _, tc := range []struct {
+		name                string
+		authenticatedUserID string
+		expectedStatus      int
+		expectedResponse    string
+	}{
+		{
+			name:                "fetch federated metrics as configured group",
+			authenticatedUserID: "US1",
+			expectedStatus:      http.StatusOK,
+			expectedResponse:    `buildbuddy_remote_execution_tasks_executing{job="mac-executor",group_id="GR1"} 1`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			if tc.authenticatedUserID != "" {
+				var err error
+				ctx, err = ta.WithAuthenticatedUser(ctx, tc.authenticatedUserID)
+				require.NoError(t, err)
+			}
+			req := &http.Request{}
+			req = req.WithContext(ctx)
+			tw := &testResponseWriter{}
+			s.GetMetricsHandler().ServeHTTP(tw, req)
+			assert.Equal(t, tc.expectedStatus, tw.Status)
+			assert.Contains(t, tw.String(), tc.expectedResponse)
+		})
+	}
+}
+
 func getEnvAndCtx(t testing.TB, user string) (*testenv.TestEnv, context.Context) {
 	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(userMap)
@@ -931,4 +1016,44 @@ func finishedEvent() *anypb.Any {
 		},
 	})
 	return finishedAny
+}
+
+type testResponseWriter struct {
+	bytes.Buffer
+	Status int
+	header http.Header
+}
+
+func (w *testResponseWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = http.Header{}
+	}
+	return w.header
+}
+
+func (w *testResponseWriter) WriteHeader(status int) {
+	w.Status = status
+}
+
+func (w *testResponseWriter) Write(p []byte) (int, error) {
+	if w.Status == 0 {
+		w.WriteHeader(200)
+	}
+	return w.Buffer.Write(p)
+}
+
+type fakePromQuerier struct{}
+
+func (p *fakePromQuerier) FetchMetrics(ctx context.Context, groupID string) ([]*dto.MetricFamily, error) {
+	return nil, nil
+}
+func (p *fakePromQuerier) FetchFederatedMetrics(ctx context.Context, w io.Writer, match string) error {
+	if !strings.Contains(match, `group_id="GR1"`) {
+		return fmt.Errorf("match param must contain group_id filter")
+	}
+	if !strings.Contains(match, "job=~") {
+		return fmt.Errorf("match param must contain job filter")
+	}
+	_, err := w.Write([]byte(`buildbuddy_remote_execution_tasks_executing{job="mac-executor",group_id="GR1"} 1`))
+	return err
 }
