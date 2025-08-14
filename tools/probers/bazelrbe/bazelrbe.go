@@ -20,6 +20,7 @@ import (
 var (
 	bazelBinary = flag.String("bazel_binary", "bazel", "Path to bazel binary")
 	bazelArgs   = flag.String("bazel_args", "", "Space separated list of args to pass to Bazel")
+	bazelStartupOptions = flag.String("bazel_startup_options", "", "Space separated list of Bazel startup options to pass (appear before the command)")
 	proberName  = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
 
 	numTargets         = flag.Int("num_targets", 10, "Number targets to generate")
@@ -132,9 +133,15 @@ func runProbe() error {
 		// Since we're only using the workspace once, don't keep the bazel
 		// server alive.
 		"--max_idle_secs=5",
-		"build",
-		"//" + *proberName + ":all",
 	}
+	if *bazelStartupOptions != "" {
+		startupArgs := strings.Split(*bazelStartupOptions, " ")
+		args = append(args, startupArgs...)
+	}
+	args = append(args,
+		"build",
+		"//"+*proberName+":all",
+	)
 	if *bazelArgs != "" {
 		extraArgs := strings.Split(*bazelArgs, " ")
 		args = append(args, extraArgs...)
