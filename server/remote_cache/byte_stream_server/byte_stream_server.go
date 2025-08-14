@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -85,6 +86,13 @@ func checkReadPreconditions(req *bspb.ReadRequest) error {
 	return nil
 }
 
+func rpcPeerAddr(ctx context.Context) string {
+	if p, ok := peer.FromContext(ctx); ok {
+		return p.Addr.String()
+	}
+	return "unknown"
+}
+
 // `Read()` is used to retrieve the contents of a resource as a sequence
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
@@ -100,14 +108,14 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	hdrs := metadata.ValueFromIncomingContext(stream.Context(), "x-buildbuddy-log-all-bss-requests")
 	debugLog := len(hdrs) > 0 && hdrs[0] == "true"
 	if debugLog {
-		log.CtxInfof(stream.Context(), "Top of BSS:Read for %s", rn.ToProto())
+		log.CtxInfof(stream.Context(), "[%s] Top of BSS:Read for %s", rpcPeerAddr(stream.Context()), rn.ToProto())
 	}
 	start := time.Now()
 
 	err = s.ReadCASResource(stream.Context(), rn, req.GetReadOffset(), req.GetReadLimit(), stream)
 
 	if debugLog {
-		log.CtxInfof(stream.Context(), "BSS read of %s completed after %s: err(%v)", rn.ToProto(), time.Since(start), err)
+		log.CtxInfof(stream.Context(), "[%s] BSS read of %s completed after %s: err(%v)", rpcPeerAddr(stream.Context()), rn.ToProto(), time.Since(start), err)
 	}
 
 	return err
