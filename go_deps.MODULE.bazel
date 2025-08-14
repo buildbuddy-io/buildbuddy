@@ -191,6 +191,7 @@ use_repo(
     "com_github_bojand_ghz",
     "com_github_bradfitz_gomemcache",
     "com_github_buildbuddy_io_tensorflow_proto",
+    "com_github_buildkite_terminal_to_html_v3",
     "com_github_cavaliergopher_cpio",
     "com_github_cespare_xxhash_v2",
     "com_github_clickhouse_clickhouse_go_v2",
