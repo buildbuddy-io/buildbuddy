@@ -2179,9 +2179,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         <div className="code-menu">
           <div className="code-menu-logo">
             {this.isSingleFile() && (
-              <a onClick={() => {
-                window.history.back();
-              }}>
+              <a
+                onClick={() => {
+                  window.history.back();
+                }}>
                 <ArrowLeft className="code-menu-back" />
               </a>
             )}
