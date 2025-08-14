@@ -994,13 +994,13 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 			return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
 		}
 		var data string
-		// If there's an error maintaining the subscription (e.g. because a Redis node went away) send a failed
-		// operation message to Bazel so that it retries the execution.
+		// If there's an error maintaining the subscription (e.g. because a Redis node went away) send a
+		// NOT FOUND error to Bazel so that it retries the execution.
 		if msg.Err != nil {
 			op, err := operation.Assemble(
 				req.GetName(),
 				operation.Metadata(repb.ExecutionStage_COMPLETED, actionResource.GetDigest()),
-				operation.ErrorResponse(status.UnavailableErrorf("receive execution update: %s", msg.Err)),
+				operation.ErrorResponse(status.NotFoundErrorf("receive execution update: %s", msg.Err)),
 			)
 			if err != nil {
 				return err
