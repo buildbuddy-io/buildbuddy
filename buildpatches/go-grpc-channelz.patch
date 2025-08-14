@@ -77,3 +77,68 @@ index 4948aa0..bb00052 100644
 +    </tr>
 +</table>
  `
+diff --git a/socket-page.go b/socket-page.go
+index 0bd36ff..5786788 100644
+--- a/socket-page.go
++++ b/socket-page.go
+@@ -56,7 +56,7 @@ const socketTemplateHTML = `
+ 	<tr>
+ 		<th>Socket Local -> Remote</th>
+         <td>
+-			<pre>{{.Socket.Local}} -> {{.Socket.Remote}} {{with .Socket.RemoteName}}({{.}}){{end}}</pre>
++			<pre>{{.Socket.Local | address}} -> {{.Socket.Remote | address}} {{with .Socket.RemoteName}}({{.}}){{end}}</pre>
+ 		</td>
+ 	</tr>
+ 	<tr>
+diff --git a/templates.go b/templates.go
+index 2caac51..9635ec2 100644
+--- a/templates.go
++++ b/templates.go
+@@ -1,10 +1,13 @@
+ package channelz
+ 
+ import (
++	"fmt"
+ 	"io"
++	"net"
+ 	"text/template"
+ 	"time"
+ 
++	channelzgrpc "google.golang.org/grpc/channelz/grpc_channelz_v1"
+ 	log "google.golang.org/grpc/grpclog"
+ 	"google.golang.org/protobuf/types/known/timestamppb"
+ )
+@@ -33,6 +36,7 @@ func parseTemplate(name, html string) *template.Template {
+ func getFuncs() template.FuncMap {
+ 	return template.FuncMap{
+ 		"timestamp": formatTimestamp,
++		"address":   formatAddress,
+ 		"link":      createHyperlink,
+ 	}
+ }
+@@ -41,6 +45,25 @@ func formatTimestamp(ts *timestamppb.Timestamp) string {
+ 	return ts.AsTime().Format(time.RFC3339)
+ }
+ 
++func formatAddress(addr *channelzgrpc.Address) string {
++	if addr == nil {
++		return ""
++	}
++	
++	switch a := addr.GetAddress().(type) {
++	case *channelzgrpc.Address_TcpipAddress:
++		tcpAddr := a.TcpipAddress
++		ip := net.IP(tcpAddr.GetIpAddress())
++		return fmt.Sprintf("%s:%d", ip.String(), tcpAddr.GetPort())
++	case *channelzgrpc.Address_UdsAddress_:
++		return fmt.Sprintf("unix:%s", a.UdsAddress.GetFilename())
++	case *channelzgrpc.Address_OtherAddress_:
++		return fmt.Sprintf("%s:%s", a.OtherAddress.GetName(), a.OtherAddress.GetValue())
++	default:
++		return addr.String()
++	}
++}
++
+ func writeHeader(w io.Writer, title string) {
+ 	if err := headerTemplate.Execute(w, headerData{Title: title}); err != nil {
+ 		log.Errorf("channelz: executing template: %v", err)
