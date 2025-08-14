@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"testing"
 
@@ -151,13 +152,13 @@ func TestComplexScreenWriting(t *testing.T) {
 			log.Printf("Running test case %q", tc.Name)
 			ctx := context.Background()
 			tl := &testLog{}
-			screen, err := terminal.NewScreenWriter(tc.ScreenRows)
+			screen, err := terminal.NewScreenWriter(math.MaxInt, tc.ScreenRows)
 			require.NoError(t, err)
 			if tc.ScreenCols > 0 {
 				if tc.ScreenRows > 0 {
 					screen.Screen.SetSize(tc.ScreenCols, tc.ScreenRows)
 				} else {
-					screen.Screen.SetSize(tc.ScreenCols, terminal.Lines)
+					screen.Screen.SetSize(tc.ScreenCols, terminal.MaxLineCapacity)
 				}
 			}
 			w := eventlog.NewANSICursorBufferWriter(tl, screen)

@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"path"
 	"slices"
@@ -829,6 +830,8 @@ type EventChannel struct {
 	initialSequenceNumber            int64
 	hasReceivedEventWithOptions      bool
 	hasReceivedStartedEvent          bool
+	requestedTerminalColumns         int
+	requestedTerminalLines           int
 	logWriter                        *eventlog.EventLogWriter
 	onClose                          func()
 	attempt                          uint64
@@ -1112,25 +1115,12 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			chunkFileSizeBytes,
 		)
 		if *enableChunkedEventLogs {
-			numLinesToRetain := getNumActionsFromOptions(&bazelBuildEvent)
-			if numLinesToRetain != 0 {
-				// the number of lines curses can overwrite is 3 + the ui_actions shown:
-				// 1 for the progress tracker, 1 for each action, and 2 blank lines.
+			e.requestedTerminalLines = getNumActionsFromOptions(&bazelBuildEvent)
+			if e.requestedTerminalLines != 0 {
+				// the number of lines curses can overwrite is 4 + the ui_actions shown:
+				// 2 for the progress tracker, 1 for each action, and 2 blank lines.
 				// 0 indicates that curses is not being used.
-				numLinesToRetain += 3
-			}
-			var err error
-			e.logWriter, err = eventlog.NewEventLogWriter(
-				e.ctx,
-				e.env.GetBlobstore(),
-				e.env.GetKeyValStore(),
-				e.env.GetPubSub(),
-				eventlog.GetEventLogPubSubChannel(iid),
-				eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
-				numLinesToRetain,
-			)
-			if err != nil {
-				return err
+				e.requestedTerminalLines += 4
 			}
 		}
 		// Since this is the first event with options and we just parsed the API key,
@@ -1188,6 +1178,22 @@ func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.Bui
 	return true, nil
 }
 
+func (e *EventChannel) InitializeLogWriter(iid string) error {
+	var err error
+	log.Infof("Initializing log writer with %dw x %dh", e.requestedTerminalColumns, e.requestedTerminalLines)
+	e.logWriter, err = eventlog.NewEventLogWriter(
+		e.ctx,
+		e.env.GetBlobstore(),
+		e.env.GetKeyValStore(),
+		e.env.GetPubSub(),
+		eventlog.GetEventLogPubSubChannel(iid),
+		eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
+		e.requestedTerminalColumns,
+		e.requestedTerminalLines,
+	)
+	return err
+}
+
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
 	if err := e.redactor.RedactAPIKey(e.ctx, event.GetBuildEvent()); err != nil {
 		return err
@@ -1201,8 +1207,40 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	}
 
 	switch p := event.GetBuildEvent().GetPayload().(type) {
+	case *build_event_stream.BuildEvent_StructuredCommandLine:
+		if e.logWriter == nil {
+			// best effort to reduce memory usage when possible by using the value of
+			// the `terminal_columns` option to determine the width of the ANSI
+			// window, but if we need to write logs before we get a
+			// `structuredCommandLine` build event, we have to just initialize with
+			// default values, which is a little less efficient in some cases.
+			for _, section := range p.StructuredCommandLine.GetSections() {
+				if section.SectionLabel == "command options" {
+					switch s := section.SectionType.(type) {
+					case *command_line.CommandLineSection_ChunkList:
+						// don't care about these
+						continue
+					case *command_line.CommandLineSection_OptionList:
+						for _, option := range s.OptionList.Option {
+							if option.GetOptionName() == "terminal_columns" {
+								terminalColumns, err := strconv.ParseInt(option.OptionValue, 10, 64)
+								if err != nil {
+									terminalColumns = math.MaxInt
+								}
+								e.requestedTerminalColumns = int(terminalColumns)
+							}
+						}
+					}
+				}
+			}
+		}
 	case *build_event_stream.BuildEvent_Progress:
-		if e.logWriter != nil {
+		if *enableChunkedEventLogs {
+			if e.logWriter == nil {
+				if err := e.InitializeLogWriter(iid); err != nil {
+					return err
+				}
+			}
 			if _, err := e.logWriter.Write(e.ctx, append([]byte(p.Progress.GetStderr()), []byte(p.Progress.GetStdout())...)); err != nil && err != context.Canceled {
 				log.CtxWarningf(e.ctx, "Failed to write build logs for event: %s", err)
 			}
@@ -1326,7 +1364,12 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID string) error {
 	db := e.env.GetInvocationDB()
 	invocationProto := e.beValues.Invocation()
-	if e.logWriter != nil {
+	if *enableChunkedEventLogs {
+		if e.logWriter == nil {
+			if err := e.InitializeLogWriter(invocationID); err != nil {
+				return err
+			}
+		}
 		invocationProto.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 	ti, err := e.tableInvocationFromProto(invocationProto, "" /*=blobID*/)
@@ -1517,7 +1560,7 @@ func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.E
 	var screenWriter *terminal.ScreenWriter
 	if !inv.GetHasChunkedEventLogs() {
 		var err error
-		screenWriter, err = terminal.NewScreenWriter(0)
+		screenWriter, err = terminal.NewScreenWriter(0, 0)
 		if err != nil {
 			return err
 		}

@@ -739,8 +739,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_buildkite_terminal_to_html_v3",
         importpath = "github.com/buildkite/terminal-to-html/v3",
         replace = "github.com/buildbuddy-io/terminal-to-html/v3",
-        sum = "h1:iuHuyVtqCz/n0eez29fwZdpAwusp9SmrvxtD1bK2oRo=",
-        version = "v3.16.8-15",
+        sum = "h1:gUDd34cmruhHg28mdPmFHPF64zpQK2OQU8t1CDSJPjc=",
+        version = "v3.16.8-18",
     )
     go_repository(
         name = "com_github_burntsushi_toml",
@@ -1222,8 +1222,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_cpuguy83_go_md2man_v2",
         importpath = "github.com/cpuguy83/go-md2man/v2",
-        sum = "h1:XJtiaUW6dEEqVuZiMTn1ldk455QWwEIsMIJlo5vtkx0=",
-        version = "v2.0.6",
+        sum = "h1:zbFlGlXEAKlwXpmvle3d8Oe3YnkKIK4xSRTd3sHPnBo=",
+        version = "v2.0.7",
     )
     go_repository(
         name = "com_github_creack_pty",
@@ -4860,8 +4860,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_urfave_cli_v2",
         importpath = "github.com/urfave/cli/v2",
-        sum = "h1:VdRdS98FNhKZ8/Az8B7MTyGQmpIr36O1EHybx/LaZ4g=",
-        version = "v2.27.6",
+        sum = "h1:bH59vdhbjLv3LAvIu6gd0usJHgoTTPhCFib8qqOwXYU=",
+        version = "v2.27.7",
     )
     go_repository(
         name = "com_github_urfave_negroni",
@@ -6640,8 +6640,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_sys",
         importpath = "golang.org/x/sys",
-        sum = "h1:q3i8TbbEz+JRD9ywIRlyRAQbM0qF7hu24q3teo2hbuw=",
-        version = "v0.33.0",
+        sum = "h1:vz1N37gP5bs89s7He8XuIYXpyY0+QlsKmzipCbUtyxI=",
+        version = "v0.35.0",
     )
     go_repository(
         name = "org_golang_x_telemetry",
