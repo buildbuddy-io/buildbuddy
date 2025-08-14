@@ -2179,7 +2179,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         <div className="code-menu">
           <div className="code-menu-logo">
             {this.isSingleFile() && (
-              <a href="javascript:history.back()">
+              <a
+                onClick={() => {
+                  window.history.back();
+                }}>
                 <ArrowLeft className="code-menu-back" />
               </a>
             )}
@@ -2244,7 +2247,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           {this.isSingleFile() && (
             <>
               <div className="code-editor-filename">
-                {this.props.search.get("filename")}
+                {this.props.search.get("filename") || this.currentPath()}
                 {this.props.search.get("compare_filename") &&
                   this.props.search.get("compare_filename") != this.props.search.get("filename") && (
                     <>
