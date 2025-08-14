@@ -4268,6 +4268,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_rantav_go_grpc_channelz",
         importpath = "github.com/rantav/go-grpc-channelz",
+        patch_args = ["-p1"],
+        patch_tool = "patch",
+        patches = ["@{}//buildpatches:go-grpc-channelz.patch".format(workspace_name)],
         sum = "h1:svoYt8ZD0uO6B/EZVWGNIDRJY/JXfak2y5Ks+1xwaVo=",
         version = "v0.0.3",
     )
