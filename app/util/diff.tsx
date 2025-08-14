@@ -107,7 +107,7 @@ export function renderComparisonRow(
 
 interface ComparisonFacet<T> {
   name: string;
-  facet: (item?: T) => any;
+  facet: (item?: T) => string | undefined;
   type?: string;
   link?: (item?: T) => string | undefined;
 }
