@@ -1,3 +1,7 @@
+// Tool to allow creating and restoring ClickHouse backups. It can execute
+// BACKUP or RESTORE queries against a configured ClickHouse database.
+//
+// See README.md for more details and examples.
 package main
 
 import (
@@ -18,20 +22,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
-// Make sure to also configure:
-// - olap_database.* flags
-// - storage.* flags (bucket and path_prefix must match disk definition in clickhouse config)
 var (
 	create               = flag.NewFlagSet("create", flag.ExitOnError)
 	createDatabase       = create.String("database", "", "Name of the database to backup.")
 	createBackupDiskName = create.String("backup_disk_name", "", "Name of the disk to backup to. Must be configured in ClickHouse server config.")
 	createFullBackupDay  = create.Int("full_backup_day_of_month", 1, "Day of the month to take a full backup. Avoids long chains of incremental backups.")
-
-	// TODO: manually optimize and freeze old partitions before taking each
-	// backup. For now, we run the backup script a few hours after the end of
-	// the previous month (UTC) to increase the chance that no background merges
-	// will modify the previous month's partitions (and invalidate large
-	// portions of our full backup that we're taking on the first of the month).
 
 	restore                    = flag.NewFlagSet("restore", flag.ExitOnError)
 	restoreBackupDiskName      = restore.String("backup_disk_name", "", "Name of the disk to restore from. Must be configured in ClickHouse server config.")
@@ -202,6 +197,12 @@ func runRestore(ctx context.Context, env environment.Env) error {
 			return fmt.Errorf(`no recent backups found and "backup_name" option is not set`)
 		}
 	}
+
+	// TODO: manually optimize and freeze old partitions before taking each
+	// backup. For now, we run the backup script a few hours after the end of
+	// the previous month (UTC) to increase the chance that no background merges
+	// will modify the previous month's partitions (and invalidate large
+	// portions of our full backup that we're taking on the first of the month).
 
 	// NOTE: we don't set the allow_non_empty_tables setting here because we
 	// don't always filter out duplicate rows correctly yet (e.g. using FINAL).
