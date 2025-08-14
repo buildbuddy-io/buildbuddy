@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -38,8 +39,8 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	http_interceptors "github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
-	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	channelzservice "google.golang.org/grpc/channelz/service"
 )
 
 var (
@@ -109,6 +110,10 @@ func main() {
 	env.SetListenAddr(*listen)
 	if err := ssl.Register(env); err != nil {
 		log.Fatalf("%v", err)
+	}
+
+	if err := startInternalGRPCServers(env); err != nil {
+		log.Fatalf("Could not start internal GRPC server: %s", err)
 	}
 
 	if err := startGRPCServers(env); err != nil {
@@ -195,6 +200,19 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func startInternalGRPCServers(env *real_environment.RealEnv) error {
+	b, err := grpc_server.New(env, grpc_server.InternalGRPCPort(), false /*=ssl*/, grpc_server.GRPCServerConfig{})
+	if err != nil {
+		return err
+	}
+	channelzservice.RegisterChannelzServiceToServer(b.GetServer())
+	if err = b.Start(); err != nil {
+		return err
+	}
+	env.SetInternalGRPCServer(b.GetServer())
 	return nil
 }
 
