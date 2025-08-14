@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -146,6 +147,7 @@ func main() {
 	flagutil.SetValueForFlagName("executor.enable_remote_snapshot_sharing", true, nil, false)
 	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
 		RemoteReadEnabled: true,
+		ReadPolicy:        snaputil.AlwaysReadNewestSnapshot,
 	})
 	if err != nil {
 		log.Fatalf("Snapshot upload failed. Snapshot is not in the remote cache after it should've been uploaded.")

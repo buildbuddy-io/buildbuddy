@@ -407,6 +407,9 @@ func New(env environment.Env) (*FileCacheLoader, error) {
 }
 
 func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKeySet, opts *GetSnapshotOptions) (*Snapshot, error) {
+	if opts.ReadPolicy == "" {
+		return nil, status.InvalidArgumentErrorf("read policy is required")
+	}
 	var lastErr error
 	allKeys := append([]*fcpb.SnapshotKey{keys.GetBranchKey()}, keys.FallbackKeys...)
 	for _, key := range allKeys {
@@ -452,19 +455,34 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 
 	// Fall back to fetching remote manifest.
 	log.CtxInfof(ctx, "Fetching remote manifest")
-	return l.fetchRemoteManifest(ctx, key)
+	manifest, acResult, err := l.fetchRemoteManifest(ctx, key)
+	if err != nil {
+		return nil, status.WrapError(err, "fetch remote manifest")
+	}
+
+	// Unless reading the newest snapshot from the remote cache is requested,
+	// save the newly fetched manifest locally. This will increase the odds that
+	// future runs on this executor will use that snapshot, which will already
+	// have snapshot chunks locally.
+	if opts.ReadPolicy != snaputil.AlwaysReadNewestSnapshot {
+		if err := l.cacheManifestLocally(ctx, key, acResult, "" /* snapshotID */); err != nil {
+			log.Warningf("Failed to cache snapshot manifest locally during get %s: %s", snapshotDebugString(ctx, l.env, key, false, ""), err)
+		}
+	}
+
+	return manifest, nil
 }
 
 // fetchRemoteManifest fetches the most recent snapshot manifest from the remote
 // cache.
 // The ActionResult fetch will automatically validate that all referenced
 // artifacts exist in the cache.
-func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
+func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, *repb.ActionResult, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	manifestKey, err := RemoteManifestKey(key)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	rn := digest.NewACResourceName(manifestKey, key.InstanceName, repb.DigestFunction_BLAKE3)
 
@@ -473,10 +491,14 @@ func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.Sna
 
 	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	tmpDir := l.env.GetFileCache().TempDir()
-	return l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, true /*remoteEnabled*/)
+	manifest, err := l.actionResultToManifest(ctx, key.InstanceName, acResult, tmpDir, true /*remoteEnabled*/)
+	if err != nil {
+		return nil, nil, err
+	}
+	return manifest, acResult, nil
 }
 
 func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifestDigest *repb.Digest) (*repb.ActionResult, error) {
@@ -749,10 +771,6 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	ctx = snaputil.GetSnapshotAccessContext(ctx)
-	b, err := proto.Marshal(ar)
-	if err != nil {
-		return err
-	}
 
 	if *snaputil.EnableRemoteSnapshotSharing && !*snaputil.RemoteSnapshotReadonly && opts.CacheSnapshotRemotely {
 		// Cache master snapshot manifest
@@ -791,6 +809,10 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 		return nil
 	}
 
+	return l.cacheManifestLocally(ctx, key, ar, opts.VMMetadata.GetSnapshotId())
+}
+
+func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.SnapshotKey, manifestACResult *repb.ActionResult, snapshotID string) error {
 	gid, err := groupID(ctx, l.env)
 	if err != nil {
 		return err
@@ -799,15 +821,18 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 	if err != nil {
 		return err
 	}
+	b, err := proto.Marshal(manifestACResult)
+	if err != nil {
+		return err
+	}
 	manifestNode := &repb.FileNode{Digest: d}
 	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, b); err != nil {
 		return err
 	}
-	log.CtxInfof(ctx, "Updated local master snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/))
+	log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/))
 
-	// Cache snapshot manifest for this specific snapshot ID
-	if opts.VMMetadata.GetSnapshotId() != "" {
-		snapshotID := opts.VMMetadata.GetSnapshotId()
+	// If set, cache local manifest for a specific snapshot ID.
+	if snapshotID != "" {
 		snapshotSpecificKey := &fcpb.SnapshotKey{
 			InstanceName: key.InstanceName,
 			SnapshotId:   snapshotID,
@@ -815,13 +840,13 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 
 		snapshotSpecificManifestKey, err := LocalManifestKey(gid, snapshotSpecificKey)
 		if err != nil {
-			log.Warningf("Failed to generate snapshot specific local manifest key for snapshot ID %s: %s", snapshotID, err)
+			log.Warningf("Failed to generate local manifest key for snapshot ID %s: %s", snapshotID, err)
 			return nil
 		}
 
 		snapshotSpecificManifestNode := &repb.FileNode{Digest: snapshotSpecificManifestKey}
 		if _, err := l.env.GetFileCache().Write(ctx, snapshotSpecificManifestNode, b); err != nil {
-			log.Warningf("Failed to cache local snapshot specific manifest for snapshot ID %s: %s", snapshotID, err)
+			log.Warningf("Failed to cache local snapshot manifest for snapshot ID %s: %s", snapshotID, err)
 			return nil
 		}
 
@@ -1186,6 +1211,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 
 	snap, err := l.GetSnapshot(ctx, key, &GetSnapshotOptions{
 		RemoteReadEnabled: remoteEnabled,
+		ReadPolicy:        snaputil.AlwaysReadNewestSnapshot,
 	})
 	if err != nil && !(status.IsNotFoundError(err) || status.IsUnavailableError(err)) {
 		return nil, err

@@ -780,11 +780,15 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		recyclingEnabled := platform.IsRecyclingEnabled(task)
 		c.recyclingEnabled = recyclingEnabled
 		if recyclingEnabled && snaputil.IsChunkedSnapshotSharingEnabled() {
+			readPolicy, err := snapshotReadPolicy(task)
+			if err != nil {
+				return nil, err
+			}
 			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
 				RemoteReadEnabled: c.supportsRemoteSnapshots,
-				ReadPolicy:        platform.FindEffectiveValue(task, platform.SnapshotReadPolicyPropertyName),
+				ReadPolicy:        readPolicy,
 			})
-			c.createFromSnapshot = (err == nil)
+			c.createFromSnapshot = err == nil
 			label := ""
 			if err != nil {
 				label = metrics.MissStatusLabel
@@ -1022,9 +1026,12 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 
 	// We always use a local manifest if it exists, so only write one if
 	// we don't want to prioritize reading a remote manifest.
-	readPolicy := platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName)
+	readPolicy, err := snapshotReadPolicy(c.task)
+	if err != nil {
+		return err
+	}
 	writeManifestLocally := snapshotDetails.saveLocalSnapshot && (!snapshotDetails.saveRemoteSnapshot ||
-		!(readPolicy == "" || readPolicy == snaputil.AlwaysReadNewestSnapshot))
+		readPolicy != snaputil.AlwaysReadNewestSnapshot)
 
 	opts := &snaploader.CacheSnapshotOptions{
 		VMMetadata:            vmd,
@@ -1208,9 +1215,13 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
+	readPolicy, err := snapshotReadPolicy(c.task)
+	if err != nil {
+		return err
+	}
 	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
 		RemoteReadEnabled: c.supportsRemoteSnapshots,
-		ReadPolicy:        platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName),
+		ReadPolicy:        readPolicy,
 	})
 	if err != nil {
 		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
@@ -3154,16 +3165,24 @@ func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader sna
 }
 
 func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, loader snaploader.Loader, key *fcpb.SnapshotKey) bool {
-	_, err := loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
+	readPolicy, err := snapshotReadPolicy(c.task)
+	if err != nil {
+		return false
+	}
+	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
 		RemoteReadEnabled: c.supportsRemoteSnapshots,
-		ReadPolicy:        platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName),
+		ReadPolicy:        readPolicy,
 	})
 	return err == nil
 }
 func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loader snaploader.Loader, key *fcpb.SnapshotKey) bool {
-	_, err := loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
+	readPolicy, err := snapshotReadPolicy(c.task)
+	if err != nil {
+		return false
+	}
+	_, err = loader.GetSnapshot(ctx, &fcpb.SnapshotKeySet{BranchKey: key}, &snaploader.GetSnapshotOptions{
 		RemoteReadEnabled: false,
-		ReadPolicy:        platform.FindEffectiveValue(c.task, platform.SnapshotReadPolicyPropertyName),
+		ReadPolicy:        readPolicy,
 	})
 	return err == nil
 }
@@ -3315,4 +3334,17 @@ func workspacePathsToExtract(task *repb.ExecutionTask) []string {
 
 func (c *FirecrackerContainer) shouldUpgradeGuestKernel() bool {
 	return slices.Contains(c.task.Experiments, "upgrade-fc-guest-kernel")
+}
+
+func snapshotReadPolicy(task *repb.ExecutionTask) (string, error) {
+	policy := platform.FindEffectiveValue(task, platform.SnapshotReadPolicyPropertyName)
+	switch policy {
+	case "":
+		// By default, always read the newest snapshot
+		return snaputil.AlwaysReadNewestSnapshot, nil
+	case snaputil.ReadLocalSnapshotOnly, snaputil.ReadLocalSnapshotFirst, snaputil.AlwaysReadNewestSnapshot:
+		return policy, nil
+	default:
+		return "", status.InvalidArgumentErrorf("invalid snapshot read policy %s", policy)
+	}
 }
