@@ -2304,12 +2304,10 @@ func TestSetupNewPartitions(t *testing.T) {
 		pd2 := partitionDescriptors[1]
 		require.Equal(t, "foo", pd2.GetId())
 		require.Equal(t, int64(2), pd2.GetInitialNumRanges())
-		require.Equal(t, uint64(3), pd2.GetFirstRangeId())
 
 		pd3 := partitionDescriptors[2]
 		require.Equal(t, "zoo", pd3.GetId())
 		require.Equal(t, int64(3), pd3.GetInitialNumRanges())
-		require.Equal(t, uint64(5), pd3.GetFirstRangeId())
 
 		if pd2.GetState() == rfpb.PartitionDescriptor_INITIALIZING || pd3.GetState() == rfpb.PartitionDescriptor_INITIALIZING {
 			log.Infof("partitions are still initializing: %+v, %+v", pd2, pd3)
@@ -2318,26 +2316,40 @@ func TestSetupNewPartitions(t *testing.T) {
 		}
 
 		log.Info("===partitions are initialized")
-		ranges, err := s.Sender().LookupRangeDescriptorsByIDs(ctx, []uint64{2, 3, 4, 5, 6, 7})
-		require.NoError(t, err)
-		require.Len(t, ranges, 6)
-		require.Equal(t, "PTdefault/", string(ranges[0].GetStart()))
-		require.Equal(t, "PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[0].GetEnd()))
+		{
+			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "default", 0 /* fetch all ranges*/)
+			require.NoError(t, err)
+			require.Len(t, ranges, 1)
+			require.Equal(t, "PTdefault/", string(ranges[0].GetStart()))
+			require.Equal(t, "PTdefault/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[0].GetEnd()))
+		}
 
-		require.Equal(t, "PTfoo/", string(ranges[1].GetStart()))
-		require.Equal(t, "PTfoo/7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[1].GetEnd()))
+		{
+			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "foo", 0 /* fetch all ranges*/)
+			require.NoError(t, err)
+			require.Len(t, ranges, 2)
+			require.Equal(t, ranges[0].GetRangeId(), pd2.GetFirstRangeId())
+			require.Equal(t, "PTfoo/", string(ranges[0].GetStart()))
+			require.Equal(t, "PTfoo/7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[0].GetEnd()))
 
-		require.Equal(t, "PTfoo/7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[2].GetStart()))
-		require.Equal(t, "PTfoo/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[2].GetEnd()))
+			require.Equal(t, "PTfoo/7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", string(ranges[1].GetStart()))
+			require.Equal(t, "PTfoo/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[1].GetEnd()))
+		}
 
-		require.Equal(t, "PTzoo/", string(ranges[3].GetStart()))
-		require.Equal(t, "PTzoo/5555555555555555555555555555555555555555555555555555555555555555", string(ranges[3].GetEnd()))
+		{
+			ranges, err := s.Sender().LookupRangeDescriptorsForPartition(ctx, "zoo", 0 /* fetch all ranges*/)
+			require.NoError(t, err)
+			require.Len(t, ranges, 3)
+			require.Equal(t, ranges[0].GetRangeId(), pd3.GetFirstRangeId())
+			require.Equal(t, "PTzoo/", string(ranges[0].GetStart()))
+			require.Equal(t, "PTzoo/5555555555555555555555555555555555555555555555555555555555555555", string(ranges[0].GetEnd()))
 
-		require.Equal(t, "PTzoo/5555555555555555555555555555555555555555555555555555555555555555", string(ranges[4].GetStart()))
-		require.Equal(t, "PTzoo/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", string(ranges[4].GetEnd()))
+			require.Equal(t, "PTzoo/5555555555555555555555555555555555555555555555555555555555555555", string(ranges[1].GetStart()))
+			require.Equal(t, "PTzoo/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", string(ranges[1].GetEnd()))
 
-		require.Equal(t, "PTzoo/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", string(ranges[5].GetStart()))
-		require.Equal(t, "PTzoo/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[5].GetEnd()))
+			require.Equal(t, "PTzoo/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", string(ranges[2].GetStart()))
+			require.Equal(t, "PTzoo/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\xff", string(ranges[2].GetEnd()))
+		}
 		break
 	}
 }
