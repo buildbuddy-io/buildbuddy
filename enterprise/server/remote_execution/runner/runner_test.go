@@ -21,12 +21,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -977,4 +979,56 @@ func TestImagePullTimeout(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, status.IsUnavailableError(err), "expected Unavailable, got %T", err)
 	assert.Contains(t, err.Error(), "deadline exceeded")
+}
+
+func TestCreateThenRecycleWithoutRun(t *testing.T) {
+	metrics.UnexpectedEvent.Reset()
+
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	task := newTask()
+	// Get a runner then try to recycle it without running anything. We should
+	// not call Pause() since Run() is responsible for creating the container,
+	// which puts it in the ready state (which makes it possible to pause it).
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	err = r.PrepareForTask(ctx)
+	require.NoError(t, err)
+	pool.TryRecycle(ctx, r, true)
+	assert.Equal(t, 0, pool.PausedRunnerCount(), "runner should not be added to the pool")
+
+	require.Empty(t, testmetrics.CounterValues(t, metrics.UnexpectedEvent), "unexpected events logged")
+}
+
+func TestUnpauseThenRecycleWithoutRun(t *testing.T) {
+	metrics.UnexpectedEvent.Reset()
+
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	task := newTask()
+	// Create a runner, execute a task, and pause it.
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	err = r.PrepareForTask(ctx)
+	require.NoError(t, err)
+	res := r.Run(ctx, &repb.IOStats{})
+	require.NoError(t, res.Error)
+	pool.TryRecycle(ctx, r, true)
+	assert.Equal(t, 1, pool.PausedRunnerCount(), "runner should be added to the pool")
+
+	// Get the paused runner then try to recycle it without running anything. We
+	// should call pause since the runner should be created and it may have
+	// useful contents from the previous run.
+	r, err = pool.Get(ctx, task)
+	require.NoError(t, err)
+	err = r.PrepareForTask(ctx)
+	require.NoError(t, err)
+	pool.TryRecycle(ctx, r, true)
+	assert.Equal(t, 1, pool.PausedRunnerCount(), "runner should be added to the pool")
+
+	require.Empty(t, testmetrics.CounterValues(t, metrics.UnexpectedEvent), "unexpected events logged")
 }
