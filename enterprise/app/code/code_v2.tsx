@@ -2199,44 +2199,62 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
               </svg>
             </a>
           </div>
-          <SearchBar<search.Result>
-            placeholder="Search..."
-            title="Results"
-            fetchResults={async (query) => {
-              return (
-                await rpcService.service.search(new search.SearchRequest({ query: new search.Query({ term: query }) }))
-              ).results;
-            }}
-            onResultPicked={(result: any, query: string) => {
-              this.fetchIfNeededAndNavigate(result.filename, `?pq=${query}&commit=${result.sha}`);
-            }}
-            emptyState={
-              <div className="code-editor-search-bar-empty-state">
-                <div className="code-editor-search-bar-empty-state-description">Search for files and code.</div>
-                <div className="code-editor-search-bar-empty-state-examples">Examples</div>
-                <ul>
-                  <li>
-                    <code>case:yes Hello World</code>
-                  </li>
-                  <li>
-                    <code>lang:css padding-(left|right)</code>
-                  </li>
-                  <li>
-                    <code>lang:go flag.String</code>
-                  </li>
-                  <li>
-                    <code>filepath:package.json</code>
-                  </li>
-                </ul>
+          {!this.isSingleFile() && (
+            <SearchBar<search.Result>
+              placeholder="Search..."
+              title="Results"
+              fetchResults={async (query) => {
+                return (
+                  await rpcService.service.search(
+                    new search.SearchRequest({ query: new search.Query({ term: query }) })
+                  )
+                ).results;
+              }}
+              onResultPicked={(result: any, query: string) => {
+                this.fetchIfNeededAndNavigate(result.filename, `?pq=${query}&commit=${result.sha}`);
+              }}
+              emptyState={
+                <div className="code-editor-search-bar-empty-state">
+                  <div className="code-editor-search-bar-empty-state-description">Search for files and code.</div>
+                  <div className="code-editor-search-bar-empty-state-examples">Examples</div>
+                  <ul>
+                    <li>
+                      <code>case:yes Hello World</code>
+                    </li>
+                    <li>
+                      <code>lang:css padding-(left|right)</code>
+                    </li>
+                    <li>
+                      <code>lang:go flag.String</code>
+                    </li>
+                    <li>
+                      <code>filepath:package.json</code>
+                    </li>
+                  </ul>
+                </div>
+              }
+              renderResult={(r) => (
+                <div className="code-editor-search-bar-result">
+                  <div>{r.filename}</div>
+                  <pre>{r.snippets.map((s) => s.lines).pop()}</pre>
+                </div>
+              )}
+            />
+          )}
+          {this.isSingleFile() && (
+            <>
+              <div className="code-editor-filename">
+                {this.props.search.get("filename")}
+                {this.props.search.get("compare_filename") &&
+                  this.props.search.get("compare_filename") != this.props.search.get("filename") && (
+                    <>
+                      <ChevronRight />
+                      {this.props.search.get("compare_filename")}
+                    </>
+                  )}
               </div>
-            }
-            renderResult={(r) => (
-              <div className="code-editor-search-bar-result">
-                <div>{r.filename}</div>
-                <pre>{r.snippets.map((s) => s.lines).pop()}</pre>
-              </div>
-            )}
-          />
+            </>
+          )}
 
           <OrgPicker user={this.props.user} floating={true} inline={true} />
           {this.isSingleFile() && (
