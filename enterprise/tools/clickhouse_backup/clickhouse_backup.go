@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
@@ -48,16 +50,18 @@ var (
 )
 
 func main() {
+	// Parse global flags and set up common dependencies
 	ctx := context.Background()
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	flag.Parse()
-	if err := log.Configure(); err != nil {
-		log.Fatal(err.Error())
+	if err := config.Load(); err != nil {
+		log.Fatalf("Failed to load config: %s", err)
 	}
-
-	// Common setup
+	if err := log.Configure(); err != nil {
+		log.Fatalf("Failed to configure logging: %s", err)
+	}
 	env := real_environment.NewBatchEnv()
 	if err := flagutil.SetValueForFlagName("olap_database.auto_migrate_db", false, nil, false); err != nil {
 		log.Fatalf("Failed to disable auto-migration: %s", err)
@@ -75,6 +79,7 @@ func main() {
 		log.Fatal("Blobstore not configured")
 	}
 
+	// Parse and run subcommand
 	subcommand := flag.Args()
 	if len(subcommand) == 0 {
 		usage()
@@ -111,18 +116,23 @@ func runSave(ctx context.Context, env environment.Env) error {
 		return fmt.Errorf("missing backup_disk_name flag")
 	}
 
-	now := env.GetClock().Now()
-	todayStr := now.Format("2006-01-02")
-	backupName := todayStr
+	nowUTC := env.GetClock().Now().UTC()
+	// For now, associate the backup with 00:00:00 of the day the backup is
+	// taken. Blobstore doesn't have the ability to list blobs (yet) so we check
+	// for previous backups by looking for backups taken at 00:00:00 for the
+	// past few days. In the future, if we want to take multiple backups per
+	// day, and if we add ListBlobs support, then we can start recording the
+	// exact timestamp, and these new backups will be backwards-compatible with
+	// existing backups.
+	backupName := backupNameForTimestamp(toStartOfDay(nowUTC))
 
 	qStr := `BACKUP DATABASE ` + *createDatabase + ` TO Disk(?, ?)`
 	qArgs := []any{*createBackupDiskName, backupName}
 	incremental := false
 	// If it's not the scheduled full-backup day, use the previous day's backup
 	// as the base for the incremental backup, if it exists.
-	if now.Day() != *createFullBackupDay {
-		yesterdayStr := now.AddDate(0, 0, -1).Format("2006-01-02")
-		yesterdayBackupName := yesterdayStr
+	if nowUTC.Day() != *createFullBackupDay {
+		yesterdayBackupName := backupNameForTimestamp(toStartOfDay(nowUTC.AddDate(0, 0, -1)))
 		// Check if yesterday's backup exists.
 		if exists, err := backupExists(ctx, env, yesterdayBackupName, *createDatabase); err != nil {
 			return fmt.Errorf("check blob exists: %w", err)
@@ -142,9 +152,17 @@ func runSave(ctx context.Context, env environment.Env) error {
 		return fmt.Errorf("run backup query: %w", err)
 	}
 
-	log.Infof("Backup completed in %s", env.GetClock().Since(now))
+	log.Infof("Backup completed in %s", env.GetClock().Since(nowUTC))
 
 	return nil
+}
+
+func toStartOfDay(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+}
+
+func backupNameForTimestamp(t time.Time) string {
+	return t.Format("2006-01-02T15:04:05.000Z")
 }
 
 func runRestore(ctx context.Context, env environment.Env) error {
@@ -165,13 +183,13 @@ func runRestore(ctx context.Context, env environment.Env) error {
 	}
 	if *restoreBackupName == "" {
 		log.Infof("No backup name provided, looking for recent backup")
-		now := env.GetClock().Now()
-		todayStr := now.Format("2006-01-02")
-		yesterdayStr := now.AddDate(0, 0, -1).Format("2006-01-02")
+		nowUTC := env.GetClock().Now().UTC()
+		todayBackupName := backupNameForTimestamp(toStartOfDay(nowUTC))
+		yesterdayBackupName := backupNameForTimestamp(toStartOfDay(nowUTC.AddDate(0, 0, -1)))
 		// Just check today's or yesterday's for now.
 		// TODO: support more fine-grained backups (e.g. list all backups and
 		// pick the most recent one)
-		backupsToCheck := []string{todayStr, yesterdayStr}
+		backupsToCheck := []string{todayBackupName, yesterdayBackupName}
 		for _, name := range backupsToCheck {
 			if exists, err := backupExists(ctx, env, name, *restoreBackupDatabase); err != nil {
 				return fmt.Errorf("check blob exists: %w", err)

@@ -94,6 +94,10 @@ func LoadFromFile(configFile string) error {
 func Load() error {
 	configFile := Path()
 
+	if configFile == "" {
+		return expandFlagValues()
+	}
+
 	log.Infof("Reading buildbuddy config from '%s'", configFile)
 
 	_, err := os.Stat(configFile)

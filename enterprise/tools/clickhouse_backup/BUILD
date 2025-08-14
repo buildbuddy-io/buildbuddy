@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//server/backends/blobstore",
+        "//server/config",
         "//server/environment",
         "//server/real_environment",
         "//server/util/clickhouse",
