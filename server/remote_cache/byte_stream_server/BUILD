@@ -25,6 +25,7 @@ go_library(
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//peer",
     ],
 )
 
