@@ -178,6 +178,36 @@ Example `buildbuddy.yaml` file:
   # ...
 ```
 
+## Branch pattern matching
+
+In `buildbuddy.yaml`, workflow triggers such as `push` and `pull_request`
+are configured using a list of branch patterns that are matched against
+the branch name from the repository event.
+
+Branch patterns are evaluated using the following rules:
+
+- Patterns may contain a single wildcard character (`*`) which matches any
+  sequence of characters. For example, the branch pattern
+  `"release-*-linux"` results in a positive match for the branch
+  `"release-v1.2.3-linux"`. Note: if there is more than one wildcard, only
+  the first one is expanded, and subsequent wildcards are treated
+  literally.
+- Patterns starting with an exclamation mark (`!`) are _negated_ patterns
+  and result in a negative match if the rest of the pattern after the
+  exclamation mark is matched. For example, the branch pattern `"!main"`
+  results in a negative match for the branch `"main"`.
+- All characters other than negation flags or wildcards are matched
+  exactly. For example, the branch pattern `"main"` results in a positive
+  match for the branch `"main"`.
+- If multiple patterns are specified, then the last matching pattern
+  (positive or negative) determines whether the branch is matched. For
+  example, given the list of branch patterns
+  `["*", "!release-*", "release-special"]`, matching against the branch
+  name `"release-20210101"` results in a positive match for `"*"`, then a
+  negative match for `"!release-*"`, then a non-match for
+  `"release-special"`. The last matching pattern is `"!release-*"`, which
+  is a negative match, so the workflow is not triggered.
+
 ## Linux image configuration
 
 By default, workflows run on an Ubuntu 18.04-based image. You can
@@ -186,7 +216,7 @@ customize the image using the `container_image` action setting:
 ```yaml title="buildbuddy.yaml"
 actions:
   - name: "Test all targets"
-    container_image: "ubuntu-20.04" # <-- add this line
+    container_image: "ubuntu-24.04" # <-- add this line
     steps:
       - run: "bazel test //..."
 ```
@@ -196,6 +226,7 @@ The supported values for `container_image` are:
 - `"ubuntu-18.04"` (the default)
 - `"ubuntu-20.04"`
 - `"ubuntu-22.04"`
+- `"ubuntu-24.04"`
 
 ## Linux resource configuration
 
@@ -365,10 +396,10 @@ Defines whether an action should execute when a branch is pushed.
 
 **Fields:**
 
-- **`branches`** (`string` list): The branches that, when pushed to, will
-  trigger the action. This field accepts a simple wildcard character
-  (`"*"`) as a possible value, which will match any branch, as well as
-  `"gh-readonly-queue/*"`, which matches GitHub's merge queue branches.
+- **`branches`** (`string` list): The branch patterns that determine
+  whether a push to the branch will trigger the workflow. Patterns are
+  matched using the rules described in
+  [Branch pattern matching](#branch-pattern-matching)
 
 ### `PullRequestTrigger`
 
@@ -377,11 +408,13 @@ pushed.
 
 **Fields:**
 
-- **`branches`** (`string` list): The _base_ branches of a pull request.
-  For example, if this is set to `[ "v1", "v2" ]`, then the associated
-  action is only run when a PR wants to merge a branch _into_ the `v1`
-  branch or the `v2` branch. This field accepts a simple wildcard
-  character (`"*"`) as a possible value, which will match any branch.
+- **`branches`** (`string` list): The branch patterns that determine
+  whether an update to the pull request will trigger the workflow.
+  The _base_ branch of the PR is matched against this list.
+  For example, if this is set to `[ "v1", "v2" ]`, then the
+  associated action is only run when a PR wants to merge a branch _into_
+  the `v1` branch or the `v2` branch. Branch patterns are matched using
+  the rules described in [Branch pattern matching](#branch-pattern-matching)
 - **`merge_with_base`** (`boolean`, default: `true`): Whether to merge the
   base branch into the PR branch before running the workflow action. This
   can help ensure that the changes in the PR branch do not conflict with
