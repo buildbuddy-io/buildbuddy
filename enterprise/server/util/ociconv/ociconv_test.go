@@ -53,7 +53,7 @@ func TestOciconv_TestRegistry(t *testing.T) {
 
 	reg := testregistry.Run(t, testregistry.Opts{})
 
-	ref, _ := reg.PushNamedImage(t, "ociconv-test-image:latest")
+	ref, img := reg.PushNamedImage(t, "ociconv-test-image:latest")
 
 	resolver, err := oci.NewResolver(te)
 	require.NoError(t, err)
@@ -72,8 +72,6 @@ func TestOciconv_TestRegistry(t *testing.T) {
 	err = ext4.ImageToDirectory(ctx, path, outDir, []string{"/"})
 	require.NoError(t, err)
 
-	img, err := resolver.Resolve(ctx, ref, oci.RuntimePlatform(), oci.Credentials{})
-	require.NoError(t, err)
 
 	rc := mutate.Extract(img)
 	defer rc.Close()
