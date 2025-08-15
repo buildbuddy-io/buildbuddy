@@ -232,7 +232,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		}
 	}
 
-	httpClient := httpclient.NewWithAllowedPrivateIPsAndName(p.allowedPrivateIPNets, "fetch_server")
+	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
 
 	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))
 	defer cancel()

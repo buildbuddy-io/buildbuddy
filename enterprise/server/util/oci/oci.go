@@ -524,7 +524,7 @@ func (r *Resolver) getRemoteOpts(ctx context.Context, platform *rgpb.Platform, c
 		}))
 	}
 
-	tr := httpclient.NewWithAllowedPrivateIPsAndName(r.allowedPrivateIPs, "oci").Transport
+	tr := httpclient.New(r.allowedPrivateIPs, "oci").Transport
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(tr, *mirrors)))
 	} else {

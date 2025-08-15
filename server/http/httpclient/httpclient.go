@@ -19,19 +19,9 @@ import (
 // Tests often need to make HTTP requests to localhost -- set this flag to permit those requests.
 var allowLocalhost = flag.Bool("http.client.allow_localhost", false, "Allow HTTP requests to localhost")
 
-// New creates an HTTP client that blocks connections to private IPs and records
-// metrics on any requests made,.
-//
-// If you just want to make an HTTP request, this is the client to use.
-func New() *http.Client {
-	return NewWithAllowedPrivateIPs([]*net.IPNet{})
-}
-
-func NewWithName(clientName string) *http.Client {
-	return NewWithAllowedPrivateIPsAndName([]*net.IPNet{}, clientName)
-}
-
-func NewWithAllowedPrivateIPsAndName(allowedPrivateIPNets []*net.IPNet, clientName string) *http.Client {
+ // New creates an HTTP client that blocks connections to private IPs and records
+// metrics on any requests made.
+func New(allowedPrivateIPNets []*net.IPNet, clientName string) *http.Client {
 	inner := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout: 30 * time.Second,
@@ -41,29 +31,13 @@ func NewWithAllowedPrivateIPsAndName(allowedPrivateIPNets []*net.IPNet, clientNa
 		Proxy:               http.ProxyFromEnvironment,
 	}
 	tp := newMetricsTransport(inner, clientName)
-
 	return &http.Client{
 		Transport: tp,
 	}
 }
 
-// NewWithAllowPrivateIPs creates an HTTP client blocks connections to all but
-// the specified private IPs and records metrics on any requests made.
-func NewWithAllowedPrivateIPs(allowedPrivateIPNets []*net.IPNet) *http.Client {
-	inner := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout: 30 * time.Second,
-			Control: blockingDialerControl(allowedPrivateIPNets),
-		}).DialContext,
-		TLSHandshakeTimeout: 10 * time.Second,
-		Proxy:               http.ProxyFromEnvironment,
-	}
-	tp := newMetricsTransport(inner, "")
 
-	return &http.Client{
-		Transport: tp,
-	}
-}
+
 
 type dialerControl = func(network, address string, conn syscall.RawConn) error
 
