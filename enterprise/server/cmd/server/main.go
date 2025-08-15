@@ -43,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scim"
@@ -91,11 +92,16 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	}
 	env.SetAuthDB(db)
 
-	if err := auth.Register(ctx, env); err != nil {
-		if err := auth.RegisterNullAuth(env); err != nil {
-			log.Fatalf("%v", err)
+	if remoteAuth, err := remoteauth.NewRemoteAuthenticator(); err == nil {
+		env.SetAuthenticator(remoteAuth)
+		log.Infof("Using remote auth")
+	} else {
+		if err := auth.Register(ctx, env); err != nil {
+			if err := auth.RegisterNullAuth(env); err != nil {
+				log.Fatalf("%v", err)
+			}
+			log.Warningf("No authentication will be configured: %s", err)
 		}
-		log.Warningf("No authentication will be configured: %s", err)
 	}
 	gcplink.Register(env)
 
