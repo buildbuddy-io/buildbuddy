@@ -150,6 +150,7 @@ ts_library(
         "//enterprise/app/code:code_empty",
         "//enterprise/app/code:code_pull_request",
         "//enterprise/app/code:code_sidebar_node_v2",
+        "//enterprise/app/code:kythe",
         "//enterprise/app/monaco",
         "//enterprise/app/org_picker",
         "//enterprise/app/sidekick/bazelrc",
@@ -158,11 +159,24 @@ ts_library(
         "//enterprise/app/sidekick/module",
         "//proto:git_ts_proto",
         "//proto:github_ts_proto",
-        "//proto:kythe_common_ts_proto",
-        "//proto:kythe_xref_ts_proto",
         "//proto:remote_execution_ts_proto",
         "//proto:runner_ts_proto",
         "//proto:search_ts_proto",
         "//proto:workspace_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "kythe",
+    srcs = ["kythe.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/monaco-editor",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/service:rpc_service",
+        "//proto:kythe_common_ts_proto",
+        "//proto:kythe_xref_ts_proto",
+        "//proto:search_ts_proto",
     ],
 )
