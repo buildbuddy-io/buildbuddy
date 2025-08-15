@@ -19,7 +19,7 @@ import (
 // Tests often need to make HTTP requests to localhost -- set this flag to permit those requests.
 var allowLocalhost = flag.Bool("http.client.allow_localhost", false, "Allow HTTP requests to localhost")
 
- // New creates an HTTP client that blocks connections to private IPs and records
+// New creates an HTTP client that blocks connections to private IPs and records
 // metrics on any requests made.
 func New(allowedPrivateIPNets []*net.IPNet, clientName string) *http.Client {
 	inner := &http.Transport{
@@ -35,9 +35,6 @@ func New(allowedPrivateIPNets []*net.IPNet, clientName string) *http.Client {
 		Transport: tp,
 	}
 }
-
-
-
 
 type dialerControl = func(network, address string, conn syscall.RawConn) error
 
