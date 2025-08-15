@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/trace"
@@ -37,6 +38,7 @@ var (
 	// TODO: use this project ID or deprecate it. It is currently unreferenced.
 	traceProjectID            = flag.String("app.trace_project_id", "", "Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP.")
 	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jager collector endpoint where traces will be sent.")
+	traceOTELCollector        = flag.String("app.trace_otel_collector", "", "Address of the OTEL collector endpoint where traces will be sent.")
 	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
 	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
 	traceFractionOverrides    = flag.Slice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
@@ -127,14 +129,29 @@ func Configure(env environment.Env) error {
 		return nil
 	}
 
-	if *traceJaegerCollector == "" {
-		return status.InvalidArgumentErrorf("Tracing enabled but Jaeger collector endpoint is not set.")
+	if *traceJaegerCollector == "" && *traceOTELCollector == "" {
+		return status.InvalidArgumentErrorf("Tracing enabled but no collector endpoint is set. Set either app.trace_jaeger_collector or app.trace_otel_collector.")
 	}
 
-	traceExporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(*traceJaegerCollector)))
-	if err != nil {
-		log.Warningf("Could not initialize Cloud Trace exporter: %s", err)
-		return nil
+	if *traceJaegerCollector != "" && *traceOTELCollector != "" {
+		return status.InvalidArgumentErrorf("Only one collector can be configured at a time. Set either app.trace_jaeger_collector or app.trace_otel_collector, not both.")
+	}
+
+	var traceExporter sdktrace.SpanExporter
+	var err error
+	
+	if *traceJaegerCollector != "" {
+		traceExporter, err = jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(*traceJaegerCollector)))
+		if err != nil {
+			log.Warningf("Could not initialize Jaeger exporter: %s", err)
+			return nil
+		}
+	} else if *traceOTELCollector != "" {
+		traceExporter, err = otlptracegrpc.New(context.Background(), otlptracegrpc.WithEndpoint(*traceOTELCollector), otlptracegrpc.WithInsecure())
+		if err != nil {
+			log.Warningf("Could not initialize OTEL exporter: %s", err)
+			return nil
+		}
 	}
 
 	fractionOverrides := make(map[string]float64)
