@@ -14,6 +14,7 @@ Example:
 : "${BB_CLICKHOUSE_CONTAINER_RUNNER:=docker}"
 # Host network port that clickhouse server will listen on
 : "${BB_CLICKHOUSE_PORT:=9000}"
+: "${BB_CLICKHOUSE_HTTP_PORT:=8123}"
 # Clickhouse image to use
 : "${BB_CLICKHOUSE_IMAGE:=mirror.gcr.io/clickhouse/clickhouse-server:23.8}"
 
@@ -26,11 +27,29 @@ if ! command -v "$docker" &>/dev/null; then
 fi
 
 start_clickhouse() {
-  "$docker" run --rm --detach --name=bb-clickhouse-local --publish="$BB_CLICKHOUSE_PORT:9000" --volume="/tmp/${USER}_clickhouse_data:/var/lib/clickhouse" "$BB_CLICKHOUSE_IMAGE"
+  # If outputting to a terminal, run docker in interactive mode and exit.
+  # If outputting to a pipe, run docker in detached mode, and continue the
+  # health checks below.
+  CMD=()
+  if [ -t 1 ]; then
+    CMD=(exec "$docker" run --interactive --tty)
+  else
+    CMD=("$docker" run --detach)
+  fi
+  "${CMD[@]}" \
+    --rm \
+    --name=bb-clickhouse-local \
+    --publish="$BB_CLICKHOUSE_PORT:9000" \
+    --publish="$BB_CLICKHOUSE_HTTP_PORT:8123" \
+    --volume="/tmp/${USER}_clickhouse_data:/var/lib/clickhouse" \
+    "$BB_CLICKHOUSE_IMAGE"
 }
 
-if ! "$docker" inspect bb-clickhouse-local &>/dev/null; then
+if ! "$docker" container inspect bb-clickhouse-local &>/dev/null; then
+  echo >&2 "$0: starting clickhouse..."
   start_clickhouse
+else
+  echo >&2 "$0: clickhouse already running - connecting..."
 fi
 
 clickhouse_client() {
@@ -39,12 +58,16 @@ clickhouse_client() {
 
 init_db() {
   for _ in {1..10}; do
-    if clickhouse_client --query 'CREATE DATABASE IF NOT EXISTS buildbuddy_local;' &>/dev/null; then
+    if clickhouse_client --query '
+        CREATE DATABASE IF NOT EXISTS buildbuddy_local;
+        CREATE DATABASE IF NOT EXISTS otel_local;
+    ' &>/dev/null; then
       return 0
     fi
     echo >&2 "$0: waiting for clickhouse to initialize..."
     sleep 1
   done
+  return 1
 }
 
 if ! init_db; then
