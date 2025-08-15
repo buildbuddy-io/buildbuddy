@@ -1765,7 +1765,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 ref={this.diffViewer}
               />
             </div>
-            <KythePanel editor={this.editor} navigate={this.fetchIfNeededAndNavigate.bind(this)} />
+            {this.editor && <KythePanel editor={this.editor} navigate={this.fetchIfNeededAndNavigate.bind(this)} />}
             {this.state.changes.size > 0 && !this.getQuery() && (
               <div className="code-diff-viewer">
                 <div className="code-diff-viewer-title">

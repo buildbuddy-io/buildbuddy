@@ -1,12 +1,12 @@
-import React from "react";
 import * as monaco from "monaco-editor";
+import React from "react";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
+import * as kythe_common from "../../../proto/kythe_common_ts_proto";
 import { kythe } from "../../../proto/kythe_xref_ts_proto";
 import { search } from "../../../proto/search_ts_proto";
-import * as kythe_common from "../../../proto/kythe_common_ts_proto";
-import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 
 interface Props {
-  editor?: monaco.editor.IStandaloneCodeEditor;
+  editor: monaco.editor.IStandaloneCodeEditor;
   navigate: (path: string, commit: string, line: number) => void;
 }
 
@@ -26,16 +26,16 @@ export class KythePanel extends React.Component<Props, State> {
   goToDefKey: monaco.editor.IContextKey<boolean> | undefined = undefined;
   findRefsKey: monaco.editor.IContextKey<boolean> | undefined = undefined;
   mousedownTarget: monaco.Position | undefined = undefined;
-  mouseUpListener: () => void = () => {};
+  mouseMoveListener = this.resizeXrefs.bind(this);
+  mouseUpListener = () => {
+    window.removeEventListener("mousemove", this.mouseMoveListener, false);
+  };
 
   componentDidMount() {
-    this.mouseUpListener = () => {
-      window.removeEventListener("mousemove", this.resizeXrefs.bind(this), false);
-    };
     window.addEventListener("mouseup", this.mouseUpListener);
 
-    this.goToDefKey = this.props.editor?.createContextKey<boolean>("goToDefContextKey", false);
-    this.props.editor?.addAction({
+    this.goToDefKey = this.props.editor.createContextKey<boolean>("goToDefContextKey", false);
+    this.props.editor.addAction({
       id: "code-search-definition-action",
       label: "Go to definition",
       precondition: "goToDefContextKey",
@@ -51,8 +51,8 @@ export class KythePanel extends React.Component<Props, State> {
       },
     });
 
-    this.findRefsKey = this.props.editor?.createContextKey<boolean>("findRefsContextKey", false);
-    this.props.editor?.addAction({
+    this.findRefsKey = this.props.editor.createContextKey<boolean>("findRefsContextKey", false);
+    this.props.editor.addAction({
       id: "code-search-reference-action",
       label: "Find references",
       precondition: "findRefsContextKey",
@@ -68,19 +68,19 @@ export class KythePanel extends React.Component<Props, State> {
       },
     });
 
-    this.props.editor?.onContextMenu((e) => {
+    this.props.editor.onContextMenu((e) => {
       if (e.target.range) {
-        let decors = this.props.editor?.getDecorationsInRange(e.target.range);
+        let decors = this.props.editor.getDecorationsInRange(e.target.range);
         // TODO(jdelfino): Disable "Go to definition" when already on a definition
         this.findRefsKey?.set(decors != null && decors.length > 0);
         this.goToDefKey?.set(decors != null && decors.length > 0);
       }
     });
 
-    this.props.editor?.onMouseDown((e) => {
+    this.props.editor.onMouseDown((e) => {
       this.mousedownTarget = e.target.position ?? undefined;
     });
-    this.props.editor?.onMouseUp((e) => {
+    this.props.editor.onMouseUp((e) => {
       if (this.mousedownTarget && e.target.position) {
         if (
           e.target.position.column === this.mousedownTarget.column &&
@@ -103,6 +103,7 @@ export class KythePanel extends React.Component<Props, State> {
 
   componentWillUnmount() {
     window.removeEventListener("mouseup", this.mouseUpListener);
+    window.removeEventListener("mousemove", this.mouseMoveListener);
   }
 
   render() {
@@ -114,9 +115,8 @@ export class KythePanel extends React.Component<Props, State> {
               className="code-search-xrefs-resize"
               onMouseDown={(e) => {
                 e.preventDefault();
-                window.addEventListener("mousemove", this.resizeXrefs.bind(this), false);
-              }}
-            ></div>
+                window.addEventListener("mousemove", this.mouseMoveListener, false);
+              }}></div>
             <div className="code-search-xrefs" style={{ height: this.state.xrefsHeight + "px" }}>
               {/* TODO(jdelfino): Add an error state if xrefs fail to load */}
               {this.state.xrefsLoading && <div className="loading"></div>}
@@ -182,7 +182,7 @@ export class KythePanel extends React.Component<Props, State> {
     const refs = this.getKytheRefsForRange(new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column));
     if (!refs.length) {
       // clear all highlights when clicking on a non-reference
-      updateSymbolHighlights(this.props.editor?.getModel()!, []);
+      updateSymbolHighlights(this.props.editor.getModel()!, []);
       return;
     }
 
@@ -344,8 +344,7 @@ export class KythePanel extends React.Component<Props, State> {
                 className="xrefs-file"
                 onClick={() => {
                   this.props.navigate(path, "", 1);
-                }}
-              >
+                }}>
                 {path} ({anchors.length} result{anchors.length > 1 ? "s" : ""})
               </div>
               <div className="xrefs-snippet">
@@ -354,8 +353,7 @@ export class KythePanel extends React.Component<Props, State> {
                     <div
                       onClick={() => {
                         this.navigateToAnchor(a.anchor!);
-                      }}
-                    >
+                      }}>
                       <span className="xrefs-snippet-line">{a.anchor?.span?.start?.lineNumber}: </span>
                       <span>{a.anchor?.snippet}</span>
                     </div>
@@ -375,7 +373,7 @@ export class KythePanel extends React.Component<Props, State> {
     // This is necessary because, for example, some definitions will have multiple
     // /kythe/edge/defines/binding edges, and we want to process them all so we don't
     // miss references.
-    const decorInRange = this.props.editor?.getDecorationsInRange(range);
+    const decorInRange = this.props.editor.getDecorationsInRange(range);
     if (!decorInRange) {
       return [];
     }
@@ -557,51 +555,48 @@ function nodeInfoToMarkdownDescription(nodeInfo: kythe_common.kythe.proto.common
 // TODO(jdelfino): The styling of this is not the best, but it would need to use HTML instead of
 // Markdown to make it any better.
 async function makeHoverContents(ticket: string): Promise<monaco.languages.Hover> {
-  return fetchDocumentation(ticket).then(
-    (rval: search.ExtendedDocumentationReply): monaco.languages.Hover => {
-      if (!rval || !rval.nodeInfo || !rval.definition) {
-        return { contents: [] };
-      }
-
-      let popupContents: monaco.IMarkdownString[] = [];
-
-      // A full description is of the form:
-      // <node description> defined at <file path>:<line number>
-      // <definition snippet>
-      // We make a best-effort to create a partial description if any of the metadata is missing.
-      let description = nodeInfoToMarkdownDescription(rval.nodeInfo);
-
-      const location =
-        filenameFromAnchor(rval.definition?.anchor) + ":" + lineNumberFromAnchor(rval.definition?.anchor);
-      if (location.length > 1) {
-        if (description.length > 0) {
-          description += " defined at " + location;
-        } else {
-          description = "Defined at " + location;
-        }
-      }
-
-      if (rval.definition?.anchor?.snippet) {
-        if (description.length > 0) {
-          description += "\n\n";
-        }
-        description += "`" + rval.definition.anchor.snippet + "`";
-      }
-
-      if (description.length > 0) {
-        description = "**Definition**\n\n" + description;
-        popupContents.push({
-          value: description,
-        });
-      }
-
-      if (rval.docstring) {
-        popupContents.push({ value: "**Documentation**\n\n" + rval.docstring });
-      }
-
-      return { contents: popupContents };
+  return fetchDocumentation(ticket).then((rval: search.ExtendedDocumentationReply): monaco.languages.Hover => {
+    if (!rval || !rval.nodeInfo || !rval.definition) {
+      return { contents: [] };
     }
-  );
+
+    let popupContents: monaco.IMarkdownString[] = [];
+
+    // A full description is of the form:
+    // <node description> defined at <file path>:<line number>
+    // <definition snippet>
+    // We make a best-effort to create a partial description if any of the metadata is missing.
+    let description = nodeInfoToMarkdownDescription(rval.nodeInfo);
+
+    const location = filenameFromAnchor(rval.definition?.anchor) + ":" + lineNumberFromAnchor(rval.definition?.anchor);
+    if (location.length > 1) {
+      if (description.length > 0) {
+        description += " defined at " + location;
+      } else {
+        description = "Defined at " + location;
+      }
+    }
+
+    if (rval.definition?.anchor?.snippet) {
+      if (description.length > 0) {
+        description += "\n\n";
+      }
+      description += "`" + rval.definition.anchor.snippet + "`";
+    }
+
+    if (description.length > 0) {
+      description = "**Definition**\n\n" + description;
+      popupContents.push({
+        value: description,
+      });
+    }
+
+    if (rval.docstring) {
+      popupContents.push({ value: "**Documentation**\n\n" + rval.docstring });
+    }
+
+    return { contents: popupContents };
+  });
 }
 
 export async function fetchDocumentation(tick: string): Promise<search.ExtendedDocumentationReply> {
