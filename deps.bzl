@@ -6529,6 +6529,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "org_golang_google_grpc",
         build_file_proto_mode = "disable",
         importpath = "google.golang.org/grpc",
+        remote = "https://github.com/vadimberezniker/grpc-go",
+        vcs = "git",
         patch_args = ["-p1"],
         patches = [
             # Remove panic() from serverHandlerTransport.Drain
@@ -6540,8 +6542,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
             # ongoing requests to finish.
             "@{}//buildpatches:org_golang_google_grpc_remove_drain_panic.patch".format(workspace_name),
         ],
-        sum = "h1:WoosgB65DlWVC9FqI82dGsZhWFNBSLjQ84bjROOpMu4=",
-        version = "v1.74.2",
+        tag = "v1.74.2.1",
     )
     go_repository(
         name = "org_golang_google_grpc_cmd_protoc_gen_go_grpc",
