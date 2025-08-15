@@ -46,6 +46,8 @@ type StoreFactory struct {
 	gossipAddrs []string
 	clock       clockwork.Clock
 	session     *client.Session
+
+	partitions []disk.Partition
 }
 
 func NewStoreFactory(t *testing.T) *StoreFactory {
@@ -104,11 +106,14 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 
 	rc := rangecache.New()
 	s := sender.New(rc, apiClient)
-	partitions := []disk.Partition{
-		{
-			ID:           "default",
-			MaxSizeBytes: int64(1_000_000_000), // 1G
-		},
+	partitions := sf.partitions
+	if len(partitions) == 0 {
+		partitions = []disk.Partition{
+			{
+				ID:           "default",
+				MaxSizeBytes: int64(1_000_000_000), // 1G
+			},
+		}
 	}
 	mc := &pebble.MetricsCollector{}
 	db, err := pebble.Open(ts.RootDir, "raft_store", &pebble.Options{
@@ -148,6 +153,10 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	}
 	sf.RecreateStore(t, ts)
 	return ts
+}
+
+func (sf *StoreFactory) SetPartitions(partitions []disk.Partition) {
+	sf.partitions = partitions
 }
 
 func MakeNodeGRPCAddressesMap(stores ...*TestingStore) map[string]string {

@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
@@ -97,10 +98,11 @@ const (
 )
 
 type Store struct {
-	env        environment.Env
-	rootDir    string
-	grpcAddr   string
-	partitions []disk.Partition
+	env                      environment.Env
+	rootDir                  string
+	grpcAddr                 string
+	partitions               []disk.Partition
+	partitionsAllInitialized bool
 
 	nodeHost      *dragonboat.NodeHost
 	gossipManager interfaces.GossipService
@@ -304,7 +306,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	usages, err := usagetracker.New(s.sender, s.leaser, gossipManager, s.NodeDescriptor(), partitions, clock)
 
 	if *enableDriver {
-		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, apiClient, clock)
+		s.driverQueue = driver.NewQueue(s, s.sender, gossipManager, nhLog, apiClient, clock)
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s, *clientSessionTTL)
 	s.replicaJanitor = newReplicaJanitor(clock, s, *zombieNodeScanInterval)
@@ -696,6 +698,10 @@ func (s *Store) Start() error {
 	}
 	s.eg.Go(func() error {
 		s.deleteSessionWorker.Start(s.egCtx)
+		return nil
+	})
+	s.eg.Go(func() error {
+		s.setupPartitions(s.egCtx)
 		return nil
 	})
 	return nil
@@ -1958,7 +1964,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, targetRangeSiz
 					s.log.Errorf("failed to get replica with rangeID=%d: %s", rangeID, err)
 					continue
 				}
-				s.driverQueue.MaybeAdd(ctx, repl)
+				s.driverQueue.MaybeAddRangeTask(ctx, repl)
 			default:
 				break
 			}
@@ -3226,7 +3232,7 @@ func (store *Store) scanReplicas(ctx context.Context, scanInterval time.Duration
 		replicas := store.getLeasedReplicas(ctx)
 		for _, repl := range replicas {
 			if store.driverQueue != nil {
-				store.driverQueue.MaybeAdd(ctx, repl)
+				store.driverQueue.MaybeAddRangeTask(ctx, repl)
 			}
 			store.deleteSessionWorker.Enqueue(repl)
 		}
@@ -3309,6 +3315,69 @@ func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
 	fsu := gosigar.FileSystemUsage{}
 	err := fsu.Get(s.rootDir)
 	return fsu, err
+}
+
+func (s *Store) setupPartitions(ctx context.Context) {
+	if s.driverQueue == nil {
+		return
+	}
+	ticker := s.clock.NewTicker(30 * time.Second) // Check every 30 seconds
+	for {
+		if s.partitionsAllInitialized {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.Chan():
+			s.processPartitions(ctx)
+		}
+	}
+}
+
+func (s *Store) processPartitions(ctx context.Context) {
+	// Check if this store is the leader of the meta range
+	if !s.HasReplicaAndIsLeader(constants.MetaRangeID) {
+		return
+	}
+	partitionsFromMetaRange, err := s.sender.FetchPartitionDescriptors(ctx)
+	if err != nil {
+		s.log.Warningf("Failed to fetch partitions from meta range: %s", err)
+		return
+	}
+
+	s.log.Debugf("Found %d partitions in meta range", len(partitionsFromMetaRange))
+
+	// Check if each store partition exists in the meta range partitions
+	partitionsNeedsSetup := false
+	for _, p := range s.partitions {
+		var pd *rfpb.PartitionDescriptor
+		for _, pFromMD := range partitionsFromMetaRange {
+			if p.ID == pFromMD.GetId() {
+				pd = pFromMD
+				break
+			}
+		}
+
+		if pd != nil && pd.GetState() == rfpb.PartitionDescriptor_INITIALIZED {
+			continue
+		}
+
+		// set up the partition
+		s.driverQueue.MaybeAddPartitionTask(ctx, p, pd)
+		partitionsNeedsSetup = true
+	}
+
+	// TODO: loop over partitionsFromMetaRange to see if there are ranges need
+	// to be deleted.
+	if !partitionsNeedsSetup {
+		s.partitionsAllInitialized = true
+	}
+}
+
+// InitializeShardsForPartition is a wrapper so that the driver can call bringup.InitializeShardsForPartition.
+func (s *Store) InitializeShardsForPartition(ctx context.Context, nodeGrpcAddrs map[string]string, partition disk.Partition) error {
+	return bringup.InitializeShardsForPartition(ctx, s, nodeGrpcAddrs, partition)
 }
 
 func (s *Store) updatePebbleMetrics() error {
