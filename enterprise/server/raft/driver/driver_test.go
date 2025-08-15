@@ -1115,11 +1115,11 @@ type testQueue struct {
 }
 
 func (tq *testQueue) processTask(ctx context.Context, task *driverTask, action DriverAction) RequeueType {
-	if task.key.taskType != RangeTask {
+	if task.key.taskType != RangeTaskType {
 		return RequeueNoop
 	}
 	rangeID := task.key.rangeID
-	replicaID := task.repl.ReplicaID()
+	replicaID := task.rangeTask.repl.ReplicaID()
 	key := fmt.Sprintf("%d-%d", rangeID, replicaID)
 	i, ok := tq.instructions[key]
 	if !ok {
@@ -1129,11 +1129,11 @@ func (tq *testQueue) processTask(ctx context.Context, task *driverTask, action D
 }
 
 func (tq *testQueue) computeAction(ctx context.Context, task *driverTask) (DriverAction, float64) {
-	if task.key.taskType != RangeTask {
+	if task.key.taskType != RangeTaskType {
 		return DriverNoop, 0.0
 	}
 	rangeID := task.key.rangeID
-	replicaID := task.repl.ReplicaID()
+	replicaID := task.rangeTask.repl.ReplicaID()
 	key := fmt.Sprintf("%d-%d", rangeID, replicaID)
 	i, ok := tq.instructions[key]
 	if !ok {
@@ -1162,7 +1162,7 @@ func TestBaseQueueRetry(t *testing.T) {
 		repls:        map[uint64]*testReplica{1: tr},
 	}
 	tq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clock, tq)
-	tq.maybeAddRangeTask(ctx, tr, attemptRecord{})
+	tq.maybeAddRangeTask(ctx, &rangeTask{repl: tr}, attemptRecord{})
 
 	// ProcessQueue should add c1n1 back to the queue with an attempt record
 	tq.processQueue()
@@ -1208,19 +1208,19 @@ func TestBaseQueueAttemptRecordRetain(t *testing.T) {
 	}
 	tq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clock, tq)
 
-	tq.maybeAddRangeTask(ctx, tr, attemptRecord{})
+	tq.maybeAddRangeTask(ctx, &rangeTask{repl: tr}, attemptRecord{})
 
 	// ProcessQueue should add c1n1 back to the queue with an attempt record
 	tq.processQueue()
 
-	task, ok := tq.taskMap[taskKey{taskType: RangeTask, rangeID: 1}]
+	task, ok := tq.taskMap[taskKey{taskType: RangeTaskType, rangeID: 1}]
 	require.True(t, ok)
 	require.NotNil(t, task)
 	require.Equal(t, 1, task.attemptRecord.attempts)
 	require.Equal(t, DriverSplitRange, task.attemptRecord.action)
 
-	tq.maybeAddRangeTask(ctx, tr, attemptRecord{})
-	task, ok = tq.taskMap[taskKey{taskType: RangeTask, rangeID: 1}]
+	tq.maybeAddRangeTask(ctx, &rangeTask{repl: tr}, attemptRecord{})
+	task, ok = tq.taskMap[taskKey{taskType: RangeTaskType, rangeID: 1}]
 	require.True(t, ok)
 	require.NotNil(t, task)
 	require.Equal(t, 1, task.attemptRecord.attempts)
@@ -1244,12 +1244,12 @@ func TestBaseQueueAttemptRecordReset(t *testing.T) {
 	}
 	tq.baseQueue = newBaseQueue(log.NamedSubLogger("test"), clock, tq)
 
-	tq.maybeAddRangeTask(ctx, tr, attemptRecord{})
+	tq.maybeAddRangeTask(ctx, &rangeTask{repl: tr}, attemptRecord{})
 
 	// ProcessQueue should add c1n1 back to the queue with an attempt record
 	tq.processQueue()
 
-	task, ok := tq.taskMap[taskKey{taskType: RangeTask, rangeID: 1}]
+	task, ok := tq.taskMap[taskKey{taskType: RangeTaskType, rangeID: 1}]
 	require.True(t, ok)
 	require.NotNil(t, task)
 	require.Equal(t, 1, task.attemptRecord.attempts)
@@ -1262,9 +1262,9 @@ func TestBaseQueueAttemptRecordReset(t *testing.T) {
 	}
 	// We try to queue replica c1n1 again, but this time, there is a different
 	// action to do.
-	tq.maybeAddRangeTask(ctx, tr, attemptRecord{})
+	tq.maybeAddRangeTask(ctx, &rangeTask{repl: tr}, attemptRecord{})
 
-	task, ok = tq.taskMap[taskKey{taskType: RangeTask, rangeID: 1}]
+	task, ok = tq.taskMap[taskKey{taskType: RangeTaskType, rangeID: 1}]
 	require.True(t, ok)
 	require.NotNil(t, task)
 	require.Equal(t, 0, task.attemptRecord.attempts)
