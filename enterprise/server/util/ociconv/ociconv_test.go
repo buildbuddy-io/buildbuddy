@@ -1,17 +1,23 @@
 package ociconv_test
 
 import (
+	"archive/tar"
 	"context"
+	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,6 +66,39 @@ func TestOciconv_TestRegistry(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, fi.IsDir())
 	require.Greater(t, fi.Size(), int64(0))
+
+	// Extract ext4 image and verify that all file paths from the image are present.
+	outDir := testfs.MakeTempDir(t)
+	err = ext4.ImageToDirectory(ctx, path, outDir, []string{"/"})
+	require.NoError(t, err)
+
+	img, err := resolver.Resolve(ctx, ref, oci.RuntimePlatform(), oci.Credentials{})
+	require.NoError(t, err)
+
+	rc := mutate.Extract(img)
+	defer rc.Close()
+
+	tr := tar.NewReader(rc)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if hdr == nil {
+			continue
+		}
+		switch hdr.Typeflag {
+		case tar.TypeReg, tar.TypeRegA, tar.TypeSymlink:
+			name := strings.TrimPrefix(hdr.Name, "./")
+			name = strings.TrimPrefix(name, "/")
+			if name == "" {
+				continue
+			}
+			_, err := os.Lstat(filepath.Join(outDir, name))
+			require.NoErrorf(t, err, "expected path to exist in ext4 output: %q", name)
+		}
+	}
 }
 
 func TestOciconv_ChecksCredentials(t *testing.T) {
