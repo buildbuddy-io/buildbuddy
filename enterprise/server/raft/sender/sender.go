@@ -44,7 +44,7 @@ func New(rangeCache *rangecache.RangeCache, apiClient *client.APIClient) *Sender
 	}
 }
 
-func scanRangeDescriptors(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, scanReq *rfpb.ScanRequest) ([]*rfpb.RangeDescriptor, error) {
+func scanKVs(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, scanReq *rfpb.ScanRequest) ([]*rfpb.KV, error) {
 	batchReq, err := rbuilder.NewBatchBuilder().Add(scanReq).ToProto()
 	if err != nil {
 		return nil, err
@@ -61,14 +61,39 @@ func scanRangeDescriptors(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header
 		log.CtxErrorf(ctx, "Error reading scan response: %s", err)
 		return nil, err
 	}
+	return scanRsp.GetKvs(), nil
+}
 
-	res := make([]*rfpb.RangeDescriptor, 0, len(scanRsp.GetKvs()))
-	for _, kv := range scanRsp.GetKvs() {
+func scanRangeDescriptors(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, scanReq *rfpb.ScanRequest) ([]*rfpb.RangeDescriptor, error) {
+	kvs, err := scanKVs(ctx, c, h, scanReq)
+	if err != nil {
+		return nil, err
+	}
+
+	res := make([]*rfpb.RangeDescriptor, 0, len(kvs))
+	for _, kv := range kvs {
 		rd := &rfpb.RangeDescriptor{}
 		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
 			return nil, status.InternalErrorf("scan returned unparsable kv (key=%q): %s", kv.GetKey(), err)
 		}
 		res = append(res, rd)
+	}
+	return res, nil
+}
+
+func scanPartitionDescriptors(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, scanReq *rfpb.ScanRequest) ([]*rfpb.PartitionDescriptor, error) {
+	kvs, err := scanKVs(ctx, c, h, scanReq)
+	if err != nil {
+		return nil, err
+	}
+
+	res := make([]*rfpb.PartitionDescriptor, 0, len(kvs))
+	for _, kv := range kvs {
+		pd := &rfpb.PartitionDescriptor{}
+		if err := proto.Unmarshal(kv.GetValue(), pd); err != nil {
+			return nil, status.InternalErrorf("scan returned unparsable kv (key=%q): %s", kv.GetKey(), err)
+		}
+		res = append(res, pd)
 	}
 	return res, nil
 }
@@ -615,4 +640,26 @@ func (s *Sender) DirectRead(ctx context.Context, key []byte) ([]byte, error) {
 		return nil, err
 	}
 	return readResponse.GetKv().GetValue(), nil
+}
+
+func (s *Sender) FetchPartitionDescriptors(ctx context.Context) ([]*rfpb.PartitionDescriptor, error) {
+	var res []*rfpb.PartitionDescriptor
+	start, end := keys.Range(constants.PartitionPrefix)
+	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
+		req := &rfpb.ScanRequest{
+			Start:    start,
+			End:      end,
+			ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
+		}
+		partitions, err := scanPartitionDescriptors(ctx, c, h, req)
+		if err != nil {
+			return err
+		}
+		res = partitions
+		return nil
+	}
+	if err := s.runOnMetaRange(ctx, fn); err != nil {
+		return nil, err
+	}
+	return res, nil
 }
