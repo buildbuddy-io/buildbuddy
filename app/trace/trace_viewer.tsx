@@ -35,6 +35,8 @@ const SCROLL_WIDTH_LIMIT = 18_000_000;
 
 const FILTER_URL_PARAM = "timingFilter";
 
+const CRITICAL_PATH_ACTION_PREFIX = "action '";
+
 /**
  * Renders an interactive trace profile viewer for an invocation.
  */
@@ -299,7 +301,11 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
         data: { event: hoveredEvent, x: mouse.clientX, y: mouse.clientY },
       });
     }
-    document.body.style.cursor = hoveredEvent?.args?.target ? "pointer" : "";
+    document.body.style.cursor =
+      hoveredEvent?.args?.target ||
+      (hoveredEvent?.tid == 0 && hoveredEvent?.name?.startsWith(CRITICAL_PATH_ACTION_PREFIX))
+        ? "pointer"
+        : "";
   }
 
   private onScroll(e: React.UIEvent<HTMLDivElement>, panelIndex: number) {
@@ -359,13 +365,14 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     document.body.style.cursor = "";
   };
 
-  private updateFilter = (value: string) => {
+  private updateFilter = (value: string, callback?: () => void) => {
     router.setQueryParam(FILTER_URL_PARAM, value);
     this.setState({ filter: value });
 
     window.clearTimeout(this.debounceTimer);
     this.debounceTimer = window.setTimeout(() => {
       this.performSearch();
+      callback?.();
     }, 300);
   };
 
@@ -380,9 +387,21 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
   }
 
   private onCanvasClick(e: React.MouseEvent, panelIndex: number) {
-    const target = this.panels[panelIndex].getHoveredEvent()?.args?.target;
-    if (target) {
-      router.navigateTo(`?target=${target}#targets`);
+    let event = this.panels[panelIndex].getHoveredEvent();
+    if (event?.args?.target) {
+      router.navigateTo(`?target=${event.args.target}#targets`);
+      return;
+    }
+
+    if (
+      panelIndex === 0 &&
+      event?.name &&
+      event.name.startsWith(CRITICAL_PATH_ACTION_PREFIX) &&
+      event.name.endsWith("'")
+    ) {
+      this.updateFilter(event.name.slice(CRITICAL_PATH_ACTION_PREFIX.length, -1), () => {
+        this.scrollToNextMatch(1);
+      });
     }
   }
 
